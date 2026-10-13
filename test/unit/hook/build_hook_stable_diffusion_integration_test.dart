@@ -13,6 +13,7 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hooks_runner_layout.dart';
 
 const _stableDiffusionAssetId = 'package:llamadart/stable_diffusion';
 const _primaryAssetId = 'package:llamadart/llamadart';
@@ -268,6 +269,26 @@ void main() {
         );
       }
     }
+  });
+
+  test('all beside a Flutter Edge AI engine drops only LiteRT-LM', () async {
+    final layout = await flutterEdgeAiWorkspace();
+    addTearDown(layout.delete);
+    final run = await runCodeBuildHook(
+      hookMain: build_hook.main,
+      targetOS: OS.linux,
+      targetArchitecture: Architecture.x64,
+      layout: layout,
+      userDefines: layout.userDefines({'llamadart_native_runtimes': 'all'}),
+    );
+    expect(
+      run.assets.keys,
+      containsAll([_primaryAssetId, _stableDiffusionAssetId]),
+    );
+    expect(
+      run.assets.keys.where((id) => id.startsWith(_liteRtLmAssetIdPrefix)),
+      isEmpty,
+    );
   });
 
   test('all under an exact bundle key still skips an unpublished '

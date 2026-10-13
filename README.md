@@ -358,6 +358,17 @@ regardless of GitHub metadata. Nightly cores use canonical decimal spelling
 zeros. The default pin above changes only after the matching artifacts,
 bindings, runtime behavior, and docs have been validated together.
 
+### Alongside Flutter Edge AI
+
+`flutter_edge_ai_litertlm` ships its own LiteRT-LM libraries, and
+`flutter_edge_ai_llama` uses only llamadart's llama.cpp runtime. When the app,
+or any member of its pub workspace, depends on llamadart together with either
+package, the native build hook bundles `llama_cpp` only unless
+`llamadart_native_runtimes` names `litert_lm`. Naming `litert_lm` next to
+`flutter_edge_ai_litertlm` fails the build, because both packages would ship
+the same libraries. Details and the pub workspace rules:
+[Alongside Flutter Edge AI](https://llamadart.leehack.com/docs/platforms/native-build-hooks#alongside-flutter-edge-ai).
+
 ## Common Tasks
 
 | Task | Docs |
@@ -434,22 +445,3 @@ matrix rows and exact validation evidence in the PR body.
 ## License
 
 MIT. See [LICENSE](https://github.com/leehack/llamadart/blob/main/LICENSE).
-
-
-### Flutter Edge AI runtime coexistence
-
-When `flutter_edge_ai_llama` or `flutter_edge_ai_litertlm` is in the app's
-dependency graph, llamadart omits its LiteRT-LM runtime by default. Other apps
-keep their existing runtime defaults. Transitive dependencies count; unused pub
-workspace members do not. Explicitly naming `litert_lm` keeps it enabled for a
-connector-only app, but the hook rejects it alongside `flutter_edge_ai_litertlm`
-before downloading or emitting assets because both packages own overlapping
-native libraries. `all` does not count as explicitly naming `litert_lm`.
-
-To select llama.cpp yourself, set `llamadart_native_runtimes: [llama_cpp]` in the
-app/pub workspace root. Remove `llamadart_litert_lm_flutter` when using Flutter
-Edge AI's LiteRT-LM engine: the Apple companion also explicitly selects its
-runtime, including when parent-workspace settings already omit hook assets.
-Flutter Edge AI's GGUF connector still requires its documented llama.cpp Apple
-companion setup. This change does not qualify combining the packages' different Apple
-CocoaPods/SwiftPM setup recipes, nor does it change Web runtime selection.

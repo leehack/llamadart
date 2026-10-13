@@ -1,120 +1,148 @@
+/// Keeps llamadart's LiteRT-LM runtime out of builds that also bundle a
+/// Flutter Edge AI engine, for `hook/build.dart`.
+///
+/// User-facing docs: `website/docs/platforms/native-build-hooks.md`.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:yaml/yaml.dart';
+import 'native_bundle_config.dart';
 
-/// Applies consumer defaults and rejects conflicting LiteRT-LM ownership.
+const String _edgeAiLlama = 'flutter_edge_ai_llama';
+const String _edgeAiLiteRtLm = 'flutter_edge_ai_litertlm';
+const String _liteRtLmCompanion = 'llamadart_litert_lm_flutter';
+
+/// Applies the Flutter Edge AI defaults to [selectedRuntimes] and rejects
+/// two owners of the LiteRT-LM native libraries.
 ///
-/// Walks only the consumer's dependency closure. Other pub workspace members in
-/// package_config are not dependencies merely because they resolved together.
-/// On Apple, the SDK LiteRT companion explicitly selects that runtime even if
-/// SwiftPM links it outside the hook's selected assets.
+/// The build hook is not told which application is being built, and its
+/// output is shared by every package resolved into the same `.dart_tool/`:
+/// one application, or all members of a pub workspace. So the decision covers
+/// every root of [packageGraph] (`.dart_tool/package_graph.json`) that
+/// depends on [hookPackage], with that root's dev dependencies, which
+/// `dart run`, `dart test` and non-release Flutter builds bundle too.
+///
+/// When such a root also reaches `flutter_edge_ai_llama` or
+/// `flutter_edge_ai_litertlm`, an implied `litert_lm` is removed with a
+/// [warn]. `flutter_edge_ai_litertlm` bundles the same libraries, so
+/// [explicitLiteRtLm], or `llamadart_litert_lm_flutter` on an Apple target,
+/// throws a [StateError] next to it.
+///
+/// A missing or unreadable [packageGraph] keeps [selectedRuntimes] with a
+/// [warn]. pub writes the file and the hook runner reads it before any hook
+/// runs, so one this function cannot read comes from a toolchain it does not
+/// know, where failing would break builds that have no such engine.
+/// [dependency] receives [packageGraph] when it is read.
 List<String> selectConsumerNativeRuntimes({
-  required Directory? consumerRoot,
+  required File? packageGraph,
+  required String hookPackage,
   required List<String> selectedRuntimes,
   required bool explicitLiteRtLm,
   required bool isAppleTarget,
-  required void Function(Uri) dependency,
+  required void Function(Uri uri) dependency,
+  required void Function(String message) warn,
 }) {
-  try {
-    return _selectConsumerNativeRuntimes(
-      consumerRoot: consumerRoot,
-      selectedRuntimes: selectedRuntimes,
-      explicitLiteRtLm: explicitLiteRtLm,
-      isAppleTarget: isAppleTarget,
-      dependency: dependency,
-    );
-  } on FormatException {
-    throw StateError(
-      'Cannot read the native runtime dependency graph. Fix package metadata and rerun pub get/build.',
-    );
-  } on FileSystemException {
-    throw StateError(
-      'Cannot read the native runtime dependency graph. Check package metadata access and rerun pub get/build.',
-    );
-  }
-}
-
-List<String> _selectConsumerNativeRuntimes({
-  required Directory? consumerRoot,
-  required List<String> selectedRuntimes,
-  required bool explicitLiteRtLm,
-  required bool isAppleTarget,
-  required void Function(Uri) dependency,
-}) {
-  if ((!selectedRuntimes.contains('litert_lm') && !isAppleTarget) ||
-      consumerRoot == null) {
+  if (!selectedRuntimes.contains(nativeRuntimeLiteRtLm) && !isAppleTarget) {
     return selectedRuntimes;
   }
-  final rootSpec = File.fromUri(consumerRoot.uri.resolve('pubspec.yaml'));
-  if (!rootSpec.existsSync()) return selectedRuntimes;
-  Set<String> names(File file, {bool dev = false}) {
-    dependency(file.uri);
-    final decoded = loadYaml(file.readAsStringSync());
-    if (decoded is! Map) return {};
-    return {
-      if (dev && decoded['name'] is String) decoded['name'] as String,
-      if (decoded['dependencies'] case final Map entries)
-        ...entries.keys.whereType<String>(),
-      if (dev && decoded['dev_dependencies'] is Map)
-        ...(decoded['dev_dependencies'] as Map).keys.whereType<String>(),
-    };
+  final graphPath = packageGraph?.path ?? '.dart_tool/package_graph.json';
+  final define = 'hooks.user_defines.$hookPackage.$nativeRuntimesUserDefineKey';
+  const pubspec = 'the application or pub workspace root pubspec.yaml';
+
+  var problem = 'was not found';
+  Set<String>? bundled;
+  if (packageGraph != null && packageGraph.existsSync()) {
+    try {
+      dependency(packageGraph.uri);
+      bundled = _packagesBundledWith(
+        hookPackage,
+        jsonDecode(packageGraph.readAsStringSync()),
+      );
+    } on FormatException {
+      problem = 'is malformed';
+    } on FileSystemException {
+      problem = 'could not be read';
+    }
+  }
+  if (bundled == null) {
+    warn(
+      'Cannot check for Flutter Edge AI LiteRT-LM conflicts: the resolved '
+      'package graph $graphPath $problem. Keeping '
+      '${selectedRuntimes.join(', ')}. If the build also uses $_edgeAiLlama '
+      'or $_edgeAiLiteRtLm, set $define: [$nativeRuntimeLlamaCpp] in $pubspec '
+      'and rerun pub get.',
+    );
+    return selectedRuntimes;
   }
 
-  final pending = names(rootSpec, dev: true).toList();
-  final visited = <String>{};
-  Map<String, Uri>? roots;
-  while (pending.isNotEmpty) {
-    final name = pending.removeLast();
-    if (!visited.add(name)) continue;
-    if (roots == null) {
-      var directory = consumerRoot;
-      File? config;
-      while (true) {
-        final candidate = File.fromUri(
-          directory.uri.resolve('.dart_tool/package_config.json'),
-        );
-        if (candidate.existsSync()) {
-          config = candidate;
-          break;
-        }
-        if (directory.parent.path == directory.path) break;
-        directory = directory.parent;
-      }
-      roots = {};
-      if (config != null) {
-        dependency(config.uri);
-        final json =
-            jsonDecode(config.readAsStringSync()) as Map<String, dynamic>;
-        for (final entry in json['packages'] as List) {
-          final root = config.uri.resolve(entry['rootUri'] as String);
-          if (root.scheme == 'file') {
-            roots[entry['name'] as String] = Directory.fromUri(root).uri;
-          }
-        }
-      }
-    }
-    final root = roots[name];
-    if (root == null) continue;
-    final spec = File.fromUri(root.resolve('pubspec.yaml'));
-    if (spec.existsSync()) pending.addAll(names(spec));
-  }
-  // SwiftPM can link the companion even when parent-workspace settings keep
-  // its runtime out of the hook. The app graph still explicitly owns it.
   final selectsLiteRtLm =
       explicitLiteRtLm ||
-      (isAppleTarget && visited.contains('llamadart_litert_lm_flutter'));
-  if (visited.contains('flutter_edge_ai_litertlm') && selectsLiteRtLm) {
+      (isAppleTarget && bundled.contains(_liteRtLmCompanion));
+  if (selectsLiteRtLm && bundled.contains(_edgeAiLiteRtLm)) {
     throw StateError(
-      'Conflicting LiteRT-LM runtimes: flutter_edge_ai_litertlm already owns its native libraries. Configure hooks.user_defines.llamadart.llamadart_native_runtimes: [llama_cpp] in the application or pub workspace root, remove llamadart_litert_lm_flutter if present, then rerun pub get/build.',
+      'Conflicting LiteRT-LM runtimes: $_edgeAiLiteRtLm owns the same native '
+      'libraries as the $hookPackage LiteRT-LM runtime, and $graphPath '
+      'resolves both into builds that share this hook output. Set $define: '
+      '[$nativeRuntimeLlamaCpp] in $pubspec, remove $_liteRtLmCompanion if '
+      'present, then rerun pub get and the build.',
     );
   }
-  if (!selectsLiteRtLm &&
-      (visited.contains('flutter_edge_ai_llama') ||
-          visited.contains('flutter_edge_ai_litertlm'))) {
-    return selectedRuntimes
-        .where((runtime) => runtime != 'litert_lm')
-        .toList(growable: false);
+  final engines = [_edgeAiLlama, _edgeAiLiteRtLm].where(bundled.contains);
+  if (selectsLiteRtLm ||
+      engines.isEmpty ||
+      !selectedRuntimes.contains(nativeRuntimeLiteRtLm)) {
+    return selectedRuntimes;
   }
-  return selectedRuntimes;
+  final recovery = bundled.contains(_edgeAiLiteRtLm)
+      ? '$_edgeAiLiteRtLm owns the same native libraries, so both cannot be '
+            'bundled.'
+      : 'To keep it, name $nativeRuntimeLiteRtLm in $define in $pubspec.';
+  warn(
+    'Leaving the LiteRT-LM runtime out: ${engines.join(' and ')} resolved '
+    'next to $hookPackage in $graphPath, and every package resolved there '
+    'shares this hook output. $recovery',
+  );
+  return selectedRuntimes
+      .where((runtime) => runtime != nativeRuntimeLiteRtLm)
+      .toList(growable: false);
+}
+
+/// Every package some root of the decoded `package_graph.json` [graph] builds
+/// together with [hookPackage]. Throws [FormatException] on another shape.
+Set<String> _packagesBundledWith(String hookPackage, Object? graph) {
+  if (graph case {
+    'roots': final List<Object?> roots,
+    'packages': final List<Object?> packages,
+  }) {
+    final dependencies = <String, List<Object?>>{};
+    final devDependencies = <String, List<Object?>>{};
+    for (final package in packages) {
+      if (package case {
+        'name': final String name,
+        'dependencies': final List<Object?> direct,
+      }) {
+        dependencies[name] = direct;
+        if (package['devDependencies'] case final List<Object?> dev) {
+          devDependencies[name] = dev;
+        }
+      } else {
+        throw const FormatException();
+      }
+    }
+    final bundled = <String>{};
+    for (final root in roots) {
+      final closure = <Object?>{};
+      final pending = [root, ...?devDependencies[root]];
+      while (pending.isNotEmpty) {
+        final name = pending.removeLast();
+        if (closure.add(name)) pending.addAll(dependencies[name] ?? const []);
+      }
+      if (closure.contains(hookPackage)) {
+        bundled.addAll(closure.whereType<String>());
+      }
+    }
+    return bundled;
+  }
+  throw const FormatException();
 }

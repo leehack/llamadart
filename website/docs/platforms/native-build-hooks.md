@@ -16,7 +16,7 @@ Configure the hook under `hooks.user_defines.llamadart` in the app's
 
 | Key | Selects | Default |
 | --- | --- | --- |
-| `llamadart_native_runtimes` | Runtime families to bundle: `llama_cpp`, `litert_lm`, and the opt-in `stable_diffusion` | `llama_cpp` and `litert_lm` where published |
+| `llamadart_native_runtimes` | Runtime families to bundle: `llama_cpp`, `litert_lm`, and the opt-in `stable_diffusion` | `llama_cpp` and `litert_lm` where published; `llama_cpp` only [alongside Flutter Edge AI](#alongside-flutter-edge-ai) |
 | `llamadart_native_backends` | llama.cpp backend modules, and Android arm64 CPU variants | `cpu` and `vulkan` where present |
 | `llamadart_stable_diffusion_backends` | The `stable_diffusion` build on Linux and Windows: `cpu` or `vulkan` | Follows `llamadart_native_backends` |
 | `llamadart_native_tag` | `leehack/llamadart-native` release to download | The [pinned release](./support-matrix#pinned-runtimes) |
@@ -75,6 +75,39 @@ hooks:
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 
+### Alongside Flutter Edge AI
+
+`flutter_edge_ai_litertlm` ships its own copy of the LiteRT-LM libraries
+llamadart bundles, and `flutter_edge_ai_llama` uses only the llama.cpp
+runtime. When the app depends on llamadart together with either package:
+
+- An unset key, `both` and `all` leave `litert_lm` out, and the hook logs a
+  warning that names the package. `all` still bundles `stable_diffusion`.
+- Naming `litert_lm` keeps it next to `flutter_edge_ai_llama`.
+- Naming `litert_lm` next to `flutter_edge_ai_litertlm` fails the build before
+  anything is downloaded. On iOS and macOS, depending on
+  `llamadart_litert_lm_flutter` counts as naming it. Set
+  `llamadart_native_runtimes: [llama_cpp]` and remove that companion.
+
+The build does not tell the hook which app it is building, and every package
+resolved into one `.dart_tool` shares the hook's output: one app, or all
+members of a pub workspace. The hook therefore reads
+`.dart_tool/package_graph.json` and applies the rules above when any root
+package there reaches both llamadart and one of the two packages through its
+dependencies. A root's `dev_dependencies` count, because `dart run`,
+`dart test` and non-release Flutter builds bundle them. In a pub workspace:
+
+- The build reads `hooks.user_defines` from the workspace root `pubspec.yaml`
+  only, so set `llamadart_native_runtimes` there.
+- One member that combines llamadart with such a package changes the default
+  for every member. A member that loads `.litertlm` models through llamadart
+  needs `litert_lm` named at the root, which fails while any member combines
+  llamadart with `flutter_edge_ai_litertlm`; move one of the two out of the
+  workspace.
+
+If the hook cannot read the graph file it keeps the configured runtimes and
+logs a warning. Web builds bundle no native runtime and are unaffected.
+
 ### Opt-in stable_diffusion runtime (experimental)
 
 `stable_diffusion` bundles the
@@ -83,8 +116,9 @@ from `leehack/stable-diffusion-native` for the experimental
 [`ImageGenerationEngine`](../guides/image-generation). It adds about 40 to
 70 MB per target, so it is never bundled by default or by `both`; name it, or
 select `all`. Unset, `llamadart_native_runtimes` bundles `llama_cpp` and
-`litert_lm`; a list replaces those defaults, so it names every runtime the app
-loads:
+`litert_lm`, or `llama_cpp` only
+[alongside Flutter Edge AI](#alongside-flutter-edge-ai); a list replaces those
+defaults, so it names every runtime the app loads:
 
 | The app loads | `llamadart_native_runtimes` |
 | --- | --- |

@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- **Behavior change:** when the app, or any member of its pub workspace,
+  depends on llamadart together with `flutter_edge_ai_llama` or
+  `flutter_edge_ai_litertlm`, the native build hook bundles llama.cpp only
+  unless `llamadart_native_runtimes` names `litert_lm`, and fails the build
+  when `litert_lm` is named next to `flutter_edge_ai_litertlm`, which ships the
+  same libraries ([Alongside Flutter Edge AI](../platforms/native-build-hooks#alongside-flutter-edge-ai)).
+
 - On an iOS simulator, `GpuBackend.auto` now runs llama.cpp on the CPU, because Metal returns incorrect output there ([#950](https://github.com/leehack/llamadart/issues/950)). An explicit `GpuBackend.metal` or `ComputeDevice.gpu` still uses Metal and logs a warning; iOS devices and macOS are unchanged.
 
 - Android validation builds can retain bounded, identity-checked reports in app-private storage.

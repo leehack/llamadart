@@ -264,33 +264,24 @@ void main(List<String> args) async {
         return;
       }
     }
+    selectedRuntimes = selectConsumerNativeRuntimes(
+      packageGraph: _resolvedPackageGraph(input),
+      hookPackage: _packageName,
+      selectedRuntimes: selectedRuntimes,
+      explicitLiteRtLm: nativeRuntimeExplicitlySelectedForBundle(
+        bundle: spec.bundle,
+        rawUserConfig: rawNativeRuntimeConfig,
+        runtime: nativeRuntimeLiteRtLm,
+      ),
+      isAppleTarget: _isAppleTarget(code.targetOS),
+      dependency: output.dependencies.add,
+      warn: log.warning,
+    );
     if (selectedRuntimes.isEmpty) {
       throw Exception(
         'No native runtimes selected for ${spec.bundle}. Configure '
         '$nativeRuntimesUserDefineKey with '
         '${supportedNativeRuntimes.join(', ')}, or all.',
-      );
-    }
-    final graphDependencies = output.build().dependencies.toSet();
-    selectedRuntimes = selectConsumerNativeRuntimes(
-      consumerRoot: _runtimeConsumerPackageRoot(input),
-      isAppleTarget: _isAppleTarget(code.targetOS),
-      selectedRuntimes: selectedRuntimes,
-      explicitLiteRtLm:
-          appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
-          nativeRuntimeExplicitlySelectedForBundle(
-            bundle: spec.bundle,
-            rawUserConfig: rawNativeRuntimeConfig,
-            runtime: nativeRuntimeLiteRtLm,
-          ),
-      dependency: (uri) {
-        if (graphDependencies.add(uri)) output.dependencies.add(uri);
-      },
-    );
-    if (selectedRuntimes.isEmpty) {
-      throw StateError(
-        'No native runtimes remain after applying Flutter Edge AI defaults. '
-        'Configure $nativeRuntimesUserDefineKey: [llama_cpp].',
       );
     }
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
@@ -802,15 +793,14 @@ void _validateAppleCompanion(
   }
 }
 
-Directory? _runtimeConsumerPackageRoot(BuildInput input) {
-  // Workspace hook settings may come from a parent pubspec. The hook output
-  // identifies the app being built, whose closure determines runtime ownership.
-  final fromOutput = _consumerPackageRootFromOutput(input);
-  if (fromOutput != null &&
-      File.fromUri(fromOutput.uri.resolve('pubspec.yaml')).existsSync()) {
-    return fromOutput;
-  }
-  return _consumerPackageRoot(input);
+/// The resolved graph of every package sharing this hook's output: the hook
+/// runner keeps that output in the `.dart_tool/` pub resolved into, which a
+/// pub workspace has once, at its root.
+File? _resolvedPackageGraph(BuildInput input) {
+  final root = _consumerPackageRootFromOutput(input);
+  return root == null
+      ? null
+      : File(path.join(root.path, _dartToolDir, 'package_graph.json'));
 }
 
 Directory? _consumerPackageRoot(BuildInput input) {

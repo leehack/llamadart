@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hooks_runner_layout.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
@@ -677,6 +678,16 @@ void main() {
       ),
     );
   });
+
+  test(
+    'only LiteRT-LM assets follow the resolved graph',
+    () => expectOnlyLiteRtLmFollowsResolvedGraph(
+      hookMain: build_hook.main,
+      targetOS: OS.windows,
+      targetArchitecture: Architecture.x64,
+      liteRtLmLibraries: _windowsLiteRtLibraries,
+    ),
+  );
 }
 
 Set<String> _emittedFileNames(BuildOutput output) {
