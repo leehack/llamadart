@@ -852,6 +852,8 @@ const List<String> tagHistoryFiles = <String>[
   'website/docs/changelog/recent-releases.md',
   'packages/llamadart_validation/test/fixtures/windows_native_log/chat.events.jsonl',
   'packages/llamadart_validation/test/fixtures/windows_native_log/tiny.events.jsonl',
+  'packages/llamadart_validation/test/fixtures/android_logcat/galaxys24-gemma4-litert-gpu.events.jsonl',
+  'packages/llamadart_validation/test/fixtures/android_logcat/pixel9pro-gemma4-litert-gpu.events.jsonl',
 ];
 
 /// Frozen documentation snapshots.
