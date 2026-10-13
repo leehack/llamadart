@@ -20,21 +20,25 @@ void main() {
   });
   tearDown(() async => scratch.delete(recursive: true));
 
-  void check(List<String> runtimes, {void Function(Uri)? dependency}) =>
-      validateRuntimeCoexistence(
-        consumerRoot: scratch,
-        selectedRuntimes: runtimes,
-        dependency: dependency ?? (_) {},
-      );
+  List<String> check(
+    List<String> runtimes, {
+    bool explicit = false,
+    void Function(Uri)? dependency,
+  }) => selectConsumerNativeRuntimes(
+    consumerRoot: scratch,
+    selectedRuntimes: runtimes,
+    explicitLiteRtLm: explicit,
+    dependency: dependency ?? (_) {},
+  );
 
   test(
-    'direct owner requires llama.cpp-only selection, defaults otherwise unchanged',
+    'direct owner defaults to llama.cpp and rejects explicit duplicate selection',
     () {
       pubspec.writeAsStringSync(
         'name: app\ndependencies:\n  flutter_edge_ai_litertlm: any\n',
       );
       expect(
-        () => check(['llama_cpp', 'litert_lm']),
+        () => check(['llama_cpp', 'litert_lm'], explicit: true),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -43,18 +47,37 @@ void main() {
           ),
         ),
       );
-      check(['llama_cpp']);
+      expect(check(['llama_cpp', 'litert_lm']), ['llama_cpp']);
+      expect(check(['llama_cpp']), ['llama_cpp']);
       pubspec.writeAsStringSync('name: app\ndependencies:\n  llamadart: any\n');
-      check(['llama_cpp', 'litert_lm']);
+      expect(check(['llama_cpp', 'litert_lm']), ['llama_cpp', 'litert_lm']);
     },
   );
+
+  test(
+    'connector defaults omit only implicit LiteRT and preserve other runtimes',
+    () {
+      pubspec.writeAsStringSync(
+        'name: app\ndependencies:\n  flutter_edge_ai_llama: any\n',
+      );
+      final runtimes = ['llama_cpp', 'litert_lm', 'stable_diffusion'];
+      expect(check(runtimes), ['llama_cpp', 'stable_diffusion']);
+      expect(check(runtimes, explicit: true), runtimes);
+      expect(runtimes, ['llama_cpp', 'litert_lm', 'stable_diffusion']);
+    },
+  );
+
+  test('engine package itself receives the conditional default', () {
+    pubspec.writeAsStringSync('name: flutter_edge_ai_llama\n');
+    expect(check(['llama_cpp', 'litert_lm']), ['llama_cpp']);
+  });
 
   test('malformed metadata errors do not print source credentials', () {
     pubspec.writeAsStringSync(
       'name: app\ndependencies: [ secret-token: broken',
     );
     try {
-      check(['litert_lm']);
+      expect(check(['litert_lm']), ['litert_lm']);
       fail('Malformed graph must fail');
     } on StateError catch (error) {
       expect(error.message, contains('rerun pub get'));
@@ -89,16 +112,18 @@ void main() {
       await pubspec.writeAsString(
         'name: app\ndependencies:\n  indirect: any\n',
       );
+      expect(check(['llama_cpp', 'litert_lm']), ['llama_cpp']);
       final dependencies = <Uri>{};
       expect(
-        () => check(['litert_lm'], dependency: dependencies.add),
+        () =>
+            check(['litert_lm'], explicit: true, dependency: dependencies.add),
         throwsStateError,
       );
       expect(dependencies, containsAll([pubspec.uri, child.uri, config.uri]));
       await pubspec.writeAsString(
         'name: app\ndependencies:\n  unrelated: any\n',
       );
-      check(['litert_lm']);
+      expect(check(['litert_lm']), ['litert_lm']);
     },
   );
 
@@ -123,7 +148,9 @@ void main() {
             targetIOSSdk: target.$1 == OS.iOS ? IOSSdk.iPhoneOS : null,
             userDefines: PackageUserDefines(
               workspacePubspec: PackageUserDefinesSource(
-                defines: {},
+                defines: {
+                  'llamadart_native_runtimes': ['llama_cpp', 'litert_lm'],
+                },
                 basePath: pubspec.uri,
               ),
             ),

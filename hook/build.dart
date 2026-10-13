@@ -271,11 +271,24 @@ void main(List<String> args) async {
         '${supportedNativeRuntimes.join(', ')}, or all.',
       );
     }
-    validateRuntimeCoexistence(
+    selectedRuntimes = selectConsumerNativeRuntimes(
       consumerRoot: _consumerPackageRoot(input),
       selectedRuntimes: selectedRuntimes,
+      explicitLiteRtLm:
+          appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
+          nativeRuntimeExplicitlySelectedForBundle(
+            bundle: spec.bundle,
+            rawUserConfig: rawNativeRuntimeConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          ),
       dependency: output.dependencies.add,
     );
+    if (selectedRuntimes.isEmpty) {
+      throw StateError(
+        'No native runtimes remain after applying Flutter Edge AI defaults. '
+        'Configure $nativeRuntimesUserDefineKey: [llama_cpp].',
+      );
+    }
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
 
     final appleSpmHandledRuntimes = await _emitAppleSpmAssetsIfEnabled(

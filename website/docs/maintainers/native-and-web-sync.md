@@ -311,11 +311,17 @@ dart run tool/testing/test_matrix.dart --list
 
 ### Flutter Edge AI runtime coexistence
 
-When the app also depends on `flutter_edge_ai_litertlm`, select
-`llamadart_native_runtimes: [llama_cpp]` in the app/pub workspace root. Both
-packages otherwise bundle LiteRT-LM libraries under overlapping names. Remove
-`llamadart_litert_lm_flutter` when using the Flutter Edge AI engine. The hook
-rejects this combination before downloading/emitting assets, including a
-transitive engine dependency. Unused workspace members do not trigger the guard.
-Runtime defaults remain unchanged for other apps. This guard does not qualify
-combining the two packages' different Apple CocoaPods/SwiftPM setup recipes.
+When `flutter_edge_ai_llama` or `flutter_edge_ai_litertlm` is in the app's
+dependency graph, llamadart omits its LiteRT-LM runtime by default. Other apps
+keep their existing runtime defaults. Transitive dependencies count; unused pub
+workspace members do not. Explicitly naming `litert_lm` keeps it enabled for a
+connector-only app, but the hook rejects it alongside `flutter_edge_ai_litertlm`
+before downloading or emitting assets because both packages own overlapping
+native libraries. `all` does not count as explicitly naming `litert_lm`.
+
+To select llama.cpp yourself, set `llamadart_native_runtimes: [llama_cpp]` in the
+app/pub workspace root. Remove `llamadart_litert_lm_flutter` when using Flutter
+Edge AI's LiteRT-LM engine: the Apple companion also explicitly selects its
+runtime. The llama.cpp Apple companion remains required for Flutter Apple
+builds. This change does not qualify combining the packages' different Apple
+CocoaPods/SwiftPM setup recipes, nor does it change Web runtime selection.

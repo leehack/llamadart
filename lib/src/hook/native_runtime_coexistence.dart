@@ -3,19 +3,21 @@ import 'dart:io';
 
 import 'package:yaml/yaml.dart';
 
-/// Rejects conflicting LiteRT-LM owners before either assets or downloads begin.
+/// Applies consumer defaults and rejects conflicting LiteRT-LM ownership.
 ///
 /// Walks only the consumer's dependency closure. Other pub workspace members in
 /// package_config are not dependencies merely because they resolved together.
-void validateRuntimeCoexistence({
+List<String> selectConsumerNativeRuntimes({
   required Directory? consumerRoot,
-  required Iterable<String> selectedRuntimes,
+  required List<String> selectedRuntimes,
+  required bool explicitLiteRtLm,
   required void Function(Uri) dependency,
 }) {
   try {
-    _validateRuntimeCoexistence(
+    return _selectConsumerNativeRuntimes(
       consumerRoot: consumerRoot,
       selectedRuntimes: selectedRuntimes,
+      explicitLiteRtLm: explicitLiteRtLm,
       dependency: dependency,
     );
   } on FormatException {
@@ -29,20 +31,24 @@ void validateRuntimeCoexistence({
   }
 }
 
-void _validateRuntimeCoexistence({
+List<String> _selectConsumerNativeRuntimes({
   required Directory? consumerRoot,
-  required Iterable<String> selectedRuntimes,
+  required List<String> selectedRuntimes,
+  required bool explicitLiteRtLm,
   required void Function(Uri) dependency,
 }) {
-  if (!selectedRuntimes.contains('litert_lm') || consumerRoot == null) return;
+  if (!selectedRuntimes.contains('litert_lm') || consumerRoot == null) {
+    return selectedRuntimes;
+  }
   final rootSpec = File.fromUri(consumerRoot.uri.resolve('pubspec.yaml'));
-  if (!rootSpec.existsSync()) return;
+  if (!rootSpec.existsSync()) return selectedRuntimes;
   dependency(rootSpec.uri);
   Set<String> names(File file, {bool dev = false}) {
     dependency(file.uri);
     final decoded = loadYaml(file.readAsStringSync());
     if (decoded is! Map) return {};
     return {
+      if (dev && decoded['name'] is String) decoded['name'] as String,
       if (decoded['dependencies'] case final Map entries)
         ...entries.keys.whereType<String>(),
       if (dev && decoded['dev_dependencies'] is Map)
@@ -56,11 +62,6 @@ void _validateRuntimeCoexistence({
   while (pending.isNotEmpty) {
     final name = pending.removeLast();
     if (!visited.add(name)) continue;
-    if (name == 'flutter_edge_ai_litertlm') {
-      throw StateError(
-        'Conflicting LiteRT-LM runtimes: flutter_edge_ai_litertlm already owns its native libraries. Configure hooks.user_defines.llamadart.llamadart_native_runtimes: [llama_cpp] in the application or pub workspace root, remove llamadart_litert_lm_flutter if present, then rerun pub get/build. Runtime defaults are unchanged for applications without that engine.',
-      );
-    }
     if (roots == null) {
       var directory = consumerRoot;
       File? config;
@@ -93,4 +94,17 @@ void _validateRuntimeCoexistence({
     final spec = File.fromUri(root.resolve('pubspec.yaml'));
     if (spec.existsSync()) pending.addAll(names(spec));
   }
+  if (visited.contains('flutter_edge_ai_litertlm') && explicitLiteRtLm) {
+    throw StateError(
+      'Conflicting LiteRT-LM runtimes: flutter_edge_ai_litertlm already owns its native libraries. Configure hooks.user_defines.llamadart.llamadart_native_runtimes: [llama_cpp] in the application or pub workspace root, remove llamadart_litert_lm_flutter if present, then rerun pub get/build.',
+    );
+  }
+  if (!explicitLiteRtLm &&
+      (visited.contains('flutter_edge_ai_llama') ||
+          visited.contains('flutter_edge_ai_litertlm'))) {
+    return selectedRuntimes
+        .where((runtime) => runtime != 'litert_lm')
+        .toList(growable: false);
+  }
+  return selectedRuntimes;
 }

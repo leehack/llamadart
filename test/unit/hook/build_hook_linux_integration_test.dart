@@ -167,6 +167,77 @@ void main() {
     },
   );
 
+  for (final engine in ['flutter_edge_ai_llama', 'flutter_edge_ai_litertlm']) {
+    test('production hook omits implicit LiteRT for $engine', () async {
+      final consumer = await Directory.systemTemp.createTemp('edge-consumer-');
+      addTearDown(() => consumer.delete(recursive: true));
+      final pubspec = File.fromUri(consumer.uri.resolve('pubspec.yaml'));
+      await pubspec.writeAsString('name: app\ndependencies:\n  $engine: any\n');
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.linux,
+        targetArchitecture: Architecture.x64,
+        userDefines: PackageUserDefines(
+          workspacePubspec: PackageUserDefinesSource(
+            defines: {},
+            basePath: pubspec.uri,
+          ),
+        ),
+        check: (_, output) {
+          final assets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList();
+          final names = assets
+              .map((asset) => path.basename(asset.file!.toFilePath()))
+              .toSet();
+          expect(names, contains('libllamadart.so'));
+          expect(names.intersection(_linuxLiteRtLibraries.toSet()), isEmpty);
+          expect(
+            assets.map((asset) => asset.id),
+            isNot(contains('package:llamadart/litertlm')),
+          );
+          expect(output.dependencies, contains(pubspec.uri));
+        },
+      );
+    });
+  }
+
+  test(
+    'production hook preserves explicitly named LiteRT with connector only',
+    () async {
+      final consumer = await Directory.systemTemp.createTemp('edge-explicit-');
+      addTearDown(() => consumer.delete(recursive: true));
+      final pubspec = File.fromUri(consumer.uri.resolve('pubspec.yaml'));
+      await pubspec.writeAsString(
+        'name: app\ndependencies:\n  flutter_edge_ai_llama: any\n',
+      );
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.linux,
+        targetArchitecture: Architecture.x64,
+        userDefines: PackageUserDefines(
+          workspacePubspec: PackageUserDefinesSource(
+            defines: {
+              'llamadart_native_runtimes': ['llama_cpp', 'litert_lm'],
+            },
+            basePath: pubspec.uri,
+          ),
+        ),
+        check: (_, output) {
+          final names = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map(
+                (asset) => path.basename(asset.asCodeAsset.file!.toFilePath()),
+              )
+              .toSet();
+          expect(names, contains('libllamadart.so'));
+          expect(names, containsAll(_linuxLiteRtLibraries));
+        },
+      );
+    },
+  );
+
   test('build hook preserves historical linux mtmd SONAME alias', () async {
     await testCodeBuildHook(
       mainMethod: build_hook.main,
