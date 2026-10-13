@@ -271,8 +271,10 @@ void main(List<String> args) async {
         '${supportedNativeRuntimes.join(', ')}, or all.',
       );
     }
+    final graphDependencies = output.build().dependencies.toSet();
     selectedRuntimes = selectConsumerNativeRuntimes(
       consumerRoot: _runtimeConsumerPackageRoot(input),
+      isAppleTarget: _isAppleTarget(code.targetOS),
       selectedRuntimes: selectedRuntimes,
       explicitLiteRtLm:
           appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
@@ -281,7 +283,9 @@ void main(List<String> args) async {
             rawUserConfig: rawNativeRuntimeConfig,
             runtime: nativeRuntimeLiteRtLm,
           ),
-      dependency: output.dependencies.add,
+      dependency: (uri) {
+        if (graphDependencies.add(uri)) output.dependencies.add(uri);
+      },
     );
     if (selectedRuntimes.isEmpty) {
       throw StateError(

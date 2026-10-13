@@ -449,6 +449,7 @@ native libraries. `all` does not count as explicitly naming `litert_lm`.
 To select llama.cpp yourself, set `llamadart_native_runtimes: [llama_cpp]` in the
 app/pub workspace root. Remove `llamadart_litert_lm_flutter` when using Flutter
 Edge AI's LiteRT-LM engine: the Apple companion also explicitly selects its
-runtime. The llama.cpp Apple companion remains required for Flutter Apple
-builds. This change does not qualify combining the packages' different Apple
+runtime, including when parent-workspace settings already omit hook assets.
+Flutter Edge AI's GGUF connector still requires its documented llama.cpp Apple
+companion setup. This change does not qualify combining the packages' different Apple
 CocoaPods/SwiftPM setup recipes, nor does it change Web runtime selection.

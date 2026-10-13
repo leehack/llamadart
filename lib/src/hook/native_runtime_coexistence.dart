@@ -7,10 +7,13 @@ import 'package:yaml/yaml.dart';
 ///
 /// Walks only the consumer's dependency closure. Other pub workspace members in
 /// package_config are not dependencies merely because they resolved together.
+/// On Apple, the SDK LiteRT companion explicitly selects that runtime even if
+/// SwiftPM links it outside the hook's selected assets.
 List<String> selectConsumerNativeRuntimes({
   required Directory? consumerRoot,
   required List<String> selectedRuntimes,
   required bool explicitLiteRtLm,
+  required bool isAppleTarget,
   required void Function(Uri) dependency,
 }) {
   try {
@@ -18,6 +21,7 @@ List<String> selectConsumerNativeRuntimes({
       consumerRoot: consumerRoot,
       selectedRuntimes: selectedRuntimes,
       explicitLiteRtLm: explicitLiteRtLm,
+      isAppleTarget: isAppleTarget,
       dependency: dependency,
     );
   } on FormatException {
@@ -35,14 +39,15 @@ List<String> _selectConsumerNativeRuntimes({
   required Directory? consumerRoot,
   required List<String> selectedRuntimes,
   required bool explicitLiteRtLm,
+  required bool isAppleTarget,
   required void Function(Uri) dependency,
 }) {
-  if (!selectedRuntimes.contains('litert_lm') || consumerRoot == null) {
+  if ((!selectedRuntimes.contains('litert_lm') && !isAppleTarget) ||
+      consumerRoot == null) {
     return selectedRuntimes;
   }
   final rootSpec = File.fromUri(consumerRoot.uri.resolve('pubspec.yaml'));
   if (!rootSpec.existsSync()) return selectedRuntimes;
-  dependency(rootSpec.uri);
   Set<String> names(File file, {bool dev = false}) {
     dependency(file.uri);
     final decoded = loadYaml(file.readAsStringSync());
@@ -94,12 +99,17 @@ List<String> _selectConsumerNativeRuntimes({
     final spec = File.fromUri(root.resolve('pubspec.yaml'));
     if (spec.existsSync()) pending.addAll(names(spec));
   }
-  if (visited.contains('flutter_edge_ai_litertlm') && explicitLiteRtLm) {
+  // SwiftPM can link the companion even when parent-workspace settings keep
+  // its runtime out of the hook. The app graph still explicitly owns it.
+  final selectsLiteRtLm =
+      explicitLiteRtLm ||
+      (isAppleTarget && visited.contains('llamadart_litert_lm_flutter'));
+  if (visited.contains('flutter_edge_ai_litertlm') && selectsLiteRtLm) {
     throw StateError(
       'Conflicting LiteRT-LM runtimes: flutter_edge_ai_litertlm already owns its native libraries. Configure hooks.user_defines.llamadart.llamadart_native_runtimes: [llama_cpp] in the application or pub workspace root, remove llamadart_litert_lm_flutter if present, then rerun pub get/build.',
     );
   }
-  if (!explicitLiteRtLm &&
+  if (!selectsLiteRtLm &&
       (visited.contains('flutter_edge_ai_llama') ||
           visited.contains('flutter_edge_ai_litertlm'))) {
     return selectedRuntimes

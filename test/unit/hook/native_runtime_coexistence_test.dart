@@ -23,11 +23,13 @@ void main() {
   List<String> check(
     List<String> runtimes, {
     bool explicit = false,
+    bool apple = false,
     void Function(Uri)? dependency,
   }) => selectConsumerNativeRuntimes(
     consumerRoot: scratch,
     selectedRuntimes: runtimes,
     explicitLiteRtLm: explicit,
+    isAppleTarget: apple,
     dependency: dependency ?? (_) {},
   );
 
@@ -70,6 +72,26 @@ void main() {
   test('engine package itself receives the conditional default', () {
     pubspec.writeAsStringSync('name: flutter_edge_ai_llama\n');
     expect(check(['llama_cpp', 'litert_lm']), ['llama_cpp']);
+  });
+
+  test('Apple companion ownership is explicit even when hook omits LiteRT', () {
+    pubspec.writeAsStringSync(
+      'name: app\ndependencies:\n  flutter_edge_ai_litertlm: any\n  llamadart_litert_lm_flutter: any\n',
+    );
+    for (final runtimes in [
+      ['llama_cpp'],
+      ['llama_cpp', 'litert_lm'],
+    ]) {
+      expect(() => check(runtimes, apple: true), throwsStateError);
+    }
+    expect(check(['llama_cpp', 'litert_lm']), ['llama_cpp']);
+    pubspec.writeAsStringSync(
+      'name: app\ndependencies:\n  flutter_edge_ai_llama: any\n  llamadart_litert_lm_flutter: any\n',
+    );
+    expect(check(['llama_cpp', 'litert_lm'], apple: true), [
+      'llama_cpp',
+      'litert_lm',
+    ]);
   });
 
   test('malformed metadata errors do not print source credentials', () {
@@ -126,6 +148,59 @@ void main() {
       expect(check(['litert_lm']), ['litert_lm']);
     },
   );
+
+  for (final hookSelection in [
+    null,
+    ['llama_cpp'],
+  ]) {
+    test(
+      'production Apple hook rejects graph companion with parent settings: $hookSelection',
+      () async {
+        await pubspec.writeAsString('name: workspace\nworkspace: [app]\n');
+        final app = Directory.fromUri(scratch.uri.resolve('app/'));
+        await app.create();
+        await File.fromUri(app.uri.resolve('pubspec.yaml')).writeAsString(
+          'name: app\ndependencies:\n  flutter:\n    sdk: flutter\n  flutter_edge_ai_litertlm: any\n  llamadart_litert_lm_flutter: any\n',
+        );
+        final output = Directory.fromUri(
+          app.uri.resolve('.dart_tool/hooks_runner/shared/llamadart/build/'),
+        );
+        await output.create(recursive: true);
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: (arguments) async {
+              final input = File(
+                arguments.single.substring('--config='.length),
+              );
+              final json =
+                  jsonDecode(await input.readAsString())
+                      as Map<String, dynamic>;
+              json['out_dir_shared'] = output.path;
+              await input.writeAsString(jsonEncode(json));
+              await Function.apply(build_hook.main, [arguments]);
+            },
+            targetOS: OS.iOS,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: IOSSdk.iPhoneOS,
+            userDefines: PackageUserDefines(
+              workspacePubspec: PackageUserDefinesSource(
+                defines: {'llamadart_native_runtimes': ?hookSelection},
+                basePath: pubspec.uri,
+              ),
+            ),
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (e) => e.toString().contains('Conflicting LiteRT-LM runtimes'),
+            ),
+          ),
+        );
+        expect(emitted, isFalse);
+      },
+    );
+  }
 
   for (final target in [
     (OS.linux, Architecture.x64),
