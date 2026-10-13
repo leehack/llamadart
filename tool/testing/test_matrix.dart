@@ -799,8 +799,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'LiteRT-LM bundle in a mode-555 directory on a device with no cache '
         'directory configured: named without .litertlm it must generate on '
-        'CPU and GPU, named .litertlm on GPU it is recorded as generating or '
-        'as a typed error, and nothing may be written to the directory',
+        'CPU and GPU, named .litertlm it is recorded on GPU and CPU as '
+        'generating or as a typed error, and nothing may be written to the '
+        'directory or beside the original model file',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-litert-read-only-bundle --device <macos|ios|android>',
@@ -808,8 +809,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM runtime pin, cache directory defaults or the .litertlm '
         'link for bundles named without that extension change. Downloads '
         'the locked model unless --model-path names a copy on the target '
-        'device. Only a platform without a temp cache default, such as iOS, '
-        'runs uncached; the Test Lab build is in example/chat_app/README.md.',
+        'device. macOS and Android default to a temp cache directory, so '
+        'only iOS, Linux and Windows run uncached through the public API; '
+        'the Test Lab build is in example/chat_app/README.md.',
   ),
   TestMatrixRow(
     id: 'chat-app-micro-batch-sweep',
