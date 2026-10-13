@@ -14,6 +14,7 @@ import 'package:yaml/yaml.dart';
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
+import 'package:llamadart/src/hook/native_runtime_coexistence.dart';
 
 const _nativeRepoSlug = 'leehack/llamadart-native';
 const _stableDiffusionNativeRepoSlug = 'leehack/stable-diffusion-native';
@@ -270,6 +271,11 @@ void main(List<String> args) async {
         '${supportedNativeRuntimes.join(', ')}, or all.',
       );
     }
+    validateRuntimeCoexistence(
+      consumerRoot: _consumerPackageRoot(input),
+      selectedRuntimes: selectedRuntimes,
+      dependency: output.dependencies.add,
+    );
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
 
     final appleSpmHandledRuntimes = await _emitAppleSpmAssetsIfEnabled(

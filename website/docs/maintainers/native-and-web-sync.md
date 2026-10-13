@@ -307,3 +307,15 @@ dart run tool/testing/test_matrix.dart --list
 - Native: model load/generation smoke checks on relevant platforms.
 - Web: bridge load/fallback checks in `example/chat_app`.
 - Docs: ensure version/platform notes match newly pinned runtime behavior.
+
+
+### Flutter Edge AI runtime coexistence
+
+When the app also depends on `flutter_edge_ai_litertlm`, select
+`llamadart_native_runtimes: [llama_cpp]` in the app/pub workspace root. Both
+packages otherwise bundle LiteRT-LM libraries under overlapping names. Remove
+`llamadart_litert_lm_flutter` when using the Flutter Edge AI engine. The hook
+rejects this combination before downloading/emitting assets, including a
+transitive engine dependency. Unused workspace members do not trigger the guard.
+Runtime defaults remain unchanged for other apps. This guard does not qualify
+combining the two packages' different Apple CocoaPods/SwiftPM setup recipes.

@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Reject conflicting Flutter Edge AI LiteRT-LM runtime packaging with an actionable fix.
+
 - On an iOS simulator, `GpuBackend.auto` now runs llama.cpp on the CPU, because Metal returns incorrect output there ([#950](https://github.com/leehack/llamadart/issues/950)). An explicit `GpuBackend.metal` or `ComputeDevice.gpu` still uses Metal and logs a warning; iOS devices and macOS are unchanged.
 
 - Android validation builds can retain bounded, identity-checked reports in app-private storage.
