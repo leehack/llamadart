@@ -715,8 +715,9 @@ only when the run has no `stderr.log` or `xcodebuild_output.log` at all: such a
 capture, bound or not, still decides alone and the device log never overrides
 or supplements it. Collection streams the single `logcat` under
 `remote-results` (at most 128 MiB) and writes the app process's lines from its
-test start record onward (at most 8 MiB) to `report/native.log`. The log is
-bound to the journal only if all of these hold:
+test start record onward (at most 8 MiB) to `report/native.log`. A Dart VM
+service announcement, whose URL carries an auth code, is dropped wherever the
+process logs it. The log is bound to the journal only if all of these hold:
 
 - exactly one `flutter` record `00:00 +0: shared validation: <profile id>`
   exists, and every other mention of a shared validation test is that process
@@ -725,13 +726,30 @@ bound to the journal only if all of these hold:
   `validation/models/<profile model sha256>/`, and there is at least one;
 - every native epoch timestamp of that process is at or after the manifest's
   `started_at`, and there is at least one. The manifest is written before the
-  first load on the same device clock, so no skew is allowed.
+  first load on the same device clock, so no skew is allowed;
+- the first of those timestamps is at most 10 seconds after `started_at`. It
+  followed by 0.14 and 0.17 seconds in the collected runs;
+- the manifest's `run_id` is `app-<epoch microseconds>`, is not after
+  `started_at`, and is at most 10 seconds after the test start record, with
+  0.1 seconds of slack before it. It followed by 0.38 and 0.34 seconds in the
+  collected runs.
+
+The device log never prints the run id, so the run id is bound by the time it
+encodes, not by a match. Device-log times have no year or zone, so the start
+record is placed on the epoch clock from the log alone: the first native epoch
+timestamp less the device-log time elapsed between the two records. Ten
+seconds leaves a slow cold start room and is far shorter than a run, whose
+cases alone took 68 and 48 seconds after `started_at`, so the device log of a
+later run cannot fall inside it.
 
 Two device logs, a second start record, another model directory, an earlier
-timestamp or an Android journal for any other runtime or backend leave no
-native log, and the report keeps `accelerator_evidence_missing`. The journal
-records no wall time after `started_at`, so the binding has no upper time
-bound. Trimmed Pixel 9 Pro and Galaxy S24 Firebase logs in
+timestamp, the device log of a later run or of another device's run, a journal
+of another day, a run id outside its window, any other line of the process
+with a Dart VM service, DevTools or loopback URL, or an Android journal for any
+other runtime or backend leave no native log, and the report keeps
+`accelerator_evidence_missing`. A journal of another run whose run id and start
+time both fall inside those windows is not told apart. Trimmed Pixel 9 Pro and
+Galaxy S24 Firebase logs in
 `packages/llamadart_validation/test/fixtures/android_logcat/` pin this.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
@@ -851,8 +869,10 @@ GPU layers alone does not qualify execution. LiteRT NPU uses the checked per-gen
 LiteRT GPU on Android has load-time evidence only. Given a bound device log,
 the reporter verifies placement as
 `gpu_delegate_initialized_per_load_execution_unobserved` when the journal's
-LiteRT-LM tag is source-qualified (`0.18.0`), every expected load case passes
-exactly once reporting a GPU backend, and each of those loads has in the log:
+environment is Android and states `web: false`, its LiteRT-LM tag is
+source-qualified (`0.18.0`), every expected load case passes exactly once
+reporting a GPU backend, and the log holds N GPU delegate initializations for
+the N expected load cases. Each of them has:
 
 - one `Selected adapter` record, identical across loads, naming a recognized
   hardware vendor with `backend=Vulkan` and an `Integrated GPU` or
@@ -860,14 +880,25 @@ exactly once reporting a GPU backend, and each of those loads has in the log:
 - one `Created a WebGPU environment.` record;
 - as many delegate-kernel records (`Total N external tensors are used for
   delegate inputs and outputs`) as the `num_signatures` of that load's
-  main-model `Loaded:` record, which is the last one before the adapter
-  selection. The embedding models' single-signature records follow it.
+  main-model `Loaded:` record. That record is the last one before the adapter
+  selection and must declare more signatures than any other `Loaded:` record
+  in the log; the embedding models' single-signature records follow it.
+
+The log must be logcat `threadtime` records (`MM-DD HH:MM:SS.mmm PID TID L
+tag: message`), which is what collection retains and what `--native-log` must
+name for such a journal. Adapter and delegate-kernel records count only under
+the `native` tag and `Loaded:` and environment records only under `litert`, as
+LiteRT-LM 0.18.0 logs them on both devices. The same text under another tag,
+such as a Dart `print` under `flutter`, a record without that prefix, or a
+signature count that cannot be parsed leaves placement unverified.
 
 Any of `GPU accelerator could not be loaded and registered`, `Some ops are not
 accelerated`, `Failed to modify graph with delegate`, `VK_ERROR_`, `Validation
-error` or `Falling back to CPU` anywhere in the log leaves placement
-unverified. Accelerator registration and XNNPACK records are ignored in both
-directions: a CPU run logs the same GPU registration.
+error` or `Falling back to CPU` anywhere in the log, under any tag, leaves
+placement unverified. The list is not exhaustive: a failed load or generation
+is expected to surface as a failed case. Accelerator registration and XNNPACK
+records are ignored in both directions: a CPU run logs the same GPU
+registration.
 
 The evidence rests on two source rules read at LiteRT-LM
 `b2f686e2ed4718fb84ec398a61dd59ca0f0aff27` and LiteRT
@@ -876,12 +907,33 @@ accelerator alone (`runtime/executor/llm_executor_settings_utils.cc`), and
 LiteRT refuses to compile a model that leaves a node undelegated unless the CPU
 accelerator was requested (`litert/runtime/compiled_model.cc`). Re-read both
 before qualifying another LiteRT-LM tag. It therefore shows that the main model
-was fully delegated to that adapter at every load. It does not observe any
-generation request, the sampler, or the embedding models LiteRT-LM loads beside
-the main model, for which the fixture logs show no GPU delegate; a device lost
-after load is visible only through failed cases or a logged marker. iOS (Metal,
-no adapter record), OpenCL, desktop and Web LiteRT GPU and browser accelerator
-proof still require qualified evidence adapters; they remain incomplete.
+was fully delegated to that adapter at every expected load. The delegate-kernel
+count is a consistency check on top of that compile rule, not proof by itself:
+a `Loaded:` record does not name its model, so the main model is recognized by
+its position and by declaring the most signatures.
+
+The residual limits are:
+
+- no generation request or sampler is observed; a device lost after load is
+  visible only through failed cases or a logged marker;
+- only the delegate initializations of the expected load cases are counted. A
+  CPU engine the process creates elsewhere logs none of these records and is
+  not observed;
+- the accelerator mask is not logged. It is inferred from the requested
+  backend and from the LiteRT-LM tag the journal reports about itself;
+- LiteRT's undelegated-node check does not count subgraphs that delegation may
+  skip;
+- the ML Drift delegate is closed source, so what a delegate kernel executes
+  on the adapter is not read;
+- the shipped binary is not attested against the sources that were read;
+- the embedding and end-of-audio/end-of-image models LiteRT-LM loads beside
+  the main model are not covered: the fixture logs show an XNNPACK CPU
+  delegate and no GPU delegate for them. Audio and vision encoders, which
+  these runs did not load, are outside this evidence too.
+
+iOS (Metal, no adapter record), OpenCL, desktop and Web LiteRT GPU and browser
+accelerator proof still require qualified evidence adapters; they remain
+incomplete.
 
 Normal model runs are opt-in. Model-free suite/provider tests run in CI. Before
 claiming another platform qualified, attach the exact commit, model/backend,

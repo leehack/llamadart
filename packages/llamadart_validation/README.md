@@ -102,8 +102,18 @@ reporter. Missing or invalid UTF-8 captures fail; supplying a log never waives
 failed cases, missing records or runtime identity requirements.
 
 For Firebase Android LiteRT GPU runs, remote collection binds the device
-`logcat` to the journal and the reporter verifies load-time delegate
-initialization on one hardware Vulkan adapter for every load. The placement is
-reported as `gpu_delegate_initialized_per_load_execution_unobserved`: it is not
-per-request execution proof and does not cover the embedding models. The
+`logcat` to the journal and the reporter verifies N GPU delegate
+initializations on one hardware Vulkan adapter for the N expected load cases.
+The placement is reported as
+`gpu_delegate_initialized_per_load_execution_unobserved`: it is not
+per-request execution proof, its delegate-kernel count is a consistency check
+on top of the upstream compile rule, and its failure-marker list is not
+exhaustive. `--native-log` for such a journal must name logcat `threadtime`
+records; evidence counts only under the `native` and `litert` tags.
+
+It does not observe CPU engines created elsewhere in the process, the
+accelerator mask (inferred from the requested backend and the self-reported
+LiteRT-LM tag), subgraphs LiteRT lets delegation skip, the closed ML Drift
+delegate internals, or the identity of the shipped binary, and the embedding
+and other side models run on the XNNPACK CPU delegate, not the GPU. The
 predicate and its limits are in `doc/cross_platform_validation.md`.

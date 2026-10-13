@@ -14,6 +14,18 @@ const _adreno =
     'Adreno (TM) 750, arch=adreno-7xx, vendor=qualcomm, backend=Vulkan, '
     'adapterType=Integrated GPU';
 const _kernel = 'external tensors are used for delegate inputs and outputs';
+const _created = 'Created a WebGPU environment.';
+const _main = 'Loaded: num_subgraphs=976, num_signatures=4';
+const _embedder = 'Loaded: num_subgraphs=1, num_signatures=1';
+const _adapterReason =
+    'WebGPU adapter selection is missing, repeated or inconsistent across '
+    'loads';
+const _recordsReason =
+    'WebGPU environment or delegate initialization records are incomplete or '
+    'contradictory';
+const _tagReason =
+    'GPU delegate records are malformed or were not logged under the native '
+    'runtime tags';
 
 String _read(String name) =>
     File('$_fixtures/$name').readAsStringSync().replaceAll('\r\n', '\n');
@@ -32,6 +44,10 @@ String _bound(String logcat) {
       .map((line) => '$line\n')
       .join();
 }
+
+/// A device-log record shaped as the Pixel fixture's app process logs it.
+String _record(String tag, String message, {String level = 'I'}) =>
+    '10-13 02:45:30.000 22950 26936 $level ${tag.padRight(8)}: $message\n';
 
 String _replaceNth(String text, Pattern from, String to, int index) {
   final match = from.allMatches(text).elementAt(index);
@@ -67,10 +83,11 @@ void main() {
     Map<String, dynamic>? of,
     List<Map<String, dynamic>>? records,
   }) => inspectPlacement(of ?? manifest(), records ?? cases(), log);
-  void rejects(String log, {String? reason}) {
+  void rejects(String log, {String? reason, String? because}) {
     final placement = inspect(log);
     expect(placement['verified'], isFalse, reason: reason ?? '$placement');
     expect(placement['placement'], 'unverified', reason: reason);
+    if (because != null) expect(placement['reason'], because, reason: reason);
   }
 
   group('LiteRT GPU delegate evidence', () {
@@ -198,31 +215,41 @@ void main() {
       expect(placement['adapter_records'], 2);
       expect(placement['expected_loads'], 3);
 
-      rejects('$pixel$pixel', reason: 'six loads for three load cases');
       rejects(
-        '${pixel}I native  : Selected adapter: Mali-G715\n',
+        '$pixel$pixel',
+        reason: 'six loads for three load cases',
+        because: _adapterReason,
+      );
+      final unparsed = _record('native', 'Selected adapter: Mali-G715');
+      rejects(
+        '$pixel$unparsed',
         reason: 'a fourth, unparsed adapter selection',
+        because: _adapterReason,
       );
       // Two complete loads and a third that only names an adapter.
-      final partial = [
-        ...lines.take(third),
-        'I native  : Selected adapter: Mali-G715',
-      ].map((line) => '$line\n').join();
+      final partial =
+          '${lines.take(third).map((line) => '$line\n').join()}$unparsed';
       expect(inspect(partial)['adapter_records'], 3);
-      rejects(partial, reason: 'the third load selected no parsed adapter');
+      rejects(
+        partial,
+        reason: 'the third load selected no parsed adapter',
+        because: _adapterReason,
+      );
       for (var load = 0; load < 3; load++) {
         rejects(
-          _withoutLine(pixel, 'Created a WebGPU environment.', index: load),
+          _withoutLine(pixel, _created, index: load),
           reason: 'load $load has no created environment',
+          because: _recordsReason,
         );
         rejects(
           _withoutLine(pixel, 'Selected adapter:', index: load),
           reason: 'load $load selected no adapter',
+          because: _adapterReason,
         );
       }
       rejects(
-        '$pixel'
-        'I litert  : [delegate_webgpu.cc:1] Created a WebGPU environment.\n',
+        '$pixel${_record('litert', '[delegate_webgpu.cc:1] $_created')}',
+        because: _recordsReason,
       );
     });
 
@@ -232,7 +259,8 @@ void main() {
         expect(placement['verified'], isFalse, reason: 'record $record');
         expect(placement['delegate_records'], 11);
       }
-      rejects('${pixel}I native  : Total 31 $_kernel\n', reason: 'thirteen');
+      final extra = _record('native', 'Total 31 $_kernel');
+      rejects('$pixel$extra', reason: 'thirteen', because: _recordsReason);
 
       // Twelve records, but one load has three and another five.
       final lines = const LineSplitter().convert(pixel);
@@ -241,27 +269,26 @@ void main() {
       lines.add(moved);
       final uneven = lines.map((line) => '$line\n').join();
       expect(RegExp(_kernel).allMatches(uneven), hasLength(12));
-      rejects(uneven, reason: 'uneven');
+      rejects(uneven, reason: 'uneven', because: _recordsReason);
 
       // Records logged before any adapter selection belong to no load.
       rejects(
-        'I native  : Total 31 $_kernel\n$pixel',
+        '$extra$pixel',
         reason: 'delegate kernel before the first load',
+        because: _recordsReason,
       );
       rejects(
-        'I litert  : Created a WebGPU environment.\n$pixel',
+        '${_record('litert', _created)}$pixel',
         reason: 'environment before the first load',
+        because: _recordsReason,
       );
     });
 
     test('the signature count comes from each load\'s main model', () {
-      const main = 'Loaded: num_subgraphs=976, num_signatures=4';
+      const main = _main;
       expect(RegExp(main).allMatches(pixel), hasLength(3));
       // The embedding models load after the delegate kernels of each load.
-      expect(
-        RegExp('Loaded: num_subgraphs=1, num_signatures=1').allMatches(pixel),
-        hasLength(12),
-      );
+      expect(RegExp(_embedder).allMatches(pixel), hasLength(12));
       for (var load = 0; load < 3; load++) {
         rejects(
           _replaceNth(
@@ -288,6 +315,140 @@ void main() {
           .map((line) => '$line\n')
           .join();
       rejects(none, reason: 'zero signatures');
+
+      // A load takes no count from the records of the load before it.
+      final lines = const LineSplitter().convert(pixel);
+      final first = lines.indexWhere(
+        (line) => line.contains('Selected adapter:'),
+      );
+      rejects(
+        [
+          for (var i = 0; i < lines.length; i++)
+            if (i < first || !lines[i].contains('Loaded: ')) '${lines[i]}\n',
+        ].join(),
+        reason: 'only the first load has a signature record',
+        because: _recordsReason,
+      );
+    });
+
+    test('the main model declares the most signatures in the log', () {
+      // One delegate kernel per load, with a single-signature record placed
+      // between the four-signature main model and its adapter selection.
+      final interposed = StringBuffer();
+      var kernels = 0;
+      for (final line in const LineSplitter().convert(pixel)) {
+        if (line.contains('Selected adapter:')) kernels = 0;
+        if (line.contains(_kernel) && ++kernels > 1) continue;
+        interposed.writeln(line);
+        if (line.contains(_main)) {
+          interposed.write(_record('litert', _embedder));
+        }
+      }
+      final placement = inspect('$interposed');
+      expect(placement['delegate_records'], 3);
+      expect(placement['signatures_per_load'], 1);
+      expect(placement['verified'], isFalse);
+      expect(placement['reason'], _recordsReason);
+
+      for (var record = 0; record < 12; record++) {
+        rejects(
+          _replaceNth(
+            pixel,
+            _embedder,
+            'Loaded: num_subgraphs=1, num_signatures=5',
+            record,
+          ),
+          reason: 'record $record declares more than the main model',
+          because: _recordsReason,
+        );
+      }
+      rejects(
+        '$pixel${_record('litert', 'Loaded: num_subgraphs=9, num_signatures=5')}',
+        reason: 'a larger record after the last load',
+        because: _recordsReason,
+      );
+    });
+
+    test('an unparsable signature count fails closed', () {
+      const absurd = 'num_signatures=99999999999999999999';
+      for (final (from, index) in [(_main, 0), (_main, 2), (_embedder, 5)]) {
+        rejects(
+          _replaceNth(pixel, from, 'Loaded: num_subgraphs=1, $absurd', index),
+          reason: '$from $index',
+          because: _tagReason,
+        );
+      }
+    });
+
+    test('evidence counts only under the native runtime tags', () {
+      String retagged(String text, String from, String to) =>
+          text.replaceAll(' I ${from.padRight(8)}: ', ' I ${to.padRight(8)}: ');
+      final imitation = retagged(
+        retagged(pixel, 'native', 'flutter'),
+        'litert',
+        'flutter',
+      );
+      expect(' I flutter : '.allMatches(imitation).length, greaterThan(200));
+      for (final text in ['Selected adapter:', _created, _kernel, _main]) {
+        expect(
+          const LineSplitter()
+              .convert(imitation)
+              .where((l) => l.contains(text)),
+          everyElement(contains(' I flutter : ')),
+        );
+      }
+      // Dart `print` output of the same process cannot imitate the runtime.
+      rejects(imitation, because: _tagReason);
+      final printed = inspect('$cpuControl$imitation');
+      expect(printed['verified'], isFalse);
+      expect(printed['reason'], _tagReason);
+      expect(printed['adapter_records'], 3);
+      expect(printed['delegate_records'], 12);
+
+      for (final (text, tag, occurrences) in [
+        ('Selected adapter:', 'native', 3),
+        (_created, 'litert', 3),
+        (_kernel, 'native', 12),
+        (_main, 'litert', 3),
+        (_embedder, 'litert', 12),
+      ]) {
+        final lines = const LineSplitter().convert(pixel);
+        final hits = [
+          for (var i = 0; i < lines.length; i++)
+            if (lines[i].contains(text)) i,
+        ];
+        expect(hits, hasLength(occurrences));
+        for (final other in [
+          'flutter',
+          tag == 'native' ? 'litert' : 'native',
+          'tflite',
+        ]) {
+          for (final hit in hits) {
+            final edited = [...lines];
+            edited[hit] = retagged('${lines[hit]}\n', tag, other);
+            expect(edited[hit], isNot('${lines[hit]}\n'));
+            edited[hit] = edited[hit].trimRight();
+            rejects(
+              edited.map((line) => '$line\n').join(),
+              reason: '$text under $other',
+              because: _tagReason,
+            );
+          }
+        }
+        // The record without its device-log prefix names no tag.
+        final bare = [...lines];
+        bare[hits.first] = lines[hits.first].substring(
+          lines[hits.first].indexOf(' I $tag') + 3,
+        );
+        rejects(bare.map((line) => '$line\n').join(), because: _tagReason);
+      }
+
+      // A failure marker counts whoever logged it.
+      final marked = inspect(
+        '$pixel${_record('flutter', 'Falling back to CPU')}',
+      );
+      expect(marked['verified'], isFalse);
+      expect(marked['failure_markers'], ['Falling back to CPU']);
     });
 
     test('only one hardware Vulkan adapter qualifies', () {
@@ -314,6 +475,18 @@ void main() {
             'adapterType=Integrated GPU',
         'Generic Accelerator, arch=, vendor=, backend=Vulkan, '
             'adapterType=Integrated GPU',
+        // A vendor outside the adapter name does not make it hardware.
+        'Generic Accelerator, arch=adreno-7xx, vendor=qualcomm, '
+            'backend=Vulkan, adapterType=Integrated GPU',
+        // A software device is refused wherever the identity names it.
+        'Mali-G715, arch=valhall, vendor=virtual, backend=Vulkan, '
+            'adapterType=Integrated GPU',
+        'Mali-G715, arch=software, vendor=arm, backend=Vulkan, '
+            'adapterType=Integrated GPU',
+        'Mali-G715, arch=basic render, vendor=arm, backend=Vulkan, '
+            'adapterType=Integrated GPU',
+        '$_mali, extra',
+        '$_mali extra',
         'Mali-G715, arch=valhall, vendor=arm, backend=Vulkan, '
             'adapterType=Unknown',
         'Mali-G715, arch=valhall, vendor=arm, backend=OpenGLES, '
@@ -436,6 +609,8 @@ void main() {
         {'platform': 'linux'},
         {'platform': 'web'},
         {'web': true},
+        {'web': null},
+        {'web': 'false'},
         {'platform': null},
       ]) {
         final placement = inspect(pixel, of: on(environment));
@@ -449,6 +624,13 @@ void main() {
       expect(
         inspect(pixel, of: {...manifest()}..remove('environment'))['verified'],
         isFalse,
+      );
+      final unstated = manifest();
+      (unstated['environment'] as Map).remove('web');
+      expect(inspect(pixel, of: unstated)['verified'], isFalse);
+      expect(
+        inspect(pixel, of: unstated)['reason'],
+        contains('only for Android'),
       );
       expect((manifest()['environment'] as Map)['litert_tag'], '0.18.0');
       for (final tag in ['0.19.0', '0.18.1', '0.18.0-1', '0.17.0-8', null]) {

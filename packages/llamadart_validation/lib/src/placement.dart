@@ -250,14 +250,29 @@ const _liteRtGpuFailureMarkers = [
 /// `litert/runtime/compiled_model.cc` at that tag's pins.
 const _liteRtGpuOnlyDelegationTags = {'0.18.0'};
 
+/// A logcat `threadtime` record's tag:
+/// `MM-DD HH:MM:SS.mmm PID TID L tag: message`.
+final _logcatTag = RegExp(
+  r'^\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} +\d+ +\d+ [VDIWEF] ([^ :]+) *: ',
+);
+
 /// Load-time evidence that LiteRT-LM's main model was delegated to one
 /// hardware WebGPU-on-Vulkan adapter on Android for every expected load.
 ///
 /// The LiteRT-LM GPU executor requests the GPU accelerator alone, and LiteRT
-/// then refuses to compile a model with an undelegated node, so a completed
-/// delegate initialization for every signature implies full delegation of the
-/// main model. No generation request is observed, and the embedding models
-/// LiteRT-LM loads beside the main model are outside this evidence.
+/// then refuses to compile a model with an undelegated node, so one completed
+/// GPU delegate initialization per expected load implies full delegation of
+/// the main model. The delegate-kernel count is a consistency check on top of
+/// that rule, not proof by itself. No generation request is observed, and the
+/// embedding models LiteRT-LM loads beside the main model and any CPU engine
+/// the process creates are outside this evidence.
+///
+/// [log] is logcat `threadtime` records, as collection retains them. Adapter
+/// and delegate-kernel records count only under the `native` tag and
+/// signature and environment records only under `litert`, as LiteRT-LM 0.18.0
+/// logs them; the same text under another tag, such as a Dart `print` under
+/// `flutter`, leaves placement unverified. Failure markers count under any
+/// tag and are not exhaustive.
 ///
 /// Accelerator registration records are ignored: a CPU engine logs them too.
 /// Metal, OpenCL, desktop and Web logs have no qualified shape here.
@@ -276,7 +291,7 @@ Map<String, dynamic> _inspectLiteRtGpu(
   final environment = manifest['environment'];
   if (environment is! Map ||
       environment['platform'] != 'android' ||
-      environment['web'] == true) {
+      environment['web'] != false) {
     return unverified(
       'LiteRT GPU placement evidence is defined only for Android WebGPU on Vulkan',
     );
@@ -308,18 +323,33 @@ Map<String, dynamic> _inspectLiteRtGpu(
   const created = 'Created a WebGPU environment.';
 
   // One window per engine load, opened by its adapter selection. The main
-  // model's signature record is the last one before that selection; the
-  // embedding models' records follow the main model's delegate kernels.
+  // model's signature record is the last one before that selection and
+  // declares more signatures than any other; the embedding models' records
+  // follow the main model's delegate kernels.
   final adapters = <RegExpMatch>[];
   final signatures = <int?>[];
   final environments = <int>[];
   final kernels = <int>[];
   var adapterMentions = 0;
   var beforeFirstLoad = 0;
+  var unusable = 0;
+  var mostSignatures = 0;
   int? pendingSignatures;
   for (final line in const LineSplitter().convert(log)) {
-    if (line.contains('Selected adapter:')) {
-      adapterMentions++;
+    final tag = _logcatTag.firstMatch(line)?[1];
+    final selects = line.contains('Selected adapter:');
+    final record = loaded.firstMatch(line);
+    final count = record == null ? null : int.tryParse(record[1]!);
+    final initialized = kernel.allMatches(line).length;
+    final ready = created.allMatches(line).length;
+    if (selects) adapterMentions++;
+    if ((selects || initialized > 0) && tag != 'native' ||
+        (record != null || ready > 0) && tag != 'litert' ||
+        record != null && count == null) {
+      unusable++;
+      continue;
+    }
+    if (selects) {
       final match = adapter.firstMatch(line);
       if (match != null) {
         adapters.add(match);
@@ -329,10 +359,10 @@ Map<String, dynamic> _inspectLiteRtGpu(
         pendingSignatures = null;
       }
     }
-    final record = loaded.firstMatch(line);
-    if (record != null) pendingSignatures = int.parse(record[1]!);
-    final initialized = kernel.allMatches(line).length;
-    final ready = created.allMatches(line).length;
+    if (count != null) {
+      pendingSignatures = count;
+      if (count > mostSignatures) mostSignatures = count;
+    }
     if (adapters.isEmpty) {
       beforeFirstLoad += initialized + ready;
     } else {
@@ -355,6 +385,13 @@ Map<String, dynamic> _inspectLiteRtGpu(
   if (failures.isNotEmpty) {
     return unverified(
       'native log reports a GPU delegate failure or CPU fallback',
+      details,
+    );
+  }
+  if (unusable != 0) {
+    return unverified(
+      'GPU delegate records are malformed or were not logged under the '
+      'native runtime tags',
       details,
     );
   }
@@ -382,6 +419,7 @@ Map<String, dynamic> _inspectLiteRtGpu(
   if (beforeFirstLoad != 0 ||
       perLoad == null ||
       perLoad < 1 ||
+      perLoad != mostSignatures ||
       signatures.any((count) => count != perLoad) ||
       environments.any((count) => count != 1) ||
       kernels.any((count) => count != perLoad)) {

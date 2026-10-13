@@ -693,6 +693,12 @@ void main() {
         ),
         ('no start time', logcat, manifest((m) => m.remove('started_at'))),
         (
+          'a first record that is not a manifest',
+          logcat,
+          manifest((m) => m['type'] = 'case'),
+        ),
+        ('an untyped first record', logcat, manifest((m) => m.remove('type'))),
+        (
           'an iOS journal',
           logcat,
           manifest((m) => (m['environment'] as Map)['platform'] = 'ios'),
@@ -712,6 +718,265 @@ void main() {
       ]) {
         expect(await bind(text, events), isNull, reason: name);
       }
+    });
+
+    test('is bound to the run at both ends of its time', () async {
+      const window = 10 * 1000000;
+      const skew = 100 * 1000;
+      const month = 30 * 24 * 3600 * 1000000;
+      final stamp = RegExp(r' [IWEF]0000 00:00:(\d+)\.(\d{6}) ');
+      DateTime logged(String line) => DateTime.parse(
+        '2026-${line.substring(0, 5)}T${line.substring(6, 18)}Z',
+      );
+      // The epoch time of the test start record and of the first native line.
+      (int, int) times(String text) {
+        final entries = LineSplitter.split(text).toList();
+        final began = entries.singleWhere(
+          (line) => line.endsWith('+0: $mention'),
+        );
+        final native = entries.firstWhere(stamp.hasMatch);
+        final epoch = stamp.firstMatch(native)!;
+        final first = int.parse(epoch[1]!) * 1000000 + int.parse(epoch[2]!);
+        return (
+          first - logged(native).difference(logged(began)).inMicroseconds,
+          first,
+        );
+      }
+
+      (int, int) identity(String events) {
+        final first = jsonDecode(LineSplitter.split(events).first) as Map;
+        return (
+          int.parse((first['run_id'] as String).substring(4)),
+          DateTime.parse(first['started_at'] as String).microsecondsSinceEpoch,
+        );
+      }
+
+      for (final (text, events) in [
+        (logcat, journal),
+        (galaxy, galaxyJournal),
+      ]) {
+        final (testStart, firstStamp) = times(text);
+        final (minted, started) = identity(events);
+        expect(minted - testStart, inInclusiveRange(300000, 400000));
+        expect(firstStamp - started, inInclusiveRange(100000, 200000));
+      }
+      final (testStart, firstStamp) = times(logcat);
+      final (minted, started) = identity(journal);
+      final (galaxyMinted, galaxyStarted) = identity(galaxyJournal);
+      String run({Object? id, int? at}) => manifest((m) {
+        if (id != null) m['run_id'] = id is int ? 'app-$id' : id;
+        if (at != null) {
+          m['started_at'] = DateTime.fromMicrosecondsSinceEpoch(
+            at,
+            isUtc: true,
+          ).toIso8601String();
+        }
+      });
+      // The start record relogged just before the first load, so that only
+      // the order of the run id and the start time is left to decide.
+      final began = LineSplitter.split(
+        logcat,
+      ).singleWhere((line) => line.endsWith('+0: $mention'));
+      final late = logcat.replaceFirst(
+        began,
+        began.replaceFirst('02:37:12.167', '02:44:27.500'),
+      );
+      expect(late, isNot(logcat));
+
+      for (final (name, text, events) in [
+        ('the recorded journal', logcat, journal),
+        ('a run id at the window', logcat, run(id: testStart + window)),
+        ('a run id at the clock slack', logcat, run(id: testStart - skew)),
+        ('a start time at the window', logcat, run(at: firstStamp - window)),
+        ('a start time at the first native line', logcat, run(at: firstStamp)),
+        ('a run id at the start time', late, run(id: started)),
+      ]) {
+        expect(await bind(text, events), isNotNull, reason: name);
+      }
+      for (final (name, text, events) in [
+        ('the journal of the other device run', galaxy, journal),
+        ('the device log of the other device run', logcat, galaxyJournal),
+        ('the other run under this run id', galaxy, run(at: galaxyStarted)),
+        ('the other run under this start time', galaxy, run(id: galaxyMinted)),
+        (
+          'a journal dated 30 days earlier',
+          logcat,
+          run(id: minted - month, at: started - month),
+        ),
+        ('a start time 30 days earlier', logcat, run(at: started - month)),
+        ('a run id 30 days earlier', logcat, run(id: minted - month)),
+        ('the run id of the other device run', logcat, run(id: galaxyMinted)),
+        ('a run id past the window', logcat, run(id: testStart + window + 1)),
+        (
+          'a run id before the start record',
+          logcat,
+          run(id: testStart - skew - 1),
+        ),
+        (
+          'a start time before the window',
+          logcat,
+          run(at: firstStamp - window - 1),
+        ),
+        ('a run id after the start time', late, run(id: started + 1)),
+        ('a run id that is not a time', logcat, run(id: 'app-1')),
+        ('a run id with another prefix', logcat, run(id: 'qa-$minted')),
+        ('a run id with a suffix', logcat, run(id: 'app-$minted-2')),
+        ('a longer run id', logcat, run(id: 'app-${minted}0')),
+        ('a zero-padded run id', logcat, run(id: 'app-000$minted')),
+        ('a numeric run id', logcat, manifest((m) => m['run_id'] = minted)),
+        ('no run id', logcat, manifest((m) => m.remove('run_id'))),
+      ]) {
+        expect(await bind(text, events), isNull, reason: name);
+      }
+    });
+
+    test('measures the time since the test start without a year', () async {
+      // A run whose first native line is logged at `loaded` and stamped
+      // `first`, with a run id minted `mintedBefore` that line.
+      Future<String?> synthetic(
+        String began,
+        String loaded,
+        DateTime first, {
+        required Duration mintedBefore,
+      }) {
+        final events = manifest((m) {
+          m['started_at'] = first
+              .subtract(const Duration(milliseconds: 100))
+              .toIso8601String();
+          m['run_id'] =
+              'app-${first.subtract(mintedBefore).microsecondsSinceEpoch}';
+        });
+        final epoch = first.microsecondsSinceEpoch;
+        return bind(
+          '$began 100 100 I flutter : 00:00 +0: $mention\n'
+          '$loaded 100 100 I flutter : Model m loaded from '
+          '/data/files/validation/models/$sha/m\n'
+          '$loaded 100 101 W native  : W0000 00:00:${epoch ~/ 1000000}.'
+          '${'${epoch % 1000000}'.padLeft(6, '0')}     101 engine.cc:1] x\n',
+          events,
+        );
+      }
+
+      const elapsed = Duration(seconds: 5);
+      const day = Duration(days: 1);
+      for (final (name, began, loaded, first, since) in [
+        // The device is seven hours behind UTC.
+        (
+          'the same day',
+          '10-13 02:44:22.829',
+          '10-13 02:44:27.829',
+          DateTime.utc(2026, 10, 13, 9, 44, 27, 829),
+          elapsed,
+        ),
+        (
+          'across New Year',
+          '12-31 23:59:57.000',
+          '01-01 00:00:02.000',
+          DateTime.utc(2027, 1, 1, 7, 0, 2),
+          elapsed,
+        ),
+        // The device is nine hours ahead of UTC, which is still last year.
+        (
+          'across New Year ahead of UTC',
+          '12-31 23:59:57.000',
+          '01-01 00:00:02.000',
+          DateTime.utc(2026, 12, 31, 15, 0, 2),
+          elapsed,
+        ),
+        (
+          'into March',
+          '02-28 23:59:57.000',
+          '03-01 00:00:02.000',
+          DateTime.utc(2027, 3, 1, 7, 0, 2),
+          elapsed,
+        ),
+        (
+          'into March of a leap year',
+          '02-28 23:59:57.000',
+          '03-01 00:00:02.000',
+          DateTime.utc(2028, 3, 1, 7, 0, 2),
+          elapsed + day,
+        ),
+      ]) {
+        expect(
+          await synthetic(began, loaded, first, mintedBefore: since),
+          isNotNull,
+          reason: name,
+        );
+        for (final other in [since + day, since - day, since + elapsed * 3]) {
+          expect(
+            await synthetic(began, loaded, first, mintedBefore: other),
+            isNull,
+            reason: '$name, minted $other before the first native line',
+          );
+        }
+      }
+    });
+
+    test('keeps no service URL wherever the process logs it', () async {
+      for (final text in [logcat, galaxy, cpu]) {
+        expect(text, isNot(contains('://')));
+        expect(text, isNot(contains('VM service')));
+      }
+      final began = LineSplitter.split(
+        logcat,
+      ).singleWhere((line) => line.endsWith('+0: $mention'));
+      const prefix = '10-13 02:37:12.500 22950 23091';
+      const url = 'http://127.0.0.1:33441/fixtureAuthCode=/';
+      Future<String?> after(String record) =>
+          bind(logcat.replaceFirst('$began\n', '$began\n$record\n'), journal);
+      expect(
+        await after('$prefix I flutter : Running on the device'),
+        contains('$began\n$prefix I flutter : Running on the device\n'),
+      );
+
+      // The announcement is printed by another thread, so it can follow the
+      // start record.
+      for (final announcement in [
+        '$prefix I flutter : The Dart VM service is listening on $url',
+        '$prefix I flutter : Dart VM service is listening on $url',
+        '$prefix I flutter : The Dart VM service is listening on '
+            'http://0.0.0.0:8181/fixtureAuthCode=/',
+      ]) {
+        expect(
+          await after(announcement),
+          process(logcat, '22950'),
+          reason: announcement,
+        );
+        expect(
+          await bind('$logcat$announcement\n', journal),
+          process(logcat, '22950'),
+          reason: announcement,
+        );
+      }
+      // Any other line with such a URL could lose more than the URL, so the
+      // log is left unbound instead of being edited.
+      for (final record in [
+        '$prefix E native  : Falling back to CPU $url',
+        '$prefix I flutter : The Dart VM service is listening on $url '
+            'Falling back to CPU',
+        '$prefix I native  : The Dart VM service is listening on $url',
+        '$prefix I flutter : Falling back to CPU. The Dart VM service is '
+            'listening on $url',
+        '$prefix I flutter : The Flutter DevTools debugger and profiler on '
+            'Pixel 9 Pro is available at: http://10.0.0.2:9101?uri=x',
+        '$prefix I flutter : The Dart VM service is listening on '
+            'http://0.0.0.0:8181/fixtureAuthCode=/ too',
+        '$prefix I flutter : connecting ws://127.0.0.1:33441/fixtureAuthCode=',
+        '$prefix I flutter : connecting http://localhost:33441/fixtureAuthCode',
+        '$prefix I flutter : connecting http://[::1]:33441/fixtureAuthCode=/',
+        '$prefix I flutter : connecting http://127.0.0.1/fixtureAuthCode=/',
+      ]) {
+        expect(await after(record), isNull, reason: record);
+      }
+      // Another process is not this run's log.
+      expect(
+        await after(
+          '10-13 02:37:12.500   999   999 I flutter : The Dart VM service is '
+          'listening on $url',
+        ),
+        process(logcat, '22950'),
+      );
     });
 
     test('is unbound when the process logged more than the limit', () async {
@@ -741,9 +1006,11 @@ void main() {
       File(
         'packages/llamadart_validation/assets/profiles/gemma4-litert-gpu.json',
       ).copySync(p.join(bundle.path, 'profile.json'));
+      const device = 'remote-results/qa-one/caiman-35-en-portrait';
       Future<String?> collect(
         Map<String, String> files, {
         String target = 'firebase-android',
+        int? logcatBytes,
       }) async {
         final run = Directory(p.join(scratch.path, 'collected-android'));
         if (run.existsSync()) run.deleteSync(recursive: true);
@@ -751,6 +1018,25 @@ void main() {
           File(p.join(run.path, key))
             ..createSync(recursive: true)
             ..writeAsStringSync(value);
+        }
+        if (logcatBytes != null) {
+          // Lines of no device-log shape, which binding skips.
+          final padded = File(
+            p.join(run.path, '$device/logcat'),
+          ).openSync(mode: FileMode.append);
+          final filler = List.filled(1 << 16, 0x78)..last = 0x0a;
+          for (
+            var left = logcatBytes - padded.lengthSync();
+            left > 0;
+            left -= filler.length
+          ) {
+            padded.writeFromSync(
+              filler,
+              filler.length - (left < filler.length ? left : filler.length),
+            );
+          }
+          padded.closeSync();
+          expect(File(padded.path).lengthSync(), logcatBytes);
         }
         String? log;
         try {
@@ -772,14 +1058,28 @@ void main() {
         return log;
       }
 
-      const device = 'remote-results/qa-one/caiman-35-en-portrait';
       const pulled =
           '$device/artifacts/sdcard/Android/data/app/files/validation/runs/'
           'app-1/events.jsonl';
       const stray = 'Selected adapter: stray\n';
+      const limit = 128 * 1024 * 1024;
       final bound = process(logcat, '22950');
       expect(await collect({'$device/logcat': logcat, pulled: journal}), bound);
       expect(await collect({pulled: journal}), isNull);
+      expect(
+        await collect({
+          '$device/logcat': logcat,
+          pulled: journal,
+        }, logcatBytes: limit),
+        bound,
+      );
+      expect(
+        await collect({
+          '$device/logcat': logcat,
+          pulled: journal,
+        }, logcatBytes: limit + 1),
+        isNull,
+      );
       for (final (name, files) in [
         (
           'two device logs',
@@ -792,6 +1092,10 @@ void main() {
         (
           'a device log of another run',
           {'$device/logcat': logcat.replaceAll(sha, 'a' * 64), pulled: journal},
+        ),
+        (
+          'the device log of the other device run',
+          {'$device/logcat': galaxy, pulled: journal},
         ),
         (
           'a device log outside the pulled results',
