@@ -793,6 +793,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'arguments in example/chat_app/README.md.',
   ),
   TestMatrixRow(
+    id: 'chat-app-litert-read-only-bundle',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'LiteRT-LM bundle in a mode-555 directory on a device with no cache '
+        'directory configured: named without .litertlm it must generate on '
+        'CPU and GPU, named .litertlm on GPU it is recorded as generating or '
+        'as a typed error, and nothing may be written to the directory',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-litert-read-only-bundle --device <macos|ios|android>',
+    useWhen:
+        'LiteRT-LM runtime pin, cache directory defaults or the .litertlm '
+        'link for bundles named without that extension change. Downloads '
+        'the locked model unless --model-path names a copy on the target '
+        'device. Only a platform without a temp cache default, such as iOS, '
+        'runs uncached; the Test Lab build is in example/chat_app/README.md.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-micro-batch-sweep',
     tier: 'targeted',
     mode: 'local-only',

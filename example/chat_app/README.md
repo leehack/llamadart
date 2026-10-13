@@ -831,6 +831,52 @@ temperature 0, seed 1). The matching build-time defaults are
 empty string keeps its default. Fewer than three iterations record the steps
 without the memory check.
 
+#### LiteRT-LM bundle in a read-only directory
+
+`integration_test/litert_lm_read_only_bundle_e2e_test.dart` hard-links the
+locked `chat-litert-*` validation model into directories it sets to mode 555
+and loads it through `LlamaEngine(LlamaBackend())` with
+`ModelParams.liteRtLmCacheDir` unset, as an app that ships a model in its
+bundle does. Three cases run in one process:
+
+| Case | Bundle name | Backend | Judged |
+| --- | --- | --- | --- |
+| `unsuffixed` | `Qwen3-0.6B` | `cpu`, then `gpu` | must generate |
+| `litertlm` | `Qwen3-0.6B.litertlm` | `gpu` | recorded: generates or throws a `LlamaException` ([#976](https://github.com/leehack/llamadart/issues/976)) |
+
+Every case fails when the directory is writable, when its mode or its entries
+change, on an empty reply and on any error that is not a `LlamaException`.
+Each logs a `started` line and then its result, with the reply or the error
+type and message on the line before:
+
+```text
+E2E read-only bundle: case=<id> backend=<cpu|gpu> outcome=<ok|empty_reply|typed_error:<Type>> ms=<n>
+```
+
+```sh
+dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-litert-read-only-bundle --device <device>
+```
+
+Only a platform without a temp cache default runs uncached, which is iOS among
+the Flutter targets. macOS and Android cache in a temp directory, so there
+every case generates and the run checks the harness. To run the service with
+that default off on such a host, instead of the public backend, call
+`flutter test` as the scenario prints it and add
+`--dart-define=LITERT_READ_ONLY_NO_TEMP_CACHE=true`.
+
+For iOS Test Lab, build the XCTest bundle from that target and submit
+`tests.zip` as an `xctest`; the result lines are in `xcodebuild_output.log`:
+
+```sh
+flutter build ios --config-only --release \
+  --target integration_test/litert_lm_read_only_bundle_e2e_test.dart
+(cd ios && xcodebuild -workspace Runner.xcworkspace -scheme Runner \
+  -configuration Release -sdk iphoneos -destination generic/platform=iOS \
+  -derivedDataPath <derived-data> build-for-testing DEVELOPMENT_TEAM=<team>)
+(cd <derived-data>/Build/Products && zip -q -r <out>/tests.zip .)
+```
+
 #### Micro-batch sweep and the Android Vulkan prompt cap
 
 `integration_test/micro_batch_sweep_e2e_test.dart` loads the locked

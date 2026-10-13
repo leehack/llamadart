@@ -263,6 +263,28 @@ void main() {
       expect(result.stdout, isNot(contains('LITERT_RELOAD_MODEL')));
     });
 
+    test('dry-runs the LiteRT-LM read-only bundle device scenario', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-litert-read-only-bundle',
+        '--device',
+        'ios',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/chat_app && flutter test --run-skipped '
+          '-t local-only '
+          'integration_test/litert_lm_read_only_bundle_e2e_test.dart '
+          '-d ios',
+        ),
+      );
+      expect(result.stdout, isNot(contains('LITERT_READ_ONLY_MODEL')));
+    });
+
     test('dry-runs the micro-batch sweep device scenario', () async {
       final result = await runLocalE2e(const [
         '--scenario',

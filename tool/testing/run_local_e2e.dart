@@ -1076,6 +1076,33 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-litert-read-only-bundle',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Load a LiteRT-LM bundle from a mode-555 directory with no cache '
+          'directory configured, named with and without .litertlm, and '
+          'require that nothing is written there.',
+      requiresDevice: true,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'integration_test/litert_lm_read_only_bundle_e2e_test.dart',
+            '-d',
+            context.device,
+            if (context.modelPath != null)
+              '--dart-define=LITERT_READ_ONLY_MODEL=${context.modelPath}',
+          ],
+          description: 'Flutter chat app LiteRT-LM read-only bundle E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'chat-app-micro-batch-sweep',
       group: LocalE2eScenarioGroup.flutterDevice,
       description:
