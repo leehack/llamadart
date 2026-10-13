@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
 /// Captured subprocess output; authentication results are never journaled.
@@ -21,11 +22,18 @@ typedef CommandExecutor =
     });
 
 /// Executes without a shell, bounds retained output and kills timed-out children.
+/// [onProcessStarted] optionally records the returned host process ID, without
+/// command arguments. This ID alone does not establish descendant ownership.
+/// The synchronous callback must return promptly; deadlines cannot preempt it.
+/// [processHostEntryPath] optionally selects a literal private host entry. The
+/// caller owns its exact identity and must preserve the maintained host contract.
 Future<CommandResult> executeCommand(
   String executable,
   List<String> arguments, {
   String? directory,
   Duration? timeout,
+  void Function(int processId)? onProcessStarted,
+  String? processHostEntryPath,
 }) async {
   // Find the checked-in host from the current repository, including package cwd.
   var root = Directory.current.absolute;
@@ -40,34 +48,45 @@ Future<CommandResult> executeCommand(
   final duration = timeout ?? const Duration(minutes: 5);
   final process =
       await Process.start(Platform.isWindows ? 'python' : 'python3', [
-        p.join(root.path, 'tool/testing/validation/process_host.py'),
+        processHostEntryPath ??
+            p.join(root.path, 'tool/testing/validation/process_host.py'),
         (duration.inMilliseconds / 1000).toString(),
         executable,
         ...arguments,
       ], workingDirectory: directory);
+  final elapsed = Stopwatch()..start();
+  final deadline = duration + const Duration(seconds: 10);
   final output = StringBuffer();
   final error = StringBuffer();
   final streams = <StreamSubscription<String>>[];
   final drains = <Future<void>>[];
-  for (final pair in [(process.stdout, output), (process.stderr, error)]) {
-    final done = Completer<void>();
-    streams.add(
-      pair.$1
-          .transform(const Utf8Decoder(allowMalformed: true))
-          .listen(
-            pair.$2.write,
-            onDone: done.complete,
-            onError: done.completeError,
-          ),
-    );
-    drains.add(done.future);
-  }
   try {
+    onProcessStarted?.call(process.pid);
+    for (final pair in [(process.stdout, output), (process.stderr, error)]) {
+      final done = Completer<void>();
+      streams.add(
+        pair.$1
+            .transform(const Utf8Decoder(allowMalformed: true))
+            .listen(
+              pair.$2.write,
+              onDone: done.complete,
+              onError: done.completeError,
+            ),
+      );
+      drains.add(done.future);
+    }
+    final remaining = deadline - elapsed.elapsed;
+    if (remaining <= Duration.zero) {
+      throw TimeoutException('Subprocess deadline exceeded', duration);
+    }
     final code = await (() async {
       final code = await process.exitCode;
       await Future.wait(drains);
       return code;
-    })().timeout(duration + const Duration(seconds: 10));
+    })().timeout(remaining);
+    if (elapsed.elapsed >= deadline) {
+      throw TimeoutException('Subprocess deadline exceeded', duration);
+    }
     if (code == 124) {
       throw TimeoutException('Subprocess deadline exceeded', duration);
     }

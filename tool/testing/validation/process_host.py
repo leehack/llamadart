@@ -9,7 +9,135 @@ import threading
 import time
 
 
-def main():
+class PosixChildReservation:
+    """Hold the returned child unreaped through final owned-group delivery.
+
+    WNOWAIT completion observation preserves the actual child reservation; an
+    old PID receipt or a matching sampled group alone does not. After wait/reap,
+    only non-delivering absence probes are allowed. Unknown remains failure.
+    """
+    def __init__(self, child):
+        self.child = child
+        self.group = None
+        self.held = True
+        self.returncode = None
+
+    def observe(self):
+        if not self.held:
+            raise RuntimeError('Child reservation is not held')
+        try:
+            observed = os.waitid(os.P_PID, self.child.pid,
+                                 os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            self.held = False
+            raise RuntimeError('Child reservation was lost') from None
+        if observed is None:
+            return None
+        if observed.si_pid != self.child.pid:
+            raise RuntimeError('Unexpected child completion identity')
+        if observed.si_code == os.CLD_EXITED:
+            self.returncode = observed.si_status
+        elif observed.si_code in (os.CLD_KILLED, os.CLD_DUMPED):
+            self.returncode = -observed.si_status
+        else:
+            raise RuntimeError('Unexpected child completion state')
+        return self.returncode
+
+    def bind(self):
+        self.observe()
+        actual_group = os.getpgid(self.child.pid)
+        if actual_group != self.child.pid:
+            raise RuntimeError('Cannot bind returned child session group')
+        self.group = actual_group
+
+    def reap(self, deadline):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError('Child retirement deadline expired')
+        self.child.wait(timeout=remaining)
+        self.held = False
+
+    def retire(self):
+        # The existing five-second child-wait bound covers delivery, reap and
+        # eventual group absence. This is not general daemon containment.
+        deadline = time.monotonic() + 5
+        completion = self.observe()
+        if self.group is None:
+            # Reservation proves this actual child only, not an unbound group.
+            # Retire the leader without delivering to any guessed group; group
+            # cleanup remains unproved even when this wait succeeds.
+            try:
+                os.kill(self.child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            self.reap(deadline)
+            raise RuntimeError('Child group retirement remains unproved')
+        # A completed unreaped child can no longer support getpgid on every
+        # POSIX host. Its earlier verified own-session group remains bound while
+        # WNOWAIT holds the returned child reservation. Do not invent a group
+        # from ESRCH: an initial unbound child still fails above.
+        if completion is None:
+            try:
+                actual_group = os.getpgid(self.child.pid)
+            except ProcessLookupError:
+                # The leader may exit between observation and lookup. Require
+                # fresh held completion; ESRCH alone proves no group absence.
+                if self.observe() is None:
+                    raise RuntimeError('Returned child group binding is unproved') from None
+            else:
+                if actual_group != self.group:
+                    raise RuntimeError('Returned child group binding changed')
+        group_present = True
+        try:
+            os.killpg(self.group, 0)
+        except ProcessLookupError:
+            group_present = False
+        except PermissionError:
+            # Permission is unknown, so do not deliver a group signal. The
+            # owned returned child must still receive a bounded wait/reap.
+            group_present = False
+        if group_present:
+            # The returned child is still unreaped here, reserving its actual
+            # PID/group. No delivering group signal may occur after reap.
+            try:
+                os.killpg(self.group, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                # Denial is not delivery proof; still finish the bounded child
+                # wait. Only eventual passive ESRCH may establish absence.
+                pass
+        self.reap(deadline)
+        while True:
+            try:
+                os.killpg(self.group, 0)
+            except ProcessLookupError:
+                return
+            except PermissionError:
+                # Unknown remains unknown until this same finite deadline;
+                # never turn EPERM into absence or deliver after reaping.
+                pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('Child group retirement deadline expired')
+            time.sleep(min(0.02, remaining))
+
+
+def require_posix_waitid():
+    if not all(hasattr(os, name) for name in
+               ('waitid', 'P_PID', 'WEXITED', 'WNOHANG', 'WNOWAIT',
+                'CLD_EXITED', 'CLD_KILLED', 'CLD_DUMPED')):
+        raise RuntimeError('Unreaped POSIX child observation is unavailable')
+
+
+def main(on_child_started=None):
+    """Optionally record the returned child PID; it is not a lineage proof.
+
+    The callback receives no command text. No CLI/environment receipt binding
+    is provided: the ordinary entry point retains its existing behavior.
+    The synchronous callback must return promptly; it cannot be preempted by
+    this host's loop deadline, which includes elapsed callback/setup time.
+    """
     terminated = threading.Event()
     def request_stop(signum, frame):
         terminated.set()
@@ -49,34 +177,40 @@ def main():
                 raise ValueError('Unsafe Windows batch argument')
             quoted = ' '.join('"' + arg + '"' for arg in arguments)
             arguments = '"' + os.environ.get('COMSPEC', 'cmd.exe') + '" /d /v:off /s /c "' + quoted + '"'
+    if os.name != 'nt':
+        require_posix_waitid()
     child = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              start_new_session=os.name != 'nt')
-    if job and not kernel.AssignProcessToJobObject(job, int(child._handle)):
-        child.kill()
-        child.wait()
-        kernel.CloseHandle(job)
-        raise RuntimeError('Cannot contain subprocess descendants')
-    overflow = threading.Event()
-    def copy(stream, sink):
-        total = 0
-        while True:
-            chunk = stream.read(4096)
-            if not chunk:
-                return
-            total += len(chunk)
-            if total > 8 * 1024 * 1024:
-                overflow.set()
-                return
-            sink.buffer.write(chunk)
-            sink.buffer.flush()
-    readers = [threading.Thread(target=copy, args=(child.stdout, sys.stdout), daemon=True),
-               threading.Thread(target=copy, args=(child.stderr, sys.stderr), daemon=True)]
-    for reader in readers:
-        reader.start()
-    deadline = time.monotonic() + seconds
-    code = 125
+    job_assigned = False
+    reservation = PosixChildReservation(child) if os.name != 'nt' else None
     try:
-        while child.poll() is None or any(reader.is_alive() for reader in readers):
+        deadline = time.monotonic() + seconds
+        if reservation is not None:
+            reservation.bind()
+        if job:
+            job_assigned = bool(kernel.AssignProcessToJobObject(job, int(child._handle)))
+            if not job_assigned:
+                raise RuntimeError('Cannot contain subprocess descendants')
+        if on_child_started is not None:
+            on_child_started(child.pid)
+        overflow = threading.Event()
+        def copy(stream, sink):
+            total = 0
+            while True:
+                chunk = stream.read(4096)
+                if not chunk:
+                    return
+                total += len(chunk)
+                if total > 8 * 1024 * 1024:
+                    overflow.set()
+                    return
+                sink.buffer.write(chunk)
+                sink.buffer.flush()
+        readers = [threading.Thread(target=copy, args=(child.stdout, sys.stdout), daemon=True),
+                   threading.Thread(target=copy, args=(child.stderr, sys.stderr), daemon=True)]
+        for reader in readers:
+            reader.start()
+        while (child.poll() if reservation is None else reservation.observe()) is None or any(reader.is_alive() for reader in readers):
             if terminated.is_set():
                 return 143
             if overflow.is_set():
@@ -84,19 +218,24 @@ def main():
             if time.monotonic() >= deadline:
                 return 124
             time.sleep(0.02)
-        code = child.returncode
-        return code
+        # Setup can consume the deadline after an already-exited child. Do not
+        # bypass stop/deadline checks merely because no reader remains active.
+        if terminated.is_set():
+            return 143
+        if time.monotonic() >= deadline:
+            return 124
+        return child.returncode if reservation is None else reservation.returncode
     finally:
         if job:
             kernel.CloseHandle(job)
-        elif os.name != 'nt':
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            if not job_assigned and child.poll() is None:
+                child.kill()
+        elif reservation is not None:
+            reservation.retire()
         elif child.poll() is None:
             child.kill()
-        child.wait(timeout=5)
+        if reservation is None:
+            child.wait(timeout=5)
 
 
 if __name__ == '__main__':

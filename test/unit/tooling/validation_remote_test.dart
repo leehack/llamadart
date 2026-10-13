@@ -1230,6 +1230,162 @@ void main() {
     },
   );
 
+  test(
+    'command host source fixtures preserve receipts and failure cleanup',
+    () async {
+      if (Platform.isWindows) {
+        return;
+      }
+      final result = await executeCommand('python3', <String>[
+        'test/unit/tooling/validation_process_host_test.py',
+      ], timeout: const Duration(seconds: 30));
+      expect(result.code, 0, reason: result.error);
+      expect(result.error, contains('OK'));
+    },
+  );
+
+  test('optional command receipt records only the returned host ID', () async {
+    final receipts = <int>[];
+    final result = await executeCommand(
+      Platform.isWindows ? 'python' : 'python3',
+      const <String>['-c', 'print("receipt fixture")'],
+      onProcessStarted: receipts.add,
+    );
+    expect(receipts, hasLength(1));
+    expect(receipts.single, greaterThan(0));
+    expect(result.code, 0);
+    expect(result.output.trim(), 'receipt fixture');
+  });
+
+  test('failed command receipt remains failed and retires its host', () async {
+    int? hostId;
+    final failure = FileSystemException('fixture publication failed');
+    await expectLater(
+      executeCommand(
+        Platform.isWindows ? 'python' : 'python3',
+        const <String>['-c', 'import time; time.sleep(10)'],
+        onProcessStarted: (processId) {
+          hostId = processId;
+          throw failure;
+        },
+      ),
+      throwsA(same(failure)),
+    );
+    expect(hostId, greaterThan(0));
+    if (!Platform.isWindows) {
+      final observed = await Process.run('ps', <String>[
+        '-p',
+        '$hostId',
+        '-o',
+        'pid=',
+      ]);
+      expect(observed.stdout.toString().trim(), isEmpty);
+      expect(observed.exitCode, 1);
+    }
+  });
+
+  test('default command host retains output and exit status', () async {
+    final newline = Platform.isWindows ? '\r\n' : '\n';
+    final binary = Platform.isWindows ? 'python' : 'python3';
+    const arguments = <String>[
+      '-c',
+      'import sys; print("out"); print("err", file=sys.stderr); sys.exit(17)',
+    ];
+    final defaultResult = await executeCommand(
+      binary,
+      arguments,
+      timeout: const Duration(seconds: 5),
+    );
+    final explicitResult = await executeCommand(
+      binary,
+      arguments,
+      timeout: const Duration(seconds: 5),
+      processHostEntryPath: File(
+        'tool/testing/validation/process_host.py',
+      ).absolute.path,
+    );
+    expect(defaultResult.code, 17);
+    expect(defaultResult.output, 'out$newline');
+    expect(defaultResult.error, 'err$newline');
+    expect(explicitResult.code, defaultResult.code);
+    expect(explicitResult.output, defaultResult.output);
+    expect(explicitResult.error, defaultResult.error);
+  });
+
+  test('literal host entry binds its maintained direct-child callback', () async {
+    final newline = Platform.isWindows ? '\r\n' : '\n';
+    final wrapper = File(p.join(scratch.path, 'private-host.py'));
+    final receipt = File(p.join(scratch.path, 'child-receipt.json'));
+    _writeReceiptHostEntry(wrapper, receipt);
+    final returnedHostIds = <int>[];
+    final result = await executeCommand(
+      Platform.isWindows ? 'python' : 'python3',
+      const <String>[
+        '-c',
+        'import sys; print("out"); print("err", file=sys.stderr); sys.exit(17)',
+      ],
+      timeout: const Duration(seconds: 5),
+      processHostEntryPath: wrapper.path,
+      onProcessStarted: returnedHostIds.add,
+    );
+    expect(result.code, 17);
+    expect(result.output, 'out$newline');
+    expect(result.error, 'err$newline');
+    expect(returnedHostIds, hasLength(1));
+    final recorded = jsonDecode(receipt.readAsStringSync()) as Map;
+    expect(recorded.keys, unorderedEquals(<String>['host_pid', 'child_pid']));
+    expect(recorded['host_pid'], returnedHostIds.single);
+    expect(recorded['child_pid'], greaterThan(0));
+    expect(recorded['child_pid'], isNot(returnedHostIds.single));
+  });
+
+  test(
+    'private host receipt failure stays failed and retires its child',
+    () async {
+      if (Platform.isWindows) {
+        return;
+      }
+      final wrapper = File(p.join(scratch.path, 'failing-private-host.py'));
+      final observed = File(p.join(scratch.path, 'observed-child.json'));
+      final occupied = File(p.join(scratch.path, 'occupied-receipt.json'))
+        ..writeAsStringSync('existing receipt');
+      _writeReceiptHostEntry(
+        wrapper,
+        observed,
+        publicationDestination: occupied,
+      );
+      final returnedHostIds = <int>[];
+      await expectLater(
+        executeCommand(
+          'python3',
+          const <String>['-c', 'import time; time.sleep(10)'],
+          timeout: const Duration(seconds: 5),
+          processHostEntryPath: wrapper.path,
+          onProcessStarted: returnedHostIds.add,
+        ),
+        throwsStateError,
+      );
+      expect(occupied.readAsStringSync(), 'existing receipt');
+      expect(returnedHostIds, hasLength(1));
+      final recorded = jsonDecode(observed.readAsStringSync()) as Map;
+      expect(recorded['host_pid'], returnedHostIds.single);
+      expect(recorded['child_pid'], greaterThan(0));
+      for (final processId in <int>[
+        returnedHostIds.single,
+        recorded['child_pid'] as int,
+      ]) {
+        final remaining = await Process.run('ps', <String>[
+          '-p',
+          '$processId',
+          '-o',
+          'pid=',
+        ]);
+        expect(remaining.stdout.toString().trim(), isEmpty);
+        expect(remaining.exitCode, 1);
+      }
+    },
+  );
+
   test('SIGTERM on the command host terminates owned descendants', () async {
     if (Platform.isWindows) {
       return;
@@ -1774,4 +1930,35 @@ void main() {
       expect(File(marker).existsSync(), false);
     },
   );
+}
+
+void _writeReceiptHostEntry(
+  File wrapper,
+  File childReceipt, {
+  File? publicationDestination,
+}) {
+  final hostPath = File(
+    'tool/testing/validation/process_host.py',
+  ).absolute.path;
+  final publication = publicationDestination == null
+      ? ''
+      : '''
+    with pathlib.Path(${jsonEncode(publicationDestination.path)}).open('x') as stream:
+        json.dump({'child_pid': child_pid}, stream)
+''';
+  wrapper.writeAsStringSync('''
+import importlib.util, json, os, pathlib, sys
+spec = importlib.util.spec_from_file_location('maintained_fixture_host', ${jsonEncode(hostPath)})
+host = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(host)
+def receipt(child_pid):
+    with pathlib.Path(${jsonEncode(childReceipt.path)}).open('x') as stream:
+        json.dump({'host_pid': os.getpid(), 'child_pid': child_pid}, stream)
+$publication
+try:
+    sys.exit(host.main(on_child_started=receipt))
+except Exception as error:
+    print('Subprocess host failed (' + type(error).__name__ + ')', file=sys.stderr)
+    sys.exit(125)
+''');
 }

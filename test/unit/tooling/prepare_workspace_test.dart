@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -286,6 +287,116 @@ void main() {
     expect(result, 0);
   });
 
+  test(
+    'optional process receipt uses the returned ID without changing status',
+    () async {
+      final root = _workspaceFixture();
+      final process = _RecordedProcess(421, 17);
+      final receipts = <int>[];
+      final result = await runWorkspaceCommand(
+        'fixture',
+        const <String>['unrecorded-argument'],
+        root.path,
+        startProcess:
+            (
+              executable,
+              arguments, {
+              workingDirectory,
+              mode = ProcessStartMode.normal,
+              runInShell = false,
+            }) async => process,
+        onProcessStarted: receipts.add,
+      );
+
+      expect(receipts, <int>[421]);
+      expect(result, 17);
+      expect(process.signals, isEmpty);
+    },
+  );
+
+  test(
+    'failed process receipt retires the returned process and stays failed',
+    () async {
+      final root = _workspaceFixture();
+      final process = _RecordedProcess(422);
+      final failure = FileSystemException('fixture publication failed');
+
+      await expectLater(
+        runWorkspaceCommand(
+          'fixture',
+          const <String>[],
+          root.path,
+          startProcess:
+              (
+                executable,
+                arguments, {
+                workingDirectory,
+                mode = ProcessStartMode.normal,
+                runInShell = false,
+              }) async => process,
+          onProcessStarted: (processId) {
+            expect(processId, 422);
+            throw failure;
+          },
+        ),
+        throwsA(same(failure)),
+      );
+
+      expect(process.signals, <ProcessSignal>[ProcessSignal.sigterm]);
+      expect(await process.exitCode, -15);
+    },
+  );
+
+  test(
+    'an awaited process error keeps the existing launch-error status',
+    () async {
+      final root = _workspaceFixture();
+      final process = _FailedExitProcess();
+      final result = await runWorkspaceCommand(
+        'fixture',
+        const <String>[],
+        root.path,
+        startProcess:
+            (
+              executable,
+              arguments, {
+              workingDirectory,
+              mode = ProcessStartMode.normal,
+              runInShell = false,
+            }) async => process,
+      );
+      expect(result, 127);
+      expect(process.signals, <ProcessSignal>[ProcessSignal.sigterm]);
+    },
+  );
+
+  test(
+    'a receipt ProcessException is not reported as a launch failure',
+    () async {
+      final root = _workspaceFixture();
+      final process = _RecordedProcess(423);
+      final failure = ProcessException('fixture', const <String>[]);
+      await expectLater(
+        runWorkspaceCommand(
+          'fixture',
+          const <String>[],
+          root.path,
+          startProcess:
+              (
+                executable,
+                arguments, {
+                workingDirectory,
+                mode = ProcessStartMode.normal,
+                runInShell = false,
+              }) async => process,
+          onProcessStarted: (_) => throw failure,
+        ),
+        throwsA(same(failure)),
+      );
+      expect(process.signals, <ProcessSignal>[ProcessSignal.sigterm]);
+    },
+  );
+
   test('reports a stable exit code when an SDK command cannot start', () async {
     final root = _workspaceFixture();
 
@@ -298,6 +409,48 @@ void main() {
 
     expect(result, 127);
   });
+}
+
+class _RecordedProcess implements Process {
+  _RecordedProcess(this.pid, [int? code]) {
+    if (code != null) {
+      _exit.complete(code);
+    }
+  }
+
+  @override
+  final int pid;
+  final _exit = Completer<int>();
+  final signals = <ProcessSignal>[];
+
+  @override
+  Future<int> get exitCode => _exit.future;
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    signals.add(signal);
+    if (!_exit.isCompleted) {
+      _exit.complete(-signal.signalNumber);
+    }
+    return true;
+  }
+
+  @override
+  IOSink get stdin => throw UnsupportedError('stdio is inherited');
+
+  @override
+  Stream<List<int>> get stdout => const Stream<List<int>>.empty();
+
+  @override
+  Stream<List<int>> get stderr => const Stream<List<int>>.empty();
+}
+
+class _FailedExitProcess extends _RecordedProcess {
+  _FailedExitProcess() : super(424);
+
+  @override
+  Future<int> get exitCode async =>
+      throw ProcessException('fixture', const <String>[]);
 }
 
 class _ExitedProcess implements Process {

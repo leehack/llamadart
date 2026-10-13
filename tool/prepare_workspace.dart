@@ -1,5 +1,6 @@
 #!/usr/bin/env dart
 
+import 'dart:async';
 import 'dart:io';
 
 /// Standard command-line usage error (`EX_USAGE`).
@@ -214,27 +215,56 @@ typedef WorkspaceProcessStarter =
 ///
 /// On Windows, Flutter's `flutter` and `dart` are `.bat` scripts, which
 /// [Process.start] launches only with `runInShell`.
+/// [onProcessStarted] optionally records the returned process ID. It receives
+/// no command arguments and does not establish descendant ownership. The
+/// synchronous callback must return promptly.
 Future<int> runWorkspaceCommand(
   String executable,
   List<String> arguments,
   String workingDirectory, {
   bool? isWindows,
   WorkspaceProcessStarter startProcess = Process.start,
+  void Function(int processId)? onProcessStarted,
 }) async {
+  final Process process;
   try {
-    final process = await startProcess(
+    process = await startProcess(
       executable,
       arguments,
       workingDirectory: workingDirectory,
       mode: ProcessStartMode.inheritStdio,
       runInShell: isWindows ?? Platform.isWindows,
     );
-    return await process.exitCode;
   } on ProcessException catch (error) {
     stderr.writeln(
       'Could not start $executable in $workingDirectory: ${error.message}',
     );
     return 127;
+  }
+  var completed = false;
+  try {
+    onProcessStarted?.call(process.pid);
+    try {
+      final result = await process.exitCode;
+      completed = true;
+      return result;
+    } on ProcessException catch (error) {
+      stderr.writeln(
+        'Could not start $executable in $workingDirectory: ${error.message}',
+      );
+      return 127;
+    }
+  } finally {
+    if (!completed) {
+      process.kill();
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        process.kill(ProcessSignal.sigkill);
+      } on ProcessException {
+        // Preserve an exit-future failure without replacing its result.
+      }
+    }
   }
 }
 
