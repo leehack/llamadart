@@ -22,9 +22,11 @@ typedef CommandExecutor =
     });
 
 /// Executes without a shell, bounds retained output and kills timed-out children.
+///
 /// [onProcessStarted] optionally records the returned host process ID, without
 /// command arguments. This ID alone does not establish descendant ownership.
 /// The synchronous callback must return promptly; deadlines cannot preempt it.
+///
 /// [processHostEntryPath] optionally selects a literal private host entry. The
 /// caller owns its exact identity and must preserve the maintained host contract.
 Future<CommandResult> executeCommand(

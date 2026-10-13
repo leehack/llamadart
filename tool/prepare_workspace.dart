@@ -215,6 +215,7 @@ typedef WorkspaceProcessStarter =
 ///
 /// On Windows, Flutter's `flutter` and `dart` are `.bat` scripts, which
 /// [Process.start] launches only with `runInShell`.
+///
 /// [onProcessStarted] optionally records the returned process ID. It receives
 /// no command arguments and does not establish descendant ownership. The
 /// synchronous callback must return promptly.

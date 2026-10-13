@@ -18,6 +18,8 @@ from types import SimpleNamespace
 
 
 HOST = Path(__file__).resolve().parents[3] / 'tool/testing/validation/process_host.py'
+# macOS gains os.waitid in Python 3.13; older hosts use the unheld fallback.
+HELD_CHILD = all(hasattr(os, name) for name in ('waitid', 'WNOWAIT', 'CLD_EXITED'))
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX owned-group source fixtures')
@@ -59,6 +61,8 @@ spec.loader.exec_module(host)
 root = pathlib.Path(sys.argv[2])
 mode = sys.argv[3]
 source = sys.argv[4]
+if mode == 'unheld-fallback':
+    host.posix_waitid_available = lambda: False
 if mode == 'exited-leader-inherited-pipe':
     original_waitid = host.os.waitid
     def observed_completion(kind, pid, flags):
@@ -177,7 +181,7 @@ except Exception as error:
 
     def test_exited_child_does_not_bypass_stop_during_setup(self):
         self.launch('stopped-receipt', 'pass')
-        for _ in range(100):
+        for _ in range(400):
             if (self.root / 'receipt.json').exists():
                 break
             time.sleep(0.005)
@@ -190,7 +194,7 @@ except Exception as error:
 
     def test_sigterm_retains_receipt_and_retires_child(self):
         self.launch('receipt', self.sleeping_child())
-        for _ in range(100):
+        for _ in range(400):
             if (self.root / 'ready').exists():
                 break
             time.sleep(0.005)
@@ -202,6 +206,23 @@ except Exception as error:
                          {'pid': self.child['pid']})
         self.assert_child_retired()
 
+    def test_host_without_waitid_keeps_status_and_retires_descendants(self):
+        descendant = (
+            'import time; from pathlib import Path; time.sleep(0.7); '
+            f'Path({str(self.root / "leaked")!r}).write_text("leaked")'
+        )
+        child = (
+            'import subprocess,sys; '
+            f'subprocess.Popen([sys.executable,"-c",{descendant!r}], stdin=subprocess.DEVNULL, '
+            'stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); '
+            'print("leader", flush=True); sys.exit(17)'
+        )
+        self.launch('unheld-fallback', child)
+        status, output, error = self.complete()
+        self.assertEqual((status, output, error), (17, b'leader\n', b''))
+        self.assert_child_retired()
+
+    @unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
     def test_exited_leader_with_inherited_pipe_stays_reserved_until_stop(self):
         descendant = (
             'import time; from pathlib import Path; time.sleep(0.7); '
@@ -232,6 +253,7 @@ except Exception as error:
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX reservation source controls')
+@unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
 class PosixReservationTest(unittest.TestCase):
     def setUp(self):
         spec = importlib.util.spec_from_file_location('reservation_host', HOST)

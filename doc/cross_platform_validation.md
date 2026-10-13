@@ -149,7 +149,9 @@ These rows are not claims that every model works on every backend.
   commit weights, signing files, account configs, results or credentials.
 
 Use Flutter **3.47.1**, its Dart executable, and Python 3.10+ (Windows: `python`,
-other hosts: `python3`). Android uses the installed Android SDK/JDK; XCTest needs
+other hosts: `python3`). On macOS, Python before 3.13 has no `os.waitid`, so the
+command host cannot hold a finished child unreaped while it retires the child's
+process group and falls back to signalling that group directly. Android uses the installed Android SDK/JDK; XCTest needs
 Xcode, configured local signing and the owned Mac. gcloud is needed only for
 provider operations. Normal chat-app behavior is unchanged.
 The `local` command records source/runtime pins for diagnostics. Desktop JIT and

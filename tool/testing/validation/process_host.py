@@ -123,10 +123,14 @@ class PosixChildReservation:
             time.sleep(min(0.02, remaining))
 
 
-def require_posix_waitid():
-    if not all(hasattr(os, name) for name in
+def posix_waitid_available():
+    return all(hasattr(os, name) for name in
                ('waitid', 'P_PID', 'WEXITED', 'WNOHANG', 'WNOWAIT',
-                'CLD_EXITED', 'CLD_KILLED', 'CLD_DUMPED')):
+                'CLD_EXITED', 'CLD_KILLED', 'CLD_DUMPED'))
+
+
+def require_posix_waitid():
+    if not posix_waitid_available():
         raise RuntimeError('Unreaped POSIX child observation is unavailable')
 
 
@@ -177,12 +181,14 @@ def main(on_child_started=None):
                 raise ValueError('Unsafe Windows batch argument')
             quoted = ' '.join('"' + arg + '"' for arg in arguments)
             arguments = '"' + os.environ.get('COMSPEC', 'cmd.exe') + '" /d /v:off /s /c "' + quoted + '"'
-    if os.name != 'nt':
-        require_posix_waitid()
     child = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              start_new_session=os.name != 'nt')
     job_assigned = False
-    reservation = PosixChildReservation(child) if os.name != 'nt' else None
+    # os.waitid is missing on macOS before Python 3.13. Without it the
+    # returned child cannot be held unreaped, so that host keeps the earlier
+    # unheld group delivery instead of refusing every command.
+    reservation = (PosixChildReservation(child)
+                   if os.name != 'nt' and posix_waitid_available() else None)
     try:
         deadline = time.monotonic() + seconds
         if reservation is not None:
@@ -232,6 +238,11 @@ def main(on_child_started=None):
                 child.kill()
         elif reservation is not None:
             reservation.retire()
+        elif os.name != 'nt':
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         elif child.poll() is None:
             child.kill()
         if reservation is None:
