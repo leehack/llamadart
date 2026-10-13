@@ -10,24 +10,29 @@
 ///
 /// - `unsuffixed` on `cpu` and `gpu`: a bundle named without `.litertlm`. It
 ///   must generate.
-/// - `litertlm` on `gpu`: a bundle named `.litertlm`, which fails engine
-///   creation where no temp cache default exists
+/// - `litertlm` on `gpu` and `cpu`: a bundle named `.litertlm`, which fails
+///   engine creation where no temp cache default exists
 ///   (https://github.com/leehack/llamadart/issues/976). It is recorded, not
 ///   judged: it must either generate or throw a `LlamaException`.
 ///
-/// No case may leave anything in its directory. Each one logs a `started`
-/// line, which names the case a crash or a hang ended in, and then its
-/// result:
+/// No case may leave anything in its directory, and the run may leave nothing
+/// beside the original model file. Each case logs a `started` line, which
+/// names the case a crash or a hang ended in, the directory as observed
+/// before and after the load, and its result. The entries of the original
+/// file's directory follow the last case:
 ///
 /// ```text
+/// E2E read-only bundle: dir case=<id> backend=<cpu|gpu> when=<before|after> writable=<true|false> mode=<0555> entries=<json list>
 /// E2E read-only bundle: case=<id> backend=<cpu|gpu> outcome=<ok|empty_reply|typed_error:<Type>> ms=<n>
+/// E2E read-only bundle: origin when=<before|after> entries=<json list>
 /// ```
 ///
 /// macOS and Android cache in a temp directory by default, so there every
 /// case generates and the run checks the harness only.
 /// `--dart-define=LITERT_READ_ONLY_NO_TEMP_CACHE=true` runs the LiteRT-LM
-/// service with that default off, as on iOS and Linux, instead of the public
-/// backend. `LITERT_READ_ONLY_MODEL` names a local copy of the model.
+/// service with that default off, as on iOS, Linux and Windows, instead of
+/// the public backend. `LITERT_READ_ONLY_MODEL` names a local copy of the
+/// model.
 ///
 /// ```bash
 /// cd example/chat_app
@@ -69,6 +74,7 @@ const _cases = [
   (id: 'unsuffixed', backend: 'cpu', mustGenerate: true),
   (id: 'unsuffixed', backend: 'gpu', mustGenerate: true),
   (id: 'litertlm', backend: 'gpu', mustGenerate: false),
+  (id: 'litertlm', backend: 'cpu', mustGenerate: false),
 ];
 
 void main() {
@@ -112,33 +118,37 @@ void main() {
       'placement=${placements.join('+')}',
     );
 
+    final origin = model.parent;
+    final originBefore = _entryNames(origin);
     final failures = <String>[];
     for (final (:id, :backend, :mustGenerate) in _cases) {
       final label = 'case=$id backend=$backend';
       final bundle = bundles[id]!;
       final directory = Directory(p.dirname(bundle));
       void expectUntouched(String when) {
+        final writable = _canCreateFile(directory);
+        final mode = directory.statSync().mode & 0x1ff;
+        final entries = _entryNames(directory);
+        debugPrint(
+          '$_logTag dir $label when=$when writable=$writable '
+          'mode=0${mode.toRadixString(8)} entries=${jsonEncode(entries)}',
+        );
         expect(
-          _canCreateFile(directory),
+          writable,
           isFalse,
-          reason: '$label: the app can write the directory $when',
+          reason: '$label: the app can write the directory $when the load',
         );
         expect(
-          directory.statSync().mode & 0x1ff,
+          mode,
           _readOnlyMode,
-          reason: '$label: directory mode $when',
+          reason: '$label: directory mode $when the load',
         );
-        expect(
-          [
-            for (final entry in directory.listSync(followLinks: false))
-              p.basename(entry.path),
-          ],
-          [p.basename(bundle)],
-          reason: '$label: directory entries $when',
-        );
+        expect(entries, [
+          p.basename(bundle),
+        ], reason: '$label: directory entries $when the load');
       }
 
-      expectUntouched('before the load');
+      expectUntouched('before');
       final profile = await _loadProfile(backend);
       expect(profile.loadParams.liteRtLmCacheDir, isNull);
       debugPrint('$_logTag started $label');
@@ -161,10 +171,20 @@ void main() {
       if (outcome == 'empty_reply' || (mustGenerate && outcome != 'ok')) {
         failures.add('$label: $outcome');
       }
-      expectUntouched('after the load');
+      expectUntouched('after');
     }
+    final originAfter = _entryNames(origin);
+    debugPrint(
+      '$_logTag origin when=before entries=${jsonEncode(originBefore)}',
+    );
+    debugPrint('$_logTag origin when=after entries=${jsonEncode(originAfter)}');
     expect(failures, isEmpty, reason: failures.join('\n'));
-  }, timeout: const Timeout(Duration(minutes: 13)));
+    expect(
+      originAfter,
+      originBefore,
+      reason: 'entries beside the original model file',
+    );
+  }, timeout: const Timeout(Duration(minutes: 15)));
 }
 
 /// The cache default of iOS and Linux, for a host that has a temp cache
@@ -276,6 +296,11 @@ String _place(File model, String path) => using((arena) {
   if (!linked) model.copySync(path);
   return linked ? 'hard_link' : 'copy';
 });
+
+List<String> _entryNames(Directory directory) => [
+  for (final entry in directory.listSync(followLinks: false))
+    p.basename(entry.path),
+]..sort();
 
 bool _canCreateFile(Directory directory) {
   final probe = File(p.join(directory.path, 'write_probe'));
