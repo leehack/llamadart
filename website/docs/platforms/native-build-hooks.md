@@ -81,8 +81,11 @@ hooks:
 llamadart bundles, and `flutter_edge_ai_llama` uses only the llama.cpp
 runtime. When the app depends on llamadart together with either package:
 
-- An unset key, `both` and `all` leave `litert_lm` out, and the hook logs a
-  warning that names the package. `all` still bundles `stable_diffusion`.
+- An unset key, `both` and `all` leave `litert_lm` out, and the hook writes a
+  `warning: llamadart:` line that names the package to the build's error
+  output. `all` still bundles `stable_diffusion`. Flutter's `--fatal-warnings`
+  fails a build that prints the line; `llamadart_native_runtimes: [llama_cpp]`
+  selects the same runtimes without it.
 - Naming `litert_lm` keeps it next to `flutter_edge_ai_llama`.
 - Naming `litert_lm` next to `flutter_edge_ai_litertlm` fails the build before
   anything is downloaded. On iOS and macOS, depending on
