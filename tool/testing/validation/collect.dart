@@ -115,6 +115,35 @@ Future<bool> assessCollectedRun(
         : (File(
             p.join(output.path, 'native.log'),
           )..writeAsStringSync(consoleLogs.single, flush: true)).path;
+  } else if (plan.target == 'firebase-android' &&
+      !files.any(
+        (f) => const {
+          'stderr.log',
+          'xcodebuild_output.log',
+        }.contains(p.basename(f.path).toLowerCase()),
+      )) {
+    // A stderr or console capture, bound or not, always decides first; the
+    // device log is read only for runs that produced neither.
+    final logcats = [
+      for (final f in files)
+        if (p.basename(f.path) == 'logcat' && p.isWithin(source.path, f.path))
+          f,
+    ];
+    if (logcats.length == 1 &&
+        logcats.single.lengthSync() <= _logcatReadLimit) {
+      final bound = await boundLogcatNativeLog(
+        logcats.single
+            .openRead()
+            .transform(const Utf8Decoder(allowMalformed: true))
+            .transform(const LineSplitter()),
+        candidates.values.single,
+      );
+      if (bound != null) {
+        nativeLog = (File(
+          p.join(output.path, 'native.log'),
+        )..writeAsStringSync(bound, flush: true)).path;
+      }
+    }
   }
   final package = p.join(repository, 'packages/llamadart_validation');
   final resolved = await execute(
@@ -231,6 +260,105 @@ String? boundConsoleNativeLog(String console, String journal) {
     return null;
   }
   return native.map((line) => '$line\n').join();
+}
+
+/// A Firebase device log covers the whole device session; a quick run is
+/// about 15 MB. It is streamed, so this bounds time rather than memory.
+const _logcatReadLimit = 128 * 1024 * 1024;
+
+/// The retained app-process lines share the `stderr.log` limit.
+const _nativeLogLimit = 8 * 1024 * 1024;
+
+final _logcatLine = RegExp(
+  r'^\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} +(\d+) +\d+ [VDIWEF] (.*)$',
+);
+final _abslEpoch = RegExp(
+  r'\b[IWEF]\d{4} \d\d:\d\d:(\d{9,11})\.(\d{6})\s+\d+ ',
+);
+final _modelDirectory = RegExp(r'/validation/models/([0-9a-f]{64})/');
+
+/// The lines a Firebase Android run's app process logged from its test start
+/// record onward, or null unless [logcat] is bound to [journal]'s run.
+///
+/// The device log holds every process of the device session. It is bound only
+/// when the journal is an Android LiteRT GPU run, exactly one Flutter test
+/// start record names the journal's profile and every other mention of a
+/// shared validation test is that process naming that profile, every model
+/// that process loaded came from the profile's locked SHA-256 directory, and
+/// every epoch timestamp its native lines carry is at or after the journal's
+/// `started_at`. The manifest is written before the first load on the same
+/// device clock, so no skew is allowed. The journal records no later wall
+/// time, so there is no upper bound.
+Future<String?> boundLogcatNativeLog(
+  Stream<String> logcat,
+  String journal,
+) async {
+  final String profile;
+  final String model;
+  final int started;
+  try {
+    final manifest =
+        jsonDecode(
+              const LineSplitter()
+                  .convert(journal)
+                  .firstWhere((line) => line.trim().isNotEmpty),
+            )
+            as Map;
+    final declared = manifest['profile'] as Map;
+    final time = DateTime.parse(manifest['started_at'] as String);
+    profile = declared['id'] as String;
+    model = (declared['model'] as Map)['sha256'] as String;
+    started = time.microsecondsSinceEpoch;
+    if (manifest['type'] != 'manifest' ||
+        (manifest['environment'] as Map)['platform'] != 'android' ||
+        declared['runtime'] != 'litert' ||
+        declared['backend'] != 'gpu' ||
+        !time.isUtc ||
+        !RegExp(r'^[a-f0-9]{64}$').hasMatch(model)) {
+      return null;
+    }
+  } catch (_) {
+    return null;
+  }
+  const mention = 'shared validation: ';
+  final start = RegExp(
+    '^flutter *: \\d\\d:\\d\\d \\+0: $mention${RegExp.escape(profile)}\$',
+  );
+  final named = RegExp('$mention${RegExp.escape(profile)}(?:\\(|\$)');
+  String? pid;
+  var models = 0;
+  var stamps = 0;
+  var size = 0;
+  final kept = StringBuffer();
+  await for (final line in logcat) {
+    final entry = _logcatLine.firstMatch(line);
+    if (line.contains(mention)) {
+      if (entry == null) return null;
+      if (start.hasMatch(entry[2]!)) {
+        if (pid != null) return null;
+        pid = entry[1];
+      } else if (entry[1] != pid || !named.hasMatch(line)) {
+        return null;
+      }
+    }
+    if (entry == null || pid == null || entry[1] != pid) continue;
+    final directories = _modelDirectory.allMatches(line).toList();
+    if (directories.any((match) => match[1] != model)) return null;
+    if (RegExp(r'\bModel .+ loaded from ').hasMatch(line)) {
+      if (directories.isEmpty) return null;
+      models++;
+    }
+    for (final match in _abslEpoch.allMatches(line)) {
+      if (int.parse(match[1]!) * 1000000 + int.parse(match[2]!) < started) {
+        return null;
+      }
+      stamps++;
+    }
+    size += line.length + 1;
+    if (size > _nativeLogLimit) return null;
+    kept.writeln(line);
+  }
+  return pid == null || models == 0 || stamps == 0 ? null : kept.toString();
 }
 
 String _stepFailure(String step, CommandResult result, {String? detail}) {

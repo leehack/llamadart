@@ -37,7 +37,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 | Report integrity | Canonical profile-derived cases/configuration/proof requirements; missing, contradictory, duplicate and interrupted records fail closed | Paired native/public/reference aggregation and optional trend views |
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
 | Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
-| Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
+| Accelerators | GGUF native-log proof, S24 per-generation NPU dispatch evidence and Android LiteRT GPU per-load delegate-initialization evidence | LiteRT GPU per-request execution, iOS/desktop/Web LiteRT GPU proof, Pixel 10 NPU and the remaining device rotation |
 | Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls | Exact-model feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal, speech qualification and embeddings |
 
 Do not weaken semantic predicates to obtain a green run. The Gemma original-model
@@ -708,6 +708,31 @@ keep `accelerator_evidence_missing`. Trimmed iPhone 16 Pro Firebase logs in
 `packages/llamadart_validation/test/fixtures/ios_xctest/` pin this (their
 `bridge_tag` reads `fixture-bridge`); the `decision-gguf-metal` log yields
 both 29/29-layer `MTL0` loads and verifies placement.
+
+Firebase Android writes neither file. Its device `logcat` holds every process
+of the device session, so collection uses it only for a LiteRT GPU profile, and
+only when the run has no `stderr.log` or `xcodebuild_output.log` at all: such a
+capture, bound or not, still decides alone and the device log never overrides
+or supplements it. Collection streams the single `logcat` under
+`remote-results` (at most 128 MiB) and writes the app process's lines from its
+test start record onward (at most 8 MiB) to `report/native.log`. The log is
+bound to the journal only if all of these hold:
+
+- exactly one `flutter` record `00:00 +0: shared validation: <profile id>`
+  exists, and every other mention of a shared validation test is that process
+  naming that profile;
+- every `Model ... loaded from` record of that process names
+  `validation/models/<profile model sha256>/`, and there is at least one;
+- every native epoch timestamp of that process is at or after the manifest's
+  `started_at`, and there is at least one. The manifest is written before the
+  first load on the same device clock, so no skew is allowed.
+
+Two device logs, a second start record, another model directory, an earlier
+timestamp or an Android journal for any other runtime or backend leave no
+native log, and the report keeps `accelerator_evidence_missing`. The journal
+records no wall time after `started_at`, so the binding has no upper time
+bound. Trimmed Pixel 9 Pro and Galaxy S24 Firebase logs in
+`packages/llamadart_validation/test/fixtures/android_logcat/` pin this.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
 
@@ -822,8 +847,41 @@ Explicit CPU rows reject contradictory GPU diagnostics. GGUF accelerator reports
 require matching backend diagnostics plus positive native tensor offload and
 compute allocations for all three successful loads. Device presence or requested
 GPU layers alone does not qualify execution. LiteRT NPU uses the checked per-generation dispatch adapter described above.
-LiteRT GPU and browser accelerator proof still require qualified evidence
-adapters; they remain incomplete.
+
+LiteRT GPU on Android has load-time evidence only. Given a bound device log,
+the reporter verifies placement as
+`gpu_delegate_initialized_per_load_execution_unobserved` when the journal's
+LiteRT-LM tag is source-qualified (`0.18.0`), every expected load case passes
+exactly once reporting a GPU backend, and each of those loads has in the log:
+
+- one `Selected adapter` record, identical across loads, naming a recognized
+  hardware vendor with `backend=Vulkan` and an `Integrated GPU` or
+  `Discrete GPU` adapter type, and no software, CPU or basic-render name;
+- one `Created a WebGPU environment.` record;
+- as many delegate-kernel records (`Total N external tensors are used for
+  delegate inputs and outputs`) as the `num_signatures` of that load's
+  main-model `Loaded:` record, which is the last one before the adapter
+  selection. The embedding models' single-signature records follow it.
+
+Any of `GPU accelerator could not be loaded and registered`, `Some ops are not
+accelerated`, `Failed to modify graph with delegate`, `VK_ERROR_`, `Validation
+error` or `Falling back to CPU` anywhere in the log leaves placement
+unverified. Accelerator registration and XNNPACK records are ignored in both
+directions: a CPU run logs the same GPU registration.
+
+The evidence rests on two source rules read at LiteRT-LM
+`b2f686e2ed4718fb84ec398a61dd59ca0f0aff27` and LiteRT
+`26895c9fbcc25c43faa8c1a98cd1fd28951602c3`: the GPU executor requests the GPU
+accelerator alone (`runtime/executor/llm_executor_settings_utils.cc`), and
+LiteRT refuses to compile a model that leaves a node undelegated unless the CPU
+accelerator was requested (`litert/runtime/compiled_model.cc`). Re-read both
+before qualifying another LiteRT-LM tag. It therefore shows that the main model
+was fully delegated to that adapter at every load. It does not observe any
+generation request, the sampler, or the embedding models LiteRT-LM loads beside
+the main model, for which the fixture logs show no GPU delegate; a device lost
+after load is visible only through failed cases or a logged marker. iOS (Metal,
+no adapter record), OpenCL, desktop and Web LiteRT GPU and browser accelerator
+proof still require qualified evidence adapters; they remain incomplete.
 
 Normal model runs are opt-in. Model-free suite/provider tests run in CI. Before
 claiming another platform qualified, attach the exact commit, model/backend,
@@ -1175,9 +1233,12 @@ logcat. The `auto` row used a local harness profile, so its journal records a
 modified source tree. The first two Galaxy S24 Gemma 4 attempts stopped at the
 harness's 10-minute deadline for the 2.6 GB model download, before any case.
 
-No GPU row is harness-qualified: none carries the native placement evidence
-the harness requires, and the `dart run` Windows rows have no portable-bundle
-payload verification. The adapter is read from the native log on Android (`Adreno (TM)
+No GPU row was harness-qualified when collected: none carried native placement
+evidence the harness could consume, and the `dart run` Windows rows have no
+portable-bundle payload verification. An Android run collected with a bound device log can now
+carry the load-time delegate evidence described under Recovery and evidence;
+these rows were not re-graded, and the iPhone and Windows rows have no such
+evidence. The adapter is read from the native log on Android (`Adreno (TM)
 750` and `Mali-G715`, both Vulkan) and Windows (`NVIDIA L4 ... Direct3D 12 ...
 Discrete GPU`); the iPhone logs name no adapter. On Windows the GPU
 accelerator and sampler import `webgpu_dawn.dll`, the packaged process mapped

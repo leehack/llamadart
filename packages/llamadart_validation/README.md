@@ -100,3 +100,10 @@ validation launcher and redirect stderr to that path before starting it. The
 launcher uses those bytes for the same placement checks as the standalone
 reporter. Missing or invalid UTF-8 captures fail; supplying a log never waives
 failed cases, missing records or runtime identity requirements.
+
+For Firebase Android LiteRT GPU runs, remote collection binds the device
+`logcat` to the journal and the reporter verifies load-time delegate
+initialization on one hardware Vulkan adapter for every load. The placement is
+reported as `gpu_delegate_initialized_per_load_execution_unobserved`: it is not
+per-request execution proof and does not cover the embedding models. The
+predicate and its limits are in `doc/cross_platform_validation.md`.

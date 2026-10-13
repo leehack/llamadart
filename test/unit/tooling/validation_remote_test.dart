@@ -506,6 +506,336 @@ void main() {
     });
   });
 
+  group('Firebase Android device log', () {
+    const fixtures =
+        'packages/llamadart_validation/test/fixtures/android_logcat';
+    const sha =
+        '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c';
+    const mention = 'shared validation: gemma4-litert-gpu';
+    String read(String name) =>
+        File('$fixtures/$name').readAsStringSync().replaceAll('\r\n', '\n');
+    final logcat = read('pixel9pro-gemma4-litert-gpu.logcat.txt');
+    final journal = read('pixel9pro-gemma4-litert-gpu.events.jsonl');
+    final galaxy = read('galaxys24-gemma4-litert-gpu.logcat.txt');
+    final galaxyJournal = read('galaxys24-gemma4-litert-gpu.events.jsonl');
+    final cpu = read('pixel9pro-chat-litert-cpu.logcat.txt');
+
+    Future<String?> bind(String logcat, String journal) => boundLogcatNativeLog(
+      Stream.fromIterable(LineSplitter.split(logcat)),
+      journal,
+    );
+    String lines(String text, bool Function(String) keep) =>
+        LineSplitter.split(text).where(keep).map((line) => '$line\n').join();
+    String process(String text, String pid) {
+      final all = LineSplitter.split(text).toList();
+      final start = all.indexWhere(
+        (line) => line.contains(' I flutter : 00:00 +0: $mention'),
+      );
+      return all
+          .skip(start)
+          .where((line) => line.split(RegExp(' +')).elementAtOrNull(2) == pid)
+          .map((line) => '$line\n')
+          .join();
+    }
+
+    String manifest(void Function(Map<String, dynamic>) edit) {
+      final records = LineSplitter.split(journal).toList();
+      final first = jsonDecode(records.first) as Map<String, dynamic>;
+      edit(first);
+      return [jsonEncode(first), ...records.skip(1)].join('\n');
+    }
+
+    test('is the app process from its test start record onward', () async {
+      for (final (text, events, pid, adapter) in [
+        (logcat, journal, '22950', 'Mali-G715'),
+        (galaxy, galaxyJournal, '27418', 'Adreno (TM) 750'),
+      ]) {
+        final bound = await bind(text, events);
+        expect(bound, process(text, pid));
+        expect('Selected adapter: $adapter'.allMatches(bound!), hasLength(3));
+        expect(bound, isNot(contains('ActivityManager')));
+        expect(text, contains('ActivityManager'));
+        // Lines the process logged before the test started belong to no run.
+        expect(bound, isNot(contains('TestRunner: run started')));
+        expect(text, contains(' $pid '));
+        expect(text, contains('TestRunner: run started'));
+      }
+      // Another process cannot add or contradict evidence.
+      final stray =
+          '10-13 02:44:28.010   999   999 I native  : I0000 '
+          '00:00:1791884668.010531     999 environment.cc:532] Selected '
+          'adapter: SwiftShader, arch=, vendor=, backend=Vulkan, '
+          'adapterType=CPU\n'
+          '10-13 02:44:28.011   999   999 I flutter : Model x loaded from '
+          '/data/files/validation/models/${'a' * 64}/x\n'
+          '10-13 02:30:00.000   999   999 I native  : I0000 '
+          '00:00:1000000000.000000     999 engine.cc:1] old\n';
+      expect(await bind('$logcat$stray', journal), process(logcat, '22950'));
+      expect(await bind('$stray$logcat', journal), process(logcat, '22950'));
+    });
+
+    test('is unbound unless exactly one run of the profile wrote it', () async {
+      final start = LineSplitter.split(
+        logcat,
+      ).singleWhere((line) => line.endsWith('+0: $mention'));
+      final first = RegExp(r'00:00:(\d+)\.(\d{6}) ').firstMatch(logcat)!;
+      final firstStamp = DateTime.fromMicrosecondsSinceEpoch(
+        int.parse(first[1]!) * 1000000 + int.parse(first[2]!),
+        isUtc: true,
+      );
+      String at(Duration offset) => manifest(
+        (m) => m['started_at'] = firstStamp.add(offset).toIso8601String(),
+      );
+      expect(await bind(logcat, at(Duration.zero)), isNotNull);
+      for (final (name, text, events) in [
+        ('two start records', '$logcat$start\n', journal),
+        (
+          'a second process started the same test',
+          '$logcat${start.replaceFirst(' 22950 22950 ', '   999   999 ')}\n',
+          journal,
+        ),
+        (
+          'another process mentions the test',
+          '${logcat}10-13 02:45:35.431   999   999 I TestRunner: started: '
+              '$mention(com.example.MainActivityTest)\n',
+          journal,
+        ),
+        (
+          'a mention before the start record',
+          '10-13 02:37:11.000 22950 23050 I TestRunner: started: '
+              '$mention(com.example.MainActivityTest)\n$logcat',
+          journal,
+        ),
+        (
+          'the process also ran another profile',
+          '${logcat}10-13 02:45:35.431 22950 23050 I TestRunner: started: '
+              '$mention-long(com.example.MainActivityTest)\n',
+          journal,
+        ),
+        ('a mention outside a device log record', '$logcat$mention\n', journal),
+        ('no start record', lines(logcat, (line) => line != start), journal),
+        (
+          'the start record is another process',
+          logcat.replaceFirst(
+            start,
+            start.replaceFirst(' 22950 22950 ', '   999   999 '),
+          ),
+          journal,
+        ),
+        (
+          'only another process ran the test',
+          lines(
+            logcat,
+            (line) => !line.contains(mention) || line == start,
+          ).replaceFirst(
+            start,
+            start.replaceFirst(' 22950 22950 ', '   999   999 '),
+          ),
+          journal,
+        ),
+        ('another profile ran', cpu, journal),
+        (
+          'only another profile started',
+          lines(
+            logcat,
+            (line) => !line.contains(mention) || line == start,
+          ).replaceFirst(
+            start,
+            start.replaceFirst(mention, 'shared validation: other'),
+          ),
+          journal,
+        ),
+        (
+          'a model from another directory',
+          logcat.replaceAll(sha, 'a' * 64),
+          journal,
+        ),
+        (
+          'one load from another directory',
+          logcat.replaceFirst('models/$sha/', 'models/${'a' * 64}/'),
+          journal,
+        ),
+        (
+          'the journal locks another model',
+          logcat,
+          manifest(
+            (m) => ((m['profile'] as Map)['model'] as Map)['sha256'] = 'a' * 64,
+          ),
+        ),
+        (
+          'a model outside the validation cache',
+          logcat.replaceFirst('/validation/models/$sha/', '/models/'),
+          journal,
+        ),
+        (
+          'no model load',
+          lines(logcat, (line) => !line.contains(' loaded from ')),
+          journal,
+        ),
+        (
+          'a native line one microsecond early',
+          logcat,
+          at(const Duration(microseconds: 1)),
+        ),
+        ('native lines a day early', logcat, at(const Duration(days: 1))),
+        (
+          'no epoch timestamp',
+          lines(
+            logcat,
+            (line) => !RegExp(r' [IWEF]0000 00:00:\d').hasMatch(line),
+          ),
+          journal,
+        ),
+        (
+          'a local start time',
+          logcat,
+          manifest((m) => m['started_at'] = '2026-10-13T02:44:27.686436'),
+        ),
+        ('no start time', logcat, manifest((m) => m.remove('started_at'))),
+        (
+          'an iOS journal',
+          logcat,
+          manifest((m) => (m['environment'] as Map)['platform'] = 'ios'),
+        ),
+        (
+          'a CPU journal',
+          logcat,
+          manifest((m) => (m['profile'] as Map)['backend'] = 'cpu'),
+        ),
+        (
+          'a GGUF journal',
+          logcat,
+          manifest((m) => (m['profile'] as Map)['runtime'] = 'gguf'),
+        ),
+        ('no journal', logcat, ''),
+        ('no device log', '', journal),
+      ]) {
+        expect(await bind(text, events), isNull, reason: name);
+      }
+    });
+
+    test('is unbound when the process logged more than the limit', () async {
+      final native = LineSplitter.split(
+        logcat,
+      ).firstWhere((line) => line.contains('Creating LiteRT environment'));
+      Stream<String> padded(int repeats) async* {
+        yield* Stream.fromIterable(LineSplitter.split(logcat));
+        for (var i = 0; i < repeats; i++) {
+          yield native;
+        }
+      }
+
+      final perLine = native.length + 1;
+      final room = 8 * 1024 * 1024 - process(logcat, '22950').length;
+      expect(
+        await boundLogcatNativeLog(padded(room ~/ perLine), journal),
+        isNotNull,
+      );
+      expect(
+        await boundLogcatNativeLog(padded(room ~/ perLine + 1), journal),
+        isNull,
+      );
+    });
+
+    test('reaches the reporter only when no other capture exists', () async {
+      File(
+        'packages/llamadart_validation/assets/profiles/gemma4-litert-gpu.json',
+      ).copySync(p.join(bundle.path, 'profile.json'));
+      Future<String?> collect(
+        Map<String, String> files, {
+        String target = 'firebase-android',
+      }) async {
+        final run = Directory(p.join(scratch.path, 'collected-android'));
+        if (run.existsSync()) run.deleteSync(recursive: true);
+        for (final MapEntry(:key, :value) in files.entries) {
+          File(p.join(run.path, key))
+            ..createSync(recursive: true)
+            ..writeAsStringSync(value);
+        }
+        String? log;
+        try {
+          await assessCollectedRun(
+            Directory.current.path,
+            plan(target: target, profile: 'gemma4-litert-gpu'),
+            run,
+            execute: (executable, arguments, {directory, timeout}) async {
+              final index = arguments.indexOf('--native-log');
+              if (index >= 0) {
+                log = File(arguments[index + 1]).readAsStringSync();
+              }
+              return const CommandResult(0, '', '');
+            },
+          );
+        } on ValidationAssessmentFailure catch (error) {
+          expect('$error', contains('wrote no results.json'));
+        }
+        return log;
+      }
+
+      const device = 'remote-results/qa-one/caiman-35-en-portrait';
+      const pulled =
+          '$device/artifacts/sdcard/Android/data/app/files/validation/runs/'
+          'app-1/events.jsonl';
+      const stray = 'Selected adapter: stray\n';
+      final bound = process(logcat, '22950');
+      expect(await collect({'$device/logcat': logcat, pulled: journal}), bound);
+      expect(await collect({pulled: journal}), isNull);
+      for (final (name, files) in [
+        (
+          'two device logs',
+          {
+            '$device/logcat': logcat,
+            'remote-results/qa-one/other-35-en-portrait/logcat': logcat,
+            pulled: journal,
+          },
+        ),
+        (
+          'a device log of another run',
+          {'$device/logcat': logcat.replaceAll(sha, 'a' * 64), pulled: journal},
+        ),
+        (
+          'a device log outside the pulled results',
+          {'xctest-attachments-0/logcat': logcat, pulled: journal},
+        ),
+        (
+          'an unbound console capture',
+          {
+            '$device/logcat': logcat,
+            '$device/xcodebuild_output.log': stray,
+            pulled: journal,
+          },
+        ),
+        (
+          'two stderr captures',
+          {
+            '$device/logcat': logcat,
+            '$device/stderr.log': stray,
+            '$device/other/stderr.log': stray,
+            pulled: journal,
+          },
+        ),
+      ]) {
+        expect(await collect(files), isNull, reason: name);
+      }
+      expect(
+        await collect({
+          '$device/logcat': logcat,
+          pulled: journal,
+        }, target: 'firebase-ios'),
+        isNull,
+      );
+      // A stderr capture keeps deciding, exactly as without a device log.
+      expect(
+        await collect({
+          '$device/logcat': logcat,
+          '$device/stderr.log': stray,
+          pulled: journal,
+        }),
+        stray,
+      );
+    });
+  });
+
   test(
     'collected qualification binds every uploaded runtime identity',
     () async {

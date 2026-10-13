@@ -449,9 +449,12 @@ class ValidationReport {
         'Accelerator placement: ${placement['required'] != true
             ? 'not required'
             : acceleratorVerified
-            ? placement['placement'] == 'npu_participation_cpu_partitions_unknown'
-                  ? 'NPU participation verified; CPU partition coverage unknown'
-                  : 'verified native offload'
+            ? switch (placement['placement']) {
+                'npu_participation_cpu_partitions_unknown' => 'NPU participation verified; CPU partition coverage unknown',
+                'gpu_delegate_initialized_per_load_execution_unobserved' => 'GPU delegate initialization verified for every load; '
+                    'per-request execution unobserved',
+                _ => 'verified native offload',
+              }
             : 'unverified'}.</p>'
         '<p>Qualification gaps: ${_escape(qualificationGaps.isEmpty ? 'none' : qualificationGaps.join(', '))}.</p>'
         '<p>Unverified placement means accelerator execution has not been proven; '
