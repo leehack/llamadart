@@ -12,6 +12,28 @@ void validateRuntimeCoexistence({
   required Iterable<String> selectedRuntimes,
   required void Function(Uri) dependency,
 }) {
+  try {
+    _validateRuntimeCoexistence(
+      consumerRoot: consumerRoot,
+      selectedRuntimes: selectedRuntimes,
+      dependency: dependency,
+    );
+  } on FormatException {
+    throw StateError(
+      'Cannot read the native runtime dependency graph. Fix package metadata and rerun pub get/build.',
+    );
+  } on FileSystemException {
+    throw StateError(
+      'Cannot read the native runtime dependency graph. Check package metadata access and rerun pub get/build.',
+    );
+  }
+}
+
+void _validateRuntimeCoexistence({
+  required Directory? consumerRoot,
+  required Iterable<String> selectedRuntimes,
+  required void Function(Uri) dependency,
+}) {
   if (!selectedRuntimes.contains('litert_lm') || consumerRoot == null) return;
   final rootSpec = File.fromUri(consumerRoot.uri.resolve('pubspec.yaml'));
   if (!rootSpec.existsSync()) return;

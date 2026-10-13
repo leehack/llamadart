@@ -49,6 +49,19 @@ void main() {
     },
   );
 
+  test('malformed metadata errors do not print source credentials', () {
+    pubspec.writeAsStringSync(
+      'name: app\ndependencies: [ secret-token: broken',
+    );
+    try {
+      check(['litert_lm']);
+      fail('Malformed graph must fail');
+    } on StateError catch (error) {
+      expect(error.message, contains('rerun pub get'));
+      expect(error.message, isNot(contains('secret-token')));
+    }
+  });
+
   test(
     'transitive owner is detected but unused workspace packages are ignored',
     () async {
