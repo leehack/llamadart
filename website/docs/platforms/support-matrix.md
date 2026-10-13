@@ -17,7 +17,7 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Android (arm64, x64) | CPU; Vulkan experimental, device-dependent; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
-| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3 | Supported |
+| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal; on a simulator Metal returns incorrect output and `auto` uses the CPU ([#950](https://github.com/leehack/llamadart/issues/950)) | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3 | Supported |
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
@@ -55,7 +55,7 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 
 | Runtime | `auto` | `gpu` | `npu` |
 | --- | --- | --- | --- |
-| Native llama.cpp | Best GPU backend that loads, all layers; CPU without a GPU module or device, and on Android | Needs a GPU module and device; Vulkan on Android (experimental) | Throws |
+| Native llama.cpp | Best GPU backend that loads, all layers; CPU without a GPU module or device, on Android and on an iOS simulator | Needs a GPU module and device; Vulkan on Android (experimental); Metal on an iOS simulator, where its output is incorrect | Throws |
 | WebGPU (llama.cpp) | WebGPU when available, else the WebAssembly CPU runtime | Needs a WebGPU adapter and GPU layers after load; no CPU retry | Throws |
 | Native LiteRT-LM | GPU on Android, iOS and macOS; CPU on Linux and Windows | GPU backend on Android, iOS, macOS arm64, Linux x64 (Vulkan) and Windows x64 (Direct3D 12); a delegate that fails to start throws on first use | Android only |
 | LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
@@ -128,6 +128,17 @@ output and grammars, sampling controls and speculative decoding. Guides:
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
   builds for it.
+- iOS simulator: llama.cpp on Metal returns incorrect output. On an arm64
+  simulator (iPhone 17 Pro, iOS 26.5, Apple silicon host) Qwen3.5 0.8B
+  (`Q4_K_M`) generates garbage text on Metal and answers correctly on the
+  CPU, and Qwen2.5 0.5B fails on Metal the same way
+  ([#950](https://github.com/leehack/llamadart/issues/950)); the cause is
+  not known. On an iOS simulator `auto` therefore runs llama.cpp on the CPU
+  with 0 GPU layers. `GpuBackend.metal` and `ComputeDevice.gpu` still load on
+  Metal there, and the load logs a warning: use them only to check a model
+  on the simulator's Metal device. The x86_64 simulator gets the same CPU
+  default and has not been run. iOS devices and macOS are unchanged: `auto`
+  uses Metal.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).

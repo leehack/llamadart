@@ -119,10 +119,10 @@ class ModelParams {
   ///   the CPU module, whatever [gpuLayers] and [preferredBackend] say;
   ///   LiteRT-LM still rejects a [gpuLayers] other than 0 or [maxGpuLayers].
   /// - [ComputeDevice.gpu] on llama.cpp needs a GPU module and device for
-  ///   [preferredBackend] (Vulkan on Android when it is
-  ///   [GpuBackend.auto]), and on the Web an active WebGPU runtime. LiteRT-LM
-  ///   needs its GPU backend on this platform, and on the Web a WebGPU
-  ///   adapter.
+  ///   [preferredBackend] (Vulkan on Android and Metal on an iOS simulator
+  ///   when it is [GpuBackend.auto]), and on the Web an active WebGPU
+  ///   runtime. LiteRT-LM needs its GPU backend on this platform, and on the
+  ///   Web a WebGPU adapter.
   /// - [ComputeDevice.npu] is LiteRT-LM on Android only.
   ///
   /// Native LiteRT-LM starts its runtime on the first call that needs it, so
@@ -143,6 +143,12 @@ class ModelParams {
   /// backend whose module is missing loads the model on CPU with 0 GPU layers
   /// and logs a `LlamaLogLevel.warn` record through the Dart logger. With
   /// [device] set to [ComputeDevice.gpu] the load throws instead.
+  ///
+  /// On an iOS simulator llama.cpp's Metal backend returns incorrect output
+  /// (https://github.com/leehack/llamadart/issues/950), so [GpuBackend.auto]
+  /// loads the model on the CPU with 0 GPU layers there. [GpuBackend.metal]
+  /// and [ComputeDevice.gpu] still load it on Metal and log a
+  /// `LlamaLogLevel.warn` record.
   final GpuBackend preferredBackend;
 
   /// Preferred LiteRT-LM runtime backend for `.litertlm` models.

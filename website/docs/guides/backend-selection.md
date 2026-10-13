@@ -103,7 +103,7 @@ the default, keeps each runtime's own default:
 
 | Runtime | `ComputeDevice.auto` |
 | --- | --- |
-| llama.cpp native | Every layer on the best GPU backend that loads; the CPU when no GPU module or device is present, and on Android. |
+| llama.cpp native | Every layer on the best GPU backend that loads; the CPU when no GPU module or device is present, on Android and on an iOS simulator. |
 | llama.cpp Web | The bridge's default: WebGPU when the browser has it, otherwise the WebAssembly CPU runtime. |
 | LiteRT-LM native | GPU on Android, iOS and macOS; CPU on Linux and Windows. |
 | LiteRT-LM Web | WebGPU, without a probe. |
@@ -125,6 +125,10 @@ never falls back to another device:
   devices; keep `auto` or `cpu` there unless you have validated your target
   devices
   ([known limitations](../platforms/support-matrix#known-limitations)). On
+  an iOS simulator it uses Metal, as `GpuBackend.metal` does, and Metal
+  returns incorrect output there
+  ([#950](https://github.com/leehack/llamadart/issues/950)); keep `auto` or
+  `cpu` on a simulator. On
   the Web it needs a WebGPU adapter and a bridge that loads GPU layers. On
   LiteRT-LM it needs the GPU backend: Linux arm64 and macOS x64 have none.
 - `npu` is LiteRT-LM on Android only.
