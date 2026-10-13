@@ -2947,6 +2947,78 @@ void main() {
         expect(simulatorWarnings(), isEmpty);
       });
 
+      test('auto lists only the CPU device for the load', () {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        final service = LlamaCppService(
+          isIosSimulator: true,
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        );
+        addTearDown(service.dispose);
+
+        service.loadModel(modelPath, const ModelParams(contextSize: 512));
+
+        final cpuDevices = _invokePrivateForTesting<List<ggml_backend_dev_t>?>(
+          service,
+          '_resolvePreferredDevices',
+          [GpuBackend.cpu],
+        );
+        expect(cpuDevices, hasLength(1));
+        expect(recorder.loadDevices, [
+          [cpuDevices!.single.address],
+        ]);
+      });
+
+      test('gpu with auto resolves to Metal, or throws naming it', () {
+        final service = LlamaCppService(isIosSimulator: true);
+        addTearDown(service.dispose);
+        const params = ModelParams(contextSize: 512, device: ComputeDevice.gpu);
+
+        try {
+          service.loadModel(modelPath, params);
+        } on LlamaUnsupportedException catch (error) {
+          expect(
+            error.message,
+            contains('ComputeDevice.gpu needs the metal backend'),
+          );
+          expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+          return;
+        }
+        expect(service.getActiveBackendName(), 'Metal');
+        expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+        expect(simulatorWarnings(), hasLength(1));
+      });
+
+      test('gpu with auto names Metal when no device is a GPU', () {
+        final service = LlamaCppService(
+          isIosSimulator: true,
+          deviceTypes: (_) => [
+            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+          ],
+        );
+        addTearDown(service.dispose);
+
+        expect(
+          () => service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('ComputeDevice.gpu needs the metal backend'),
+                isNot(contains('needs the cpu backend')),
+              ),
+            ),
+          ),
+        );
+        expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+        expect(simulatorWarnings(), isEmpty);
+      });
+
       test('auto keeps its GPU layers off the simulator', () {
         final service = LlamaCppService(
           isIosSimulator: false,
