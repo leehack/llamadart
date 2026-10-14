@@ -109,8 +109,10 @@ builds and launches on x86_64. The build hook leaves LiteRT-LM out of the
 x86_64 slice and prints a `warning: llamadart:` build warning. On x86_64,
 loading a `.litertlm` model or LiteRT-LM speech recognition throws
 `LlamaUnsupportedException`. A Dart program on x86_64 macOS gets the same
-exception. The build fails only when `llamadart_native_runtimes` names
-`litert_lm` in its `macos-x86_64` entry.
+exception. The build fails only when a `macos-x86_64` or `macos-x64` entry in
+`llamadart_native_runtimes` names `litert_lm`. The same holds for an app
+without the companion that uses the
+[build phase](#flutter-macos-litert-lm-build-phase).
 
 Building for arm64 only is optional. It only silences the
 `ignoring file ... required architecture 'x86_64'` linker warnings for the
@@ -189,9 +191,14 @@ bash "$root/tool/macos_litert_lm_prepare_app.sh" "$TARGET_BUILD_DIR/$WRAPPER_NAM
 The script finds the resolved `llamadart` package through
 `.dart_tool/package_config.json`, so it works for hosted, path and git
 dependencies and in pub workspaces, and runs that package's
-`tool/macos_litert_lm_prepare_app.sh`. That script copies the libraries for
-the build Mac's architecture only into `Contents/Frameworks/LiteRtLmRuntime`
-and signs them with the build's signing identity. Once the companion embeds
+`tool/macos_litert_lm_prepare_app.sh`. That script copies the arm64 libraries
+into `Contents/Frameworks/LiteRtLmRuntime` and signs them with the build's
+signing identity. It picks the architecture from Xcode's `ARCHS`, or from the
+build Mac when `ARCHS` is unset, so a universal build on an Intel Mac gets the
+arm64 runtime. A build for x86_64 only, such as a Debug build on an Intel Mac,
+gets a `warning:` line naming
+[litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)
+and no LiteRT-LM runtime. Once the companion embeds
 the runtime, the script detects it and copies nothing, so the phase can be
 removed.
 

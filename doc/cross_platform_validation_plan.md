@@ -235,7 +235,7 @@ or selectable backend is not inference qualification.
 | iOS arm64 simulator | CPU, available Metal path separately labelled simulator | CPU, available GPU path separately labelled simulator | Owned Mac; does not qualify physical-device drivers or memory |
 | iOS x86_64 simulator | CPU / available Metal | Negative packaging contract: no LiteRT artifact | Intel host if available, otherwise NOT_RUN |
 | macOS arm64 | CPU, Metal | CPU, GPU | Owned Mac if matching architecture; record actual hardware |
-| macOS x64 | CPU, available Metal | CPU; GPU unsupported by documented x64 bundle | Available free runner or Intel host; GPU gaps explicit |
+| macOS x64 | CPU, available Metal | Negative contract: no LiteRT-LM artifact from `0.18.0-1` ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)); loads throw `LlamaUnsupportedException` | Available free runner or Intel host; GPU gaps explicit |
 | Linux x64 | CPU; CUDA, Vulkan, HIP/BLAS targeted | CPU; explicit GPU through Vulkan with `0.17.0-5` | Free CI CPU; GPU requires a compatible driver and suite execution proof |
 | Linux arm64 | CPU; Vulkan/BLAS targeted | CPU | Available arm64 runner/hardware; no x64 emulation as arm64 proof |
 | Windows x64 | CPU; CUDA, Vulkan/BLAS targeted | CPU; explicit GPU through D3D12 with `0.17.0-5` | Free CI CPU, accessible Windows hardware; GGUF CUDA requires actual NVIDIA GPU |

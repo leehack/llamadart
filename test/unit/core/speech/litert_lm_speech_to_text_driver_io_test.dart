@@ -1,10 +1,11 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
 import 'dart:typed_data';
 
-import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver_io.dart';
 import 'package:test/test.dart';
@@ -48,6 +49,36 @@ void main() {
       }
     },
   );
+
+  group('probe on macOS x86_64', () {
+    setUp(() => debugLiteRtLmAbiOverride = Abi.macosX64);
+    tearDown(() => debugLiteRtLmAbiOverride = null);
+
+    test('reports the typed unsupported reason', () async {
+      final support = await createLiteRtLmSpeechToTextDriver().probeSupport();
+
+      expect(support.isSupported, isFalse);
+      expect(
+        support.unsupportedReason,
+        allOf(
+          contains('LiteRT-LM is not available on macOS x86_64'),
+          contains('leehack/litert-lm-native#72'),
+        ),
+      );
+    });
+
+    test('probes an explicit libraryPath', () async {
+      final support = await createLiteRtLmSpeechToTextDriver().probeSupport(
+        libraryPath: _missingLibrary,
+      );
+
+      expect(support.isSupported, isFalse);
+      expect(
+        support.unsupportedReason,
+        isNot(contains('LiteRT-LM is not available on macOS x86_64')),
+      );
+    });
+  });
 
   test('skips only LiteRT-LM incomplete BPE ASR windows', () {
     final session = _FakeAsrSession(<Object>[

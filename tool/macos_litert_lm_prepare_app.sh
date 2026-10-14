@@ -6,15 +6,23 @@ APP_PATH="${1:?usage: $0 /path/to/App.app}"
 FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
 RUNTIME_DIR="$FRAMEWORKS_DIR/LiteRtLmRuntime"
 
+# The arm64 slice of a universal build needs the runtime even on an Intel
+# build Mac, so Xcode's ARCHS decides before the host does.
 resolve_litert_arch() {
-  local arch="${LLAMADART_LITERT_LM_ARCH:-$(uname -m)}"
+  local arch="${LLAMADART_LITERT_LM_ARCH:-}"
+  if [[ -z "$arch" && -n "${ARCHS:-}" ]]; then
+    case " $ARCHS " in
+      *" arm64 "*) arch="arm64" ;;
+      *) arch="$ARCHS" ;;
+    esac
+  fi
+  arch="${arch:-$(uname -m)}"
   case "$arch" in
     arm64 | aarch64)
       echo "arm64"
       ;;
     x64 | x86_64 | amd64)
-      echo "LiteRT-LM is not available on macOS x86_64: litert-lm-native publishes arm64-only macOS runtimes (leehack/litert-lm-native#72)." >&2
-      exit 2
+      echo "x86_64"
       ;;
     *)
       echo "Unsupported LiteRT-LM macOS architecture: $arch" >&2
@@ -24,6 +32,11 @@ resolve_litert_arch() {
 }
 
 LITERT_ARCH="$(resolve_litert_arch)"
+
+if [[ "$LITERT_ARCH" == x86_64 ]]; then
+  echo "warning: LiteRT-LM is not available on macOS x86_64: litert-lm-native publishes arm64-only macOS runtimes (leehack/litert-lm-native#72). This x86_64-only build gets no LiteRT-LM runtime." >&2
+  exit 0
+fi
 
 required_libraries() {
   case "$LITERT_ARCH" in

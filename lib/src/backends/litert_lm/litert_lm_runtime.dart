@@ -139,6 +139,13 @@ LlamaUnsupportedException? liteRtLmUnsupportedAbiException(Abi abi) {
   );
 }
 
+/// Test-only ABI that the macOS x86_64 LiteRT-LM gate checks instead of
+/// [Abi.current].
+Abi? debugLiteRtLmAbiOverride;
+
+/// The ABI the macOS x86_64 LiteRT-LM gate checks.
+Abi liteRtLmGateAbi() => debugLiteRtLmAbiOverride ?? Abi.current();
+
 /// Internal helper used by the LiteRT-LM runtime to locate extracted macOS
 /// native-assets cache directories.
 List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
@@ -1502,7 +1509,7 @@ class LiteRtLmRuntimeClient {
     }
     final libraryPathOverride = _libraryPathOverride?.trim();
     if (libraryPathOverride == null || libraryPathOverride.isEmpty) {
-      final unsupported = liteRtLmUnsupportedAbiException(Abi.current());
+      final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
       if (unsupported != null) {
         throw unsupported;
       }

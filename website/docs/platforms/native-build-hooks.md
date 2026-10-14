@@ -78,6 +78,16 @@ hooks:
 - Selecting `litert_lm` by name for a target without a LiteRT-LM runtime, such
   as the iOS x86_64 simulator or Windows arm64, fails the build. When it is only
   implied by the default, `both` or `all`, the hook drops it with a warning.
+- macOS x86_64 is the exception, because a universal build runs the hook for
+  x86_64 too
+  ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+  Only a `macos-x86_64` or `macos-x64` entry that names `litert_lm` fails the
+  build. A `runtimes` or `macos` entry that names it gets a warning and no
+  LiteRT-LM in the x86_64 slice. `[litert_lm]` alone leaves that slice with no
+  native assets, and loading a `.litertlm` model there throws
+  `LlamaUnsupportedException`. `LLAMADART_LITERT_LM_LIB_DIR` does not lift
+  that error on x86_64; a `libraryPath` passed to `LiteRtLmRuntimeClient`
+  does.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 
@@ -146,7 +156,8 @@ hooks:
 - `all` only implies its runtimes, so a target without a LiteRT-LM or
   `stable_diffusion` build skips that runtime with a warning.
   `[llama_cpp, litert_lm, stable_diffusion]` names `litert_lm` and fails the
-  build on a target without it.
+  build on a target without it, except macOS x86_64, which only warns unless a
+  `macos-x86_64` or `macos-x64` entry names it.
 - In a Flutter iOS or macOS app, `all` includes `stable_diffusion` only when
   the `llamadart_stable_diffusion_flutter` companion is a dependency. Without
   it the hook leaves the runtime out with a build warning that names the

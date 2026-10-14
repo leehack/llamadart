@@ -245,6 +245,63 @@ void main() {
     );
   });
 
+  group('macOS x86_64 load gate', () {
+    void runOn(Abi abi) {
+      debugLiteRtLmAbiOverride = abi;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+    }
+
+    test('throws the typed error before looking for a runtime', () {
+      runOn(Abi.macosX64);
+      final client = LiteRtLmRuntimeClient();
+      addTearDown(client.dispose);
+
+      expect(
+        () => client.bundleCapabilities('/missing/model.litertlm'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('LiteRT-LM is not available on macOS x86_64'),
+          ),
+        ),
+      );
+    });
+
+    test('lets an explicit libraryPath through', () {
+      runOn(Abi.macosX64);
+      final client = LiteRtLmRuntimeClient(
+        libraryPath: '/missing/libLiteRtLm.dylib',
+      );
+      addTearDown(client.dispose);
+
+      expect(
+        () => client.bundleCapabilities('/missing/model.litertlm'),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.toString(),
+            'message',
+            contains('/missing/libLiteRtLm.dylib'),
+          ),
+        ),
+      );
+    });
+
+    test('does not stop macOS arm64', () {
+      runOn(Abi.macosArm64);
+      final client = LiteRtLmRuntimeClient();
+      addTearDown(client.dispose);
+
+      Object? error;
+      try {
+        client.bundleCapabilities('/missing/model.litertlm');
+      } on Object catch (caught) {
+        error = caught;
+      }
+      expect(error, isNot(isA<LlamaUnsupportedException>()));
+    });
+  });
+
   test('macOS LiteRT-LM cache lookup follows the current runtime ABI', () {
     expect(
       liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosArm64),
