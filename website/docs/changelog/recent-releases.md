@@ -24,6 +24,9 @@ For canonical full release notes, use:
 - Document that native prompt-state restore matches fresh evaluation within
   numerical tolerance, not bit-exactly, under automatic prompt batching
   ([#1003](https://github.com/leehack/llamadart/issues/1003)).
+- The default llama.cpp runtime is now `leehack/llamadart-native@v0.6.0-3`,
+  whose Apple frameworks declare their minimum OS version (iOS 16.4, macOS
+  13.3) ([#1037](https://github.com/leehack/llamadart/issues/1037)).
 
 ## 0.12.1
 
