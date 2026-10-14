@@ -2459,6 +2459,11 @@ class LlamaEngine {
   /// continuation may differ from evaluating the full prompt because the
   /// evaluation batch shape changes.
   ///
+  /// With automatic prompt batching, restore is equal within numerical
+  /// tolerance, not bit-exact: next-token probabilities may differ slightly
+  /// and greedy continuations can change, as with any llama.cpp batch-shape
+  /// change.
+  ///
   /// File format is whatever llama.cpp emits — opaque, not portable
   /// across builds, and tied to the same model used at save time.
   ///

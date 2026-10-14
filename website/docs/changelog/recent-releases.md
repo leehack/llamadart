@@ -21,6 +21,9 @@ For canonical full release notes, use:
   `liteRtLmCacheDir` is unset, as in an iOS app bundle: the GPU engine now
   reuses caches already there or runs without them
   ([#976](https://github.com/leehack/llamadart/issues/976)).
+- Document that native prompt-state restore matches fresh evaluation within
+  numerical tolerance, not bit-exactly, under automatic prompt batching
+  ([#1003](https://github.com/leehack/llamadart/issues/1003)).
 
 ## 0.12.1
 
