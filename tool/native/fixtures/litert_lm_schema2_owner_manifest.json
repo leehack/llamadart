@@ -212,30 +212,6 @@
     {
       "accelerators": [],
       "arch": "x64",
-      "fileName": "libCLiteRTLM_mac.dylib",
-      "path": "bin/macos/x64/libCLiteRTLM_mac.dylib",
-      "platform": "macos",
-      "releaseTag": "v0.16.0-3",
-      "runtime": "native",
-      "sha256": "4be2cc7c109fa31dfac73e2a2d3467ca9e18ecf31574cc655c65a2c3dfb3c47b",
-      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
-      "upstreamTag": "v0.16.0"
-    },
-    {
-      "accelerators": [],
-      "arch": "x64",
-      "fileName": "libLiteRtLm.dylib",
-      "path": "bin/macos/x64/libLiteRtLm.dylib",
-      "platform": "macos",
-      "releaseTag": "v0.16.0-3",
-      "runtime": "native",
-      "sha256": "d937abc3ad2162f13f9f02f9f65ef18d25b7259773c6a174816fd5146d7514cb",
-      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
-      "upstreamTag": "v0.16.0"
-    },
-    {
-      "accelerators": [],
-      "arch": "x64",
       "fileName": "LiteRtLm.dll",
       "path": "bin/windows/x64/LiteRtLm.dll",
       "platform": "windows",
@@ -426,16 +402,6 @@
       ],
       "platform": "macos",
       "releaseAsset": "litert-lm-native-runtime-macos-arm64-v0.16.0-3.tar.gz"
-    },
-    {
-      "accelerators": [],
-      "arch": "x64",
-      "artifactPaths": [
-        "bin/macos/x64/libCLiteRTLM_mac.dylib",
-        "bin/macos/x64/libLiteRtLm.dylib"
-      ],
-      "platform": "macos",
-      "releaseAsset": "litert-lm-native-runtime-macos-x64-v0.16.0-3.tar.gz"
     },
     {
       "accelerators": [],

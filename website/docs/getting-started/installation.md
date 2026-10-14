@@ -67,9 +67,8 @@ companion's `Package.swift` is the one this core release expects; any other
 companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
 
-The companion's macOS `LiteRt`, WebGPU accelerator and sampler, and Dawn
-libraries are published for arm64 only, so a universal
-`flutter build macos` prints
+The companion's macOS XCFrameworks are published for arm64 only, so a
+universal `flutter build macos` prints
 `ld: warning: ignoring file ... found architecture 'arm64', required
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
@@ -100,30 +99,32 @@ runtime's three categories itself. Copy the categories and codes from
 
 ### Intel Macs
 
-LiteRT-LM `v0.18.0` does not load on x86_64 macOS ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)): its x86_64
-`LiteRtLm` binary needs Gemma constraint-provider symbols that no x86_64
-library provides. A Flutter macOS app that depends on
-`llamadart_litert_lm_flutter` links that binary, so the whole app, llama.cpp
-included, dies at launch on an Intel Mac or under Rosetta with
-`symbol not found in flat namespace '_LiteRtLmGemmaModelConstraintProvider_Destroy'`.
-A Dart program, or a Flutter app without the companion, starts but cannot load
-LiteRT-LM on x86_64: the hook's x86_64 `libLiteRtLm.dylib` fails `dlopen`
-with the same message on first LiteRT-LM use.
+LiteRT-LM is not available on x86_64 macOS, on an Intel Mac or under Rosetta.
+From `v0.18.0-1`, `litert-lm-native` publishes macOS runtimes for arm64 only
+([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+llama.cpp runs on both architectures.
 
-Until that is fixed, build Flutter macOS apps that use the companion for arm64
-only. Add this line to `macos/Runner/Configs/Release.xcconfig`, which the
-Release and Profile configurations use:
+A universal Flutter macOS app that depends on `llamadart_litert_lm_flutter`
+builds and launches on x86_64. The build hook leaves LiteRT-LM out of the
+x86_64 slice and prints a `warning: llamadart:` build warning. On x86_64,
+loading a `.litertlm` model or LiteRT-LM speech recognition throws
+`LlamaUnsupportedException`. A Dart program on x86_64 macOS gets the same
+exception. The build fails only when `llamadart_native_runtimes` names
+`litert_lm` in its `macos-x86_64` entry.
+
+Building for arm64 only is optional. It only silences the
+`ignoring file ... required architecture 'x86_64'` linker warnings for the
+arm64-only LiteRT-LM XCFrameworks. To do it, add this line to
+`macos/Runner/Configs/Release.xcconfig`, which the Release and Profile
+configurations use:
 
 ```
 EXCLUDED_ARCHS = x86_64
 ```
 
-Flutter passes it to `xcodebuild`, so the executable, `App.framework` and the
-Swift packages build for arm64 only, and an Intel Mac refuses to open the app
-instead of crashing it. Debug builds already target only the build Mac's
-architecture. For a one-off build, `FLUTTER_MACOS_ARM64_ONLY=true flutter build
-macos` has the same effect; `flutter config --enable-macos-arm64-only` turns it
-on for every project on the machine.
+An Intel Mac then refuses to open the app. Debug builds already target only
+the build Mac's architecture. For a one-off build,
+`FLUTTER_MACOS_ARM64_ONLY=true flutter build macos` has the same effect.
 
 ### Flutter macOS LiteRT-LM build phase
 

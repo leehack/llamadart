@@ -213,15 +213,45 @@ void main() {
     expect(result.metrics, same(metrics));
   });
 
+  test('macOS arm64 is a supported LiteRT-LM ABI', () {
+    expect(liteRtLmUnsupportedAbiException(Abi.macosArm64), isNull);
+    expect(liteRtLmPrimaryLibraryForAbi(Abi.macosArm64), 'libLiteRtLm.dylib');
+    expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), isNotEmpty);
+    for (final abi in const [
+      Abi.linuxArm64,
+      Abi.linuxX64,
+      Abi.windowsX64,
+      Abi.androidArm64,
+      Abi.iosArm64,
+    ]) {
+      expect(liteRtLmUnsupportedAbiException(abi), isNull, reason: '$abi');
+    }
+  });
+
+  test('macOS x64 reports a typed LiteRT-LM unsupported error', () {
+    expect(
+      liteRtLmUnsupportedAbiException(Abi.macosX64),
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('LiteRT-LM is not available on macOS x86_64'),
+          contains('arm64-only macOS runtimes'),
+          contains('leehack/litert-lm-native#72'),
+          contains('not under Rosetta'),
+          contains('llama.cpp backend'),
+        ),
+      ),
+    );
+  });
+
   test('macOS LiteRT-LM cache lookup follows the current runtime ABI', () {
     expect(
       liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosArm64),
       const <String>['macos_arm64', 'macos/arm64'],
     );
-    expect(
-      liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosX64),
-      const <String>['macos_x64', 'macos/x64'],
-    );
+    expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosX64), isEmpty);
+    expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.macosX64), isEmpty);
     expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
   });
 
@@ -407,10 +437,9 @@ void main() {
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     ]);
-    expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), const <String>[
-      'libCLiteRTLM_mac.dylib',
-      'libLiteRtLm.dylib',
-    ]);
+    expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), isEmpty);
+    expect(liteRtLmRequiredLibrariesForAbi(Abi.macosX64), isEmpty);
+    expect(liteRtLmPrimaryLibraryForAbi(Abi.macosX64), isNull);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
   });
 
@@ -469,7 +498,6 @@ void main() {
   test('companion libraries are the required list minus the primary', () {
     for (final abi in const [
       Abi.macosArm64,
-      Abi.macosX64,
       Abi.linuxArm64,
       Abi.linuxX64,
       Abi.windowsX64,
@@ -498,10 +526,7 @@ void main() {
       liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
       _macOsFrameworkFiles,
     );
-    expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64), const <String>[
-      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-    ]);
+    expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64), isEmpty);
     expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.linuxX64), isEmpty);
   });
 
@@ -519,13 +544,7 @@ void main() {
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     ]);
-    expect(
-      liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64),
-      const <String>[
-        'LiteRtLm.framework/Versions/A/LiteRtLm',
-        'libCLiteRTLM_mac.dylib',
-      ],
-    );
+    expect(liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64), isEmpty);
     expect(liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.linuxX64), isEmpty);
   });
 
@@ -568,20 +587,16 @@ void main() {
     }
     expect(liteRtLmIsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64), isTrue);
 
-    final x64Dir = Directory('${root.path}/x64')..createSync();
-
-    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
-
-    File('${x64Dir.path}/libLiteRtLm.dylib').createSync();
-
-    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
-
-    for (final library in liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64)) {
-      File('${x64Dir.path}/$library').createSync();
-    }
-
-    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isTrue);
-    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.linuxX64), isFalse);
+    // A complete arm64 cache is never an x64 cache: no x64 runtime exists.
+    expect(
+      liteRtLmIsMacOsCacheDirectoryForAbi(arm64Dir, Abi.macosX64),
+      isFalse,
+    );
+    expect(liteRtLmIsCacheDirectoryForAbi(arm64Dir, Abi.macosX64), isFalse);
+    expect(
+      liteRtLmIsMacOsCacheDirectoryForAbi(arm64Dir, Abi.linuxX64),
+      isFalse,
+    );
   });
 
   test('LiteRT-LM cache validation rejects partial desktop caches', () {

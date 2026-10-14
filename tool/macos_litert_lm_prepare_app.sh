@@ -13,7 +13,8 @@ resolve_litert_arch() {
       echo "arm64"
       ;;
     x64 | x86_64 | amd64)
-      echo "x64"
+      echo "LiteRT-LM is not available on macOS x86_64: litert-lm-native publishes arm64-only macOS runtimes (leehack/litert-lm-native#72)." >&2
+      exit 2
       ;;
     *)
       echo "Unsupported LiteRT-LM macOS architecture: $arch" >&2
@@ -38,12 +39,6 @@ required_libraries() {
         "libLiteRtTopKWebGpuSampler.dylib" \
         "libLiteRtWebGpuAccelerator.dylib" \
         "libwebgpu_dawn.dylib"
-      ;;
-    x64)
-      printf '%s
-' \
-        "libCLiteRTLM_mac.dylib" \
-        "libLiteRtLm.dylib"
       ;;
   esac
 }
@@ -87,12 +82,6 @@ required_native_spm_files() {
         "libLiteRtWebGpuAccelerator.dylib" \
         "libwebgpu_dawn.dylib"
       ;;
-    x64)
-      printf '%s
-' \
-        "LiteRtLm.framework/Versions/A/LiteRtLm" \
-        "libCLiteRTLM_mac.dylib"
-      ;;
   esac
 }
 
@@ -118,8 +107,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.18.0/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.18.0/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.18.0-1/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.18.0-1/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do

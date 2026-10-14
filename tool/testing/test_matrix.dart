@@ -1104,12 +1104,15 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'macos-x64-runtime-smoke',
     tier: 'platform',
     mode: 'local/device',
-    covers: 'macOS x64 llama.cpp CPU/Metal and LiteRT-LM CPU/GPU runtime',
+    covers:
+        'macOS x64 llama.cpp CPU/Metal runtime; LiteRT-LM has no x64 runtime '
+        'and must throw LlamaUnsupportedException',
     command:
-        'On Intel macOS: dart test -p vm -j 1 --exclude-tags local-only; '
+        'On Intel macOS or under Rosetta: dart test -p vm -j 1 '
+        '--exclude-tags local-only; '
         'dart run tool/gguf_chat_features_smoke.dart <model.gguf> metal; '
-        'dart run tool/litert_lm_chat_features_smoke.dart '
-        '<model.litertlm> gpu',
+        'launch a universal Flutter macOS build with arch -x86_64 and select '
+        'LiteRT-LM',
     useWhen: 'macOS x64 native runtime, bundle, or release changes.',
   ),
   TestMatrixRow(

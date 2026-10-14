@@ -9,17 +9,19 @@ LiteRT-LM Apple XCFrameworks through SwiftPM instead of relying on the core
 package's native-assets fallback. On macOS it also links the `LiteRt`, WebGPU
 accelerator and sampler, and Dawn XCFrameworks, so the app bundle holds the
 complete runtime and a sandboxed or distributed app loads LiteRT-LM on CPU and
-GPU. Those macOS libraries are arm64 only; a universal build prints an
+GPU. Every macOS XCFramework is arm64 only; a universal build prints an
 `ignoring file ... required architecture 'x86_64'` linker warning for each.
 The Metal accelerator and sampler stay iOS-only: their `v0.18.0` macOS slices
 carry an invalid code signature, and the macOS GPU path uses the WebGPU
 accelerator.
 
-On Intel Macs the `v0.18.0` x86_64 `LiteRtLm` binary cannot load
-([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)): an app that depends on this package dies at launch with
-`symbol not found in flat namespace '_LiteRtLmGemmaModelConstraintProvider_Destroy'`.
-Build the macOS app for arm64 only, for example with `EXCLUDED_ARCHS = x86_64`
-in `macos/Runner/Configs/Release.xcconfig`.
+LiteRT-LM is not available on x86_64 macOS: `litert-lm-native` publishes
+arm64-only macOS runtimes
+([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+A universal app still launches on an Intel Mac or under Rosetta, where
+LiteRT-LM throws `LlamaUnsupportedException`. Building the macOS app for arm64
+only, for example with `EXCLUDED_ARCHS = x86_64`, just silences the linker
+warnings.
 The core uses this macOS runtime only when it recognizes this package's
 manifest; with an older companion it keeps LiteRT-LM in its hook cache and
 warns.
@@ -36,7 +38,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.0`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.0-1`.
 Pair companion `0.0.15` with core `0.12.1`, and `0.0.14` with core `0.12.0`;
 companion `0.0.13` retains `v0.17.0-8` for core `0.11.1` and `0.11.0`.
 

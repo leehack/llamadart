@@ -623,7 +623,7 @@ void main() {
   _expectList(
     'macOS x64 libraries',
     liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64),
-    <String>['libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'],
+    <String>[],
   );
   _expectList(
     'macOS arm64 frameworks',
@@ -636,10 +636,7 @@ void main() {
   _expectList(
     'macOS x64 frameworks',
     liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64),
-    <String>[
-      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-    ],
+    <String>[],
   );
   _expectList(
     'macOS arm64 native SPM files',
@@ -652,10 +649,7 @@ void main() {
   _expectList(
     'macOS x64 native SPM files',
     liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64),
-    <String>[
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libCLiteRTLM_mac.dylib',
-    ],
+    <String>[],
   );
 }
 """,
@@ -956,7 +950,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(owner_fixture.read_bytes()).hexdigest(),
-            "fdd6cdf7304de550f789c41f3032792dc0a92a0d150f64585d8a721a90406c18",
+            "a0d29aa83dc11a565703a395accfbd4a5ca686305c6607dc3807d417a4952bed",
         )
         manifest = json.loads(owner_fixture.read_text(encoding="utf-8"))
         tag = manifest["release"]["tag"]
@@ -971,7 +965,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(owner_release_fixture.read_bytes()).hexdigest(),
-            "e2d199613270b62ad51c6b89fdb5375979822d8b5affd96e00c51afe59296002",
+            "a5352536af34e1a4076c05261766ea85e532eb174be3fee6cd35deb3eb94d8e6",
         )
         release = json.loads(owner_release_fixture.read_text(encoding="utf-8"))
         release_assets = release["assets"]
@@ -1521,7 +1515,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(
-                ReleaseError, "exactly 9 finalized platform bundles; found 8"
+                ReleaseError, "exactly 8 finalized platform bundles; found 7"
             ):
                 validate_litert_lm_release_manifest(
                     release,
@@ -1548,6 +1542,49 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=required_bundles,
                 )
             manifest["platforms"][1] = original_second_platform
+
+            manifest["platforms"] = [
+                *original_platforms,
+                {
+                    "accelerators": [],
+                    "arch": "x64",
+                    "artifactPaths": [
+                        "bin/macos/x64/libCLiteRTLM_mac.dylib",
+                        "bin/macos/x64/libLiteRtLm.dylib",
+                    ],
+                    "platform": "macos",
+                    "releaseAsset": f"litert-lm-native-runtime-macos-x64-{tag}.tar.gz",
+                },
+            ]
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(
+                ReleaseError, "exactly 8 finalized platform bundles; found 9"
+            ):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["platforms"] = original_platforms
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(
+                ReleaseError, "finalized 8-platform schema-2 contract"
+            ):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=[*required_bundles, "macos-x64"],
+                )
 
             del manifest["capabilities"]["streamChunkAccessors"]
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
@@ -2493,6 +2530,37 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     release_json_dir=temp,
                     required_bundles=["linux-x64"],
                 )
+
+        x64_asset = f"litert-lm-native-runtime-macos-x64-{tag}.tar.gz"
+        without_x64 = {
+            **legacy_identity,
+            "assets": {
+                name: digest
+                for name, digest in legacy_identity["assets"].items()
+                if name != x64_asset
+            },
+        }
+        release["assets"] = [
+            {"name": name, "digest": digest}
+            for name, digest in without_x64["assets"].items()
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = (
+                Path(temp)
+                / f"leehack__litert-lm-native__{tag}__manifest.json"
+            )
+            fixture.write_bytes(owner_fixture.read_bytes())
+            with patch.dict(pins.LEGACY_SCHEMA1_RELEASES, {tag: without_x64}):
+                with self.assertRaisesRegex(
+                    ReleaseError, "schema-1 nine-platform contract; missing macos-x64"
+                ):
+                    validate_litert_lm_release_manifest(
+                        release,
+                        repo="leehack/litert-lm-native",
+                        tag=tag,
+                        release_json_dir=temp,
+                        required_bundles=["linux-x64"],
+                    )
 
         future_tag = "v99.0.0-native.1"
         future_release = {

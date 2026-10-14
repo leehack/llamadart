@@ -29,10 +29,11 @@ void requireDesktopBackendModules(Directory bundle, {Abi? abi}) {
   }
 }
 
-/// Null keeps the supported GGUF-only Windows arm64 bundle buildable.
+/// Null keeps the supported GGUF-only Windows arm64 and macOS x64 bundles
+/// buildable; litert-lm-native publishes arm64-only macOS runtimes.
 String? standaloneLiteRtTarget(Abi abi) => switch (abi) {
   Abi.macosArm64 => 'macos-arm64',
-  Abi.macosX64 => 'macos-x64',
+  Abi.macosX64 => null,
   Abi.linuxArm64 => 'linux-arm64',
   Abi.linuxX64 => 'linux-x64',
   Abi.windowsX64 => 'windows-x64',
@@ -76,15 +77,15 @@ Future<void> bundleLiteRtRuntime(
   CommandExecutor execute = executeCommand,
   Abi? abi,
 }) async {
-  final target = standaloneLiteRtTarget(abi ?? Abi.current());
+  final targetAbi = abi ?? Abi.current();
+  final target = standaloneLiteRtTarget(targetAbi);
   provenance['litert_runtime_supported'] = target != null;
   if (target == null) {
+    final platform = targetAbi == Abi.macosX64 ? 'macOS x64' : 'Windows arm64';
     provenance['litert_runtime_unavailable_reason'] =
-        'No pinned LiteRT artifact for Windows arm64; GGUF only';
+        'No pinned LiteRT artifact for $platform; GGUF only';
     if ((provenance['profile'] as String).startsWith('chat-litert-')) {
-      throw UnsupportedError(
-        'LiteRT profiles are unavailable on Windows arm64',
-      );
+      throw UnsupportedError('LiteRT profiles are unavailable on $platform');
     }
     return;
   }

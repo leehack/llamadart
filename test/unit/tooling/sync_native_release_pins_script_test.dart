@@ -228,7 +228,6 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   LiteRtLmBundleSpec('linux-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
   LiteRtLmBundleSpec('linux-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
   LiteRtLmBundleSpec('macos-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  LiteRtLmBundleSpec('macos-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
   LiteRtLmBundleSpec('windows-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
 ];
 ''');
@@ -427,6 +426,9 @@ paths=(
     expect(litertRuntimeDartText, isNot(contains('legacy-macos-arm64')));
     expect(litertRuntimeDartText, isNot(contains('legacy-arm64.framework')));
     expect(litertRuntimeDartText, isNot(contains('legacy-arm64-spm')));
+    expect(litertRuntimeDartText, isNot(contains('Abi.macosX64')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-macos-x64')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-x64')));
     final macosPrepareText = (await macosPrepareScript.readAsString())
         .replaceAll('\r\n', '\n');
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
@@ -444,6 +446,7 @@ paths=(
     );
     expect(macosPrepareText, isNot(contains('legacy-macos')));
     expect(macosPrepareText, isNot(contains('legacy-spm')));
+    expect(macosPrepareText, isNot(contains('    x64)')));
 
     final llamaSwift = await File(
       path.join(
@@ -1572,7 +1575,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final pins = File(_pinsPath).readAsStringSync();
-    expect(pins, contains("const liteRtLmReleaseTag = 'v0.18.0';"));
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.18.0-1';"));
     final hook = File('hook/build.dart').readAsStringSync();
     expect(hook, contains(r"'$liteRtLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$liteRtLmVersion")));

@@ -54,6 +54,9 @@ const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     '$liteRtLmReleaseTag';
 const _litertLmCacheDir = 'litert_lm';
+const _liteRtLmMacOsX64Unavailable =
+    'LiteRT-LM is not available on macOS x86_64: litert-lm-native publishes '
+    'arm64-only macOS runtimes (leehack/litert-lm-native#72).';
 const _stableDiffusionNativeReleaseBaseUrl =
     'https://github.com/leehack/stable-diffusion-native/releases/download/'
     '$stableDiffusionReleaseTag';
@@ -229,24 +232,51 @@ void main(List<String> args) async {
     final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
     if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
         liteRtLmBundleSpec == null) {
-      final explicitLiteRtLmSelection =
-          appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
-          nativeRuntimeExplicitlySelectedForBundle(
-            bundle: spec.bundle,
-            rawUserConfig: rawNativeRuntimeConfig,
-            runtime: nativeRuntimeLiteRtLm,
-          );
+      final macOsX64 =
+          code.targetOS == OS.macOS &&
+          code.targetArchitecture == Architecture.x64;
+      // A universal macOS build runs this hook once per architecture. Failing
+      // the x86_64 pass for a companion or platform-wide selection would break
+      // every universal build, so only a macos-x86_64-scoped request fails.
+      final explicitLiteRtLmSelection = macOsX64
+          ? nativeRuntimeNamedForExactBundle(
+              bundle: spec.bundle,
+              rawUserConfig: rawNativeRuntimeConfig,
+              runtime: nativeRuntimeLiteRtLm,
+            )
+          : appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
+                nativeRuntimeExplicitlySelectedForBundle(
+                  bundle: spec.bundle,
+                  rawUserConfig: rawNativeRuntimeConfig,
+                  runtime: nativeRuntimeLiteRtLm,
+                );
       if (explicitLiteRtLmSelection) {
         throw Exception(
-          'LiteRT-LM runtime is not available for ${spec.bundle}.',
+          macOsX64
+              ? '$_liteRtLmMacOsX64Unavailable Remove litert_lm from the '
+                    'macos-x86_64 entry of $nativeRuntimesUserDefineKey, or '
+                    'build the app for arm64 only.'
+              : 'LiteRT-LM runtime is not available for ${spec.bundle}.',
         );
       }
       selectedRuntimes = selectedRuntimes
           .where((runtime) => runtime != nativeRuntimeLiteRtLm)
           .toList(growable: false);
-      log.warning(
-        'LiteRT-LM runtime is not available for ${spec.bundle}; skipping it.',
-      );
+      if (macOsX64) {
+        const skipped =
+            '$_liteRtLmMacOsX64Unavailable The x86_64 slice of this build '
+            'leaves LiteRT-LM out; selecting it there throws '
+            'LlamaUnsupportedException.';
+        log.warning(skipped);
+        stderr.writeln('warning: llamadart: $skipped');
+        if (selectedRuntimes.isEmpty) {
+          return;
+        }
+      } else {
+        log.warning(
+          'LiteRT-LM runtime is not available for ${spec.bundle}; skipping it.',
+        );
+      }
     }
     final stableDiffusionBundleSpec =
         _stableDiffusionBundles[stableDiffusionBundleForNativeBundle(
@@ -1299,7 +1329,6 @@ LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
     case OS.macOS:
       return switch (code.targetArchitecture) {
         Architecture.arm64 => _litertLmBundles['macos-arm64'],
-        Architecture.x64 => _litertLmBundles['macos-x64'],
         _ => null,
       };
     case OS.linux:

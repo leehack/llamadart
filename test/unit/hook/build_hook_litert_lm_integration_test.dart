@@ -30,9 +30,6 @@ void main() {
   final macosX64NativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/macos-x86_64/extracted',
   );
-  final macosX64LitertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/macos/x64',
-  );
   final iosDeviceNativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
   );
@@ -62,10 +59,6 @@ void main() {
     (
       macosX64NativeBundleDir,
       Directory('${macosX64NativeBundleDir.path}.__litert_test'),
-    ),
-    (
-      macosX64LitertBundleDir,
-      Directory('${macosX64LitertBundleDir.path}.__litert_test'),
     ),
     (
       iosDeviceNativeBundleDir,
@@ -114,10 +107,6 @@ void main() {
     await _writeBundleLibraries(macosX64NativeBundleDir, const [
       'libllamadart.dylib',
     ]);
-    await _writeBundleLibraries(
-      macosX64LitertBundleDir,
-      _macosX64LiteRtLibraries,
-    );
     for (final directory in [
       iosDeviceNativeBundleDir,
       iosArm64SimNativeBundleDir,
@@ -153,7 +142,12 @@ void main() {
     _expectSpecLibraries(source, 'ios-arm64', _iosLiteRtLibraries);
     _expectSpecLibraries(source, 'ios-arm64-sim', _iosLiteRtLibraries);
     _expectSpecLibraries(source, 'macos-arm64', _macosArm64LiteRtLibraries);
-    _expectSpecLibraries(source, 'macos-x64', _macosX64LiteRtLibraries);
+    final liteRtLmSpecs = source.substring(
+      source.indexOf('const liteRtLmBundleSpecs'),
+      source.indexOf('];', source.indexOf('const liteRtLmBundleSpecs')),
+    );
+    expect(liteRtLmSpecs, contains("'macos-arm64'"));
+    expect(liteRtLmSpecs, isNot(contains("'macos-x64'")));
     _expectSpecLibraries(source, 'linux-arm64', _linuxLiteRtLibraries);
     _expectSpecLibraries(source, 'linux-x64', _linuxLiteRtLibraries);
     _expectSpecLibraries(source, 'windows-x64', _windowsLiteRtLibraries);
@@ -170,7 +164,6 @@ void main() {
       'ios-arm64',
       'ios-arm64-sim',
       'macos-arm64',
-      'macos-x64',
       'linux-arm64',
       'linux-x64',
       'windows-x64',
@@ -213,39 +206,65 @@ void main() {
   test(
     'build hook keeps macOS LiteRT-LM libraries in the cache when requested',
     () async {
-      for (final (architecture, expectedLibraries) in [
-        (Architecture.arm64, _macosArm64LiteRtLibraries),
-        (Architecture.x64, _macosX64LiteRtLibraries),
-      ]) {
-        await testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: OS.macOS,
-          targetArchitecture: architecture,
-          userDefines: _bothRuntimeUserDefines(),
-          check: (input, output) {
-            final codeAssets = output.assets.encodedAssets
-                .where((asset) => asset.isCodeAsset)
-                .map((asset) => asset.asCodeAsset)
-                .toList(growable: false);
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: _bothRuntimeUserDefines(),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
 
-            final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
-            final emittedNames = codeAssets
-                .map((asset) => path.basename(asset.file!.toFilePath()))
-                .toSet();
+          final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+          final emittedNames = codeAssets
+              .map((asset) => path.basename(asset.file!.toFilePath()))
+              .toSet();
 
-            expect(codeAssetIds, contains('package:llamadart/llamadart'));
-            expect(
-              codeAssetIds.where((id) => id.contains('litert_lm')),
-              isEmpty,
-            );
-            for (final library in expectedLibraries) {
-              expect(emittedNames, isNot(contains(library)));
-            }
-          },
-        );
-      }
+          expect(codeAssetIds, contains('package:llamadart/llamadart'));
+          expect(codeAssetIds.where((id) => id.contains('litert_lm')), isEmpty);
+          for (final library in _macosArm64LiteRtLibraries) {
+            expect(emittedNames, isNot(contains(library)));
+          }
+        },
+      );
     },
   );
+
+  for (final (selection, userDefines) in [
+    ('both', _bothRuntimeUserDefines),
+    ('litert_lm only', _liteRtLmOnlyUserDefines),
+  ]) {
+    test('build hook skips LiteRT-LM on macOS x64 with a warning when '
+        '$selection is selected', () async {
+      final records = <String>[];
+      final subscription = Logger.root.onRecord.listen(
+        (record) => records.add(record.message),
+      );
+      addTearDown(subscription.cancel);
+      final stderrLines = await _capturingStderr(
+        () async => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.x64,
+          userDefines: userDefines(),
+          check: (input, output) {
+            final codeAssetIds = output.assets.encodedAssets
+                .where((asset) => asset.isCodeAsset)
+                .map((asset) => asset.asCodeAsset.id)
+                .toList(growable: false);
+            expect(
+              codeAssetIds,
+              selection == 'both' ? ['package:llamadart/llamadart'] : isEmpty,
+            );
+          },
+        ),
+      );
+      expect(stderrLines, contains(_macOsX64LiteRtLmSkippedWarning));
+      _expectNoLiteRtLmBundleRequest(records);
+    });
+  }
 
   test('build hook can emit LiteRT-LM runtime without llama.cpp', () async {
     await testCodeBuildHook(
@@ -627,7 +646,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     },
   );
 
-  for (final architecture in [Architecture.arm64, Architecture.x64]) {
+  for (final architecture in [Architecture.arm64]) {
     test(
       'build hook hands Flutter macOS $architecture LiteRT-LM to the SwiftPM '
       'companion and keeps its cache for flutter_tester',
@@ -713,7 +732,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       () => _flutterLiteRtLmOnlyUserDefines(resolveLiteRtLmCompanion: false),
     ),
   ]) {
-    for (final architecture in [Architecture.arm64, Architecture.x64]) {
+    for (final architecture in [Architecture.arm64]) {
       test('build hook keeps Flutter macOS $architecture LiteRT-LM on the '
           'hook cache with a build warning for $scenario', () async {
         final stderrLines = await _capturingStderr(
@@ -743,6 +762,98 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         );
       });
     }
+  }
+
+  for (final (scenario, dependencies, expectedAssetIds) in [
+    ('the LiteRT-LM companion', const ['llamadart_litert_lm_flutter'], []),
+    (
+      'both companions',
+      const ['llamadart_llama_cpp_flutter', 'llamadart_litert_lm_flutter'],
+      ['package:llamadart/llamadart'],
+    ),
+  ]) {
+    test('build hook drops companion-implied LiteRT-LM from the Flutter macOS '
+        'x64 slice with a warning for $scenario', () async {
+      final records = <String>[];
+      final subscription = Logger.root.onRecord.listen(
+        (record) => records.add(record.message),
+      );
+      addTearDown(subscription.cancel);
+      final stderrLines = await _capturingStderr(
+        () async => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.x64,
+          userDefines: await _flutterAppleUserDefines(
+            dependencies: dependencies,
+            defines: {
+              'llamadart_native_runtimes': {
+                'runtimes': ['litert_lm'],
+                'platforms': {
+                  'macos': ['litert_lm'],
+                },
+              },
+            },
+          ),
+          check: (input, output) {
+            expect(
+              output.assets.encodedAssets
+                  .map((asset) => asset.asCodeAsset.id)
+                  .toList(growable: false),
+              expectedAssetIds,
+            );
+            final outputDir = input.outputDirectory.toFilePath();
+            expect(
+              Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+              isFalse,
+            );
+          },
+        ),
+      );
+      expect(stderrLines, contains(_macOsX64LiteRtLmSkippedWarning));
+      _expectNoLiteRtLmBundleRequest(records);
+    });
+  }
+
+  for (final bundleKey in ['macos-x86_64', 'macos-x64']) {
+    test('build hook fails a Flutter macOS x64 build whose $bundleKey entry '
+        'names LiteRT-LM', () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.x64,
+          userDefines: await _flutterAppleUserDefines(
+            dependencies: const ['llamadart_litert_lm_flutter'],
+            defines: {
+              'llamadart_native_runtimes': {
+                'platforms': {
+                  bundleKey: ['litert_lm'],
+                },
+              },
+            },
+          ),
+          check: (_, _) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            allOf(
+              contains(
+                'LiteRT-LM is not available on macOS x86_64: '
+                'litert-lm-native publishes arm64-only macOS runtimes '
+                '(leehack/litert-lm-native#72).',
+              ),
+              contains(
+                'Remove litert_lm from the macos-x86_64 entry of '
+                'llamadart_native_runtimes',
+              ),
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   test(
@@ -1049,6 +1160,18 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       );
     },
   );
+}
+
+const _macOsX64LiteRtLmSkippedWarning =
+    'warning: llamadart: LiteRT-LM is not available on macOS x86_64: '
+    'litert-lm-native publishes arm64-only macOS runtimes '
+    '(leehack/litert-lm-native#72). The x86_64 slice of this build leaves '
+    'LiteRT-LM out; selecting it there throws LlamaUnsupportedException.';
+
+/// Fails when the hook looked up, downloaded or cached any LiteRT-LM bundle.
+void _expectNoLiteRtLmBundleRequest(List<String> records) {
+  expect(records, isNot(contains(contains('LiteRT-LM bundle'))));
+  expect(records, isNot(contains(contains('litert-lm-native-runtime-'))));
 }
 
 /// Runs [body] with `stderr` captured, returning the lines it wrote.
@@ -1359,11 +1482,6 @@ const List<String> _macosArm64LiteRtLibraries = [
   'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
   'libwebgpu_dawn.dylib',
-];
-
-const List<String> _macosX64LiteRtLibraries = [
-  'libLiteRtLm.dylib',
-  'libCLiteRTLM_mac.dylib',
 ];
 
 const List<String> _linuxLiteRtLibraries = [

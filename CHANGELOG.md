@@ -25,6 +25,12 @@
   must be reloaded, and later generations on that engine fail at once with
   the same message, instead of claiming the next request can run
   ([#1045](https://github.com/leehack/llamadart/issues/1045)).
+- The default LiteRT-LM runtime is now `leehack/litert-lm-native@v0.18.0-1`,
+  which publishes macOS runtimes for arm64 only. Universal Flutter macOS apps
+  with `llamadart_litert_lm_flutter` now launch on Intel Macs and under
+  Rosetta instead of aborting, and LiteRT-LM throws
+  `LlamaUnsupportedException` on x86_64 macOS
+  ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
 
 ## 0.12.1
 

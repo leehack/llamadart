@@ -74,12 +74,8 @@ List<Map<String, Object?>> validationCoverage() {
       );
     }
     final platform = entry.key;
-    final available = platform != 'windows-arm64';
-    final gpu = ![
-      'macos-x64',
-      'linux-arm64',
-      'windows-arm64',
-    ].contains(platform);
+    final available = !['windows-arm64', 'macos-x64'].contains(platform);
+    final gpu = !['linux-arm64', 'windows-arm64'].contains(platform);
     for (final backend in ['cpu', 'gpu']) {
       for (final model in ['gemma4-e2b', 'qwen35-08b']) {
         final supported = available && (backend == 'cpu' || gpu);

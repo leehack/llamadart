@@ -111,8 +111,12 @@ REQUIRED_LITERT_PLATFORM_BUNDLES = {
     "linux-arm64",
     "linux-x64",
     "macos-arm64",
-    "macos-x64",
     "windows-x64",
+}
+# Schema 1 releases predate the arm64-only macOS policy (litert-lm-native#72)
+# and keep their macOS x64 runtime archive.
+LEGACY_SCHEMA1_LITERT_PLATFORM_BUNDLES = REQUIRED_LITERT_PLATFORM_BUNDLES | {
+    "macos-x64",
 }
 LITERT_SMOKE_ASSETS = {
     "model": {
@@ -199,8 +203,6 @@ LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/linux/x64/libLiteRtLm.so",
     "bin/macos/arm64/libCLiteRTLM_mac.dylib",
     "bin/macos/arm64/libLiteRtLm.dylib",
-    "bin/macos/x64/libCLiteRTLM_mac.dylib",
-    "bin/macos/x64/libLiteRtLm.dylib",
     "bin/windows/x64/LiteRtLm.dll",
 }
 LITERT_V0_16_IOS_GPU_PATHS = {
@@ -2107,6 +2109,17 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError(
                 f"Legacy release {repo}@{tag} asset digests are not immutable allowlist evidence"
             )
+        missing_legacy_bundles = sorted(
+            bundle
+            for bundle in LEGACY_SCHEMA1_LITERT_PLATFORM_BUNDLES
+            if f"litert-lm-native-runtime-{bundle}-{tag}.tar.gz" not in actual_assets
+        )
+        if missing_legacy_bundles:
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} does not cover the schema-1 "
+                "nine-platform contract; missing "
+                + ", ".join(missing_legacy_bundles)
+            )
         if release.get("draft", False) != legacy_identity.get("draft") or release.get(
             "prerelease", False
         ) != legacy_identity.get("prerelease"):
@@ -2384,7 +2397,8 @@ def validate_litert_lm_release_manifest(
     expected_bundles = set(required_bundles)
     if expected_bundles != REQUIRED_LITERT_PLATFORM_BUNDLES:
         raise ReleaseError(
-            "llamadart hook bundle inventory does not cover the finalized nine-platform contract"
+            "llamadart hook bundle inventory does not cover the finalized "
+            f"{required_platform_count}-platform schema-2 contract"
         )
     missing_bundles = sorted(expected_bundles - available_bundles)
     unexpected_bundles = sorted(available_bundles - expected_bundles)
@@ -3328,7 +3342,6 @@ def litert_schema2_runtime_required_libraries(
 ) -> dict[str, tuple[str, ...]]:
     required_bundles = (
         "macos-arm64",
-        "macos-x64",
         "linux-arm64",
         "linux-x64",
         "windows-x64",
@@ -3402,15 +3415,11 @@ def replace_litert_lm_runtime_required_libraries(
     # The bundle keys use hyphens while the Dart ABI enum uses camel case.
     runtime_entries = {
         "macosArm64": runtime_libraries["macos-arm64"],
-        "macosX64": runtime_libraries["macos-x64"],
         "linuxArm64": runtime_libraries["linux-arm64"],
         "linuxX64": runtime_libraries["linux-x64"],
         "windowsX64": runtime_libraries["windows-x64"],
     }
-    macos_entries = {
-        "macosArm64": runtime_libraries["macos-arm64"],
-        "macosX64": runtime_libraries["macos-x64"],
-    }
+    macos_entries = {"macosArm64": runtime_libraries["macos-arm64"]}
     updated = _replace_litert_lm_runtime_library_function(
         runtime_text,
         "liteRtLmMacOsRequiredLibrariesForAbi",
@@ -3427,10 +3436,7 @@ def _litert_schema2_macos_bundle_entries(
     bundle_libraries: dict[str, tuple[str, ...]],
 ) -> dict[str, tuple[str, ...]]:
     runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
-    return {
-        "arm64": runtime_libraries["macos-arm64"],
-        "x64": runtime_libraries["macos-x64"],
-    }
+    return {"arm64": runtime_libraries["macos-arm64"]}
 
 
 def _litert_macos_framework_binary_path(library: str) -> str:
@@ -3499,7 +3505,7 @@ def litert_macos_complete_spm_entries(
     # Require the complete per-architecture inventory before skipping raw staging.
     macos_bundles = _litert_schema2_macos_bundle_entries(bundle_libraries)
     entries: dict[str, tuple[str, ...]] = {}
-    for arch in ("arm64", "x64"):
+    for arch in macos_bundles:
         embedded = [
             litert_macos_spm_layout(library)[1]
             for library in sorted(macos_bundles[arch])
@@ -3519,8 +3525,7 @@ def _render_litert_lm_shell_inventory_function(
         f"{function_name}() {{",
         '  case "$LITERT_ARCH" in',
     ]
-    for arch in ("arm64", "x64"):
-        libraries = entries[arch]
+    for arch, libraries in entries.items():
         if not libraries:
             raise ReleaseError(
                 f"LiteRT-LM macOS {arch} inventory has no required files"
@@ -3591,19 +3596,13 @@ def replace_litert_lm_runtime_macos_inventory(
     resolved_tag: str,
 ) -> str:
     framework_entries = _litert_schema2_macos_framework_entries(bundle_libraries)
-    runtime_framework_entries = {
-        "macosArm64": framework_entries["arm64"],
-        "macosX64": framework_entries["x64"],
-    }
+    runtime_framework_entries = {"macosArm64": framework_entries["arm64"]}
     native_spm_files = litert_schema2_macos_required_native_spm_files(
         manifest,
         resolved_tag,
     )
     complete_spm = litert_macos_complete_spm_entries(bundle_libraries, native_spm_files)
-    runtime_native_spm_entries = {
-        "macosArm64": complete_spm["arm64"],
-        "macosX64": complete_spm["x64"],
-    }
+    runtime_native_spm_entries = {"macosArm64": complete_spm["arm64"]}
     updated = _replace_litert_lm_runtime_library_function(
         runtime_text,
         "liteRtLmMacOsRequiredFrameworksForAbi",

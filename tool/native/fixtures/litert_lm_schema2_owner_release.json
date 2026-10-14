@@ -61,15 +61,11 @@
       "name": "litert-lm-native-runtime-macos-arm64-v0.16.0-3.tar.gz"
     },
     {
-      "digest": "sha256:a5df37ad4db31a649da105359c3d08b62e0b54eea1043da8b1131514dcd8648a",
-      "name": "litert-lm-native-runtime-macos-x64-v0.16.0-3.tar.gz"
-    },
-    {
       "digest": "sha256:f075db63dcb0d045f8d0296adbe0c1a84ab352d0aa3e2e4369603d40b461997d",
       "name": "litert-lm-native-runtime-windows-x64-v0.16.0-3.tar.gz"
     },
     {
-      "digest": "sha256:fdd6cdf7304de550f789c41f3032792dc0a92a0d150f64585d8a721a90406c18",
+      "digest": "sha256:a0d29aa83dc11a565703a395accfbd4a5ca686305c6607dc3807d417a4952bed",
       "name": "manifest.json"
     },
     {

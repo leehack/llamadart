@@ -1,3 +1,10 @@
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.18.0-1`.
+* Link arm64-only macOS LiteRT-LM XCFrameworks, so universal macOS apps
+  launch on Intel Macs and under Rosetta
+  ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+
 ## 0.0.15
 
 * Link and embed the complete macOS arm64 LiteRT-LM runtime from

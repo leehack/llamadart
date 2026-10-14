@@ -210,7 +210,7 @@ dart run tool/testing/test_matrix.dart --tier platform
 | Windows x64 | `windows-x64-ci-runtime` | CI runtime plus LiteRT-LM smoke. |
 | Windows arm64 | `windows-arm64-hook-coverage` | Hook coverage; runtime proof needs Windows arm64 hardware. |
 | macOS arm64 | `macos-arm64-runtime-smoke` | Local/device runtime row. |
-| macOS x64 | `macos-x64-runtime-smoke` | Local/device runtime row. |
+| macOS x64 | `macos-x64-runtime-smoke` | Local/device runtime row; LiteRT-LM is arm64-only and must fail with `LlamaUnsupportedException`. |
 | iOS arm64 device | `ios-arm64-device-smoke` | Manual/device runtime row. |
 | iOS arm64/x86_64 simulator | `ios-simulator-smoke` | Manual/simulator runtime row; LiteRT-LM is arm64-only. |
 | Android arm64 | `android-arm64-device-smoke` | Manual/device runtime row and release smoke plan. |

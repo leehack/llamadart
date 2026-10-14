@@ -294,46 +294,38 @@ void main() {
       skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
     );
 
-    test('installs the x64 runtime library set', () async {
-      final root = await Directory.systemTemp.createTemp('litert_prepare_x64_');
-      addTearDown(() => root.delete(recursive: true));
+    for (final arch in ['x64', 'x86_64', 'amd64']) {
+      test('fails loudly for the unpublished macOS $arch runtime', () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_x64_',
+        );
+        addTearDown(() => root.delete(recursive: true));
 
-      final libDir = Directory(path.join(root.path, 'litert'))..createSync();
-      for (final library in _x64Libraries) {
-        await File(path.join(libDir.path, library)).create();
-      }
+        final libDir = Directory(path.join(root.path, 'litert'))..createSync();
+        for (final library in _arm64Libraries) {
+          await File(path.join(libDir.path, library)).create();
+        }
 
-      final appDir = Directory(path.join(root.path, 'Test.app'));
-      final result = await _runPrepareApp(appDir, libDir, arch: 'x64');
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        final result = await _runPrepareApp(appDir, libDir, arch: arch);
 
-      expect(result.exitCode, 0, reason: result.stderr.toString());
-
-      final frameworksDir = path.join(appDir.path, 'Contents', 'Frameworks');
-      final runtimeDir = path.join(frameworksDir, 'LiteRtLmRuntime');
-      for (final library in _x64Libraries) {
-        final libraryPath = path.join(runtimeDir, library);
-        expect(File(libraryPath).existsSync(), isTrue, reason: library);
-      }
-      expect(
-        File(
-          path.join(
-            frameworksDir,
-            'LiteRtLmRuntime',
-            'libLiteRtMetalAccelerator.dylib',
+        expect(result.exitCode, 2);
+        expect(
+          result.stderr,
+          contains(
+            'LiteRT-LM is not available on macOS x86_64: litert-lm-native '
+            'publishes arm64-only macOS runtimes '
+            '(leehack/litert-lm-native#72).',
           ),
-        ).existsSync(),
-        isFalse,
-      );
-      for (final framework in _oldFrameworks) {
+        );
         expect(
           Directory(
-            path.join(frameworksDir, '$framework.framework'),
+            path.join(appDir.path, 'Contents', 'Frameworks', 'LiteRtLmRuntime'),
           ).existsSync(),
           isFalse,
-          reason: framework,
         );
-      }
-    }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
+      }, skip: Platform.isWindows ? 'requires bash' : false);
+    }
   });
 }
 
@@ -397,9 +389,4 @@ const List<String> _oldFrameworks = [
   'LiteRtTopKMetalSampler',
   'LiteRtTopKWebGpuSampler',
   'LiteRtWebGpuAccelerator',
-];
-
-const List<String> _x64Libraries = [
-  'libCLiteRTLM_mac.dylib',
-  'libLiteRtLm.dylib',
 ];

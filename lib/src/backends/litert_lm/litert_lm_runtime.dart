@@ -15,8 +15,8 @@ import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
 
-const _litertLmReleaseTag = 'v0.18.0';
-const _litertLmVersion = '0.18.0';
+const _litertLmReleaseTag = 'v0.18.0-1';
+const _litertLmVersion = '0.18.0-1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -120,12 +120,30 @@ String liteRtLmEngineCreateFailureMessage({
       '"$displayName". $hint';
 }
 
+/// The error LiteRT-LM reports on [abi] before it looks for a runtime, or
+/// null when litert-lm-native publishes one for [abi].
+///
+/// macOS x86_64 has none: litert-lm-native publishes arm64-only macOS runtimes
+/// ([leehack/litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)),
+/// so an x86_64 process, including an Apple-silicon app under Rosetta, gets a
+/// [LlamaUnsupportedException] instead of a library lookup failure.
+LlamaUnsupportedException? liteRtLmUnsupportedAbiException(Abi abi) {
+  if (abi != Abi.macosX64) {
+    return null;
+  }
+  return LlamaUnsupportedException(
+    'LiteRT-LM is not available on macOS x86_64; litert-lm-native publishes '
+    'arm64-only macOS runtimes (leehack/litert-lm-native#72). Run the app '
+    'natively on Apple silicon, not under Rosetta, or use the llama.cpp '
+    'backend.',
+  );
+}
+
 /// Internal helper used by the LiteRT-LM runtime to locate extracted macOS
 /// native-assets cache directories.
 List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
   final arch = switch (abi) {
     Abi.macosArm64 => 'arm64',
-    Abi.macosX64 => 'x64',
     _ => null,
   };
   if (arch == null) {
@@ -149,10 +167,6 @@ List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     ],
-    Abi.macosX64 => const <String>[
-      'libCLiteRTLM_mac.dylib',
-      'libLiteRtLm.dylib',
-    ],
     _ => const <String>[],
   };
 }
@@ -162,7 +176,6 @@ List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
 List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => liteRtLmMacOsCacheDirectoryCandidatesForAbi(abi),
-    Abi.macosX64 => liteRtLmMacOsCacheDirectoryCandidatesForAbi(abi),
     Abi.linuxArm64 => const <String>['linux/arm64', 'linux_arm64'],
     Abi.linuxX64 => const <String>['linux/x64', 'linux_x64'],
     Abi.windowsX64 => const <String>['windows/x64', 'windows_x64'],
@@ -233,10 +246,6 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
     ],
-    Abi.macosX64 => const <String>[
-      'libCLiteRTLM_mac.dylib',
-      'libLiteRtLm.dylib',
-    ],
     Abi.linuxArm64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -283,7 +292,6 @@ Set<String> liteRtLmNonPreloadedLibrariesForAbi(Abi abi) {
 String? liteRtLmPrimaryLibraryForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => 'libLiteRtLm.dylib',
-    Abi.macosX64 => 'libLiteRtLm.dylib',
     Abi.linuxArm64 => 'libLiteRtLm.so',
     Abi.linuxX64 => 'libLiteRtLm.so',
     Abi.windowsX64 => 'LiteRtLm.dll',
@@ -377,10 +385,6 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
       'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
       'webgpu_dawn.framework/Versions/A/webgpu_dawn',
     ],
-    Abi.macosX64 => const <String>[
-      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-    ],
     _ => const <String>[],
   };
 }
@@ -397,10 +401,6 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
       'libLiteRtTopKWebGpuSampler.dylib',
       'libLiteRtWebGpuAccelerator.dylib',
       'libwebgpu_dawn.dylib',
-    ],
-    Abi.macosX64 => const <String>[
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libCLiteRTLM_mac.dylib',
     ],
     _ => const <String>[],
   };
@@ -1500,6 +1500,13 @@ class LiteRtLmRuntimeClient {
     if (_bindings != null) {
       return;
     }
+    final libraryPathOverride = _libraryPathOverride?.trim();
+    if (libraryPathOverride == null || libraryPathOverride.isEmpty) {
+      final unsupported = liteRtLmUnsupportedAbiException(Abi.current());
+      if (unsupported != null) {
+        throw unsupported;
+      }
+    }
     final libraries = _librariesForCurrentPlatform();
     if (libraries == null) {
       throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
@@ -1563,7 +1570,7 @@ class LiteRtLmRuntimeClient {
         directCallbackSupported: true,
       );
     }
-    if (Platform.isMacOS && (abi == Abi.macosArm64 || abi == Abi.macosX64)) {
+    if (Platform.isMacOS && abi == Abi.macosArm64) {
       final companions = _macOsCompanionLibrariesForAbi(abi);
       final frameworksDir = _findMacOsAppFrameworksDir();
       if (frameworksDir != null) {

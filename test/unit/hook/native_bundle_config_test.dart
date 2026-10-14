@@ -418,6 +418,54 @@ void main() {
         isTrue,
       );
     });
+
+    test('macOS x64 LiteRT-LM is explicit only for its exact bundle key', () {
+      bool namedForMacOsX64(Object? rawUserConfig) =>
+          nativeRuntimeNamedForExactBundle(
+            bundle: 'macos-x86_64',
+            rawUserConfig: rawUserConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          );
+
+      for (final key in ['macos-x86_64', 'macos-x64']) {
+        expect(
+          namedForMacOsX64({
+            'platforms': {
+              key: ['llama_cpp', 'litert_lm'],
+            },
+          }),
+          isTrue,
+          reason: key,
+        );
+      }
+      for (final rawUserConfig in <Object?>[
+        ['litert_lm'],
+        {
+          'runtimes': ['litert_lm'],
+        },
+        {
+          'platforms': {
+            'macos': ['litert_lm'],
+          },
+        },
+        {
+          'platforms': {
+            'macos-arm64': ['litert_lm'],
+          },
+        },
+        {
+          'platforms': {
+            'macos-x86_64': ['all'],
+          },
+        },
+      ]) {
+        expect(
+          namedForMacOsX64(rawUserConfig),
+          isFalse,
+          reason: '$rawUserConfig',
+        );
+      }
+    });
   });
 
   group('selectNativeRuntimesForBundle explicit none', () {

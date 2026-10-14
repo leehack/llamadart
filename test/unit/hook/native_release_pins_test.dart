@@ -58,7 +58,6 @@ void main() {
         'ios-arm64',
         'ios-arm64-sim',
         'macos-arm64',
-        'macos-x64',
         'linux-arm64',
         'linux-x64',
         'windows-x64',
@@ -94,7 +93,6 @@ void main() {
   test('desktop bundle specs agree with the runtime required lists', () {
     const desktopBundles = {
       'macos-arm64': Abi.macosArm64,
-      'macos-x64': Abi.macosX64,
       'linux-arm64': Abi.linuxArm64,
       'linux-x64': Abi.linuxX64,
       'windows-x64': Abi.windowsX64,

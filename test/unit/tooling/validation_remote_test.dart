@@ -268,6 +268,8 @@ void main() {
     'Windows arm64 keeps GGUF builds without requiring a LiteRT archive',
     () async {
       expect(standaloneLiteRtTarget(Abi.windowsArm64), isNull);
+      expect(standaloneLiteRtTarget(Abi.macosX64), isNull);
+      expect(standaloneLiteRtTarget(Abi.macosArm64), 'macos-arm64');
       expect(standaloneLiteRtTarget(Abi.windowsX64), 'windows-x64');
       expect(standaloneLiteRtTarget(Abi.linuxArm64), 'linux-arm64');
       final scratch = Directory.systemTemp.createTempSync('validation-arm64-');
@@ -290,6 +292,33 @@ void main() {
         }, abi: Abi.windowsArm64),
         throwsUnsupportedError,
       );
+      final macOsX64 = <String, dynamic>{'profile': 'tiny-gguf-cpu'};
+      await bundleLiteRtRuntime(
+        'missing-checkout',
+        scratch,
+        scratch,
+        macOsX64,
+        abi: Abi.macosX64,
+        execute: (executable, arguments, {directory, timeout}) async =>
+            throw StateError('No extraction should run'),
+      );
+      expect(macOsX64['litert_runtime_supported'], false);
+      expect(
+        macOsX64['litert_runtime_unavailable_reason'],
+        'No pinned LiteRT artifact for macOS x64; GGUF only',
+      );
+      await expectLater(
+        bundleLiteRtRuntime('missing-checkout', scratch, scratch, {
+          'profile': 'chat-litert-cpu',
+        }, abi: Abi.macosX64),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            'LiteRT profiles are unavailable on macOS x64',
+          ),
+        ),
+      );
     },
   );
   test(
@@ -300,7 +329,6 @@ void main() {
       ).readAsStringSync();
       for (final target in [
         'macos-arm64',
-        'macos-x64',
         'linux-arm64',
         'linux-x64',
         'windows-x64',
@@ -311,6 +339,7 @@ void main() {
         expect(spec.libraries.any((name) => name.contains('LiteRtLm')), true);
       }
       expect(() => liteRtArchiveSpec(hook, 'windows-arm64'), throwsStateError);
+      expect(() => liteRtArchiveSpec(hook, 'macos-x64'), throwsStateError);
       expect(
         () => liteRtArchiveSpec(
           hook.replaceAll('sha256:', 'unverified:'),
