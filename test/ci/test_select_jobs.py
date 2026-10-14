@@ -92,6 +92,16 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(plan['desktops'], [])
         plan = ci.select(['example/chat_app/lib/validation/controller.dart'])
         self.assertEqual(plan['apps'], list(ci.APPS))
+        self.assertFalse(plan['jobs']['validation-integration'])
+
+    def test_chat_app_files_imported_by_validation_tooling_run_root_validation_tests(self):
+        for path in ('example/chat_app/lib/models/image_model_profile.dart',
+                     'example/chat_app/integration_test/support/image_evidence.dart'):
+            with self.subTest(path=path):
+                plan = ci.select([path])
+                for job in ('analyze', 'validation-harness', 'validation-integration',
+                            'web-chat-contract'):
+                    self.assertTrue(plan['jobs'][job], job)
 
     def test_root_tests_retain_all_os_inventories(self):
         for path in ('test/unit/tooling/windows_test.dart', 'test/test_helper.dart',

@@ -26,6 +26,12 @@ CORE_JOBS = (
 )
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
+# Imported by tool/testing/validation/image_profile.dart, whose root tests run
+# in validation-integration.
+VALIDATION_IMPORTED_CHAT_APP_FILES = (
+    'example/chat_app/lib/models/image_model_profile.dart',
+    'example/chat_app/integration_test/support/image_evidence.dart',
+)
 
 
 def inventory(raw):
@@ -104,6 +110,8 @@ def select(paths, force_full=False):
             jobs.update(('analyze', 'web-chat-contract'))
         elif path.startswith('example/chat_app/'):
             jobs.update(('analyze', 'web-chat-contract', 'validation-harness'))
+            if path in VALIDATION_IMPORTED_CHAT_APP_FILES:
+                jobs.add('validation-integration')
             apps.update(APPS)
         elif path.startswith('test/'):
             # Preserve all root test inventories, including platform-sensitive tests.

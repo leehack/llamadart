@@ -97,9 +97,11 @@ void main() {
   Future<void> sealBundle(
     String id, {
     Map<String, Object?> overrides = const {},
+    void Function(Map<String, dynamic> profile)? editProfile,
   }) async {
     // The builder records the execution path in the bundled copy.
     final profile = {..._profile(id), 'execution_path': 'public_api'};
+    editProfile?.call(profile);
     File(
       p.join(bundle.path, 'profile.json'),
     ).writeAsStringSync(jsonEncode(profile));
@@ -506,6 +508,25 @@ void main() {
         expect(state['phase'], 'PREFLIGHT_FAILED', reason: '$overrides');
         expect(state['preflights'], 0, reason: '$overrides');
       }
+    });
+
+    test('rejects a bundled image profile with a changed model lock', () async {
+      await sealBundle(
+        'image-sdxs-cpu',
+        editProfile: (profile) => profile['model']['sha256'] = 'f' * 64,
+      );
+      final state = await submit(plan('image-sdxs-cpu'));
+      expect(state['phase'], 'PREFLIGHT_FAILED');
+      expect(state['preflights'], 0);
+    });
+
+    test('rejects a cpu image profile inside an iOS bundle', () async {
+      await sealBundle('image-sdxs-cpu', overrides: {'target': 'ios'});
+      final state = await submit(
+        plan('image-sdxs-cpu', target: 'firebase-ios'),
+      );
+      expect(state['phase'], 'PREFLIGHT_FAILED');
+      expect(state['preflights'], 0);
     });
 
     test('pulls the image evidence directory on Android', () async {

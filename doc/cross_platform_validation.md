@@ -783,10 +783,11 @@ dart run tool/testing/validation.dart run --plan .dart_tool/validation/plan-andr
 dart run tool/testing/validation.dart build --target ios --profile image-sdxs-metal --out .dart_tool/validation/bundles/ios-image
 ```
 
-The build compiles the image test into `app.apk`/`test.apk` (or `tests.zip`)
-with the same `VALIDATION_COMMIT` and `VALIDATION_SOURCE_DIRTY` defines as text
-bundles, for both the `flutter build apk` step and the Gradle
-`-Pdart-defines` test APK step, and records `test_target` and the pinned
+The build compiles the image test into `app.apk` (or `tests.zip`) with the
+same `VALIDATION_COMMIT` and `VALIDATION_SOURCE_DIRTY` defines as text bundles,
+passed to both the `flutter build apk` step and the Gradle `-Pdart-defines`
+step; `test.apk` only carries the Java instrumentation runner. It records
+`test_target` and the pinned
 `stable_diffusion_tag` in the bundle manifest. There is no `qa-app.apk`.
 The test reads the commit and clean flag from those defines, so only a clean
 committed build can produce evidence that verifies.
