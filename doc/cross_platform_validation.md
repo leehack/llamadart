@@ -761,6 +761,52 @@ inference as NOT_RUN, with TPS unavailable. Zero cases and successful artifact
 collection are not a passing run; a structured preparation-error envelope remains
 a follow-up. Do not insert requested bundle metadata as observed runtime evidence.
 
+### Image-generation profiles
+
+`packages/llamadart_validation/assets/image_profiles/` holds the image device
+checks: `image-sdxs-cpu` (Android, CPU) and `image-sdxs-metal` (iOS, Metal).
+They run the chat-app test `integration_test/image_generation_e2e_test.dart`
+(SDXS download through the image screen, one seeded 512x512 image, and a
+verified receipt with both PNGs), not the shared text suite. They live outside
+`assets/profiles/` because that directory is bundled into the QA app and every
+file in it must parse as a text profile; an ID names one file in either
+directory. Each profile locks exactly the chat app's SDXS model; the builder
+and the upload check reject any other lock, an unknown backend, and a target
+the backend is not routed on (CPU is Android only, Metal iOS only; desktop,
+Web and `ios-inputs` are rejected).
+
+```sh
+dart run tool/testing/validation.dart build --target android --profile image-sdxs-cpu --out .dart_tool/validation/bundles/android-image
+dart run tool/testing/validation.dart plan --target firebase-android --config .dart_tool/validation/firebase.json --bundle .dart_tool/validation/bundles/android-image --out .dart_tool/validation/plan-android-image.json
+dart run tool/testing/validation.dart run --plan .dart_tool/validation/plan-android-image.json
+# iOS, on a Mac with signing configured:
+dart run tool/testing/validation.dart build --target ios --profile image-sdxs-metal --out .dart_tool/validation/bundles/ios-image
+```
+
+The build compiles the image test into `app.apk`/`test.apk` (or `tests.zip`)
+with the same `VALIDATION_COMMIT` and `VALIDATION_SOURCE_DIRTY` defines as text
+bundles, for both the `flutter build apk` step and the Gradle
+`-Pdart-defines` test APK step, and records `test_target` and the pinned
+`stable_diffusion_tag` in the bundle manifest. There is no `qa-app.apk`.
+The test reads the commit and clean flag from those defines, so only a clean
+committed build can produce evidence that verifies.
+
+Android pulls `files/image_generation_e2e` instead of `files/validation`.
+iOS Test Lab does not collect the app cache directory the test writes to, so
+the XCTest runner attaches the latest `image_generation_e2e/run-*` receipt and
+PNGs (each at most 16 MiB) to the result; collection exports them on macOS.
+Collection then grades with the maintained image verifier
+(`verifyImageEvidence`) instead of the text report and writes
+`report/image-verdict.json`. It verifies only when exactly one run's evidence
+was collected and the receipt matches the bundle: its exact clean source
+commit, the profile's backend device (`CPU` or `MTL0`), the bundle's
+`stable_diffusion_tag`, the profile's model lock, seed 42 and 512x512, with
+both PNGs structurally valid and matching the receipt's sizes and SHA256.
+As for text profiles, the run qualifies only if the provider outcome is also
+SUCCESS and cleanup is verified. PNG checks are structural; they do not judge
+image quality, and the backend is the device the runtime reported, not proof
+of per-step GPU execution.
+
 ## GCE setup and teardown
 
 Run the GCE controller from the owned Mac or Linux. Windows is supported as the

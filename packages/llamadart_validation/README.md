@@ -23,6 +23,9 @@ configuration. `lib/llamadart_validation.dart` is the platform-neutral suite; co
 adapters and `lib/io.dart` handle filesystem/runtime checks. `bin/run.dart` and `bin/report.dart` are the
 CLI entrypoints. Flutter uses the package's profile assets and shared runner.
 Native wrappers persist JSONL per event; reports always derive from that journal.
+`assets/image_profiles/` holds the Firebase image-generation device checks, which
+run the chat app's image test and are graded by its image evidence verifier
+([image-generation profiles](../../doc/cross_platform_validation.md#image-generation-profiles)).
 
 The two `npu-*` profiles are locked candidates. Inspect their local prerequisites
 with `validation.dart npu-preflight`; the opt-in Android builder packages verified

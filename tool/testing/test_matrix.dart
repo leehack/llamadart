@@ -669,6 +669,26 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Windows (#779). Record device, backend, timing and memory.',
   ),
   TestMatrixRow(
+    id: 'firebase-image-generation-e2e',
+    tier: 'platform',
+    mode: 'opt-in; explicit Firebase Test Lab run with budget evidence',
+    covers:
+        'the chat-app image test on one physical Firebase device through the '
+        'maintained validation flow: exact clean source commit compiled in, '
+        'Android evidence pull or iOS XCTest attachments, and grading by the '
+        'maintained image verifier (commit, clean source, backend, runtime '
+        'tag, model lock, seed, dimensions, PNG structure)',
+    command:
+        'dart run tool/testing/validation.dart build --target android '
+        '--profile image-sdxs-cpu --out <bundle>, then plan --target '
+        'firebase-android, run and collect; image-sdxs-metal with ios and '
+        'firebase-ios',
+    useWhen:
+        'Physical-device image evidence for a release or a change to the '
+        'image screen, the stable_diffusion runtime or image validation '
+        'tooling; see doc/cross_platform_validation.md.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-voice-question-smoke',
     tier: 'targeted',
     mode: 'manual/device',

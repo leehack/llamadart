@@ -61,6 +61,23 @@ void main() {
       expect(ids, contains('chat-app-image-generation-smoke'));
     });
 
+    test('Firebase image row builds a maintained image profile', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'firebase-image-generation-e2e',
+      );
+
+      for (final id in ['image-sdxs-cpu', 'image-sdxs-metal']) {
+        expect(row.command, contains(id));
+        expect(
+          File(
+            'packages/llamadart_validation/assets/image_profiles/$id.json',
+          ).existsSync(),
+          isTrue,
+        );
+      }
+      expect(row.command, contains('tool/testing/validation.dart build'));
+    });
+
     test('chat-app image row runs the local-only device test', () {
       final row = testMatrixRows.singleWhere(
         (row) => row.id == 'chat-app-image-generation-smoke',

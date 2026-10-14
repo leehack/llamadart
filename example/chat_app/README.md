@@ -306,7 +306,10 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
   to download SDXS, generate a seeded image, and save both PNGs plus a receipt.
   Android writes to app external files under `image_generation_e2e/run-*`;
-  other platforms use the app's temporary directory. It has passed on macOS, the iOS
+  other platforms use the app's temporary directory. For a Firebase device,
+  build it with the `image-sdxs-cpu` or `image-sdxs-metal` validation profile
+  instead of a hand-built bundle; see
+  [image-generation profiles](../../doc/cross_platform_validation.md#image-generation-profiles). It has passed on macOS, the iOS
   simulator and Galaxy S24 and A53 phones (the phone results are in #779). On
   an iPhone 16 Pro the earlier `enterText` version failed its seed check; a
   scratch test using the seed entry this test now uses generated with seed 42
