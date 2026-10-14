@@ -309,6 +309,27 @@ void main() {
       );
     });
 
+    test('dry-runs the text and image coexistence device scenario', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-text-image-coexistence',
+        '--device',
+        'android',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/chat_app && flutter test --run-skipped '
+          '-t local-only '
+          'integration_test/text_image_coexistence_e2e_test.dart '
+          '-d android',
+        ),
+      );
+    });
+
     test('dry-runs the micro-batch sweep device scenario', () async {
       final result = await runLocalE2e(const [
         '--scenario',

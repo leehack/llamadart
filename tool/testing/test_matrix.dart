@@ -815,6 +815,26 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'the Test Lab build is in example/chat_app/README.md.',
   ),
   TestMatrixRow(
+    id: 'chat-app-text-image-coexistence',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'llama.cpp text generation and stable_diffusion image generation in '
+        'one process on a device: a greedy seeded chat reply before the '
+        'image runtime is used must be repeated exactly with the image '
+        'engine loaded, and a seeded 512x512 SDXS image must be repeated '
+        'byte for byte with the text engine still loaded; resident memory '
+        'is logged per step',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-text-image-coexistence --device <macos|android|ios>',
+    useWhen:
+        'llama.cpp or stable_diffusion runtime pin, native bundle packaging, '
+        'or image engine load and memory check changes (#779). Downloads '
+        'the locked chat-gguf-cpu model and SDXS (1.2 GB together); the '
+        'Test Lab build is in example/chat_app/README.md.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-micro-batch-sweep',
     tier: 'targeted',
     mode: 'local-only',

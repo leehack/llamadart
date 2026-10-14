@@ -159,6 +159,7 @@ Pick targeted rows based on the touched surface:
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
 | `stable_diffusion` runtime pin, image worker native calls, progress polling, exit or isolate shutdown | `image-exit-teardown`, `image-generation-smoke` |
 | Chat-app image screen or image model downloads | `chat-app-image-generation-smoke` |
+| llama.cpp and `stable_diffusion` loaded in one process on a device | `chat-app-text-image-coexistence` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |

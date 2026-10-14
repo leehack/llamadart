@@ -884,6 +884,56 @@ flutter build ios --config-only --release \
 (cd <derived-data>/Build/Products && zip -q -r <out>/tests.zip .)
 ```
 
+#### llama.cpp text and stable_diffusion images in one process
+
+`integration_test/text_image_coexistence_e2e_test.dart` checks that a chat
+model and an image model work side by side in one process
+([#779](https://github.com/leehack/llamadart/issues/779)). It downloads and
+hash-checks the locked `chat-gguf-cpu` validation model (563 MB) and SDXS-512
+(683 MB), then runs through the public API, each engine staying loaded from
+its load to the last step:
+
+1. `solo`: a greedy, seeded chat reply, before anything of the image runtime
+   is called.
+2. `ImageGenerationEngine.load`, then a 512x512 image with seed 42.
+3. `after_image`: the same chat request on the same `LlamaEngine`.
+4. The same image request again.
+
+It fails unless the second reply equals the first and both are at least 16
+tokens long, the second PNG equals the first and is a 512x512 image that is
+not blank, and both engines name their backend. A typed error fails the test
+after its `error` line.
+
+```text
+E2E coexistence: text when=<solo|after_image> sha256=<hex> tokens=<n> ms=<n>
+E2E coexistence: image n=<1|2> sha256=<hex> backend=<name> ms=<n>
+E2E coexistence: memory after=<step> rss_mb=<n> peak_rss_mb=<n>
+E2E coexistence: result text_equal=<bool> image_equal=<bool>
+```
+
+A `started step=<step>` line precedes each step, so a run that a native crash
+ends names the step it died in. The `memory` lines hold the resident and peak
+resident set size of the process, which leaves out Metal memory on Apple
+devices.
+
+```sh
+dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-text-image-coexistence --device <device>
+```
+
+For Test Lab, build both APKs from that target as above, with
+`--dart-define=VALIDATION_COMMIT=<exact-source-commit>` and
+`--dart-define=VALIDATION_SOURCE_DIRTY=false` from a clean checkout so the
+`config` line and the receipt name the source, then add:
+
+```sh
+--directories-to-pull=/sdcard/Android/data/com.example.llamadart_chat_example/files/coexistence
+```
+
+Each run directory holds the first image as `coexistence_image.png` and
+`coexistence.json` with the replies, hashes, timings and memory figures. Give
+the Test Lab timeout both downloads on top of the run.
+
 #### Micro-batch sweep and the Android Vulkan prompt cap
 
 `integration_test/micro_batch_sweep_e2e_test.dart` loads the locked

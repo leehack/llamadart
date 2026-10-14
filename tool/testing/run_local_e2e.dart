@@ -1103,6 +1103,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-text-image-coexistence',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Generate llama.cpp text, a stable_diffusion image, the same text '
+          'and the same image again in one process, and require the reply '
+          'and the image to be unchanged.',
+      requiresDevice: true,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'integration_test/text_image_coexistence_e2e_test.dart',
+            '-d',
+            context.device,
+          ],
+          description: 'Flutter chat app text and image coexistence E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'chat-app-micro-batch-sweep',
       group: LocalE2eScenarioGroup.flutterDevice,
       description:
