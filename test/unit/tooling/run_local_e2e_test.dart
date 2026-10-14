@@ -31,6 +31,106 @@ void main() {
       );
     });
 
+    group('dry-run display shell', () {
+      const foreground = LocalE2eCommandStep(
+        workingDirectory: "C:\\work\\it's repo",
+        executable: 'dart',
+        arguments: ['test', '--name', 'a b', 'x,y', '@file', ''],
+        environment: {'MODEL_PATH': r'C:\models\m.gguf', 'NOTE': "it's"},
+        description: 'Foreground step',
+      );
+      const background = LocalE2eCommandStep(
+        workingDirectory: '/repo',
+        executable: 'python3',
+        arguments: ['serve.py', '--port', '7358'],
+        description: 'Background step',
+        background: true,
+      );
+
+      test('renders POSIX syntax for posix shells', () {
+        expect(
+          foreground.toDisplayString(shell: LocalE2eDisplayShell.posix),
+          "cd 'C:\\work\\it'\\''s repo' && "
+          "MODEL_PATH='C:\\models\\m.gguf' NOTE='it'\\''s' "
+          "dart test --name 'a b' x,y @file ''",
+        );
+        expect(
+          background.toDisplayString(shell: LocalE2eDisplayShell.posix),
+          'cd /repo && python3 serve.py --port 7358 &',
+        );
+      });
+
+      test('renders PowerShell syntax for Windows', () {
+        expect(
+          foreground.toDisplayString(shell: LocalE2eDisplayShell.powerShell),
+          "Set-Location -LiteralPath 'C:\\work\\it''s repo'; "
+          r"$env:MODEL_PATH = C:\models\m.gguf; "
+          r"$env:NOTE = 'it''s'; "
+          "dart test --name 'a b' 'x,y' '@file' ''",
+        );
+        expect(
+          background.toDisplayString(shell: LocalE2eDisplayShell.powerShell),
+          'Set-Location -LiteralPath /repo; '
+          'Start-Process -NoNewWindow -FilePath python3 '
+          '-ArgumentList serve.py,--port,7358',
+        );
+      });
+
+      test('uses the call operator for a quoted PowerShell executable', () {
+        const step = LocalE2eCommandStep(
+          workingDirectory: '/repo',
+          executable: r'C:\Program Files\Python\python.exe',
+          arguments: ['-V'],
+          description: 'Quoted executable',
+        );
+
+        expect(
+          step.toDisplayString(shell: LocalE2eDisplayShell.powerShell),
+          "Set-Location -LiteralPath /repo; "
+          "& 'C:\\Program Files\\Python\\python.exe' -V",
+        );
+      });
+
+      test('defaults to the host platform shell', () {
+        expect(
+          LocalE2eDisplayShell.host,
+          Platform.isWindows
+              ? LocalE2eDisplayShell.powerShell
+              : LocalE2eDisplayShell.posix,
+        );
+        expect(
+          background.toDisplayString(),
+          background.toDisplayString(shell: LocalE2eDisplayShell.host),
+        );
+      });
+
+      test('--dry-run prints the injected shell syntax', () async {
+        Future<String> dryRun(LocalE2eDisplayShell shell) async {
+          final result = await runLocalE2e(
+            const ['--scenario', 'root-template-e2e', '--dry-run'],
+            projectRoot: '/repo',
+            displayShell: shell,
+          );
+          expect(result.exitCode, 0);
+          return result.stdout;
+        }
+
+        final posix = await dryRun(LocalE2eDisplayShell.posix);
+        expect(posix, contains('  cd /repo && LLAMA_CPP_GBNF_VALIDATOR='));
+        expect(posix, isNot(contains('Set-Location')));
+
+        final powerShell = await dryRun(LocalE2eDisplayShell.powerShell);
+        expect(
+          powerShell,
+          contains(
+            r'  Set-Location -LiteralPath /repo; $env:LLAMA_CPP_GBNF_VALIDATOR = ',
+          ),
+        );
+        expect(powerShell, isNot(contains(' && ')));
+        expect(powerShell, isNot(contains('  cd ')));
+      });
+    });
+
     test('lists local-only Dart, Flutter, and Web smoke scenarios', () async {
       final result = await runLocalE2e(const ['--list'], projectRoot: '/repo');
 

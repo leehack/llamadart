@@ -776,6 +776,39 @@ void main() {
       );
     });
 
+    test('TTS sends Min-P only when the loaded runtime supports it', () async {
+      for (final supported in <bool>[false, true]) {
+        final engine = MockLlamaEngine()
+          ..loadedCapabilities = LlamaEngineCapabilities(
+            isSupported: true,
+            supportsMinP: supported,
+          );
+        final ttsProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: MockSettingsService(),
+          initialSettings: const ChatSettings(
+            modelPath: 'qwen3-tts.gguf',
+            mmprojPath: 'qwen3-tts-mmproj.gguf',
+            modelSupportsTextToSpeech: true,
+            minP: 0.2,
+          ),
+        );
+        addTearDown(ttsProvider.dispose);
+
+        await ttsProvider.loadModel();
+        expect(ttsProvider.minPSupported, supported);
+        expect(ttsProvider.minP, 0.2);
+
+        final completed = await ttsProvider.synthesizeSpeech('Hello.');
+
+        expect(completed, isTrue);
+        expect(
+          engine.mockBackend.lastTextToSpeechRequest?.minP,
+          supported ? 0.2 : 0.0,
+        );
+      }
+    });
+
     test('Web TTS abort reports an actionable recovery message', () async {
       final ttsProvider = ChatProvider(
         chatService: mockChatService,

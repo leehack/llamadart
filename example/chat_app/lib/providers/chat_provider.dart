@@ -3897,7 +3897,7 @@ class ChatProvider extends ChangeNotifier {
               : _settings.maxTokens.clamp(1, 4096).toInt(),
           topK: _settings.topK.clamp(1, 1000).toInt(),
           topP: _settings.topP.clamp(0.000001, 1).toDouble(),
-          minP: _settings.minP.clamp(0, 1).toDouble(),
+          minP: minPSupported ? _settings.minP.clamp(0, 1).toDouble() : 0,
           temperature: math.max(0, _settings.temperature),
         ),
       );
