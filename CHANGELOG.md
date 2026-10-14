@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.6.0-3`, keeping the `v0.6.0` llama.cpp
+  ABI/bindings while picking up wrapper-only native fixes. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and
+  aligned current README/website native override docs.
+
 - The build hook now verifies every llama.cpp archive it downloads or reuses
   from its cache against a pinned SHA-256, or against the release's
   `SHA256SUMS` when `llamadart_native_tag` or `llamadart_native_repository`
