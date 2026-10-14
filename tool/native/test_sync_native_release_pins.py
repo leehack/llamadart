@@ -3030,5 +3030,85 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
         )
 
 
+class LlamaCppBundleDigestPinTest(unittest.TestCase):
+    PINS = Path(__file__).resolve().parents[2] / "lib/src/hook/native_release_pins.dart"
+
+    def checked_in_pins(self) -> str:
+        return self.PINS.read_text(encoding="utf-8")
+
+    def test_checked_in_pins_list_every_hook_bundle(self) -> None:
+        self.assertEqual(
+            pins.llama_cpp_bundle_names(self.checked_in_pins()),
+            list(pins._STABLE_NATIVE_BUNDLES),
+        )
+
+    def test_replaces_only_the_named_bundle_and_keeps_the_layout(self) -> None:
+        text = self.checked_in_pins()
+        digest = "a" * 64
+        updated = pins.replace_llama_cpp_bundle_checksum(text, "linux-x64", digest)
+        self.assertIn(f"  'linux-x64':\n      '{digest}',", updated)
+        changed = [
+            (before, after)
+            for before, after in zip(text.splitlines(), updated.splitlines())
+            if before != after
+        ]
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(len(updated), len(text))
+        self.assertEqual(
+            pins.litert_lm_bundle_names(updated),
+            pins.litert_lm_bundle_names(text),
+        )
+
+    def test_rejects_missing_unknown_or_duplicate_pins(self) -> None:
+        text = self.checked_in_pins()
+        with self.assertRaisesRegex(ReleaseError, "Could not find llamaCppBundleSha256"):
+            pins.llama_cpp_bundle_names("const llamaCppTag = 'v0.6.0';\n")
+        with self.assertRaisesRegex(ReleaseError, "Could not replace llama.cpp checksum"):
+            pins.replace_llama_cpp_bundle_checksum(text, "linux-riscv64", "a" * 64)
+        duplicated = text.replace(
+            "  'linux-x64':",
+            "  'linux-arm64':",
+        )
+        with self.assertRaisesRegex(ReleaseError, "duplicates a bundle"):
+            pins.llama_cpp_bundle_names(duplicated)
+
+    def test_bundle_checksum_comes_from_the_release_and_must_match_the_manifest(
+        self,
+    ) -> None:
+        name = "llamadart-native-linux-x64-b10514-1.tar.gz"
+        release = {
+            "tag_name": "b10514-1",
+            "assets": [{"name": name, "digest": "sha256:" + "b" * 64}],
+        }
+        self.assertEqual(
+            pins.llama_cpp_bundle_checksum(
+                release, "linux-x64", "b10514-1", {}, repo="leehack/llamadart-native"
+            ),
+            "b" * 64,
+        )
+        self.assertEqual(
+            pins.llama_cpp_bundle_checksum(
+                release,
+                "linux-x64",
+                "b10514-1",
+                {name: "b" * 64},
+                repo="leehack/llamadart-native",
+            ),
+            "b" * 64,
+        )
+        with self.assertRaisesRegex(ReleaseError, "assets.json lists"):
+            pins.llama_cpp_bundle_checksum(
+                release,
+                "linux-x64",
+                "b10514-1",
+                {name: "c" * 64},
+                repo="leehack/llamadart-native",
+            )
+        with self.assertRaisesRegex(ReleaseError, "does not contain required asset"):
+            pins.llama_cpp_bundle_checksum(
+                release, "linux-arm64", "b10514-1", {}, repo="leehack/llamadart-native"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

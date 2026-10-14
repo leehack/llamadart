@@ -800,7 +800,7 @@ def main() -> int:
             current_tag=read_hook_native_tag(pins_text),
             allow_legacy_tag=args.allow_legacy_tag,
         )
-        validate_native_release_manifest(
+        manifest_checksums = validate_native_release_manifest(
             release,
             resolved_llama_cpp_tag,
             repo=args.llamadart_native_repo,
@@ -811,6 +811,18 @@ def main() -> int:
             f"const llamaCppTag = '{resolved_llama_cpp_tag}';",
             "native pins llama.cpp tag",
         )
+        for bundle in llama_cpp_bundle_names(pins_text):
+            pins_text = replace_llama_cpp_bundle_checksum(
+                pins_text,
+                bundle,
+                llama_cpp_bundle_checksum(
+                    release,
+                    bundle,
+                    resolved_llama_cpp_tag,
+                    manifest_checksums,
+                    repo=args.llamadart_native_repo,
+                ),
+            )
         if llama_cpp_package_swift_path.exists():
             checksum = release_asset_checksum(
                 release,
@@ -1672,7 +1684,8 @@ def validate_native_release_manifest(
     release_tag: str,
     *,
     repo: str = DEFAULT_LLAMADART_NATIVE_REPO,
-) -> None:
+) -> dict[str, str]:
+    """Validate the release manifest and return its checksums by file name."""
     release_version = parse_native_release_tag(release_tag)
     is_new_wrapper_form = bool(
         _STABLE_WRAPPER_TAG_PATTERN.fullmatch(release_tag)
@@ -1685,7 +1698,7 @@ def validate_native_release_manifest(
                 f"Release {release_tag} is missing required assets.json "
                 "provenance and hook-contract metadata."
             )
-        return
+        return {}
     if release_version.channel == "stable":
         require_github_sha256_digest(
             manifest_asset,
@@ -1860,6 +1873,7 @@ def validate_native_release_manifest(
                     f"{file_name} is {published_checksum!r}, expected "
                     f"{checksum!r} from assets.json"
                 )
+    return manifest_checksums
 
 
 def normalize_litert_lm_release_tag(tag: str) -> str:
@@ -3091,6 +3105,78 @@ def atomic_write_many(
     finally:
         for path in (*staged.values(), *(item for item in backups.values() if item)):
             path.unlink(missing_ok=True)
+
+
+_LLAMA_CPP_BUNDLE_DIGESTS_RE = re.compile(
+    r"const llamaCppBundleSha256 = <String, String>\{(.*?)\n\};",
+    re.DOTALL,
+)
+
+
+def llama_cpp_bundle_names(pins_text: str) -> list[str]:
+    match = _LLAMA_CPP_BUNDLE_DIGESTS_RE.search(pins_text)
+    if match is None:
+        raise ReleaseError(
+            "Could not find llamaCppBundleSha256 in "
+            f"{DEFAULT_NATIVE_RELEASE_PINS}"
+        )
+    bundles = re.findall(r"'([^']+)':\s*'[0-9a-f]{64}',", match.group(1))
+    if not bundles:
+        raise ReleaseError(
+            f"{DEFAULT_NATIVE_RELEASE_PINS} llamaCppBundleSha256 pins no bundles"
+        )
+    if len(bundles) != len(set(bundles)):
+        raise ReleaseError(
+            f"{DEFAULT_NATIVE_RELEASE_PINS} llamaCppBundleSha256 duplicates a "
+            "bundle"
+        )
+    return bundles
+
+
+def llama_cpp_bundle_checksum(
+    release: dict[str, Any],
+    bundle: str,
+    release_tag: str,
+    manifest_checksums: dict[str, str],
+    *,
+    repo: str,
+) -> str:
+    """Return the archive SHA-256 the hook must verify for [bundle].
+
+    The GitHub asset digest (or the hash of the downloaded asset) is the
+    source; an assets.json entry for the archive must agree with it.
+    """
+    asset_name = f"llamadart-native-{bundle}-{release_tag}.tar.gz"
+    checksum = release_asset_checksum(release, asset_name, repo=repo)
+    manifest_checksum = manifest_checksums.get(asset_name)
+    if manifest_checksum is not None and manifest_checksum != checksum:
+        raise ReleaseError(
+            f"Release {release_tag} checksum mismatch for {asset_name}: "
+            f"assets.json lists {manifest_checksum}, the release asset is "
+            f"{checksum}."
+        )
+    return checksum
+
+
+def replace_llama_cpp_bundle_checksum(
+    pins_text: str,
+    bundle: str,
+    checksum: str,
+) -> str:
+    match = _LLAMA_CPP_BUNDLE_DIGESTS_RE.search(pins_text)
+    if match is None:
+        raise ReleaseError(
+            "Could not find llamaCppBundleSha256 in "
+            f"{DEFAULT_NATIVE_RELEASE_PINS}"
+        )
+    body, count = re.subn(
+        rf"('{re.escape(bundle)}':\s*')[0-9a-f]{{64}}(')",
+        rf"\g<1>{checksum}\2",
+        match.group(1),
+    )
+    if count != 1:
+        raise ReleaseError(f"Could not replace llama.cpp checksum for {bundle}")
+    return pins_text[: match.start(1)] + body + pins_text[match.end(1) :]
 
 
 def litert_lm_bundle_names(pins_text: str) -> list[str]:
