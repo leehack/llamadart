@@ -90,7 +90,7 @@ final _reloadFailure = isA<LlamaInferenceException>().having(
   allOf(
     contains('Metal backend in an error state'),
     contains('Dispose the ImageGenerationEngine and load the model again'),
-    isNot(contains('can run the next request')),
+    isNot(contains('It reports no reason')),
   ),
 );
 
