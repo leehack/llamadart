@@ -9,15 +9,30 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Flutter macOS apps with `llamadart_litert_lm_flutter` now load LiteRT-LM on
-  CPU and GPU from their own bundle, so sandboxed, copied and distributed apps
-  work without a build phase; pair it with the companion release that embeds
-  the macOS runtime
-  ([#1029](https://github.com/leehack/llamadart/issues/1029)).
 - Fix a LiteRT-LM bundle named `.litertlm` failing GPU engine creation on
   iOS and Linux when the process cannot write the bundle's directory and
   `liteRtLmCacheDir` is unset, as in an iOS app bundle: it now runs without
   runtime caches ([#976](https://github.com/leehack/llamadart/issues/976)).
+
+## 0.12.1
+
+- Pair this release with Apple companions `llamadart_llama_cpp_flutter`
+  `0.0.22`, `llamadart_litert_lm_flutter` `0.0.15` and
+  `llamadart_stable_diffusion_flutter` `0.0.3`, which link native runtimes
+  `v0.6.0-2`, `v0.18.0` and `v0.2.0-3`, respectively.
+
+- Flutter macOS apps with `llamadart_litert_lm_flutter` now load LiteRT-LM on
+  CPU and GPU from their own bundle, so sandboxed, copied and distributed apps
+  work without a build phase; pair it with companion `0.0.15`, which embeds
+  the macOS runtime
+  ([#1029](https://github.com/leehack/llamadart/issues/1029)).
+
+- Aligned default WebGPU bridge assets to `v0.1.59`, unchanged from 0.12.0:
+  they embed llama.cpp `v0.6.0`, are qualified against native `v0.6.0`, and
+  keep Web/native llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`
+  parity; Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset
+  manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.12.0
 

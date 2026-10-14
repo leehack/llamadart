@@ -2,6 +2,24 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.12.0` -> `0.12.1`: Flutter macOS LiteRT-LM bundle
+
+Upgrade the LiteRT-LM companion together with the core package:
+
+```yaml
+dependencies:
+  llamadart: ^0.12.1
+  llamadart_litert_lm_flutter: ^0.0.15
+```
+
+Core `0.12.1` embeds the macOS LiteRT-LM runtime only through companion
+`0.0.15`; with an older companion the build warns and the runtime stays in the
+hook cache. A Flutter macOS app that added the
+[LiteRT-LM build phase](https://llamadart.leehack.com/docs/getting-started/installation#flutter-macos-litert-lm-build-phase)
+for 0.12.0 can remove it after upgrading both: the script detects the
+embedded runtime and copies nothing, so leaving it in place is harmless.
+Other platforms and companions are unchanged.
+
 ## `0.11.x` -> `0.12.0`: runtime and chat behavior
 
 Upgrade the Apple companions together with the core package:

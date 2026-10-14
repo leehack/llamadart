@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.15
 
 * Link and embed the complete macOS arm64 LiteRT-LM runtime from
   `leehack/litert-lm-native@v0.18.0`, adding the `LiteRt`, WebGPU accelerator
