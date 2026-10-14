@@ -970,12 +970,27 @@ class LiteRtLmService {
         : null;
 
     final cacheDir = _effectiveCacheDir(modelParams);
+    final usesGpu = [
+      backend,
+      visionBackend,
+      requestedAudioBackend,
+    ].contains(liteRtLmGpuBackend);
     final runtimeCacheDir =
         cacheDir ??
         _modelLink?.runtimeCacheDirectory() ??
-        liteRtLmUnlinkedCacheDirectory(modelPath);
+        liteRtLmUnlinkedCacheDirectory(
+          modelPath,
+          gpu: usesGpu,
+          textOnly:
+              !resolvedVisionEnabled &&
+              !resolvedAudioEnabled &&
+              !resolvedSpeculativeDecoding,
+        );
 
-    Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
+    Future<LiteRtLmRuntimeClient> initializeClient(
+      String? audioBackend,
+      String? cacheDirectory,
+    ) async {
       _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);
       final client = _clientFactory();
       client.configureResponseThinkingTags(
@@ -990,7 +1005,7 @@ class LiteRtLmService {
           audioBackend: audioBackend,
           maxTokens: modelParams.contextSize,
           maxNumImages: resolvedMaxNumImages,
-          cacheDir: runtimeCacheDir,
+          cacheDir: cacheDirectory,
           speculativeDecoding: resolvedSpeculativeDecoding,
           minLogLevel: _liteRtLmMinLogLevel(_logLevel),
           activationDataType: modelParams.liteRtLmActivationDataType,
@@ -1017,19 +1032,36 @@ class LiteRtLmService {
     var resolvedAudioBackend = requestedAudioBackend;
     try {
       try {
-        client = await initializeClient(requestedAudioBackend);
+        client = await initializeClient(requestedAudioBackend, runtimeCacheDir);
       } catch (initialError, initialStackTrace) {
+        // The GPU backend fails engine creation on a cache it rejects, such
+        // as a truncated weight cache, when it cannot write a new one.
+        final uncachedDir =
+            initialError is LiteRtLmEngineCreateError && runtimeCacheDir == null
+            ? liteRtLmUnlinkedCacheDirectory(
+                modelPath,
+                gpu: usesGpu,
+                textOnly: false,
+              )
+            : null;
         final canRetryWithCpuAudio =
             resolvedAudioEnabled &&
             requestedAudioBackend != null &&
             requestedAudioBackend != liteRtLmCpuBackend;
-        if (!canRetryWithCpuAudio) {
+        if (uncachedDir == null && !canRetryWithCpuAudio) {
           rethrow;
         }
 
         try {
-          resolvedAudioBackend = liteRtLmCpuBackend;
-          client = await initializeClient(resolvedAudioBackend);
+          if (uncachedDir != null) {
+            client = await initializeClient(requestedAudioBackend, uncachedDir);
+          } else {
+            resolvedAudioBackend = liteRtLmCpuBackend;
+            client = await initializeClient(
+              resolvedAudioBackend,
+              runtimeCacheDir,
+            );
+          }
         } catch (_) {
           Error.throwWithStackTrace(initialError, initialStackTrace);
         }

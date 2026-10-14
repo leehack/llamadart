@@ -9,6 +9,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_model_link.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
+import '../../../support/litert_lm_gpu_caches.dart';
 import '../../../support/read_only_directory.dart';
 
 void main() {
@@ -213,24 +214,83 @@ void main() {
     expect(link.runtimeCacheDirectory(), models.absolute.path);
   }, testOn: '!windows');
 
-  test('turns the runtime caches off for an unlinked bundle only while the '
-      'process cannot write its directory', () async {
-    final models = await Directory('${tempDir.path}/models').create();
-    final bundle = File('${models.path}/model.litertlm');
-    await bundle.writeAsString('LITERTLM');
+  group('the cache directory of an unlinked bundle', () {
+    late Directory models;
+    late File bundle;
 
-    expect(liteRtLmUnlinkedCacheDirectory(bundle.path), isNull);
+    setUp(() async {
+      models = await Directory('${tempDir.path}/models').create();
+      bundle = File('${models.path}/model.litertlm');
+      await bundle.writeAsString('LITERTLM');
+    });
 
-    if (!makeReadOnly(models)) {
-      markTestSkipped('This user writes a directory without write permission.');
-      return;
+    String? cacheDir({required bool gpu, bool textOnly = true}) =>
+        liteRtLmUnlinkedCacheDirectory(
+          bundle.path,
+          gpu: gpu,
+          textOnly: textOnly,
+        );
+
+    test('is the runtime default while the process can write the bundle '
+        'directory', () {
+      expect(cacheDir(gpu: true), isNull);
+      expect(cacheDir(gpu: true, textOnly: false), isNull);
+      expect(cacheDir(gpu: false), isNull);
+    });
+
+    test('turns a GPU engine uncached in a directory the process cannot '
+        'write, keeping a CPU engine on the runtime default', () {
+      if (!makeReadOnly(models)) {
+        markTestSkipped(
+          'This user writes a directory without write permission.',
+        );
+        return;
+      }
+      expect(cacheDir(gpu: true), ':nocache');
+      expect(cacheDir(gpu: true, textOnly: false), ':nocache');
+      expect(cacheDir(gpu: false), isNull);
+      expect(cacheDir(gpu: false, textOnly: false), isNull);
+      expect(models.listSync().map((entry) => entry.path), [bundle.path]);
+
+      Process.runSync('chmod', ['u+w', models.path]);
+      expect(cacheDir(gpu: true), isNull);
+    }, testOn: '!windows');
+
+    test('keeps the GPU caches of this model file in a directory the process '
+        'cannot write for a text-only engine', () {
+      writeLiteRtLmGpuTextCaches(bundle);
+      if (!makeReadOnly(models)) {
+        markTestSkipped(
+          'This user writes a directory without write permission.',
+        );
+        return;
+      }
+      expect(cacheDir(gpu: true), isNull);
+      expect(cacheDir(gpu: true, textOnly: false), ':nocache');
+
+      bundle.setLastModifiedSync(
+        bundle.lastModifiedSync().subtract(const Duration(minutes: 1)),
+      );
+      expect(cacheDir(gpu: true), ':nocache');
+    }, testOn: '!windows');
+
+    for (final suffix in [
+      '_mldrift_program_cache.bin',
+      '_mldrift_weight_cache.bin',
+    ]) {
+      test('turns a GPU engine uncached with only the $suffix cache in a '
+          'directory the process cannot write', () {
+        writeLiteRtLmGpuTextCaches(bundle, suffixes: [suffix]);
+        if (!makeReadOnly(models)) {
+          markTestSkipped(
+            'This user writes a directory without write permission.',
+          );
+          return;
+        }
+        expect(cacheDir(gpu: true), ':nocache');
+      }, testOn: '!windows');
     }
-    expect(liteRtLmUnlinkedCacheDirectory(bundle.path), ':nocache');
-    expect(models.listSync().map((entry) => entry.path), [bundle.path]);
-
-    Process.runSync('chmod', ['u+w', models.path]);
-    expect(liteRtLmUnlinkedCacheDirectory(bundle.path), isNull);
-  }, testOn: '!windows');
+  });
 
   test('names the link from a sanitized bundle name', () async {
     final file = File('${tempDir.path}/my model \u00fc?.bin');

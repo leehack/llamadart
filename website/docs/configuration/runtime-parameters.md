@@ -168,11 +168,17 @@ The native LiteRT-LM runtime writes cache files such as
 | `null` (default) | `llamadart_litert_lm` under `Directory.systemTemp` | No directory is passed; the runtime caches next to the model file |
 | A path | That directory, created when missing | That directory, created when missing |
 
-On Linux and iOS a model file in a directory the process cannot write, such as
-an iOS app bundle, loads with the runtime caches turned off, so each engine
-create rebuilds what they would hold. Set `liteRtLmCacheDir` to a writable
-directory to keep them. Windows has no such check: set `liteRtLmCacheDir` there
-when the model's directory is read-only.
+On Linux and iOS, when the model file is in a directory the process cannot
+write, such as an iOS app bundle, one named without `.litertlm` loads with the
+runtime caches turned off, so each engine create rebuilds what they would
+hold. One named `.litertlm` keeps the runtime default on the CPU backend,
+which reads caches already next to the file and otherwise runs uncached. On
+the GPU backend it reads the text model's weight and program caches already
+there for that exact file, and runs uncached when they are missing, when the
+runtime rejects them, or when the engine also runs vision, audio or
+speculative decoding. Set `liteRtLmCacheDir` to a writable directory to keep
+every cache. Windows has no such check: set `liteRtLmCacheDir` there when the
+model's directory is read-only.
 
 `liteRtLmMaxProgramCacheBytes` caps GPU program cache files. `null` (default)
 never deletes anything. Otherwise, before each engine create, llamadart

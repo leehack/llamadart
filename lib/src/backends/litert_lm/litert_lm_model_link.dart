@@ -175,16 +175,41 @@ class LiteRtLmModelLink {
 
 /// The cache directory to hand the runtime for a bundle named `.litertlm`
 /// when none is configured: `null`, so the runtime caches next to
-/// [modelPath], or [liteRtLmNoCacheDirectory] when the process cannot write
-/// that directory.
+/// [modelPath], or [liteRtLmNoCacheDirectory] for a [gpu] engine whose caches
+/// the runtime would have to write in a directory the process cannot write.
 ///
 /// Without a cache directory the GPU backend fails engine creation when it
 /// cannot write its caches next to the model, where the CPU backend runs
-/// uncached ([#976](https://github.com/leehack/llamadart/issues/976)).
-String? liteRtLmUnlinkedCacheDirectory(String modelPath) =>
-    _runtimeAcceptsCacheDirectory(File(modelPath).absolute.parent.path)
-    ? null
-    : liteRtLmNoCacheDirectory;
+/// uncached ([#976](https://github.com/leehack/llamadart/issues/976)). Caches
+/// already there are only read, so a [textOnly] engine keeps them when both
+/// GPU caches of this model file exist.
+String? liteRtLmUnlinkedCacheDirectory(
+  String modelPath, {
+  required bool gpu,
+  required bool textOnly,
+}) {
+  if (!gpu) return null;
+  final model = File(modelPath).absolute;
+  if (_runtimeAcceptsCacheDirectory(model.parent.path)) return null;
+  return textOnly && _hasGpuTextCaches(model) ? null : liteRtLmNoCacheDirectory;
+}
+
+/// Whether the GPU caches of the text model are next to [model], named as
+/// LiteRT-LM v0.18 names them: the model path, `_<mtime in seconds>_<size>`
+/// and a suffix. The caches of an earlier version of the file have other
+/// names. The runtime does not document the names of the vision, audio and
+/// drafter caches.
+bool _hasGpuTextCaches(File model) {
+  final stat = model.statSync();
+  if (stat.type != FileSystemEntityType.file) return false;
+  final seconds = stat.modified.millisecondsSinceEpoch ~/ 1000;
+  final prefix = '${model.path}_${seconds}_${stat.size}';
+  return [liteRtLmProgramCacheSuffix, liteRtLmGpuWeightCacheSuffix].every(
+    (suffix) =>
+        FileSystemEntity.typeSync('$prefix$suffix') ==
+        FileSystemEntityType.file,
+  );
+}
 
 /// Mirrors the cache directory check of LiteRT-LM v0.18: `access(2)` with
 /// `W_OK`. On Windows that check passes every existing directory, so this

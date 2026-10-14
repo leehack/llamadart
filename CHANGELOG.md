@@ -2,8 +2,9 @@
 
 - Fix a LiteRT-LM bundle named `.litertlm` failing GPU engine creation on
   iOS and Linux when the process cannot write the bundle's directory and
-  `liteRtLmCacheDir` is unset, as in an iOS app bundle: it now runs without
-  runtime caches ([#976](https://github.com/leehack/llamadart/issues/976)).
+  `liteRtLmCacheDir` is unset, as in an iOS app bundle: the GPU engine now
+  reuses caches already there or runs without them
+  ([#976](https://github.com/leehack/llamadart/issues/976)).
 
 ## 0.12.1
 
