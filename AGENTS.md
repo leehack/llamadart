@@ -179,6 +179,15 @@ analyze and the relevant tests before the final commit.
   lower-priority merge work, file a causally accurate issue, and prepare one
   cohesive recovery before resuming feature work.
 
+## Writing for people
+
+PR bodies, issues, comments, review replies, commit messages, changelog
+entries, docs and code comments are read by people. Keep them concise: lead
+with the outcome, say each thing once, and cut narration, restated context and
+boilerplate. Put bulky evidence (logs, matrices, mutation lists) in a table or
+a linked artifact, not prose. Code comments explain why (a non-obvious
+constraint or trade-off), never what the code does.
+
 ## This file
 
 When a task reveals a durable rule that changes agent behavior and that no
