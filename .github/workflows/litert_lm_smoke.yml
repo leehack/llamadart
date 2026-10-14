@@ -117,7 +117,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: .dart_tool/litert_lm_models/Qwen3-0.6B.litertlm
-          key: litert-lm-smoke-qwen3-0.6b-${{ runner.os }}-v1
+          key: litert-lm-smoke-qwen3-0.6b-${{ runner.os }}-v2
 
       - name: Download tiny LiteRT-LM model
         id: download-model
@@ -128,7 +128,8 @@ jobs:
         run: |
           set -euo pipefail
           model_path=".dart_tool/litert_lm_models/Qwen3-0.6B.litertlm"
-          model_url="https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm?download=true"
+          model_url="https://huggingface.co/litert-community/Qwen3-0.6B/resolve/8414150f2e9dcc82449bcc9c5abc404b399a4d06/Qwen3-0.6B.litertlm?download=true"
+          model_sha256="555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4"
           mkdir -p "$(dirname "$model_path")"
           if [ -s "$model_path" ]; then
             echo "Using cached $model_path ($(wc -c < "$model_path") bytes)"
@@ -150,6 +151,12 @@ jobs:
             curl_args+=(--header "Authorization: Bearer ${HF_TOKEN}")
           fi
           curl "${curl_args[@]}" "$model_url"
+          actual_sha256="$(sha256sum "$tmp_path" | cut -d' ' -f1)"
+          if [ "$actual_sha256" != "$model_sha256" ]; then
+            rm -f "$tmp_path"
+            echo "::error::Model sha256 mismatch: expected $model_sha256, got $actual_sha256"
+            exit 1
+          fi
           mv "$tmp_path" "$model_path"
           echo "Downloaded $model_path ($(wc -c < "$model_path") bytes)"
 
