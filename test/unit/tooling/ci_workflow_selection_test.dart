@@ -332,6 +332,7 @@ void main() {
           .join('\n');
       for (final assertion in [
         'validation_remote_test.dart',
+        'validation_image_profile_test.dart',
         'validation_npu_test.dart',
         'prepare_workspace_test.dart',
         'validation_controller_test.dart',

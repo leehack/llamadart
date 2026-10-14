@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'bundle.dart';
+import 'image_profile.dart';
 import 'npu.dart';
 import 'process.dart';
 
@@ -376,6 +377,13 @@ class RemoteController {
         npu['device_model'] == plan.settings['device_model'] &&
         manifest['execution_path'] == profile['execution_path'];
     requireExecutableValidationProfile(profile, verifiedAndroidKit: validNpu);
+    if (isImageGenerationProfile(profile)) {
+      requireImageGenerationProfile(profile, manifest['target'] as String);
+      if (manifest['test_target'] != imageGenerationTestTarget ||
+          manifest['stable_diffusion_tag'] is! String) {
+        throw StateError('Image bundle lacks its test target or runtime pin');
+      }
+    }
     if (profile['backend'] == 'npu') {
       var checkout = Directory.current.absolute;
       while (!File(
@@ -1065,6 +1073,10 @@ class GcloudProvider implements RemoteProvider {
   ) async {
     if (!plan.firebase) return _startVm(plan, checkpoint);
     final ios = plan.target == 'firebase-ios';
+    final image = isImageGenerationProfile(
+      jsonDecode(File(p.join(plan.bundle, 'profile.json')).readAsStringSync())
+          as Map,
+    );
     final args = [
       'firebase',
       'test',
@@ -1082,7 +1094,7 @@ class GcloudProvider implements RemoteProvider {
       '--results-dir=${plan.runId}',
       '--format=json',
       if (!ios)
-        '--directories-to-pull=/sdcard/Android/data/com.example.llamadart_chat_example/files/validation',
+        '--directories-to-pull=${image ? androidImageEvidenceDirectory : androidValidationDirectory}',
     ];
     final result = await command(
       plan,

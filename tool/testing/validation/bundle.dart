@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import '../../../packages/llamadart_validation/lib/src/runtime_environment.dart';
 
 import 'process.dart';
+import 'image_profile.dart';
 import 'internal_diagnostic.dart';
 import 'npu.dart';
 import 'runtime_bundle.dart';
@@ -96,12 +97,20 @@ Future<Directory> buildValidationBundle(
   }
   final package = p.join(root, 'packages', 'llamadart_validation');
   final selectedProfile =
-      jsonDecode(
-            File(
-              p.join(package, 'assets', 'profiles', '$profile.json'),
-            ).readAsStringSync(),
-          )
+      jsonDecode(validationProfileFile(package, profile).readAsStringSync())
           as Map<String, dynamic>;
+  final image = isImageGenerationProfile(selectedProfile);
+  if (image) {
+    requireImageGenerationProfile(selectedProfile, target);
+    if (internalDiagnosticRunId != null || npuKit != null || model != null) {
+      throw const FormatException(
+        'Image-generation bundles take no diagnostic, kit or model inputs',
+      );
+    }
+  }
+  final testTarget = image
+      ? imageGenerationTestTarget
+      : 'integration_test/validation_test.dart';
   final npu = selectedProfile['backend'] == 'npu';
   requireExecutableValidationProfile(
     selectedProfile,
@@ -146,6 +155,10 @@ Future<Directory> buildValidationBundle(
     'profile': profile,
     'execution_path': executionPath,
     'mode': ['desktop', 'web', 'ios'].contains(target) ? 'release' : mode,
+    if (image) ...{
+      'test_target': testTarget,
+      'stable_diffusion_tag': readStableDiffusionTag(root),
+    },
   };
   final defines = [
     'VALIDATION_PROFILE=$profile',
@@ -289,32 +302,42 @@ Future<Directory> buildValidationBundle(
       }
       await command('flutter', ['pub', 'get'], app);
       destination.createSync(recursive: true);
+      // The interactive app runs text profiles only.
+      if (!image) {
+        await command('flutter', [
+          'build',
+          'apk',
+          '--debug',
+          '--target',
+          'lib/validation_main.dart',
+          '--target-platform',
+          'android-arm64',
+          ...defines.map((value) => '--dart-define=$value'),
+        ], app);
+        File(
+          p.join(
+            app,
+            'build',
+            'app',
+            'outputs',
+            'flutter-apk',
+            'app-debug.apk',
+          ),
+        ).copySync(p.join(destination.path, 'qa-app.apk'));
+      }
       await command('flutter', [
         'build',
         'apk',
         '--debug',
         '--target',
-        'lib/validation_main.dart',
-        '--target-platform',
-        'android-arm64',
-        ...defines.map((value) => '--dart-define=$value'),
-      ], app);
-      File(
-        p.join(app, 'build', 'app', 'outputs', 'flutter-apk', 'app-debug.apk'),
-      ).copySync(p.join(destination.path, 'qa-app.apk'));
-      await command('flutter', [
-        'build',
-        'apk',
-        '--debug',
-        '--target',
-        'integration_test/validation_test.dart',
+        testTarget,
         '--target-platform',
         'android-arm64',
         ...defines.map((value) => '--dart-define=$value'),
       ], app);
       await command(Platform.isWindows ? 'gradlew.bat' : './gradlew', [
         'app:assembleAndroidTest',
-        '-Ptarget=integration_test/validation_test.dart',
+        '-Ptarget=$testTarget',
         '-Ptarget-platform=android-arm64',
         '-Pdart-defines=${defines.map((value) => base64Encode(utf8.encode(value))).join(',')}',
       ], p.join(app, 'android'));
@@ -369,7 +392,7 @@ Future<Directory> buildValidationBundle(
         '--config-only',
         '--release',
         '--target',
-        'integration_test/validation_test.dart',
+        testTarget,
         ...defines.map((value) => '--dart-define=$value'),
       ], app);
       await command('xcodebuild', [
@@ -470,7 +493,7 @@ Future<Directory> buildValidationBundle(
       'llamadart validation bundle\nTarget: $target\nSource: $source\n'
       'Desktop: bin/llamadart-validate --profile $profile --environment-file environment.json --out results\n'
       '${npu ? 'NPU model and licensed vendor libraries are embedded and SHA256-verified.' : 'Models are downloaded and SHA256-verified; weights are not in this bundle.'}\n'
-      'Android: install qa-app.apk for interactive use; app.apk plus test.apk are a matched instrumentation pair.\n'
+      '${image ? 'Image generation: app.apk plus test.apk (or tests.zip) run $testTarget; there is no qa-app.apk.' : 'Android: install qa-app.apk for interactive use; app.apk plus test.apk are a matched instrumentation pair.'}\n'
       'iOS: build/sign XCTest on a Mac. Web: serve with required isolation headers.\n',
     );
     await writeBundleManifest(destination, provenance);

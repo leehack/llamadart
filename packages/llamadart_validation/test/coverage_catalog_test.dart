@@ -196,6 +196,16 @@ void main() {
     ]) {
       File('lib/src/$name').copySync('${library.path}/$name');
     }
+    // The image grader reuses the chat app's model lock and evidence verifier.
+    for (final path in [
+      'example/chat_app/lib/models/image_model_profile.dart',
+      'example/chat_app/lib/models/downloadable_model.dart',
+      'example/chat_app/integration_test/support/image_evidence.dart',
+    ]) {
+      final copy = File('${isolated.path}/$path');
+      copy.parent.createSync(recursive: true);
+      File('../../$path').copySync(copy.path);
+    }
     final command = [
       '--packages=${File('.dart_tool/package_config.json').absolute.path}',
       '${isolated.path}/tool/testing/validation.dart',

@@ -296,9 +296,11 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           arguments: const [
             'test',
             'test/unit/tooling/validation_remote_test.dart',
+            'test/unit/tooling/validation_image_profile_test.dart',
             'test/unit/tooling/validation_npu_test.dart',
           ],
-          description: 'Provider safety, bundle identity and NPU input checks',
+          description:
+              'Provider safety, bundle identity, image grading and NPU input checks',
         ),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,

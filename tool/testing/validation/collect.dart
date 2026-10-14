@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'image_profile.dart';
 import 'process.dart';
 import 'remote.dart';
 
@@ -35,6 +36,27 @@ Future<bool> assessCollectedRun(
         '--output-path',
         output.path,
       ], timeout: const Duration(minutes: 2));
+    }
+  }
+  if (plan.firebase) {
+    final profileBytes = File(
+      p.join(plan.bundle, 'profile.json'),
+    ).readAsBytesSync();
+    final profile = jsonDecode(utf8.decode(profileBytes)) as Map;
+    if (isImageGenerationProfile(profile)) {
+      // Grade against the identity that was planned and uploaded.
+      final manifestBytes = File(
+        p.join(plan.bundle, 'bundle-manifest.json'),
+      ).readAsBytesSync();
+      final bundle = jsonDecode(utf8.decode(manifestBytes)) as Map;
+      return sha256.convert(manifestBytes).toString() ==
+              plan.json['bundle_sha256'] &&
+          ((bundle['files'] as Map?)?['profile.json'] as Map?)?['sha256'] ==
+              sha256.convert(profileBytes).toString() &&
+          profile['id'] == plan.profile &&
+          bundle['profile'] == plan.profile &&
+          bundle['target'] == plan.target.substring('firebase-'.length) &&
+          gradeCollectedImageRun(run, profile, bundle);
     }
   }
   final files = <File>[];
