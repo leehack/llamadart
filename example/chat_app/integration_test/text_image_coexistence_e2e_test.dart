@@ -270,6 +270,11 @@ void main() {
       reason: 'the reply is too short to compare',
     );
     expect(
+      (solo['text'] as String).trim(),
+      isNotEmpty,
+      reason: 'the reply has no visible text to compare',
+    );
+    expect(
       afterImage['text'],
       solo['text'],
       reason: 'the reply changed once the image engine was loaded',
