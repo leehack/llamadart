@@ -129,6 +129,9 @@ analyze and the relevant tests before the final commit.
   `Unreleased` into a version only in an explicit release task.
 - One short user-facing bullet per change; implementation detail and migration
   notes go in the PR or maintainer docs.
+- When release prep moves `Unreleased` into a version, compact it in both
+  files: merge related or follow-up bullets, drop duplicates and items users
+  cannot observe, and tighten wording. Released sections stay as published.
 - Before release prep or a change to current install snippets, run
   `dart run tool/testing/verify_release_docs_versions.dart`, then again with
   `--release-prep`; resolve pending companion bumps in the release-prep PR.
