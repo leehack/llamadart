@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hooks_runner_layout.dart';
+import '../../support/runtime_bundle_http_fixture.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
@@ -477,35 +478,72 @@ void main() {
   });
 
   test('build hook emits archive symlink aliases with target bytes', () async {
-    await bundleDir.delete(recursive: true);
-    await _writeSymlinkedBundleArchive(archiveFile);
-
-    await testCodeBuildHook(
-      mainMethod: build_hook.main,
-      targetOS: OS.linux,
-      targetArchitecture: Architecture.x64,
-      check: (input, output) {
-        final assetFilesByName = <String, File>{};
-        for (final asset
-            in output.assets.encodedAssets
-                .where((asset) => asset.isCodeAsset)
-                .map((asset) => asset.asCodeAsset)) {
-          final assetFile = File(asset.file!.toFilePath());
-          assetFilesByName[path.basename(assetFile.path)] = assetFile;
-        }
-
-        for (final fileName in const ['libmtmd.so', 'libmtmd.so.0']) {
-          final assetFile = assetFilesByName[fileName];
-          expect(assetFile, isNotNull, reason: fileName);
-          expect(assetFile!.readAsStringSync(), _mtmdPayload, reason: fileName);
-        }
-
-        expect(
-          assetFilesByName['libllamadart.so']?.readAsStringSync(),
-          'archive-libllamadart.so',
-        );
-      },
+    const overrideTag = 'v9.8.7';
+    final overrideCacheDir = Directory(
+      '.dart_tool/llamadart/native_bundles/$overrideTag/linux-x64',
     );
+    final overrideArchive = File(
+      path.join(
+        overrideCacheDir.path,
+        'llamadart-native-linux-x64-$overrideTag.tar.gz',
+      ),
+    );
+    if (overrideCacheDir.existsSync()) {
+      await overrideCacheDir.delete(recursive: true);
+    }
+    addTearDown(() async {
+      if (overrideCacheDir.existsSync()) {
+        await overrideCacheDir.delete(recursive: true);
+      }
+    });
+    await _writeSymlinkedBundleArchive(overrideArchive);
+    final fixture = RuntimeBundleHttpFixture({
+      'https://github.com/leehack/llamadart-native/releases/download/'
+          '$overrideTag/SHA256SUMS': sha256SumsFor({
+        path.basename(overrideArchive.path): overrideArchive.readAsBytesSync(),
+      }).codeUnits,
+    });
+
+    await build_hook.withRuntimeBundleHttpClientForTesting(
+      fixture.createClient,
+      () => testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.linux,
+        targetArchitecture: Architecture.x64,
+        userDefines: PackageUserDefines(
+          workspacePubspec: PackageUserDefinesSource(
+            defines: const {'llamadart_native_tag': overrideTag},
+            basePath: Directory.current.uri,
+          ),
+        ),
+        check: (input, output) {
+          final assetFilesByName = <String, File>{};
+          for (final asset
+              in output.assets.encodedAssets
+                  .where((asset) => asset.isCodeAsset)
+                  .map((asset) => asset.asCodeAsset)) {
+            final assetFile = File(asset.file!.toFilePath());
+            assetFilesByName[path.basename(assetFile.path)] = assetFile;
+          }
+
+          for (final fileName in const ['libmtmd.so', 'libmtmd.so.0']) {
+            final assetFile = assetFilesByName[fileName];
+            expect(assetFile, isNotNull, reason: fileName);
+            expect(
+              assetFile!.readAsStringSync(),
+              _mtmdPayload,
+              reason: fileName,
+            );
+          }
+
+          expect(
+            assetFilesByName['libllamadart.so']?.readAsStringSync(),
+            'archive-libllamadart.so',
+          );
+        },
+      ),
+    );
+    expect(fixture.requests, hasLength(1));
   });
 
   test('build hook fails when runtimes config selects none', () async {

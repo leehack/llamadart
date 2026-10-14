@@ -321,13 +321,16 @@ hooks:
   `latest`. List releases with
   `gh release list --repo leehack/llamadart-native --limit 20`.
 - The release must contain `llamadart-native-<bundle>-<tag>.tar.gz` for the
-  target; otherwise the download fails the build.
+  target and a `SHA256SUMS` that lists it; otherwise the build fails before
+  using the archive. The pinned release is verified against digests in
+  `lib/src/hook/native_release_pins.dart` instead.
 - `llamadart_native_repository` takes an `owner/repo` slug or a
   `https://github.com/owner/repo` URL.
 - `llamadart_native_path` wins over downloads. It can point at an archive, an
   extracted bundle directory, or a directory containing `<tag>/<bundle>/`,
   `<bundle>/`, or the expected archive. Relative paths resolve from the
-  `pubspec.yaml` that sets them.
+  `pubspec.yaml` that sets them. Local bundles are trusted as given; the hook
+  does not check their digests.
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
@@ -499,7 +502,7 @@ sequenceDiagram
     Hook->>Cache: check cached bundle
     alt cache miss or stale
         Hook->>Release: download bundle archive
-        Hook->>Hook: extract and validate libraries
+        Hook->>Hook: verify SHA-256, extract and validate libraries
     end
     Hook->>Hook: select llama.cpp modules
     Hook->>Assets: report code assets
@@ -509,6 +512,11 @@ Runtime sources: llama.cpp bundles come from
 [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native) and
 LiteRT-LM bundles from
 [`leehack/litert-lm-native`](https://github.com/leehack/litert-lm-native).
-The hook checks each LiteRT-LM archive for its required libraries and
-downloads it again when a cached copy is corrupt or incomplete. Which
+The hook checks every downloaded or cached llama.cpp, LiteRT-LM and
+stable-diffusion.cpp archive against its SHA-256 before extracting it, and
+downloads it again when a cached copy does not match; a fresh download that
+does not match fails the build with `NativeArchiveDigestException`. An
+already-extracted bundle in the cache is reused without hashing it again.
+The hook also checks each LiteRT-LM archive for its required libraries and
+downloads it again when a cached copy is incomplete. Which
 repository owns which change: [Runtime ownership](../maintainers/runtime-ownership).

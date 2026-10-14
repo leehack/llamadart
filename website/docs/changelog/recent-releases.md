@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- The build hook now verifies every llama.cpp archive it downloads or reuses
+  from its cache against a pinned SHA-256, or against the release's
+  `SHA256SUMS` when `llamadart_native_tag` or `llamadart_native_repository`
+  overrides the release. A corrupted or replaced archive is deleted and
+  downloaded again, and a download that still does not match fails the build
+  with `NativeArchiveDigestException`
+  ([#1015](https://github.com/leehack/llamadart/issues/1015)).
 - Fix a LiteRT-LM bundle named `.litertlm` failing GPU engine creation on
   iOS and Linux when the process cannot write the bundle's directory and
   `liteRtLmCacheDir` is unset, as in an iOS app bundle: the GPU engine now

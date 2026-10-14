@@ -1,5 +1,12 @@
 import 'dart:async'
-    show Completer, StreamSubscription, Timer, TimeoutException, unawaited;
+    show
+        Completer,
+        StreamSubscription,
+        Timer,
+        TimeoutException,
+        Zone,
+        runZoned,
+        unawaited;
 import 'dart:convert' show jsonDecode, utf8;
 import 'dart:io';
 
@@ -12,6 +19,7 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
+import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/hook/native_runtime_coexistence.dart';
@@ -1183,13 +1191,13 @@ Future<Directory> _acquireStableDiffusionBundle({
       description: 'stable_diffusion bundle',
       log: log,
     );
-    if (!await _stableDiffusionArchiveMatchesPin(archiveFile, bundleSpec)) {
-      await archiveFile.delete();
-      throw Exception(
-        'stable_diffusion archive ${bundleSpec.archiveName} does not match '
-        'its pinned SHA-256 ${bundleSpec.sha256}.',
-      );
-    }
+    await requireNativeArchiveSha256(
+      archive: archiveFile,
+      expectedSha256: bundleSpec.sha256,
+      digestSource:
+          'the pinned $_stableDiffusionNativeRepoSlug@'
+          '$stableDiffusionReleaseTag digest',
+    );
   }
 
   await _extractStableDiffusionLibraries(
@@ -1403,14 +1411,21 @@ Future<bool> _verifyLiteRtLmArchiveChecksum({
     return true;
   }
 
-  final message =
-      'LiteRT-LM archive ${bundleSpec.archiveName} checksum mismatch: '
-      'expected ${bundleSpec.sha256}, got $actualSha256.';
   if (!allowRefresh) {
-    throw Exception(message);
+    await archiveFile.delete();
+    throw NativeArchiveDigestException.mismatch(
+      archiveName: bundleSpec.archiveName,
+      expectedSha256: bundleSpec.sha256,
+      actualSha256: actualSha256,
+      digestSource:
+          'the pinned leehack/litert-lm-native@$liteRtLmReleaseTag digest',
+    );
   }
 
-  log.warning('$message Redownloading.');
+  log.warning(
+    'LiteRT-LM archive ${bundleSpec.archiveName} checksum mismatch: '
+    'expected ${bundleSpec.sha256}, got $actualSha256. Redownloading.',
+  );
   await archiveFile.delete();
   return false;
 }
@@ -1794,42 +1809,60 @@ Future<Directory> _acquireBundleDirectory({
   }
 
   await Directory(cacheDir).create(recursive: true);
+  final expectedDigest = await _expectedNativeArchiveDigest(
+    nativeConfig: nativeConfig,
+    bundle: bundle,
+    archiveName: archiveName,
+    cacheDir: cacheDir,
+    log: log,
+  );
 
   var extractedLibraryPaths = const <String>[];
   if (archiveFile.existsSync()) {
-    extractedLibraryPaths = await _extractCachedArchive(
-      archivePath: archivePath,
-      extractedDir: extractedDir,
-      cacheDir: cacheDir,
-      log: log,
-    );
-    if (_isBundleLayoutCompatible(
-      bundle: bundle,
-      libraryPaths: extractedLibraryPaths,
-      log: log,
-    )) {
-      log.info('Using cached native bundle archive: $archivePath');
-      return extractedDir;
+    final actualSha256 = await fileSha256(archiveFile);
+    if (actualSha256 == expectedDigest.sha256) {
+      extractedLibraryPaths = await _extractCachedArchive(
+        archivePath: archivePath,
+        extractedDir: extractedDir,
+        cacheDir: cacheDir,
+        log: log,
+      );
+      if (_isBundleLayoutCompatible(
+        bundle: bundle,
+        libraryPaths: extractedLibraryPaths,
+        log: log,
+      )) {
+        log.info('Using cached native bundle archive: $archivePath');
+        return extractedDir;
+      }
+      log.warning(
+        'Cached native bundle archive is stale; redownloading: $archivePath',
+      );
+    } else {
+      log.warning(
+        'Cached native bundle archive $archivePath has SHA-256 '
+        '$actualSha256, but ${expectedDigest.source} expects '
+        '${expectedDigest.sha256}; redownloading.',
+      );
     }
-
-    log.warning(
-      'Cached native bundle archive is stale; redownloading: $archivePath',
-    );
     await archiveFile.delete();
     if (extractedDir.existsSync()) {
       await extractedDir.delete(recursive: true);
     }
   }
 
-  if (!archiveFile.existsSync()) {
-    await _downloadReleaseAsset(
-      repository: nativeConfig.repository,
-      nativeTag: nativeConfig.tag,
-      assetName: archiveName,
-      destinationPath: archivePath,
-      log: log,
-    );
-  }
+  await _downloadReleaseAsset(
+    repository: nativeConfig.repository,
+    nativeTag: nativeConfig.tag,
+    assetName: archiveName,
+    destinationPath: archivePath,
+    log: log,
+  );
+  await requireNativeArchiveSha256(
+    archive: archiveFile,
+    expectedSha256: expectedDigest.sha256,
+    digestSource: expectedDigest.source,
+  );
   extractedLibraryPaths = await _extractCachedArchive(
     archivePath: archivePath,
     extractedDir: extractedDir,
@@ -1844,6 +1877,75 @@ Future<Directory> _acquireBundleDirectory({
     throw Exception('Downloaded bundle $archiveName is missing runtime deps.');
   }
   return extractedDir;
+}
+
+/// The SHA-256 a llama.cpp archive must have: the pin for the default release,
+/// or the release's own `SHA256SUMS` entry for a tag or repository override.
+Future<({String sha256, String source})> _expectedNativeArchiveDigest({
+  required _NativeBundleConfig nativeConfig,
+  required String bundle,
+  required String archiveName,
+  required String cacheDir,
+  required Logger log,
+}) async {
+  if (nativeConfig.tag == llamaCppTag &&
+      nativeConfig.repository == _nativeRepoSlug) {
+    final pinned = llamaCppBundleSha256[bundle];
+    if (pinned == null) {
+      throw NativeArchiveDigestException(
+        'No SHA-256 is pinned for $archiveName in llamaCppBundleSha256, so '
+        'the hook cannot verify it. Run tool/native/sync_native_release_pins.py '
+        'for $llamaCppTag to pin every bundle.',
+      );
+    }
+    return (
+      sha256: pinned,
+      source: 'the pinned $_nativeRepoSlug@$llamaCppTag digest',
+    );
+  }
+
+  final source = '${nativeConfig.sourceLabel} SHA256SUMS';
+  final url =
+      'https://github.com/${nativeConfig.repository}/releases/download/'
+      '${nativeConfig.tag}/SHA256SUMS';
+  final checksumFile = File(path.join(cacheDir, 'SHA256SUMS'));
+  try {
+    try {
+      await _downloadRuntimeBundle(
+        url: url,
+        destination: checksumFile,
+        description: 'native release SHA256SUMS',
+        log: log,
+      );
+    } on _RuntimeBundleDownloadHttpException catch (error) {
+      if (error.statusCode != HttpStatus.notFound) {
+        rethrow;
+      }
+      throw NativeArchiveDigestException(
+        '${nativeConfig.sourceLabel} publishes no SHA256SUMS ($url returned '
+        '404), so the hook cannot verify $archiveName. Use a release that '
+        'publishes SHA256SUMS, or set $nativePathUserDefineKey to a local '
+        'bundle you trust.',
+      );
+    }
+    final listedSha256 = sha256SumsEntry(
+      await checksumFile.readAsString(),
+      fileName: archiveName,
+      source: source,
+    );
+    if (listedSha256 == null) {
+      throw NativeArchiveDigestException(
+        '$source lists no SHA-256 for $archiveName, so the hook cannot verify '
+        'it. Use a release whose SHA256SUMS covers this bundle, or set '
+        '$nativePathUserDefineKey to a local bundle you trust.',
+      );
+    }
+    return (sha256: listedSha256, source: source);
+  } finally {
+    if (checksumFile.existsSync()) {
+      await checksumFile.delete();
+    }
+  }
 }
 
 String _bundleCacheDirectory({
@@ -2339,7 +2441,11 @@ Future<void> _downloadRuntimeBundleOnce({
   required Duration transferTimeout,
   required http.Client Function()? createClient,
 }) async {
-  final client = (createClient ?? http.Client.new)();
+  final client =
+      (createClient ??
+      Zone.current[_runtimeBundleHttpClientZoneKey]
+          as http.Client Function()? ??
+      http.Client.new)();
   final temporaryDestination = File('${destination.path}.tmp');
   try {
     if (temporaryDestination.existsSync()) {
@@ -2396,6 +2502,23 @@ Future<void> _downloadRuntimeBundleOnce({
       await temporaryDestination.delete();
     }
   }
+}
+
+final _runtimeBundleHttpClientZoneKey = Object();
+
+/// Runs [body] with every runtime download the hook makes served by clients
+/// from [createClient].
+///
+/// This is intended for hook tests that drive the build hook entrypoint
+/// offline; production code never sets it.
+Future<T> withRuntimeBundleHttpClientForTesting<T>(
+  http.Client Function() createClient,
+  Future<T> Function() body,
+) {
+  return runZoned(
+    body,
+    zoneValues: {_runtimeBundleHttpClientZoneKey: createClient},
+  );
 }
 
 /// Downloads a runtime bundle through the hardened build-hook download path.

@@ -16,6 +16,24 @@ void main() {
     expect(isValidNativeReleaseTag(llamaCppTag), isTrue, reason: llamaCppTag);
   });
 
+  test('llama.cpp pins a sha256 for exactly the bundles the hook selects', () {
+    final selectable = <String>{
+      for (final os in OS.values)
+        for (final arch in Architecture.values)
+          for (final isIosSimulator in const [false, true])
+            ?resolveNativeBundleSpec(
+              os: os,
+              arch: arch,
+              isIosSimulator: isIosSimulator,
+            )?.bundle,
+    };
+    expect(llamaCppBundleSha256.keys.toSet(), selectable);
+    for (final MapEntry(key: bundle, value: digest)
+        in llamaCppBundleSha256.entries) {
+      expect(digest, matches(sha256Pattern), reason: bundle);
+    }
+  });
+
   test('LiteRT-LM cache version is the release tag without its v prefix', () {
     expect(liteRtLmReleaseTag, startsWith('v'));
     expect(liteRtLmVersion, liteRtLmReleaseTag.substring(1));

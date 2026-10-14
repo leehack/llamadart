@@ -216,6 +216,7 @@ else:
 
     await pinsFile.writeAsString('''
 const llamaCppTag = 'b9998';
+${_llamaCppBundleDigestPins()}
 const liteRtLmReleaseTag = 'v1.0.0';
 const liteRtLmVersion = '1.0.0';
 
@@ -377,8 +378,9 @@ paths=(
     expect(result.stdout, contains('llama.cpp -> leehack/llamadart-native'));
     expect(result.stdout, contains('LiteRT-LM -> leehack/litert-lm-native'));
 
-    final pins = await pinsFile.readAsString();
+    final pins = (await pinsFile.readAsString()).replaceAll('\r\n', '\n');
     expect(pins, contains("const llamaCppTag = '$llamaTag';"));
+    expect(pins, contains(_llamaCppBundleDigestPins(llamaTag)));
     expect(pins, contains("const liteRtLmReleaseTag = '$litertTag';"));
     expect(pins, contains("const liteRtLmVersion = '9.9.9';"));
     expect(pins, contains("sha256: '$litertRuntimeChecksum'"));
@@ -809,10 +811,19 @@ paths=(
         0,
         reason: '${transition.stdout}\n${transition.stderr}',
       );
-      expect(
-        await File(path.join(setup.root.path, _pinsPath)).readAsString(),
-        contains("const llamaCppTag = 'v0.2.0';"),
-      );
+      final transitionedPins = (await File(
+        path.join(setup.root.path, _pinsPath),
+      ).readAsString()).replaceAll('\r\n', '\n');
+      expect(transitionedPins, contains("const llamaCppTag = 'v0.2.0';"));
+      for (final (index, bundle) in _stableNativeBundles.indexed) {
+        expect(
+          transitionedPins,
+          contains(
+            "'$bundle':\n      '${_hex(_fixtureHexCharacters[index])}',",
+          ),
+          reason: bundle,
+        );
+      }
       expect(
         await File(path.join(setup.root.path, 'README.md')).readAsString(),
         contains('leehack/llamadart-native@v0.2.0'),
@@ -900,6 +911,50 @@ paths=(
       expect(legacy.exitCode, 0, reason: '${legacy.stdout}\n${legacy.stderr}');
     },
   );
+
+  test('pins every bundle archive digest the release publishes', () async {
+    final setup = await _writeLlamaOnlyRepo('b10514');
+    addTearDown(() => setup.root.delete(recursive: true));
+    final pinsFile = File(path.join(setup.root.path, _pinsPath));
+    final originalPins = await pinsFile.readAsString();
+
+    await _writeNightlyNativeReleaseFixture(
+      setup.releaseDir,
+      'b10514-1',
+      omittedBundle: 'linux-x64',
+    );
+    final missing = await _runLlamaSync(setup, 'b10514-1');
+    expect(missing.exitCode, 1);
+    expect(
+      missing.stderr,
+      contains(
+        'does not contain required asset '
+        'llamadart-native-linux-x64-b10514-1.tar.gz',
+      ),
+    );
+    expect(await pinsFile.readAsString(), originalPins);
+
+    await _writeNightlyNativeReleaseFixture(setup.releaseDir, 'b10514-1');
+    final synced = await _runLlamaSync(setup, 'b10514-1');
+    expect(synced.exitCode, 0, reason: '${synced.stdout}\n${synced.stderr}');
+    expect(
+      (await pinsFile.readAsString()).replaceAll('\r\n', '\n'),
+      contains(_llamaCppBundleDigestPins('b10514-1')),
+    );
+  });
+
+  test('refuses to sync llama.cpp without bundle digest pins', () async {
+    final setup = await _writeLlamaOnlyRepo('b10514');
+    addTearDown(() => setup.root.delete(recursive: true));
+    final pinsFile = File(path.join(setup.root.path, _pinsPath));
+    await pinsFile.writeAsString("const llamaCppTag = 'b10514';\n");
+    await _writeNightlyNativeReleaseFixture(setup.releaseDir, 'b10514-1');
+
+    final result = await _runLlamaSync(setup, 'b10514-1');
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('Could not find llamaCppBundleSha256'));
+    expect(await pinsFile.readAsString(), "const llamaCppTag = 'b10514';\n");
+  });
 
   test('requires provenance manifests for new wrapper release forms', () async {
     final missingManifestSetup = await _writeLlamaOnlyRepo('b10514');
@@ -1904,7 +1959,7 @@ Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
   await pinsFile.parent.create(recursive: true);
   await pinsFile.writeAsString('''
 const llamaCppTag = '$currentTag';
-''');
+${_llamaCppBundleDigestPins()}''');
   final releaseDir = Directory(path.join(root.path, 'releases'))
     ..createSync(recursive: true);
   await _writePackageSwift(
@@ -2020,6 +2075,7 @@ Future<void> _writeNightlyNativeReleaseFixture(
   bool includeNativeReleaseTag = true,
   bool includeLegacyTag = true,
   String? llamaCppTag,
+  String? omittedBundle,
 }) {
   final artifactFile = 'llamadart-native-apple-xcframework-$tag.zip';
   final artifactChecksum = _hex('b');
@@ -2039,6 +2095,12 @@ Future<void> _writeNightlyNativeReleaseFixture(
     'tag_name': tag,
     'assets': [
       {'name': artifactFile, 'digest': 'sha256:$artifactChecksum'},
+      for (final bundle in _stableNativeBundles)
+        if (bundle != omittedBundle)
+          {
+            'name': 'llamadart-native-$bundle-$tag.tar.gz',
+            'digest': 'sha256:${_llamaBundleDigest(bundle, tag)}',
+          },
       if (includeManifest)
         {
           'name': 'assets.json',
@@ -2707,6 +2769,15 @@ Future<void> _writeReleaseFixture(
     path.join(dir.path, '${repo.replaceAll('/', '__')}__$tag.json'),
   );
   final releaseAssetChecksums = Map<String, String>.of(assets);
+  if (repo == 'leehack/llamadart-native') {
+    final releaseTag = resolvedTag ?? tag;
+    for (final bundle in _stableNativeBundles) {
+      releaseAssetChecksums.putIfAbsent(
+        'llamadart-native-$bundle-$releaseTag.tar.gz',
+        () => _llamaBundleDigest(bundle, releaseTag),
+      );
+    }
+  }
   if (repo == 'leehack/litert-lm-native') {
     final ownerFixture = File(
       path.join(
@@ -2830,6 +2901,22 @@ Future<void> _writeReleaseFixture(
 }
 
 String _hex(String character) => List.filled(64, character).join();
+
+/// The archive digest release fixtures publish for [bundle] at [tag].
+String _llamaBundleDigest(String bundle, String tag) =>
+    sha256.convert(utf8.encode('$bundle@$tag')).toString();
+
+/// The `llamaCppBundleSha256` pin block, with each bundle's [tag] fixture
+/// digest or zeros when [tag] is null.
+String _llamaCppBundleDigestPins([String? tag]) => [
+  'const llamaCppBundleSha256 = <String, String>{',
+  for (final bundle in _stableNativeBundles) ...[
+    "  '$bundle':",
+    "      '${tag == null ? _hex('0') : _llamaBundleDigest(bundle, tag)}',",
+  ],
+  '};',
+  '',
+].join('\n');
 
 const Map<String, (String, String)> _litertAppleTargets = {
   'LiteRtLm': ('litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip', '3'),
