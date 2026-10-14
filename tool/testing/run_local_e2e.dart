@@ -41,7 +41,15 @@ class LocalE2eCommandStep {
   final bool background;
   final int? waitForPort;
 
-  String toDisplayString() {
+  /// Renders this step as a copy-pasteable command for [shell].
+  String toDisplayString({LocalE2eDisplayShell? shell}) {
+    return switch (shell ?? LocalE2eDisplayShell.host) {
+      LocalE2eDisplayShell.posix => _toPosixDisplayString(),
+      LocalE2eDisplayShell.powerShell => _toPowerShellDisplayString(),
+    };
+  }
+
+  String _toPosixDisplayString() {
     final envPrefix = environment.entries
         .map((entry) => '${entry.key}=${_shellQuote(entry.value)}')
         .join(' ');
@@ -50,6 +58,47 @@ class LocalE2eCommandStep {
     final suffix = background ? ' &' : '';
     return 'cd ${_shellQuote(workingDirectory)} && $rendered$suffix';
   }
+
+  String _toPowerShellDisplayString() {
+    final statements = [
+      'Set-Location -LiteralPath ${_powerShellQuote(workingDirectory)}',
+      for (final entry in environment.entries)
+        '\$env:${entry.key} = ${_powerShellQuote(entry.value)}',
+    ];
+    if (background) {
+      final argumentList = arguments.isEmpty
+          ? ''
+          : ' -ArgumentList ${arguments.map(_powerShellQuote).join(',')}';
+      statements.add(
+        'Start-Process -NoNewWindow -FilePath '
+        '${_powerShellQuote(executable)}$argumentList',
+      );
+    } else {
+      final quotedExecutable = _powerShellQuote(executable);
+      // A quoted string at command position is an expression in PowerShell,
+      // so it needs the call operator to run.
+      final invocation = quotedExecutable == executable
+          ? executable
+          : '& $quotedExecutable';
+      statements.add(
+        [invocation, ...arguments.map(_powerShellQuote)].join(' '),
+      );
+    }
+    return statements.join('; ');
+  }
+}
+
+/// Shell syntax used when `--dry-run` prints scenario commands.
+enum LocalE2eDisplayShell {
+  /// POSIX `sh` syntax for macOS and Linux.
+  posix,
+
+  /// PowerShell syntax for Windows.
+  powerShell;
+
+  /// The shell matching the platform running the tool.
+  static LocalE2eDisplayShell get host =>
+      Platform.isWindows ? powerShell : posix;
 }
 
 class _BackgroundProcess {
@@ -1672,6 +1721,7 @@ Future<LocalE2eResult> runLocalE2e(
   Future<void> Function(int port)? portAvailabilityCheck,
   Future<void> Function(int port, Process owner)? portReadinessWait,
   Future<ProcessResult> Function(LocalE2eCommandStep step)? foregroundStepRun,
+  LocalE2eDisplayShell? displayShell,
 }) async {
   final parsed = _ParsedArgs.parse(args);
   if (parsed.help) {
@@ -1901,7 +1951,10 @@ Future<LocalE2eResult> runLocalE2e(
   final steps = scenario.steps(context);
 
   if (parsed.dryRun) {
-    return LocalE2eResult(0, stdout: _formatDryRun(scenario, steps));
+    return LocalE2eResult(
+      0,
+      stdout: _formatDryRun(scenario, steps, displayShell),
+    );
   }
 
   final buffer = StringBuffer()
@@ -2063,6 +2116,7 @@ String _formatScenarioList(List<LocalE2eScenario> scenarios) {
 String _formatDryRun(
   LocalE2eScenario scenario,
   List<LocalE2eCommandStep> steps,
+  LocalE2eDisplayShell? shell,
 ) {
   final buffer = StringBuffer()
     ..writeln('Scenario: ${scenario.name}')
@@ -2072,7 +2126,7 @@ String _formatDryRun(
     ..writeln('Commands:');
   for (final step in steps) {
     buffer.writeln('- ${step.description}:');
-    buffer.writeln('  ${step.toDisplayString()}');
+    buffer.writeln('  ${step.toDisplayString(shell: shell)}');
   }
   return buffer.toString();
 }
@@ -2177,6 +2231,15 @@ String _shellQuote(String value) {
     return value;
   }
   return "'${value.replaceAll("'", "'\\''")}'";
+}
+
+String _powerShellQuote(String value) {
+  // Excludes `,` and `@`, which PowerShell parses as array and splat syntax.
+  final safe = RegExp(r'^[A-Za-z0-9_%+=:./\\-]+$');
+  if (value.isNotEmpty && safe.hasMatch(value)) {
+    return value;
+  }
+  return "'${value.replaceAll("'", "''")}'";
 }
 
 class _ParsedArgs {

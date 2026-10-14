@@ -31,6 +31,106 @@ void main() {
       );
     });
 
+    group('dry-run display shell', () {
+      const foreground = LocalE2eCommandStep(
+        workingDirectory: "C:\\work\\it's repo",
+        executable: 'dart',
+        arguments: ['test', '--name', 'a b', 'x,y', '@file', ''],
+        environment: {'MODEL_PATH': r'C:\models\m.gguf', 'NOTE': "it's"},
+        description: 'Foreground step',
+      );
+      const background = LocalE2eCommandStep(
+        workingDirectory: '/repo',
+        executable: 'python3',
+        arguments: ['serve.py', '--port', '7358'],
+        description: 'Background step',
+        background: true,
+      );
+
+      test('renders POSIX syntax for posix shells', () {
+        expect(
+          foreground.toDisplayString(shell: LocalE2eDisplayShell.posix),
+          "cd 'C:\\work\\it'\\''s repo' && "
+          "MODEL_PATH='C:\\models\\m.gguf' NOTE='it'\\''s' "
+          "dart test --name 'a b' x,y @file ''",
+        );
+        expect(
+          background.toDisplayString(shell: LocalE2eDisplayShell.posix),
+          'cd /repo && python3 serve.py --port 7358 &',
+        );
+      });
+
+      test('renders PowerShell syntax for Windows', () {
+        expect(
+          foreground.toDisplayString(shell: LocalE2eDisplayShell.powerShell),
+          "Set-Location -LiteralPath 'C:\\work\\it''s repo'; "
+          r"$env:MODEL_PATH = C:\models\m.gguf; "
+          r"$env:NOTE = 'it''s'; "
+          "dart test --name 'a b' 'x,y' '@file' ''",
+        );
+        expect(
+          background.toDisplayString(shell: LocalE2eDisplayShell.powerShell),
+          'Set-Location -LiteralPath /repo; '
+          'Start-Process -NoNewWindow -FilePath python3 '
+          '-ArgumentList serve.py,--port,7358',
+        );
+      });
+
+      test('uses the call operator for a quoted PowerShell executable', () {
+        const step = LocalE2eCommandStep(
+          workingDirectory: '/repo',
+          executable: r'C:\Program Files\Python\python.exe',
+          arguments: ['-V'],
+          description: 'Quoted executable',
+        );
+
+        expect(
+          step.toDisplayString(shell: LocalE2eDisplayShell.powerShell),
+          "Set-Location -LiteralPath /repo; "
+          "& 'C:\\Program Files\\Python\\python.exe' -V",
+        );
+      });
+
+      test('defaults to the host platform shell', () {
+        expect(
+          LocalE2eDisplayShell.host,
+          Platform.isWindows
+              ? LocalE2eDisplayShell.powerShell
+              : LocalE2eDisplayShell.posix,
+        );
+        expect(
+          background.toDisplayString(),
+          background.toDisplayString(shell: LocalE2eDisplayShell.host),
+        );
+      });
+
+      test('--dry-run prints the injected shell syntax', () async {
+        Future<String> dryRun(LocalE2eDisplayShell shell) async {
+          final result = await runLocalE2e(
+            const ['--scenario', 'root-template-e2e', '--dry-run'],
+            projectRoot: '/repo',
+            displayShell: shell,
+          );
+          expect(result.exitCode, 0);
+          return result.stdout;
+        }
+
+        final posix = await dryRun(LocalE2eDisplayShell.posix);
+        expect(posix, contains('  cd /repo && LLAMA_CPP_GBNF_VALIDATOR='));
+        expect(posix, isNot(contains('Set-Location')));
+
+        final powerShell = await dryRun(LocalE2eDisplayShell.powerShell);
+        expect(
+          powerShell,
+          contains(
+            r'  Set-Location -LiteralPath /repo; $env:LLAMA_CPP_GBNF_VALIDATOR = ',
+          ),
+        );
+        expect(powerShell, isNot(contains(' && ')));
+        expect(powerShell, isNot(contains('  cd ')));
+      });
+    });
+
     test('lists local-only Dart, Flutter, and Web smoke scenarios', () async {
       final result = await runLocalE2e(const ['--list'], projectRoot: '/repo');
 
@@ -61,11 +161,11 @@ void main() {
     test(
       'Android Perfetto plan checks evidence before an offline model-free build',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'android-perfetto-capability',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const ['--scenario', 'android-perfetto-capability', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         final commands = result.stdout
@@ -88,11 +188,11 @@ void main() {
     );
 
     test('builds the GBNF validator before the grammar test uses it', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'root-template-e2e',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'root-template-e2e', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
       final buildDir =
           Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ??
           '/repo/.dart_tool/llama_cpp_chat_tests';
@@ -123,21 +223,25 @@ void main() {
     test(
       'requires a model and wires the bounded LiteRT lifecycle scenario',
       () async {
-        final missing = await runLocalE2e(const [
-          '--scenario',
-          'litert-lm-lifecycle',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final missing = await runLocalE2e(
+          const ['--scenario', 'litert-lm-lifecycle', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(missing.exitCode, 64);
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'litert-lm-lifecycle',
-          '--model-path',
-          '/model.litertlm',
-          '--backend',
-          'gpu',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'litert-lm-lifecycle',
+            '--model-path',
+            '/model.litertlm',
+            '--backend',
+            'gpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(result.exitCode, 0);
         expect(result.stdout, contains('LITERT_LM_MODEL=/model.litertlm'));
         expect(result.stdout, contains('LITERT_LM_BACKEND=gpu'));
@@ -151,21 +255,25 @@ void main() {
     test(
       'requires a model and wires the native prompt cancel scenario',
       () async {
-        final missing = await runLocalE2e(const [
-          '--scenario',
-          'native-prompt-cancel',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final missing = await runLocalE2e(
+          const ['--scenario', 'native-prompt-cancel', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(missing.exitCode, 64);
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'native-prompt-cancel',
-          '--model-path',
-          '/model.gguf',
-          '--backend',
-          'metal',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'native-prompt-cancel',
+            '--model-path',
+            '/model.gguf',
+            '--backend',
+            'metal',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(result.exitCode, 0);
         expect(result.stdout, contains('PROMPT_CANCEL_MODEL=/model.gguf'));
         expect(result.stdout, contains('PROMPT_CANCEL_BACKEND=metal'));
@@ -179,19 +287,23 @@ void main() {
     test(
       'requires a model and wires the native exit teardown scenario',
       () async {
-        final missing = await runLocalE2e(const [
-          '--scenario',
-          'native-exit-teardown',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final missing = await runLocalE2e(
+          const ['--scenario', 'native-exit-teardown', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(missing.exitCode, 64);
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'native-exit-teardown',
-          '--model-path',
-          '/model.gguf',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'native-exit-teardown',
+            '--model-path',
+            '/model.gguf',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(result.exitCode, 0);
         expect(result.stdout, contains('EXIT_TEARDOWN_MODEL=/model.gguf'));
         expect(
@@ -204,13 +316,17 @@ void main() {
     test(
       'dry-runs a Flutter device scenario with the requested device',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'chat-app-model-cache',
-          '--device',
-          'macos',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'chat-app-model-cache',
+            '--device',
+            'macos',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(result.stdout, contains('chat-app-model-cache'));
@@ -226,15 +342,19 @@ void main() {
     );
 
     test('dry-runs the LiteRT-LM reload memory device scenario', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-litert-reload-memory',
-        '--device',
-        'macos',
-        '--model-path',
-        '/models/Qwen3-0.6B.litertlm',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-litert-reload-memory',
+          '--device',
+          'macos',
+          '--model-path',
+          '/models/Qwen3-0.6B.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -250,13 +370,17 @@ void main() {
     });
 
     test('the reload memory scenario downloads the model by default', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-litert-reload-memory',
-        '--device',
-        'android',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-litert-reload-memory',
+          '--device',
+          'android',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('-d android'));
@@ -264,13 +388,17 @@ void main() {
     });
 
     test('dry-runs the LiteRT-LM read-only bundle device scenario', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-litert-read-only-bundle',
-        '--device',
-        'ios',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-litert-read-only-bundle',
+          '--device',
+          'ios',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -286,15 +414,19 @@ void main() {
     });
 
     test('the read-only bundle scenario passes a supplied model', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-litert-read-only-bundle',
-        '--device',
-        'macos',
-        '--model-path',
-        '/models/Qwen3-0.6B.litertlm',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-litert-read-only-bundle',
+          '--device',
+          'macos',
+          '--model-path',
+          '/models/Qwen3-0.6B.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -310,13 +442,17 @@ void main() {
     });
 
     test('dry-runs the image settings comparison device scenario', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-image-settings-comparison',
-        '--device',
-        'ios',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-image-settings-comparison',
+          '--device',
+          'ios',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -331,13 +467,17 @@ void main() {
     });
 
     test('dry-runs the text and image coexistence device scenario', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-text-image-coexistence',
-        '--device',
-        'android',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-text-image-coexistence',
+          '--device',
+          'android',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -352,15 +492,19 @@ void main() {
     });
 
     test('dry-runs the micro-batch sweep device scenario', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-micro-batch-sweep',
-        '--device',
-        'android',
-        '--model-path',
-        '/data/local/tmp/Qwen3.5-0.8B-Q4_0.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-micro-batch-sweep',
+          '--device',
+          'android',
+          '--model-path',
+          '/data/local/tmp/Qwen3.5-0.8B-Q4_0.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -377,22 +521,26 @@ void main() {
     });
 
     test('dry-runs Web Qwen3-ASR file and microphone transcription', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-web-speech-to-text-smoke',
-        '--audio-path',
-        'test/fixtures/speech.wav',
-        '--model-url',
-        'https://example.com/qwen-asr.gguf',
-        '--mmproj-url',
-        'https://example.com/qwen-asr-mmproj.gguf',
-        '--expect',
-        'Known transcript.',
-        '--skip-build',
-        '--python',
-        '/custom/python',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-speech-to-text-smoke',
+          '--audio-path',
+          'test/fixtures/speech.wav',
+          '--model-url',
+          'https://example.com/qwen-asr.gguf',
+          '--mmproj-url',
+          'https://example.com/qwen-asr-mmproj.gguf',
+          '--expect',
+          'Known transcript.',
+          '--skip-build',
+          '--python',
+          '/custom/python',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('validate_chat_app_web_build.sh'));
@@ -415,16 +563,20 @@ void main() {
 
     for (final fixture in ['speech.mp3', 'speech.FLAC']) {
       test('dry-runs Web Qwen3-ASR $fixture file transcription only', () async {
-        final result = await runLocalE2e([
-          '--scenario',
-          'chat-app-web-speech-to-text-smoke',
-          '--audio-path',
-          'test/fixtures/$fixture',
-          '--expect',
-          'Known transcript.',
-          '--skip-build',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          [
+            '--scenario',
+            'chat-app-web-speech-to-text-smoke',
+            '--audio-path',
+            'test/fixtures/$fixture',
+            '--expect',
+            'Known transcript.',
+            '--skip-build',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(
@@ -440,11 +592,11 @@ void main() {
     }
 
     test('requires a fixture and expected text for Web speech smoke', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-web-speech-to-text-smoke',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'chat-app-web-speech-to-text-smoke', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--audio-path'));
@@ -452,20 +604,24 @@ void main() {
     });
 
     test('dry-runs Web Qwen3-TTS synthesis and WAV export', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-web-text-to-speech-smoke',
-        '--model-url',
-        'https://example.com/qwen-tts.gguf',
-        '--mmproj-url',
-        'https://example.com/qwen-tts-mmproj.gguf',
-        '--audio-path',
-        'test/fixtures/speaker.wav',
-        '--skip-build',
-        '--python',
-        '/custom/python',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-text-to-speech-smoke',
+          '--model-url',
+          'https://example.com/qwen-tts.gguf',
+          '--mmproj-url',
+          'https://example.com/qwen-tts-mmproj.gguf',
+          '--audio-path',
+          'test/fixtures/speaker.wav',
+          '--skip-build',
+          '--python',
+          '/custom/python',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('validate_chat_app_web_build.sh'));
@@ -490,11 +646,11 @@ void main() {
     test(
       'production smoke builds once and tests root with separate model server',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'chat-app-web-production-smoke',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const ['--scenario', 'chat-app-web-production-smoke', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(result.exitCode, 0);
         final output = result.stdout.toString();
         expect(
@@ -525,12 +681,16 @@ void main() {
             'playwright_chat_app_real_model_smoke.py http://127.0.0.1:7358/',
           ),
         );
-        final reuse = await runLocalE2e(const [
-          '--scenario',
-          'chat-app-web-production-smoke',
-          '--skip-build',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final reuse = await runLocalE2e(
+          const [
+            '--scenario',
+            'chat-app-web-production-smoke',
+            '--skip-build',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(reuse.exitCode, 0);
         expect(
           reuse.stdout,
@@ -543,18 +703,22 @@ void main() {
     test(
       'dry-runs Web real-model smoke with build, serve, and Playwright steps',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'chat-app-web-real-model-smoke',
-          '--model-url',
-          'http://127.0.0.1:7358/models/tiny.gguf',
-          '--expect',
-          'ok',
-          '--allow-any-response',
-          '--python',
-          '/custom/python',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'chat-app-web-real-model-smoke',
+            '--model-url',
+            'http://127.0.0.1:7358/models/tiny.gguf',
+            '--expect',
+            'ok',
+            '--allow-any-response',
+            '--python',
+            '/custom/python',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(result.stdout, contains('scripts/build_chat_app_web.sh'));
@@ -588,15 +752,19 @@ void main() {
     test(
       'dry-runs Web mock smoke with build, serve, and Playwright steps',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'chat-app-web-mock-smoke',
-          '--model-url',
-          'https://example.com/custom-mock.gguf',
-          '--python',
-          '/custom/python',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'chat-app-web-mock-smoke',
+            '--model-url',
+            'https://example.com/custom-mock.gguf',
+            '--python',
+            '/custom/python',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(result.stdout, contains('scripts/build_chat_app_web.sh'));
@@ -622,13 +790,17 @@ void main() {
     );
 
     test('dry-runs packaged bridge smoke with build and serve steps', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'bridge-smoke',
-        '--python',
-        '/custom/python',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'bridge-smoke',
+          '--python',
+          '/custom/python',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -649,12 +821,11 @@ void main() {
     });
 
     test('validates an existing packaged bridge build when skipped', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'bridge-smoke',
-        '--skip-build',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'bridge-smoke', '--skip-build', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -679,12 +850,16 @@ void main() {
           : '${tempDir.path}/.dart_tool/playwright-python/bin/python';
       await File(pythonPath).create(recursive: true);
 
-      final result = await runLocalE2e([
-        '--scenario',
-        'chat-app-web-litert-gemma4-smoke',
-        '--skip-build',
-        '--dry-run',
-      ], projectRoot: tempDir.path);
+      final result = await runLocalE2e(
+        [
+          '--scenario',
+          'chat-app-web-litert-gemma4-smoke',
+          '--skip-build',
+          '--dry-run',
+        ],
+        projectRoot: tempDir.path,
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains(pythonPath));
@@ -701,15 +876,19 @@ void main() {
     test(
       'dry-runs GGUF chat feature smoke with model path and backend',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'gguf-chat-features-smoke',
-          '--model-path',
-          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
-          '--backend',
-          'cpu',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'gguf-chat-features-smoke',
+            '--model-path',
+            'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+            '--backend',
+            'cpu',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(result.stdout, contains('gguf-chat-features-smoke'));
@@ -726,19 +905,23 @@ void main() {
     );
 
     test('dry-runs GGUF chat feature smoke with multimodal inputs', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'gguf-chat-features-smoke',
-        '--model-path',
-        'models/Qwen3.5-0.8B-Q4_K_M.gguf',
-        '--backend',
-        'cpu',
-        '--mmproj-path',
-        'models/Qwen3.5-0.8B-mmproj-F16.gguf',
-        '--image-path',
-        'test/fixtures/image.png',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'gguf-chat-features-smoke',
+          '--model-path',
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+          '--backend',
+          'cpu',
+          '--mmproj-path',
+          'models/Qwen3.5-0.8B-mmproj-F16.gguf',
+          '--image-path',
+          'test/fixtures/image.png',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -754,21 +937,25 @@ void main() {
     });
 
     test('dry-runs GGUF audio chat with an exact expected answer', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'gguf-audio-chat-smoke',
-        '--model-path',
-        'models/gemma-4-E2B-it-Q4_K_S.gguf',
-        '--backend',
-        'metal',
-        '--mmproj-path',
-        'models/gemma-4-E2B-it-mmproj-F16.gguf',
-        '--audio-path',
-        'test/fixtures/question.wav',
-        '--expect',
-        '4',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'gguf-audio-chat-smoke',
+          '--model-path',
+          'models/gemma-4-E2B-it-Q4_K_S.gguf',
+          '--backend',
+          'metal',
+          '--mmproj-path',
+          'models/gemma-4-E2B-it-mmproj-F16.gguf',
+          '--audio-path',
+          'test/fixtures/question.wav',
+          '--expect',
+          '4',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -787,17 +974,21 @@ void main() {
     });
 
     test('requires an exact expected GGUF audio answer', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'gguf-audio-chat-smoke',
-        '--model-path',
-        'models/gemma-4-E2B-it-Q4_K_S.gguf',
-        '--mmproj-path',
-        'models/gemma-4-E2B-it-mmproj-F16.gguf',
-        '--audio-path',
-        'test/fixtures/question.wav',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'gguf-audio-chat-smoke',
+          '--model-path',
+          'models/gemma-4-E2B-it-Q4_K_S.gguf',
+          '--mmproj-path',
+          'models/gemma-4-E2B-it-mmproj-F16.gguf',
+          '--audio-path',
+          'test/fixtures/question.wav',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('a nonempty --expect'));
@@ -805,40 +996,48 @@ void main() {
     });
 
     test('rejects image input for the dedicated GGUF audio smoke', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'gguf-audio-chat-smoke',
-        '--model-path',
-        'models/gemma-4-E2B-it-Q4_K_S.gguf',
-        '--mmproj-path',
-        'models/gemma-4-E2B-it-mmproj-F16.gguf',
-        '--image-path',
-        'test/fixtures/image.png',
-        '--audio-path',
-        'test/fixtures/question.wav',
-        '--expect',
-        '4',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'gguf-audio-chat-smoke',
+          '--model-path',
+          'models/gemma-4-E2B-it-Q4_K_S.gguf',
+          '--mmproj-path',
+          'models/gemma-4-E2B-it-mmproj-F16.gguf',
+          '--image-path',
+          'test/fixtures/image.png',
+          '--audio-path',
+          'test/fixtures/question.wav',
+          '--expect',
+          '4',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--image-path is not supported'));
     });
 
     test('dry-runs typed speech-to-text with exact fixture inputs', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'speech-to-text-smoke',
-        '--model-path',
-        'models/Qwen3-ASR-0.6B-Q8_0.gguf',
-        '--mmproj-path',
-        'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
-        '--audio-path',
-        'test/fixtures/speech.wav',
-        '--expect',
-        'Known transcript.',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'speech-to-text-smoke',
+          '--model-path',
+          'models/Qwen3-ASR-0.6B-Q8_0.gguf',
+          '--mmproj-path',
+          'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+          '--audio-path',
+          'test/fixtures/speech.wav',
+          '--expect',
+          'Known transcript.',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('speech-to-text-smoke'));
@@ -867,38 +1066,46 @@ void main() {
     });
 
     test('requires an exact expected speech transcript', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'speech-to-text-smoke',
-        '--model-path',
-        'models/Qwen3-ASR-0.6B-Q8_0.gguf',
-        '--mmproj-path',
-        'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
-        '--audio-path',
-        'test/fixtures/speech.wav',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'speech-to-text-smoke',
+          '--model-path',
+          'models/Qwen3-ASR-0.6B-Q8_0.gguf',
+          '--mmproj-path',
+          'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+          '--audio-path',
+          'test/fixtures/speech.wav',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('a nonempty --expect'));
     });
 
     test('dry-runs dedicated LiteRT-LM ASR with exact inputs', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'litert-lm-asr-smoke',
-        '--model-path',
-        'models/moonshine.tflite',
-        '--tokenizer-path',
-        'models/tokenizer.json',
-        '--audio-path',
-        'test/fixtures/speech.wav',
-        '--model-preset',
-        'moonshine-tiny',
-        '--expect',
-        'Known transcript.',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-asr-smoke',
+          '--model-path',
+          'models/moonshine.tflite',
+          '--tokenizer-path',
+          'models/tokenizer.json',
+          '--audio-path',
+          'test/fixtures/speech.wav',
+          '--model-preset',
+          'moonshine-tiny',
+          '--expect',
+          'Known transcript.',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('litert-lm-asr-smoke'));
@@ -911,32 +1118,40 @@ void main() {
     });
 
     test('requires all dedicated LiteRT-LM ASR inputs', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'litert-lm-asr-smoke',
-        '--model-path',
-        'models/moonshine.tflite',
-        '--audio-path',
-        'test/fixtures/speech.wav',
-        '--expect',
-        'Known transcript.',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-asr-smoke',
+          '--model-path',
+          'models/moonshine.tflite',
+          '--audio-path',
+          'test/fixtures/speech.wav',
+          '--expect',
+          'Known transcript.',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--tokenizer-path'));
     });
 
     test('dry-runs typed text-to-speech with model and projector', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'text-to-speech-smoke',
-        '--model-path',
-        'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
-        '--mmproj-path',
-        'models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'text-to-speech-smoke',
+          '--model-path',
+          'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+          '--mmproj-path',
+          'models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('text-to-speech-smoke'));
@@ -965,26 +1180,34 @@ void main() {
     });
 
     test('requires a model and projector for text-to-speech', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'text-to-speech-smoke',
-        '--model-path',
-        'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'text-to-speech-smoke',
+          '--model-path',
+          'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--model-path and --mmproj-path'));
     });
 
     test('dry-runs image generation in the opted-in example', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'image-generation-smoke',
-        '--model-path',
-        'models/sdxs-512-tinySDdistilled_Q8_0.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'image-generation-smoke',
+          '--model-path',
+          'models/sdxs-512-tinySDdistilled_Q8_0.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -1065,20 +1288,24 @@ dev_dependencies:
 
     test('dry-runs the image exit teardown in the opted-in example, and '
         'requires its model', () async {
-      final missing = await runLocalE2e(const [
-        '--scenario',
-        'image-exit-teardown',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final missing = await runLocalE2e(
+        const ['--scenario', 'image-exit-teardown', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
       expect(missing.exitCode, 64);
 
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'image-exit-teardown',
-        '--model-path',
-        '/sdxs.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'image-exit-teardown',
+          '--model-path',
+          '/sdxs.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
       expect(result.exitCode, 0);
       expect(
         result.stdout,
@@ -1090,15 +1317,19 @@ dev_dependencies:
         ),
       );
 
-      final cpu = await runLocalE2e(const [
-        '--scenario',
-        'image-exit-teardown',
-        '--model-path',
-        '/sdxs.gguf',
-        '--backend',
-        'cpu',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final cpu = await runLocalE2e(
+        const [
+          '--scenario',
+          'image-exit-teardown',
+          '--model-path',
+          '/sdxs.gguf',
+          '--backend',
+          'cpu',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
       expect(cpu.exitCode, 0);
       expect(
         cpu.stdout,
@@ -1113,24 +1344,28 @@ dev_dependencies:
 
     test('dry-runs the macOS quit scenario as a host test of the chat app, '
         'and requires its model', () async {
-      final missing = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-macos-quit',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final missing = await runLocalE2e(
+        const ['--scenario', 'chat-app-macos-quit', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
       expect(missing.exitCode, 64);
       expect(
         missing.stderr,
         contains('--model-path is required for chat-app-macos-quit'),
       );
 
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'chat-app-macos-quit',
-        '--model-path',
-        '/chat.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-macos-quit',
+          '--model-path',
+          '/chat.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
       expect(result.exitCode, 0);
       expect(
         result.stdout,
@@ -1153,6 +1388,7 @@ dev_dependencies:
         final missingModel = await runLocalE2e(
           args,
           projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
           environment: const {},
         );
         expect(missingModel.exitCode, 64);
@@ -1161,6 +1397,7 @@ dev_dependencies:
         final missingHeaders = await runLocalE2e(
           withModel,
           projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
           environment: const {},
         );
         expect(missingHeaders.exitCode, 64);
@@ -1168,6 +1405,7 @@ dev_dependencies:
         final ready = await runLocalE2e(
           withModel,
           projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
           environment: const {'FLUTTER_SHUTDOWN_HEADERS': '/headers'},
         );
         expect(ready.exitCode, 0);
@@ -1186,6 +1424,7 @@ dev_dependencies:
         final missingModel = await runLocalE2e(
           args,
           projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
           environment: const {},
         );
         expect(missingModel.exitCode, 64);
@@ -1194,6 +1433,7 @@ dev_dependencies:
         final missingHeaders = await runLocalE2e(
           withModel,
           projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
           environment: const {},
         );
         expect(missingHeaders.exitCode, 64);
@@ -1201,6 +1441,7 @@ dev_dependencies:
         final ready = await runLocalE2e(
           withModel,
           projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
           environment: const {'FLUTTER_SHUTDOWN_HEADERS': '/headers'},
         );
         expect(ready.exitCode, 0);
@@ -1213,11 +1454,11 @@ dev_dependencies:
     );
 
     test('requires an SDXS model for image generation', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'image-generation-smoke',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'image-generation-smoke', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--model-path <sdxs.gguf> is required'));
@@ -1225,14 +1466,18 @@ dev_dependencies:
 
     test('passes the GGUF stop-sequence backend only when given', () async {
       Future<String> dryRun(List<String> backend) async {
-        final result = await runLocalE2e([
-          '--scenario',
-          'gguf-stop-sequences',
-          '--model-path',
-          'models/chat.gguf',
-          ...backend,
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          [
+            '--scenario',
+            'gguf-stop-sequences',
+            '--model-path',
+            'models/chat.gguf',
+            ...backend,
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
         expect(result.exitCode, 0);
         return result.stdout;
       }
@@ -1251,15 +1496,19 @@ dev_dependencies:
     });
 
     test('dry-runs the decision model smoke with model and head', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'decision-model-smoke',
-        '--model-path',
-        'models/laya-Q8_0.gguf',
-        '--head-path',
-        'models/laya-head.safetensors',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'decision-model-smoke',
+          '--model-path',
+          'models/laya-Q8_0.gguf',
+          '--head-path',
+          'models/laya-head.safetensors',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('Scenario: decision-model-smoke'));
@@ -1277,19 +1526,23 @@ dev_dependencies:
     });
 
     test('passes the decision config path and explicit backend', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'decision-model-smoke',
-        '--model-path',
-        'models/laya-Q8_0.gguf',
-        '--head-path',
-        'checkpoint/model.safetensors',
-        '--config-path',
-        'checkpoint/rl_agent_config.json',
-        '--backend',
-        'metal',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'decision-model-smoke',
+          '--model-path',
+          'models/laya-Q8_0.gguf',
+          '--head-path',
+          'checkpoint/model.safetensors',
+          '--config-path',
+          'checkpoint/rl_agent_config.json',
+          '--backend',
+          'metal',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -1307,12 +1560,11 @@ dev_dependencies:
       ('head', ['--model-path', 'models/laya-Q8_0.gguf']),
     ]) {
       test('requires a decision $name path', () async {
-        final result = await runLocalE2e([
-          '--scenario',
-          'decision-model-smoke',
-          ...args,
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          ['--scenario', 'decision-model-smoke', ...args, '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 64);
         expect(
@@ -1326,32 +1578,40 @@ dev_dependencies:
     }
 
     test('requires a head path before a decision config path', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'decision-model-smoke',
-        '--model-path',
-        'models/laya-Q8_0.gguf',
-        '--config-path',
-        'checkpoint/rl_agent_config.json',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'decision-model-smoke',
+          '--model-path',
+          'models/laya-Q8_0.gguf',
+          '--config-path',
+          'checkpoint/rl_agent_config.json',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--config-path requires --head-path.'));
     });
 
     test('rejects a head path outside the decision scenario', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'text-to-speech-smoke',
-        '--model-path',
-        'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
-        '--mmproj-path',
-        'models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
-        '--head-path',
-        'models/laya-head.safetensors',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'text-to-speech-smoke',
+          '--model-path',
+          'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+          '--mmproj-path',
+          'models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+          '--head-path',
+          'models/laya-head.safetensors',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(
@@ -1361,15 +1621,19 @@ dev_dependencies:
     });
 
     test('requires mmproj path before GGUF image path', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'gguf-chat-features-smoke',
-        '--model-path',
-        'models/Qwen3.5-0.8B-Q4_K_M.gguf',
-        '--image-path',
-        'test/fixtures/image.png',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'gguf-chat-features-smoke',
+          '--model-path',
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+          '--image-path',
+          'test/fixtures/image.png',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--image-path requires --mmproj-path'));
@@ -1378,29 +1642,33 @@ dev_dependencies:
     test(
       'dry-runs llama.cpp speculative benchmark with matrix options',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'llama-cpp-speculative-benchmark',
-          '--model-path',
-          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
-          '--backend',
-          'cpu',
-          '--speculative-cases',
-          'baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram',
-          '--benchmark-max-tokens',
-          '128',
-          '--benchmark-runs',
-          '3',
-          '--draft-token-max',
-          '1,2',
-          '--ngram-size-m',
-          '8,16',
-          '--ngram-token-max',
-          '64',
-          '--benchmark-warmups',
-          '1',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'llama-cpp-speculative-benchmark',
+            '--model-path',
+            'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+            '--backend',
+            'cpu',
+            '--speculative-cases',
+            'baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram',
+            '--benchmark-max-tokens',
+            '128',
+            '--benchmark-runs',
+            '3',
+            '--draft-token-max',
+            '1,2',
+            '--ngram-size-m',
+            '8,16',
+            '--ngram-token-max',
+            '64',
+            '--benchmark-warmups',
+            '1',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
@@ -1420,25 +1688,29 @@ dev_dependencies:
     );
 
     test('dry-runs llama.cpp speculative benchmark with draft model', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'llama-cpp-speculative-benchmark',
-        '--model-path',
-        'models/qwen2.5-1.5b-instruct-q4_k_m.gguf',
-        '--draft-model-path',
-        'models/qwen2.5-0.5b-instruct-q4_k_m.gguf',
-        '--speculative-cases',
-        'baseline,draft-simple,mixed-ngram-draft-simple',
-        '--benchmark-max-tokens',
-        '16',
-        '--benchmark-runs',
-        '1',
-        '--draft-token-max',
-        '1',
-        '--benchmark-warmups',
-        '0',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'llama-cpp-speculative-benchmark',
+          '--model-path',
+          'models/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+          '--draft-model-path',
+          'models/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+          '--speculative-cases',
+          'baseline,draft-simple,mixed-ngram-draft-simple',
+          '--benchmark-max-tokens',
+          '16',
+          '--benchmark-runs',
+          '1',
+          '--draft-token-max',
+          '1',
+          '--benchmark-warmups',
+          '0',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -1458,19 +1730,23 @@ dev_dependencies:
     test(
       'dry-runs llama.cpp speculative benchmark with generated ngram cache',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'llama-cpp-speculative-benchmark',
-          '--model-path',
-          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
-          '--speculative-cases',
-          'baseline,ngram-cache',
-          '--ngram-cache-build-static-path',
-          '/tmp/llamadart-ngram-cache.bin',
-          '--ngram-cache-build-text',
-          'alpha beta gamma alpha beta delta',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'llama-cpp-speculative-benchmark',
+            '--model-path',
+            'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+            '--speculative-cases',
+            'baseline,ngram-cache',
+            '--ngram-cache-build-static-path',
+            '/tmp/llamadart-ngram-cache.bin',
+            '--ngram-cache-build-text',
+            'alpha beta gamma alpha beta delta',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(
@@ -1487,11 +1763,11 @@ dev_dependencies:
     );
 
     test('requires model path for llama.cpp speculative benchmark', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'llama-cpp-speculative-benchmark',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'llama-cpp-speculative-benchmark', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(
@@ -1503,13 +1779,17 @@ dev_dependencies:
     });
 
     test('dry-runs llama.cpp chat-template smoke with model path', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'llama-cpp-chat-template-smoke',
-        '--model-path',
-        'models/Qwen3.5-0.8B-Q4_K_M.gguf',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'llama-cpp-chat-template-smoke',
+          '--model-path',
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
@@ -1530,10 +1810,11 @@ dev_dependencies:
     });
 
     test('requires model path for llama.cpp chat-template smoke', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'llama-cpp-chat-template-smoke',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'llama-cpp-chat-template-smoke'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(
@@ -1548,11 +1829,11 @@ dev_dependencies:
       'native-embedding-sweep',
     ]) {
       test('requires model path for $scenario dry-run', () async {
-        final result = await runLocalE2e([
-          '--scenario',
-          scenario,
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          ['--scenario', scenario, '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 64);
         expect(
@@ -1570,11 +1851,11 @@ dev_dependencies:
       'validation-speech-litert-asr',
     ]) {
       test('resolves the validation package first for $scenario', () async {
-        final result = await runLocalE2e([
-          '--scenario',
-          scenario,
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          ['--scenario', scenario, '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         final commands = result.stdout
@@ -1590,10 +1871,11 @@ dev_dependencies:
     }
 
     test('requires model path for LiteRT-LM chat feature smoke', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'litert-lm-chat-features-smoke',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'litert-lm-chat-features-smoke'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(
@@ -1603,13 +1885,17 @@ dev_dependencies:
     });
 
     test('dry-runs LiteRT-LM chat feature smoke with model path', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'litert-lm-chat-features-smoke',
-        '--model-path',
-        'models/gemma-4-E2B-it.litertlm',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-chat-features-smoke',
+          '--model-path',
+          'models/gemma-4-E2B-it.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -1625,19 +1911,23 @@ dev_dependencies:
     });
 
     test('dry-runs LiteRT-LM audio chat with shared CLI flags', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'litert-lm-chat-features-smoke',
-        '--model-path',
-        'models/gemma-4-E2B-it.litertlm',
-        '--backend',
-        'gpu',
-        '--audio-path',
-        'test/fixtures/question.wav',
-        '--expect',
-        '4',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-chat-features-smoke',
+          '--model-path',
+          'models/gemma-4-E2B-it.litertlm',
+          '--backend',
+          'gpu',
+          '--audio-path',
+          'test/fixtures/question.wav',
+          '--expect',
+          '4',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(
@@ -1655,15 +1945,19 @@ dev_dependencies:
     });
 
     test('requires an exact expected LiteRT-LM audio answer', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'litert-lm-chat-features-smoke',
-        '--model-path',
-        'models/gemma-4-E2B-it.litertlm',
-        '--audio-path',
-        'test/fixtures/question.wav',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'litert-lm-chat-features-smoke',
+          '--model-path',
+          'models/gemma-4-E2B-it.litertlm',
+          '--audio-path',
+          'test/fixtures/question.wav',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('A nonempty --expect is required'));
@@ -1673,12 +1967,16 @@ dev_dependencies:
     test(
       'dry-runs Web LiteRT-LM Gemma 4 smoke with LiteRT response capture',
       () async {
-        final result = await runLocalE2e(const [
-          '--scenario',
-          'chat-app-web-litert-gemma4-smoke',
-          '--skip-build',
-          '--dry-run',
-        ], projectRoot: '/repo');
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'chat-app-web-litert-gemma4-smoke',
+            '--skip-build',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
 
         expect(result.exitCode, 0);
         expect(
@@ -1697,16 +1995,20 @@ dev_dependencies:
     );
 
     test('dry-runs WebGPU regression with forwarded runner options', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'webgpu-multimodal-regression',
-        '--port',
-        '9123',
-        '--python',
-        '/custom/python',
-        '--skip-build',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'webgpu-multimodal-regression',
+          '--port',
+          '9123',
+          '--python',
+          '/custom/python',
+          '--skip-build',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('PLAYWRIGHT_GATE_PORT=9123'));
@@ -1719,11 +2021,11 @@ dev_dependencies:
     });
 
     test('reports unknown scenarios without executing anything', () async {
-      final result = await runLocalE2e(const [
-        '--scenario',
-        'does-not-exist',
-        '--dry-run',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        const ['--scenario', 'does-not-exist', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
 
       expect(result.exitCode, isNot(0));
       expect(
@@ -1741,6 +2043,7 @@ dev_dependencies:
       final result = await runLocalE2e(
         ['--scenario', 'bridge-smoke', '--skip-build', '--port', '$port'],
         projectRoot: tempDir.path,
+        displayShell: LocalE2eDisplayShell.posix,
         foregroundStepRun: _successfulForegroundStep,
         portAvailabilityCheck: (actualPort) async {
           throw StateError(
@@ -1776,6 +2079,7 @@ dev_dependencies:
           '$port',
         ],
         projectRoot: tempDir.path,
+        displayShell: LocalE2eDisplayShell.posix,
         foregroundStepRun: _successfulForegroundStep,
         portAvailabilityCheck: (_) async {},
         portReadinessWait: (actualPort, _) async {

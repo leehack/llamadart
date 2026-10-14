@@ -40,6 +40,9 @@ For canonical full release notes, use:
   Rosetta instead of aborting, and LiteRT-LM throws
   `LlamaUnsupportedException` on x86_64 macOS
   ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+- Fix the chat example's text to speech sending the stored Min-P while the
+  loaded runtime does not support Min-P and the slider is disabled
+  ([#747](https://github.com/leehack/llamadart/issues/747)).
 
 ## 0.12.1
 
