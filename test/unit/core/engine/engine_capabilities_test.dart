@@ -84,9 +84,13 @@ class _RuntimeBackend extends MockLlamaBackend
   /// When set, [generationCapabilities] waits for it.
   Completer<void>? generationGate;
 
+  /// When set, [generationCapabilities] throws it after [generationGate].
+  Object? generationError;
+
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     await generationGate?.future;
+    if (generationError case final error?) throw error;
     return generation;
   }
 
@@ -357,6 +361,26 @@ void main() {
       expect((await engine.capabilities).isSupported, reload);
     });
   }
+
+  test('reports no model when a probe fails because the model unloaded '
+      'while capabilities are read', () async {
+    final backend = _RuntimeBackend(
+      runtime: LlamaRuntime.llamaCpp,
+      generation: _llamaCppGeneration,
+    );
+    final engine = await loaded(backend);
+    final gate = backend.generationGate = Completer<void>();
+
+    final pending = engine.capabilities;
+    await engine.unloadModel();
+    backend.generationError = StateError('model handle is gone');
+    gate.complete();
+    final capabilities = await pending;
+
+    expect(capabilities.isSupported, isFalse);
+    expect(capabilities.unsupportedReason, contains('No model is loaded'));
+    expect(capabilities.runtime, isNull);
+  });
 
   for (final grammar in [true, false]) {
     test('ChatSession rejects strict responseFormat exactly when '

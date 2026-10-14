@@ -1580,6 +1580,109 @@ void main() {
       },
     );
 
+    test(
+      'a failed request puts back the exchanges compaction removed',
+      () async {
+        session.maxContextTokens = 300;
+        final older = [
+          _text(LlamaChatRole.user, 'task'),
+          _text(LlamaChatRole.assistant, 'call ${'x' * 300}'),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'result ${'y' * 300}',
+            continuesPreviousTurn: true,
+          ),
+          _text(LlamaChatRole.assistant, 'call again'),
+        ];
+        older.forEach(session.addMessage);
+        backend.generateError = LlamaInferenceException('backend rejected');
+
+        await expectLater(
+          session
+              .create(
+                [const LlamaTextContent('result again')],
+                params: const GenerationParams(maxTokens: 128),
+                continuesPreviousTurn: true,
+              )
+              .drain<void>(),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+
+        expect(backend.generateCalls, 1);
+        expect(backend.lastPrompt, contains('user: task'));
+        expect(backend.lastPrompt, isNot(contains('x' * 300)));
+        expect(session.history, older);
+      },
+    );
+
+    group('enableThinking and chatTemplateKwargs', () {
+      const kwargs = {'source_lang_code': 'en', 'target_lang_code': 'ko'};
+      late ScriptedChatEngine scripted;
+      late ChatSession forwarding;
+
+      setUp(() {
+        scripted = ScriptedChatEngine();
+        forwarding = ChatSession(scripted, maxContextTokens: 1000);
+      });
+
+      List<List<Object?>> options(List<(bool, Map<String, dynamic>?)> calls) =>
+          [
+            for (final (thinking, kwargs) in calls) [thinking, kwargs],
+          ];
+
+      void expectForwarded() {
+        expect(options(scripted.createOptions), [
+          [false, kwargs],
+        ]);
+        expect(scripted.templateOptions, isNotEmpty);
+        expect(
+          options(scripted.templateOptions),
+          everyElement(equals([false, kwargs])),
+        );
+      }
+
+      test('reach the request and the budget render of create', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        await forwarding
+            .create(
+              [const LlamaTextContent('hi')],
+              enableThinking: false,
+              chatTemplateKwargs: kwargs,
+            )
+            .drain<void>();
+
+        expectForwarded();
+      });
+
+      test('reach the request and the budget render of send', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        await forwarding.send(
+          'hi',
+          enableThinking: false,
+          chatTemplateKwargs: kwargs,
+        );
+
+        expectForwarded();
+      });
+
+      test('reach the request and the budget render of '
+          'createStructuredJson', () async {
+        scripted.replies.add(scriptedAnswer('{"ok":true}'));
+
+        final decoded = await forwarding.createStructuredJson(
+          [const LlamaTextContent('status')],
+          output: LlamaStructuredOutput.jsonObject(decoder: (json) => json),
+          enableThinking: false,
+          chatTemplateKwargs: kwargs,
+        );
+
+        expect(decoded, {'ok': true});
+        expectForwarded();
+      });
+    });
+
     test('a cancel after completion leaves the next turn intact', () async {
       backend.queueResponse('First');
       await session.create([const LlamaTextContent('Hi')]).drain<void>();

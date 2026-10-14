@@ -83,6 +83,30 @@ void main() {
     expect(stuck.nativeLevels, [LlamaLogLevel.warn]);
   });
 
+  test('backends that never answer are waited for together', () async {
+    final warnings = <LlamaLogRecord>[];
+    final gate = Completer<void>();
+    final stuckEngines = [
+      for (var i = 0; i < 3; i++) LlamaEngine(_LogLevelBackend()..gate = gate),
+    ];
+    addTearDown(() async {
+      if (!gate.isCompleted) gate.complete();
+      for (final engine in stuckEngines) {
+        await engine.dispose();
+      }
+    });
+
+    final stopwatch = Stopwatch()..start();
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.warn,
+      handler: warnings.add,
+    ).timeout(const Duration(seconds: 10));
+
+    // One second for all of them; one after another would take three.
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+    expect(warnings, hasLength(3));
+  });
+
   test('a failing backend warns and does not stop the others', () async {
     final warnings = <LlamaLogRecord>[];
     await LlamaLogging.configure(

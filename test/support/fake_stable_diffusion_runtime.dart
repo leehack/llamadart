@@ -28,6 +28,7 @@ const _reportsPerRead = 20;
 const _olderRelease = 24;
 const _logEnabled = 25;
 const _quietReject = 26;
+const _holdLogDrain = 27;
 const _racingReads = 28;
 const _latest = 32;
 const _modelVersion = 40;
@@ -121,6 +122,17 @@ final class FakeStableDiffusionRuntime {
 
   /// Makes a failed load log no error.
   set quietReject(bool value) => _state[_quietReject] = value ? 1 : 0;
+
+  /// Holds the next drain of the log in the worker isolate that reads it
+  /// once it has read its messages, before it sends them, until
+  /// [releaseLogDrain]. [logDrainHeld] completes when it is held.
+  void holdNextLogDrain() => _state[_holdLogDrain] = 1;
+
+  /// Completes when the drain [holdNextLogDrain] asked for is held.
+  Future<void> logDrainHeld() => _next('log-drain-held');
+
+  /// Lets the held drain send what it read.
+  void releaseLogDrain() => _state[_holdLogDrain] = 0;
 
   /// Makes [resolver] return the calls of a runtime older than
   /// `StableDiffusionCalls.optionalNativeRelease`: no log and no device
@@ -522,6 +534,12 @@ final class _FakeCalls {
               read: _logRead,
               dropped: () {
                 _record('sd_dart_log_dropped');
+                // The last call of a drain, so what it read is settled.
+                if (_inWorker && _state[_holdLogDrain] == 1) {
+                  _state[_holdLogDrain] = 2;
+                  _log.send(('signal', 'log-drain-held'));
+                  _waitWhile(() => _state[_holdLogDrain] == 2);
+                }
                 return _longs[_logDropped ~/ 8];
               },
               lastError: _readLastError,
