@@ -84,11 +84,11 @@ embedded template through the LiteRT-LM FFI, so `llamadart` uses a
 filename-keyed registry for supported Gemma and Qwen LiteRT-LM families.
 
 Native LiteRT-LM `engine.create(...)` uses LiteRT-LM's Conversation APIs for
-eligible text-only chat requests so system messages, history, tools, and extra
-context stay structured inside the runtime. The Dart template registry is still
-used for template metadata, streamed output parsing, `engine.chatTemplate(...)`,
-web LiteRT-LM, and fallback prompt rendering when a request cannot use the
-native conversation path.
+eligible chat requests, including images and audio, so system messages,
+history, tools, media, and extra context stay structured inside the runtime.
+The Dart template registry is still used for template metadata, streamed output
+parsing, `engine.chatTemplate(...)`, web LiteRT-LM, and fallback prompt
+rendering when a request cannot use the native conversation path.
 
 Use `ModelParams.chatTemplate` when loading a `.litertlm` bundle whose family is
 not in the registry or whose filename has been changed. The maintained registry
@@ -139,7 +139,8 @@ embedded template is missing or broken, load it with
 `ModelParams(chatTemplate: ...)`. `engine.create` and `engine.chatTemplate`
 then render with that template instead of `tokenizer.chat_template` and its
 `tool_use` variant, and detect the tool-call and reasoning format from it, as
-llama.cpp's `--chat-template-file` does. Null or empty keeps the model's
+llama.cpp's `--chat-template-file` does. On llama.cpp, null or empty keeps
+the model's template; on LiteRT-LM, an empty string also replaces the built-in
 template. The value is Jinja source: unlike llama.cpp's `--chat-template`, a
 name such as `chatml` is not mapped to a built-in template.
 `engine.getMetadata()` still reports the GGUF `tokenizer.chat_template`.

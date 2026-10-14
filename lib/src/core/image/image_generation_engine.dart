@@ -878,5 +878,10 @@ class ImageGenerationEngine {
 /// for SD-Turbo Q8 with TAESD and 2.64 GiB for SD-Turbo Q8 with its full VAE,
 /// against estimates of 1.30, 2.87 and 2.86 GiB. Larger sizes than a model's
 /// native one need more, especially on the CPU.
+///
+/// The Apple peaks are `phys_footprint`, which leaves out Metal compute
+/// buffers, so the estimate does not model the Metal working set: SD-Turbo at
+/// 512x512 allocates a 1664 MB VAE compute buffer that the footprint does not
+/// show.
 int estimateImageGenerationMemoryBytes(int weightBytes) =>
     weightBytes + weightBytes ~/ 4 + (512 << 20);
