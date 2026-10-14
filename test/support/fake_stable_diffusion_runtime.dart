@@ -53,7 +53,10 @@ const _logSlotBytes = 512;
 const _gpus = _logSlots + _logSlotCount * _logSlotBytes;
 const _gpuBytes = 24;
 const _maxGpus = 4;
-const _stateBytes = _gpus + _maxGpus * _gpuBytes;
+const _generationErrorLength = _gpus + _maxGpus * _gpuBytes;
+const _generationError = _generationErrorLength + 8;
+const _generationErrorBytes = 1024;
+const _stateBytes = _generationError + _generationErrorBytes;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -88,6 +91,7 @@ final class FakeStableDiffusionRuntime {
     _state.cast<Int32>()[_logThreshold ~/ 4] = _sdLogInfo;
     _state.cast<Int32>()[_logHistory ~/ 4] = logHistory;
     _state.cast<Int32>()[_gpuCount ~/ 4] = -2;
+    _state.cast<Int32>()[_generationErrorLength ~/ 4] = -1;
     final version = 'SD 2.x'.codeUnits;
     for (var i = 0; i < version.length; i++) {
       _state[_modelVersion + i] = version[i];
@@ -178,6 +182,17 @@ final class FakeStableDiffusionRuntime {
   /// `uncaught generation error`, with how it holds its context, when the
   /// error ends it.
   set throwInGenerate(bool value) => _state[_throwInGenerate] = value ? 1 : 0;
+
+  /// Makes every generation fail after logging [errors] at `SD_LOG_ERROR`,
+  /// which `sd_dart_last_error` then returns, as the runtime does for the
+  /// errors of a call; `null` lets generations succeed again.
+  set generationErrors(String? errors) {
+    final bytes = utf8.encode(errors ?? '');
+    _state.cast<Int32>()[_generationErrorLength ~/ 4] = errors == null
+        ? -1
+        : bytes.length;
+    (_state + _generationError).asTypedList(bytes.length).setAll(0, bytes);
+  }
 
   /// Keeps a generation from starting, so from clearing a pending cancel,
   /// while it is set.
@@ -580,10 +595,23 @@ final class _FakeCalls {
     _logText(_sdLogInfo, 'stable-diffusion.cpp:3391 - generating');
     imagesOut.value = nullptr;
     countOut.value = 0;
+    _ints[_lastErrorLength ~/ 4] = 0;
     _waitWhile(() => _state[_holdStart] != 0);
     _state[_cancelled] = 0;
     if (_state[_throwInGenerate] != 0) {
       throw _GenerationFailure(this);
+    }
+    final errorLength = _ints[_generationErrorLength ~/ 4];
+    if (errorLength >= 0) {
+      final errors = (_state + _generationError).asTypedList(errorLength);
+      for (final line in utf8.decode(errors).split('\n')) {
+        _logText(_sdLogError, line);
+      }
+      if (_state[_logEnabled] != 0) {
+        _ints[_lastErrorLength ~/ 4] = errorLength;
+        (_state + _lastError).asTypedList(errorLength).setAll(0, errors);
+      }
+      return false;
     }
     final steps = params.ref.sample_params.sample_steps;
     final images = params.ref.batch_count;

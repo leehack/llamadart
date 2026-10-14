@@ -535,14 +535,14 @@ slow while the GPU compiles shaders; see
 ## Attention and VAE settings
 
 Two runtime settings in `ImageModelParams` change speed and memory.
-Direct VAE convolutions leave the image identical; flash attention changes
-pixels slightly, by rounding. Left `null`, the engine picks them for the device it loads
-on:
+Direct VAE convolutions leave the image identical on the CPU and change it
+by rounding on Metal; flash attention changes pixels slightly, by rounding.
+Left `null`, the engine picks them for the device it loads on:
 
 | Setting | Automatic choice | Measured |
 | --- | --- | --- |
 | `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GiB to 0.3 GiB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x sampling time unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. 512x512 on phones: SD-Turbo with TAESD 12% faster on a Galaxy S24 (CPU) and 11% on an iPhone 16 Pro (Metal), same peak memory; its 3.7% gap on a Pixel 9 Pro is within run-to-run noise there (the same `auto` arm took 11.3 s, then 17.4 s a round later); SDXS unchanged on those and a Galaxy A53. Pixels change slightly |
-| `vaeDirectConvolution` (VAE decode) | On, except on Metal and when a tiny autoencoder decodes: a `taesd` file, or a checkpoint whose header shows an embedded one, as SDXS's does | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Galaxy S24 and Pixel 9 Pro CPU, SD-Turbo 512x512: peak 3.7 to 4.0 GiB to 2.8 to 3.1 GiB, time unchanged within thermal noise (about 56 s per image on the S24). Metal: about 7 times slower. Identical output |
+| `vaeDirectConvolution` (VAE decode) | On, except on Metal and when a tiny autoencoder decodes: a `taesd` file, or a checkpoint whose header shows an embedded one, as SDXS's does | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Galaxy S24 and Pixel 9 Pro CPU, SD-Turbo 512x512: peak 3.7 to 4.0 GiB to 2.8 to 3.1 GiB, time unchanged within thermal noise (about 56 s per image on the S24). Metal: about 7 times slower. Identical output on the CPU; on M4 Max Metal, SD-Turbo at 256x256 and 512x512 differed by at most 2 of 255 per channel. `true` on iOS Metal throws `LlamaUnsupportedException`: on an iPhone 16 Pro every decode tripped the GPU watchdog and returned a corrupt image ([#1044](https://github.com/leehack/llamadart/issues/1044)) |
 
 The phone figures are Firebase Test Lab runs of the chat app's settings
 comparison. Peak memory is the `phys_footprint` interval peak on the iPhone
@@ -849,11 +849,11 @@ final engine = await ImageGenerationEngine.load(model);
 
 | Exception | When |
 | --- | --- |
-| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, or `ModelLoadOptions.sha256` set for a `load` of several files |
+| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, `vaeDirectConvolution: true` on iOS Metal, or `ModelLoadOptions.sha256` set for a `load` of several files |
 | `LlamaModelException` | A file is missing, fails to download or is not an image-model component, two files share a role, a decoder does not match the diffusion model, the model does not fit, or the runtime cannot load it. A load the runtime rejects quotes the errors it logged, with files named by role, such as `tensor '...' extends beyond its model file`; a rejected split model also names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
 | `LlamaImageGenerationException` | An invalid request or `params:` |
 | `LlamaStateException` | The load's cancel token cancelled it, another generation or load is running, or the engine is disposed |
-| `LlamaInferenceException` | The runtime failed a generation, for example an aborted Metal command buffer or running out of memory; the engine runs the next request |
+| `LlamaInferenceException` | The runtime failed a generation, for example by running out of memory; the engine runs the next request. A failed Metal command buffer leaves the backend in an error state: from then on every generation on the engine fails with a message saying so. Dispose the engine and load the model again to recover |
 
 ## Known limits
 
@@ -865,7 +865,11 @@ final engine = await ImageGenerationEngine.load(model);
   on the phones tried
   ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
-  SD-Turbo at four steps); the task fails and the next request runs.
+  SD-Turbo at four steps). This leaves ggml's Metal backend in an error
+  state: from then on every generation on that engine fails until you
+  dispose it and load the model again. A runtime older than
+  `stable-diffusion-native` `v0.2.0-2` has no log to detect this from, so
+  its failures read as recoverable.
 - On Linux a model on a Vulkan GPU is refused only when it fits neither the
   GPU nor the GPU plus system memory; one larger than the GPU's memory loads
   with a warning and runs slower. On Windows such a model is warned about

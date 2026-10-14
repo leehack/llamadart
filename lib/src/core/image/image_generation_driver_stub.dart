@@ -13,6 +13,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
   const _UnsupportedImageGenerationDriver();
 
   @override
+  String get operatingSystem => 'web';
+
+  @override
   StableDiffusionRuntimeStatus probe() => probeStableDiffusionRuntime();
 
   @override

@@ -160,8 +160,11 @@ description: >-
   VAE convolutions on except on Metal (about 7 times slower there) and when
   a tiny autoencoder decodes (a `taesd` file, or a checkpoint embedding one,
   as SDXS does, seen from its header). Leave them `null` unless measuring. Direct VAE
-  convolutions leave the image identical; flash attention changes pixels
-  slightly.
+  convolutions leave the image identical on the CPU and change it by rounding
+  on Metal; flash attention changes pixels slightly. `vaeDirectConvolution:
+  true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
+  tripped the GPU watchdog and returned a corrupt image
+  ([#1044](https://github.com/leehack/llamadart/issues/1044)).
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
   first runtime probe in a process (`checkRuntime()` or `load()`, both off
   the calling isolate) compiles the Metal library on Apple (about 16 s on an
@@ -225,9 +228,11 @@ description: >-
   await the same cleanup. Before C `exit()`, a native host must also stop and
   join its other native workers and shut down its Dart isolates or Flutter
   engine. A kill request alone cannot interrupt native generation.
-- A runtime failure (for example an aborted Metal command buffer or out of
-  memory) fails the task with `LlamaInferenceException`; the engine stays
-  usable for the next request.
+- A runtime failure (for example out of memory) fails the task with
+  `LlamaInferenceException`; the engine stays usable for the next request.
+  A failed Metal command buffer is the exception: it leaves the backend in
+  an error state. From then on every generation on that engine fails with a
+  message saying so, and only `dispose()` plus a new `load()` recovers.
 - A load the runtime rejects (`LlamaModelException`) quotes the errors
   stable-diffusion.cpp logged, with files named by role, such as
   `<checkpoint file>`. For a split checkpoint it also names the missing roles

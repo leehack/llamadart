@@ -75,6 +75,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   bool _cancelRequested = false;
   bool _disposed = false;
   bool _stopped = false;
+  bool _backendFailed = false;
   Future<void>? _disposeStart;
 
   @override
@@ -162,6 +163,9 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
         'The image-generation worker stopped; load the model again.',
       );
     }
+    if (_backendFailed) {
+      throw stableDiffusionBackendFailure();
+    }
     final reports = calloc<sd.sd_dart_progress_t>(_reportsPerRead);
     final latest = calloc<Uint64>();
     // Reports are process-wide and numbered: everything after the newest one
@@ -208,6 +212,10 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
       final reply = await _reply() as _Generated;
       // The runtime recorded the last reports before the reply was sent.
       readProgress();
+      if (reply.backendFailed) {
+        _backendFailed = true;
+        throw stableDiffusionBackendFailure();
+      }
       return reply.images == null
           ? null
           : [
@@ -457,6 +465,24 @@ final class _LogBatch {
 
 /// The runtime's log in the worker isolate: nothing on a runtime that has no
 /// recorder.
+/// The error for a generation that failed because a GPU command buffer
+/// failed earlier, and for every later generation on the same model.
+LlamaInferenceException stableDiffusionBackendFailure() =>
+    LlamaInferenceException(
+      'stable-diffusion.cpp could not generate the image: a GPU command '
+      'buffer failed and left the Metal backend in an error state, so every '
+      'later generation with this model fails too. Dispose the '
+      'ImageGenerationEngine and load the model again to recover.',
+    );
+
+/// Whether [lastError], the errors the runtime logged during one call, show
+/// that ggml's Metal backend is in its error state: it enters it whenever a
+/// command buffer fails, logging the failure, and from then on refuses every
+/// graph until the backend is created again.
+bool stableDiffusionBackendInErrorState(String lastError) =>
+    lastError.contains('backend is in error state') ||
+    lastError.contains('ggml_metal_synchronize: error: command buffer');
+
 final class _WorkerLog {
   _WorkerLog(this._log, this._level, this._replies, Map<String, String> files)
     : _redact = stableDiffusionPathRedactor(files);
@@ -465,6 +491,14 @@ final class _WorkerLog {
   final LlamaLogLevel _level;
   final SendPort _replies;
   final String Function(String text) _redact;
+
+  /// Whether the generation this thread just ran left the GPU backend in its
+  /// error state; `false` on a runtime that cannot tell.
+  bool backendFailed() {
+    final log = _log;
+    return log != null &&
+        stableDiffusionBackendInErrorState(readStableDiffusionLastError(log));
+  }
 
   /// Why the load this thread just made failed, or `null`.
   String? failureReason() {
@@ -515,8 +549,9 @@ final class _ImagePayload {
 
 final class _Generated {
   final List<_ImagePayload>? images;
+  final bool backendFailed;
 
-  const _Generated(this.images);
+  const _Generated(this.images, {this.backendFailed = false});
 }
 
 void _workerMain(
@@ -583,7 +618,11 @@ void _workerMain(
         // An error here ends this isolate with the context still held, so
         // its shutdown frees it; a later cancel from the calling isolate
         // does nothing for a freed context.
-        final generated = _generate(calls, context, request);
+        // The generation's errors belong to this thread until its next call.
+        var generated = _generate(calls, context, request);
+        if (generated.images == null && log.backendFailed()) {
+          generated = const _Generated(null, backendFailed: true);
+        }
         log.forward(logPosition);
         replies.send(generated);
       case _Dispose(:final logPosition):

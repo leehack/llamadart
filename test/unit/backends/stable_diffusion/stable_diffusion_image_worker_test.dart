@@ -71,6 +71,29 @@ const _loadCalls = [
   'sd_get_model_version_name+held',
 ];
 
+// What ggml's Metal backend logs when a command buffer fails, and on every
+// later graph until the backend is created again.
+const _commandBufferFailed =
+    'ggml - ggml_metal_synchronize: error: command buffer 0 failed with '
+    'status 5\n'
+    'ggml - error: Discarded (victim of GPU error/recovery) '
+    '(00000005:kIOGPUCommandBufferCallbackErrorInnocentVictim)';
+const _backendInErrorState =
+    'ggml - ggml_metal_graph_compute: backend is in error state from a '
+    'previous command buffer failure - recreate the backend to recover\n'
+    'ggml_runner.cpp:785  - unet compute failed: GGML status: error '
+    '(operation failed)';
+
+final _reloadFailure = isA<LlamaInferenceException>().having(
+  (error) => error.message,
+  'message',
+  allOf(
+    contains('Metal backend in an error state'),
+    contains('Dispose the ImageGenerationEngine and load the model again'),
+    isNot(contains('can run the next request')),
+  ),
+);
+
 const _generateCalls = [
   'sd_img_gen_params_init+held',
   'sd_dart_generate_image+held',
@@ -407,6 +430,7 @@ void main() {
       expect(runtime.calls('worker'), [
         'sd_img_gen_params_init+held',
         'sd_dart_generate_image+held',
+        'sd_dart_last_error',
       ]);
       expect(progress, [(0, 4)]);
     });
@@ -662,6 +686,66 @@ void main() {
       expect(runtime.calls('caller'), ['sd_dart_progress_read:mark']);
     });
 
+    for (final (name, errors) in [
+      ('a failed command buffer', _commandBufferFailed),
+      ('a backend in its error state', _backendInErrorState),
+    ]) {
+      test('a generation that fails with $name says to reload the model, and '
+          'every later one fails the same way without native work', () async {
+        final worker = await loaded();
+        runtime.generationErrors = errors;
+
+        await expectLater(
+          worker.generate(_request(), (_, _) {}),
+          throwsA(_reloadFailure),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), [
+          'sd_img_gen_params_init+held',
+          'sd_dart_generate_image+held',
+          'sd_dart_last_error',
+        ]);
+
+        runtime
+          ..generationErrors = null
+          ..clearCalls();
+        await expectLater(
+          worker.generate(_request(), (_, _) {}),
+          throwsA(_reloadFailure),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), isEmpty);
+        expect(runtime.calls('caller'), isEmpty);
+      });
+    }
+
+    test('a generation that fails for another reason returns null, and the '
+        'next one runs', () async {
+      final worker = await loaded();
+      runtime.generationErrors =
+          'ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate '
+          'buffer of size 1073741824';
+
+      expect(await worker.generate(_request(), (_, _) {}), isNull);
+      await runtime.flush();
+      expect(runtime.calls('worker'), [
+        'sd_img_gen_params_init+held',
+        'sd_dart_generate_image+held',
+        'sd_dart_last_error',
+      ]);
+
+      runtime.generationErrors = null;
+      expect(await worker.generate(_request(), (_, _) {}), hasLength(1));
+    });
+
+    test('a generation that succeeds does not read its errors', () async {
+      final worker = await loaded();
+
+      expect(await worker.generate(_request(), (_, _) {}), hasLength(1));
+      await runtime.flush();
+      expect(runtime.calls('worker'), _generateCalls);
+    });
+
     group('with a log level', () {
       test('the recorder is set to the level before the worker starts, and '
           'the worker reads what the load recorded after its calls on the '
@@ -893,6 +977,19 @@ void main() {
     group('on a runtime older than the log, v0.2.0-1', () {
       setUp(() => runtime.olderRelease = true);
 
+      test('a failed command buffer cannot be told apart from another '
+          'failure, so the generation returns null', () async {
+        final worker = await loaded();
+        runtime.generationErrors = _backendInErrorState;
+
+        expect(await worker.generate(_request(), (_, _) {}), isNull);
+        await runtime.flush();
+        expect(runtime.calls('worker'), [
+          'sd_img_gen_params_init+held',
+          'sd_dart_generate_image+held',
+        ]);
+      });
+
       test('a worker loads, generates and disposes without any log call, '
           'whatever the log level', () async {
         final logged = records();
@@ -943,6 +1040,26 @@ void main() {
           'sd_dart_new_sd_ctx',
         ]);
       });
+    });
+  });
+
+  group('stableDiffusionBackendInErrorState', () {
+    test('is true for a failed Metal command buffer and for the backend '
+        'refusing a graph in its error state', () {
+      expect(stableDiffusionBackendInErrorState(_commandBufferFailed), isTrue);
+      expect(stableDiffusionBackendInErrorState(_backendInErrorState), isTrue);
+    });
+
+    test('is false for other errors and for none', () {
+      expect(stableDiffusionBackendInErrorState(''), isFalse);
+      expect(
+        stableDiffusionBackendInErrorState(
+          'ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate '
+          'buffer of size 1073741824\n'
+          'diffusion_engine.cpp:2594 - diffusion model compute failed',
+        ),
+        isFalse,
+      );
     });
   });
 

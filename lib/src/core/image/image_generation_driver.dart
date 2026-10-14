@@ -119,8 +119,10 @@ abstract interface class ImageGenerationSession {
   /// Runs one generation, reporting native `(step, steps)` progress.
   ///
   /// Returns `null` when the runtime reports failure, which includes a
-  /// cancelled generation and a GPU command-buffer abort. The session stays
-  /// usable afterwards.
+  /// cancelled generation; the session stays usable afterwards. Throws
+  /// `LlamaInferenceException` when a failed GPU command buffer left the
+  /// backend in an error state, and from then on throws it again at once:
+  /// only a new session recovers.
   Future<List<GeneratedImage>?> generate(
     ImageGenerationSessionRequest request,
     void Function(int step, int steps) onProgress,
@@ -136,6 +138,10 @@ abstract interface class ImageGenerationSession {
 
 /// Platform services behind `ImageGenerationEngine`.
 abstract interface class ImageGenerationDriver {
+  /// The operating system the runtime runs on, as `Platform.operatingSystem`
+  /// names it (`ios`, `macos`, `android`, ...), or `web`.
+  String get operatingSystem;
+
   /// Probes the stable_diffusion runtime without loading a model.
   StableDiffusionRuntimeStatus probe();
 

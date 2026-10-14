@@ -8,6 +8,7 @@ void main() {
   test('reports the runtime unavailable and never starts', () async {
     final driver = createImageGenerationDriver();
 
+    expect(driver.operatingSystem, 'web');
     expect(driver.probe().isAvailable, isFalse);
     expect(
       (await driver.probeInBackground()).unavailableReason?.message,

@@ -401,6 +401,80 @@ void main() {
         expect(onVulkan.flashAttention, isTrue);
         expect(onVulkan.vaeDirectConvolution, isTrue);
       });
+
+      group('direct VAE convolutions on iOS', () {
+        const iphone = 'MTL0\tApple A18 Pro GPU\nBLAS\tAccelerate\nCPU\tCPU\n';
+        setUp(() => driver.operatingSystem = 'ios');
+
+        test('true on Metal throws LlamaUnsupportedException naming the '
+            'option, the platform, the backend and the issue, before any '
+            'file is read or loaded', () async {
+          driver
+            ..status = _available(iphone)
+            ..started.clear();
+
+          await expectLater(
+            load(
+              checkpoint,
+              params: const ImageModelParams(vaeDirectConvolution: true),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('ImageModelParams.vaeDirectConvolution: true'),
+                  contains('iOS with the Metal backend (MTL0)'),
+                  contains('https://github.com/leehack/llamadart/issues/1044'),
+                ),
+              ),
+            ),
+          );
+          expect(driver.started, isEmpty);
+          expect(driver.budgetDevices, isEmpty);
+        });
+
+        test('null and false load on Metal with the unfolded VAE', () async {
+          for (final value in [null, false]) {
+            final config = await startedWith(
+              iphone,
+              checkpoint,
+              params: ImageModelParams(vaeDirectConvolution: value),
+            );
+            expect(config.vaeDirectConvolution, isFalse, reason: '$value');
+          }
+        });
+
+        test('true loads on the CPU', () async {
+          final config = await startedWith(
+            iphone,
+            checkpoint,
+            params: const ImageModelParams(
+              device: ComputeDevice.cpu,
+              vaeDirectConvolution: true,
+            ),
+          );
+          expect(config.vaeDirectConvolution, isTrue);
+        });
+      });
+
+      test('true loads on Metal off iOS, and on every backend of other '
+          'platforms', () async {
+        for (final (os, devices) in [
+          ('macos', metal),
+          ('linux', vulkan),
+          ('android', cpu),
+          ('windows', vulkan),
+        ]) {
+          driver.operatingSystem = os;
+          final config = await startedWith(
+            devices,
+            checkpoint,
+            params: const ImageModelParams(vaeDirectConvolution: true),
+          );
+          expect(config.vaeDirectConvolution, isTrue, reason: os);
+        }
+      });
     });
 
     test('gpu selects the first GPU the runtime reports', () async {
@@ -1778,6 +1852,9 @@ StableDiffusionRuntimeStatus _available(String devices) =>
     );
 
 final class _FakeDriver implements ImageGenerationDriver {
+  @override
+  String operatingSystem = 'macos';
+
   StableDiffusionRuntimeStatus status = _available(
     'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n',
   );

@@ -57,6 +57,13 @@ void main() {
     () => applyLogLevels(dart: LlamaLogLevel.none, native: LlamaLogLevel.none),
   );
 
+  test('reports the host operating system', () {
+    expect(
+      createImageGenerationDriver().operatingSystem,
+      Platform.operatingSystem,
+    );
+  });
+
   test('sizes regular files only', () async {
     final directory = await Directory.systemTemp.createTemp('llamadart-img-');
     addTearDown(() => directory.delete(recursive: true));

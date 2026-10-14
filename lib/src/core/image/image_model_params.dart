@@ -31,7 +31,15 @@ class ImageModelParams {
   final bool? flashAttention;
 
   /// Whether the VAE decoder runs its convolutions directly instead of
-  /// unfolding its input first. The output is identical.
+  /// unfolding its input first. On the CPU the output is identical; on
+  /// Metal on an M4 Max it differed by rounding, at most 2 of 255 per
+  /// channel.
+  ///
+  /// `true` on iOS with the Metal backend makes `ImageGenerationEngine.load`
+  /// throw `LlamaUnsupportedException`: on an iPhone 16 Pro every decode
+  /// tripped the GPU watchdog and returned a corrupt image
+  /// ([#1044](https://github.com/leehack/llamadart/issues/1044)). macOS
+  /// Metal is not affected.
   ///
   /// `null` turns it on, except on Metal and when a tiny autoencoder
   /// decodes: a [ImageModelRole.taesd] file, or a checkpoint whose header

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -44,6 +45,9 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
 
   final ImageRuntimeProbe _probe;
   final ImageGpuMemoryReader _readGpuMemory;
+
+  @override
+  String get operatingSystem => Platform.operatingSystem;
 
   @override
   StableDiffusionRuntimeStatus probe() =>

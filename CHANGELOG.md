@@ -12,6 +12,13 @@
   `liteRtLmCacheDir` is unset, as in an iOS app bundle: the GPU engine now
   reuses caches already there or runs without them
   ([#976](https://github.com/leehack/llamadart/issues/976)).
+- `ImageModelParams.vaeDirectConvolution: true` now throws
+  `LlamaUnsupportedException` at load on iOS Metal instead of returning
+  corrupt images ([#1044](https://github.com/leehack/llamadart/issues/1044)).
+- After a failed Metal command buffer, image generation now says the model
+  must be reloaded, and later generations on that engine fail at once with
+  the same message, instead of claiming the next request can run
+  ([#1045](https://github.com/leehack/llamadart/issues/1045)).
 
 ## 0.12.1
 

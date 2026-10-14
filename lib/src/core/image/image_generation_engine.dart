@@ -346,7 +346,9 @@ class ImageGenerationEngine {
   ///   [ModelLoadOptions.sha256] for a model of more than one file (a
   ///   single file is verified against it); and when a source sets [ModelSource.format] to [ModelFormat.liteRtLm].
   ///   Image files are classified by their headers, so [ModelSource.format]
-  ///   is otherwise unused here.
+  ///   is otherwise unused here. Also when
+  ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
+  ///   Metal backend, before any file is resolved or loaded.
   /// - [LlamaModelException] when a file is missing, is not an image-model
   ///   component (such as a LoRA or ControlNet), shares a role with another
   ///   file, or does not match the diffusion model; when no file holds
@@ -368,6 +370,17 @@ class ImageGenerationEngine {
     final runtime = await _probeRuntime(driver)
       ..throwIfUnavailable();
     final backendName = _backendNameFor(params.device, runtime.devices);
+    if (params.vaeDirectConvolution == true &&
+        driver.operatingSystem == 'ios' &&
+        _isMetal(backendName)) {
+      throw LlamaUnsupportedException(
+        'ImageModelParams.vaeDirectConvolution: true is not supported on iOS '
+        'with the Metal backend ($backendName): every VAE decode trips the '
+        'GPU watchdog and returns a corrupt image '
+        '(https://github.com/leehack/llamadart/issues/1044). Leave it null or '
+        'set it to false, or load with ComputeDevice.cpu.',
+      );
+    }
     if (params.threads < 0) {
       throw LlamaImageGenerationException(
         'ImageModelParams.threads must be 0 or greater.',
@@ -529,8 +542,11 @@ class ImageGenerationEngine {
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running; these checks run before the returned future completes,
   /// and the one-generation slot is taken when this is called. A runtime
-  /// failure after the task starts, such as an aborted GPU command buffer,
-  /// fails the task with [LlamaInferenceException]; the engine stays usable.
+  /// failure after the task starts, such as running out of memory, fails the
+  /// task with [LlamaInferenceException]; the engine stays usable. A failed
+  /// Metal command buffer leaves the backend in an error state instead: from
+  /// then on every task fails with a [LlamaInferenceException] that says so,
+  /// until the engine is disposed and the model loaded again.
   Future<ImageGenerationTask> generate(ImageGenerationRequest request) async {
     final effective = _resolve(request);
     final operation = _acquireOperation();
