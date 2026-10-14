@@ -30,6 +30,12 @@ For canonical full release notes, use:
 - The default llama.cpp runtime is now `leehack/llamadart-native@v0.6.0-3`,
   whose Apple frameworks declare their minimum OS version (iOS 16.4, macOS
   13.3) ([#1037](https://github.com/leehack/llamadart/issues/1037)).
+- Flutter iOS and macOS apps that keep `llamadart_llama_cpp_flutter` `0.0.22`
+  still build, with a warning to depend on `^0.0.23`: its `v0.6.0-2`
+  frameworks are the same llama.cpp build as `v0.6.0-3` without the minimum
+  OS version keys that App Store validation checks. Any other mismatched
+  companion still fails the build, and the error now names the companion
+  version to depend on.
 - `ImageModelParams.vaeDirectConvolution: true` now throws
   `LlamaUnsupportedException` at load on iOS Metal instead of returning
   corrupt images ([#1044](https://github.com/leehack/llamadart/issues/1044)).

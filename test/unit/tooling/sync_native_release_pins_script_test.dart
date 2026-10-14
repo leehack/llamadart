@@ -217,6 +217,7 @@ else:
     await pinsFile.writeAsString('''
 const llamaCppTag = 'b9998';
 ${_llamaCppBundleDigestPins()}
+${_llamaCppAppleCompanionPins()}
 const liteRtLmReleaseTag = 'v1.0.0';
 const liteRtLmVersion = '1.0.0';
 
@@ -1962,7 +1963,8 @@ Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
   await pinsFile.parent.create(recursive: true);
   await pinsFile.writeAsString('''
 const llamaCppTag = '$currentTag';
-${_llamaCppBundleDigestPins()}''');
+${_llamaCppBundleDigestPins()}
+${_llamaCppAppleCompanionPins()}''');
   final releaseDir = Directory(path.join(root.path, 'releases'))
     ..createSync(recursive: true);
   await _writePackageSwift(
@@ -2920,6 +2922,14 @@ String _llamaCppBundleDigestPins([String? tag]) => [
   '};',
   '',
 ].join('\n');
+
+/// The Apple llama.cpp companion version and compatible-tag pins.
+String _llamaCppAppleCompanionPins() => '''
+const llamaCppAppleCompanionVersion = '0.0.1';
+const llamaCppCompatibleAppleCompanionTags = <String, String>{
+  'b9997': 'x',
+};
+''';
 
 const Map<String, (String, String)> _litertAppleTargets = {
   'LiteRtLm': ('litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip', '3'),

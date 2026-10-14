@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -390,6 +391,144 @@ void main() {
         expect(emitted, isFalse);
       },
     );
+  }
+
+  for (final target in [OS.iOS, OS.macOS]) {
+    for (final MapEntry(key: tag, value: missing)
+        in llamaCppCompatibleAppleCompanionTags.entries) {
+      test('Apple $target links a companion pinning compatible $tag with an '
+          'upgrade warning', () async {
+        final records = <String>[];
+        final subscription = Logger.root.onRecord.listen(
+          (record) => records.add(record.message),
+        );
+        addTearDown(subscription.cancel);
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          companionTag: tag,
+          companionVersion: '0.0.22',
+        );
+        final stderrLines = await _capturingStderr(
+          () => testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+            userDefines: defines,
+            check: (_, output) {
+              final asset = output.assets.encodedAssets.single.asCodeAsset;
+              expect(asset.id, 'package:llamadart/llamadart');
+              expect(asset.linkMode, isA<LookupInProcess>());
+            },
+          ),
+        );
+        final warning =
+            'Resolved llamadart_llama_cpp_flutter 0.0.22 pins '
+            'leehack/llamadart-native@$tag, an earlier build of the same '
+            'llama.cpp runtime as $llamaCppTag, so this build links it. '
+            'Its frameworks lack $missing. Depend on '
+            '`llamadart_llama_cpp_flutter: ^$llamaCppAppleCompanionVersion` '
+            'to link $llamaCppTag.';
+        expect(stderrLines, contains('warning: llamadart: $warning'));
+        expect(records, contains(warning));
+      });
+
+      test('Apple $target still rejects local Artifacts beside compatible '
+          '$tag', () async {
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          companionTag: tag,
+          companionVersion: '0.0.22',
+          localArtifacts: true,
+        );
+        final captured = _CapturedStderr();
+        await expectLater(
+          IOOverrides.runZoned(
+            () => testCodeBuildHook(
+              mainMethod: build_hook.main,
+              targetOS: target,
+              targetArchitecture: Architecture.arm64,
+              targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+              userDefines: defines,
+              check: (_, _) => fail('Must not emit in-process assets'),
+            ),
+            stderr: () => captured,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple llama.cpp companion: Local Artifacts',
+              ),
+            ),
+          ),
+        );
+        expect(captured.lines, isNot(contains(contains('earlier build'))));
+      });
+    }
+
+    test('Apple $target links the exact companion pin without a compatibility '
+        'warning', () async {
+      final records = <String>[];
+      final subscription = Logger.root.onRecord.listen(
+        (record) => records.add(record.message),
+      );
+      addTearDown(subscription.cancel);
+      final defines = await _flutterAppleUserDefines(
+        dependencies: const ['llamadart_llama_cpp_flutter'],
+        companionVersion: llamaCppAppleCompanionVersion,
+      );
+      final stderrLines = await _capturingStderr(
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: target,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+          userDefines: defines,
+          check: (_, output) => expect(
+            output.assets.encodedAssets.single.asCodeAsset.linkMode,
+            isA<LookupInProcess>(),
+          ),
+        ),
+      );
+      expect(stderrLines, isNot(contains(contains('earlier build'))));
+      expect(records, isNot(contains(contains('earlier build'))));
+    });
+
+    for (final tag in ['v0.6.0-1', 'v0.6.0-4', 'v0.5.0-2']) {
+      test('Apple $target rejects unlisted companion pin $tag and names the '
+          'companion release to depend on', () async {
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          companionTag: tag,
+          companionVersion: '0.0.22',
+        );
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+            userDefines: defines,
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple llama.cpp companion: Resolved companion '
+                '0.0.22 does not uniquely pin the required native runtime '
+                '$llamaCppTag. Depend on `llamadart_llama_cpp_flutter: '
+                '^$llamaCppAppleCompanionVersion`, the first release '
+                'pinning leehack/llamadart-native@$llamaCppTag, in '
+                'pubspec.yaml and rerun flutter pub get; a caret '
+                'constraint on an earlier 0.0.x release never resolves it.',
+              ),
+            ),
+          ),
+        );
+        expect(emitted, isFalse);
+      });
+    }
   }
 
   for (final scenario in [

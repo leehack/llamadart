@@ -59,13 +59,22 @@ dependencies:
 
 Pair companion `0.0.22` with core `0.12.1` and `0.12.0`; keep `0.0.21` with
 core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
-a mismatch or on an unverified local `Artifacts` override; resolve the
-matching companion and rerun `flutter pub get`. On macOS,
+a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
+names the companion version to depend on. That check also accepts, with a
+build warning, a companion whose pin is an earlier build of the same llama.cpp
+release: companion `0.0.22` (`v0.6.0-2`) still builds with this core, but its
+frameworks lack the minimum OS version keys that App Store validation checks,
+so move to `^0.0.23` before you ship. On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
 including the GPU accelerators. The build uses it only when the resolved
 companion's `Package.swift` is the one this core release expects; any other
 companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
+Companion `0.0.15` is the exception: it pins `v0.18.0` rather than this core's
+`v0.18.0-1`, so the build prints that warning, but the app still embeds and
+loads the companion's complete macOS arm64 runtime and needs no build phase.
+On iOS the build does not check the LiteRT-LM companion pin. `v0.18.0-1`
+rebuilds the same LiteRT-LM release with arm64-only macOS XCFrameworks.
 
 The companion's macOS XCFrameworks are published for arm64 only, so a
 universal `flutter build macos` prints

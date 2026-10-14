@@ -691,7 +691,7 @@ _AppleCompanions? _flutterAppleCompanions({
   final runtimes = <String>[];
   String? liteRtLmMacOsGap;
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
-    _validateAppleCompanion(_llamaCppCompanion, consumerRoot, output);
+    _validateAppleCompanion(_llamaCppCompanion, consumerRoot, output, log);
     runtimes.add(nativeRuntimeLlamaCpp);
   }
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
@@ -704,7 +704,12 @@ _AppleCompanions? _flutterAppleCompanions({
     _stableDiffusionFlutterPackageName,
   );
   if (stableDiffusion) {
-    _validateAppleCompanion(_stableDiffusionCompanion, consumerRoot, output);
+    _validateAppleCompanion(
+      _stableDiffusionCompanion,
+      consumerRoot,
+      output,
+      log,
+    );
   }
   if (runtimes.isEmpty) {
     log.info(
@@ -724,12 +729,17 @@ _AppleCompanions? _flutterAppleCompanions({
 /// What a resolved Flutter Apple companion must match before the hook trusts
 /// its SwiftPM framework: the companion pins [nativeRepository]@[nativeTag]
 /// through `let [tagVariable]` in the maintained manifest template.
+/// [compatibleTags] maps earlier tags accepted with a warning to what their
+/// frameworks lack. [companionVersion] is the first companion release pinning
+/// [nativeTag], when the core records it.
 typedef _AppleCompanionContract = ({
   String label,
   String packageName,
   String tagVariable,
   String nativeRepository,
   String nativeTag,
+  Map<String, String> compatibleTags,
+  String? companionVersion,
   String templateSha256,
 });
 
@@ -739,6 +749,8 @@ const _AppleCompanionContract _llamaCppCompanion = (
   tagVariable: 'llamaCppTag',
   nativeRepository: _nativeRepoSlug,
   nativeTag: llamaCppTag,
+  compatibleTags: llamaCppCompatibleAppleCompanionTags,
+  companionVersion: llamaCppAppleCompanionVersion,
   templateSha256: _appleCompanionManifestTemplateSha256,
 );
 
@@ -748,6 +760,8 @@ const _AppleCompanionContract _stableDiffusionCompanion = (
   tagVariable: 'stableDiffusionTag',
   nativeRepository: _stableDiffusionNativeRepoSlug,
   nativeTag: stableDiffusionReleaseTag,
+  compatibleTags: <String, String>{},
+  companionVersion: null,
   templateSha256: _stableDiffusionCompanionManifestTemplateSha256,
 );
 
@@ -755,12 +769,21 @@ void _validateAppleCompanion(
   _AppleCompanionContract contract,
   Directory consumerRoot,
   BuildOutputBuilder output,
+  Logger log,
 ) {
+  final companionVersion = contract.companionVersion;
+  final requiredCompanion = companionVersion == null
+      ? 'Resolve ${contract.packageName} with a Package.swift pin matching '
+            '${contract.nativeRepository}@${contract.nativeTag} and rerun '
+            'flutter pub get. '
+      : 'Depend on `${contract.packageName}: ^$companionVersion`, the first '
+            'release pinning ${contract.nativeRepository}@'
+            '${contract.nativeTag}, in pubspec.yaml and rerun flutter pub '
+            'get; a caret constraint on an earlier 0.0.x release never '
+            'resolves it. ';
   Never reject(String reason) => throw StateError(
     'Incompatible Apple ${contract.label} companion: $reason '
-    'Resolve ${contract.packageName} with a Package.swift pin matching '
-    '${contract.nativeRepository}@${contract.nativeTag} and rerun flutter pub '
-    'get. '
+    '$requiredCompanion'
     'Upgrade the core and companion together to a matching released pair; '
     'native tag/path overrides do not replace SPM frameworks. '
     'No in-process native asset was emitted.',
@@ -802,7 +825,10 @@ void _validateAppleCompanion(
       '^let $tagVariable = "([^"\\r\\n]+)"\\s*\$',
       multiLine: true,
     ).allMatches(source).toList();
-    if (pins.length != 1 || pins.single.group(1) != contract.nativeTag) {
+    final pinnedTag = pins.length == 1 ? pins.single.group(1)! : null;
+    if (pinnedTag == null ||
+        (pinnedTag != contract.nativeTag &&
+            !contract.compatibleTags.containsKey(pinnedTag))) {
       reject(
         'Resolved companion ${metadata['version']} does not uniquely pin '
         'the required native runtime ${contract.nativeTag}.',
@@ -833,6 +859,18 @@ void _validateAppleCompanion(
         'Local Artifacts overrides cannot establish framework ABI '
         'compatibility; remove them and use the pinned framework.',
       );
+    }
+    final missing = contract.compatibleTags[pinnedTag];
+    if (missing != null) {
+      final upgrade =
+          'Resolved ${contract.packageName} ${metadata['version']} pins '
+          '${contract.nativeRepository}@$pinnedTag, an earlier build of the '
+          'same ${contract.label} runtime as ${contract.nativeTag}, so this '
+          'build links it. Its frameworks lack $missing. Depend on '
+          '`${contract.packageName}: ^${contract.companionVersion}` to link '
+          '${contract.nativeTag}.';
+      log.warning(upgrade);
+      stderr.writeln('warning: llamadart: $upgrade');
     }
   } on FileSystemException {
     reject('Unable to read resolved companion metadata.');
