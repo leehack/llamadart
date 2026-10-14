@@ -47,9 +47,9 @@ you loaded yourself, for example to chat with the same model, and its
 
 `load` takes `download:` (`ModelLoadOptions` for every remote file: cache
 policy and directory, authentication, resume, retries and cancel token),
-`onProgress:` (one combined progress for all files), `store:` (a
-`ModelFileStore` with your own resolver or download manager), and, for a
-prompt adapter, `params:` (`ModelParams`) and `backend:` (by default
+`onProgress:` (one combined progress for all files, except on [Web](#web)),
+`store:` (a `ModelFileStore` with your own resolver or download manager), and,
+for a prompt adapter, `params:` (`ModelParams`) and `backend:` (by default
 `LlamaBackend()`). Every file resolves, main file first, before anything
 loads. A local file takes only the cancel token. The bearer token and headers
 are never sent across hosts: when they are set and the remote files span more
@@ -330,6 +330,10 @@ leaves an attached recognizer's `capabilities.isSupported` false, with an
 actionable reason. On Web, `load` passes the sources to the browser runtime,
 which fetches each file itself: a `ModelSource.path` is a URL relative to the
 document, or a `blob:` URL, and `download` must stay at its defaults.
+`onProgress` reports only the model fetch, as a fraction from 0 to 0.5 of the
+two files; the projector fetch reports nothing, so progress stops at 0.5.
+`DecisionEngine.load` instead reports its encoder fetch from 0 to 1, so an app
+that loads both on Web gets two progress scales.
 
 WebGPU accepts encoded WAV, MP3, and FLAC bytes. Read the selected file into
 memory and pass `SpeechAudioBytesInput` with a `SpeechAudioFormat` whose

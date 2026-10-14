@@ -2,6 +2,15 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: Web load progress for speech and decision models
+
+No API or behavior changes; on Web the two-file loaders report progress on
+different scales. `SpeechToTextEngine.load` and `TextToSpeechEngine.load`
+report only the main model fetch, as a fraction from 0 to 0.5; the projector
+fetch reports nothing, so progress stops at 0.5. `DecisionEngine.load`
+reports its encoder fetch from 0 to 1. All three treat a `ModelSource.path`
+as a URL relative to the document base URL.
+
 ## `0.12.0` -> `0.12.1`: Flutter macOS LiteRT-LM bundle
 
 Upgrade the LiteRT-LM companion together with the core package:
