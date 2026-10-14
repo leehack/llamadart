@@ -13,10 +13,15 @@ dependencies:
   llamadart_litert_lm_flutter: ^0.0.16
 ```
 
-Core `0.12.2` pins llama.cpp `v0.6.0-3` and LiteRT-LM `v0.18.0-1`. With
-llama.cpp companion `0.0.22` the Apple build's runtime-pin check fails; with
-LiteRT-LM companion `0.0.15` the macOS build warns and LiteRT-LM stays in the
-hook cache. `llamadart_stable_diffusion_flutter` `0.0.3` is unchanged.
+Core `0.12.2` pins llama.cpp `v0.6.0-3` and LiteRT-LM `v0.18.0-1`. llama.cpp
+companion `0.0.22` still builds, with a warning: its `v0.6.0-2` frameworks lack
+the minimum OS version keys that App Store validation checks, so upgrade before
+shipping. Any other llama.cpp companion fails the build with an error naming
+`0.0.23`. With LiteRT-LM companion `0.0.15`, the macOS build warns that
+LiteRT-LM stays in the hook cache, but the app still loads its arm64 runtime
+from the bundle ([#1064](https://github.com/leehack/llamadart/issues/1064));
+iOS does not check the LiteRT-LM pin. `llamadart_stable_diffusion_flutter`
+`0.0.3` is unchanged.
 
 ## `0.12.0` -> `0.12.1`: Flutter macOS LiteRT-LM bundle
 

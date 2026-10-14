@@ -276,6 +276,7 @@ jobs:
             "- [ ] If LiteRT-LM sync was requested, confirm release \`${RESOLVED_LITERT_LM_TAG}\` includes all required runtime archives." \
             "- [ ] Confirm manifest provenance, ABI/capabilities, bundle coverage, checksums, and real-model evidence." \
             "- [ ] Confirm Apple SPM pins and current README/website/changelog surfaces are aligned." \
+            "- [ ] A moved llama.cpp pin clears \`llamaCppCompatibleAppleCompanionTags\`, so apps on the previous companion fail the Apple build. For a wrapper rebuild of the same upstream llama.cpp, re-list the previous pin only after confirming identical headers and thin binaries." \
             > "${body_file}"
           title="chore(native): sync native release ${RESOLVED_NATIVE_TAG}"
           if [[ -n "${open_pr}" ]]; then

@@ -8,6 +8,11 @@
 - The default llama.cpp runtime is now `leehack/llamadart-native@v0.6.0-3`,
   whose Apple frameworks declare their minimum OS version (iOS 16.4, macOS
   13.3) ([#1037](https://github.com/leehack/llamadart/issues/1037)).
+- Flutter iOS and macOS apps that keep `llamadart_llama_cpp_flutter` `0.0.22`
+  (native `v0.6.0-2`, the same binaries) still build, with a warning to depend
+  on `^0.0.23` for the frameworks' minimum OS version metadata. Any other
+  mismatched companion still fails the build, and the error names the
+  companion version to depend on.
 - The default LiteRT-LM runtime is now `leehack/litert-lm-native@v0.18.0-1`,
   whose macOS runtimes are arm64 only. Universal Flutter macOS apps with
   `llamadart_litert_lm_flutter` now launch on Intel Macs and under Rosetta
@@ -16,8 +21,8 @@
 - The build hook verifies every llama.cpp archive it downloads or reuses from
   its cache against a pinned SHA-256, or the release's `SHA256SUMS` when
   `llamadart_native_tag` or `llamadart_native_repository` overrides the
-  release. A mismatched archive is downloaded again, and a second mismatch
-  fails the build with `NativeArchiveDigestException`
+  release. A mismatched cached archive is downloaded again; a fresh download
+  that does not match fails the build with `NativeArchiveDigestException`
   ([#1015](https://github.com/leehack/llamadart/issues/1015)).
 - A `.litertlm` bundle in a directory the process cannot write, such as an
   iOS app bundle, no longer fails GPU engine creation on iOS and Linux when

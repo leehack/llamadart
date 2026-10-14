@@ -7,6 +7,32 @@ library;
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
 const llamaCppTag = 'v0.6.0-3';
 
+/// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
+/// [llamaCppTag].
+///
+/// An incompatible-companion build error names it, because a caret constraint
+/// on an earlier `0.0.x` companion can never resolve it. The native pin sync
+/// sets it whenever it moves the companion pin.
+const llamaCppAppleCompanionVersion = '0.0.23';
+
+/// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
+/// companion pins and the build still accepts, each mapped to what its
+/// frameworks lack compared with [llamaCppTag].
+///
+/// Every entry must be a wrapper rebuild of the same upstream llama.cpp
+/// release as [llamaCppTag]: the same `vMAJOR.MINOR.PATCH` prefix, which the
+/// native release manifest binds to one upstream commit, with byte-identical
+/// headers and thin binaries, so its frameworks are ABI- and symbol-identical
+/// to the ones the Dart bindings expect. The build accepts such a companion
+/// with a warning. The native pin sync clears this map whenever it moves
+/// [llamaCppTag], because each entry is verified against one pin.
+const llamaCppCompatibleAppleCompanionTags = <String, String>{
+  'v0.6.0-2':
+      'the MinimumOSVersion, LSMinimumSystemVersion, and '
+      'CFBundleSupportedPlatforms framework Info.plist keys that App Store '
+      'validation checks',
+};
+
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
 /// archive, keyed by bundle.
 ///

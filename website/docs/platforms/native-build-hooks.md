@@ -396,7 +396,10 @@ a pub workspace member is the exception described under
 Adding only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
-package and rejects local `Artifacts` overrides. The tag,
+package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
+an earlier build of the same llama.cpp release that the core lists as
+ABI-identical, such as `0.0.22` (`v0.6.0-2`), builds with a warning to upgrade
+the companion. The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. On macOS the hook hands LiteRT-LM to the companion
@@ -405,6 +408,8 @@ pinning the core's LiteRT-LM release. Any other companion, including `0.0.14`
 and earlier, keeps macOS LiteRT-LM in the hook cache with a build warning; a
 sandboxed, copied or distributed app cannot read that cache and needs the
 [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase).
+Companion `0.0.15` also gets that warning, but it embeds the complete macOS
+runtime, which the app loads from its bundle.
 Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
 

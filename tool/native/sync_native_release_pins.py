@@ -796,10 +796,11 @@ def main() -> int:
             llama_cpp_tag_input,
             args.release_json_dir,
         )
+        current_llama_cpp_tag = read_hook_native_tag(pins_text)
         resolved_llama_cpp_tag = validate_resolved_native_release(
             release,
             requested_tag=llama_cpp_tag_input,
-            current_tag=read_hook_native_tag(pins_text),
+            current_tag=current_llama_cpp_tag,
             allow_legacy_tag=args.allow_legacy_tag,
         )
         manifest_checksums = validate_native_release_manifest(
@@ -825,6 +826,16 @@ def main() -> int:
                     repo=args.llamadart_native_repo,
                 ),
             )
+        if resolved_llama_cpp_tag != current_llama_cpp_tag:
+            pins_text, cleared_tags = clear_compatible_apple_companion_tags(
+                pins_text
+            )
+            if cleared_tags:
+                summaries.append(
+                    "cleared compatible Apple llama.cpp companion tags "
+                    f"{', '.join(cleared_tags)}; re-verify their ABI against "
+                    f"{resolved_llama_cpp_tag} before listing them again"
+                )
         if llama_cpp_package_swift_path.exists():
             checksum = release_asset_checksum(
                 release,
@@ -848,18 +859,30 @@ def main() -> int:
             )
             pending_writes[llama_cpp_package_swift_path] = swift_text
             package_root = companion_package_root(llama_cpp_package_swift_path)
-            project_doc_dependency_versions[package_root.name] = (
-                update_companion_package_metadata(
-                    pending_writes,
-                    package_root,
-                    args.llamadart_native_repo,
-                    resolved_llama_cpp_tag,
-                    bump_version=(
-                        args.bump_companion_versions
-                        and swift_text != original_swift_text
-                    ),
-                )
+            bump_companion = (
+                args.bump_companion_versions and swift_text != original_swift_text
             )
+            companion_version = update_companion_package_metadata(
+                pending_writes,
+                package_root,
+                args.llamadart_native_repo,
+                resolved_llama_cpp_tag,
+                bump_version=bump_companion,
+            )
+            project_doc_dependency_versions[package_root.name] = companion_version
+            if swift_text != original_swift_text:
+                pins_text = replace_one(
+                    pins_text,
+                    r"const llamaCppAppleCompanionVersion = '[^']+';",
+                    "const llamaCppAppleCompanionVersion = '"
+                    + (
+                        companion_version
+                        if bump_companion
+                        else bump_patch_version(companion_version)
+                    )
+                    + "';",
+                    "native pins Apple llama.cpp companion version",
+                )
         update_llama_cpp_project_docs(
             pending_writes,
             llama_cpp_project_doc_paths,
@@ -3054,6 +3077,30 @@ def fetch_tag_commit(
 
 def allows_legacy_litert_manifest(tag: str) -> bool:
     return tag in LEGACY_SCHEMA1_RELEASES
+
+
+_COMPATIBLE_APPLE_COMPANION_TAGS_PATTERN = re.compile(
+    r"const llamaCppCompatibleAppleCompanionTags = <String, String>\{(.*?)\};",
+    re.DOTALL,
+)
+
+
+def clear_compatible_apple_companion_tags(pins_text: str) -> tuple[str, list[str]]:
+    """Empty the accepted earlier companion tags, which hold for one pin only."""
+    matches = list(_COMPATIBLE_APPLE_COMPANION_TAGS_PATTERN.finditer(pins_text))
+    if len(matches) != 1:
+        raise ReleaseError(
+            "Could not find llamaCppCompatibleAppleCompanionTags in "
+            f"{DEFAULT_NATIVE_RELEASE_PINS}"
+        )
+    match = matches[0]
+    cleared = re.findall(r"^  '([^']+)':", match.group(1), re.MULTILINE)
+    updated = (
+        pins_text[: match.start()]
+        + "const llamaCppCompatibleAppleCompanionTags = <String, String>{};"
+        + pins_text[match.end() :]
+    )
+    return updated, cleared
 
 
 def replace_one(text: str, pattern: str, replacement: str, description: str) -> str:

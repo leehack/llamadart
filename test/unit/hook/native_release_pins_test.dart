@@ -2,6 +2,7 @@
 library;
 
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -14,6 +15,53 @@ void main() {
 
   test('llama.cpp tag follows the native release tag grammar', () {
     expect(isValidNativeReleaseTag(llamaCppTag), isTrue, reason: llamaCppTag);
+  });
+
+  test('compatible Apple companion tags are earlier wrapper builds of the '
+      'pinned upstream llama.cpp release', () {
+    // A stable wrapper tag keeps its upstream release as the vM.m.p prefix,
+    // which the native release manifest binds to one upstream commit.
+    final wrapper = RegExp(r'^(v\d+\.\d+\.\d+)(?:-([1-9]\d*))?$');
+    final pinned = wrapper.firstMatch(llamaCppTag);
+    expect(pinned, isNotNull, reason: llamaCppTag);
+    final pinnedBuild = int.parse(pinned!.group(2) ?? '0');
+    for (final MapEntry(key: tag, value: missing)
+        in llamaCppCompatibleAppleCompanionTags.entries) {
+      final match = wrapper.firstMatch(tag);
+      expect(match, isNotNull, reason: tag);
+      expect(match!.group(1), pinned.group(1), reason: tag);
+      expect(int.parse(match.group(2) ?? '0'), lessThan(pinnedBuild));
+      expect(missing.trim(), isNotEmpty, reason: tag);
+    }
+  });
+
+  test('Apple companion version is the first release pinning llamaCppTag', () {
+    const companion = 'packages/llamadart_llama_cpp_flutter';
+    final version = RegExp(
+      r'^version: (\d+)\.(\d+)\.(\d+)$',
+      multiLine: true,
+    ).firstMatch(File('$companion/pubspec.yaml').readAsStringSync())!;
+    final changelog = File('$companion/CHANGELOG.md').readAsStringSync();
+    final sections = RegExp(
+      r'^## (.+)$',
+      multiLine: true,
+    ).allMatches(changelog).toList();
+    String? firstPinning;
+    for (final (index, section) in sections.indexed) {
+      final end = index + 1 < sections.length
+          ? sections[index + 1].start
+          : changelog.length;
+      if (changelog
+          .substring(section.end, end)
+          .contains('leehack/llamadart-native@$llamaCppTag`')) {
+        firstPinning = section.group(1);
+      }
+    }
+    final expected = firstPinning == 'Unreleased'
+        ? '${version.group(1)}.${version.group(2)}.'
+              '${int.parse(version.group(3)!) + 1}'
+        : firstPinning;
+    expect(llamaCppAppleCompanionVersion, expected);
   });
 
   test('llama.cpp pins a sha256 for exactly the bundles the hook selects', () {

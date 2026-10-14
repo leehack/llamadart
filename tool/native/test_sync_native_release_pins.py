@@ -3098,6 +3098,181 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
         )
 
 
+class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
+    SOURCE_ROOT = Path(__file__).resolve().parents[2]
+    COMPANION = "packages/llamadart_llama_cpp_flutter"
+
+    def setUp(self) -> None:
+        self.make_repo()
+
+    def make_repo(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.repo_root = self.root / "repo"
+        for relative in (
+            "lib/src/hook/native_release_pins.dart",
+            "CHANGELOG.md",
+            *pins.DEFAULT_LLAMA_CPP_PROJECT_DOCS,
+            f"{self.COMPANION}/pubspec.yaml",
+            f"{self.COMPANION}/README.md",
+            f"{self.COMPANION}/CHANGELOG.md",
+            f"{self.COMPANION}/darwin/llamadart_llama_cpp_flutter/Package.swift",
+        ):
+            target = self.repo_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(self.SOURCE_ROOT / relative, target)
+        self.pins = self.repo_root / "lib/src/hook/native_release_pins.dart"
+        self.release_dir = self.root / "releases"
+        self.release_dir.mkdir()
+
+    def write_release(self, tag: str) -> None:
+        def asset(name: str) -> dict:
+            return {
+                "name": name,
+                "digest": "sha256:" + hashlib.sha256(name.encode()).hexdigest(),
+                "browser_download_url": (
+                    "https://github.com/leehack/llamadart-native/releases/"
+                    f"download/{tag}/{name}"
+                ),
+            }
+
+        bundles = [
+            *(
+                asset(f"llamadart-native-{bundle}-{tag}.tar.gz")
+                for bundle in pins._STABLE_NATIVE_BUNDLES
+            ),
+            asset(f"llamadart-native-headers-{tag}.tar.gz"),
+            asset(f"llamadart-native-apple-xcframework-{tag}.zip"),
+        ]
+        manifest = {
+            "native_release_tag": tag,
+            "tag": tag,
+            "hook_contract_version": pins.SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION,
+            "llama_cpp_commit": "d81235049384534c167caea52b85a694f6103d14",
+            "native_commit": NATIVE_COMMIT,
+            "llama_cpp_tag": pins.parse_native_release_tag(tag).upstream_tag,
+            "artifacts": [
+                {"file": bundle["name"], "sha256": bundle["digest"][7:]}
+                for bundle in bundles
+            ],
+        }
+        manifest_asset = asset("assets.json")
+        manifest_asset["fixture_json"] = manifest
+        sums_asset = asset("SHA256SUMS")
+        sums_asset["fixture_text"] = "".join(
+            f"{bundle['digest'][7:]}  {bundle['name']}\n" for bundle in bundles
+        )
+        release = {
+            "tag_name": tag,
+            "prerelease": True,
+            "assets": [manifest_asset, sums_asset, *bundles],
+        }
+        (self.release_dir / f"leehack__llamadart-native__{tag}.json").write_text(
+            json.dumps(release), encoding="utf-8"
+        )
+
+    def run_sync(self, tag: str, *extra: str) -> subprocess.CompletedProcess[str]:
+        self.write_release(tag)
+        return subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve().parent / "sync_native_release_pins.py"),
+                "--repo-root",
+                str(self.repo_root),
+                "--release-json-dir",
+                str(self.release_dir),
+                "--llama-cpp-tag",
+                tag,
+                *extra,
+            ],
+            cwd=self.repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_a_pin_move_clears_compatible_tags_and_records_the_companion(
+        self,
+    ) -> None:
+        current = pins.read_hook_native_tag(self.pins.read_text(encoding="utf-8"))
+        upstream = pins.parse_native_release_tag(current).upstream_tag
+        build = int(current.rsplit("-", 1)[1]) if "-" in current else 0
+        target = f"{upstream}-{build + 1}"
+        version = pins.companion_pubspec_version(
+            (self.repo_root / self.COMPANION / "pubspec.yaml").read_text(),
+            self.repo_root / self.COMPANION / "pubspec.yaml",
+        )
+        for extra, pubspec_version in (
+            ((), version),
+            (("--bump-companion-versions",), pins.bump_patch_version(version)),
+        ):
+            with self.subTest(extra=extra):
+                self.make_repo()
+                self.pins.write_text(
+                    re.sub(
+                        r"const llamaCppAppleCompanionVersion = '[^']+';",
+                        "const llamaCppAppleCompanionVersion = '0.0.1';",
+                        self.pins.read_text(encoding="utf-8"),
+                    ).replace(
+                        "const llamaCppCompatibleAppleCompanionTags = "
+                        "<String, String>{\n",
+                        "const llamaCppCompatibleAppleCompanionTags = "
+                        "<String, String>{\n  'v0.0.1-1': 'x',\n",
+                    ),
+                    encoding="utf-8",
+                )
+                result = self.run_sync(target, *extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                text = self.pins.read_text(encoding="utf-8")
+                self.assertIn(f"const llamaCppTag = '{target}';", text)
+                self.assertIn(
+                    "const llamaCppCompatibleAppleCompanionTags = "
+                    "<String, String>{};",
+                    text,
+                )
+                self.assertIn(
+                    "const llamaCppAppleCompanionVersion = "
+                    f"'{pins.bump_patch_version(version)}';",
+                    text,
+                )
+                self.assertIn(
+                    f"version: {pubspec_version}\n",
+                    (self.repo_root / self.COMPANION / "pubspec.yaml").read_text(),
+                )
+                self.assertIn("cleared compatible Apple llama.cpp companion tags", result.stdout)
+                self.assertIn("v0.0.1-1", result.stdout)
+
+    def test_a_same_tag_resync_keeps_compatible_tags(self) -> None:
+        original = self.pins.read_text(encoding="utf-8")
+        compatible = re.search(
+            r"const llamaCppCompatibleAppleCompanionTags = <String, String>\{.*?\};",
+            original,
+            re.DOTALL,
+        )
+        assert compatible is not None
+        self.assertIn("'v0.6.0-2':", compatible.group(0))
+        result = self.run_sync(pins.read_hook_native_tag(original))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(compatible.group(0), self.pins.read_text(encoding="utf-8"))
+        self.assertNotIn("cleared compatible Apple llama.cpp companion tags", result.stdout)
+
+    def test_clear_reports_every_listed_tag_and_requires_the_constant(self) -> None:
+        text = self.pins.read_text(encoding="utf-8")
+        cleared_text, cleared = pins.clear_compatible_apple_companion_tags(text)
+        self.assertEqual(cleared, ["v0.6.0-2"])
+        self.assertIn(
+            "const llamaCppCompatibleAppleCompanionTags = <String, String>{};",
+            cleared_text,
+        )
+        self.assertEqual(
+            pins.clear_compatible_apple_companion_tags(cleared_text),
+            (cleared_text, []),
+        )
+        with self.assertRaisesRegex(ReleaseError, "llamaCppCompatibleAppleCompanionTags"):
+            pins.clear_compatible_apple_companion_tags("const llamaCppTag = 'v0.6.0';\n")
+
+
 class LlamaCppBundleDigestPinTest(unittest.TestCase):
     PINS = Path(__file__).resolve().parents[2] / "lib/src/hook/native_release_pins.dart"
 
