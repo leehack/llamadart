@@ -208,6 +208,35 @@ void main() {
     expect(engine.requests[1].last.role, LlamaChatRole.tool);
   });
 
+  test('every round carries enableThinking and chatTemplateKwargs', () async {
+    const kwargs = {'locale': 'en_CA'};
+    final budgeted = ChatSession(engine, maxContextTokens: 1000);
+    engine.replies
+      ..add(scriptedCalls([('call_1', 'weather', '{"city":"Seoul"}')]))
+      ..add(scriptedAnswer('Sunny in Seoul.'));
+
+    final result = await budgeted.sendWithTools(
+      'Weather?',
+      tools: [_tool('weather', (params) async => 'sunny')],
+      enableThinking: false,
+      chatTemplateKwargs: kwargs,
+    );
+
+    List<List<Object?>> options(List<(bool, Map<String, dynamic>?)> calls) => [
+      for (final (thinking, kwargs) in calls) [thinking, kwargs],
+    ];
+    expect(result.stopReason, LlamaToolLoopStopReason.completed);
+    expect(options(engine.createOptions), [
+      [false, kwargs],
+      [false, kwargs],
+    ]);
+    expect(engine.templateOptions, hasLength(2));
+    expect(
+      options(engine.templateOptions),
+      everyElement(equals([false, kwargs])),
+    );
+  });
+
   test('runs parallel calls concurrently and records them in order', () async {
     engine.replies
       ..add(

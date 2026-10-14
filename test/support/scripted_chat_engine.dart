@@ -23,6 +23,13 @@ class ScriptedChatEngine extends LlamaEngine {
   final List<ScriptedReply> replies = [];
   final List<List<LlamaChatMessage>> requests = [];
   final List<ToolChoice?> toolChoices = [];
+
+  /// The `enableThinking` and `chatTemplateKwargs` of each [create] call.
+  final List<(bool, Map<String, dynamic>?)> createOptions = [];
+
+  /// The `enableThinking` and `chatTemplateKwargs` of each [chatTemplate]
+  /// call.
+  final List<(bool, Map<String, dynamic>?)> templateOptions = [];
   int promptTokens = 0;
 
   /// The prompt token count of a request; [promptTokens] when unset.
@@ -46,6 +53,7 @@ class ScriptedChatEngine extends LlamaEngine {
   }) {
     requests.add(List.of(messages));
     toolChoices.add(toolChoice);
+    createOptions.add((enableThinking, chatTemplateKwargs));
     try {
       onRequest?.call(messages, tools);
     } catch (error, stackTrace) {
@@ -71,10 +79,13 @@ class ScriptedChatEngine extends LlamaEngine {
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
-  }) async => LlamaChatTemplateResult(
-    prompt: '',
-    tokenCount: countFor?.call(messages) ?? promptTokens,
-  );
+  }) async {
+    templateOptions.add((enableThinking, chatTemplateKwargs));
+    return LlamaChatTemplateResult(
+      prompt: '',
+      tokenCount: countFor?.call(messages) ?? promptTokens,
+    );
+  }
 }
 
 LlamaCompletionChunk scriptedChunk({

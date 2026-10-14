@@ -1010,6 +1010,38 @@ void main() {
     }
   });
 
+  for (final (kind, matcher) in [
+    ('llamaArgument', isA<LlamaArgumentException>()),
+    ('llamaModel', isA<LlamaModelException>()),
+    ('llamaContext', isA<LlamaContextException>()),
+    ('llamaInference', isA<LlamaInferenceException>()),
+    ('llamaState', isA<LlamaStateException>()),
+  ]) {
+    test('rebuilds a $kind worker error as its LlamaException', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        generationErrorResponse: LiteRtLmErrorResponse(
+          '$kind failed',
+          kind: kind,
+        ),
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+      try {
+        await expectLater(
+          backend.generate(7, 'prompt', const GenerationParams()).drain<void>(),
+          throwsA(
+            matcher.having((error) => error.message, 'message', '$kind failed'),
+          ),
+        );
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    });
+  }
+
   test('maps unknown worker generation errors to generic exceptions', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],

@@ -859,6 +859,30 @@ void main() {
         expect(logged.single.$2, contains('loading model from'));
       });
 
+      test('a drain that finishes after a later one does not move the read '
+          'position back', () async {
+        final first = await loaded(logLevel: LlamaLogLevel.info);
+        final second = await loaded(logLevel: LlamaLogLevel.info);
+        final logged = records(level: LlamaLogLevel.info);
+        const generating =
+            'stable_diffusion: stable-diffusion.cpp:3391 - generating';
+
+        // The first drain reads its message and is held before it sends it;
+        // the second one starts from the same position and reads both.
+        runtime.holdNextLogDrain();
+        final held = first.generate(_request(), (_, _) {});
+        await runtime.logDrainHeld();
+        await second.generate(_request(), (_, _) {});
+        runtime.releaseLogDrain();
+        await held;
+        expect(logged.map((record) => record.$2), everyElement(generating));
+        logged.clear();
+
+        await second.generate(_request(), (_, _) {});
+
+        expect(logged, [(LlamaLogLevel.info, generating)]);
+      });
+
       test('messages the runtime dropped are reported in one warning, after '
           'the ones it kept', () async {
         runtime.close();

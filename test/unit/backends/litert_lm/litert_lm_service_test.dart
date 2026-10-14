@@ -280,6 +280,85 @@ void main() {
         }
       });
     }
+
+    for (final (name, media, passedThrough) in [
+      (
+        'an unsupported raw RGB image',
+        LlamaImageContent(
+          bytes: Uint8List.fromList([1, 2, 3]),
+          width: 1,
+          height: 1,
+        ),
+        isA<UnsupportedError>().having(
+          (error) => '${error.message}',
+          'message',
+          allOf(contains('raw RGB'), isNot(contains('declares no'))),
+        ),
+      ),
+      (
+        'a missing image file',
+        const LlamaImageContent(path: '/missing/llamadart-image.png'),
+        isA<ArgumentError>().having(
+          (error) => '${error.message}',
+          'message',
+          contains('image file does not exist'),
+        ),
+      ),
+      (
+        'a remote image URL',
+        const LlamaImageContent(url: 'https://example.com/image.png'),
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('remote image URLs'),
+        ),
+      ),
+    ]) {
+      test('rejecting $name on a bundle that declares no image encoder '
+          'passes through unexplained', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = newService(client);
+        declared = (vision: false, audio: false, speculativeDecoding: false);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          await expectLater(
+            mediaChat(service, context, media),
+            throwsA(passedThrough),
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a speculative chat failure on a bundle that declares no drafter is '
+        'explained', () async {
+      final client = _FakeLiteRtLmRuntimeClient(
+        initializeError: StateError('runtime failed'),
+      );
+      final service = newService(client);
+      declared = (vision: true, audio: true, speculativeDecoding: false);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        await expectLater(
+          service.generateChat(
+            context,
+            [
+              const LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Hi',
+              ),
+            ],
+            const GenerationParams(maxTokens: 8, speculativeDecoding: true),
+          ).toList(),
+          undeclared('speculative decoding drafter'),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
   });
 
   group('bundle template content shape', () {
