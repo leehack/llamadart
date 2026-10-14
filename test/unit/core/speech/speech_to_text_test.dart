@@ -1012,6 +1012,42 @@ void main() {
       adapter: adapter,
     );
 
+    test('a model cache directory that cannot be created fails the load '
+        'with LlamaModelException', () async {
+      final blocker = File(p.join(directory.path, 'not-a-directory'))
+        ..writeAsStringSync('');
+      ModelSource remote(String name) =>
+          ModelSource.url(Uri.parse('http://127.0.0.1:9/models/$name'));
+
+      await expectLater(
+        SpeechToTextEngine.load(
+          SpeechToTextModel(
+            remote('asr.gguf'),
+            projector: remote('mmproj-asr.gguf'),
+            adapter: const Qwen3AsrAdapter(),
+          ),
+          download: ModelLoadOptions(
+            cacheDirectory: p.join(blocker.path, 'cache'),
+            maxRetries: 0,
+          ),
+          store: ModelFileStore(
+            downloadManager: DefaultModelDownloadManager.appPrivate(
+              cacheDirectory: p.join(directory.path, 'cache'),
+            ),
+          ),
+          backend: backend,
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot create the model cache directory'),
+          ),
+        ),
+      );
+      expect(backend.lastProjectorPath, isNull);
+    });
+
     test('owns the engine it loads and frees it on dispose', () async {
       final recognizer = await SpeechToTextEngine.load(
         model(),

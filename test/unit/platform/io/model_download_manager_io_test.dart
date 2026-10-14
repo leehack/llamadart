@@ -2055,6 +2055,238 @@ void main() {
     );
   });
 
+  group('cache directory creation', () {
+    late Directory tempDir;
+    late _ModelHttpFixture server;
+
+    setUp(() async {
+      tempDir = await _createManagedTempDirectory();
+      server = await _startManagedFixture();
+    });
+
+    Matcher cannotCreate(String directory) => throwsA(
+      isA<LlamaModelException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          startsWith('Cannot create the model cache directory $directory'),
+          contains('set ModelLoadOptions.cacheDirectory to a writable'),
+        ),
+      ),
+    );
+
+    for (final policy in [
+      ModelCachePolicy.preferCached,
+      ModelCachePolicy.refresh,
+      ModelCachePolicy.noCache,
+    ]) {
+      test('a cache root that cannot be created throws LlamaModelException '
+          'before any request with ${policy.name}', () async {
+        final blocker = File(path.join(tempDir.path, 'not-a-directory'))
+          ..writeAsStringSync('');
+        final cacheRoot = path.join(blocker.path, 'cache');
+        final source = ModelSource.url(server.modelUri);
+        final options = ModelLoadOptions(
+          cacheDirectory: cacheRoot,
+          cachePolicy: policy,
+          maxRetries: 0,
+        );
+
+        await expectLater(
+          DefaultModelDownloadManager().ensureModel(source, options: options),
+          cannotCreate(cacheRoot),
+        );
+        await expectLater(
+          DefaultModelDownloadManager(
+            defaultCacheDirectory: cacheRoot,
+          ).ensureModel(
+            source,
+            options: ModelLoadOptions(cachePolicy: policy, maxRetries: 0),
+          ),
+          cannotCreate(cacheRoot),
+        );
+        expect(server.requestCount, 0);
+      });
+    }
+
+    test('an unwritable cache root names the permission failure', () async {
+      final readOnly = Directory(path.join(tempDir.path, 'ro'))..createSync();
+      await Process.run('chmod', ['a-w', readOnly.path]);
+      addTearDown(() => Process.run('chmod', ['u+w', readOnly.path]));
+      final cacheRoot = path.join(readOnly.path, 'cache');
+      try {
+        Directory(cacheRoot).createSync();
+        markTestSkipped('This user can write to a read-only directory.');
+        return;
+      } on FileSystemException {
+        // Expected: the directory is not writable.
+      }
+
+      await expectLater(
+        DefaultModelDownloadManager().ensureModel(
+          ModelSource.url(server.modelUri),
+          options: ModelLoadOptions(cacheDirectory: cacheRoot),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            startsWith(
+              'Cannot create the model cache directory '
+              '${path.join(cacheRoot, ModelSource.url(server.modelUri).cacheDirectoryName)}: '
+              'Permission denied.',
+            ),
+          ),
+        ),
+      );
+      expect(server.requestCount, 0);
+    }, testOn: '!windows');
+  });
+
+  group('TLS failures', () {
+    late Directory tempDir;
+    final source = ModelSource.url(
+      Uri.parse('https://models.example/tiny.gguf'),
+    );
+
+    setUp(() async {
+      tempDir = await _createManagedTempDirectory();
+    });
+
+    Future<ModelCacheEntry> download(_FakeHttp http) => http.run(
+      () => DefaultModelDownloadManager().ensureModel(
+        source,
+        options: ModelLoadOptions(cacheDirectory: tempDir.path, maxRetries: 2),
+      ),
+    );
+
+    Matcher certificateFailure(Matcher details) => throwsA(
+      isA<LlamaModelException>()
+          .having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains("the server's TLS certificate could not be verified"),
+              contains('missing the root certificate'),
+              contains('not retried'),
+            ),
+          )
+          .having((error) => '${error.details}', 'details', details),
+    );
+
+    Matcher handshakeFailure(String cause) => throwsA(
+      isA<LlamaModelException>()
+          .having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('the TLS handshake with the server failed'),
+              contains('not retried'),
+              isNot(contains('certificate')),
+            ),
+          )
+          .having((error) => '${error.details}', 'details', contains(cause)),
+    );
+
+    for (final cause in [
+      'CERTIFICATE_VERIFY_FAILED: unable to get local issuer '
+          'certificate(handshake.cc:393)',
+      'error:0A000086:SSL routines::certificate verify failed',
+    ]) {
+      test('a certificate verification failure ($cause) names the cause and '
+          'is not retried', () async {
+        final http = _FakeHttp.failing(
+          HandshakeException('Handshake error in client', OSError(cause, 0)),
+        );
+
+        await expectLater(download(http), certificateFailure(contains(cause)));
+        expect(http.requests, 1);
+      });
+    }
+
+    test('a CertificateException names the certificate and is not '
+        'retried', () async {
+      final http = _FakeHttp.failing(
+        const CertificateException('Bad certificate'),
+      );
+
+      await expectLater(
+        download(http),
+        certificateFailure(contains('Bad certificate')),
+      );
+      expect(http.requests, 1);
+    });
+
+    test('another handshake failure names TLS and is not retried', () async {
+      final http = _FakeHttp.failing(
+        const HandshakeException(
+          'Handshake error in client',
+          OSError('WRONG_VERSION_NUMBER(tls_record.cc:231)', 0),
+        ),
+      );
+
+      await expectLater(
+        download(http),
+        handshakeFailure('WRONG_VERSION_NUMBER'),
+      );
+      expect(http.requests, 1);
+    });
+
+    for (final alert in [
+      'SSLV3_ALERT_BAD_CERTIFICATE',
+      'TLSV13_ALERT_CERTIFICATE_REQUIRED',
+    ]) {
+      test(
+        'a server alert $alert does not blame the server certificate',
+        () async {
+          final http = _FakeHttp.failing(
+            HandshakeException(
+              'Handshake error in client',
+              OSError('$alert(tls_record.cc:592)', 0),
+            ),
+          );
+
+          await expectLater(download(http), handshakeFailure(alert));
+          expect(http.requests, 1);
+        },
+      );
+    }
+
+    test('a connection closed during the handshake is retried', () async {
+      final http = _FakeHttp.failing(
+        const HandshakeException('Connection terminated during handshake'),
+      );
+
+      await expectLater(
+        download(http),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            'Failed to download tiny.gguf.',
+          ),
+        ),
+      );
+      expect(http.requests, 3);
+    });
+
+    test('a TLS error in the body stream is retried', () async {
+      final payload = utf8.encode('tiny model payload');
+      final http = _FakeHttp((attempt) async* {
+        if (attempt == 0) {
+          yield payload.sublist(0, 4);
+          throw const TlsException('Bad record MAC');
+        }
+        yield payload;
+      });
+
+      final entry = await download(http);
+
+      expect(http.requests, 2);
+      expect(await File(entry.filePath).readAsBytes(), payload);
+    });
+  });
+
   group('suite resource isolation', () {
     final createdDirectories = <Directory>[];
 
@@ -2363,4 +2595,84 @@ class _ModelHttpFixture {
       activeRequests -= 1;
     }
   }
+}
+
+/// Stands in for every [HttpClient] created inside [run]: each request either
+/// throws the connection error from [_FakeHttp.failing] or answers 200 with
+/// the body that [_body] returns for the zero-based request number.
+class _FakeHttp {
+  _FakeHttp(this._body) : _error = null;
+
+  _FakeHttp.failing(Exception error) : _error = error, _body = null;
+
+  final Exception? _error;
+  final Stream<List<int>> Function(int request)? _body;
+  int requests = 0;
+
+  Future<T> run<T>(Future<T> Function() body) => HttpOverrides.runZoned(
+    body,
+    createHttpClient: (_) => _FakeHttpClient(this),
+  );
+
+  Future<HttpClientRequest> _open() async {
+    final request = requests;
+    requests += 1;
+    final error = _error;
+    if (error != null) {
+      throw error;
+    }
+    return _FakeHttpClientRequest(_FakeHttpClientResponse(_body!(request)));
+  }
+}
+
+class _FakeHttpClient implements HttpClient {
+  _FakeHttpClient(this._http);
+
+  final _FakeHttp _http;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) => _http._open();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeHttpClientRequest implements HttpClientRequest {
+  _FakeHttpClientRequest(this._response);
+
+  final HttpClientResponse _response;
+
+  @override
+  final HttpHeaders headers = _FakeHttpHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async => _response;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeHttpClientResponse extends StreamView<List<int>>
+    implements HttpClientResponse {
+  _FakeHttpClientResponse(super.stream);
+
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  int get contentLength => -1;
+
+  @override
+  final HttpHeaders headers = _FakeHttpHeaders();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeHttpHeaders implements HttpHeaders {
+  @override
+  String? value(String name) => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }

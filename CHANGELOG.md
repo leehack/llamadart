@@ -37,6 +37,24 @@
 - Fix the chat example's text to speech sending the stored Min-P while the
   loaded runtime does not support Min-P and the slider is disabled
   ([#747](https://github.com/leehack/llamadart/issues/747)).
+- A model cache directory that cannot be created, such as an unwritable
+  `ModelLoadOptions.cacheDirectory`, now throws `LlamaModelException` naming
+  the directory instead of a raw `FileSystemException`
+  ([#894](https://github.com/leehack/llamadart/issues/894)).
+- A model download that fails TLS certificate verification now says so in
+  its `LlamaModelException`, and TLS certificate and handshake failures are
+  no longer retried
+  ([#978](https://github.com/leehack/llamadart/issues/978)).
+- A `ModelResolver` that maps a remote source to a local mirror file now
+  loads it when the download options set `cacheDirectory`, credentials or
+  other download-only options, instead of throwing
+  `LlamaUnsupportedException`
+  ([#897](https://github.com/leehack/llamadart/issues/897)).
+- `ModelParams.loras` with more than one adapter or a scale other than 1.0
+  now throws `LlamaUnsupportedException` before any adapter downloads when
+  the model loads in LiteRT-LM: on a LiteRT-LM-only backend, or when the
+  model's format or `.litertlm` extension names a LiteRT-LM bundle
+  ([#891](https://github.com/leehack/llamadart/issues/891)).
 
 ## 0.12.1
 

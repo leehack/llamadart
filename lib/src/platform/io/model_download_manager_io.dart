@@ -321,7 +321,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       }
     }
 
-    await cacheDir.create(recursive: true);
+    await _createCacheDirectory(cacheDir);
     final entry = await _download(
       source,
       options,
@@ -539,13 +539,28 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     ModelLoadOptions options,
   ) async {
     final root = Directory(options.cacheDirectory ?? defaultCacheDirectory);
-    await root.create(recursive: true);
+    await _createCacheDirectory(root);
     final timestamp = DateTime.now().toUtc().microsecondsSinceEpoch;
     final directory = Directory(
       path.join(root.path, '${source.cacheDirectoryName}-nocache-$timestamp'),
     );
-    await directory.create(recursive: true);
+    await _createCacheDirectory(directory);
     return directory;
+  }
+
+  Future<void> _createCacheDirectory(Directory directory) async {
+    try {
+      await directory.create(recursive: true);
+    } on FileSystemException catch (error) {
+      final reason = error.osError?.message;
+      throw LlamaModelException(
+        'Cannot create the model cache directory ${directory.path}'
+            '${reason == null || reason.isEmpty ? '' : ': $reason'}. Make sure '
+            'the directory and its parents are writable, or set '
+            'ModelLoadOptions.cacheDirectory to a writable directory.',
+        '$error',
+      );
+    }
   }
 
   Future<ModelCacheEntry> _localEntry(
@@ -1053,6 +1068,14 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         ),
       );
       return entry;
+    } on TlsException catch (error) {
+      final details = redactUrlSecrets('$error', sourceUrls: requestUrls);
+      if (!_isPermanentTlsFailure(error)) {
+        throw HttpException(details);
+      }
+      // A LlamaModelException without an HTTP status is not retried: a
+      // certificate or handshake failure fails the same way every time.
+      throw LlamaModelException(_tlsFailureMessage(source, error), details);
     } on IOException catch (error) {
       // Preserve the outer download retry policy while sanitizing every hop.
       throw HttpException(redactUrlSecrets('$error', sourceUrls: requestUrls));
@@ -1289,6 +1312,36 @@ void _throwIfCancelled(ModelLoadOptions options) {
   if (options.cancelToken?.isCancelled ?? false) {
     throw LlamaStateException('Model download was cancelled.');
   }
+}
+
+// A handshake that the connection cut short can succeed on a retry, and so
+// can a TLS error after the handshake, such as one in the body stream.
+bool _isPermanentTlsFailure(TlsException error) =>
+    error is CertificateException ||
+    (error is HandshakeException &&
+        !(error.osError == null &&
+            error.message.contains('Connection terminated during handshake')));
+
+String _tlsFailureMessage(ModelSource source, TlsException error) {
+  final name = _redactedSourceName(source);
+  if (error is CertificateException || _isCertificateVerifyFailure(error)) {
+    return 'Failed to download $name: the server\'s TLS certificate could not '
+        'be verified. The certificate may be invalid, or this machine may be '
+        'missing the root certificate that issued it. A certificate failure '
+        'is not retried.';
+  }
+  return 'Failed to download $name: the TLS handshake with the server failed. '
+      'A TLS handshake failure is not retried.';
+}
+
+// BoringSSL reports a failed verification of the server's certificate as
+// CERTIFICATE_VERIFY_FAILED; OpenSSL-style builds spell it in lower case.
+// Alerts such as SSLV3_ALERT_BAD_CERTIFICATE come from the server instead.
+bool _isCertificateVerifyFailure(TlsException error) {
+  final cause = '${error.message} ${error.osError?.message ?? ''}'
+      .toLowerCase();
+  return cause.contains('certificate_verify_failed') ||
+      cause.contains('certificate verify failed');
 }
 
 bool _isRetryable(LlamaModelException error) {

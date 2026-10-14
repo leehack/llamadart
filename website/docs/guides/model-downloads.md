@@ -177,6 +177,9 @@ final engine = await LlamaEngine.load(
 checkpoint and the load throws `LlamaStateException`, which is never retried.
 Other download failures are typically `LlamaModelException`; check
 `cancelToken.isCancelled` in the `catch` to tell a cancel from a failure.
+A cache directory that cannot be created throws `LlamaModelException` naming
+the directory. A TLS certificate or handshake failure throws
+`LlamaModelException` saying so, and is not retried.
 
 Disposing the engine also cancels package-managed downloads from `setModel`
 and the deprecated `loadModelSource`, including `ModelParams.loras` adapters.
@@ -189,9 +192,11 @@ promotes a cancelled download to a complete cached file.
 
 `download` applies to every remote file of the load. A local
 `ModelSource.path(...)` takes only the cancel token and, when the model has no
-projector, `sha256`. `ModelDownloadManager.ensureModel(...)` called directly
-with a local source and a non-default cache policy, `cacheDirectory`, auth
-headers, `resume: false` or a non-default `maxRetries` throws
+projector, `sha256`, and so does a remote source that a custom
+`ModelResolver` maps to a local file, such as an offline mirror.
+`ModelDownloadManager.ensureModel(...)` called directly with a local source
+and a non-default cache policy, `cacheDirectory`, auth headers,
+`resume: false` or a non-default `maxRetries` throws
 `LlamaUnsupportedException` instead of ignoring the option.
 
 ## Cache policies

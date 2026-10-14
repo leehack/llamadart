@@ -622,6 +622,8 @@ class LlamaEngine {
       params,
       options,
       loraLocations,
+      model: locations.first,
+      format: sources.first.format,
     );
     return (locations, resolvedParams);
   }
@@ -716,6 +718,8 @@ class LlamaEngine {
       modelParams,
       ModelLoadOptions.defaults,
       loraLocations,
+      model: path,
+      format: format,
     );
 
     final redactedPath = _redactedSource(path);
@@ -818,6 +822,8 @@ class LlamaEngine {
           modelParams,
           options,
           loraLocations,
+          model: entry.filePath,
+          format: source.format,
         );
         _throwIfSourceLoadCancelled(options);
         return (entry.filePath, resolvedParams);
@@ -1067,6 +1073,8 @@ class LlamaEngine {
       modelParams,
       ModelLoadOptions.defaults,
       loraLocations,
+      model: url,
+      format: format,
     );
 
     try {
@@ -2872,11 +2880,18 @@ class LlamaEngine {
   /// model load's [options]. Records where each adapter resolved in
   /// [locations], a path configuration under its [ModelSource.path], which
   /// the caller keeps once the model loads.
+  ///
+  /// Throws [LlamaUnsupportedException] before any adapter resolves when the
+  /// backend can load the [model] file or URL, declared as [format], only
+  /// in LiteRT-LM, and LiteRT-LM cannot take the adapters.
   Future<ModelParams> _resolveLoraSources(
     ModelParams params,
     ModelLoadOptions options,
-    Map<String, String> locations,
-  ) async {
+    Map<String, String> locations, {
+    required String model,
+    required ModelFormat? format,
+  }) async {
+    _checkLiteRtLmLoras(params.loras, model, format);
     final resolved = <LoraAdapterConfig>[];
     for (final lora in params.loras) {
       final source = lora.source;
@@ -2897,6 +2912,45 @@ class LlamaEngine {
     }
     if (params.loras.every((lora) => lora.source == null)) return params;
     return params.copyWith(loras: resolved);
+  }
+
+  // Mirrors the native LiteRT-LM load check, so an adapter that load would
+  // reject is not downloaded first.
+  void _checkLiteRtLmLoras(
+    List<LoraAdapterConfig> loras,
+    String model,
+    ModelFormat? format,
+  ) {
+    if (loras.every((lora) => lora.source == null)) return;
+    final scales = {
+      for (final lora in loras)
+        if (lora.scale != 1.0) lora.scale,
+    };
+    if (loras.length <= 1 && scales.isEmpty) return;
+    if (!_loadsOnlyInLiteRtLm(model, format)) return;
+    final problems = [
+      if (loras.length > 1) 'has ${loras.length} adapters',
+      if (scales.isNotEmpty) 'sets scale ${scales.join(', ')}',
+    ];
+    throw LlamaUnsupportedException(
+      'LiteRT-LM takes one LoRA adapter at scale 1.0, but ModelParams.loras '
+      '${problems.join(' and ')}, so no adapter was downloaded. Pass a single '
+      'adapter with scale 1.0, or load a GGUF model in llama.cpp to stack '
+      'adapters or set their scale.',
+    );
+  }
+
+  /// Whether the backend can load the [model] file or URL, declared as
+  /// [format], only in LiteRT-LM. A backend that routes by model format
+  /// loads it in LiteRT-LM, or fails, when [format] or the extension of
+  /// [model] names a LiteRT-LM bundle.
+  bool _loadsOnlyInLiteRtLm(String model, ModelFormat? format) {
+    final candidate = backend;
+    if (candidate is BackendModelFormatRouting) {
+      return (format ?? ModelFormat.fromPath(model)) == ModelFormat.liteRtLm;
+    }
+    return candidate is BackendRuntimeIdentity &&
+        (candidate as BackendRuntimeIdentity).runtime == LlamaRuntime.liteRtLm;
   }
 
   /// The download options of the [ModelParams.loras] adapter at [source]:

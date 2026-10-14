@@ -810,6 +810,33 @@ void main() {
       expect(downloads.cached, contains(lora.canonicalKey));
     });
 
+    test('a model cache directory that cannot be created fails the load with '
+        'LlamaModelException', () async {
+      await expectLater(
+        ImageGenerationEngine.load(
+          _sdxs(ModelSource.parse('http://127.0.0.1:9/sdxs.gguf')),
+          download: ModelLoadOptions(
+            // A path under a file, which no directory can be created at.
+            cacheDirectory: '/dev/null/llamadart-cache',
+            maxRetries: 0,
+          ),
+          store: ModelFileStore(
+            downloadManager: DefaultModelDownloadManager(
+              defaultCacheDirectory: '/dev/null/llamadart-cache',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot create the model cache directory'),
+          ),
+        ),
+      );
+      expect(driver.started, isEmpty);
+    }, testOn: 'vm && !windows');
+
     test('remote-only options reach only remote files', () async {
       const cacheDirectory = '/models/cache';
 
