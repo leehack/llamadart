@@ -1,19 +1,16 @@
 @Tags(['local-only', 'e2e'])
 /// Local-only device check that a LiteRT-LM bundle in a directory the app
 /// cannot write loads and generates with `ModelParams.liteRtLmCacheDir` unset
-/// (https://github.com/leehack/llamadart/pull/975), the case of a model
+/// (https://github.com/leehack/llamadart/pull/975,
+/// https://github.com/leehack/llamadart/issues/976), the case of a model
 /// shipped in an iOS app bundle.
 ///
 /// It downloads and hash-checks the locked `chat-litert-*` validation model,
 /// hard-links it into directories it then sets to mode 555, and loads it
-/// through `LlamaEngine(LlamaBackend())`:
+/// through `LlamaEngine(LlamaBackend())`. Every case must generate:
 ///
-/// - `unsuffixed` on `cpu` and `gpu`: a bundle named without `.litertlm`. It
-///   must generate.
-/// - `litertlm` on `gpu` and `cpu`: a bundle named `.litertlm`, which fails
-///   engine creation where no temp cache default exists
-///   (https://github.com/leehack/llamadart/issues/976). It is recorded, not
-///   judged: it must either generate or throw a `LlamaException`.
+/// - `unsuffixed` on `cpu` and `gpu`: a bundle named without `.litertlm`.
+/// - `litertlm` on `gpu` and `cpu`: a bundle named `.litertlm`.
 ///
 /// No case may leave anything in its directory, and the run may leave nothing
 /// beside the original model file. Each case logs a `started` line, which
@@ -71,10 +68,10 @@ const _readOnlyMode = 0x16d;
 const _writableMode = 0x1ed;
 
 const _cases = [
-  (id: 'unsuffixed', backend: 'cpu', mustGenerate: true),
-  (id: 'unsuffixed', backend: 'gpu', mustGenerate: true),
-  (id: 'litertlm', backend: 'gpu', mustGenerate: false),
-  (id: 'litertlm', backend: 'cpu', mustGenerate: false),
+  (id: 'unsuffixed', backend: 'cpu'),
+  (id: 'unsuffixed', backend: 'gpu'),
+  (id: 'litertlm', backend: 'gpu'),
+  (id: 'litertlm', backend: 'cpu'),
 ];
 
 void main() {
@@ -121,7 +118,7 @@ void main() {
     final origin = model.parent;
     final originBefore = _entryNames(origin);
     final failures = <String>[];
-    for (final (:id, :backend, :mustGenerate) in _cases) {
+    for (final (:id, :backend) in _cases) {
       final label = 'case=$id backend=$backend';
       final bundle = bundles[id]!;
       final directory = Directory(p.dirname(bundle));
@@ -168,7 +165,7 @@ void main() {
       debugPrint(
         '$_logTag $label outcome=$outcome ms=${watch.elapsedMilliseconds}',
       );
-      if (outcome == 'empty_reply' || (mustGenerate && outcome != 'ok')) {
+      if (outcome != 'ok') {
         failures.add('$label: $outcome');
       }
       expectUntouched('after');

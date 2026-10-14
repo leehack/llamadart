@@ -6,6 +6,11 @@
   the macOS runtime
   ([#1029](https://github.com/leehack/llamadart/issues/1029)).
 
+- Fix a LiteRT-LM bundle named `.litertlm` failing GPU engine creation on
+  iOS and Linux when the process cannot write the bundle's directory and
+  `liteRtLmCacheDir` is unset, as in an iOS app bundle: it now runs without
+  runtime caches ([#976](https://github.com/leehack/llamadart/issues/976)).
+
 ## 0.12.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`

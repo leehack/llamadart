@@ -842,13 +842,16 @@ and loads it through `LlamaEngine(LlamaBackend())` with
 `ModelParams.liteRtLmCacheDir` unset, as an app that ships a model in its
 bundle does. Four cases run in one process, in this order:
 
-| Case | Bundle name | Backend | Judged |
-| --- | --- | --- | --- |
-| `unsuffixed` | `Qwen3-0.6B` | `cpu`, then `gpu` | must generate |
-| `litertlm` | `Qwen3-0.6B.litertlm` | `gpu`, then `cpu` | recorded: generates or throws a `LlamaException` ([#976](https://github.com/leehack/llamadart/issues/976)) |
+| Case | Bundle name | Backend |
+| --- | --- | --- |
+| `unsuffixed` | `Qwen3-0.6B` | `cpu`, then `gpu` |
+| `litertlm` | `Qwen3-0.6B.litertlm` | `gpu`, then `cpu` |
 
-Every case fails when the directory is writable, when its mode or its entries
-change, on an empty reply and on any error that is not a `LlamaException`.
+Every case must generate
+([#975](https://github.com/leehack/llamadart/pull/975),
+[#976](https://github.com/leehack/llamadart/issues/976)). A case fails when the
+directory is writable, when its mode or its entries change, on an empty reply
+and on any error.
 The run also fails when the entries beside the original model file change.
 Each case logs a `started` line, a `dir` line with the directory as observed
 before the load, its result with the reply or the error type and message on

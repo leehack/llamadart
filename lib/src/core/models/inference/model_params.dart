@@ -192,8 +192,9 @@ class ModelParams {
   /// `null` keeps the default: `llamadart_litert_lm` under the system
   /// temporary directory on macOS and Android, and no directory on other
   /// platforms, where the runtime writes its caches next to the model file.
-  /// A provided directory is created when missing and forwarded to
-  /// `litert_lm_engine_settings_set_cache_dir`.
+  /// On Linux and iOS the caches are turned off when the process cannot
+  /// write that directory. A provided directory is created when missing and
+  /// forwarded to `litert_lm_engine_settings_set_cache_dir`.
   final String? liteRtLmCacheDir;
 
   /// Size cap in bytes for native LiteRT-LM GPU program cache files.
