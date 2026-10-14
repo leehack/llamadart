@@ -900,6 +900,11 @@
   embeddings and model loads, with their usage, to tracing and metrics code
   ([#696](https://github.com/leehack/llamadart/issues/696)).
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`) with Apple companion
+  `0.0.20`, regenerated matching Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
+  checksum, and aligned current README/website native override docs.
+
 - Add `LlamaEngine.scoreNextToken(...)` for next-token log-probabilities on
   native llama.cpp and WebGPU bridge assets `v0.1.52+`, matching llama-server
   `n_probs`; check
@@ -1295,6 +1300,32 @@
   companion does not match the core native runtime, with an actionable upgrade
   diagnostic instead of allowing ABI-incompatible frameworks.
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.4.0`, regenerated matching Dart FFI bindings, refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs. Updated multimodal calls
+  for the matching ABI. Saved native sessions from older runtimes must be
+  regenerated. Apple companion `0.0.18` supplies the matching native runtime.
+
+* Aligned the default WebGPU bridge assets to `v0.1.43` for Web/native
+  llama.cpp `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`.
+
+* Known upstream limitation: llama.cpp v0.4.0 can reject large grammar
+  repetitions, such as `root ::= "a"{2000}`. The post-v0.4.0 upstream
+  correction is tracked in `llamadart-native#76` and is not part of this release.
+
+## 0.8.22
+
+* Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the
+  Apple SwiftPM `v0.3.0` runtime pin.
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.3.0`, regenerated matching Dart FFI bindings, refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
 * Aligned the default WebGPU bridge assets to `v0.1.41` for corrected
   TypeScript declarations and TTS recovery guidance, retaining Web/native
   llama.cpp `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264` parity and Web
@@ -1480,6 +1511,78 @@
 * Added `code_assets` 2.x compatibility while retaining support for 1.x native
   asset toolchains.
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10514`, adding BailingMoE3,
+  GraniteSWA/GraniteMoeSWA, speculators-format DSpark checkpoints, and current
+  upstream multimodal/backend improvements. Matching Dart FFI bindings and the
+  `llamadart_llama_cpp_flutter` Apple SwiftPM artifact were refreshed.
+
+* Updated the default WebGPU bridge assets to `v0.1.37`, embedding llama.cpp
+  `b10514` to restore native/Web parity. The bridge provisions an explicit 1 MiB
+  Wasm stack for wasm32 and memory64, preventing Qwen3-ASR memory64 context
+  construction from overflowing the default stack.
+
+* Improved Web microphone transcription by warming up browser capture before
+  showing the recording-ready state, trimming the warmup silence, and
+  rejecting too-short, silent, or unsupported PCM WAV captures before
+  inference.
+
+* Added logical batch-size (`n_batch`) and micro-batch-size (`n_ubatch`)
+  controls for llama.cpp/WebGPU models in the Flutter chat example.
+
+* Improved Android Auto backend selection by probing the packaged Vulkan device
+  before memory planning, avoiding unnecessary CPU fallback on capable models.
+
+* Updated the native LiteRT-LM runtime to `v0.16.0-native.2`. The Apple companion
+  packages the iOS Gemma constraint provider and Metal accelerator/sampler
+  plugins required by the published runtime.
+
+* Added an experimental `SpeechToTextEngine.liteRtLm` path with capability
+  discovery, worker-isolated CPU inference, bounded mono 16 kHz float PCM,
+  partial/final transcript events, finalization, and cancellation.
+
+* Added experimental live dictation to the native Flutter chat example for
+  chat models using selectable Moonshine Tiny and Parakeet TDT 0.6B sidecars.
+  Live dictation is CPU-only, English-only, capped at five minutes, and
+  unavailable on Linux and Web.
+
+* Improved Flutter chat example model downloads with bounded retries for
+  transient network failures, safe resume after truncated responses, and a
+  distinct integrity-verification state after transfer reaches 100%.
+
+* Redesigned the Flutter chat example onboarding and Lab surfaces, preserved a
+  completed model card's viewport position when downloads reorder the catalog,
+  and stopped streaming responses from pulling users away from chat history.
+
+* Added an experimental typed `TextToSpeechEngine` for native llama.cpp and
+  WebGPU with Qwen3-TTS models, including capability discovery, speaker
+  references, cancellable progress, complete 24 kHz PCM output, and WAV
+  encoding. The Flutter chat example adds synthesis, playback, replay, and WAV
+  save controls. Apple apps discover the TTS ABI in the embedded llama
+  framework; current LiteRT-LM artifacts fail explicitly as unsupported.
+
+* Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
+  adapter profile for whole-file llama.cpp transcription. The Flutter chat
+  example includes a checksum-pinned Qwen3-ASR 0.6B preset plus file and
+  microphone transcription on native and WebGPU. Web accepts WAV bytes only;
+  native LiteRT-LM live dictation remains a separate implementation.
+
+* Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
+  through LiteRT-LM direct media and audio-capable GGUF + projector paths. It
+  sends a microphone recording through multimodal chat and remains separate
+  from typed speech-to-text.
+
+* Added experimental, opt-in native llama.cpp DSpark speculative decoding
+  through `SpeculativeDecodingConfig.draftDspark(...)` with a compatible
+  external draft model.
+
+## 0.8.19
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10333`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and aligned
+  current README/website native override docs.
+
 * Updated WebGPU bridge assets to `v0.1.27` (llama.cpp `b10333`), keeping the
   native and Web GGUF runtimes on the same upstream revision.
 
@@ -1488,6 +1591,140 @@
   remaining conservative Android context settings.
 
 ## 0.8.18
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10276`, picking up Qwen3-TTS model-loading
+  primitives, explicit bundled-MTP loading, automatic model-specific token
+  suppression, and recent model, multimodal, speculative-decoding, backend,
+  and runtime fixes. Regenerated matching Dart FFI bindings, migrated model
+  loading to llama.cpp's load-mode ABI and the penalty sampler to the new
+  vocabulary-sized ABI, and refreshed the `llamadart_llama_cpp_flutter` Apple
+  SwiftPM checksum. Speech generation is not yet exposed through the public
+  Dart API.
+
+* Updated the default LiteRT-LM runtimes to
+  `leehack/litert-lm-native@v0.15.0-native.3` and
+  `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
+  streaming callback bridge and an Android Dawn rollback for Mali-G715 GPU
+  device loss; incompatible callback runtimes now fail safely before
+  generation, and concrete macOS app, framework, and cache libraries take
+  precedence over process-linked assets.
+
+* Disabled automatic WebGPU fetch-backed model loading by default. Streamed
+  loading remains the safe default; controlled range-capable deployments can
+  opt in explicitly.
+
+* Updated WebGPU bridge assets to `v0.1.26` (llama.cpp `b10276`), refreshing
+  both WebAssembly runtimes while preserving the existing bridge API.
+
+## 0.8.17
+
+* Updated the default llama.cpp native runtime to
+  `leehack/llamadart-native@b10075` with matching bindings and Apple artifacts.
+
+* Added Tencent Hunyuan V3 chat-template, reasoning, and tool-call support.
+
+* Fixed Gemma 4 LiteRT-LM text generation in the Web chat app after model
+  loading completed successfully.
+
+* Restored GGUF loading in deployed Web chat apps by packaging the pinned
+  WebGPU runtime assets with Flutter Web builds.
+
+## 0.8.16
+
+* Updated the default llama.cpp native runtime to
+  `leehack/llamadart-native@b9982`, including regenerated bindings and safer
+  multimodal UTF-8 prompt handling.
+
+* Improved llama.cpp batching defaults and `ChatSession` context management for
+  more predictable generation under constrained contexts.
+
+* Added llama.cpp `presencePenalty` sampling and thinking-budget controls,
+  including the server's `thinking_budget_tokens` extension. Unsupported
+  WebGPU and LiteRT-LM paths now fail explicitly.
+
+* Reworked the runnable TUI coding agent with a focused Pi-style workflow,
+  Unsloth Qwen3.6 defaults, shared model-source loading, and clearer reasoning
+  and final-answer presentation.
+
+* Improved the OpenAI-compatible server with standard client-managed tool-call
+  transcripts, named `tool_choice`, configurable thinking behavior, and shared
+  model-source loading.
+
+## 0.8.15
+
+* Added clipboard media attachments to the runnable chat app. Desktop and web
+  users can paste screenshots or copied image/audio files with `Cmd/Ctrl+V`,
+  mobile users can choose **Paste attachment**, and ordinary text paste remains
+  unchanged.
+
+* Restored the runnable macOS chat app build phase that embeds and signs
+  LiteRT-LM runtime libraries inside the sandboxed app bundle, and enabled
+  LiteRT-LM Metal selection on iOS with the consolidated upstream runtime.
+  Updated the default LiteRT-LM runtime to
+  `leehack/litert-lm-native@v0.14.0-native.2`, which fixes Android GPU plugin
+  symbol resolution and uses the checksum-pinned official Apple XCFrameworks.
+
+* Fixed native LiteRT-LM generation incorrectly treating the requested maximum
+  response length as a forced benchmark decode count. Short responses no longer
+  wait for every allowed token before streaming, and LiteRT-LM chat flushes its
+  first token immediately.
+
+* Added an app-owned FIFO model-download queue to the runnable chat app. Only
+  one model transfers at a time, queued cards show their position and can leave
+  the queue independently, and a responsive shell progress pill keeps the
+  active download visible after the settings panel closes.
+
+* Replaced the runnable chat app's broad built-in model catalog with a focused
+  Unsloth-first set. Added cross-platform Gemma 4 E4B plus native-desktop Gemma
+  4 12B/26B-A4B/31B and Qwen3.6 35B-A3B presets. The model library now promotes
+  downloaded models, supports name/capability search and Mobile & Web/Desktop
+  filters, explains incompatible choices, and uses quieter cards with compact
+  compatibility, capability, and recommended-setting summaries. Custom entries
+  retain independent remove-from-library and downloaded-file actions.
+
+* Enabled Gemma 4 audio attachments in the runnable chat app for the current
+  native GGUF projector and LiteRT-LM bundle, while keeping LiteRT-LM Web
+  correctly text-only. Model capability settings now distinguish direct media
+  input from external `mmproj` input and persist that distinction across app
+  launches.
+
+* Redesigned the runnable chat app with a quieter responsive shell, compact
+  runtime details, full-screen mobile settings, streamlined message/composer
+  surfaces, accessible controls, protected conversation deletion, and
+  copy/regenerate actions for assistant responses. Model downloads now remain
+  active when settings closes or switches between drawer and pinned layouts.
+
+* Hardened the runnable chat app for narrow windows, 200% text scaling, and
+  macOS assistive technology; removed stale assistant placeholders after empty
+  or failed generations; kept context accounting stable when regenerating a
+  response; and redacted signed model URL parameters from labels and generation
+  errors.
+
+* Clarified the chat app's backend and GPU-layer controls, exposed the active
+  loaded backend beside its preference, and restored GPU offload when switching
+  from a zero-layer CPU configuration back to Auto or a GPU backend. Native
+  **Max** now maps to full llama.cpp offload, while Auto uses model size,
+  available device memory, safe system headroom, and requested context to choose
+  full or partial offload and only reduces context when the model does not fit.
+  Auto intent now persists separately from resolved layer/context values so
+  device headroom is recalculated on every model load and after app restarts.
+
+## 0.8.14
+
+* Updated the runnable chat app's web runtimes to pinned WebGPU bridge assets
+  `v0.1.18` (llama.cpp `b9915`) and `@litert-lm/core@0.14.0`, keeping hosted
+  and local inference on reproducible runtime versions.
+
+* Improved the runnable chat app's model-cache UX by reusing cached GGUF and
+  LiteRT-LM web bundles for benign catalog URLs such as `?download=true`,
+  preserving browser model caches during app cache cleanup, adding a text-only
+  projector skip path, and polishing download/load progress states.
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9935`, regenerated matching Dart FFI bindings, refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
 
 ## 0.8.13
 
@@ -1508,6 +1745,13 @@
   WebGPU mem64, native sync, and capability-support wording with the current
   workflows and runtime behavior. WebGPU runtime LoRA calls now throw an
   unsupported-operation error instead of reporting no-op success.
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9873-llamadart.2`, keeping the `b9873` llama.cpp
+  ABI/bindings while picking up wrapper fixes for native release
+  provenance and backend-selected speculative sampler acceptance. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current
+  README/website native override docs.
 
 * Aligned llama.cpp n-gram speculative rejected-tail rollback with upstream
   server behavior by trimming rejected target tokens before falling back to
@@ -1598,7 +1842,62 @@
 * Refreshed llama.cpp `b9860` template parity for DeepSeek V4 and MiniCPM5,
   including MiniCPM5 XML tool-call detection, rendering, and parsing.
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9860`, regenerated matching Dart FFI bindings, refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
 ## 0.8.11
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9829`, refreshed the
+  `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and aligned current
+  README/website native override docs for the release.
+
+## 0.8.10
+
+* **Potentially breaking behavior change:** native model cache defaults changed
+  without breaking Dart source compatibility. `DefaultModelDownloadManager()` now
+  prefers the platform shared cache on desktop/server instead of the process temp
+  directory, and mobile `DefaultModelDownloadManager.auto()` without an explicit
+  app-private directory now uses a best-effort temporary/cache fallback instead
+  of throwing. Apps or tests that asserted the old temp path or mobile exception
+  should pass an explicit cache directory or follow `MIGRATION.md`.
+
+* Added optional `androidAppPrivateCacheDirectory` and
+  `iosAppPrivateCacheDirectory` arguments to
+  `DefaultModelDownloadManager.auto(...)` so apps can provide platform-specific
+  mobile cache roots without constructor-level `Platform.isAndroid` /
+  `Platform.isIOS` branching.
+* Updated the default native `DefaultModelDownloadManager()` constructor to use
+  the per-user shared model cache on desktop/server platforms and the mobile
+  app-private cache fallback, so plain `LlamaEngine(...)` remote source loads use
+  a platform-appropriate default while preserving a temporary fallback for hosts
+  that cannot expose a desktop cache environment.
+
+## 0.8.9
+
+* Broadened the `hooks` dependency constraint to support both the existing
+  build-hooks package family and the latest stable release, restoring the
+  pub.dev dependency freshness score without breaking downstream packages that
+  still resolve `hooks` 1.x.
+
+* Made web-safe backend stubs the default conditional import/export targets,
+  preserving native `dart:io` selection while avoiding false WASM compatibility
+  deductions in pub.dev analysis.
+
+## 0.8.8
+
+* Added a CI release-doc version consistency check so current README/website
+  install snippets and companion package READMEs stay aligned with package
+  `pubspec.yaml` versions, and documented that companion/core package publishing
+  happens only after release-prep merge with explicit maintainer approval for
+  each tag.
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings, refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
 
 * Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
   constructors for shared desktop caches, app-private mobile caches,
@@ -1615,6 +1914,11 @@
 
 ## 0.8.6
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9776`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
 ## 0.8.5
 
 * Fixed the split-library mtmd fallback ABI for image and byte-buffer
@@ -1625,6 +1929,11 @@
   fallback ABI.
 
 ## 0.8.4
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9744`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
 
 * Expanded llama.cpp chat-template parity coverage for the latest upstream
   template fixtures, including Cohere2 MoE, LFM2.5 tool-call, and Granite 4.1
