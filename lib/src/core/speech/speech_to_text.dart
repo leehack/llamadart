@@ -696,7 +696,8 @@ class SpeechToTextEngine {
   /// [SpeechToTextModel.tokenizer] to local files. Each [transcribe] or
   /// [startStream] starts its own native session on them in a worker
   /// isolate. The adapter carries the runtime settings, so [params] and
-  /// [backend] must be null.
+  /// [backend] must be null; [load] disposes a [backend] passed in before it
+  /// throws.
   ///
   /// The load is atomic: when it throws, nothing stays loaded. Downloaded
   /// files stay in the model cache.

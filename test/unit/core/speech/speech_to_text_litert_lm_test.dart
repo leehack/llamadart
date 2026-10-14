@@ -316,6 +316,91 @@ void main() {
     expect(driver.probeCalls, 0);
   });
 
+  test('disposes a passed backend when the tokenizer is missing or a '
+      'projector is set', () async {
+    final missingTokenizer = _DisposeCountingBackend();
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        backend: missingTokenizer,
+      ),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'model.tokenizer',
+        ),
+      ),
+    );
+    expect(missingTokenizer.disposeCalls, 1);
+    final withProjector = _DisposeCountingBackend();
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          tokenizer: ModelSource.path(tokenizerPath),
+          projector: ModelSource.path(tokenizerPath),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        backend: withProjector,
+      ),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'model.projector',
+        ),
+      ),
+    );
+    expect(withProjector.disposeCalls, 1);
+    expect(driver.probeCalls, 0);
+  });
+
+  test('a backend dispose failure does not mask the argument error', () async {
+    final backend = _DisposeCountingBackend()
+      ..disposeError = StateError('dispose failed');
+    await expectLater(
+      SpeechToTextEngine.load(model(), backend: backend),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'backend',
+        ),
+      ),
+    );
+    expect(backend.disposeCalls, 1);
+  });
+
+  test(
+    'throws the argument error only after the backend is disposed',
+    () async {
+      final release = Completer<void>();
+      final backend = _DisposeCountingBackend()..disposeGate = release.future;
+      var settled = false;
+      final load = SpeechToTextEngine.load(
+        model(),
+        backend: backend,
+      ).whenComplete(() => settled = true);
+      final expectation = expectLater(
+        load,
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      await pumpEventQueue();
+      expect(backend.disposeCalls, 1);
+      expect(settled, isFalse);
+      release.complete();
+      await expectation;
+    },
+  );
+
   test('rejects a checksum for the two files', () async {
     await expectLater(
       SpeechToTextEngine.load(
@@ -884,10 +969,17 @@ class _SourceDownloadManager implements ModelDownloadManager {
 
 class _DisposeCountingBackend implements LlamaBackend {
   int disposeCalls = 0;
+  Object? disposeError;
+  Future<void>? disposeGate;
 
   @override
   Future<void> dispose() async {
     disposeCalls++;
+    await disposeGate;
+    final error = disposeError;
+    if (error != null) {
+      throw error;
+    }
   }
 
   @override

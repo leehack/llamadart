@@ -49,6 +49,27 @@ void main() {
     expect(backend.lastRequest?.speakerAudioBytes, isNotEmpty);
   });
 
+  test('load reports the Web model fetch from 0 to 0.5', () async {
+    final backend = _WebBackend();
+    final progress = <ModelDownloadProgress>[];
+    final synthesizer = await TextToSpeechEngine.load(
+      TextToSpeechModel(
+        ModelSource.parse('https://example.com/qwen3-tts.gguf'),
+        projector: ModelSource.parse(
+          'https://example.com/qwen3-tts-mmproj.gguf',
+        ),
+        adapter: const Qwen3TtsAdapter(),
+      ),
+      onProgress: progress.add,
+      backend: backend,
+    );
+    addTearDown(synthesizer.dispose);
+
+    expect(backend.modelUrl, 'https://example.com/qwen3-tts.gguf');
+    expect(backend.projectorUrl, 'https://example.com/qwen3-tts-mmproj.gguf');
+    expect([for (final p in progress) p.fraction], [0.25, 0.5]);
+  });
+
   test('typed text-to-speech rejects browser-local speaker paths', () async {
     final speechEngine = TextToSpeechEngine.attach(
       LlamaEngine(_WebBackend()),
@@ -76,6 +97,8 @@ void main() {
 class _WebBackend implements LlamaBackend, BackendTextToSpeech {
   bool _ready = false;
   BackendTextToSpeechRequest? lastRequest;
+  String? modelUrl;
+  String? projectorUrl;
 
   @override
   bool get isReady => _ready;
@@ -89,6 +112,9 @@ class _WebBackend implements LlamaBackend, BackendTextToSpeech {
     ModelParams params, {
     void Function(double progress)? onProgress,
   }) async {
+    modelUrl = url;
+    onProgress?.call(0.5);
+    onProgress?.call(1);
     _ready = true;
     return 1;
   }
@@ -100,7 +126,10 @@ class _WebBackend implements LlamaBackend, BackendTextToSpeech {
   Future<int?> multimodalContextCreate(
     int modelHandle,
     String mmProjPath,
-  ) async => 3;
+  ) async {
+    projectorUrl = mmProjPath;
+    return 3;
+  }
 
   @override
   Future<void> multimodalContextFree(int mmContextHandle) async {}
