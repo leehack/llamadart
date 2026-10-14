@@ -251,14 +251,16 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-Core `0.12.1` pairs with companions `llamadart_llama_cpp_flutter` `0.0.22`,
-`llamadart_litert_lm_flutter` `0.0.15` and
+Core `0.12.2` pairs with companions `llamadart_llama_cpp_flutter` `0.0.23`,
+`llamadart_litert_lm_flutter` `0.0.16` and
 `llamadart_stable_diffusion_flutter` `0.0.3`, whose SwiftPM pins are
-`v0.6.0-2`, `v0.18.0` and `v0.2.0-3`, respectively. The release-prep merge
+`v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`, respectively. The release-prep merge
 automation must publish any missing companion version before tagging core
-`0.12.1`; repository manifests alone do not prove pub.dev publication.
-Companion `llamadart_litert_lm_flutter` `0.0.14` pairs with core `0.12.0`,
-and `0.0.13` retains `v0.17.0-8` for core `0.11.1` and `0.11.0`. The iOS
+`0.12.2`; repository manifests alone do not prove pub.dev publication.
+Companion `llamadart_llama_cpp_flutter` `0.0.22` pairs with core `0.12.1`
+and `0.12.0`. Companion `llamadart_litert_lm_flutter` `0.0.15` pairs with core
+`0.12.1`, `0.0.14` with core `0.12.0`, and `0.0.13` retains `v0.17.0-8` for
+core `0.11.1` and `0.11.0`. The iOS
 artifacts meet the declared 16.4 deployment floor, but runtime execution at
 16.4 remains unqualified; keep [#831](https://github.com/leehack/llamadart/issues/831) open.
 

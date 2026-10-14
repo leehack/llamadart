@@ -31,16 +31,17 @@ also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
 
 ```yaml
 dependencies:
-  llamadart: ^0.12.1
-  llamadart_litert_lm_flutter: ^0.0.15
+  llamadart: ^0.12.2
+  llamadart_litert_lm_flutter: ^0.0.16
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.0-1`.
-Pair companion `0.0.15` with core `0.12.1`, and `0.0.14` with core `0.12.0`;
-companion `0.0.13` retains `v0.17.0-8` for core `0.11.1` and `0.11.0`.
+Pair companion `0.0.16` with core `0.12.2`; companion `0.0.15` retains
+`v0.18.0` for core `0.12.1`, `0.0.14` pairs with core `0.12.0`, and `0.0.13`
+retains `v0.17.0-8` for core `0.11.1` and `0.11.0`.
 
 These iOS artifacts omit the Gemma FST constraint provider. Gemma 3/4 and
 FunctionGemma conversations must use constrained decoding disabled, as the Dart

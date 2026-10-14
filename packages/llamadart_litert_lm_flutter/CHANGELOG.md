@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.16
 
 * Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.18.0-1`.
 * Link arm64-only macOS LiteRT-LM XCFrameworks, so universal macOS apps

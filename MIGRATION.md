@@ -2,6 +2,22 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.12.1` -> `0.12.2`: Apple companion pins
+
+Upgrade the Apple companions the app uses together with the core package:
+
+```yaml
+dependencies:
+  llamadart: ^0.12.2
+  llamadart_llama_cpp_flutter: ^0.0.23
+  llamadart_litert_lm_flutter: ^0.0.16
+```
+
+Core `0.12.2` pins llama.cpp `v0.6.0-3` and LiteRT-LM `v0.18.0-1`. With
+llama.cpp companion `0.0.22` the Apple build's runtime-pin check fails; with
+LiteRT-LM companion `0.0.15` the macOS build warns and LiteRT-LM stays in the
+hook cache. `llamadart_stable_diffusion_flutter` `0.0.3` is unchanged.
+
 ## `0.12.0` -> `0.12.1`: Flutter macOS LiteRT-LM bundle
 
 Upgrade the LiteRT-LM companion together with the core package:

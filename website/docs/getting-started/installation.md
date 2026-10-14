@@ -20,7 +20,7 @@ description: Add llamadart to a Dart or Flutter app, set up Apple and web target
 
 ```yaml
 dependencies:
-  llamadart: ^0.12.1
+  llamadart: ^0.12.2
 ```
 
 Then resolve packages:
@@ -51,14 +51,14 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.12.1
-  llamadart_llama_cpp_flutter: ^0.0.22 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.15 # Apple .litertlm / LiteRT-LM targets
+  llamadart: ^0.12.2
+  llamadart_llama_cpp_flutter: ^0.0.23 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.16 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.0.3 # Apple image generation, opt-in
 ```
 
-Pair companion `0.0.22` with core `0.12.1` and `0.12.0`; keep `0.0.21` with
-core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
+Pair companion `0.0.23` with core `0.12.2`; keep `0.0.22` with core `0.12.1`
+and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; resolve the
 matching companion and rerun `flutter pub get`. On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
@@ -73,8 +73,8 @@ universal `flutter build macos` prints
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
 
-Pair `llamadart_stable_diffusion_flutter` `0.0.3` with core `0.12.1` and
-`0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core
+Pair `llamadart_stable_diffusion_flutter` `0.0.3` with core `0.12.2`,
+`0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core
 `0.10.0`; older cores, including `0.9.x`, ignore it. Adding it opts iOS and
 macOS builds into the image generation runtime (about 37 MB per Apple
 target) on its own and leaves the other
@@ -132,7 +132,8 @@ the build Mac's architecture. For a one-off build,
 
 A Flutter macOS app gets the LiteRT-LM runtime in its bundle only from a
 `llamadart_litert_lm_flutter` that matches the core. With llamadart `0.12.0`
-and earlier, with companion `0.0.14` and earlier, or without the companion,
+and earlier, with a companion the core does not pair with (core `0.12.2` pairs
+with `0.0.16`, core `0.12.1` with `0.0.15`), or without the companion,
 the build hook leaves the libraries in its cache inside the resolved
 `llamadart` package, and the app loads them from there only when it runs unsandboxed, on
 the build machine, from inside the project. Under the App Sandbox, which

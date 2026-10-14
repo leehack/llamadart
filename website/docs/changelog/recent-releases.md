@@ -7,52 +7,43 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.12.2
 
-- The build hook now verifies every llama.cpp archive it downloads or reuses
-  from its cache against a pinned SHA-256, or against the release's
-  `SHA256SUMS` when `llamadart_native_tag` or `llamadart_native_repository`
-  overrides the release. A corrupted or replaced archive is deleted and
-  downloaded again, and a download that still does not match fails the build
-  with `NativeArchiveDigestException`
-  ([#1015](https://github.com/leehack/llamadart/issues/1015)).
-- Fix a LiteRT-LM bundle named `.litertlm` failing GPU engine creation on
-  iOS and Linux when the process cannot write the bundle's directory and
-  `liteRtLmCacheDir` is unset, as in an iOS app bundle: the GPU engine now
-  reuses caches already there or runs without them
-  ([#976](https://github.com/leehack/llamadart/issues/976)).
-- Document that on Web, speech `load` reports progress from 0 to 0.5 while
-  `DecisionEngine.load` reports 0 to 1
-  ([#903](https://github.com/leehack/llamadart/issues/903)).
-- Document that native prompt-state restore matches fresh evaluation within
-  numerical tolerance, not bit-exactly, under automatic prompt batching
-  ([#1003](https://github.com/leehack/llamadart/issues/1003)).
+- Pair this release with Apple companions `llamadart_llama_cpp_flutter`
+  `0.0.23`, `llamadart_litert_lm_flutter` `0.0.16` and
+  `llamadart_stable_diffusion_flutter` `0.0.3`, which link native runtimes
+  `v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`, respectively.
+
 - The default llama.cpp runtime is now `leehack/llamadart-native@v0.6.0-3`,
   whose Apple frameworks declare their minimum OS version (iOS 16.4, macOS
   13.3) ([#1037](https://github.com/leehack/llamadart/issues/1037)).
-- `ImageModelParams.vaeDirectConvolution: true` now throws
-  `LlamaUnsupportedException` at load on iOS Metal instead of returning
-  corrupt images ([#1044](https://github.com/leehack/llamadart/issues/1044)).
-- After a failed Metal command buffer, image generation now says the model
-  must be reloaded, and later generations on that engine fail at once with
-  the same message, instead of claiming the next request can run
-  ([#1045](https://github.com/leehack/llamadart/issues/1045)).
 - The default LiteRT-LM runtime is now `leehack/litert-lm-native@v0.18.0-1`,
-  which publishes macOS runtimes for arm64 only. Universal Flutter macOS apps
-  with `llamadart_litert_lm_flutter` now launch on Intel Macs and under
-  Rosetta instead of aborting, and LiteRT-LM throws
-  `LlamaUnsupportedException` on x86_64 macOS
-  ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
-- Fix the chat example's text to speech sending the stored Min-P while the
-  loaded runtime does not support Min-P and the slider is disabled
-  ([#747](https://github.com/leehack/llamadart/issues/747)).
+  whose macOS runtimes are arm64 only. Universal Flutter macOS apps with
+  `llamadart_litert_lm_flutter` now launch on Intel Macs and under Rosetta
+  instead of aborting; LiteRT-LM throws `LlamaUnsupportedException` on x86_64
+  macOS ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+- The build hook verifies every llama.cpp archive it downloads or reuses from
+  its cache against a pinned SHA-256, or the release's `SHA256SUMS` when
+  `llamadart_native_tag` or `llamadart_native_repository` overrides the
+  release. A mismatched archive is downloaded again, and a second mismatch
+  fails the build with `NativeArchiveDigestException`
+  ([#1015](https://github.com/leehack/llamadart/issues/1015)).
+- A `.litertlm` bundle in a directory the process cannot write, such as an
+  iOS app bundle, no longer fails GPU engine creation on iOS and Linux when
+  `liteRtLmCacheDir` is unset: the GPU engine reuses caches already there or
+  runs without them ([#976](https://github.com/leehack/llamadart/issues/976)).
+- Image generation on Metal: `ImageModelParams.vaeDirectConvolution: true`
+  throws `LlamaUnsupportedException` at load on iOS instead of returning
+  corrupt images ([#1044](https://github.com/leehack/llamadart/issues/1044)),
+  and after a failed command buffer generation says the model must be
+  reloaded and fails later generations on that engine with the same message
+  ([#1045](https://github.com/leehack/llamadart/issues/1045)).
 - A model cache directory that cannot be created, such as an unwritable
-  `ModelLoadOptions.cacheDirectory`, now throws `LlamaModelException` naming
-  the directory instead of a raw `FileSystemException`
-  ([#894](https://github.com/leehack/llamadart/issues/894)).
-- A model download that fails TLS certificate verification now says so in
-  its `LlamaModelException`, and TLS certificate and handshake failures are
-  no longer retried
+  `ModelLoadOptions.cacheDirectory`, throws `LlamaModelException` naming the
+  directory instead of a raw `FileSystemException`
+  ([#894](https://github.com/leehack/llamadart/issues/894)). A download that
+  fails TLS certificate verification says so in its `LlamaModelException`,
+  and TLS certificate and handshake failures are no longer retried
   ([#978](https://github.com/leehack/llamadart/issues/978)).
 - A `ModelResolver` that maps a remote source to a local mirror file now
   loads it when the download options set `cacheDirectory`, credentials or
@@ -60,10 +51,19 @@ For canonical full release notes, use:
   `LlamaUnsupportedException`
   ([#897](https://github.com/leehack/llamadart/issues/897)).
 - `ModelParams.loras` with more than one adapter or a scale other than 1.0
-  now throws `LlamaUnsupportedException` before any adapter downloads when
-  the model loads in LiteRT-LM: on a LiteRT-LM-only backend, or when the
-  model's format or `.litertlm` extension names a LiteRT-LM bundle
+  throws `LlamaUnsupportedException` before any adapter downloads when the
+  model loads in LiteRT-LM, by backend, format or `.litertlm` extension
   ([#891](https://github.com/leehack/llamadart/issues/891)).
+- The chat example no longer sends its stored Min-P to text to speech when
+  the loaded runtime does not support Min-P
+  ([#747](https://github.com/leehack/llamadart/issues/747)).
+
+- Aligned default WebGPU bridge assets to `v0.1.59`, unchanged from 0.12.1:
+  they embed llama.cpp `v0.6.0`, are qualified against native `v0.6.0`, and
+  keep Web/native llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`
+  parity; Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset
+  manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.12.1
 
