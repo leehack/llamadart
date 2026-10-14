@@ -121,9 +121,14 @@ abstract class LlamaBackend {
   /// Applies the model's chat template to the given [messages].
   ///
   /// If [customTemplate] is provided, even empty, it will be used instead of
-  /// the model's default template; otherwise a non-empty
-  /// [ModelParams.chatTemplate] from the load is used. The WebGPU backend
-  /// cannot render either and throws `LlamaUnsupportedException`;
+  /// the model's default template; otherwise [ModelParams.chatTemplate] from
+  /// the load is used when non-empty on llama.cpp, and even when empty on
+  /// native LiteRT-LM.
+  ///
+  /// The WebGPU backend cannot render either and throws
+  /// `LlamaUnsupportedException`. LiteRT-LM web renders no template: it
+  /// returns the last message's text, ignores the load template and an empty
+  /// [customTemplate], and throws `UnsupportedError` for a non-empty one.
   /// `LlamaEngine.chatTemplate` renders both on every backend.
   ///
   /// Returns the formatted prompt string.

@@ -68,6 +68,10 @@ If you run this app on Apple platforms with the Flutter SwiftPM companion
 packages enabled, set the Xcode project deployment target to iOS `16.4` or
 macOS `14.0` or newer first.
 
+Building on Linux also needs the GStreamer headers that `audioplayers_linux`
+links against, for example on Debian or Ubuntu:
+`sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev`.
+
 This app bundles the `llama_cpp` and `litert_lm` native runtimes and declares
 both Apple companion packages so GGUF and `.litertlm` presets work on supported
 targets. It also opts into the experimental `stable_diffusion` runtime for the

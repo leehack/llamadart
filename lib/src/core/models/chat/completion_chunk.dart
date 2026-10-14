@@ -1,18 +1,23 @@
 import '../inference/generation_usage.dart';
 
-/// Represents a tool call within a completion chunk.
-/// Aligns with OpenAI's `ToolCall` in streaming chunks.
+/// A tool call in a completion chunk, shaped like OpenAI's streaming
+/// `ToolCall`.
+///
+/// `LlamaEngine.create` does not stream calls as fragments. It emits each
+/// call once, complete, in the final chunk, whose `finishReason` is
+/// `tool_calls`.
 class LlamaCompletionChunkToolCall {
-  /// The index of the tool call in the list of tool calls.
+  /// The position of this call among the calls of the completion.
   final int index;
 
-  /// The ID of the tool call. Only present in the first chunk for this tool call.
+  /// The call ID. `LlamaEngine.create` fills `call_<index>` when the model
+  /// output has none.
   final String? id;
 
   /// The type of the tool call. Usually "function".
   final String? type;
 
-  /// The arguments delta. This is a JSON fragment that should be accumulated.
+  /// The function name and its arguments as a JSON string.
   final LlamaCompletionChunkFunction? function;
 
   /// Creates a new [LlamaCompletionChunkToolCall].
@@ -57,7 +62,8 @@ class LlamaCompletionChunkFunction {
   /// The name of the function.
   final String? name;
 
-  /// The arguments of the function (JSON fragment).
+  /// The function arguments as JSON. From `LlamaEngine.create` this is the
+  /// complete arguments object.
   final String? arguments;
 
   /// Creates a new [LlamaCompletionChunkFunction].

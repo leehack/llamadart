@@ -82,6 +82,38 @@ void main() {
       expect(chunks.last.choices.single.finishReason, 'stop');
     });
 
+    test('emits each tool call once, complete, in the final chunk', () async {
+      const call =
+          '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+          '</tool_call>';
+      final chunks = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable([
+          for (var i = 0; i < call.length; i += 4)
+            call.substring(i, min(i + 4, call.length)),
+        ]),
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: ChatFormat.hermes.index,
+        ),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: 'complete-call',
+      ).toList();
+
+      final withCalls = chunks
+          .where((chunk) => chunk.choices.single.delta.toolCalls != null)
+          .toList();
+      expect(withCalls, [same(chunks.last)]);
+      expect(chunks.last.choices.single.finishReason, 'tool_calls');
+      final calls = chunks.last.choices.single.delta.toolCalls!;
+      expect(calls, hasLength(1));
+      expect(calls.single.index, 0);
+      expect(calls.single.id, 'call_0');
+      expect(calls.single.function?.name, 'weather');
+      expect(jsonDecode(calls.single.function!.arguments!), {'city': 'Paris'});
+    });
+
     for (final endedAtLimit in [true, false]) {
       test('parallel Ministral calls preserve limit=$endedAtLimit', () async {
         const first = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
