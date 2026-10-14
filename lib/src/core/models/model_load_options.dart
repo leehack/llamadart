@@ -118,8 +118,8 @@ class ModelLoadOptions {
 
   /// Maximum retry attempts for native downloads.
   ///
-  /// A TLS certificate or protocol failure is not retried; a connection
-  /// that closes during the TLS handshake is.
+  /// A TLS certificate or handshake failure is not retried; a connection
+  /// that closes during the handshake, and a TLS error after it, are.
   final int maxRetries;
 }
 
