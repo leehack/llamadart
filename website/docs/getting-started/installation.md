@@ -141,8 +141,7 @@ the build Mac's architecture. For a one-off build,
 
 A Flutter macOS app gets the LiteRT-LM runtime in its bundle only from a
 `llamadart_litert_lm_flutter` that matches the core. With llamadart `0.12.0`
-and earlier, with a companion the core does not pair with (core `0.12.2` pairs
-with `0.0.16`, core `0.12.1` with `0.0.15`), or without the companion,
+and earlier, with companion `0.0.14` or earlier, or without the companion,
 the build hook leaves the libraries in its cache inside the resolved
 `llamadart` package, and the app loads them from there only when it runs unsandboxed, on
 the build machine, from inside the project. Under the App Sandbox, which

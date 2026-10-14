@@ -127,8 +127,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   ([#831](https://github.com/leehack/llamadart/issues/831)).
 - Flutter macOS LiteRT-LM needs a `llamadart_litert_lm_flutter` that matches
   the core to put the runtime in the app bundle. With llamadart `0.12.0` and
-  earlier, with a companion the core does not pair with (core `0.12.2` pairs
-  with `0.0.16`, core `0.12.1` with `0.0.15`), or without the companion, an
+  earlier, with companion `0.0.14` or earlier, or without the companion, an
   unsandboxed app run on the build machine from the project loads the runtime
   from the hook cache, and a sandboxed (the `flutter create` default), copied
   or distributed app throws `Failed to load dynamic library 'libLiteRt.dylib'`

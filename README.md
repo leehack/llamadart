@@ -234,8 +234,7 @@ runtime (about 37 MB per Apple target), so leave it out unless the app uses
 The LiteRT-LM companion manifest links the complete iOS and macOS SwiftPM
 runtime, including the macOS WebGPU accelerator, so a sandboxed or distributed
 Flutter macOS app loads LiteRT-LM from its own bundle. A Flutter macOS app
-without the companion, or with one its core does not pair with (`0.0.16` for
-core `0.12.2`, `0.0.15` for core `0.12.1`), needs the
+without the companion, or with companion `0.0.14` or earlier, needs the
 [LiteRT-LM build phase](https://llamadart.leehack.com/docs/getting-started/installation#flutter-macos-litert-lm-build-phase).
 
 The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS

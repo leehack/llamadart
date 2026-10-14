@@ -21,7 +21,8 @@ For canonical full release notes, use:
   (native `v0.6.0-2`, the same binaries) still build, with a warning to depend
   on `^0.0.23` for the frameworks' minimum OS version metadata. Any other
   mismatched companion still fails the build, and the error names the
-  companion version to depend on.
+  companion version to depend on
+  ([#1063](https://github.com/leehack/llamadart/pull/1063)).
 - The default LiteRT-LM runtime is now `leehack/litert-lm-native@v0.18.0-1`,
   whose macOS runtimes are arm64 only. Universal Flutter macOS apps with
   `llamadart_litert_lm_flutter` now launch on Intel Macs and under Rosetta

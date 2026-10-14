@@ -16,7 +16,7 @@ dependencies:
 Core `0.12.2` pins llama.cpp `v0.6.0-3` and LiteRT-LM `v0.18.0-1`. llama.cpp
 companion `0.0.22` still builds, with a warning: its `v0.6.0-2` frameworks lack
 the minimum OS version keys that App Store validation checks, so upgrade before
-shipping. Any other llama.cpp companion fails the build with an error naming
+shipping. Any other mismatched llama.cpp companion fails the build with an error naming
 `0.0.23`. With LiteRT-LM companion `0.0.15`, the macOS build warns that
 LiteRT-LM stays in the hook cache, but the app still loads its arm64 runtime
 from the bundle ([#1064](https://github.com/leehack/llamadart/issues/1064));
