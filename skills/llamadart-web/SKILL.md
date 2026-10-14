@@ -34,7 +34,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   space, shared with the KV cache) loads.
 - Serve from a secure context (`https://`, `http://localhost` or
   `http://127.0.0.1`) and send `Cross-Origin-Opener-Policy: same-origin` with
-  `Cross-Origin-Embedder-Policy: require-corp` (or `credentialless`). Without
+  `Cross-Origin-Embedder-Policy: require-corp` (`credentialless` isolates only
+  in Chromium-based browsers). Without
   isolation (`window.crossOriginIsolated == false`) the bridge caps inference
   at one thread (`threads_capped_no_coi` in its notes) and large single-file
   GGUF loads become unreliable.

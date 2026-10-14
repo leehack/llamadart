@@ -205,6 +205,30 @@ void main() {
       );
     }
   });
+  test('sizes 16-bit RGB, grey and grey-alpha rows by their channels', () {
+    for (final (colorType, channels) in [(2, 3), (0, 1), (4, 2)]) {
+      Map<String, int> inspect({int? rowBytes}) => inspectEvidencePng(
+        evidencePngFixture(
+          width: 8,
+          height: 12,
+          colorType: colorType,
+          rowBytes: rowBytes,
+        ),
+        allowSixteenBit: true,
+      );
+      expect(inspect(), {'width': 8, 'height': 12}, reason: '$colorType');
+      expect(
+        () => inspect(rowBytes: 8 * channels),
+        _rejects('does not match dimensions'),
+        reason: '$colorType',
+      );
+      expect(
+        () => inspect(rowBytes: 8 * 4 * 2),
+        _rejects('exceeds dimensions'),
+        reason: '$colorType',
+      );
+    }
+  });
   test('rejects a missing screenshot instead of log-only evidence', () async {
     await write();
     File(p.join(directory.path, 'image_generation_screen.png')).deleteSync();

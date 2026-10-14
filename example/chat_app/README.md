@@ -911,7 +911,9 @@ E2E coexistence: memory after=<step> rss_mb=<n> peak_rss_mb=<n>
 E2E coexistence: result text_equal=<bool> image_equal=<bool>
 ```
 
-A `started step=<step>` line precedes each step, so a run that a native crash
+The `result` line and `coexistence.json` are written before the assertions,
+so a run is graded by the test outcome, not by the receipt. A
+`started step=<step>` line precedes each step, so a run that a native crash
 ends names the step it died in. The `memory` lines hold the resident and peak
 resident set size of the process, which leaves out Metal memory on Apple
 devices.

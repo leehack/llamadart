@@ -168,10 +168,10 @@ the tag explicitly, since `latest` skips GitHub prereleases.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-2 \
+  --stable-diffusion-tag v0.2.0-3 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-2
+  --stable-diffusion-tag v0.2.0-3
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 

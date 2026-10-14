@@ -34,7 +34,10 @@ compatible bridge assets for a given model.
   Cross-Origin-Embedder-Policy: require-corp
   ```
 
-  `Cross-Origin-Embedder-Policy: credentialless` also works. Without isolation
+  `require-corp` is the portable choice. `Cross-Origin-Embedder-Policy:
+  credentialless` isolates the page in Chromium-based browsers, but a macOS
+  WKWebView probe stayed unisolated with it
+  ([#1025](https://github.com/leehack/llamadart/issues/1025)). Without isolation
   (`window.crossOriginIsolated === false`) the bridge caps inference at one
   thread and records `threads_capped_no_coi` in its runtime notes.
 

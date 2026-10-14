@@ -758,9 +758,11 @@ engine asks for them in a short-lived isolate, because the first such call in
 a process can initialize the GPU.
 
 The Vulkan rules are tested on reported figures, and the call that reads them
-is checked on macOS Metal, where its total equals the working set above. The
-figures of a physical Vulkan GPU on Linux and Windows have not been checked
-yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)).
+is checked on macOS Metal, where its total equals the working set above. On
+an NVIDIA L4 under Vulkan, one GPU each on Linux and Windows, the figures,
+the device facts and the device selection were checked. The warning, the
+refusal and the two-GPU paths have not been checked on a physical GPU yet
+([#1024](https://github.com/leehack/llamadart/issues/1024)).
 The Apple checks do not use these figures: Metal's total is the same working
 set, and its free figure counts only this process's allocations.
 
@@ -858,9 +860,12 @@ final engine = await ImageGenerationEngine.load(model);
   GPU nor the GPU plus system memory; one larger than the GPU's memory loads
   with a warning and runs slower. On Windows such a model is warned about
   and never refused, and the Windows CPU and integrated GPUs on Windows are
-  not memory-checked. The [Vulkan figures](#vulkan-gpus) have not been
-  validated on a physical Vulkan GPU yet. Per-platform validation results,
-  including timings, are in
+  not memory-checked. The [Vulkan figures](#vulkan-gpus), device facts and
+  device selection were validated under Vulkan on an NVIDIA L4 on Linux and
+  Windows, one GPU each; the warning, refusal and two-GPU paths have not been
+  validated on a physical GPU yet
+  ([#1024](https://github.com/leehack/llamadart/issues/1024)). Per-platform
+  validation results, including timings, are in
   [#779](https://github.com/leehack/llamadart/issues/779).
 - The web has no image runtime yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).

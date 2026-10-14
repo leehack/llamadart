@@ -205,7 +205,9 @@ web backend load options).
 
 Large single-file GGUF loads are only reliable when the page is cross-origin
 isolated (`Cross-Origin-Opener-Policy: same-origin`,
-`Cross-Origin-Embedder-Policy: require-corp` or `credentialless`). Without it
+`Cross-Origin-Embedder-Policy: require-corp`; `credentialless` isolates only in
+Chromium-based browsers, see
+[#1025](https://github.com/leehack/llamadart/issues/1025)). Without it
 the bridge caps threads to one, and fetch-backed loading fails with
 thread-constructor errors.
 
