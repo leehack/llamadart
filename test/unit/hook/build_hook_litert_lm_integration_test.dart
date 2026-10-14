@@ -531,103 +531,111 @@ void main() {
     }
   }
 
-  for (final scenario in [
-    'missing',
-    'duplicate',
-    'local',
-    'false-version',
-    'malformed-config',
-    'malformed-pubspec',
-    'wrong-name',
-    'missing-pin',
-    'duplicate-pin',
-    'wrong-target',
-    'hardcoded-url',
-    'comment-decoy',
-    'missing-manifest',
+  for (final (scenario, compatibleTag) in [
+    for (final tag in [null, ...llamaCppCompatibleAppleCompanionTags.keys])
+      for (final scenario in [
+        'missing',
+        'duplicate',
+        'local',
+        'false-version',
+        'malformed-config',
+        'malformed-pubspec',
+        'wrong-name',
+        'missing-pin',
+        'duplicate-pin',
+        'wrong-target',
+        'hardcoded-url',
+        'comment-decoy',
+        'missing-manifest',
+      ])
+        (scenario, tag),
   ]) {
-    test('Apple companion rejects $scenario metadata before lookup', () async {
-      final defines = await _flutterAppleUserDefines(
-        dependencies: const ['llamadart_llama_cpp_flutter'],
-        missingConfiguration: scenario == 'missing',
-        duplicateCompanion: scenario == 'duplicate',
-        localArtifacts: scenario == 'local',
-        companionTag: scenario == 'false-version' ? 'v0.3.0' : null,
-        mutate: (root) {
-          final config = File(
-            path.join(root.path, '.dart_tool', 'package_config.json'),
-          );
-          final metadata = File(
-            path.join(root.path, 'resolved companion', 'pubspec.yaml'),
-          );
-          final manifest = File(
-            path.join(
-              root.path,
-              'resolved companion',
-              'darwin',
-              'llamadart_llama_cpp_flutter',
-              'Package.swift',
-            ),
-          );
-          switch (scenario) {
-            case 'malformed-config':
-              config.writeAsStringSync('{');
-            case 'malformed-pubspec':
-              metadata.writeAsStringSync('name: [');
-            case 'wrong-name':
-              metadata.writeAsStringSync('name: other\nversion: 0.0.18');
-            case 'missing-pin':
-              manifest.writeAsStringSync('// no pin');
-            case 'duplicate-pin':
-              manifest.writeAsStringSync(
-                '${manifest.readAsStringSync()}\nlet llamaCppTag = "v0.4.0"\n',
-              );
-            case 'wrong-target':
-              manifest.writeAsStringSync(
-                manifest.readAsStringSync().replaceFirst(
-                  'tag: llamaCppTag,',
-                  'tag: "v0.3.0",',
-                ),
-              );
-            case 'missing-manifest':
-              manifest.deleteSync();
-            case 'hardcoded-url':
-              manifest.writeAsStringSync(
-                manifest.readAsStringSync().replaceFirst(
-                  r'url: "https://github.com/\(repository)/releases/download/\(tag)/\(artifactName)"',
-                  'url: "https://github.com/leehack/llamadart-native/releases/download/v0.3.0/llamadart-native-apple-xcframework-v0.3.0.zip"',
-                ),
-              );
-            case 'comment-decoy':
-              manifest.writeAsStringSync(
-                manifest.readAsStringSync().replaceFirst(
-                  'tag: llamaCppTag,',
-                  '// tag: llamaCppTag,\n            tag: "v0.3.0",',
-                ),
-              );
-          }
-        },
-      );
-      var emitted = false;
-      await expectLater(
-        testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: OS.iOS,
-          targetArchitecture: Architecture.arm64,
-          targetIOSSdk: IOSSdk.iPhoneOS,
-          userDefines: defines,
-          check: (_, _) => emitted = true,
-        ),
-        throwsA(
-          predicate(
-            (error) => error.toString().contains(
-              'Incompatible Apple llama.cpp companion',
+    test(
+      'Apple companion rejects $scenario metadata before lookup'
+      '${compatibleTag == null ? '' : ' with compatible pin $compatibleTag'}',
+      () async {
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          missingConfiguration: scenario == 'missing',
+          duplicateCompanion: scenario == 'duplicate',
+          localArtifacts: scenario == 'local',
+          companionTag: scenario == 'false-version' ? 'v0.3.0' : compatibleTag,
+          mutate: (root) {
+            final config = File(
+              path.join(root.path, '.dart_tool', 'package_config.json'),
+            );
+            final metadata = File(
+              path.join(root.path, 'resolved companion', 'pubspec.yaml'),
+            );
+            final manifest = File(
+              path.join(
+                root.path,
+                'resolved companion',
+                'darwin',
+                'llamadart_llama_cpp_flutter',
+                'Package.swift',
+              ),
+            );
+            switch (scenario) {
+              case 'malformed-config':
+                config.writeAsStringSync('{');
+              case 'malformed-pubspec':
+                metadata.writeAsStringSync('name: [');
+              case 'wrong-name':
+                metadata.writeAsStringSync('name: other\nversion: 0.0.18');
+              case 'missing-pin':
+                manifest.writeAsStringSync('// no pin');
+              case 'duplicate-pin':
+                manifest.writeAsStringSync(
+                  '${manifest.readAsStringSync()}\nlet llamaCppTag = "v0.4.0"\n',
+                );
+              case 'wrong-target':
+                manifest.writeAsStringSync(
+                  manifest.readAsStringSync().replaceFirst(
+                    'tag: llamaCppTag,',
+                    'tag: "v0.3.0",',
+                  ),
+                );
+              case 'missing-manifest':
+                manifest.deleteSync();
+              case 'hardcoded-url':
+                manifest.writeAsStringSync(
+                  manifest.readAsStringSync().replaceFirst(
+                    r'url: "https://github.com/\(repository)/releases/download/\(tag)/\(artifactName)"',
+                    'url: "https://github.com/leehack/llamadart-native/releases/download/v0.3.0/llamadart-native-apple-xcframework-v0.3.0.zip"',
+                  ),
+                );
+              case 'comment-decoy':
+                manifest.writeAsStringSync(
+                  manifest.readAsStringSync().replaceFirst(
+                    'tag: llamaCppTag,',
+                    '// tag: llamaCppTag,\n            tag: "v0.3.0",',
+                  ),
+                );
+            }
+          },
+        );
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: OS.iOS,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: IOSSdk.iPhoneOS,
+            userDefines: defines,
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple llama.cpp companion',
+              ),
             ),
           ),
-        ),
-      );
-      expect(emitted, isFalse);
-    });
+        );
+        expect(emitted, isFalse);
+      },
+    );
   }
 
   test(

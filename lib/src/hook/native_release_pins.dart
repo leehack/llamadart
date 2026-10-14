@@ -28,8 +28,9 @@ const llamaCppAppleCompanionVersion = '0.0.23';
 /// [llamaCppTag], because each entry is verified against one pin.
 const llamaCppCompatibleAppleCompanionTags = <String, String>{
   'v0.6.0-2':
-      'the MinimumOSVersion and LSMinimumSystemVersion framework Info.plist '
-      'keys that App Store validation checks',
+      'the MinimumOSVersion, LSMinimumSystemVersion, and '
+      'CFBundleSupportedPlatforms framework Info.plist keys that App Store '
+      'validation checks',
 };
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`

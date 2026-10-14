@@ -3243,6 +3243,20 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
                 self.assertIn("cleared compatible Apple llama.cpp companion tags", result.stdout)
                 self.assertIn("v0.0.1-1", result.stdout)
 
+    def test_a_same_tag_resync_keeps_compatible_tags(self) -> None:
+        original = self.pins.read_text(encoding="utf-8")
+        compatible = re.search(
+            r"const llamaCppCompatibleAppleCompanionTags = <String, String>\{.*?\};",
+            original,
+            re.DOTALL,
+        )
+        assert compatible is not None
+        self.assertIn("'v0.6.0-2':", compatible.group(0))
+        result = self.run_sync(pins.read_hook_native_tag(original))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(compatible.group(0), self.pins.read_text(encoding="utf-8"))
+        self.assertNotIn("cleared compatible Apple llama.cpp companion tags", result.stdout)
+
     def test_clear_reports_every_listed_tag_and_requires_the_constant(self) -> None:
         text = self.pins.read_text(encoding="utf-8")
         cleared_text, cleared = pins.clear_compatible_apple_companion_tags(text)
