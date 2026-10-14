@@ -430,6 +430,9 @@ void main() {
               ),
             ),
           );
+          expect(driver.fileSizePaths, isEmpty);
+          expect(driver.readPaths, isEmpty);
+          expect(downloads.calls, isEmpty);
           expect(driver.started, isEmpty);
           expect(driver.budgetDevices, isEmpty);
         });
@@ -1587,7 +1590,14 @@ void main() {
         isA<LlamaInferenceException>().having(
           (error) => error.message,
           'message',
-          contains('The engine can run the next request'),
+          allOf(
+            contains('running out of memory'),
+            isNot(contains('command buffer')),
+            contains(
+              'If every request fails this way, dispose the '
+              'ImageGenerationEngine and load the model again.',
+            ),
+          ),
         ),
       );
       await expectLater(task.result, throwsA(same(completion.error)));
@@ -1901,11 +1911,18 @@ final class _FakeDriver implements ImageGenerationDriver {
     return status;
   }
 
+  final List<String> fileSizePaths = [];
+  final List<String> readPaths = [];
+
   @override
-  int? fileSize(String path) => sizes[path];
+  int? fileSize(String path) {
+    fileSizePaths.add(path);
+    return sizes[path];
+  }
 
   @override
   Future<Uint8List> readFileRange(String path, int offset, int length) async {
+    readPaths.add(path);
     await readGate?.future;
     final bytes = headers[path] ?? Uint8List(0);
     final start = offset.clamp(0, bytes.length);

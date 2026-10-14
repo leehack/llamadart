@@ -463,10 +463,8 @@ final class _LogBatch {
   }
 }
 
-/// The runtime's log in the worker isolate: nothing on a runtime that has no
-/// recorder.
-/// The error for a generation that failed because a GPU command buffer
-/// failed earlier, and for every later generation on the same model.
+/// The error for a generation that fails because a Metal command buffer
+/// failed, on this or an earlier generation with the same model.
 LlamaInferenceException stableDiffusionBackendFailure() =>
     LlamaInferenceException(
       'stable-diffusion.cpp could not generate the image: a GPU command '
@@ -483,6 +481,8 @@ bool stableDiffusionBackendInErrorState(String lastError) =>
     lastError.contains('backend is in error state') ||
     lastError.contains('ggml_metal_synchronize: error: command buffer');
 
+/// The runtime's log in the worker isolate: nothing on a runtime that has no
+/// recorder.
 final class _WorkerLog {
   _WorkerLog(this._log, this._level, this._replies, Map<String, String> files)
     : _redact = stableDiffusionPathRedactor(files);

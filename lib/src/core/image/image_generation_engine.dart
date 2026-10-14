@@ -692,8 +692,9 @@ class ImageGenerationEngine {
       if (images == null || images.isEmpty) {
         throw LlamaInferenceException(
           'stable-diffusion.cpp could not generate the image. It reports no '
-          'reason; causes include running out of memory and an aborted GPU '
-          'command buffer. The engine can run the next request.',
+          'reason; causes include running out of memory. If every request '
+          'fails this way, dispose the ImageGenerationEngine and load the '
+          'model again.',
         );
       }
       final result = ImageGenerationResult(
