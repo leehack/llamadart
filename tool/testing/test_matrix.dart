@@ -810,7 +810,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'link for bundles named without that extension change. Downloads '
         'the locked model unless --model-path names a copy on the target '
         'device. macOS and Android default to a temp cache directory, so '
-        'only iOS, Linux and Windows run uncached through the public API; '
+        'of the POSIX targets only iOS and Linux run uncached through the '
+        'public API; '
         'the Test Lab build is in example/chat_app/README.md.',
   ),
   TestMatrixRow(

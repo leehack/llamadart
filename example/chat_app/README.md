@@ -864,9 +864,9 @@ dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-litert-read-only-bundle --device <device>
 ```
 
-The runtime keeps its caches beside the model on every target except macOS and
-Android, which default to a temp cache directory. iOS, Linux and Windows
-therefore run uncached through the public API, while on macOS and Android
+macOS and Android default to a temp cache directory, so of the targets this
+test runs on only iOS and Linux load the bundle uncached through the public
+API (it needs POSIX `link` and `chmod`, so not Windows), while on macOS and Android
 every case generates and the run checks the harness. To run the service with
 that default off on such a host, instead of the public backend, call
 `flutter test` as the scenario prints it and add
