@@ -44,7 +44,9 @@ Linux and web. Full docs: https://llamadart.leehack.com
   extension or `getBackendName()` text.
 - KV-state save/load is not an exact generation checkpoint. On native
   llama.cpp, an exact restored prompt with prefix reuse re-evaluates its final
-  token; scores and continuation may differ from full-prompt evaluation. Live
+  token; scores and continuation may differ from full-prompt evaluation. The
+  contract is numerical tolerance, not bit-exactness: with automatic prompt
+  batching, probabilities may differ slightly and greedy output can change. Live
   logits and sampler/RNG state are not restored. If the caller explicitly
   chooses full prompt evaluation, use `reusePromptPrefix: false`; do not promise
   exact resume or silently replace KV reuse with full prompt evaluation.

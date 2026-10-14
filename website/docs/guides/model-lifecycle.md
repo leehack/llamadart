@@ -330,6 +330,10 @@ Important caveats:
   logits. That one-token evaluation can produce different scores and
   continuation from evaluating the full prompt
   ([#1003](https://github.com/leehack/llamadart/issues/1003)).
+- The restore contract is numerical tolerance, not bit-exactness. With
+  automatic prompt batching, next-token probabilities may differ slightly and
+  greedy continuations can change, matching llama.cpp's own sensitivity to
+  batch shape ([#761](https://github.com/leehack/llamadart/issues/761)).
 - To explicitly evaluate the full prompt on native llama.cpp, pass
   `reusePromptPrefix: false` to the next `scoreNextToken(...)` call or to its
   `GenerationParams`. This pays the prompt-evaluation cost again; it does not

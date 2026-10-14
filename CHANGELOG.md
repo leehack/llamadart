@@ -12,6 +12,9 @@
   `liteRtLmCacheDir` is unset, as in an iOS app bundle: the GPU engine now
   reuses caches already there or runs without them
   ([#976](https://github.com/leehack/llamadart/issues/976)).
+- Document that native prompt-state restore matches fresh evaluation within
+  numerical tolerance, not bit-exactly, under automatic prompt batching
+  ([#1003](https://github.com/leehack/llamadart/issues/1003)).
 - `ImageModelParams.vaeDirectConvolution: true` now throws
   `LlamaUnsupportedException` at load on iOS Metal instead of returning
   corrupt images ([#1044](https://github.com/leehack/llamadart/issues/1044)).
