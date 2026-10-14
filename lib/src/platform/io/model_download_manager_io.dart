@@ -1070,11 +1070,11 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       return entry;
     } on TlsException catch (error) {
       final details = redactUrlSecrets('$error', sourceUrls: requestUrls);
-      if (_isInterruptedHandshake(error)) {
+      if (!_isPermanentTlsFailure(error)) {
         throw HttpException(details);
       }
       // A LlamaModelException without an HTTP status is not retried: a
-      // certificate or protocol failure fails the same way every time.
+      // certificate or handshake failure fails the same way every time.
       throw LlamaModelException(_tlsFailureMessage(source, error), details);
     } on IOException catch (error) {
       // Preserve the outer download retry policy while sanitizing every hop.
@@ -1314,18 +1314,17 @@ void _throwIfCancelled(ModelLoadOptions options) {
   }
 }
 
-// The connection closed before the handshake finished, which a retry can
-// get past, unlike a certificate or protocol failure.
-bool _isInterruptedHandshake(TlsException error) =>
-    error is HandshakeException &&
-    error.osError == null &&
-    error.message.contains('Connection terminated during handshake');
+// A handshake that the connection cut short can succeed on a retry, and so
+// can a TLS error after the handshake, such as one in the body stream.
+bool _isPermanentTlsFailure(TlsException error) =>
+    error is CertificateException ||
+    (error is HandshakeException &&
+        !(error.osError == null &&
+            error.message.contains('Connection terminated during handshake')));
 
 String _tlsFailureMessage(ModelSource source, TlsException error) {
   final name = _redactedSourceName(source);
-  final cause = '${error.message} ${error.osError?.message ?? ''}';
-  if (error is CertificateException ||
-      cause.toUpperCase().contains('CERTIFICATE')) {
+  if (error is CertificateException || _isCertificateVerifyFailure(error)) {
     return 'Failed to download $name: the server\'s TLS certificate could not '
         'be verified. The certificate may be invalid, or this machine may be '
         'missing the root certificate that issued it. A certificate failure '
@@ -1333,6 +1332,16 @@ String _tlsFailureMessage(ModelSource source, TlsException error) {
   }
   return 'Failed to download $name: the TLS handshake with the server failed. '
       'A TLS handshake failure is not retried.';
+}
+
+// BoringSSL reports a failed verification of the server's certificate as
+// CERTIFICATE_VERIFY_FAILED; OpenSSL-style builds spell it in lower case.
+// Alerts such as SSLV3_ALERT_BAD_CERTIFICATE come from the server instead.
+bool _isCertificateVerifyFailure(TlsException error) {
+  final cause = '${error.message} ${error.osError?.message ?? ''}'
+      .toLowerCase();
+  return cause.contains('certificate_verify_failed') ||
+      cause.contains('certificate verify failed');
 }
 
 bool _isRetryable(LlamaModelException error) {

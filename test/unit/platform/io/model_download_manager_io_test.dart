@@ -2145,75 +2145,120 @@ void main() {
 
   group('TLS failures', () {
     late Directory tempDir;
+    final source = ModelSource.url(
+      Uri.parse('https://models.example/tiny.gguf'),
+    );
 
     setUp(() async {
       tempDir = await _createManagedTempDirectory();
     });
 
-    Future<ModelLoadOptions> optionsFor() async =>
-        ModelLoadOptions(cacheDirectory: tempDir.path, maxRetries: 2);
+    Future<ModelCacheEntry> download(_FakeHttp http) => http.run(
+      () => DefaultModelDownloadManager().ensureModel(
+        source,
+        options: ModelLoadOptions(cacheDirectory: tempDir.path, maxRetries: 2),
+      ),
+    );
 
-    test('a certificate failure names the cause and is not retried', () async {
-      final server = await _TlsFixture.start(_TlsBehavior.selfSigned);
+    Matcher certificateFailure(Matcher details) => throwsA(
+      isA<LlamaModelException>()
+          .having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains("the server's TLS certificate could not be verified"),
+              contains('missing the root certificate'),
+              contains('not retried'),
+            ),
+          )
+          .having((error) => '${error.details}', 'details', details),
+    );
 
-      await expectLater(
-        DefaultModelDownloadManager().ensureModel(
-          ModelSource.url(server.uri),
-          options: await optionsFor(),
-        ),
-        throwsA(
-          isA<LlamaModelException>()
-              .having(
-                (error) => error.message,
-                'message',
-                allOf(
-                  contains(
-                    "the server's TLS certificate could not be verified",
-                  ),
-                  contains('missing the root certificate'),
-                  contains('not retried'),
-                ),
-              )
-              .having(
-                (error) => '${error.details}',
-                'details',
-                contains('CERTIFICATE_VERIFY_FAILED'),
-              ),
-        ),
-      );
-      expect(server.connections, 1);
-    });
-
-    test('another handshake failure names TLS and is not retried', () async {
-      final server = await _TlsFixture.start(_TlsBehavior.plaintext);
-
-      await expectLater(
-        DefaultModelDownloadManager().ensureModel(
-          ModelSource.url(server.uri),
-          options: await optionsFor(),
-        ),
-        throwsA(
-          isA<LlamaModelException>().having(
+    Matcher handshakeFailure(String cause) => throwsA(
+      isA<LlamaModelException>()
+          .having(
             (error) => error.message,
             'message',
             allOf(
               contains('the TLS handshake with the server failed'),
+              contains('not retried'),
               isNot(contains('certificate')),
             ),
-          ),
-        ),
-      );
-      expect(server.connections, 1);
-    });
+          )
+          .having((error) => '${error.details}', 'details', contains(cause)),
+    );
 
-    test('a connection closed during the handshake is retried', () async {
-      final server = await _TlsFixture.start(_TlsBehavior.close);
+    for (final cause in [
+      'CERTIFICATE_VERIFY_FAILED: unable to get local issuer '
+          'certificate(handshake.cc:393)',
+      'error:0A000086:SSL routines::certificate verify failed',
+    ]) {
+      test('a certificate verification failure ($cause) names the cause and '
+          'is not retried', () async {
+        final http = _FakeHttp.failing(
+          HandshakeException('Handshake error in client', OSError(cause, 0)),
+        );
+
+        await expectLater(download(http), certificateFailure(contains(cause)));
+        expect(http.requests, 1);
+      });
+    }
+
+    test('a CertificateException names the certificate and is not '
+        'retried', () async {
+      final http = _FakeHttp.failing(
+        const CertificateException('Bad certificate'),
+      );
 
       await expectLater(
-        DefaultModelDownloadManager().ensureModel(
-          ModelSource.url(server.uri),
-          options: await optionsFor(),
+        download(http),
+        certificateFailure(contains('Bad certificate')),
+      );
+      expect(http.requests, 1);
+    });
+
+    test('another handshake failure names TLS and is not retried', () async {
+      final http = _FakeHttp.failing(
+        const HandshakeException(
+          'Handshake error in client',
+          OSError('WRONG_VERSION_NUMBER(tls_record.cc:231)', 0),
         ),
+      );
+
+      await expectLater(
+        download(http),
+        handshakeFailure('WRONG_VERSION_NUMBER'),
+      );
+      expect(http.requests, 1);
+    });
+
+    for (final alert in [
+      'SSLV3_ALERT_BAD_CERTIFICATE',
+      'TLSV13_ALERT_CERTIFICATE_REQUIRED',
+    ]) {
+      test(
+        'a server alert $alert does not blame the server certificate',
+        () async {
+          final http = _FakeHttp.failing(
+            HandshakeException(
+              'Handshake error in client',
+              OSError('$alert(tls_record.cc:592)', 0),
+            ),
+          );
+
+          await expectLater(download(http), handshakeFailure(alert));
+          expect(http.requests, 1);
+        },
+      );
+    }
+
+    test('a connection closed during the handshake is retried', () async {
+      final http = _FakeHttp.failing(
+        const HandshakeException('Connection terminated during handshake'),
+      );
+
+      await expectLater(
+        download(http),
         throwsA(
           isA<LlamaModelException>().having(
             (error) => error.message,
@@ -2222,7 +2267,23 @@ void main() {
           ),
         ),
       );
-      expect(server.connections, 3);
+      expect(http.requests, 3);
+    });
+
+    test('a TLS error in the body stream is retried', () async {
+      final payload = utf8.encode('tiny model payload');
+      final http = _FakeHttp((attempt) async* {
+        if (attempt == 0) {
+          yield payload.sublist(0, 4);
+          throw const TlsException('Bad record MAC');
+        }
+        yield payload;
+      });
+
+      final entry = await download(http);
+
+      expect(http.requests, 2);
+      expect(await File(entry.filePath).readAsBytes(), payload);
     });
   });
 
@@ -2536,78 +2597,82 @@ class _ModelHttpFixture {
   }
 }
 
-enum _TlsBehavior { selfSigned, plaintext, close }
+/// Stands in for every [HttpClient] created inside [run]: each request either
+/// throws the connection error from [_FakeHttp.failing] or answers 200 with
+/// the body that [_body] returns for the zero-based request number.
+class _FakeHttp {
+  _FakeHttp(this._body) : _error = null;
 
-/// A loopback server that fails every TLS handshake in one way and counts
-/// connection attempts.
-class _TlsFixture {
-  _TlsFixture._(this._server, this._behavior);
+  _FakeHttp.failing(Exception error) : _error = error, _body = null;
 
-  final ServerSocket _server;
-  final _TlsBehavior _behavior;
-  final List<Socket> _sockets = <Socket>[];
-  int connections = 0;
+  final Exception? _error;
+  final Stream<List<int>> Function(int request)? _body;
+  int requests = 0;
 
-  Uri get uri => Uri.parse('https://127.0.0.1:${_server.port}/tiny.gguf');
+  Future<T> run<T>(Future<T> Function() body) => HttpOverrides.runZoned(
+    body,
+    createHttpClient: (_) => _FakeHttpClient(this),
+  );
 
-  static Future<_TlsFixture> start(_TlsBehavior behavior) async {
-    final fixture = _TlsFixture._(
-      await ServerSocket.bind(InternetAddress.loopbackIPv4, 0),
-      behavior,
-    );
-    fixture._server.listen(fixture._accept);
-    addTearDown(fixture._close);
-    return fixture;
-  }
-
-  void _accept(Socket socket) {
-    connections += 1;
-    _sockets.add(socket);
-    switch (_behavior) {
-      case _TlsBehavior.selfSigned:
-        final context = SecurityContext()
-          ..useCertificateChainBytes(utf8.encode(_selfSignedCertificate))
-          ..usePrivateKeyBytes(utf8.encode(_selfSignedKey));
-        SecureSocket.secureServer(
-          socket,
-          context,
-        ).then((secure) => secure.destroy(), onError: (Object _) {});
-      case _TlsBehavior.plaintext:
-        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-        socket.close().catchError((Object _) => socket);
-      case _TlsBehavior.close:
-        socket.destroy();
+  Future<HttpClientRequest> _open() async {
+    final request = requests;
+    requests += 1;
+    final error = _error;
+    if (error != null) {
+      throw error;
     }
-  }
-
-  Future<void> _close() async {
-    for (final socket in _sockets) {
-      socket.destroy();
-    }
-    await _server.close();
+    return _FakeHttpClientRequest(_FakeHttpClientResponse(_body!(request)));
   }
 }
 
-// A throwaway self-signed identity for 127.0.0.1, valid until 2126. No client
-// trusts it, so a handshake against it fails certificate verification.
-const String _selfSignedCertificate = '''
------BEGIN CERTIFICATE-----
-MIIBkTCCATagAwIBAgIUfKxMsACJolLtw2S8d88BlpZGwv0wCgYIKoZIzj0EAwIw
-FDESMBAGA1UEAwwJMTI3LjAuMC4xMCAXDTI2MTAxNDE5MjM0MloYDzIxMjYwOTIw
-MTkyMzQyWjAUMRIwEAYDVQQDDAkxMjcuMC4wLjEwWTATBgcqhkjOPQIBBggqhkjO
-PQMBBwNCAAQI8SY5+eucFzGact0De66W+pForEbr4joNfDeE2tNor/wjylyHcg7j
-9TWpoznRHD6mefKlOqhd6MIs22HYTUj5o2QwYjAdBgNVHQ4EFgQUMeRZMt4MceBM
-lhT0pOWlXV/Gt78wHwYDVR0jBBgwFoAUMeRZMt4MceBMlhT0pOWlXV/Gt78wDwYD
-VR0TAQH/BAUwAwEB/zAPBgNVHREECDAGhwR/AAABMAoGCCqGSM49BAMCA0kAMEYC
-IQDKHTZ94DpezW4uJmXWfNx7lxUG9SZFhwdDzPxNZwkHDQIhAP2M0TTJU+csy2Kd
-AXAKbIuI6DP6LeP+HvNhGzy9yK70
------END CERTIFICATE-----
-''';
+class _FakeHttpClient implements HttpClient {
+  _FakeHttpClient(this._http);
 
-const String _selfSignedKey = '''
------BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgFXVK9Uxdpw32Rxz1
-ovjggiBgV1GB/jzinhJkWq0IsC2hRANCAAQI8SY5+eucFzGact0De66W+pForEbr
-4joNfDeE2tNor/wjylyHcg7j9TWpoznRHD6mefKlOqhd6MIs22HYTUj5
------END PRIVATE KEY-----
-''';
+  final _FakeHttp _http;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) => _http._open();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeHttpClientRequest implements HttpClientRequest {
+  _FakeHttpClientRequest(this._response);
+
+  final HttpClientResponse _response;
+
+  @override
+  final HttpHeaders headers = _FakeHttpHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async => _response;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeHttpClientResponse extends StreamView<List<int>>
+    implements HttpClientResponse {
+  _FakeHttpClientResponse(super.stream);
+
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  int get contentLength => -1;
+
+  @override
+  final HttpHeaders headers = _FakeHttpHeaders();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _FakeHttpHeaders implements HttpHeaders {
+  @override
+  String? value(String name) => null;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
