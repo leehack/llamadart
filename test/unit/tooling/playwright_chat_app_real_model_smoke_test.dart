@@ -10,6 +10,45 @@ import 'package:test/test.dart';
 const _script = 'tool/testing/playwright_chat_app_real_model_smoke.py';
 const _playwrightReached = 'fake playwright reached';
 
+// Well above the slowest first `node` start seen on GitHub's Windows runners,
+// where the first launch in a job has taken 2-17 s in passing runs.
+const _processTimeout = Duration(seconds: 60);
+
+/// Runs [executable] like [Process.run], but kills it after [_processTimeout].
+///
+/// A test timeout does not stop a [Process.run] child: it keeps running into
+/// the next test after `tearDown` has deleted its files, and competes with that
+/// test's own processes.
+Future<ProcessResult> _runProcess(
+  String executable,
+  List<String> arguments, {
+  Map<String, String>? environment,
+}) async {
+  final process = await Process.start(
+    executable,
+    arguments,
+    environment: environment,
+  );
+  final stdout = process.stdout.transform(systemEncoding.decoder).join();
+  final stderr = process.stderr.transform(systemEncoding.decoder).join();
+  final exitCode = await process.exitCode.timeout(
+    _processTimeout,
+    onTimeout: () async {
+      process.kill();
+      // A grandchild that inherited the pipes can hold stderr open.
+      final partialStderr = await stderr.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => '<still open>',
+      );
+      fail(
+        '`$executable ${arguments.first}` did not exit within '
+        '${_processTimeout.inSeconds} s.\nstderr:\n$partialStderr',
+      );
+    },
+  );
+  return ProcessResult(process.pid, exitCode, await stdout, await stderr);
+}
+
 // Stands in for a browser: the page answers from a scenario and records the
 // scripts the helper hands it.
 const _scriptedPlaywright = r'''
@@ -225,7 +264,7 @@ void main() {
   Future<ProcessResult> runSmoke(String audioName, {bool microphone = false}) {
     final audio = File(p.join(tempDir.path, audioName))
       ..writeAsBytesSync(const <int>[0]);
-    return Process.run(
+    return _runProcess(
       Platform.isWindows ? 'python' : 'python3',
       [
         _script,
@@ -272,180 +311,192 @@ void main() {
     );
   });
 
-  group('LiteRT-LM chat run against a scripted page', () {
-    const moduleUrl = 'https://cdn.jsdelivr.net/npm/@litert-lm/core@9.9.9/+esm';
-    const wasmLoaderUrl =
-        'https://cdn.jsdelivr.net/npm/@litert-lm/core@9.9.9/wasm/litertlm_wasm_internal.js';
-    const wasmUrl =
-        'https://cdn.jsdelivr.net/npm/@litert-lm/core@9.9.9/wasm/litertlm_wasm_internal.wasm';
-    const modelUrl = 'http://127.0.0.1:1/model.litertlm';
-    const createErrorStack =
-        'RangeError: Maximum call stack size exceeded\n    at Proxy.<anonymous>';
+  group(
+    'LiteRT-LM chat run against a scripted page',
+    // A test here runs up to three processes, so a stalled one reports through
+    // _processTimeout instead of the default 30 s test timeout.
+    timeout: Timeout(_processTimeout * 3),
+    () {
+      const moduleUrl =
+          'https://cdn.jsdelivr.net/npm/@litert-lm/core@9.9.9/+esm';
+      const wasmLoaderUrl =
+          'https://cdn.jsdelivr.net/npm/@litert-lm/core@9.9.9/wasm/litertlm_wasm_internal.js';
+      const wasmUrl =
+          'https://cdn.jsdelivr.net/npm/@litert-lm/core@9.9.9/wasm/litertlm_wasm_internal.wasm';
+      const modelUrl = 'http://127.0.0.1:1/model.litertlm';
+      const createErrorStack =
+          'RangeError: Maximum call stack size exceeded\n    at Proxy.<anonymous>';
 
-    setUp(() async {
-      await File(
-        p.join(tempDir.path, 'playwright', 'sync_api.py'),
-      ).writeAsString(_scriptedPlaywright);
-    });
+      setUp(() async {
+        await File(
+          p.join(tempDir.path, 'playwright', 'sync_api.py'),
+        ).writeAsString(_scriptedPlaywright);
+      });
 
-    Future<({ProcessResult result, Map<String, dynamic> capture})> runChat(
-      String name, {
-      required String body,
-      required Map<String, Object?> pageState,
-    }) async {
-      final capturePath = p.join(tempDir.path, '$name.json');
-      final result = await Process.run(
-        Platform.isWindows ? 'python' : 'python3',
-        [
-          _script,
-          'http://127.0.0.1:1/',
-          '--model-url',
-          modelUrl,
-          '--response-source',
-          'litert',
-          '--load-timeout-ms',
-          '4000',
-        ],
-        environment: {
-          'PYTHONPATH': tempDir.path,
-          'LLAMADART_FAKE_PLAYWRIGHT_SCENARIO': jsonEncode({
-            'capturePath': capturePath,
-            'body': body,
-            'pageState': pageState,
-            'requests': [
-              modelUrl,
-              moduleUrl,
-              wasmLoaderUrl,
-              wasmUrl,
-              moduleUrl,
-            ],
-          }),
+      Future<({ProcessResult result, Map<String, dynamic> capture})> runChat(
+        String name, {
+        required String body,
+        required Map<String, Object?> pageState,
+      }) async {
+        final capturePath = p.join(tempDir.path, '$name.json');
+        final result = await _runProcess(
+          Platform.isWindows ? 'python' : 'python3',
+          [
+            _script,
+            'http://127.0.0.1:1/',
+            '--model-url',
+            modelUrl,
+            '--response-source',
+            'litert',
+            '--load-timeout-ms',
+            '4000',
+          ],
+          environment: {
+            'PYTHONPATH': tempDir.path,
+            'LLAMADART_FAKE_PLAYWRIGHT_SCENARIO': jsonEncode({
+              'capturePath': capturePath,
+              'body': body,
+              'pageState': pageState,
+              'requests': [
+                modelUrl,
+                moduleUrl,
+                wasmLoaderUrl,
+                wasmUrl,
+                moduleUrl,
+              ],
+            }),
+          },
+        );
+        return (
+          result: result,
+          capture:
+              jsonDecode(File(capturePath).readAsStringSync())
+                  as Map<String, dynamic>,
+        );
+      }
+
+      Future<({ProcessResult result, Map<String, dynamic> capture})>
+      runFailedLoad() => runChat(
+        'failed_load',
+        body: 'Model failed to load\nRangeError\nRetry\nChange model',
+        pageState: {'liteRtLmCreateErrorStack': createErrorStack},
+      );
+
+      Future<({ProcessResult result, Map<String, dynamic> capture})>
+      runLoadedChat() => runChat(
+        'loaded_chat',
+        body: 'Model loaded successfully! Ready to chat.',
+        pageState: {'liteRtLmResponse': '4'},
+      );
+
+      List<Map<String, dynamic>> events(ProcessResult result) => [
+        for (final line in const LineSplitter().convert(
+          result.stdout as String,
+        ))
+          jsonDecode(line) as Map<String, dynamic>,
+      ];
+
+      test(
+        'a failed model load ends the run with the page error state',
+        () async {
+          final run = await runFailedLoad();
+
+          expect(run.result.exitCode, 1);
+          expect(
+            run.result.stderr,
+            allOf(
+              contains('App entered error state while waiting for model load'),
+              contains(jsonEncode(createErrorStack)),
+              isNot(contains('Timed out waiting for model load')),
+            ),
+          );
         },
       );
-      return (
-        result: result,
-        capture:
-            jsonDecode(File(capturePath).readAsStringSync())
-                as Map<String, dynamic>,
-      );
-    }
 
-    Future<({ProcessResult result, Map<String, dynamic> capture})>
-    runFailedLoad() => runChat(
-      'failed_load',
-      body: 'Model failed to load\nRangeError\nRetry\nChange model',
-      pageState: {'liteRtLmCreateErrorStack': createErrorStack},
-    );
+      test('the result names the LiteRT-LM runtime files requested', () async {
+        final run = await runLoadedChat();
 
-    Future<({ProcessResult result, Map<String, dynamic> capture})>
-    runLoadedChat() => runChat(
-      'loaded_chat',
-      body: 'Model loaded successfully! Ready to chat.',
-      pageState: {'liteRtLmResponse': '4'},
-    );
-
-    List<Map<String, dynamic>> events(ProcessResult result) => [
-      for (final line in const LineSplitter().convert(result.stdout as String))
-        jsonDecode(line) as Map<String, dynamic>,
-    ];
-
-    test(
-      'a failed model load ends the run with the page error state',
-      () async {
-        final run = await runFailedLoad();
-
-        expect(run.result.exitCode, 1);
+        expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+        final emitted = events(run.result);
         expect(
-          run.result.stderr,
+          [
+            for (final event in emitted)
+              if (event['event'] == 'litert_lm_runtime_request') event['url'],
+          ],
+          [moduleUrl, wasmLoaderUrl, wasmUrl],
+        );
+        final result = emitted.singleWhere(
+          (event) => event['event'] == 'result',
+        );
+        expect(result['liteRtLmRuntimeRequests'], [
+          moduleUrl,
+          wasmLoaderUrl,
+          wasmUrl,
+        ]);
+      });
+
+      test('the init script wraps Engine.create once and leaves '
+          'window.LiteRtLmEngine alone', () async {
+        final initScript =
+            (await runLoadedChat()).capture['initScript'] as String;
+
+        expect('new Proxy(mod.Engine'.allMatches(initScript), hasLength(1));
+        expect(initScript.contains('LiteRtLmEngine'), isFalse);
+        expect(initScript.contains('.create ='), isFalse);
+      });
+
+      Future<Map<String, dynamic>> runPageScripts() async {
+        await runFailedLoad();
+        await runLoadedChat();
+        final harness = File(p.join(tempDir.path, 'page_script_harness.mjs'))
+          ..writeAsStringSync(_pageScriptHarness);
+        final node = await _runProcess('node', [
+          harness.path,
+          p.join(tempDir.path, 'failed_load.json'),
+          p.join(tempDir.path, 'loaded_chat.json'),
+          tempDir.path,
+        ]);
+
+        expect(node.exitCode, 0, reason: '${node.stderr}');
+        return jsonDecode((node.stdout as String).trim())
+            as Map<String, dynamic>;
+      }
+
+      // Issue 970: a second wrapper assigned through the module's Proxy made
+      // Engine.create call itself until the stack overflowed.
+      test('wrapped Engine.create reaches the runtime once per call', () async {
+        final report = await runPageScripts();
+
+        expect(report['createError'], isNull);
+        expect(report['runtimeCreateReplaced'], isFalse);
+        expect(report['runtimeCreateCalls'], 2);
+        expect(report['settingsModel'], 'ok');
+        expect(report['prompt'], '2+2?');
+        expect(report['response'], '4');
+        expect(
+          (report['resultGlobals']
+              as Map<String, dynamic>)['liteRtLmOriginalModuleUrl'],
+          report['runtimeUrl'],
+        );
+      });
+
+      test('a rejected Engine.create leaves its stack for the load-failure '
+          'report', () async {
+        final report = await runPageScripts();
+
+        expect(report['brokenCreateError'], 'Error: fake engine create failed');
+        final state =
+            (report['loadFailureStates'] as List<dynamic>).single
+                as Map<String, dynamic>;
+        expect(state['liteRtLmError'], 'Error: fake engine create failed');
+        expect(
+          state['liteRtLmCreateErrorStack'],
           allOf(
-            contains('App entered error state while waiting for model load'),
-            contains(jsonEncode(createErrorStack)),
-            isNot(contains('Timed out waiting for model load')),
+            startsWith('Error: fake engine create failed\n'),
+            contains('fake_litert_lm.mjs'),
           ),
         );
-      },
-    );
-
-    test('the result names the LiteRT-LM runtime files requested', () async {
-      final run = await runLoadedChat();
-
-      expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
-      final emitted = events(run.result);
-      expect(
-        [
-          for (final event in emitted)
-            if (event['event'] == 'litert_lm_runtime_request') event['url'],
-        ],
-        [moduleUrl, wasmLoaderUrl, wasmUrl],
-      );
-      final result = emitted.singleWhere((event) => event['event'] == 'result');
-      expect(result['liteRtLmRuntimeRequests'], [
-        moduleUrl,
-        wasmLoaderUrl,
-        wasmUrl,
-      ]);
-    });
-
-    test('the init script wraps Engine.create once and leaves '
-        'window.LiteRtLmEngine alone', () async {
-      final initScript =
-          (await runLoadedChat()).capture['initScript'] as String;
-
-      expect('new Proxy(mod.Engine'.allMatches(initScript), hasLength(1));
-      expect(initScript.contains('LiteRtLmEngine'), isFalse);
-      expect(initScript.contains('.create ='), isFalse);
-    });
-
-    Future<Map<String, dynamic>> runPageScripts() async {
-      await runFailedLoad();
-      await runLoadedChat();
-      final harness = File(p.join(tempDir.path, 'page_script_harness.mjs'))
-        ..writeAsStringSync(_pageScriptHarness);
-      final node = await Process.run('node', [
-        harness.path,
-        p.join(tempDir.path, 'failed_load.json'),
-        p.join(tempDir.path, 'loaded_chat.json'),
-        tempDir.path,
-      ]);
-
-      expect(node.exitCode, 0, reason: '${node.stderr}');
-      return jsonDecode((node.stdout as String).trim()) as Map<String, dynamic>;
-    }
-
-    // Issue 970: a second wrapper assigned through the module's Proxy made
-    // Engine.create call itself until the stack overflowed.
-    test('wrapped Engine.create reaches the runtime once per call', () async {
-      final report = await runPageScripts();
-
-      expect(report['createError'], isNull);
-      expect(report['runtimeCreateReplaced'], isFalse);
-      expect(report['runtimeCreateCalls'], 2);
-      expect(report['settingsModel'], 'ok');
-      expect(report['prompt'], '2+2?');
-      expect(report['response'], '4');
-      expect(
-        (report['resultGlobals']
-            as Map<String, dynamic>)['liteRtLmOriginalModuleUrl'],
-        report['runtimeUrl'],
-      );
-    });
-
-    test('a rejected Engine.create leaves its stack for the load-failure '
-        'report', () async {
-      final report = await runPageScripts();
-
-      expect(report['brokenCreateError'], 'Error: fake engine create failed');
-      final state =
-          (report['loadFailureStates'] as List<dynamic>).single
-              as Map<String, dynamic>;
-      expect(state['liteRtLmError'], 'Error: fake engine create failed');
-      expect(
-        state['liteRtLmCreateErrorStack'],
-        allOf(
-          startsWith('Error: fake engine create failed\n'),
-          contains('fake_litert_lm.mjs'),
-        ),
-      );
-    });
-  });
+      });
+    },
+  );
 }
