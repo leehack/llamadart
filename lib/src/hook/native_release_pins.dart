@@ -7,6 +7,36 @@ library;
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
 const llamaCppTag = 'v0.6.0-2';
 
+/// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
+/// archive, keyed by bundle.
+///
+/// The hook verifies a downloaded or cached archive of the pinned release
+/// against this map before extracting it.
+const llamaCppBundleSha256 = <String, String>{
+  'android-arm64':
+      'e227f5b3b72fe7c2d727a18a3b9172f6e186a609422f14b2abbcc5e48f855d6e',
+  'android-x64':
+      'd0c3bc9310109ef4e94a683674481b6be99e9b5a7a83167fad4c35ca001f6d60',
+  'ios-arm64':
+      '3d709de622e218b4c9ea6e64a28ea9e00b4b6343953392635b9b4bd8961b773d',
+  'ios-arm64-sim':
+      'd47edd9a71a601a4b5f68cf637042ad6734c8c39ebfa9f7a1e107c50c85143bd',
+  'ios-x86_64-sim':
+      '052139c8c0166dae650db9faed4d59005574f19de3e9f945c65389666b5b2615',
+  'linux-arm64':
+      '36eab76ba292ac42f287903d5244f2eca44715c91819ce3090e84452b3e422e9',
+  'linux-x64':
+      'c28749b408e022f3a28337aa48d2aecdde4d8497eb0fc15e6888a706149da411',
+  'macos-arm64':
+      'fc4bf705c40a8958881f5f5ca99531a6afe2fa86ee9600e78a744e90b0bdd92c',
+  'macos-x86_64':
+      '5333975482fc652cc975ed1f8f81e9b41645f264ebb590a78fca7e977c10aab7',
+  'windows-arm64':
+      '7d189db3759ec1798ac48634114fb2a1a2005fd4bae3a469ca31a9a847f1a3c2',
+  'windows-x64':
+      '47710c7f920ac84e90c6be19e7b7c7ae2ee5bb7be15805527f4c28d24805f98b',
+};
+
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
 const liteRtLmReleaseTag = 'v0.18.0';
 

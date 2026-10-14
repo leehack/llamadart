@@ -13,6 +13,7 @@ import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hooks_runner_layout.dart';
+import '../../support/runtime_bundle_http_fixture.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
@@ -278,66 +279,101 @@ void main() {
     );
   });
 
-  test('build hook refreshes stale windows cache from local archive', () async {
-    await _writeBundleLibraries(bundleDir, const [
-      'llamadart-windows-x64.dll',
-      'llama-windows-x64.dll',
-      'ggml-windows-x64.dll',
-      'ggml-base-windows-x64.dll',
-      'ggml-cpu-windows-x64.dll',
-      'ggml-cuda-windows-x64.dll',
-    ]);
+  test(
+    'build hook refreshes stale windows cache from a verified cached archive',
+    () async {
+      const overrideTag = 'v9.8.7';
+      final overrideCacheDir = Directory(
+        '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+      );
+      final overrideArchive = File(
+        path.join(
+          overrideCacheDir.path,
+          'llamadart-native-windows-x64-$overrideTag.tar.gz',
+        ),
+      );
+      if (overrideCacheDir.existsSync()) {
+        await overrideCacheDir.delete(recursive: true);
+      }
+      addTearDown(() async {
+        if (overrideCacheDir.existsSync()) {
+          await overrideCacheDir.delete(recursive: true);
+        }
+      });
+      await _writeBundleLibraries(
+        Directory(path.join(overrideCacheDir.path, 'extracted')),
+        const [
+          'llamadart-windows-x64.dll',
+          'llama-windows-x64.dll',
+          'ggml-windows-x64.dll',
+          'ggml-base-windows-x64.dll',
+          'ggml-cpu-windows-x64.dll',
+          'ggml-cuda-windows-x64.dll',
+        ],
+      );
+      await _writeBundleArchive(
+        archiveFile: overrideArchive,
+        files: const [
+          'llamadart-windows-x64.dll',
+          'llama-windows-x64.dll',
+          'ggml-windows-x64.dll',
+          'ggml-base-windows-x64.dll',
+          'ggml-cpu-windows-x64.dll',
+          'ggml-cuda-windows-x64.dll',
+          'cudart64_12.dll',
+          'cublas64_12.dll',
+          'cublaslt64_12.dll',
+        ],
+      );
+      final fixture = RuntimeBundleHttpFixture({
+        'https://github.com/leehack/llamadart-native/releases/download/'
+            '$overrideTag/SHA256SUMS': sha256SumsFor({
+          path.basename(overrideArchive.path): overrideArchive
+              .readAsBytesSync(),
+        }).codeUnits,
+      });
 
-    await _writeBundleArchive(
-      archiveFile: archiveFile,
-      files: const [
-        'llamadart-windows-x64.dll',
-        'llama-windows-x64.dll',
-        'ggml-windows-x64.dll',
-        'ggml-base-windows-x64.dll',
-        'ggml-cpu-windows-x64.dll',
-        'ggml-cuda-windows-x64.dll',
-        'cudart64_12.dll',
-        'cublas64_12.dll',
-        'cublaslt64_12.dll',
-      ],
-    );
-
-    final userDefines = PackageUserDefines(
-      workspacePubspec: PackageUserDefinesSource(
-        defines: {
-          'llamadart_native_backends': {
-            'platforms': {
-              'windows-x64': ['cuda'],
+      final userDefines = PackageUserDefines(
+        workspacePubspec: PackageUserDefinesSource(
+          defines: {
+            'llamadart_native_tag': overrideTag,
+            'llamadart_native_backends': {
+              'platforms': {
+                'windows-x64': ['cuda'],
+              },
             },
           },
-        },
-        basePath: Directory.current.uri,
-      ),
-    );
+          basePath: Directory.current.uri,
+        ),
+      );
 
-    await testCodeBuildHook(
-      mainMethod: build_hook.main,
-      targetOS: OS.windows,
-      targetArchitecture: Architecture.x64,
-      userDefines: userDefines,
-      check: (input, output) {
-        final codeAssets = output.assets.encodedAssets
-            .where((asset) => asset.isCodeAsset)
-            .map((asset) => asset.asCodeAsset)
-            .toList(growable: false);
+      await build_hook.withRuntimeBundleHttpClientForTesting(
+        fixture.createClient,
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.windows,
+          targetArchitecture: Architecture.x64,
+          userDefines: userDefines,
+          check: (input, output) {
+            final codeAssets = output.assets.encodedAssets
+                .where((asset) => asset.isCodeAsset)
+                .map((asset) => asset.asCodeAsset)
+                .toList(growable: false);
 
-        final emittedNames = codeAssets
-            .map((asset) => path.basename(asset.file!.toFilePath()))
-            .toSet();
+            final emittedNames = codeAssets
+                .map((asset) => path.basename(asset.file!.toFilePath()))
+                .toSet();
 
-        expect(emittedNames, contains('ggml-cuda-windows-x64.dll'));
-        expect(emittedNames, contains('cudart64_12.dll'));
-        expect(emittedNames, contains('cublas64_12.dll'));
-        expect(emittedNames, contains('cublaslt64_12.dll'));
-      },
-    );
-  });
+            expect(emittedNames, contains('ggml-cuda-windows-x64.dll'));
+            expect(emittedNames, contains('cudart64_12.dll'));
+            expect(emittedNames, contains('cublas64_12.dll'));
+            expect(emittedNames, contains('cublaslt64_12.dll'));
+          },
+        ),
+      );
+      expect(fixture.requests, hasLength(1));
+    },
+  );
 
   test('build hook uses accepted wrapper native tag overrides', () async {
     for (final overrideTag in const [
