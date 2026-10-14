@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
-    show BackendRuntimeIdentity;
+    show BackendModelFormatRouting, BackendRuntimeIdentity;
 import 'package:test/test.dart';
 
 import 'engine_test.dart' show MockLlamaBackend, NativeChatMockBackend;
@@ -409,6 +409,119 @@ void main() {
         backend.contextParams.single.loras.single.path,
         'https://huggingface.co/owner/repo/resolve/main/adapters/style.gguf?download=true',
       );
+    });
+  });
+
+  group('LiteRT-LM ModelParams.loras', () {
+    Matcher unsupportedLoras(String reason) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('LiteRT-LM takes one LoRA adapter at scale 1.0'),
+          contains(reason),
+          contains('no adapter was downloaded'),
+        ),
+      ),
+    );
+    final twoAdapters = ModelParams(
+      loras: [
+        LoraAdapterConfig.source(hfAdapter),
+        LoraAdapterConfig.source(urlAdapter),
+      ],
+    );
+    final halfScale = ModelParams(
+      loras: [LoraAdapterConfig.source(hfAdapter, scale: 0.5)],
+    );
+
+    test('a LiteRT-LM backend rejects two adapters or another scale before '
+        'it downloads any, and still loads one adapter at scale 1.0', () async {
+      final backend = _RuntimeBackend(LlamaRuntime.liteRtLm);
+      final manager = _CacheManager({
+        hfAdapter: '/cache/style.gguf',
+        urlAdapter: '/cache/tone.gguf',
+      });
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await expectLater(
+        engine.loadModel('/models/model', modelParams: twoAdapters),
+        unsupportedLoras('has 2 adapters'),
+      );
+      await expectLater(
+        engine.loadModel('/models/model', modelParams: halfScale),
+        unsupportedLoras('sets scale 0.5'),
+      );
+      expect(manager.calls, isEmpty);
+      expect(backend.modelLoadCalls, 0);
+
+      await engine.loadModel(
+        '/models/model',
+        modelParams: ModelParams(loras: [LoraAdapterConfig.source(hfAdapter)]),
+      );
+      expect(manager.calls.single.source.cacheKey, hfAdapter.cacheKey);
+      expect(
+        backend.contextParams.single.loras.single.path,
+        '/cache/style.gguf',
+      );
+    });
+
+    test('a format-routing backend rejects them for a .litertlm file or a '
+        'declared LiteRT-LM format, and downloads them for a GGUF model even '
+        'after a LiteRT-LM load', () async {
+      final backend = _FormatRoutingBackend();
+      final manager = _CacheManager({
+        hfAdapter: '/cache/style.gguf',
+        urlAdapter: '/cache/tone.gguf',
+      });
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await expectLater(
+        engine.loadModel('/models/model.litertlm', modelParams: halfScale),
+        unsupportedLoras('sets scale 0.5'),
+      );
+      await expectLater(
+        engine.setModel(
+          LlamaModel(
+            ModelSource.path('/models/model', format: ModelFormat.liteRtLm),
+          ),
+          params: twoAdapters,
+        ),
+        unsupportedLoras('has 2 adapters'),
+      );
+      expect(manager.calls.map((call) => call.source.path), ['/models/model']);
+      manager.calls.clear();
+
+      await engine.loadModel('/models/model.litertlm');
+      expect(engine.runtime, LlamaRuntime.liteRtLm);
+      await engine.unloadModel();
+      await engine.loadModel('/models/model.gguf', modelParams: twoAdapters);
+      expect(manager.calls.map((call) => call.source.cacheKey), [
+        hfAdapter.cacheKey,
+        urlAdapter.cacheKey,
+      ]);
+    });
+
+    test('loadModelSource downloads a remote .litertlm model but none of the '
+        'adapters LiteRT-LM rejects', () async {
+      final model = ModelSource.url(
+        Uri.parse('https://example.com/model.litertlm'),
+      );
+      final manager = _CacheManager({
+        model: '/cache/model.litertlm',
+        hfAdapter: '/cache/style.gguf',
+      });
+      final engine = LlamaEngine(
+        _FormatRoutingBackend(),
+        modelDownloadManager: manager,
+      );
+
+      await expectLater(
+        engine.loadModelSource(model, modelParams: halfScale),
+        unsupportedLoras('sets scale 0.5'),
+      );
+      expect(manager.calls.map((call) => call.source.cacheKey), [
+        model.cacheKey,
+      ]);
     });
   });
 
@@ -1372,6 +1485,35 @@ class _RuntimeBackend extends _RecordingBackend
         thinkingBudget: false,
         speculativeDecodingStrategies: strategies,
       );
+}
+
+/// Chooses the runtime from an explicit format or the file extension, as
+/// `LlamaBackend()` does without a readable header.
+class _FormatRoutingBackend extends _RecordingBackend
+    implements BackendModelFormatRouting, BackendRuntimeIdentity {
+  @override
+  LlamaRuntime? runtime;
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) =>
+      modelLoadAs(path, params, ModelFormat.fromPath(path) ?? ModelFormat.gguf);
+
+  @override
+  Future<int> modelLoadAs(String path, ModelParams params, ModelFormat format) {
+    runtime = format.runtime;
+    return super.modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  }) {
+    runtime = format.runtime;
+    return super.modelLoadFromUrl(url, params, onProgress: onProgress);
+  }
 }
 
 /// A LiteRT-LM backend, which has no runtime LoRA API.

@@ -250,7 +250,10 @@ class ModelParams {
   ///
   /// Native LiteRT-LM supports one default-scale text LoRA adapter at model
   /// load; runtime adapter updates, stacking, custom scales, and LiteRT-LM
-  /// web LoRA are unsupported.
+  /// web LoRA are unsupported. When the model's format, given or from a
+  /// `.litertlm` extension, or the backend makes the load LiteRT-LM, more
+  /// adapters or another scale throw `LlamaUnsupportedException` before any
+  /// [LoraAdapterConfig.source] resolves or downloads.
   final List<LoraAdapterConfig> loras;
 
   /// Optional Jinja chat template that replaces the model's own template.

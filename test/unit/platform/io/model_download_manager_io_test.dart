@@ -2055,6 +2055,177 @@ void main() {
     );
   });
 
+  group('cache directory creation', () {
+    late Directory tempDir;
+    late _ModelHttpFixture server;
+
+    setUp(() async {
+      tempDir = await _createManagedTempDirectory();
+      server = await _startManagedFixture();
+    });
+
+    Matcher cannotCreate(String directory) => throwsA(
+      isA<LlamaModelException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          startsWith('Cannot create the model cache directory $directory'),
+          contains('set ModelLoadOptions.cacheDirectory to a writable'),
+        ),
+      ),
+    );
+
+    for (final policy in [
+      ModelCachePolicy.preferCached,
+      ModelCachePolicy.refresh,
+      ModelCachePolicy.noCache,
+    ]) {
+      test('a cache root that cannot be created throws LlamaModelException '
+          'before any request with ${policy.name}', () async {
+        final blocker = File(path.join(tempDir.path, 'not-a-directory'))
+          ..writeAsStringSync('');
+        final cacheRoot = path.join(blocker.path, 'cache');
+        final source = ModelSource.url(server.modelUri);
+        final options = ModelLoadOptions(
+          cacheDirectory: cacheRoot,
+          cachePolicy: policy,
+          maxRetries: 0,
+        );
+
+        await expectLater(
+          DefaultModelDownloadManager().ensureModel(source, options: options),
+          cannotCreate(cacheRoot),
+        );
+        await expectLater(
+          DefaultModelDownloadManager(
+            defaultCacheDirectory: cacheRoot,
+          ).ensureModel(
+            source,
+            options: ModelLoadOptions(cachePolicy: policy, maxRetries: 0),
+          ),
+          cannotCreate(cacheRoot),
+        );
+        expect(server.requestCount, 0);
+      });
+    }
+
+    test('an unwritable cache root names the permission failure', () async {
+      final readOnly = Directory(path.join(tempDir.path, 'ro'))..createSync();
+      await Process.run('chmod', ['a-w', readOnly.path]);
+      addTearDown(() => Process.run('chmod', ['u+w', readOnly.path]));
+      final cacheRoot = path.join(readOnly.path, 'cache');
+      try {
+        Directory(cacheRoot).createSync();
+        markTestSkipped('This user can write to a read-only directory.');
+        return;
+      } on FileSystemException {
+        // Expected: the directory is not writable.
+      }
+
+      await expectLater(
+        DefaultModelDownloadManager().ensureModel(
+          ModelSource.url(server.modelUri),
+          options: ModelLoadOptions(cacheDirectory: cacheRoot),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            startsWith(
+              'Cannot create the model cache directory '
+              '${path.join(cacheRoot, ModelSource.url(server.modelUri).cacheDirectoryName)}: '
+              'Permission denied.',
+            ),
+          ),
+        ),
+      );
+      expect(server.requestCount, 0);
+    }, testOn: '!windows');
+  });
+
+  group('TLS failures', () {
+    late Directory tempDir;
+
+    setUp(() async {
+      tempDir = await _createManagedTempDirectory();
+    });
+
+    Future<ModelLoadOptions> optionsFor() async =>
+        ModelLoadOptions(cacheDirectory: tempDir.path, maxRetries: 2);
+
+    test('a certificate failure names the cause and is not retried', () async {
+      final server = await _TlsFixture.start(_TlsBehavior.selfSigned);
+
+      await expectLater(
+        DefaultModelDownloadManager().ensureModel(
+          ModelSource.url(server.uri),
+          options: await optionsFor(),
+        ),
+        throwsA(
+          isA<LlamaModelException>()
+              .having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains(
+                    "the server's TLS certificate could not be verified",
+                  ),
+                  contains('missing the root certificate'),
+                  contains('not retried'),
+                ),
+              )
+              .having(
+                (error) => '${error.details}',
+                'details',
+                contains('CERTIFICATE_VERIFY_FAILED'),
+              ),
+        ),
+      );
+      expect(server.connections, 1);
+    });
+
+    test('another handshake failure names TLS and is not retried', () async {
+      final server = await _TlsFixture.start(_TlsBehavior.plaintext);
+
+      await expectLater(
+        DefaultModelDownloadManager().ensureModel(
+          ModelSource.url(server.uri),
+          options: await optionsFor(),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('the TLS handshake with the server failed'),
+              isNot(contains('certificate')),
+            ),
+          ),
+        ),
+      );
+      expect(server.connections, 1);
+    });
+
+    test('a connection closed during the handshake is retried', () async {
+      final server = await _TlsFixture.start(_TlsBehavior.close);
+
+      await expectLater(
+        DefaultModelDownloadManager().ensureModel(
+          ModelSource.url(server.uri),
+          options: await optionsFor(),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            'Failed to download tiny.gguf.',
+          ),
+        ),
+      );
+      expect(server.connections, 3);
+    });
+  });
+
   group('suite resource isolation', () {
     final createdDirectories = <Directory>[];
 
@@ -2364,3 +2535,79 @@ class _ModelHttpFixture {
     }
   }
 }
+
+enum _TlsBehavior { selfSigned, plaintext, close }
+
+/// A loopback server that fails every TLS handshake in one way and counts
+/// connection attempts.
+class _TlsFixture {
+  _TlsFixture._(this._server, this._behavior);
+
+  final ServerSocket _server;
+  final _TlsBehavior _behavior;
+  final List<Socket> _sockets = <Socket>[];
+  int connections = 0;
+
+  Uri get uri => Uri.parse('https://127.0.0.1:${_server.port}/tiny.gguf');
+
+  static Future<_TlsFixture> start(_TlsBehavior behavior) async {
+    final fixture = _TlsFixture._(
+      await ServerSocket.bind(InternetAddress.loopbackIPv4, 0),
+      behavior,
+    );
+    fixture._server.listen(fixture._accept);
+    addTearDown(fixture._close);
+    return fixture;
+  }
+
+  void _accept(Socket socket) {
+    connections += 1;
+    _sockets.add(socket);
+    switch (_behavior) {
+      case _TlsBehavior.selfSigned:
+        final context = SecurityContext()
+          ..useCertificateChainBytes(utf8.encode(_selfSignedCertificate))
+          ..usePrivateKeyBytes(utf8.encode(_selfSignedKey));
+        SecureSocket.secureServer(
+          socket,
+          context,
+        ).then((secure) => secure.destroy(), onError: (Object _) {});
+      case _TlsBehavior.plaintext:
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+        socket.close().catchError((Object _) => socket);
+      case _TlsBehavior.close:
+        socket.destroy();
+    }
+  }
+
+  Future<void> _close() async {
+    for (final socket in _sockets) {
+      socket.destroy();
+    }
+    await _server.close();
+  }
+}
+
+// A throwaway self-signed identity for 127.0.0.1, valid until 2126. No client
+// trusts it, so a handshake against it fails certificate verification.
+const String _selfSignedCertificate = '''
+-----BEGIN CERTIFICATE-----
+MIIBkTCCATagAwIBAgIUfKxMsACJolLtw2S8d88BlpZGwv0wCgYIKoZIzj0EAwIw
+FDESMBAGA1UEAwwJMTI3LjAuMC4xMCAXDTI2MTAxNDE5MjM0MloYDzIxMjYwOTIw
+MTkyMzQyWjAUMRIwEAYDVQQDDAkxMjcuMC4wLjEwWTATBgcqhkjOPQIBBggqhkjO
+PQMBBwNCAAQI8SY5+eucFzGact0De66W+pForEbr4joNfDeE2tNor/wjylyHcg7j
+9TWpoznRHD6mefKlOqhd6MIs22HYTUj5o2QwYjAdBgNVHQ4EFgQUMeRZMt4MceBM
+lhT0pOWlXV/Gt78wHwYDVR0jBBgwFoAUMeRZMt4MceBMlhT0pOWlXV/Gt78wDwYD
+VR0TAQH/BAUwAwEB/zAPBgNVHREECDAGhwR/AAABMAoGCCqGSM49BAMCA0kAMEYC
+IQDKHTZ94DpezW4uJmXWfNx7lxUG9SZFhwdDzPxNZwkHDQIhAP2M0TTJU+csy2Kd
+AXAKbIuI6DP6LeP+HvNhGzy9yK70
+-----END CERTIFICATE-----
+''';
+
+const String _selfSignedKey = '''
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgFXVK9Uxdpw32Rxz1
+ovjggiBgV1GB/jzinhJkWq0IsC2hRANCAAQI8SY5+eucFzGact0De66W+pForEbr
+4joNfDeE2tNor/wjylyHcg7j9TWpoznRHD6mefKlOqhd6MIs22HYTUj5
+-----END PRIVATE KEY-----
+''';

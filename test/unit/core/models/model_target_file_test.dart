@@ -15,12 +15,12 @@ void main() {
   setUp(() => manager = _RecordingManager());
 
   test('a local target is checked by the manager as a path source', () async {
-    final options = ModelLoadOptions(maxRetries: 1);
+    final options = ModelLoadOptions(sha256: 'a' * 64);
     void onProgress(ModelDownloadProgress _) {}
 
     final entry = await ensureModelTargetFile(
       manager,
-      ModelSource.parse('hf://owner/repo@main/model.gguf'),
+      ModelSource.path('/models/source.gguf'),
       const LocalModelFile('/models/model.gguf'),
       options: options,
       onProgress: onProgress,
@@ -32,6 +32,39 @@ void main() {
     expect(passedOptions, same(options));
     expect(passedProgress, same(onProgress));
     expect(entry.filePath, '/cache/model.gguf');
+  });
+
+  test('a local target of a remote source takes only the checksum and '
+      'cancel token', () async {
+    final cancelToken = ModelDownloadCancelToken();
+    final options = ModelLoadOptions(
+      cachePolicy: ModelCachePolicy.refresh,
+      cacheDirectory: '/cache',
+      sha256: 'a' * 64,
+      bearerToken: 'secret-token',
+      headers: const {'X-Test': '1'},
+      cancelToken: cancelToken,
+      resume: false,
+      maxRetries: 1,
+    );
+
+    await ensureModelTargetFile(
+      manager,
+      ModelSource.parse('hf://owner/repo@main/model.gguf'),
+      const LocalModelFile('/models/model.gguf'),
+      options: options,
+    );
+
+    final (source, passedOptions, _) = manager.calls.single;
+    expect(source.path, '/models/model.gguf');
+    expect(passedOptions.sha256, 'a' * 64);
+    expect(passedOptions.cancelToken, same(cancelToken));
+    expect(passedOptions.cachePolicy, ModelCachePolicy.preferCached);
+    expect(passedOptions.cacheDirectory, isNull);
+    expect(passedOptions.bearerToken, isNull);
+    expect(passedOptions.headers, isEmpty);
+    expect(passedOptions.resume, isTrue);
+    expect(passedOptions.maxRetries, ModelLoadOptions.defaults.maxRetries);
   });
 
   test('a remote target downloads under the source cache identity', () async {

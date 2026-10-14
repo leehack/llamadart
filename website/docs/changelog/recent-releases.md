@@ -40,6 +40,23 @@ For canonical full release notes, use:
   Rosetta instead of aborting, and LiteRT-LM throws
   `LlamaUnsupportedException` on x86_64 macOS
   ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
+- A model cache directory that cannot be created, such as an unwritable
+  `ModelLoadOptions.cacheDirectory`, now throws `LlamaModelException` naming
+  the directory instead of a raw `FileSystemException`
+  ([#894](https://github.com/leehack/llamadart/issues/894)).
+- A model download that fails TLS certificate verification now says so in
+  its `LlamaModelException`, and TLS certificate and protocol failures are
+  no longer retried
+  ([#978](https://github.com/leehack/llamadart/issues/978)).
+- A `ModelResolver` that maps a remote source to a local mirror file now
+  loads it when the download options set `cacheDirectory`, credentials or
+  other download-only options, instead of throwing
+  `LlamaUnsupportedException`
+  ([#897](https://github.com/leehack/llamadart/issues/897)).
+- On LiteRT-LM, `ModelParams.loras` with more than one adapter or a scale
+  other than 1.0 now throws `LlamaUnsupportedException` before any adapter
+  downloads, when the model's format or `.litertlm` extension names a
+  LiteRT-LM bundle ([#891](https://github.com/leehack/llamadart/issues/891)).
 
 ## 0.12.1
 

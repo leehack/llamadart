@@ -29,7 +29,10 @@ class UncacheableLocalModelFileException extends LlamaUnsupportedException {
 /// file through [manager], for backends that load files rather than URLs.
 ///
 /// A local target is checked by [manager]; a remote one is downloaded or
-/// taken from its cache under [source]'s cache identity.
+/// taken from its cache under [source]'s cache identity. A local target of a
+/// remote [source], such as a resolver's offline mirror, takes only the
+/// checksum and cancel token of [options], since its cache and credential
+/// options apply to downloads only.
 ///
 /// Throws [LlamaUnsupportedException] for a remote target that disallows the
 /// browser/backend cache, naming [assetType] in the message.
@@ -45,7 +48,12 @@ Future<ModelCacheEntry> ensureModelTargetFile(
     case LocalModelFile(:final path):
       return manager.ensureModel(
         ModelSource.path(path, format: source.format),
-        options: options,
+        options: source.isRemote
+            ? ModelLoadOptions(
+                sha256: options.sha256,
+                cancelToken: options.cancelToken,
+              )
+            : options,
         onProgress: onProgress,
       );
     case RemoteModelUrl(:final url, :final useBrowserCache):

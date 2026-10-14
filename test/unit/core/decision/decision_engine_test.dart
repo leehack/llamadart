@@ -1042,6 +1042,43 @@ void main() {
       ));
     });
 
+    test('a model cache directory that cannot be created fails the load '
+        'with LlamaModelException', () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'llamadart_decision_cache_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final blocker = File('${directory.path}/not-a-directory')
+        ..writeAsStringSync('');
+
+      await expectLater(
+        DecisionEngine.load(
+          DecisionModel(
+            encoder: ModelSource.parse('http://127.0.0.1:9/laya-Q8_0.gguf'),
+            head: ModelSource.parse('http://127.0.0.1:9/laya-head.safetensors'),
+            config: ModelSource.path('/models/rl_agent_config.json'),
+          ),
+          download: ModelLoadOptions(
+            cacheDirectory: '${blocker.path}/cache',
+            maxRetries: 0,
+          ),
+          store: ModelFileStore(
+            downloadManager: DefaultModelDownloadManager.appPrivate(
+              cacheDirectory: '${directory.path}/cache',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot create the model cache directory'),
+          ),
+        ),
+      );
+      expect(owned.modelLoads, isEmpty);
+    });
+
     test('reports progress over every file', () async {
       final progress = <(int, int?)>[];
 
