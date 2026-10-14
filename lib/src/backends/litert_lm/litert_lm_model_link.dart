@@ -173,6 +173,19 @@ class LiteRtLmModelLink {
   }
 }
 
+/// The cache directory to hand the runtime for a bundle named `.litertlm`
+/// when none is configured: `null`, so the runtime caches next to
+/// [modelPath], or [liteRtLmNoCacheDirectory] when the process cannot write
+/// that directory.
+///
+/// Without a cache directory the GPU backend fails engine creation when it
+/// cannot write its caches next to the model, where the CPU backend runs
+/// uncached ([#976](https://github.com/leehack/llamadart/issues/976)).
+String? liteRtLmUnlinkedCacheDirectory(String modelPath) =>
+    _runtimeAcceptsCacheDirectory(File(modelPath).absolute.parent.path)
+    ? null
+    : liteRtLmNoCacheDirectory;
+
 /// Mirrors the cache directory check of LiteRT-LM v0.18: `access(2)` with
 /// `W_OK`. On Windows that check passes every existing directory, so this
 /// does too.

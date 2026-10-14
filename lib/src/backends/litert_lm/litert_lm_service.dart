@@ -970,7 +970,10 @@ class LiteRtLmService {
         : null;
 
     final cacheDir = _effectiveCacheDir(modelParams);
-    final runtimeCacheDir = cacheDir ?? _modelLink?.runtimeCacheDirectory();
+    final runtimeCacheDir =
+        cacheDir ??
+        _modelLink?.runtimeCacheDirectory() ??
+        liteRtLmUnlinkedCacheDirectory(modelPath);
 
     Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
       _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);

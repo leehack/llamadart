@@ -1905,6 +1905,115 @@ void main() {
     }
   });
 
+  for (final device in [ComputeDevice.cpu, ComputeDevice.gpu]) {
+    test('an unlinked bundle in a directory the process cannot write runs '
+        'uncached on ${device.name}', () async {
+      if (device == ComputeDevice.gpu &&
+          !liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+        markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+        return;
+      }
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        useTempCacheDir: false,
+      );
+      final models = await Directory('${tempDir.path}/models').create();
+      final bundle = File('${models.path}/model.litertlm');
+      await bundle.writeAsString('LITERTLM fake model');
+      if (!makeReadOnly(models)) {
+        markTestSkipped(
+          'This user writes a directory without write permission.',
+        );
+        service.dispose();
+        return;
+      }
+      try {
+        final params = ModelParams(device: device);
+        final model = await service.loadModel(bundle.path, params);
+        await startEngine(service, client, model, params);
+
+        expect(client.lastModelPath, bundle.path);
+        expect(client.lastCacheDir, ':nocache');
+        expect(models.listSync().map((entry) => entry.path), [bundle.path]);
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
+  }
+
+  test('an unlinked bundle in a directory the process cannot write names no '
+      'cache directory when its engine fails', () async {
+    final client = _FakeLiteRtLmRuntimeClient(
+      initializeError: LiteRtLmEngineCreateError('no engine.'),
+    );
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      useTempCacheDir: false,
+    );
+    final models = await Directory('${tempDir.path}/models').create();
+    final bundle = File('${models.path}/model.litertlm');
+    await bundle.writeAsString('LITERTLM fake model');
+    if (!makeReadOnly(models)) {
+      markTestSkipped('This user writes a directory without write permission.');
+      service.dispose();
+      return;
+    }
+    try {
+      const params = ModelParams(device: ComputeDevice.cpu);
+      final model = await service.loadModel(bundle.path, params);
+      service.createContext(model, params);
+
+      await expectLater(
+        service.tokenize(model, 'hi', true),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            'no engine.',
+          ),
+        ),
+      );
+      expect(client.lastCacheDir, ':nocache');
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
+  for (final configured in [true, false]) {
+    test('an unlinked bundle in a directory the process cannot write keeps '
+        '${configured ? 'a configured cache directory' : 'the temp cache '
+                  'default'}', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        useTempCacheDir: !configured,
+      );
+      final models = await Directory('${tempDir.path}/models').create();
+      final bundle = File('${models.path}/model.litertlm');
+      await bundle.writeAsString('LITERTLM fake model');
+      final configuredDir = '${tempDir.path}/cache';
+      makeReadOnly(models);
+      try {
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          liteRtLmCacheDir: configured ? configuredDir : null,
+        );
+        final model = await service.loadModel(bundle.path, params);
+        await startEngine(service, client, model, params);
+
+        expect(
+          client.lastCacheDir,
+          configured
+              ? configuredDir
+              : '${Directory.systemTemp.path}/llamadart_litert_lm',
+        );
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
+  }
+
   test('a failed link keeps the previous model loaded', () async {
     final client = _FakeLiteRtLmRuntimeClient();
     final blocker = File('${tempDir.path}/blocker');

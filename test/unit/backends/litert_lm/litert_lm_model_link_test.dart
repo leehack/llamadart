@@ -213,6 +213,25 @@ void main() {
     expect(link.runtimeCacheDirectory(), models.absolute.path);
   }, testOn: '!windows');
 
+  test('turns the runtime caches off for an unlinked bundle only while the '
+      'process cannot write its directory', () async {
+    final models = await Directory('${tempDir.path}/models').create();
+    final bundle = File('${models.path}/model.litertlm');
+    await bundle.writeAsString('LITERTLM');
+
+    expect(liteRtLmUnlinkedCacheDirectory(bundle.path), isNull);
+
+    if (!makeReadOnly(models)) {
+      markTestSkipped('This user writes a directory without write permission.');
+      return;
+    }
+    expect(liteRtLmUnlinkedCacheDirectory(bundle.path), ':nocache');
+    expect(models.listSync().map((entry) => entry.path), [bundle.path]);
+
+    Process.runSync('chmod', ['u+w', models.path]);
+    expect(liteRtLmUnlinkedCacheDirectory(bundle.path), isNull);
+  }, testOn: '!windows');
+
   test('names the link from a sanitized bundle name', () async {
     final file = File('${tempDir.path}/my model \u00fc?.bin');
     await file.writeAsString('LITERTLM');
