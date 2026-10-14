@@ -42,7 +42,7 @@ bridge behavior between pure Dart/macOS fallback and Flutter Apple builds.
 
 | Runtime | Core native-assets pin | Apple SPM companion pin |
 | --- | --- | --- |
-| llama.cpp / GGUF | `lib/src/hook/native_release_pins.dart` `llamaCppTag`, default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
+| llama.cpp / GGUF | `lib/src/hook/native_release_pins.dart` `llamaCppTag` and per-bundle checksums (`llamaCppBundleSha256`), default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
 | LiteRT-LM / `.litertlm` | `lib/src/hook/native_release_pins.dart` `liteRtLmReleaseTag` and per-bundle checksums, repository `leehack/litert-lm-native` | `packages/llamadart_litert_lm_flutter/.../Package.swift` binary target URLs/checksums |
 | stable-diffusion.cpp (opt-in `stable_diffusion`) | `lib/src/hook/native_release_pins.dart` `stableDiffusionReleaseTag` and per-bundle checksums, repository `leehack/stable-diffusion-native` | `packages/llamadart_stable_diffusion_flutter/.../Package.swift` binary target URL/checksum |
 
@@ -143,7 +143,9 @@ and hook contract version 1. New stable or nightly wrapper forms require
 `assets.json`, `native_release_tag`, and the retained `tag` compatibility alias;
 older base or legacy-wrapper manifests with only `tag` remain valid.
 Manifest checksums must agree with both `SHA256SUMS` and GitHub release asset
-digests before any pin files are written.
+digests before any pin files are written. The sync rewrites
+`llamaCppBundleSha256` from each bundle archive's release digest and fails
+without writing when the release lacks a pinned bundle.
 Re-syncing the exact current tag remains idempotent for recovery and validation;
 the owning native release workflow is responsible for rejecting publication
 collisions.

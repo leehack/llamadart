@@ -7,6 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- The build hook now verifies every llama.cpp archive it downloads or reuses
+  from its cache against a pinned SHA-256, or against the release's
+  `SHA256SUMS` when `llamadart_native_tag` or `llamadart_native_repository`
+  overrides the release. A corrupted or replaced archive is deleted and
+  downloaded again, and a download that still does not match fails the build
+  with `NativeArchiveDigestException`
+  ([#1015](https://github.com/leehack/llamadart/issues/1015)).
+
 ## 0.12.1
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`
