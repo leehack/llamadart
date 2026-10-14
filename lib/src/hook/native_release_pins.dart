@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.6.0-2';
+const llamaCppTag = 'v0.6.0-3';
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
 /// archive, keyed by bundle.
@@ -14,27 +14,27 @@ const llamaCppTag = 'v0.6.0-2';
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'e227f5b3b72fe7c2d727a18a3b9172f6e186a609422f14b2abbcc5e48f855d6e',
+      '434e4f8b394fd80e96e094ef8e2720f7b6f38ee7a6bd1a036f9d7bbdbb898d0f',
   'android-x64':
-      'd0c3bc9310109ef4e94a683674481b6be99e9b5a7a83167fad4c35ca001f6d60',
+      'e1e57532a0f0154c5b6a3f034de80f00f0eeb2354854b0e3e3e6f7e225a7d46a',
   'ios-arm64':
-      '3d709de622e218b4c9ea6e64a28ea9e00b4b6343953392635b9b4bd8961b773d',
+      '37a4e69cf6e1af5a56a9559dfd0bedeb2b5275af691bc7b6680690b16c6fa7d8',
   'ios-arm64-sim':
-      'd47edd9a71a601a4b5f68cf637042ad6734c8c39ebfa9f7a1e107c50c85143bd',
+      'cbb9d481d1fc515d15670150fe44b8611166e886f2f9c46ba421f4fe6bf387bf',
   'ios-x86_64-sim':
-      '052139c8c0166dae650db9faed4d59005574f19de3e9f945c65389666b5b2615',
+      '74349811b95106e24ae929c9132c67b88d936de39d543cfe1f4a9f41eeba9a3a',
   'linux-arm64':
-      '36eab76ba292ac42f287903d5244f2eca44715c91819ce3090e84452b3e422e9',
+      '03154c5db784ce6e85a58c69b480c1925cc96cf35deddcdbfb69b0a9ea63cd68',
   'linux-x64':
-      'c28749b408e022f3a28337aa48d2aecdde4d8497eb0fc15e6888a706149da411',
+      'ad8dc7272d44f8a58182b1de30764265de0e93313a914f470a681e418a0f98d0',
   'macos-arm64':
-      'fc4bf705c40a8958881f5f5ca99531a6afe2fa86ee9600e78a744e90b0bdd92c',
+      'fbbe53ce1c63fda3e75f5573b013451396b085de8984eb071ee52614a5437629',
   'macos-x86_64':
-      '5333975482fc652cc975ed1f8f81e9b41645f264ebb590a78fca7e977c10aab7',
+      'a9964d3559c53613e9e38fa446c8292605e1b6de12b345e77f6e39a96272077a',
   'windows-arm64':
-      '7d189db3759ec1798ac48634114fb2a1a2005fd4bae3a469ca31a9a847f1a3c2',
+      'b08d94691573b3c48286096ffc47d752abdaef01077b633bcc331c8e8c736b45',
   'windows-x64':
-      '47710c7f920ac84e90c6be19e7b7c7ae2ee5bb7be15805527f4c28d24805f98b',
+      '61a245ea08e3738dc9c621571fafc894fc9c2ccb7dfa52e090b150a430ff845c',
 };
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
