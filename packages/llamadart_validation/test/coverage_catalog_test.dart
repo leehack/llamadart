@@ -79,7 +79,7 @@ void main() {
       final cpuAsr =
           row['backend'] == 'cpu' &&
           row['use_case'] == 'stt' &&
-          !['web', 'windows-arm64'].contains(row['platform']);
+          !['web', 'windows-arm64', 'macos-x64'].contains(row['platform']);
       expect(row['status'], cpuAsr ? 'NOT_RUN' : 'UNSUPPORTED');
     }
   });
