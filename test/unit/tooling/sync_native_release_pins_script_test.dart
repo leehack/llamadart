@@ -378,7 +378,7 @@ paths=(
     expect(result.stdout, contains('llama.cpp -> leehack/llamadart-native'));
     expect(result.stdout, contains('LiteRT-LM -> leehack/litert-lm-native'));
 
-    final pins = await pinsFile.readAsString();
+    final pins = (await pinsFile.readAsString()).replaceAll('\r\n', '\n');
     expect(pins, contains("const llamaCppTag = '$llamaTag';"));
     expect(pins, contains(_llamaCppBundleDigestPins(llamaTag)));
     expect(pins, contains("const liteRtLmReleaseTag = '$litertTag';"));
@@ -811,9 +811,9 @@ paths=(
         0,
         reason: '${transition.stdout}\n${transition.stderr}',
       );
-      final transitionedPins = await File(
+      final transitionedPins = (await File(
         path.join(setup.root.path, _pinsPath),
-      ).readAsString();
+      ).readAsString()).replaceAll('\r\n', '\n');
       expect(transitionedPins, contains("const llamaCppTag = 'v0.2.0';"));
       for (final (index, bundle) in _stableNativeBundles.indexed) {
         expect(
@@ -938,7 +938,7 @@ paths=(
     final synced = await _runLlamaSync(setup, 'b10514-1');
     expect(synced.exitCode, 0, reason: '${synced.stdout}\n${synced.stderr}');
     expect(
-      await pinsFile.readAsString(),
+      (await pinsFile.readAsString()).replaceAll('\r\n', '\n'),
       contains(_llamaCppBundleDigestPins('b10514-1')),
     );
   });

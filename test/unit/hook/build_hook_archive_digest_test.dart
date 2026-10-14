@@ -30,18 +30,32 @@ const _llamaLibraries = [
 ];
 
 void main() {
+  final nativeBundlesDir = path.join(
+    '.dart_tool',
+    'llamadart',
+    'native_bundles',
+  );
   final defaultCacheDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$llamaCppTag/$_bundle',
+    path.join(nativeBundlesDir, llamaCppTag, _bundle),
   );
   final overrideCacheDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$_overrideTag/$_bundle',
+    path.join(nativeBundlesDir, _overrideTag, _bundle),
   );
   final forkCacheDir = Directory(
-    '.dart_tool/llamadart/native_bundles/github/$_forkRepository/'
-    '$llamaCppTag/$_bundle',
+    path.joinAll([
+      nativeBundlesDir,
+      'github',
+      ..._forkRepository.split('/'),
+      llamaCppTag,
+      _bundle,
+    ]),
   );
-  final stableDiffusionCacheDir =
-      '.dart_tool/llamadart/stable_diffusion/$stableDiffusionVersion';
+  final stableDiffusionCacheDir = path.join(
+    '.dart_tool',
+    'llamadart',
+    'stable_diffusion',
+    stableDiffusionVersion,
+  );
   final stableDiffusionArchiveName =
       'stable-diffusion-native-runtime-$_bundle-$stableDiffusionReleaseTag'
       '.tar.gz';
@@ -51,7 +65,12 @@ void main() {
   final stableDiffusionBundleDir = Directory(
     path.join(stableDiffusionCacheDir, _bundle),
   );
-  final liteRtLmCacheDir = '.dart_tool/llamadart/litert_lm/$liteRtLmVersion';
+  final liteRtLmCacheDir = path.join(
+    '.dart_tool',
+    'llamadart',
+    'litert_lm',
+    liteRtLmVersion,
+  );
   final liteRtLmArchiveName =
       'litert-lm-native-runtime-$_bundle-$liteRtLmReleaseTag.tar.gz';
   final liteRtLmArchive = File(
