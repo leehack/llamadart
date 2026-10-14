@@ -2122,6 +2122,152 @@ void main() {
     }, testOn: '!windows');
   }
 
+  for (final modality in ['vision', 'audio']) {
+    test(
+      'an unlinked bundle in a directory the process cannot write runs a '
+      'GPU engine with $modality uncached despite its text GPU caches',
+      () async {
+        if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+          markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+          return;
+        }
+        final bundle = await readOnlyBundle(caches: true);
+        if (bundle == null) return;
+        final imageFile = File('${tempDir.path}/image.png');
+        await imageFile.writeAsBytes(const [0x89, 0x50, 0x4e, 0x47]);
+        var created = 0;
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(
+          clientFactory: () {
+            created++;
+            return client;
+          },
+          useTempCacheDir: false,
+        );
+        try {
+          const params = ModelParams(device: ComputeDevice.gpu);
+          final model = await service.loadModel(bundle.path, params);
+          final context = service.createContext(model, params);
+          final pending = service.generateChat(context, [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                const LlamaTextContent('Hi'),
+                if (modality == 'vision')
+                  LlamaImageContent(path: imageFile.path)
+                else
+                  LlamaAudioContent(bytes: Uint8List.fromList(const [1, 2, 3])),
+              ],
+            ),
+          ], const GenerationParams(maxTokens: 8)).toList();
+          await client.generateStarted.future;
+          await client.generated.close();
+          await pending;
+
+          expect(created, 1);
+          expect(client.lastBackend, 'gpu');
+          if (modality == 'vision') {
+            expect(client.lastVisionBackend, isNotNull);
+          } else {
+            expect(client.lastAudioBackend, isNotNull);
+          }
+          expect(client.lastCacheDir, ':nocache');
+        } finally {
+          service.dispose();
+        }
+      },
+      testOn: '!windows',
+    );
+  }
+
+  test('an unlinked bundle in a directory the process cannot write does not '
+      'retry a failed GPU engine uncached with a configured cache '
+      'directory', () async {
+    if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return;
+    }
+    final bundle = await readOnlyBundle();
+    if (bundle == null) return;
+    final configuredDir = '${tempDir.path}/cache';
+    var created = 0;
+    final client = _FakeLiteRtLmRuntimeClient(
+      initializeError: LiteRtLmEngineCreateError('no engine.'),
+    );
+    final service = LiteRtLmService(
+      clientFactory: () {
+        created++;
+        return client;
+      },
+      useTempCacheDir: false,
+    );
+    try {
+      final params = ModelParams(
+        device: ComputeDevice.gpu,
+        liteRtLmCacheDir: configuredDir,
+      );
+      final model = await service.loadModel(bundle.path, params);
+      service.createContext(model, params);
+
+      await expectLater(
+        service.tokenize(model, 'hi', true),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('no engine.'),
+          ),
+        ),
+      );
+      expect(created, 1);
+      expect(client.lastCacheDir, configuredDir);
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
+  test('an unlinked bundle in a directory the process cannot write does not '
+      'retry a GPU engine uncached after an error other than engine '
+      'creation', () async {
+    if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return;
+    }
+    final bundle = await readOnlyBundle(caches: true);
+    if (bundle == null) return;
+    var created = 0;
+    final client = _FakeLiteRtLmRuntimeClient(
+      initializeError: StateError('runtime failed'),
+    );
+    final service = LiteRtLmService(
+      clientFactory: () {
+        created++;
+        return client;
+      },
+      useTempCacheDir: false,
+    );
+    try {
+      const params = ModelParams(device: ComputeDevice.gpu);
+      final model = await service.loadModel(bundle.path, params);
+      service.createContext(model, params);
+
+      await expectLater(
+        service.tokenize(model, 'hi', true),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'runtime failed',
+          ),
+        ),
+      );
+      expect(created, 1);
+      expect(client.lastCacheDir, isNull);
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
   for (final configured in [true, false]) {
     test('an unlinked bundle in a directory the process cannot write keeps '
         '${configured ? 'a configured cache directory' : 'the temp cache '
