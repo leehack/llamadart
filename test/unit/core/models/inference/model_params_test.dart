@@ -352,6 +352,18 @@ void main() {
       }
     });
 
+    test('every device accepts negative gpuLayers, meaning all layers', () {
+      for (final device in ComputeDevice.values) {
+        for (final gpuLayers in [-1, -2]) {
+          expect(
+            ModelParams(device: device, gpuLayers: gpuLayers).validate,
+            returnsNormally,
+            reason: '$device with gpuLayers $gpuLayers',
+          );
+        }
+      }
+    });
+
     test('gpu and npu reject a negative mainGpu with splitMode none', () {
       for (final device in [ComputeDevice.gpu, ComputeDevice.npu]) {
         for (final mainGpu in [-1, -2]) {
