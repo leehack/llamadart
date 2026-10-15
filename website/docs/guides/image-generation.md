@@ -106,7 +106,7 @@ Pair `0.13.0` with core `0.13.0`, `0.0.3` with core `0.12.2`, `0.12.1` and
 
 ```yaml
 dependencies:
-  llamadart_stable_diffusion_flutter: ^0.0.3
+  llamadart_stable_diffusion_flutter: ^0.13.0
 ```
 
 Without it, `all` leaves the image runtime out of a Flutter iOS or macOS app

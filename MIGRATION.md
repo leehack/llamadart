@@ -29,6 +29,13 @@ An explicit cap now bounds the directory total instead of each file.
 `LlamaInferenceException` instead of `StateError`; see the `0.13.0` entry in
 `CHANGELOG.md`.
 
+- On native llama.cpp, a runtime missing an mtmd function, with no complete
+  fallback mtmd library, makes `supportsVision` and image or audio requests
+  throw `LlamaUnsupportedException`. Before, `supportsVision` returned `false`
+  and those requests threw `LlamaInferenceException`.
+- On Web, `SpeechToTextEngine.load`, `TextToSpeechEngine.load` and
+  `LlamaEngine.setModel` with a projector now report progress from 0 to 1.
+
 ## `0.12.1` -> `0.12.2`: Apple companion pins
 
 Upgrade the Apple companions the app uses together with the core package:

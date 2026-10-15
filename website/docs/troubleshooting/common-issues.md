@@ -253,8 +253,9 @@ llamadart prunes the program cache files of the cache directory to
 directory, as on Linux, Windows and iOS when `liteRtLmCacheDir` is unset, the
 runtime writes them next to the model file and nothing is pruned; set
 `liteRtLmCacheDir` there. An engine protects its model's caches from other
-engines' pruning only from its first generation or tokenization, not from
-`loadModel`, so a prune before then can cost one recompile. See
+engines' pruning only from its first generation, tokenization or
+detokenization, not from `loadModel`, so a prune before then can cost one
+recompile. See
 [LiteRT-LM cache directory](../configuration/runtime-parameters#litert-lm-cache-directory).
 
 If one model's program cache still exceeds the cap, check its cache directory

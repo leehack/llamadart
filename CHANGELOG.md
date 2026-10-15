@@ -39,9 +39,10 @@
   throwing `StateError`; other output a PEG parser cannot parse, including in
   `ChatTemplateEngine.parse`, throws `LlamaInferenceException`
   ([#890](https://github.com/leehack/llamadart/issues/890)).
-- **Behavior change:** on native llama.cpp, a runtime missing an mtmd function
-  fails image and audio requests, and `supportsVision`, with
-  `LlamaUnsupportedException` naming the function and pinned runtime
+- **Behavior change:** on native llama.cpp, a runtime missing an mtmd function,
+  with no complete fallback mtmd library, fails image and audio requests, and
+  `supportsVision`, with `LlamaUnsupportedException` naming the function and
+  pinned runtime
   ([#640](https://github.com/leehack/llamadart/issues/640)).
 - **Behavior change:** on Web, `SpeechToTextEngine.load`,
   `TextToSpeechEngine.load` and `LlamaEngine.setModel` with a projector report
