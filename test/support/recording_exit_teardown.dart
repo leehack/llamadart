@@ -57,6 +57,10 @@ final class RecordingExitTeardown {
   /// no devices.
   final List<List<int>?> loadDevices = <List<int>?>[];
 
+  /// The `llama_model_params.n_gpu_layers` of each
+  /// `llama_dart_model_load_from_file` so far.
+  final List<int> loadGpuLayers = <int>[];
+
   /// Token count of the batch of each `llama_dart_decode` so far.
   final List<int> decodedTokens = <int>[];
 
@@ -140,6 +144,7 @@ final class RecordingExitTeardown {
             ? null
             : [for (var i = 0; devices[i] != nullptr; i++) devices[i].address],
       );
+      loadGpuLayers.add(params.n_gpu_layers);
       if (!_proceeds('llama_dart_model_load_from_file')) return nullptr;
       final model = real.modelLoadFromFile(path, params);
       owned.add(model.address);
