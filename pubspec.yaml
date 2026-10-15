@@ -39,4 +39,5 @@ dev_dependencies:
   coverage: 1.15.1
   ffigen: ">=21.0.0 <23.0.0"
   lints: ^6.1.0
+  pub_semver: ^2.1.4
   test: ^1.26.3

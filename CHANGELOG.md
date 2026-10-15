@@ -1,3 +1,11 @@
+## Unreleased
+
+- Apple companion packages now depend on `llamadart` and constrain it to the
+  core minor they pair with, so pub refuses a mismatched companion and core
+  instead of the iOS or macOS build failing. Apps that take `llamadart` from a
+  path or git checkout add it under `dependency_overrides`
+  ([#857](https://github.com/leehack/llamadart/issues/857)).
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`

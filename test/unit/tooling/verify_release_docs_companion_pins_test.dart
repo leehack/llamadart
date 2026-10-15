@@ -69,7 +69,7 @@ List<String> _releaseWorkflowContractProblems(String workflow) {
   }
 
   const validateStep = '- name: Validate release state';
-  const publishStep = '- name: Publish companion packages and core tag';
+  const publishStep = '- name: Publish core tag and companion packages';
   const releaseSecret =
       r'RELEASE_TOKEN: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}';
   final validateIndex = workflow.indexOf(validateStep);
@@ -180,7 +180,7 @@ void main() {
     const strictCommand =
         'dart run tool/testing/verify_release_docs_versions.dart '
         '--release-prep';
-    const publishStep = '- name: Publish companion packages and core tag';
+    const publishStep = '- name: Publish core tag and companion packages';
 
     expect(
       _releaseWorkflowContractProblems(

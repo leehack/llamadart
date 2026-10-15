@@ -135,6 +135,11 @@ analyze and the relevant tests before the final commit.
 - Before release prep or a change to current install snippets, run
   `dart run tool/testing/verify_release_docs_versions.dart`, then again with
   `--release-prep`; resolve pending companion bumps in the release-prep PR.
+- Apple companions constrain `llamadart` to the core minor
+  (`'>=M.m.0 <M.(m+1).0'`), so automation publishes the core before them. A
+  core minor bump re-releases every companion, and a companion native pin
+  moves only in a core minor release; the release docs verifier and
+  `tool/release/companion_pub_preflight.dart` enforce both.
 - Never push release tags by hand unless release automation is disabled,
   blocked or being repaired. Give each new release-sensitive path a
   `.github/CODEOWNERS` entry. Release work follows
