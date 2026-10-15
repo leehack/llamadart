@@ -35,11 +35,13 @@ compatible bridge assets for a given model.
   ```
 
   `require-corp` is the portable choice. `Cross-Origin-Embedder-Policy:
-  credentialless` isolates the page in Chromium-based browsers, but a macOS
-  WKWebView probe stayed unisolated with it
-  ([#1025](https://github.com/leehack/llamadart/issues/1025)). Without isolation
-  (`window.crossOriginIsolated === false`) the bridge caps inference at one
-  thread and records `threads_capped_no_coi` in its runtime notes.
+  credentialless` isolates the page in Chromium-based browsers. Do not rely on
+  it in Safari or other WebKit browsers: a macOS WKWebView probe reported
+  `crossOriginIsolated === false` with it, and Safari itself has not been
+  validated ([#1025](https://github.com/leehack/llamadart/issues/1025)).
+  Without isolation (`window.crossOriginIsolated === false`) the bridge caps
+  inference at one thread and records `threads_capped_no_coi` in its runtime
+  notes.
 
 A supported browser version does not guarantee that a GGUF loads with WebGPU
 offload; the GPU, driver, OS, flags and memory pressure all matter.
