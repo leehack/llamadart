@@ -259,9 +259,8 @@ Use this checklist in native sync PRs:
 Core `0.12.2` pairs with companions `llamadart_llama_cpp_flutter` `0.0.23`,
 `llamadart_litert_lm_flutter` `0.0.16` and
 `llamadart_stable_diffusion_flutter` `0.0.3`, whose SwiftPM pins are
-`v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`, respectively. The release-prep merge
-automation must publish any missing companion version before tagging core
-`0.12.2`; repository manifests alone do not prove pub.dev publication.
+`v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`, respectively. Repository manifests
+alone do not prove pub.dev publication.
 Companion `llamadart_llama_cpp_flutter` `0.0.22` pairs with core `0.12.1`
 and `0.12.0`. Companion `llamadart_litert_lm_flutter` `0.0.15` pairs with core
 `0.12.1`, `0.0.14` with core `0.12.0`, and `0.0.13` retains `v0.17.0-8` for
@@ -271,8 +270,20 @@ artifacts meet the declared 16.4 deployment floor, but runtime execution at
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version
-does not exist yet. That is expected before merge, but it must be resolved before
-tagging the next core `llamadart` release.
+does not exist yet. That is expected before merge, but it must be resolved by
+the next core `llamadart` release.
+
+Each companion constrains `llamadart` to the core's minor, so a sync that moves
+a companion's native pin ships in the next core minor release, not a patch.
+Every companion published for the current minor would otherwise still resolve
+beside the patch and fail its Apple build, unless the core hook keeps accepting
+its earlier pin. `verify_release_docs_versions.dart --release-prep` enforces
+this from the published companion tags.
+
+Companion versions share the core's `MAJOR.MINOR` and move only their patch
+independently, so a core minor release sets every companion to `M.m.0` and a
+companion change within a minor bumps its patch. The release docs verifier
+fails on a mismatch from core `0.13.0` on.
 
 For every companion package whose `pubspec.yaml` version changed, or whose
 version is newly referenced by current install docs:
@@ -282,18 +293,18 @@ version is newly referenced by current install docs:
 2. Merge the sync/release-prep PR first. The PR itself must not publish the
    companion or core package.
 3. After merge, `release_on_prep_merge.yml` uses the release-prep PR merge as
-   the publishing approval boundary and pushes each missing package-specific
-   companion tag:
+   the publishing approval boundary, pushes the core `vX.Y.Z` release tag and
+   waits for that core on pub.dev, because each companion's `llamadart`
+   constraint must resolve there.
+4. The automation then pushes each missing package-specific companion tag:
    `llamadart_llama_cpp_flutter-v{{version}}`,
    `llamadart_litert_lm_flutter-v{{version}}` or
    `llamadart_stable_diffusion_flutter-v{{version}}`. A package's first
    version must already be published by hand; see
    [Release workflow](./release-workflow).
-4. Wait for `publish_companion_pubdev.yml` to pass.
-5. Verify the version URL on pub.dev, for example
+5. Wait for `publish_companion_pubdev.yml` to pass.
+6. Verify the version URL on pub.dev, for example
    `https://pub.dev/api/packages/llamadart_llama_cpp_flutter/versions/{{version}}`.
-6. Only after the companion version is live, the automation pushes the core
-   `vX.Y.Z` release tag that documents or depends on that companion version.
 
 ## Web bridge asset sync flow
 

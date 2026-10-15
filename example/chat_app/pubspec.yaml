@@ -50,6 +50,13 @@ dev_dependencies:
   test: ^1.26.3
 
   ffi: any
+
+# The companion packages depend on hosted llamadart; pin the whole graph to
+# this checkout.
+dependency_overrides:
+  llamadart:
+    path: ../..
+
 flutter:
   uses-material-design: true
 

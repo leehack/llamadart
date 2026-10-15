@@ -96,28 +96,43 @@ jobs:
           # the previous tag or be skipped as an already-published version.
           dart run tool/testing/verify_release_docs_versions.dart --release-prep
 
-          # Automated publishing cannot create a pub.dev package, so a new
-          # companion's tag would never publish and the core tag would never
-          # be pushed. Stop here, before any tag, with the first-publish steps.
+          # Automated publishing cannot create a pub.dev package, and skips a
+          # companion version that is already published, so a new companion
+          # or an unbumped constraint change would fail or vanish after the
+          # core shipped. Stop here, before any tag.
           dart run tool/release/companion_pub_preflight.dart
 
           core_tag="v$version"
-          if git ls-remote --exit-code --tags origin "refs/tags/$core_tag" >/dev/null 2>&1; then
-            echo "Release tag $core_tag already exists. Refusing to publish again." >&2
-            exit 1
+          release_sha="$(git rev-parse HEAD)"
+          # Companions publish after the core they constrain, so a rerun after
+          # a failed companion finds the core tag it pushed. Resume only at the
+          # same commit.
+          core_tag_sha="$(
+            git ls-remote --tags origin "refs/tags/$core_tag" "refs/tags/$core_tag^{}" |
+              awk 'END {print $1}'
+          )"
+          core_tag_exists=false
+          if [[ -n "$core_tag_sha" ]]; then
+            if [[ "$core_tag_sha" != "$release_sha" ]]; then
+              echo "Release tag $core_tag already exists at $core_tag_sha, not $release_sha. Refusing to publish again." >&2
+              exit 1
+            fi
+            core_tag_exists=true
+            echo "Release tag $core_tag already points at $release_sha; resuming companion publication."
           fi
 
-          release_sha="$(git rev-parse HEAD)"
           {
             echo "version=$version"
             echo "core_tag=$core_tag"
+            echo "core_tag_exists=$core_tag_exists"
             echo "release_sha=$release_sha"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Publish companion packages and core tag
+      - name: Publish core tag and companion packages
         if: steps.gate.outputs.should_release == 'true'
         env:
           CORE_TAG: ${{ steps.release.outputs.core_tag }}
+          CORE_TAG_EXISTS: ${{ steps.release.outputs.core_tag_exists }}
           CORE_VERSION: ${{ steps.release.outputs.version }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
@@ -157,15 +172,18 @@ jobs:
               >/dev/null
           }
 
+          # Wait on the package listing, not the version URL: pub resolves a
+          # companion's llamadart constraint from the listing.
           wait_for_pub_version() {
             local package_name="$1"
             local package_version="$2"
-            local version_url="https://pub.dev/api/packages/$package_name/versions/$package_version"
+            local package_url="https://pub.dev/api/packages/$package_name"
             local attempts="$PUBDEV_WAIT_ATTEMPTS"
             local interval_seconds="$PUBDEV_WAIT_INTERVAL_SECONDS"
 
             for attempt in $(seq 1 "$attempts"); do
-              if curl -fsSL "$version_url" >/dev/null; then
+              if curl -fsSL --max-time 30 "$package_url" |
+                jq -e --arg version "$package_version" 'any(.versions[]; .version == $version)' >/dev/null; then
                 echo "$package_name $package_version is live on pub.dev."
                 return 0
               fi
@@ -195,6 +213,13 @@ jobs:
             exit 1
           }
 
+          if [[ "$CORE_TAG_EXISTS" == "true" ]]; then
+            echo "$CORE_TAG already points at $RELEASE_SHA."
+          else
+            push_tag "$CORE_TAG"
+          fi
+          wait_for_pub_version "llamadart" "$CORE_VERSION"
+
           companion_paths=(
             packages/llamadart_llama_cpp_flutter
             packages/llamadart_litert_lm_flutter
@@ -209,7 +234,7 @@ jobs:
               exit 1
             fi
 
-            if curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version" >/dev/null; then
+            if curl -fsSL --max-time 30 "https://pub.dev/api/packages/$package_name/versions/$package_version" >/dev/null; then
               echo "$package_name $package_version already exists on pub.dev."
               continue
             fi
@@ -217,7 +242,8 @@ jobs:
             companion_tag="$package_name-v$package_version"
             if git ls-remote --exit-code --tags origin "refs/tags/$companion_tag" >/dev/null 2>&1; then
               echo "$companion_tag already exists, but $package_name $package_version is missing on pub.dev." >&2
-              echo "Inspect publish_companion_pubdev.yml before retrying the core release." >&2
+              echo "If its publish_companion_pubdev.yml run failed transiently, rerun that run, wait for $package_name $package_version on pub.dev, then rerun this workflow." >&2
+              echo "If the cause is in the repository, this commit cannot publish $package_name $package_version: fix it in a new release-prep PR that bumps the core version and $package_name's patch version." >&2
               exit 1
             fi
 
@@ -225,6 +251,4 @@ jobs:
             wait_for_pub_version "$package_name" "$package_version"
           done
 
-          push_tag "$CORE_TAG"
-          wait_for_pub_version "llamadart" "$CORE_VERSION"
           wait_for_github_release "$CORE_TAG"

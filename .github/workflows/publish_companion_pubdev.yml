@@ -110,6 +110,9 @@ jobs:
       - uses: flutter-actions/setup-flutter@6e2468fd827c4a7337cd4b835a6049b78bc0bd1f
         if: steps.publish.outputs.should_publish == 'true'
 
+      # Without the checkout's pubspec_overrides.yaml, pub resolves the
+      # companion's llamadart constraint against pub.dev, so this publishes
+      # only once release_on_prep_merge.yml has published that core.
       - name: Prepare package
         if: steps.publish.outputs.should_publish == 'true'
         env:
@@ -121,6 +124,7 @@ jobs:
             --exclude='.dart_tool' \
             --exclude='build' \
             --exclude='pubspec.lock' \
+            --exclude='pubspec_overrides.yaml' \
             "$PACKAGE_PATH/" "$RUNNER_TEMP/pub-package/"
 
       - name: Install dependencies

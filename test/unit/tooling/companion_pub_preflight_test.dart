@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -9,7 +10,7 @@ import '../../../tool/release/companion_pub_preflight.dart';
 
 const _preflightCommand = 'dart run tool/release/companion_pub_preflight.dart';
 const _validateStep = '- name: Validate release state';
-const _publishStep = '- name: Publish companion packages and core tag';
+const _publishStep = '- name: Publish core tag and companion packages';
 
 /// Why [workflow] could push a release tag before the companion preflight.
 List<String> _preflightContractProblems(String workflow) {
@@ -41,6 +42,99 @@ List<String> _preflightContractProblems(String workflow) {
   }
   return problems;
 }
+
+/// Why [workflow] could publish a companion before the core it constrains.
+List<String> _publishOrderProblems(String workflow) {
+  final problems = <String>[];
+  final publish = workflow.indexOf(_publishStep);
+  if (publish == -1) return ['the publication step is missing'];
+  final step = workflow.substring(publish);
+  final corePush = RegExp(
+    r'^\s+push_tag "\$CORE_TAG"\s*$',
+    multiLine: true,
+  ).allMatches(step).toList();
+  final coreWait = RegExp(
+    r'^\s+wait_for_pub_version "llamadart" "\$CORE_VERSION"\s*$',
+    multiLine: true,
+  ).allMatches(step).toList();
+  final companionPush = RegExp(
+    r'^\s+push_tag "\$companion_tag"\s*$',
+    multiLine: true,
+  ).allMatches(step).toList();
+  if (corePush.length != 1 ||
+      coreWait.length != 1 ||
+      companionPush.length != 1) {
+    problems.add(
+      'expected one core tag push, one core pub.dev wait and one companion '
+      'tag push',
+    );
+    return problems;
+  }
+  if (!(corePush.single.start < coreWait.single.start &&
+      coreWait.single.start < companionPush.single.start)) {
+    problems.add(
+      'companions must publish only after the core they constrain is on '
+      'pub.dev',
+    );
+  }
+  final listingWait = RegExp(
+    r'local package_url="https://pub\.dev/api/packages/\$package_name"\s*$'
+    r'[\s\S]*?curl -fsSL --max-time [0-9]+ "\$package_url" \|\s*'
+    r'jq -e --arg version "\$package_version" '
+    "'any\\(\\.versions\\[\\]; \\.version == \\\$version\\)'",
+    multiLine: true,
+  );
+  if (!listingWait.hasMatch(step)) {
+    problems.add('pub.dev waits must read the package listing pub resolves');
+  }
+  if (!workflow.contains(
+    'if [[ "\$core_tag_sha" != "\$release_sha" ]]; then',
+  )) {
+    problems.add('a rerun must refuse a core tag at another commit');
+  }
+  return problems;
+}
+
+typedef _Fetch = Future<PubDevResponse> Function(Uri uri);
+
+/// A repo holding one companion pubspec at [version] constraining core to
+/// [core], or declaring no core dependency when [core] is null.
+({Directory root, List<CompanionPackage> companions}) _repo({
+  String version = '0.0.24',
+  String? core = "'>=0.13.0 <0.14.0'",
+}) {
+  final root = Directory.systemTemp.createTempSync('companion_preflight_');
+  addTearDown(() => root.deleteSync(recursive: true));
+  const companion = (
+    name: 'llamadart_llama_cpp_flutter',
+    path: 'packages/llamadart_llama_cpp_flutter',
+  );
+  File('${root.path}/${companion.path}/pubspec.yaml')
+    ..parent.createSync(recursive: true)
+    ..writeAsStringSync(
+      'name: ${companion.name}\nversion: $version\ndependencies:\n'
+      '  flutter:\n    sdk: flutter\n'
+      '${core == null ? '' : '  llamadart: $core\n'}',
+    );
+  return (root: root, companions: [companion]);
+}
+
+_Fetch _published(Object? core, {List<Uri>? asked}) => (uri) async {
+  asked?.add(uri);
+  return (
+    status: HttpStatus.ok,
+    body: jsonEncode({
+      'version': '0.0.24',
+      'pubspec': {
+        'name': 'llamadart_llama_cpp_flutter',
+        'dependencies': {
+          'flutter': {'sdk': 'flutter'},
+          'llamadart': ?core,
+        },
+      },
+    }),
+  );
+};
 
 void main() {
   final companions = discoverAppleCompanionPackages(Directory.current);
@@ -114,10 +208,190 @@ void main() {
     expect(problems, [contains('offline'), contains('HTTP 503')]);
   });
 
+  group('companionPublishedConstraintProblems', () {
+    test('an unpublished version passes', () async {
+      final repo = _repo();
+      final asked = <Uri>[];
+
+      final problems = await companionPublishedConstraintProblems(
+        repo.root,
+        repo.companions,
+        (uri) async {
+          asked.add(uri);
+          return (status: HttpStatus.notFound, body: '');
+        },
+      );
+
+      expect(problems, isEmpty);
+      expect(asked, [
+        Uri.parse(
+          'https://pub.dev/api/packages/llamadart_llama_cpp_flutter/'
+          'versions/0.0.24',
+        ),
+      ]);
+    });
+
+    test('a published version with the same constraint passes', () async {
+      final repo = _repo();
+
+      expect(
+        await companionPublishedConstraintProblems(
+          repo.root,
+          repo.companions,
+          _published('>=0.13.0 <0.14.0'),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a published version with no constraint, like the checkout, '
+        'passes', () async {
+      final repo = _repo(core: null);
+
+      expect(
+        await companionPublishedConstraintProblems(
+          repo.root,
+          repo.companions,
+          _published(null),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a constraint changed without a version bump fails', () async {
+      for (final published in <Object?>[
+        null,
+        '>=0.12.2 <0.13.0',
+        {'path': '../..'},
+      ]) {
+        final repo = _repo();
+
+        final problems = await companionPublishedConstraintProblems(
+          repo.root,
+          repo.companions,
+          _published(published),
+        );
+
+        expect(problems, [
+          allOf(
+            startsWith(
+              'llamadart_llama_cpp_flutter 0.0.24 is already on pub.dev '
+              'with `llamadart: ${published ?? '<none>'}`',
+            ),
+            contains('declares `llamadart: >=0.13.0 <0.14.0`'),
+            contains('bump llamadart_llama_cpp_flutter past 0.0.24'),
+            contains('No release tags were pushed.'),
+          ),
+        ], reason: '$published');
+      }
+    });
+
+    test('an unconfirmed version fails closed', () async {
+      for (final fetch in <_Fetch>[
+        (uri) async => throw const SocketException('offline'),
+        (uri) async => (status: HttpStatus.serviceUnavailable, body: ''),
+        (uri) async => (status: HttpStatus.ok, body: '{"version":"0.0.24"}'),
+        (uri) async => (status: HttpStatus.ok, body: 'not json'),
+      ]) {
+        final repo = _repo();
+
+        expect(
+          await companionPublishedConstraintProblems(
+            repo.root,
+            repo.companions,
+            fetch,
+          ),
+          [contains('0.0.24')],
+        );
+      }
+    });
+
+    test('a pubspec without a version fails', () async {
+      final repo = _repo();
+      File(
+        '${repo.root.path}/${repo.companions.single.path}/pubspec.yaml',
+      ).writeAsStringSync('name: llamadart_llama_cpp_flutter\n');
+
+      expect(
+        await companionPublishedConstraintProblems(
+          repo.root,
+          repo.companions,
+          _published(null),
+        ),
+        [contains('does not declare a version')],
+      );
+    });
+  });
+
+  test('the first-publish steps resolve core from pub.dev', () {
+    final steps = firstPublishInstructions(companions.first);
+
+    expect(steps, contains("--exclude='pubspec_overrides.yaml'"));
+    expect(steps, contains('already released'));
+  });
+
+  test('the preflight CLI runs the published-constraint check', () {
+    final source = File(
+      'tool/release/companion_pub_preflight.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final wired = RegExp(
+      r'final problems = \[[\s\S]*?\.\.\.await '
+      r'companionPublishedConstraintProblems\(\s*Directory\.current,\s*'
+      r'companions,\s*_httpGet,?\s*\),[\s\S]*?\];\s*'
+      r'if \(problems\.isNotEmpty\) \{',
+    );
+
+    expect(wired.hasMatch(source), isTrue);
+    expect(
+      wired.hasMatch(
+        source.replaceFirst(
+          'companionPublishedConstraintProblems(\n      Directory.current,',
+          'companionPublishedConstraintProblems(\n      Directory.systemTemp,',
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('the release workflow publishes the core before any companion', () {
+    final workflow = File(
+      '.github/workflows/release_on_prep_merge.yml',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+
+    expect(_publishOrderProblems(workflow), isEmpty);
+  });
+
+  test('the publish-order contract rejects companions first', () {
+    final workflow = File(
+      '.github/workflows/release_on_prep_merge.yml',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    const coreBlock =
+        '          wait_for_pub_version "llamadart" "\$CORE_VERSION"\n';
+    const companionWait =
+        '            wait_for_pub_version "\$package_name" "\$package_version"\n'
+        '          done\n';
+
+    for (final mutated in [
+      workflow
+          .replaceFirst(coreBlock, '')
+          .replaceFirst(companionWait, '$companionWait$coreBlock'),
+      workflow.replaceFirst(
+        'curl -fsSL --max-time 30 "\$package_url" |',
+        'curl -fsSL --max-time 30 "\$package_url/versions/\$package_version" |',
+      ),
+      workflow.replaceFirst(
+        'if [[ "\$core_tag_sha" != "\$release_sha" ]]; then',
+        'if false; then',
+      ),
+    ]) {
+      expect(_publishOrderProblems(mutated), isNotEmpty);
+    }
+  });
+
   test('the release workflow runs the preflight before any tag push', () {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(_preflightContractProblems(workflow), isEmpty);
   });
@@ -125,7 +399,7 @@ void main() {
   test('the preflight contract rejects deletion, bypass and late runs', () {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     for (final mutated in [
       workflow.replaceFirst(_preflightCommand, ''),

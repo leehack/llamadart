@@ -201,6 +201,9 @@ jobs:
             exit 1
           fi
 
+      # A release-prep PR constrains companions to a core version that is not
+      # on pub.dev until after merge, so resolve llamadart from this checkout.
+      # The real publish resolves it from pub.dev, after the core publishes.
       - name: Publish dry-run
         working-directory: ${{ matrix.package }}
         run: |
@@ -211,7 +214,10 @@ jobs:
             --exclude='.dart_tool' \
             --exclude='build' \
             --exclude='pubspec.lock' \
+            --exclude='pubspec_overrides.yaml' \
             ./ "$tmp_package/"
+          printf 'dependency_overrides:\n  llamadart:\n    path: %s\n' \
+            "$GITHUB_WORKSPACE" > "$tmp_package/pubspec_overrides.yaml"
           (cd "$tmp_package" && flutter pub publish --dry-run)
 
   docs-check:

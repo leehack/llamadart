@@ -1,3 +1,9 @@
+## Unreleased
+
+* Depends on `llamadart` within the core minor this companion pairs with,
+  so pub refuses to resolve it beside a mismatched core. The Apple SwiftPM
+  native pin stays `leehack/stable-diffusion-native@v0.2.0-3`.
+
 ## 0.0.3
 
 * Updated Apple SwiftPM native pin to `leehack/stable-diffusion-native@v0.2.0-3`.

@@ -57,6 +57,30 @@ dependencies:
   llamadart_stable_diffusion_flutter: ^0.0.3 # Apple image generation, opt-in
 ```
 
+Companion versions released with core `0.13.0` and later share its
+`MAJOR.MINOR`, depend on `llamadart`, and constrain it to that core minor, so
+pub refuses a mismatched pair instead of the Apple build failing. Companion
+patch versions move independently of the core's.
+
+The companions depend on the hosted `llamadart`, and pub ignores a
+dependency's own `pubspec_overrides.yaml`. An app that takes `llamadart` from
+git or a path, for example with a companion from the same checkout, therefore
+repeats that `llamadart` source under its own `dependency_overrides`:
+
+```yaml
+dependencies:
+  llamadart:
+    git: https://github.com/leehack/llamadart.git
+  llamadart_llama_cpp_flutter:
+    git:
+      url: https://github.com/leehack/llamadart.git
+      path: packages/llamadart_llama_cpp_flutter
+
+dependency_overrides:
+  llamadart:
+    git: https://github.com/leehack/llamadart.git
+```
+
 Pair companion `0.0.23` with core `0.12.2`; keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
