@@ -139,11 +139,12 @@ LlamaUnsupportedException? liteRtLmUnsupportedAbiException(Abi abi) {
   );
 }
 
-/// Test-only ABI that the macOS x86_64 LiteRT-LM gate checks instead of
-/// [Abi.current].
+/// Test-only ABI that the macOS x86_64 LiteRT-LM gate and the desktop
+/// backend defaults check instead of [Abi.current].
 Abi? debugLiteRtLmAbiOverride;
 
-/// The ABI the macOS x86_64 LiteRT-LM gate checks.
+/// The ABI the macOS x86_64 LiteRT-LM gate and the desktop backend defaults
+/// check.
 Abi liteRtLmGateAbi() => debugLiteRtLmAbiOverride ?? Abi.current();
 
 /// Internal helper used by the LiteRT-LM runtime to locate extracted macOS

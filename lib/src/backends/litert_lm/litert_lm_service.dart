@@ -1307,6 +1307,7 @@ class LiteRtLmService {
         );
       }
       final backend = _deviceBackendName(device)!;
+      liteRtLmEnsureNativeBackendSupported(backend);
       final available = getAvailableBackendInfo();
       if (!available.contains(backend)) {
         throw LlamaUnsupportedException(
@@ -1320,6 +1321,7 @@ class LiteRtLmService {
     final backend =
         normalizeLiteRtLmNativeBackendOverride(backendOverride) ??
         _backendNameFor(params);
+    liteRtLmEnsureNativeBackendSupported(backend);
     final available = getAvailableBackendInfo();
     if (!available.contains(backend)) {
       throw ArgumentError(
@@ -1439,6 +1441,7 @@ class LiteRtLmService {
       return;
     }
 
+    liteRtLmEnsureNativeBackendSupported(requestedBackend);
     final available = getAvailableBackendInfo();
     if (!available.contains(requestedBackend)) {
       throw ArgumentError(

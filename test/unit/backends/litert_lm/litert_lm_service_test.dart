@@ -1310,6 +1310,109 @@ void main() {
     }
   });
 
+  group('macOS ABI GPU selection', () {
+    void runOn(Abi abi) {
+      debugLiteRtLmAbiOverride = abi;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+    }
+
+    final macOsX64Gpu = throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        contains('LiteRT-LM GPU is not available on macOS x86_64'),
+      ),
+    );
+
+    test('macOS arm64 auto selection loads GPU', () async {
+      runOn(Abi.macosArm64);
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        expect(service.getGpuSupport(), isTrue);
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+        expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+        service.freeModel(model);
+
+        await service.loadModel(
+          modelFile.path,
+          const ModelParams(device: ComputeDevice.gpu),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('macOS x86_64 auto selection loads CPU', () async {
+      runOn(Abi.macosX64);
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        expect(service.getGpuSupport(), isFalse);
+        expect(service.getAvailableBackendInfo(), const ['cpu']);
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        expect(service.getResolvedGpuLayers(), 0);
+        service.freeModel(model);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('macOS x86_64 GPU requests throw LlamaUnsupportedException', () async {
+      runOn(Abi.macosX64);
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        for (final params in const [
+          ModelParams(device: ComputeDevice.gpu),
+          ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+          ModelParams(preferredBackend: GpuBackend.metal),
+        ]) {
+          await expectLater(
+            service.loadModel(modelFile.path, params),
+            macOsX64Gpu,
+            reason: '$params',
+          );
+        }
+        await expectLater(
+          service.loadModel(
+            modelFile.path,
+            const ModelParams(),
+            backendOverride: 'gpu',
+          ),
+          macOsX64Gpu,
+        );
+
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(device: ComputeDevice.cpu),
+        );
+        expect(
+          () => service.createContext(
+            model,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          macOsX64Gpu,
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+  });
+
   group('ModelParams.device', () {
     Matcher unsupported(List<String> parts) => throwsA(
       isA<LlamaUnsupportedException>().having(
