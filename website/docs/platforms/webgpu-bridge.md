@@ -234,8 +234,9 @@ The feature-by-runtime table is in the
 - The runtime fetches the model and projector itself. `ModelSource.parse`
   takes a remote `https://` URL; a `ModelSource.path` is a URL relative to the
   document, or a `blob:` URL. `download` must stay at its defaults, and
-  `onProgress` reports only the model's fetch, as a fraction that ends at 0.5
-  when there is a projector.
+  `onProgress` reports a fraction from 0 to 1: with a projector, the model
+  fetch fills the first half and progress reaches 1 once the projector has
+  loaded.
 - `LlamaEngine.scoreNextToken(...)` needs bridge assets `v0.1.52+`; older
   assets report `supportsNextTokenScoring == false`.
 

@@ -57,6 +57,11 @@ For canonical full release notes, use:
   JSON Schema objects, including `responseFormat` schemas, no longer accept a
   declared property through the extra-property slot unless their declared
   names exceed the grammar's size budget.
+- **Behavior change:** on Web, `SpeechToTextEngine.load`,
+  `TextToSpeechEngine.load` and `LlamaEngine.setModel` with a projector now
+  report progress from 0 to 1, as `DecisionEngine.load` does: the model fetch
+  fills the first half and progress reaches 1 once the files have loaded,
+  before any capability check ([#903](https://github.com/leehack/llamadart/issues/903)).
 
 ## 0.12.2
 

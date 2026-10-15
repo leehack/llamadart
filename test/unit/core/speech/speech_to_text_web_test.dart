@@ -323,7 +323,7 @@ void main() {
 
     expect(backend.modelUrl, 'https://example.com/qwen3-asr.gguf');
     expect(backend.projectorUrl, 'https://example.com/qwen3-asr-mmproj.gguf');
-    expect([for (final p in progress) p.fraction], [0.25, 0.5]);
+    expect([for (final p in progress) p.fraction], [0.25, 0.5, 1.0]);
 
     final result = await recognizer.transcribeOnce(
       SpeechToTextRequest(

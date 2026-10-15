@@ -213,8 +213,9 @@ throws `LlamaStateException`.
 On web the runtime fetches each file itself: `.gguf` URLs load through the
 llama.cpp WebGPU bridge and `.litertlm` URLs through LiteRT-LM JS. A
 `ModelSource.path` is a URL relative to the document, or a `blob:` URL;
-`download` must stay at its defaults, and `onProgress` reports only the
-model's fetch, as a fraction that ends at 0.5 when there is a projector.
+`download` must stay at its defaults, and `onProgress` reports a fraction from
+0 to 1: with a projector, the model fetch fills the first half and progress
+reaches 1 once the projector has loaded.
 
 Revisions, private repositories, progress UI, checksums and cache location:
 [Download and cache models](./model-downloads).

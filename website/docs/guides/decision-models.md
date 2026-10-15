@@ -481,8 +481,7 @@ LiteRT-LM Web models report unsupported too.
   the document base URL, so a `<base href>` applies; a `blob:` URL also goes
   in `ModelSource.path`. `download:` must keep every option at its default,
   since the browser owns the fetch and cache, and `onProgress` reports only the
-  encoder fetch, as a fraction from 0 to 1 (`attach` reports none). Speech
-  `load` reports its model fetch from 0 to 0.5 instead.
+  encoder fetch, as a fraction from 0 to 1 (`attach` reports none).
 - The bridge downloads the head into its in-memory file system, so peak memory
   includes the whole head file. The page fetches the config and passes its
   text to the bridge; a config that cannot be fetched throws
