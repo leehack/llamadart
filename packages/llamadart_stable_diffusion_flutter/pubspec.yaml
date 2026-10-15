@@ -1,6 +1,6 @@
 name: llamadart_stable_diffusion_flutter
 description: Flutter Apple SwiftPM runtime companion package for llamadart stable-diffusion.cpp image generation.
-version: 0.0.3
+version: 0.13.0
 repository: https://github.com/leehack/llamadart/tree/main/packages/llamadart_stable_diffusion_flutter
 homepage: https://github.com/leehack/llamadart
 issue_tracker: https://github.com/leehack/llamadart/issues
@@ -17,7 +17,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  llamadart: '>=0.12.2 <0.13.0'
+  llamadart: '>=0.13.0 <0.14.0'
 
 dev_dependencies:
   flutter_test:

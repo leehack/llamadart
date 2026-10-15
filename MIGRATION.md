@@ -2,6 +2,33 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.12.x` -> `0.13.0`: companion versions and LiteRT-LM cache cap
+
+Apple companions now share the core `MAJOR.MINOR` and constrain `llamadart`
+to it, so upgrade every companion the app uses together with the core:
+
+```yaml
+dependencies:
+  llamadart: ^0.13.0
+  llamadart_llama_cpp_flutter: ^0.13.0
+  llamadart_litert_lm_flutter: ^0.13.0
+  llamadart_stable_diffusion_flutter: ^0.13.0
+```
+
+The native pins are unchanged from `0.12.2`. An app that takes `llamadart`
+from a path or git checkout repeats that source under `dependency_overrides`.
+
+LiteRT-LM now caps each cache directory's GPU program cache files at 1 GiB by
+default, so the first engine create after upgrading may delete files from an
+existing oversized cache, and the runtime recompiles them when needed. Set
+`ModelParams.liteRtLmMaxProgramCacheBytes` to a larger value, or to
+`ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) to keep every file.
+An explicit cap now bounds the directory total instead of each file.
+
+`ToolParam` tool grammars are stricter, and PEG parse failures throw
+`LlamaInferenceException` instead of `StateError`; see the `0.13.0` entry in
+`CHANGELOG.md`.
+
 ## `0.12.1` -> `0.12.2`: Apple companion pins
 
 Upgrade the Apple companions the app uses together with the core package:

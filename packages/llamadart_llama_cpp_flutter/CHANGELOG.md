@@ -1,5 +1,7 @@
-## Unreleased
+## 0.13.0
 
+* Versions now share the core `MAJOR.MINOR`; this release pairs with core
+  `0.13.0`.
 * Depends on `llamadart` within the core minor this companion pairs with,
   so pub refuses to resolve it beside a mismatched core. The Apple SwiftPM
   native pin stays `leehack/llamadart-native@v0.6.0-3`.

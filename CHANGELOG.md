@@ -1,82 +1,79 @@
-## Unreleased
+## 0.13.0
 
-- With `llamadart_litert_lm_flutter` `0.0.15`, the Flutter macOS build now
-  only warns to upgrade the companion to `0.0.16`, the release pinning
-  `v0.18.0-1`, instead of claiming that the app cannot load LiteRT-LM and needs
-  the build phase; the app already loads the companion's runtime from its
-  bundle ([#1064](https://github.com/leehack/llamadart/issues/1064)).
-- A chat template that fails to render now names its source in the
-  `LlamaInferenceException` message: the model's `tokenizer.chat_template`
-  or its `tool_use` variant, `ModelParams.chatTemplate`, or `customTemplate`
-  ([#820](https://github.com/leehack/llamadart/issues/820)).
-- A `ToolChoice.required` reply cut short by a cancel, or by `maxTokens` on
-  a backend that reports a token limit, no longer throws a raw
-  `StateError`; it ends with `stop` or `length` and no tool calls, as with
-  `ToolChoice.auto`. **Behavior change:** other output a PEG parser cannot
-  parse, including in `ChatTemplateEngine.parse`, throws
-  `LlamaInferenceException` instead of `StateError`
-  ([#890](https://github.com/leehack/llamadart/issues/890)).
-- The image model memory check now treats a GPU that reports 0 bytes free,
-  as a Vulkan driver does once the process is over its memory budget, as
-  having no free GPU memory instead of all of it: loads warn that generation
-  will be slower and, on Linux, are refused above system memory alone
-  ([#980](https://github.com/leehack/llamadart/issues/980)).
-- On native llama.cpp, a runtime that lacks an mtmd function, with no
-  complete fallback mtmd library, fails image and audio requests with
-  `LlamaUnsupportedException` naming the function and the pinned runtime,
-  where they failed with `LlamaInferenceException`. `supportsVision` on the
-  backend throws it too, as `supportsAudio` does, instead of returning false
-  ([#640](https://github.com/leehack/llamadart/issues/640)).
-- `LlamaEngine.getPerformanceContext()` returns null after a generation that
-  was cancelled before it reached the backend, instead of the counters of the
-  request before it
-  ([#677](https://github.com/leehack/llamadart/issues/677)).
-- On macOS x86_64, where LiteRT-LM has no runtime, a LiteRT-LM GPU request
-  now fails up front with `LlamaUnsupportedException`, and LiteRT-LM is no
-  longer reported or selected as GPU there
-  ([#711](https://github.com/leehack/llamadart/issues/711)).
-- `WebGpuLlamaBackend(bridgeScriptUrl: ...)` now loads the bridge in dart2js
-  builds instead of failing with `WebGPU bridge init failed`
-  ([#735](https://github.com/leehack/llamadart/issues/735)).
-- An attached `SpeechToTextEngine` whose `LlamaEngine` was disposed now
-  reports the disposed engine, instead of asking to load a model
-  ([#924](https://github.com/leehack/llamadart/issues/924)).
-- A `ModelLoadOptions.sha256` mismatch in `ImageGenerationEngine.load` names
-  the main file by position, not by its local path or URL
-  ([#907](https://github.com/leehack/llamadart/issues/907)).
-- Add `ToolDefinition.fromJsonSchema` for owned, validated tool input schemas,
-  with explicit errors for unsupported constraints, formats and runtimes.
-- **Behavior change:** Existing `ToolParam` tool grammars are stricter. GLM-4.5,
-  Laguna and Hunyuan V3 integer parameters reject fractional values and
-  `ToolParam.nullType` parameters accept only `null`; Gemma 2/3 multi-tool
-  grammars require the `{"tool_call": ...}` wrapper around every tool. Open
-  JSON Schema objects, including `responseFormat` schemas, no longer accept a
-  declared property through the extra-property slot unless their declared
-  names exceed the grammar's size budget.
-- **Behavior change:** on Web, `SpeechToTextEngine.load`,
-  `TextToSpeechEngine.load` and `LlamaEngine.setModel` with a projector now
-  report progress from 0 to 1, as `DecisionEngine.load` does: the model fetch
-  fills the first half and progress reaches 1 once the files have loaded,
-  before any capability check ([#903](https://github.com/leehack/llamadart/issues/903)).
-- Apple companion packages now depend on `llamadart` and constrain it to the
-  core minor they pair with, so pub refuses a mismatched companion and core
+- Pair this release with Apple companions `llamadart_llama_cpp_flutter`,
+  `llamadart_litert_lm_flutter` and `llamadart_stable_diffusion_flutter`
+  `0.13.0`, which link native runtimes `v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`,
+  respectively.
+
+- **Behavior change:** Apple companion versions now share the core
+  `MAJOR.MINOR`, starting at `0.13.0`, with independent patch versions. Each
+  companion depends on `llamadart` within its core minor
+  (`'>=0.13.0 <0.14.0'`), so pub refuses a mismatched companion and core
   instead of the iOS or macOS build failing. Apps that take `llamadart` from a
   path or git checkout add it under `dependency_overrides`
   ([#857](https://github.com/leehack/llamadart/issues/857)).
-- From core `0.13.0`, Apple companion versions share the core `MAJOR.MINOR`,
-  starting with companions `0.13.0`; their patch versions move independently.
-- **Behavior change:** LiteRT-LM now caps the GPU program cache files of each
-  cache directory at 1 GiB by default
-  ([#552](https://github.com/leehack/llamadart/issues/552)). Before each
-  engine create, `ModelParams.liteRtLmMaxProgramCacheBytes: null` prunes to
-  `ModelParams.defaultLiteRtLmMaxProgramCacheBytes`, where it deleted nothing,
-  and an explicit cap now bounds the directory's total, least recently
-  modified files first, where it bounded each file. Pass a larger value to
-  raise the cap, or `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) to
-  keep every file. Engines sharing a cache directory, in one process or
-  several, no longer delete the program caches of a model another one is
-  running, and `liteRtLmCacheDir: ':nocache'` no longer creates a `:nocache`
-  directory, which failed the load on Windows.
+- **Behavior change:** LiteRT-LM caps each cache directory's GPU program cache
+  files at 1 GiB by default
+  (`ModelParams.defaultLiteRtLmMaxProgramCacheBytes`), pruning least recently
+  modified files first before each engine create, so an existing oversized
+  cache is pruned on the first create after upgrading. An explicit
+  `liteRtLmMaxProgramCacheBytes` now bounds the directory total instead of
+  each file; pass `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) to
+  keep every file. Engines sharing a cache directory no longer delete the
+  program caches of a model another one is running, and
+  `liteRtLmCacheDir: ':nocache'` no longer creates a directory, which failed
+  the load on Windows ([#552](https://github.com/leehack/llamadart/issues/552)).
+- Add `ToolDefinition.fromJsonSchema` for owned, validated tool input schemas,
+  with explicit errors for unsupported constraints, formats and runtimes
+  ([#1007](https://github.com/leehack/llamadart/issues/1007)).
+- **Behavior change:** `ToolParam` tool grammars are stricter: GLM-4.5, Laguna
+  and Hunyuan V3 integer parameters reject fractions, `ToolParam.nullType`
+  accepts only `null`, and Gemma 2/3 multi-tool grammars require the
+  `{"tool_call": ...}` wrapper. Open JSON Schema objects, including
+  `responseFormat` schemas, no longer accept a declared property through the
+  extra-property slot unless the declared names exceed the grammar size budget.
+- **Behavior change:** a `ToolChoice.required` reply cut short by a cancel or
+  `maxTokens` ends with `stop` or `length` and no tool calls instead of
+  throwing `StateError`; other output a PEG parser cannot parse, including in
+  `ChatTemplateEngine.parse`, throws `LlamaInferenceException`
+  ([#890](https://github.com/leehack/llamadart/issues/890)).
+- **Behavior change:** on native llama.cpp, a runtime missing an mtmd function
+  fails image and audio requests, and `supportsVision`, with
+  `LlamaUnsupportedException` naming the function and pinned runtime
+  ([#640](https://github.com/leehack/llamadart/issues/640)).
+- **Behavior change:** on Web, `SpeechToTextEngine.load`,
+  `TextToSpeechEngine.load` and `LlamaEngine.setModel` with a projector report
+  progress from 0 to 1, as `DecisionEngine.load` does
+  ([#903](https://github.com/leehack/llamadart/issues/903)).
+- On macOS x86_64, LiteRT-LM GPU requests fail up front with
+  `LlamaUnsupportedException`, and LiteRT-LM is no longer reported or selected
+  as GPU there ([#711](https://github.com/leehack/llamadart/issues/711)).
+- With `llamadart_litert_lm_flutter` `0.0.15`, the macOS build only warns to
+  upgrade the companion instead of claiming the app needs the LiteRT-LM build
+  phase ([#1064](https://github.com/leehack/llamadart/issues/1064)).
+- `WebGpuLlamaBackend(bridgeScriptUrl: ...)` loads the bridge in dart2js
+  builds ([#735](https://github.com/leehack/llamadart/issues/735)).
+- The image model memory check treats a GPU reporting 0 bytes free, as Vulkan
+  does over budget, as having no free GPU memory: loads warn and, on Linux,
+  are refused above system memory
+  ([#980](https://github.com/leehack/llamadart/issues/980)).
+- `LlamaEngine.getPerformanceContext()` returns null after a generation
+  cancelled before it reached the backend, instead of the previous request's
+  counters ([#677](https://github.com/leehack/llamadart/issues/677)).
+- Clearer errors: a chat template that fails to render names its source
+  ([#820](https://github.com/leehack/llamadart/issues/820)), a
+  `SpeechToTextEngine` attached to a disposed `LlamaEngine` reports the
+  disposal ([#924](https://github.com/leehack/llamadart/issues/924)), and an
+  `ImageGenerationEngine.load` SHA-256 mismatch names the main file by
+  position, not its path or URL
+  ([#907](https://github.com/leehack/llamadart/issues/907)).
+
+* Aligned the default WebGPU bridge assets to `v0.1.59`, unchanged from 0.12.2:
+  they embed llama.cpp `v0.6.0`, are qualified against native `v0.6.0`, and
+  keep Web/native llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`
+  parity; Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset
+  manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.12.2
 

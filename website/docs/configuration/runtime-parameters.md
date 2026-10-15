@@ -219,6 +219,10 @@ disposed, or until the process exits when the engine's worker was stopped
 without disposing it. An engine prunes the caches of its own model, since it
 disposes its previous native engine first, but while two engines use the same
 model file with one directory neither deletes that model's program caches.
+The native engine, and so its lease, starts at the first generation or
+tokenization after `loadModel`, not at `loadModel` itself. Until then another
+engine pruning the same directory may delete that model's program caches,
+which costs a one-time recompile on the first generation.
 
 A lease left by a process that crashed is taken for one of the pruning
 process when the two share a process ID, as can happen when a container

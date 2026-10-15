@@ -34,7 +34,8 @@ dart test -p chrome --exclude-tags local-only
 - Chat app changes: `(cd example/chat_app && flutter test test test_vm)`
   (`test_vm/` holds VM-only tests kept out of the Web compile), plus
   `flutter test --platform chrome test/chat_generation_service_test.dart
-  test/image_generation_screen_test.dart` there for Web-only paths such as
+  test/image_generation_screen_test.dart test/unit_test.dart
+  test/conversation_state_service_test.dart` there for Web-only paths such as
   LiteRT-LM generation settings and the image screen's unsupported state.
 - Pick further validation from `dart run tool/testing/test_matrix.dart --list`
   (`doc/testing_matrix.md`) and put its `--pr-template` rows in the PR.
