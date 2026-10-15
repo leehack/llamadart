@@ -472,7 +472,7 @@ List<String> checkPublishedCompanionPins(
         'which pub resolves beside core $coreVersion, but it pins '
         '${companion.nativeRepo}@${pin ?? '<none>'} and this core accepts '
         '${corePins.join(', ')}. Move a companion native pin only in a new '
-        'core minor release.',
+        'core minor release, or keep the core hook accepting the earlier pin.',
       );
     }
   }
