@@ -51,6 +51,14 @@ case "$1" in
     echo "$STUB_HEAD"
     ;;
   ls-remote)
+    if [[ -f "$STUB_STATE/ls_remote_failures" ]]; then
+      for arg in "$@"; do
+        if grep -Fxq -- "$arg" "$STUB_STATE/ls_remote_failures"; then
+          echo "fatal: unable to access origin" >&2
+          exit 128
+        fi
+      done
+    fi
     found=false
     for arg in "$@"; do
       [[ "$arg" == refs/tags/* ]] || continue
@@ -152,6 +160,11 @@ class _Sandbox {
   void remoteTag(String sha, String ref) => File(
     '$state/remote_tags',
   ).writeAsStringSync('$sha $ref\n', mode: FileMode.append);
+
+  /// Makes `git ls-remote` exit 128 whenever it is asked for [ref].
+  void lsRemoteFails(String ref) => File(
+    '$state/ls_remote_failures',
+  ).writeAsStringSync('$ref\n', mode: FileMode.append);
 
   void pub(String url, String body) => File(
     '$state/pub/${url.replaceAll(RegExp('[^A-Za-z0-9]'), '_')}',
@@ -642,6 +655,43 @@ List<String> _releaseGuardProblems(String workflow) {
       '${run.validate.stderr}${run.publish?.stderr}',
     );
   }
+
+  final unreachableCore = _runRelease(
+    workflow,
+    _release(
+      'unreachable core tag lookup',
+      remote: (sandbox) => sandbox.lsRemoteFails('refs/tags/v0.13.0'),
+    ),
+  );
+  check(
+    unreachableCore.validate.exitCode != 0 &&
+        unreachableCore.publish == null &&
+        !unreachableCore.output.contains('core_tag_exists=') &&
+        !_pushedAnyTag(unreachableCore.calls),
+    'a failed core tag lookup must stop the release before any tag: '
+    '${unreachableCore.validate.stderr}${unreachableCore.publish?.stderr}',
+  );
+
+  final companionTag = 'refs/tags/${_companions[1]}-v0.13.0';
+  final unreachableCompanion = _runRelease(
+    workflow,
+    _release(
+      'unreachable companion tag lookup',
+      remote: (sandbox) => sandbox
+        ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
+        ..lsRemoteFails(companionTag),
+      missingCompanions: {_companions[1]},
+    ),
+  );
+  check(
+    unreachableCompanion.validate.exitCode == 0 &&
+        unreachableCompanion.publish != null &&
+        unreachableCompanion.publish!.exitCode != 0 &&
+        !_pushedAnyTag(unreachableCompanion.calls),
+    'a failed companion tag lookup must stop before pushing the companion: '
+    '${unreachableCompanion.validate.stderr}'
+    '${unreachableCompanion.publish?.stderr}',
+  );
   return problems;
 }
 
@@ -958,6 +1008,19 @@ void main() {
         'publishes without set -euo pipefail': (source) => source.replaceFirst(
           '          set -euo pipefail\n\n          if [[ -z "\${RELEASE_TOKEN:-}" ]]',
           '          if [[ -z "\${RELEASE_TOKEN:-}" ]]',
+        ),
+        'ignores a failed core tag lookup': (source) => source.replaceFirst(
+          '            git ls-remote --tags origin "refs/tags/\$core_tag" '
+              '"refs/tags/\$core_tag^{}" |\n',
+          '            { git ls-remote --tags origin "refs/tags/\$core_tag" '
+              '"refs/tags/\$core_tag^{}" || true; } |\n',
+        ),
+        'ignores a failed companion tag lookup': (source) => source.replaceFirst(
+          '              git ls-remote --tags origin '
+              '"refs/tags/\$companion_tag" "refs/tags/\$companion_tag^{}" |\n',
+          '              { git ls-remote --tags origin '
+              '"refs/tags/\$companion_tag" "refs/tags/\$companion_tag^{}" '
+              '|| true; } |\n',
         ),
       };
       for (final mutation in mutations.entries) {

@@ -369,6 +369,42 @@ void main() {
       );
     });
 
+    test('reads FLUTTER_TEST from the process by default', () {
+      final dir = Directory.systemTemp.createTempSync('sd_flutter_test_host_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final script = File('${dir.path}/load_failure.dart')
+        ..writeAsStringSync('''
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
+
+void main() {
+  print(stableDiffusionLoadFailure(
+    platform: 'ios-arm64',
+    error: ArgumentError("Failed to lookup symbol 'sd_version'"),
+  ).message);
+}
+''');
+      final packages = File('.dart_tool/package_config.json').absolute.path;
+
+      String messageWith(String flutterTest) {
+        final result = Process.runSync(
+          Platform.resolvedExecutable,
+          ['--packages=$packages', script.path],
+          environment: {'FLUTTER_TEST': flutterTest},
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return '${result.stdout}';
+      }
+
+      expect(
+        messageWith('true'),
+        contains('not linked into the flutter test host on ios-arm64'),
+      );
+      expect(
+        messageWith('false'),
+        contains('not linked into the process on ios-arm64'),
+      );
+    });
+
     group('Windows error 126', () {
       final error126 = ArgumentError(
         "Couldn't resolve native function 'sd_version' in "
