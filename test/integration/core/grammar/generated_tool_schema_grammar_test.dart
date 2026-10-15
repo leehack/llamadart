@@ -17,6 +17,7 @@ import 'package:llamadart/src/core/grammar/tool_grammar_generator.dart'
 import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:test/test.dart';
 
+import '../../../support/llama_cpp_grammar_load.dart';
 import '../../../test_helper.dart';
 
 void main() {
@@ -215,6 +216,68 @@ void main() {
       }
     },
   );
+
+  test('native sampler loads PodSpec-sized open schema grammars', () async {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        for (final name in largeKeySets['Kubernetes PodSpec']!)
+          name: {'type': 'string'},
+      },
+      'additionalProperties': true,
+    };
+    final podTool = ToolDefinition.fromJsonSchema(
+      name: 'apply_pod',
+      description: 'Apply a pod spec.',
+      schema: schema,
+    );
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Apply it.'),
+    ];
+    const params = GenerationParams(maxTokens: 8, temp: 0);
+    for (final toolChoice in [ToolChoice.required, ToolChoice.auto]) {
+      await engine
+          .create(
+            messages,
+            tools: [podTool],
+            toolChoice: toolChoice,
+            params: params,
+          )
+          .drain<void>();
+    }
+    await engine
+        .create(
+          messages,
+          params: params,
+          responseFormat: {
+            'type': 'json_schema',
+            'json_schema': {'schema': schema},
+          },
+        )
+        .drain<void>();
+
+    final required = grammar.ToolGrammarGenerator.generate([
+      podTool,
+    ], toolChoice: grammar.ToolChoice.required)!.grammar;
+    String call(String arguments) =>
+        '{"tool_call":{"name":"apply_pod","arguments":$arguments}}';
+    expect(
+      _compiledGrammarAccepts(
+        nativeModel!,
+        required,
+        call('{"hostname":"a","extra":"b"}'),
+      ),
+      isTrue,
+    );
+    expect(
+      _compiledGrammarAccepts(
+        nativeModel!,
+        required,
+        call('{"hostname":"a","hostname":"b"}'),
+      ),
+      isFalse,
+    );
+  });
 
   test('compiled grammar rejects an incomplete valid prefix at EOG', () {
     expect(

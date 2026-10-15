@@ -1,5 +1,6 @@
 import '../exceptions.dart';
 import '../models/tools/tool_definition.dart';
+import '../models/tools/tool_input_schema.dart';
 import '../models/tools/tool_param.dart';
 import 'tool_call_parsing_utils.dart';
 
@@ -65,7 +66,10 @@ Set<String> schemaRequired(Map<String, dynamic> schema) {
 
 /// Whether a schema must preserve emitted text as a string.
 bool schemaResolvesToString(Map<String, dynamic> schema) =>
-    schema['type'] == 'string' || schema['enum'] is List;
+    schema['type'] == 'string' ||
+    schema['type'] == null &&
+        schema['enum'] is List &&
+        (schema['enum'] as List).every((value) => value is String);
 
 /// Decodes protocol text according to [schema] without guessing string types.
 ToolSchemaValueResult decodeToolSchemaText(
@@ -86,77 +90,40 @@ ToolSchemaValueResult decodeToolSchemaText(
 ToolSchemaValueResult validateToolSchemaValue(
   Object? value,
   Map<String, dynamic> schema,
-) {
-  final type = schema['type'];
-  Object? normalized = value;
+) => validateToolInputValue(value, schema);
 
-  if (type == 'string') {
-    if (value is! String) {
-      return (valid: false, value: null);
+/// Rejects raw schemas that a fixed-argument protocol grammar cannot enforce.
+/// Legacy parameter-helper callers retain their existing format support.
+void validateFixedArgumentToolSchemas(
+  List<ToolDefinition>? tools, {
+  required String format,
+  bool stringEnums = false,
+}) {
+  for (final tool in tools ?? const <ToolDefinition>[]) {
+    if (!toolUsesJsonSchema(tool)) continue;
+    final schema = tool.toJsonSchema();
+    if (schema['additionalProperties'] != false) {
+      throw LlamaUnsupportedException(
+        '$format tool schemas need additionalProperties: false; this protocol names a fixed set of arguments.',
+      );
     }
-  } else if (type == 'integer') {
-    if (value is! int) {
-      return (valid: false, value: null);
-    }
-  } else if (type == 'number') {
-    if (value is! num) {
-      return (valid: false, value: null);
-    }
-  } else if (type == 'boolean') {
-    if (value is! bool) {
-      return (valid: false, value: null);
-    }
-  } else if (type == 'null') {
-    if (value != null) {
-      return (valid: false, value: null);
-    }
-  } else if (type == 'object') {
-    if (value is! Map) {
-      return (valid: false, value: null);
-    }
-    final properties = schemaProperties(schema);
-    final required = schemaRequired(schema);
-    final object = <String, dynamic>{};
-    for (final entry in value.entries) {
-      if (entry.key is! String) {
-        return (valid: false, value: null);
+    for (final property in schemaProperties(schema).values) {
+      final type = property['type'];
+      final allowed = {
+        'type',
+        'description',
+        'title',
+        'default',
+        'examples',
+        r'$schema',
+      };
+      if (stringEnums && type == 'string') allowed.add('enum');
+      if (!{'string', 'integer', 'number', 'boolean', 'null'}.contains(type) ||
+          property.keys.any((key) => !allowed.contains(key))) {
+        throw LlamaUnsupportedException(
+          '$format currently supports scalar tool properties${stringEnums ? " and string enums" : ""}; use a JSON-envelope format for richer schemas.',
+        );
       }
-      final propertySchema = properties[entry.key];
-      if (propertySchema == null) {
-        return (valid: false, value: null);
-      }
-      final nested = validateToolSchemaValue(entry.value, propertySchema);
-      if (!nested.valid) {
-        return (valid: false, value: null);
-      }
-      object[entry.key as String] = nested.value;
-    }
-    if (!object.keys.toSet().containsAll(required)) {
-      return (valid: false, value: null);
-    }
-    normalized = object;
-  } else if (type == 'array') {
-    if (value is! List) {
-      return (valid: false, value: null);
-    }
-    final itemSchema = schema['items'];
-    if (itemSchema is Map) {
-      final resolvedItemSchema = Map<String, dynamic>.from(itemSchema);
-      final items = <Object?>[];
-      for (final item in value) {
-        final nested = validateToolSchemaValue(item, resolvedItemSchema);
-        if (!nested.valid) {
-          return (valid: false, value: null);
-        }
-        items.add(nested.value);
-      }
-      normalized = items;
     }
   }
-
-  final enumValues = schema['enum'];
-  if (enumValues is List && !enumValues.contains(normalized)) {
-    return (valid: false, value: null);
-  }
-  return (valid: true, value: normalized);
 }

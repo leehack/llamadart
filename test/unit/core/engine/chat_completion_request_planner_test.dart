@@ -10,8 +10,58 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
+import '../../../support/raw_tool_schema_fixture.dart';
 
 void main() {
+  test(
+    'canonical schemas require active grammar and avoid native chat bypass',
+    () {
+      for (final choice in ToolChoice.values) {
+        for (final backend in [
+          _NoGrammarBackend(),
+          _NoGrammarNativeChatBackend(),
+        ]) {
+          ChatCompletionRequestPlan plan() =>
+              ChatCompletionRequestPlanner.build(
+                backend: backend,
+                templateResult: const LlamaChatTemplateResult(
+                  prompt: 'p',
+                  grammar: 'root ::= "ok"',
+                ),
+                messages: const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'hello',
+                  ),
+                ],
+                toolChoice: choice,
+                parallelToolCalls: false,
+                tools: [rawSchemaTool()],
+              );
+          if (choice == ToolChoice.none) {
+            expect(plan, returnsNormally);
+          } else {
+            expect(plan, throwsA(isA<LlamaUnsupportedException>()));
+          }
+        }
+      }
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: _NativeChatBackend(),
+        templateResult: const LlamaChatTemplateResult(
+          prompt: 'p',
+          grammar: 'root ::= "ok"',
+        ),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: false,
+        tools: [rawSchemaTool()],
+      );
+      expect(plan.usesNativeChatGeneration, isFalse);
+      expect(plan.generationParams.grammar, isNotEmpty);
+    },
+  );
   group('ChatCompletionRequestPlanner', () {
     test('merges template grammar, stop sequences, and preserved tokens', () {
       final backend = _NativeChatBackend();

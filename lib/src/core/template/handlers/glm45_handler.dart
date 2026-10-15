@@ -190,6 +190,11 @@ class Glm45Handler extends ChatTemplateHandler
       return null;
     }
     toolSchemas(tools);
+    validateFixedArgumentToolSchemas(
+      tools,
+      format: 'GLM-4.5/Laguna',
+      stringEnums: true,
+    );
 
     final toolChoiceRules = <String>[];
     final toolRules = <String>[];
@@ -199,14 +204,16 @@ class Glm45Handler extends ChatTemplateHandler
       toolChoiceRules.add(toolRuleName);
 
       final argParts = <String>[];
-      for (final parameter in tool.parameters) {
-        final paramSchema = parameter.toJsonSchema();
+      final schema = tool.toJsonSchema();
+      final required = schemaRequired(schema);
+      for (final parameter in schemaProperties(schema).entries) {
+        final paramSchema = parameter.value;
         final paramRuleName =
             '${ToolCallGrammarUtils.ruleName(tool.name)}-arg-'
-            '${ToolCallGrammarUtils.ruleName(parameter.name)}';
+            '${ToolCallGrammarUtils.ruleName(parameter.key)}';
         final valueRuleName =
             '${ToolCallGrammarUtils.ruleName(tool.name)}-arg-'
-            '${ToolCallGrammarUtils.ruleName(parameter.name)}-value';
+            '${ToolCallGrammarUtils.ruleName(parameter.key)}-value';
 
         final valueRules = _buildValueRules(
           valueRuleName: valueRuleName,
@@ -215,9 +222,13 @@ class Glm45Handler extends ChatTemplateHandler
 
         toolRules.addAll(valueRules);
         toolRules.add(
-          '$paramRuleName ::= "<arg_key>${_escapeLiteral(parameter.name)}</arg_key>\\n<arg_value>" $valueRuleName "</arg_value>\\n"',
+          '$paramRuleName ::= "<arg_key>${_escapeLiteral(parameter.key)}</arg_key>\\n<arg_value>" $valueRuleName "</arg_value>\\n"',
         );
-        argParts.add(parameter.required ? paramRuleName : '($paramRuleName)?');
+        argParts.add(
+          required.contains(parameter.key)
+              ? paramRuleName
+              : '($paramRuleName)?',
+        );
       }
 
       final argsRule = argParts.join(' ');
@@ -236,6 +247,7 @@ class Glm45Handler extends ChatTemplateHandler
       ..._glmUntilAnyLiteralRules('glm-string-raw', _glmProtocolMarkers),
       'space ::= " "?',
       'string ::= "\\"" ([^"\\\\] | "\\\\" .)* "\\""',
+      'integer ::= "-"? ("0" | [1-9] [0-9]*)',
       'number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
       'boolean ::= "true" | "false"',
       'null ::= "null"',
@@ -267,10 +279,14 @@ class Glm45Handler extends ChatTemplateHandler
       return ['$valueRuleName ::= glm-string-raw-0'];
     }
 
-    if (type == 'integer' || type == 'number') {
+    if (type == 'integer') {
+      return ['$valueRuleName ::= integer'];
+    }
+    if (type == 'number') {
       return ['$valueRuleName ::= number'];
     }
 
+    if (type == 'null') return ['$valueRuleName ::= "null"'];
     if (type == 'boolean') {
       return ['$valueRuleName ::= boolean'];
     }

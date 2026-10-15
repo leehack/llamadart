@@ -71,7 +71,7 @@ void main() {
       suffix: '</tool>',
     );
 
-    expect(wrapped, contains('root ::= "<tool>" obj "</tool>"'));
+    expect(wrapped, contains('root ::= "<tool>" (obj) "</tool>"'));
     expect(wrapped, endsWith('\n'));
   });
 
@@ -133,13 +133,13 @@ void main() {
 
     expect(
       noParallel,
-      contains('root ::= "[TOOL_CALLS]" "[" space root-item  "]" space'),
+      contains('root ::= "[TOOL_CALLS]" ("[" space root-item  "]" space)'),
     );
     expect(
       parallel,
       contains(
-        'root ::= "[TOOL_CALLS]" "[" space root-item ("," space root-item)* '
-        '"]" space',
+        'root ::= "[TOOL_CALLS]" ("[" space root-item ("," space root-item)* '
+        '"]" space)',
       ),
     );
     for (final grammar in [noParallel, parallel]) {

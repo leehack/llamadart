@@ -13,7 +13,8 @@ import '../tool_call_parsing_utils.dart';
 import '../tool_schema_utils.dart';
 
 /// Handler for Tencent Hunyuan V3's namespaced chat and tool-call format.
-class HunyuanV3Handler extends ChatTemplateHandler {
+class HunyuanV3Handler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static const String _namespace = ':opensource';
   static const String _eos = '<｜hy_eos$_namespace｜>';
   static const String _user = '<｜hy_User$_namespace｜>';
@@ -139,7 +140,27 @@ class HunyuanV3Handler extends ChatTemplateHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => parseWithTools(
+    output,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  /// Parses canonical-schema arguments without guessing string types.
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
   }) {
+    final schemas = toolSchemas(tools);
+    final canonicalNames = {
+      for (final tool in tools ?? const <ToolDefinition>[])
+        if (toolUsesJsonSchema(tool)) tool.name,
+    };
     final thinking = extractThinking(
       output,
       startTag: thinkingStartTag,
@@ -189,7 +210,22 @@ class HunyuanV3Handler extends ChatTemplateHandler {
           return rollback();
         }
         final value = (argumentMatch.group(2) ?? '').trim();
-        arguments[key] = ToolCallParsingUtils.decodeJsonValueOrString(value);
+        if (canonicalNames.contains(name)) {
+          final property = schemaProperties(schemas[name]!)[key];
+          if (property == null) return rollback();
+          final decoded = schemaResolvesToString(property)
+              ? validateToolSchemaValue(
+                  value.startsWith('"')
+                      ? ToolCallParsingUtils.decodeJsonValueOrString(value)
+                      : value,
+                  property,
+                )
+              : decodeToolSchemaText(value, property);
+          if (!decoded.valid) return rollback();
+          arguments[key] = decoded.value;
+        } else {
+          arguments[key] = ToolCallParsingUtils.decodeJsonValueOrString(value);
+        }
         argumentCursor = argumentMatch.end;
       }
       if (argumentsBlock.substring(argumentCursor).trim().isNotEmpty) {
@@ -228,6 +264,7 @@ class HunyuanV3Handler extends ChatTemplateHandler {
       return null;
     }
     toolSchemas(tools);
+    validateFixedArgumentToolSchemas(tools, format: 'Hunyuan-V3');
 
     final choices = <String>[];
     final rules = <String>[];
@@ -237,17 +274,19 @@ class HunyuanV3Handler extends ChatTemplateHandler {
       choices.add(toolRule);
 
       final argumentRules = <String>[];
-      for (final parameter in tool.parameters) {
-        final parameterName = ToolCallGrammarUtils.ruleName(parameter.name);
+      final schema = tool.toJsonSchema();
+      final required = schemaRequired(schema);
+      for (final parameter in schemaProperties(schema).entries) {
+        final parameterName = ToolCallGrammarUtils.ruleName(parameter.key);
         final argumentRule = '$toolName-$parameterName-arg';
         final valueRule = '$argumentRule-value';
-        rules.add(_valueRule(valueRule, parameter.toJsonSchema()));
+        rules.add(_valueRule(valueRule, parameter.value));
         rules.add(
-          '$argumentRule ::= ${_literal('$_argKeyStart${parameter.name}$_argKeyEnd\n$_argValueStart')} '
+          '$argumentRule ::= ${_literal('$_argKeyStart${parameter.key}$_argKeyEnd\n$_argValueStart')} '
           '$valueRule ${_literal('$_argValueEnd\n')}',
         );
         argumentRules.add(
-          parameter.required ? argumentRule : '($argumentRule)?',
+          required.contains(parameter.key) ? argumentRule : '($argumentRule)?',
         );
       }
 
@@ -266,6 +305,7 @@ class HunyuanV3Handler extends ChatTemplateHandler {
       r'raw-string ::= raw-alpha raw-tail*',
       r'space ::= " "?',
       r'string ::= "\"" ([^"\\] | "\\" .)* "\""',
+      r'integer ::= "-"? ("0" | [1-9] [0-9]*)',
       r'number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
       r'boolean ::= "true" | "false"',
       r'null ::= "null"',
@@ -297,9 +337,13 @@ class HunyuanV3Handler extends ChatTemplateHandler {
       }
       return '$name ::= raw-string | string';
     }
-    if (type == 'integer' || type == 'number') {
+    if (type == 'integer') {
+      return '$name ::= integer';
+    }
+    if (type == 'number') {
       return '$name ::= number';
     }
+    if (type == 'null') return '$name ::= "null"';
     if (type == 'boolean') {
       return '$name ::= boolean';
     }
