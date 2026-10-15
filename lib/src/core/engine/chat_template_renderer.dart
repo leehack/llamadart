@@ -7,6 +7,7 @@ import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_template_engine.dart';
 import '../template/media_placeholders.dart';
+import '../template/template_internal_metadata.dart';
 
 /// Loads model metadata for chat-template rendering.
 typedef ChatTemplateMetadataLoader = Future<Map<String, String>> Function();
@@ -64,7 +65,7 @@ class ChatTemplateRenderer {
   }) async {
     Map<String, String> metadata = {};
     try {
-      metadata = await loadMetadata();
+      metadata = {...await loadMetadata()};
     } catch (error) {
       LlamaLogger.instance.warning('Failed to read metadata: $error');
     }
@@ -72,8 +73,12 @@ class ChatTemplateRenderer {
     if (modelTemplate != null && modelTemplate.isNotEmpty) {
       templateSource = modelTemplate;
       metadata.remove('tokenizer.chat_template.tool_use');
+      metadata[internalTemplateSourceNameMetadataKey] =
+          'ModelParams.chatTemplate';
     } else {
       templateSource = metadata['tokenizer.chat_template'];
+      metadata[internalTemplateSourceNameMetadataKey] =
+          "the model's tokenizer.chat_template";
     }
 
     final effectiveResponseFormat =

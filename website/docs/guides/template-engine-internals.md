@@ -85,7 +85,10 @@ sequenceDiagram
   space in every other string `generate` reads as a part. Messages without
   media render as they are.
 - A template that fails to render, by raising or through invalid syntax,
-  throws `LlamaInferenceException` with the template's message.
+  throws `LlamaInferenceException` with the template's message. The message
+  names the template: the model's `tokenizer.chat_template` or its
+  `tool_use` variant, `ModelParams.chatTemplate`, or a per-call
+  `customTemplate`.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 
@@ -106,6 +109,12 @@ sequenceDiagram
 - On completion, final parse produces stable tool-call structures and finish
   reason semantics.
 - PEG-backed parse paths are used when parser payloads are present.
+- A reply that a cancel or a generation limit cut short may not hold what
+  the PEG parser requires, such as the tool call of `ToolChoice.required`.
+  It is parsed as partial output instead: its content and thinking are kept,
+  its tool calls are withheld, and it finishes with `length` at a limit and
+  `stop` on a cancel, as with `ToolChoice.auto`. A reply that ended normally
+  and does not parse throws `LlamaInferenceException`.
 
 ## Tool-call parsing
 
