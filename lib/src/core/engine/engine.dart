@@ -1707,6 +1707,7 @@ class LlamaEngine {
           completionId: completionId,
           tools: effectiveTools,
           stoppedAtLimit: () => generationLimit != null,
+          cancelled: request.isCancelled,
           usage: () => generationUsage,
         ).map((chunk) {
           final limit = generationLimit;

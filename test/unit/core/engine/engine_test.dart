@@ -666,6 +666,80 @@ class HeldOutputBackend extends MockLlamaBackend
   }) => _held();
 }
 
+/// Streams [output], then holds the generation open until
+/// [cancelGeneration] ends it, as the llama.cpp backend does.
+class _OutputUntilCancelBackend extends MockLlamaBackend {
+  _OutputUntilCancelBackend(this.output, Map<String, String> metadata)
+    : super(modelMetadataResponse: metadata);
+
+  final List<String> output;
+  final Completer<void> started = Completer<void>();
+  final Completer<void> _cancelled = Completer<void>();
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    started.complete();
+    for (final text in output) {
+      yield utf8.encode(text);
+    }
+    await _cancelled.future;
+  }
+
+  @override
+  void cancelGeneration() {
+    super.cancelGeneration();
+    if (!_cancelled.isCompleted) _cancelled.complete();
+  }
+}
+
+/// Reports that every generation ended at `maxTokens`, for a Ministral
+/// template.
+class _MinistralLimitBackend extends MockLlamaBackend
+    implements BackendGenerationLimitReporting {
+  _MinistralLimitBackend()
+    : super(
+        modelMetadataResponse: const {
+          'tokenizer.chat_template':
+              '{#- [SYSTEM_PROMPT] [TOOL_CALLS] [ARGS] -#}'
+              '{% for message in messages %}{{ message["content"] }}'
+              '{% endfor %}',
+        },
+      );
+
+  final Expando<BackendGenerationLimit> _limits =
+      Expando<BackendGenerationLimit>();
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) {
+    late final Stream<List<int>> tracked;
+    tracked = super
+        .generate(contextHandle, prompt, params, parts: parts)
+        .transform(
+          StreamTransformer<List<int>, List<int>>.fromHandlers(
+            handleDone: (sink) {
+              _limits[tracked] = BackendGenerationLimit.maxTokens;
+              sink.close();
+            },
+          ),
+        );
+    return tracked;
+  }
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      _limits[generation];
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -2486,35 +2560,59 @@ void main() {
       }
     });
 
-    test(
-      'create throws a typed exception when the chat template raises',
-      () async {
-        final raising = MockLlamaBackend(
-          modelMetadataResponse: {
-            'tokenizer.chat_template':
-                "{{ raise_exception('Conversation roles must alternate') }}",
-          },
-        );
-        final raisingEngine = LlamaEngine(raising);
-        addTearDown(raisingEngine.dispose);
-        await raisingEngine.loadModel('qwen-test.gguf');
-
-        await expectLater(
-          raisingEngine.create(const [
-            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
-          ]).drain<void>(),
-          throwsA(
+    for (final overridden in [false, true]) {
+      final source = overridden
+          ? 'ModelParams.chatTemplate'
+          : "the model's tokenizer.chat_template";
+      test('create, chatTemplate and ChatSession throw a typed exception '
+          'naming $source when it fails to render', () async {
+        const raising =
+            "{{ raise_exception('Conversation roles must alternate') }}";
+        const invalid = '{% for message in messages %}{{ message.content';
+        for (final (template, cause) in const [
+          (raising, 'Conversation roles must alternate'),
+          (invalid, 'ParserException: '),
+        ]) {
+          final backend = MockLlamaBackend(
+            modelMetadataResponse: {
+              'tokenizer.chat_template': overridden
+                  ? '{{ messages[0].content }}'
+                  : template,
+            },
+          );
+          final failing = LlamaEngine(backend);
+          addTearDown(failing.dispose);
+          await failing.loadModel(
+            'qwen-test.gguf',
+            modelParams: overridden
+                ? ModelParams(chatTemplate: template)
+                : const ModelParams(),
+          );
+          final throwsNamed = throwsA(
             isA<LlamaInferenceException>().having(
               (error) => error.message,
               'message',
-              'The chat template failed to render: '
-                  'Conversation roles must alternate',
+              startsWith(
+                'The chat template from $source failed to render: $cause',
+              ),
             ),
-          ),
-        );
-        expect(raising.lastGenerationPrompt, isNull);
-      },
-    );
+          );
+          const hi = [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ];
+
+          await expectLater(failing.create(hi).drain<void>(), throwsNamed);
+          await expectLater(failing.chatTemplate(hi), throwsNamed);
+          await expectLater(
+            ChatSession(
+              failing,
+            ).create(const [LlamaTextContent('hi')]).drain<void>(),
+            throwsNamed,
+          );
+          expect(backend.lastGenerationPrompt, isNull);
+        }
+      });
+    }
 
     test(
       'multimodal projector can be unloaded without unloading model',
@@ -5161,6 +5259,136 @@ void main() {
       final result = await engine.chatTemplate(messages);
 
       expect(result.prompt, startsWith('<|im_start|>user\nhi'));
+    });
+  });
+
+  group('LlamaEngine Ministral replies cut short', () {
+    const ministralTemplate =
+        '{#- [SYSTEM_PROMPT] [TOOL_CALLS] [ARGS] -#}'
+        '{% for message in messages %}[INST]{{ message["content"] }}[/INST]'
+        '{% endfor %}';
+    const metadata = {'tokenizer.chat_template': ministralTemplate};
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+    ];
+    final weatherTool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [ToolParam.string('city', required: true)],
+      handler: (_) async => 'ok',
+    );
+    const partialCall = '[TOOL_CALLS]get_weather[ARGS]{"ci';
+
+    Future<LlamaEngine> load(LlamaBackend backend) async {
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('ministral.gguf');
+      return engine;
+    }
+
+    for (final toolChoice in ToolChoice.values) {
+      for (final output in const [
+        <String>[],
+        <String>[partialCall],
+      ]) {
+        final state = output.isEmpty ? 'before any output' : 'in a tool call';
+        test('create with ${toolChoice.name} ends with stop when cancelled '
+            '$state', () async {
+          final backend = _OutputUntilCancelBackend(output, metadata);
+          final engine = await load(backend);
+          final chunks = <LlamaCompletionChunk>[];
+          final done = engine
+              .create(messages, tools: [weatherTool], toolChoice: toolChoice)
+              .forEach(chunks.add);
+          await backend.started.future;
+          await pumpEventQueue();
+          engine.cancelGeneration();
+          await done;
+
+          expect(chunks.last.choices.single.finishReason, 'stop');
+          expect(
+            chunks.expand(
+              (chunk) => chunk.choices.single.delta.toolCalls ?? [],
+            ),
+            isEmpty,
+          );
+        });
+      }
+
+      test('ChatSession.create with ${toolChoice.name} reports a cancel '
+          'before any output as cancelled', () async {
+        final backend = _OutputUntilCancelBackend(const [], metadata);
+        final engine = await load(backend);
+        final session = ChatSession(engine);
+        final done = session
+            .create(
+              [const LlamaTextContent('Weather?')],
+              tools: [weatherTool],
+              toolChoice: toolChoice,
+            )
+            .drain<void>();
+        await backend.started.future;
+        await pumpEventQueue();
+        engine.cancelGeneration();
+
+        await expectLater(
+          done,
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              'Generation was cancelled before any output.',
+            ),
+          ),
+        );
+      });
+
+      test('create with ${toolChoice.name} ends with length when maxTokens '
+          'cuts a tool call short', () async {
+        final backend = _MinistralLimitBackend()..generationText = partialCall;
+        final engine = await load(backend);
+
+        final chunks = await engine
+            .create(
+              messages,
+              params: const GenerationParams(maxTokens: 6),
+              tools: [weatherTool],
+              toolChoice: toolChoice,
+            )
+            .toList();
+
+        expect(chunks.last.choices.single.finishReason, 'length');
+        expect(
+          chunks.expand((chunk) => chunk.choices.single.delta.toolCalls ?? []),
+          isEmpty,
+        );
+      });
+    }
+
+    test('create with required throws a typed exception for a reply that '
+        'ended without a call', () async {
+      final backend = MockLlamaBackend(modelMetadataResponse: metadata)
+        ..generationText = 'It is sunny.';
+      final engine = await load(backend);
+
+      await expectLater(
+        engine
+            .create(
+              messages,
+              tools: [weatherTool],
+              toolChoice: ToolChoice.required,
+            )
+            .drain<void>(),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            startsWith(
+              'The model output does not match the expected peg-native format',
+            ),
+          ),
+        ),
+      );
     });
   });
 

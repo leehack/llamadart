@@ -85,7 +85,10 @@ sequenceDiagram
   space in every other string `generate` reads as a part. Messages without
   media render as they are.
 - A template that fails to render, by raising or through invalid syntax,
-  throws `LlamaInferenceException` with the template's message.
+  throws `LlamaInferenceException` with the template's message. The message
+  names the template: the model's `tokenizer.chat_template` or its
+  `tool_use` variant, `ModelParams.chatTemplate`, or a per-call
+  `customTemplate`.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 
@@ -106,6 +109,19 @@ sequenceDiagram
 - On completion, final parse produces stable tool-call structures and finish
   reason semantics.
 - PEG-backed parse paths are used when parser payloads are present.
+- A reply that a cancel or a generation limit cut short may not hold what
+  the PEG parser requires, such as the tool call of `ToolChoice.required`.
+  It is parsed as partial output instead: its content and thinking are kept,
+  its tool calls are withheld, and it finishes with `length` at a limit and
+  `stop` on a cancel, as with `ToolChoice.auto`. A limit counts only on a
+  backend that reports a token limit, such as native llama.cpp; on one that
+  does not, such as LiteRT-LM, a reply cut short by `maxTokens` is parsed as
+  a complete one. A reply parsed as complete that does not parse throws
+  `LlamaInferenceException`.
+- This deliberately differs from upstream llama.cpp (`b10549`), whose server
+  fails a cut-short `required` reply with a parse error. llamadart withholds
+  the calls and finishes with `length` or `stop` instead
+  ([#890](https://github.com/leehack/llamadart/issues/890)).
 
 ## Tool-call parsing
 

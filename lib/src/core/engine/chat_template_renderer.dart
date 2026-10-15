@@ -7,6 +7,7 @@ import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_template_engine.dart';
 import '../template/media_placeholders.dart';
+import '../template/template_internal_metadata.dart';
 
 /// Loads model metadata for chat-template rendering.
 typedef ChatTemplateMetadataLoader = Future<Map<String, String>> Function();
@@ -31,6 +32,25 @@ class ChatTemplateRenderer {
           part is LlamaVideoContent,
     ),
   );
+
+  /// Names the template [render] uses when no `tool_use` variant or
+  /// `customTemplate` applies, for render-failure messages.
+  ///
+  /// A non-empty [modelTemplate] is `ModelParams.chatTemplate`; otherwise
+  /// [metadataTemplate] is the model's `tokenizer.chat_template`, and without
+  /// it the built-in ChatML fallback is used.
+  static String templateSourceName({
+    String? modelTemplate,
+    String? metadataTemplate,
+  }) {
+    if (modelTemplate != null && modelTemplate.isNotEmpty) {
+      return 'ModelParams.chatTemplate';
+    }
+    if (metadataTemplate != null) {
+      return "the model's tokenizer.chat_template";
+    }
+    return 'the built-in ChatML fallback template';
+  }
 
   /// Renders a chat template and optionally counts prompt tokens.
   ///
@@ -64,7 +84,7 @@ class ChatTemplateRenderer {
   }) async {
     Map<String, String> metadata = {};
     try {
-      metadata = await loadMetadata();
+      metadata = {...await loadMetadata()};
     } catch (error) {
       LlamaLogger.instance.warning('Failed to read metadata: $error');
     }
@@ -75,6 +95,10 @@ class ChatTemplateRenderer {
     } else {
       templateSource = metadata['tokenizer.chat_template'];
     }
+    metadata[internalTemplateSourceNameMetadataKey] = templateSourceName(
+      modelTemplate: modelTemplate,
+      metadataTemplate: metadata['tokenizer.chat_template'],
+    );
 
     final effectiveResponseFormat =
         responseFormat ??
