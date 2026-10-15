@@ -56,17 +56,17 @@ bool liteRtLmNativeGpuSupportedOnCurrentPlatform() {
 ///
 /// litert-lm-native publishes arm64-only macOS runtimes
 /// ([leehack/litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)),
-/// so macOS x86_64, including an Apple-silicon app under Rosetta, has no GPU
-/// runtime.
+/// so macOS x86_64, including an Apple-silicon app under Rosetta, has no
+/// LiteRT-LM runtime at all.
 void liteRtLmEnsureNativeBackendSupported(String backend) {
   if (backend != liteRtLmGpuBackend || liteRtLmGateAbi() != Abi.macosX64) {
     return;
   }
   throw LlamaUnsupportedException(
-    'LiteRT-LM GPU is not available on macOS x86_64; litert-lm-native '
-    'publishes no macOS x86_64 GPU runtime (leehack/litert-lm-native#72). '
-    'Run the app natively on Apple silicon, not under Rosetta, or use the '
-    'llama.cpp backend.',
+    'LiteRT-LM GPU is not available on macOS x86_64 because LiteRT-LM is not '
+    'available there; litert-lm-native publishes arm64-only macOS runtimes '
+    '(leehack/litert-lm-native#72). Run the app natively on Apple silicon, '
+    'not under Rosetta, or use the llama.cpp backend.',
   );
 }
 

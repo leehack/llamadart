@@ -53,7 +53,7 @@ void main() {
       return;
     }
 
-    if (Platform.isIOS || Abi.current() == Abi.macosArm64) {
+    if (Platform.isIOS || liteRtLmGateAbi() == Abi.macosArm64) {
       expect(available, const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend]);
       expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'gpu');
       expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isTrue);

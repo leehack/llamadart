@@ -202,10 +202,10 @@ void main() {
       );
       expect(
         results[3],
-        Platform.isMacOS ||
-            Platform.isAndroid ||
-            Abi.current() == Abi.linuxX64 ||
-            Abi.current() == Abi.windowsX64,
+        Platform.isAndroid ||
+            liteRtLmGateAbi() == Abi.macosArm64 ||
+            liteRtLmGateAbi() == Abi.linuxX64 ||
+            liteRtLmGateAbi() == Abi.windowsX64,
       );
     } finally {
       await backend.dispose();
@@ -1551,7 +1551,7 @@ void main() {
 }
 
 String _expectedAutoLiteRtLmBackend() {
-  if (Platform.isAndroid || Platform.isMacOS) {
+  if (Platform.isAndroid || liteRtLmGateAbi() == Abi.macosArm64) {
     return 'gpu';
   }
   return 'cpu';

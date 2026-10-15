@@ -9,9 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- LiteRT-LM `auto` selection now uses the CPU on macOS x86_64, which has no
-  LiteRT-LM GPU runtime, and an explicit GPU request there throws
-  `LlamaUnsupportedException`
+- On macOS x86_64, where LiteRT-LM has no runtime, a LiteRT-LM GPU request
+  now fails up front with `LlamaUnsupportedException`, and LiteRT-LM is no
+  longer reported or selected as GPU there
   ([#711](https://github.com/leehack/llamadart/issues/711)).
 - `WebGpuLlamaBackend(bridgeScriptUrl: ...)` now loads the bridge in dart2js
   builds instead of failing with `WebGPU bridge init failed`

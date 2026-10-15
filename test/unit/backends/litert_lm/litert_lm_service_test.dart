@@ -1201,6 +1201,9 @@ void main() {
 
   test('resolves LiteRT-LM backend preference from model params', () async {
     final service = LiteRtLmService();
+    final throwsUnavailableGpu = liteRtLmGateAbi() == Abi.macosX64
+        ? throwsA(isA<LlamaUnsupportedException>())
+        : throwsArgumentError;
 
     try {
       var modelHandle = await service.loadModel(
@@ -1241,7 +1244,7 @@ void main() {
               modelFile.path,
               ModelParams(preferredBackend: preferredBackend),
             ),
-            throwsArgumentError,
+            throwsUnavailableGpu,
           );
         }
       }
@@ -1286,7 +1289,7 @@ void main() {
             modelFile.path,
             const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
           ),
-          throwsArgumentError,
+          throwsUnavailableGpu,
         );
       }
 
@@ -1457,10 +1460,11 @@ void main() {
         ]) {
           await expectLater(
             service.loadModel(modelFile.path, ModelParams(device: device)),
-            unsupported([
-              'ComputeDevice.${device.name}',
-              Platform.operatingSystem,
-            ]),
+            unsupported(
+              device == ComputeDevice.gpu && liteRtLmGateAbi() == Abi.macosX64
+                  ? ['LiteRT-LM GPU is not available on macOS x86_64']
+                  : ['ComputeDevice.${device.name}', Platform.operatingSystem],
+            ),
           );
         }
       } finally {
@@ -5242,11 +5246,11 @@ void main() {
     try {
       expect(
         service.getGpuSupport(),
-        Platform.isMacOS ||
-            Platform.isIOS ||
+        Platform.isIOS ||
             Platform.isAndroid ||
-            Abi.current() == Abi.linuxX64 ||
-            Abi.current() == Abi.windowsX64,
+            liteRtLmGateAbi() == Abi.macosArm64 ||
+            liteRtLmGateAbi() == Abi.linuxX64 ||
+            liteRtLmGateAbi() == Abi.windowsX64,
       );
       expect(service.getVramInfo(), (total: 0, free: 0));
       expect(() => service.freeMultimodalContext(1), throwsUnsupportedError);
@@ -5259,7 +5263,7 @@ void main() {
 }
 
 String _expectedAutoLiteRtLmBackend() {
-  if (Platform.isAndroid || Platform.isMacOS) {
+  if (Platform.isAndroid || liteRtLmGateAbi() == Abi.macosArm64) {
     return 'gpu';
   }
   return 'cpu';
