@@ -53,8 +53,8 @@ abstract class ChatTemplateHandler {
   /// reads content only as parts, as llama.cpp does. A handler that builds
   /// typed parts itself passes `typedContent: false` to keep string content.
   /// Inside [renderWithToolResultsAsUserTurns], tool results become user
-  /// turns when [TemplateCaps] finds the template rejects the `tool` role,
-  /// with tool calls in `content` when it cannot render them either. With
+  /// turns, with tool calls in `content` when [TemplateCaps] finds the
+  /// template cannot render them. With
   /// [multimodal], each media part becomes [mediaMarker] in the message
   /// text.
   List<Map<String, dynamic>> templateMessages(
@@ -81,7 +81,7 @@ abstract class ChatTemplateHandler {
             caps != null &&
             caps.supportsTypedContent &&
             !caps.supportsStringContent,
-        toolResultsAsUser: polyfill && !caps.supportsToolResponses,
+        toolResultsAsUser: polyfill,
         toolCallsAsContent: polyfill && !caps.supportsToolCalls,
       );
     } catch (e, stackTrace) {
@@ -250,8 +250,9 @@ final Object _toolResultsAsUserTurns = Object();
 /// Runs [render] so that [ChatTemplateHandler.templateMessages] sends tool
 /// results as user turns to a template that rejects the `tool` role.
 ///
-/// `ChatTemplateEngine` uses it only to retry a render that already failed,
-/// so a request the template renders as given is never changed.
+/// `ChatTemplateEngine` uses it only to retry a failed render for a template
+/// whose [TemplateCaps.supportsToolResponses] is `false`, so a request the
+/// template renders as given is never changed.
 T renderWithToolResultsAsUserTurns<T>(T Function() render) =>
     runZoned(render, zoneValues: {_toolResultsAsUserTurns: true});
 

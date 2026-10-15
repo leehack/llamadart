@@ -328,6 +328,39 @@ void main() {
     );
   });
 
+  test('keeps the error of a template that renders the tool role', () {
+    const template = '''
+{%- for message in messages -%}
+{%- if message.role == 'tool' and loop.previtem.role == 'tool' -%}
+{{ raise_exception('one result per turn') }}
+{%- endif -%}
+{{- message.role }}: {{ message.content }}
+{% endfor -%}''';
+    expect(TemplateCaps.detect(template).supportsToolResponses, isTrue);
+
+    expect(
+      () => ChatTemplateEngine.render(
+        templateSource: template,
+        messages: [
+          _user,
+          _calls([_call('call00001', 'Paris'), _call('call00002', 'Rome')]),
+          _results([
+            _result('call00001', {'temperature_c': 21}),
+            _result('call00002', {'temperature_c': 25}),
+          ]),
+        ],
+        metadata: const {},
+      ),
+      throwsA(
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          contains('one result per turn'),
+        ),
+      ),
+    );
+  });
+
   test('keeps the error of a template that rejects user turns too', () {
     const template = '''
 {%- for message in messages -%}
