@@ -248,8 +248,10 @@ void main() {
         responseFormat: responseFormat,
       );
 
+      // 1997 tools is the most the shipped llama.cpp runtime loads; the e2e
+      // grammar validation suite checks both counts against it.
       test('keeps Hermes grammars llama.cpp loads', () {
-        final tools = schemaTools(1000);
+        final tools = schemaTools(1997);
         final grammar = HermesHandler().buildGrammar(tools)!;
         expect(
           plan(_BaseBackend(), grammar, tools: tools).generationParams.grammar,
@@ -258,7 +260,7 @@ void main() {
       });
 
       test('rejects Hermes grammars over the llama.cpp repetition limit', () {
-        final tools = schemaTools(2000);
+        final tools = schemaTools(1998);
         expect(
           () => plan(
             _BaseBackend(),

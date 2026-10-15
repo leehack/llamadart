@@ -387,6 +387,14 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
         ),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const [
+            'tool/testing/build_llama_cpp_runtime_gbnf_validator.sh',
+          ],
+          description: 'GBNF validator for the shipped llama.cpp runtime',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
           executable: 'dart',
           arguments: const [
             'test',
@@ -397,7 +405,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           environment: {
             'LLAMA_CPP_GBNF_VALIDATOR':
-                '${Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ?? '${context.projectRoot}/.dart_tool/llama_cpp_chat_tests'}'
+                '${Platform.environment['LLAMA_CPP_RUNTIME_BUILD_DIR'] ?? '${context.projectRoot}/.dart_tool/llama_cpp_runtime_build'}'
                 '/bin/test-gbnf-validator',
           },
           description: 'Compiled tool-grammar acceptance',

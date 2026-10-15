@@ -194,13 +194,16 @@ void main() {
         displayShell: LocalE2eDisplayShell.posix,
       );
       final buildDir =
-          Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ??
-          '/repo/.dart_tool/llama_cpp_chat_tests';
+          Platform.environment['LLAMA_CPP_RUNTIME_BUILD_DIR'] ??
+          '/repo/.dart_tool/llama_cpp_runtime_build';
 
       expect(result.exitCode, 0);
       final chatTests = result.stdout.indexOf(
         'dart test --run-skipped -t local-only '
         'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart',
+      );
+      final validatorBuild = result.stdout.indexOf(
+        'bash tool/testing/build_llama_cpp_runtime_gbnf_validator.sh',
       );
       final grammarTests = result.stdout.indexOf(
         'LLAMA_CPP_GBNF_VALIDATOR=$buildDir/bin/test-gbnf-validator '
@@ -208,7 +211,8 @@ void main() {
         'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
       );
       expect(chatTests, isNonNegative);
-      expect(grammarTests, greaterThan(chatTests));
+      expect(validatorBuild, greaterThan(chatTests));
+      expect(grammarTests, greaterThan(validatorBuild));
       final templateTests = Directory('test/e2e/template')
           .listSync()
           .whereType<File>()

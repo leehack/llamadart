@@ -1383,7 +1383,7 @@ void main() {
   });
 
   test('grammar limit check agrees with llama.cpp on Hermes tool counts', () {
-    for (final (count, loads) in [(1000, true), (2000, false)]) {
+    for (final (count, loads) in [(1997, true), (1998, false)]) {
       final tools = [
         for (var i = 0; i < count; i++)
           ToolDefinition.fromJsonSchema(
@@ -1501,22 +1501,37 @@ void main() {
   test('llama.cpp grammar repetition limit matches the schema bound', () {
     final directory = Directory.systemTemp.createTempSync('llamadart-gbnf-');
     addTearDown(() => directory.deleteSync(recursive: true));
-    String run(int bound) {
-      final grammar = File('${directory.path}/bound.gbnf')
-        ..writeAsStringSync(
-          JsonSchemaConverter.convert({'type': 'string', 'maxLength': bound}),
-        );
+    String run(Map<String, dynamic> schema, int length) {
+      final grammar = JsonSchemaConverter.convert(schema);
+      final grammarFile = File('${directory.path}/bound.gbnf')
+        ..writeAsStringSync(grammar);
       final input = File('${directory.path}/bound.txt')
-        ..writeAsStringSync('"${'a' * bound}"');
-      final result = Process.runSync(validator, [grammar.path, input.path]);
+        ..writeAsStringSync('"${'a' * length}"');
+      final result = Process.runSync(validator, [grammarFile.path, input.path]);
       return '${result.stdout}\n${result.stderr}';
     }
 
+    const maxLength = {'type': 'string', 'maxLength': 2000};
     expect(
-      run(1999),
+      () => checkTemplateGrammarLimits(JsonSchemaConverter.convert(maxLength)),
+      returnsNormally,
+    );
+    expect(
+      run(maxLength, 2000),
       contains('Input string is valid according to the grammar.'),
     );
-    expect(run(2000), contains('failed to parse grammar'));
+    expect(run(maxLength, 2001), isNot(contains('failed to parse grammar')));
+    expect(
+      run(maxLength, 2001),
+      isNot(contains('Input string is valid according to the grammar.')),
+    );
+
+    const minLength = {'type': 'string', 'minLength': 2001};
+    expect(
+      () => checkTemplateGrammarLimits(JsonSchemaConverter.convert(minLength)),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    expect(run(minLength, 2001), contains('failed to parse grammar'));
   });
 }
 

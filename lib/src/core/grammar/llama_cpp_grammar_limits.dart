@@ -5,8 +5,8 @@ import '../llama_logger.dart';
 const _maxRepetitionThreshold = 2000;
 const _unbounded = -1;
 
-/// Throws [LlamaUnsupportedException] when llama.cpp would refuse to load
-/// [grammar] for its repetition limit.
+/// Throws [LlamaUnsupportedException] when the shipped llama.cpp runtime would
+/// refuse to load [grammar] for its repetition limit.
 ///
 /// A repetition upper bound above the threshold, which llama.cpp replaces
 /// with an unbounded repetition, logs a warning instead: the output still
@@ -34,11 +34,13 @@ void checkTemplateGrammarLimits(String grammar) {
 /// repetition limit, or `null` when it stays within it or uses syntax this
 /// check does not model.
 ///
-/// Mirrors the symbol accounting of `llama_grammar_parser::parse_sequence` at
-/// the pinned b10549: a repeated item counts every symbol created while it
-/// was parsed (synthesized groups, repetition rules and first references to
-/// rule names), and the product with the repetition count must stay below
-/// `MAX_REPETITION_THRESHOLD`.
+/// Mirrors the symbol accounting of `llama_grammar_parser::parse_sequence` in
+/// the llama.cpp release the native runtime ships (upstream `v0.6.0`,
+/// d81235049, for native pin `v0.6.0-3`): a repeated item counts every symbol
+/// created while it was parsed (synthesized groups, repetition rules and
+/// first references to rule names), and the product with the repetition count
+/// must not exceed `MAX_REPETITION_THRESHOLD`. Releases before upstream
+/// 9e0e22059, such as b10549, also rejected a product equal to it.
 String? llamaCppRepetitionRejection(String grammar) =>
     _RepetitionBudget(grammar).rejection();
 
@@ -94,7 +96,7 @@ final class _RepetitionBudget {
     var previous = 1;
     void repeat(int min, int max) {
       final total = max != _unbounded && max > 0 ? max : (min > 0 ? min : 1);
-      if (previous * total >= _maxRepetitionThreshold) {
+      if (previous * total > _maxRepetitionThreshold) {
         throw _Rejected(
           'rule $_rule repeats $previous symbols $total times at $_pos',
         );
