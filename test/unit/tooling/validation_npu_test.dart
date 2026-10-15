@@ -10,6 +10,7 @@ import 'package:test/test.dart';
 
 import '../../../tool/testing/validation/bundle.dart';
 import '../../../tool/testing/validation/npu.dart';
+import '../../../tool/testing/validation/process.dart';
 
 void main() {
   late Directory root;
@@ -191,7 +192,7 @@ void main() {
           target,
           p.join(root.path, 'output-$target'),
           profile: 'gemma3-litert-cpu',
-          execute: (binary, args, {directory, timeout}) async {
+          execute: (binary, args, {directory, timeout, environment}) async {
             invoked = true;
             throw StateError('Build command must not run');
           },
@@ -239,7 +240,7 @@ void main() {
             target,
             p.join(root.path, 'output-$target-$id'),
             profile: id,
-            execute: (binary, args, {directory, timeout}) async {
+            execute: (binary, args, {directory, timeout, environment}) async {
               invoked = true;
               throw StateError('Build command must not run');
             },
@@ -386,7 +387,7 @@ void main() {
         'android',
         p.join(root.path, 'out'),
         profile: id,
-        execute: (binary, arguments, {directory, timeout}) async {
+        execute: (binary, arguments, {directory, timeout, environment}) async {
           calls++;
           throw StateError('must not reach build executor');
         },
@@ -395,4 +396,106 @@ void main() {
     );
     expect(calls, 0);
   });
+
+  test(
+    'verified NPU build passes the staged inputs to every Android build',
+    () async {
+      for (final path in [
+        '.flutter-version',
+        'hook/build.dart',
+        'scripts/fetch_webgpu_bridge_assets.sh',
+        'packages/llamadart_validation/pubspec.lock',
+        'example/chat_app/pubspec.lock',
+        'example/chat_app/android/app/src/main/AndroidManifest.xml',
+      ]) {
+        final target = File(p.join(root.path, path));
+        target.parent.createSync(recursive: true);
+        File(path).copySync(target.path);
+      }
+      File(
+        p.join(root.path, 'lib/src/hook/native_release_pins.dart'),
+      ).writeAsStringSync(
+        "const llamaCppTag = 'v0.0.0';\n"
+        "const liteRtLmVersion = '$npuRuntimeTag';\n",
+      );
+      final javaHome = p.join(root.path, 'jdk');
+      File(
+        p.join(javaHome, 'bin', Platform.isWindows ? 'java.exe' : 'java'),
+      ).createSync(recursive: true);
+      final commands = <(String, List<String>, Map<String, String>?)>[];
+      final outputs = p.join(root.path, 'example/chat_app/build/app/outputs');
+      await buildValidationBundle(
+        root.path,
+        'android',
+        p.join(root.path, 'out'),
+        profile: id,
+        npuKit: kit.path,
+        model: model.path,
+        environment: {'JAVA_HOME': javaHome},
+        execute: (binary, args, {directory, timeout, environment}) async {
+          commands.add((binary, args, environment));
+          if (binary == 'git') {
+            return CommandResult(
+              0,
+              args.first == 'rev-parse' ? 'a' * 40 : '',
+              '',
+            );
+          }
+          if (binary == 'flutter' && args.first == '--version') {
+            return CommandResult(
+              0,
+              jsonEncode({
+                'frameworkVersion': File(
+                  '.flutter-version',
+                ).readAsStringSync().trim(),
+                'dartSdkVersion': Platform.version.split(' ').first,
+              }),
+              '',
+            );
+          }
+          if (binary == 'flutter' && args.first == 'config') {
+            return CommandResult(0, jsonEncode({'jdk-dir': javaHome}), '');
+          }
+          for (final path in [
+            if (binary == 'flutter' && args.first == 'build')
+              p.join(outputs, 'flutter-apk', 'app-debug.apk'),
+            if (binary.contains('gradlew'))
+              p.join(
+                outputs,
+                'apk',
+                'androidTest',
+                'debug',
+                'app-debug-androidTest.apk',
+              ),
+          ]) {
+            File(path).createSync(recursive: true);
+          }
+          return const CommandResult(0, '', '');
+        },
+      );
+      final builds = commands.where(
+        (command) =>
+            command.$2.take(2).join(' ') == 'pub get' ||
+            command.$2.first == 'build' ||
+            command.$1.contains('gradlew'),
+      );
+      expect(builds.map((command) => command.$2.first), [
+        'pub',
+        'build',
+        'build',
+        'app:assembleAndroidTest',
+      ]);
+      for (final (binary, args, environment) in builds) {
+        expect(
+          environment,
+          containsPair(
+            'LLAMADART_VALIDATION_NPU_STAGE',
+            isA<String>().having(p.basename, 'basename', 'npu'),
+          ),
+          reason: '$binary $args',
+        );
+      }
+    },
+    skip: Platform.isWindows ? 'NPU APK builder needs macOS/Linux' : false,
+  );
 }

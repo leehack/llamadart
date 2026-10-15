@@ -1856,7 +1856,7 @@ void main() {
       expect(customProvider.settings.gpuLayers, ModelParams.maxGpuLayers);
       expect(customProvider.settings.contextSize, 16384);
       expect(customProvider.settings.autoTuneModelParams, isTrue);
-    });
+    }, testOn: 'vm');
 
     test('Android Auto probes Vulkan before estimating GPU offload', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -1884,7 +1884,7 @@ void main() {
         ),
         isTrue,
       );
-    });
+    }, testOn: 'vm');
 
     test('applyModelPreset disables tools when unsupported', () {
       const model = DownloadableModel(
@@ -1922,6 +1922,7 @@ void main() {
         expect(customProvider.settings.preferredBackend, GpuBackend.auto);
         expect(customProvider.activeBackend, 'METAL');
       },
+      testOn: 'vm',
     );
 
     test(
@@ -2364,6 +2365,7 @@ void main() {
         expect(provider.canAttachMedia, isTrue);
         expect(provider.hasConfiguredMmproj, isFalse);
       },
+      testOn: 'vm',
     );
 
     test('applyModelPreset prefers CPU for Qwen3.5 0.8B on Android', () {
@@ -2376,7 +2378,7 @@ void main() {
 
       expect(provider.settings.preferredBackend, GpuBackend.cpu);
       expect(provider.settings.gpuLayers, 0);
-    });
+    }, testOn: 'vm');
 
     test('applyModelPreset reduces Android context for Qwen3.5 0.8B', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -2387,7 +2389,19 @@ void main() {
       provider.applyModelPreset(qwenModel);
 
       expect(provider.settings.contextSize, 2048);
-    });
+    }, testOn: 'vm');
+
+    test('applyModelPreset keeps web defaults for Qwen3.5 0.8B', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final qwenModel = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Qwen3.5 0.8B Instruct',
+      );
+
+      provider.applyModelPreset(qwenModel);
+
+      expect(provider.settings.preferredBackend, isNot(GpuBackend.cpu));
+      expect(provider.settings.contextSize, isNot(2048));
+    }, testOn: 'browser');
 
     test('applyModelPreset uses LiteRT-LM preset values on Android', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
