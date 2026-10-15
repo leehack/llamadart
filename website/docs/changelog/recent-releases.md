@@ -25,6 +25,11 @@ For canonical full release notes, use:
   worker path, which rejects with an `AbortError`, and on LiteRT-LM Web, whose
   pending stream read rejects. Observers report the run as cancelled
   ([#875](https://github.com/leehack/llamadart/issues/875)).
+- Fix `getPerformanceContext()` decode and prompt-eval times on a native
+  runtime without the llamadart exit-teardown exports (`v0.5.0` or older),
+  where an asynchronous GPU backend such as Metal counted its work as sampling
+  time and decode speed read about 10x too high
+  ([#671](https://github.com/leehack/llamadart/issues/671)).
 
 ## 0.13.0
 

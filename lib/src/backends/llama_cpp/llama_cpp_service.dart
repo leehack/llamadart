@@ -5966,6 +5966,10 @@ class LlamaCppService {
             }
           }
           if (evalResult == 0) {
+            // The tracked mtmd evaluations wait for the backend, as the
+            // object calls' decode does; upstream libmtmd returns before an
+            // asynchronous one has finished.
+            if (exitTeardown == null) _calls.synchronize(ctx.pointer);
             initialTokens = newPast.value;
           } else {
             throw Exception(
