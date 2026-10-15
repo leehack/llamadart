@@ -1007,6 +1007,26 @@ void main() {
       expect(lastRequestedMicroBatchSize, 4096);
     });
 
+    for (final gpuLayers in const [-1, -2]) {
+      test('sends every layer for gpuLayers $gpuLayers', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/llama-3.2-3b.gguf',
+          ModelParams(contextSize: 4096, gpuLayers: gpuLayers),
+        );
+
+        expect(lastRequestedGpuLayers, ModelParams.maxGpuLayers);
+      });
+    }
+
+    test('caps negative gpuLayers for qwen3.5-0.8b', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: -1),
+      );
+
+      expect(lastRequestedGpuLayers, 2);
+    });
+
     test('bounds size-hinted large model batches when unset', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/local-large-model.gguf',
@@ -1329,6 +1349,18 @@ void main() {
         );
       },
     );
+
+    test('falls back to the CPU for negative gpuLayers', () async {
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+      failLoads(message: 'array buffer allocation failed', firstAttempts: 1);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/negative-layers-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: -1),
+      );
+
+      expect(requestedGpuLayerCounts, <int?>[ModelParams.maxGpuLayers, 0]);
+    });
 
     test('leaves the first rung thread count unset by default', () async {
       bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
@@ -4005,6 +4037,22 @@ void main() {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
         const ModelParams(gpuLayers: 42),
+      );
+
+      expect(lastRequestedGpuLayers, 0);
+    });
+
+    test('forces CPU fallback on Safari for negative gpuLayers', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeUserAgent'.toJS,
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 '
+                '(KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+            .toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(gpuLayers: -1),
       );
 
       expect(lastRequestedGpuLayers, 0);

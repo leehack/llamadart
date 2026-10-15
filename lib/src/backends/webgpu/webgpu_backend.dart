@@ -17,6 +17,7 @@ import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
+import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/media_placeholders.dart';
@@ -866,10 +867,6 @@ class WebGpuLlamaBackend
       return requestedGpuLayers;
     }
 
-    if (requestedGpuLayers < 0) {
-      return _qwen35SmallSafeWebGpuLayers;
-    }
-
     return math.min(requestedGpuLayers, _qwen35SmallSafeWebGpuLayers);
   }
 
@@ -1129,7 +1126,7 @@ class WebGpuLlamaBackend
         params.preferredBackend == GpuBackend.cpu ||
             params.device == ComputeDevice.cpu
         ? 0
-        : params.gpuLayers;
+        : resolveGpuLayerCount(params.gpuLayers);
 
     if (requestedGpuLayers > 0 &&
         _isSafariBrowser() &&

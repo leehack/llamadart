@@ -21,6 +21,12 @@
   where an asynchronous GPU backend such as Metal counted its work as sampling
   time and decode speed read about 10x too high
   ([#671](https://github.com/leehack/llamadart/issues/671)).
+- A negative `ModelParams.gpuLayers` now means all layers on every runtime,
+  as in llama.cpp, exactly like `ModelParams.maxGpuLayers`. Native llama.cpp
+  now also offloads the KV cache and reports the GPU backend instead of
+  `CPU`, LiteRT-LM under `ComputeDevice.auto` uses its GPU backend instead
+  of the CPU, and the Web applies its GPU safety caps and CPU fallback
+  ([#920](https://github.com/leehack/llamadart/issues/920)).
 
 ## 0.13.0
 

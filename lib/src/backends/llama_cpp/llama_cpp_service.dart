@@ -23,6 +23,7 @@ import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
@@ -857,7 +858,10 @@ class LlamaCppService {
 
   /// Resolves the effective GPU layer count for model loading.
   ///
-  /// CPU backend preference always forces zero offloaded layers.
+  /// CPU backend preference always forces zero offloaded layers, and a
+  /// negative [ModelParams.gpuLayers] resolves to [ModelParams.maxGpuLayers]:
+  /// llama.cpp offloads every layer for it, so the context offload, backend
+  /// name and reported layer count must treat it as a GPU load.
   static int resolveGpuLayersForLoad(
     ModelParams modelParams, {
     bool isAndroid = false,
@@ -870,7 +874,7 @@ class LlamaCppService {
             ) ==
             GpuBackend.cpu
         ? 0
-        : modelParams.gpuLayers;
+        : resolveGpuLayerCount(modelParams.gpuLayers);
   }
 
   /// The warning for a model an iOS simulator loaded with [resolvedGpuLayers]

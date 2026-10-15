@@ -34,10 +34,12 @@ Important fields:
 - `device`: `ComputeDevice.auto` (default), `cpu`, `gpu` or `npu`, for every
   runtime. `auto` keeps each runtime's default; an explicit device runs there
   or throws `LlamaUnsupportedException`. On llama.cpp, `cpu` ignores
-  `gpuLayers`; LiteRT-LM rejects a `gpuLayers` other than `0` or
+  `gpuLayers`; LiteRT-LM rejects a positive `gpuLayers` other than
   `ModelParams.maxGpuLayers` with any device. See
   [Choosing the device](../guides/backend-selection#choosing-the-device).
-- `gpuLayers`: number of layers offloaded to GPU.
+- `gpuLayers`: number of layers offloaded to GPU. `0` keeps the model on
+  CPU; a negative value means all layers, as in llama.cpp, and every runtime
+  treats it like `ModelParams.maxGpuLayers`.
 - `preferredBackend`: backend preference (`auto`, `vulkan`, `metal`, etc).
   On Linux and Windows, an explicit GPU backend whose module is missing loads
   the model on CPU with 0 GPU layers and logs a Dart warning;
@@ -144,7 +146,8 @@ runtime default.
 | `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
 | `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
 
-`gpuLayers` must be `0` (CPU) or `ModelParams.maxGpuLayers`. Native
+`gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative
+value, which means all layers like `maxGpuLayers`. Native
 LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
 `numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF

@@ -1478,6 +1478,49 @@ void main() {
       expect(createdBackends, [2]);
     });
 
+    for (final (gpuLayers, backend) in const [
+      (-1, 2),
+      (-2, 2),
+      (ModelParams.maxGpuLayers, 2),
+      (0, 3),
+    ]) {
+      test('auto with gpuLayers $gpuLayers creates backend $backend', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.missing));
+
+        await LiteRtLmBackend().modelLoadFromUrl(
+          url,
+          ModelParams(gpuLayers: gpuLayers),
+        );
+
+        expect(createdBackends, [backend]);
+      });
+    }
+
+    test('a context with negative gpuLayers keeps a GPU model', () async {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.missing));
+      final backend = LiteRtLmBackend();
+      final modelHandle = await backend.modelLoadFromUrl(
+        url,
+        const ModelParams(),
+      );
+
+      await backend.contextCreate(
+        modelHandle,
+        const ModelParams(gpuLayers: -1),
+      );
+      await expectLater(
+        () =>
+            backend.contextCreate(modelHandle, const ModelParams(gpuLayers: 0)),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('from gpu to cpu'),
+          ),
+        ),
+      );
+    });
+
     test('cpu runs on the CPU', () async {
       await LiteRtLmBackend().modelLoadFromUrl(
         url,

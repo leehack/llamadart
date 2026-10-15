@@ -117,7 +117,8 @@ class ModelParams {
   /// `LlamaUnsupportedException`; it never runs elsewhere:
   /// - [ComputeDevice.cpu] loads no GPU layers. On llama.cpp it loads only
   ///   the CPU module, whatever [gpuLayers] and [preferredBackend] say;
-  ///   LiteRT-LM still rejects a [gpuLayers] other than 0 or [maxGpuLayers].
+  ///   LiteRT-LM still rejects a positive [gpuLayers] other than
+  ///   [maxGpuLayers].
   /// - [ComputeDevice.gpu] on llama.cpp needs a GPU module and device for
   ///   [preferredBackend] (Vulkan on Android and Metal on an iOS simulator
   ///   when it is [GpuBackend.auto]), and on the Web an active WebGPU
@@ -135,6 +136,10 @@ class ModelParams {
   final ComputeDevice device;
 
   /// Number of model layers to offload to the GPU (n_gpu_layers).
+  ///
+  /// `0` keeps every layer on the CPU. A negative value means all layers, as
+  /// llama.cpp defines `n_gpu_layers`, and every runtime treats it exactly
+  /// like [maxGpuLayers].
   final int gpuLayers;
 
   /// Preferred GPU backend for inference.
