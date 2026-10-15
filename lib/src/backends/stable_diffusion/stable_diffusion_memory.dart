@@ -193,8 +193,8 @@ List<StableDiffusionGpuMemory>? readStableDiffusionGpuMemory({
 ///   which is what this process can still allocate there and so accounts for
 ///   other processes and for models already loaded;
 /// - without one, its total memory. The runtime then reports the total as
-///   free, so equal figures mean "not reported", and so does a free figure of
-///   0, which a driver whose budget is below the process's use gives.
+///   free, so equal figures mean "not reported". A free figure of 0 is a
+///   budget below the process's use, and counts as no free memory.
 ///
 /// Discrete GPUs do not bound a load by themselves: stable-diffusion.cpp's
 /// automatic fit, which llamadart leaves on, keeps the weights that do not
@@ -270,7 +270,7 @@ ImageGenerationMemoryLimits stableDiffusionGpuMemoryLimits(
 }
 
 ImageGenerationMemoryBudget _gpuFigure(StableDiffusionGpuMemory gpu) =>
-    gpu.freeBytes > 0 && gpu.freeBytes < gpu.totalBytes
+    gpu.freeBytes < gpu.totalBytes
     ? (
         bytes: gpu.freeBytes,
         source:
