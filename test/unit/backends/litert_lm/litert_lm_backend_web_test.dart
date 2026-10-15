@@ -1025,6 +1025,42 @@ void main() {
     }
   });
 
+  test('ignores the load template and an empty custom template, and rejects '
+      'a non-empty one', () async {
+    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(chatTemplate: 'load {{ messages }}'),
+      );
+      const messages = <Map<String, dynamic>>[
+        {'role': 'user', 'content': 'hello'},
+      ];
+
+      expect(await backend.applyChatTemplate(modelHandle, messages), 'hello');
+      expect(
+        await backend.applyChatTemplate(
+          modelHandle,
+          messages,
+          customTemplate: '',
+        ),
+        'hello',
+      );
+      await expectLater(
+        backend.applyChatTemplate(
+          modelHandle,
+          messages,
+          customTemplate: 'custom {{ messages }}',
+        ),
+        throwsUnsupportedError,
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('reports zero VRAM without requiring web runtime', () async {
     final backend = LiteRtLmBackend(readyTimeout: Duration.zero);
 
