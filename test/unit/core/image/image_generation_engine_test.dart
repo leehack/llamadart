@@ -1036,6 +1036,56 @@ void main() {
       });
     }
 
+    for (final (name, source, message) in [
+      (
+        'local',
+        _local(_model),
+        'Checksum mismatch for local model file: $_model.',
+      ),
+      (
+        'remote',
+        _remote,
+        'Checksum mismatch for hf://owner/sdxs@0123abc/sdxs.gguf.',
+      ),
+    ]) {
+      test('a checksum mismatch for a single $name file names it by '
+          'position', () async {
+        downloads.checksumError = LlamaModelException(message);
+
+        await expectLater(
+          load(_sdxs(source), download: ModelLoadOptions(sha256: 'a' * 64)),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                equals(
+                  'Checksum mismatch for the main file: its SHA-256 does not '
+                  'match ModelLoadOptions.sha256.',
+                ),
+                isNot(contains('sdxs')),
+                isNot(contains('/models')),
+              ),
+            ),
+          ),
+        );
+        expect(driver.started, isEmpty);
+      });
+    }
+
+    test(
+      'another model error from a checksummed load passes through',
+      () async {
+        final failure = LlamaModelException('Local model file does not exist.');
+        downloads.checksumError = failure;
+
+        await expectLater(
+          load(_sdxs(), download: ModelLoadOptions(sha256: 'a' * 64)),
+          throwsA(same(failure)),
+        );
+      },
+    );
+
     test('a checksum for several files is rejected before anything '
         'downloads', () async {
       await expectLater(
@@ -2087,6 +2137,9 @@ final class _FakeDownloads implements ModelDownloadManager {
   /// a checkpoint and `.safetensors` files to a TAESD.
   final Map<String, Uint8List> remoteHeaders = {};
   Object? error;
+
+  /// Thrown for any file when the load sets [ModelLoadOptions.sha256].
+  Object? checksumError;
   Completer<void>? gate;
 
   static String cachePath(ModelSource source) =>
@@ -2099,6 +2152,9 @@ final class _FakeDownloads implements ModelDownloadManager {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     calls.add((source, options));
+    if (options.sha256 != null && checksumError != null) {
+      throw checksumError!;
+    }
     final path = source.isLocal ? source.path! : cachePath(source);
     if (!source.isLocal) {
       final failure = error;

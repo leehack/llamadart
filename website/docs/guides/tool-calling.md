@@ -124,7 +124,10 @@ which some templates, such as Ministral 3's and Mistral Small 3.2's, cannot
 render before a new user turn. `completeWithTools(const [], ...)` continues
 the open turn, so its rollback also removes that turn's earlier messages,
 including the tool results you added. Messages that other code added during
-the loop stay. Older turns that context trimming dropped stay dropped, as
+the loop stay, except those an `addMessage` override appends while the loop
+adds a message (or that a listener adds from inside that override): the
+rollback removes them with the turn, and they are neither in
+`result.messages` nor reported to `onMessageAdded`. Older turns that context trimming dropped stay dropped, as
 after `create`. A rollback edits the history without calling `addMessage` or
 `reset`, so a `ChatSession` subclass that mirrors the history should check
 `result.rolledBack`.
@@ -134,7 +137,10 @@ their side effects: `result.messages` holds every message of the turn,
 including their results, and `onMessageAdded` has already reported the ones
 the call added. To resume a rolled-back turn, add `result.messages` back,
 answer `result.pendingToolCalls`, and call
-`completeWithTools(const [], tools: ...)`.
+`completeWithTools(const [], tools: ...)`. After `truncated`, raise
+`maxTokens` and send the turn again instead: `result.messages` ends with the
+partial reply, and templates such as Ministral 3's can reject the next user
+turn after it.
 
 On WebGPU a cancel ends generation with a stream error; the loop still
 reports it as `cancelled`.

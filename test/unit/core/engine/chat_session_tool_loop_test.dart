@@ -998,6 +998,38 @@ void main() {
       expect(session.history.last.content, 'Sunny');
     });
 
+    test('takes precedence over a cut-off reply and rolls it back', () async {
+      final earlier = [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ];
+      earlier.forEach(session.addMessage);
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(() async* {
+          engine.cancelGeneration();
+          yield scriptedChunk(content: 'It is sun', finishReason: 'length');
+        });
+
+      final result = await session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+      expect(result.completion.finishReason, LlamaFinishReason.length);
+      expect(result.text, 'It is sun');
+      expect(result.rounds, 1);
+      expect(result.rolledBack, isTrue);
+      expect(session.history, orderedEquals(earlier));
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
     test('reported as a stream error keeps a partial answer', () async {
       engine.replies
         ..add(scriptedCalls([('a', 'weather', '{}')]))
@@ -1323,6 +1355,39 @@ void main() {
     expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
     expect(session.history, isEmpty);
     expect(session.systemPrompt, 'Be brief.');
+  });
+
+  test('a class that implements ChatSession over an addMessage that stores '
+      'copies rolls the copies back', () async {
+    final copying = _CopyingSession(engine);
+    [
+      _text(LlamaChatRole.user, 'Hi'),
+      _text(LlamaChatRole.assistant, 'Hello'),
+    ].forEach(copying.addMessage);
+    final delegate = _DelegatingSession(copying);
+    engine.replies
+      ..add(scriptedCalls([('a', 'weather', '{}')]))
+      ..add(scriptedCalls([('b', 'weather', '{}')]));
+
+    final result = await delegate.sendWithTools(
+      'Weather',
+      tools: [_tool('weather', (_) async => 'sunny')],
+      maxRounds: 1,
+    );
+
+    expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
+    expect(result.rolledBack, isTrue);
+    expect(_roles(result.messages), [
+      LlamaChatRole.user,
+      LlamaChatRole.assistant,
+      LlamaChatRole.tool,
+      LlamaChatRole.assistant,
+    ]);
+    expect(_toolResults(copying), isEmpty);
+    expect(
+      [for (final message in copying.history) message.content],
+      ['Hi', 'Hello'],
+    );
   });
 
   test('completeWithTools sends media parts as the user turn', () async {

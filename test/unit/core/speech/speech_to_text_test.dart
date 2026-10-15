@@ -39,6 +39,36 @@ void main() {
       expect(capabilities.unsupportedReason, contains('Load a model'));
     });
 
+    test(
+      'reports a disposed attached LlamaEngine, not a missing model',
+      () async {
+        await _loadSpeechModel(llamaEngine);
+        await llamaEngine.dispose();
+
+        final capabilities = await speechEngine.capabilities;
+        expect(capabilities.isSupported, isFalse);
+        expect(
+          capabilities.unsupportedReason,
+          'The attached LlamaEngine is disposed. Create a new LlamaEngine and '
+          'attach a new SpeechToTextEngine.',
+        );
+        await expectLater(
+          speechEngine.transcribe(
+            const SpeechToTextRequest(
+              audio: SpeechAudioFileInput('/tmp/a.wav'),
+            ),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('The attached LlamaEngine is disposed.'),
+            ),
+          ),
+        );
+      },
+    );
+
     test('reports exact first-backend capabilities', () async {
       await _loadSpeechModel(llamaEngine);
 
