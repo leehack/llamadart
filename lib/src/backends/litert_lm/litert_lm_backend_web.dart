@@ -699,7 +699,15 @@ class LiteRtLmBackend
     final reader = conversation.sendMessageStreaming(prompt).getReader();
     try {
       while (!_cancelRequested) {
-        final result = await reader.read().toDart;
+        final _LiteRtLmStreamReadResult result;
+        try {
+          result = await reader.read().toDart;
+        } catch (_) {
+          // conversation.cancel() ends the run with a cancelled status, which
+          // rejects the pending read with a plain Error.
+          if (_cancelRequested) break;
+          rethrow;
+        }
         if (result.done) {
           break;
         }

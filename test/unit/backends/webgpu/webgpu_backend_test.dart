@@ -14,7 +14,15 @@ import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart'
-    show Blob, BlobPropertyBag, Response, URL, document, window;
+    show
+        AbortSignal,
+        Blob,
+        BlobPropertyBag,
+        DOMException,
+        Response,
+        URL,
+        document,
+        window;
 
 import '../../../support/fake_navigator_gpu.dart';
 import '../../../support/fake_webgpu_decision_bridge.dart';
@@ -3085,6 +3093,191 @@ void main() {
           ),
         );
       }
+    });
+
+    group('a cancelGeneration during a completion', () {
+      late _ResultRecorder recorder;
+
+      setUp(() => recorder = _ResultRecorder());
+
+      /// Emits `partial`, runs [afterToken], then settles as the pinned
+      /// bridge does once the caller's signal aborts: the worker path rejects
+      /// with [abortRejection], the direct path resolves with the text so
+      /// far.
+      void completeOnAbort({
+        required JSAny? abortRejection,
+        void Function()? afterToken,
+      }) {
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final signal = opts.getProperty<AbortSignal>('signal'.toJS);
+            final onToken = opts.getProperty('onToken'.toJS) as JSFunction;
+            return JSPromise<JSAny?>(
+              ((JSFunction resolve, JSFunction reject) {
+                signal.addEventListener(
+                  'abort',
+                  ((JSAny? _) {
+                    if (abortRejection == null) {
+                      resolve.callAsFunction(null, 'partial'.toJS);
+                    } else {
+                      reject.callAsFunction(null, abortRejection);
+                    }
+                  }).toJS,
+                );
+                onToken.callAsFunction(null, 'partial'.toJS, 'partial'.toJS);
+                afterToken?.call();
+              }).toJS,
+            );
+          }).toJS,
+        );
+      }
+
+      Future<LlamaEngine> loadEngine() async {
+        final engine = LlamaEngine(backend, observers: [recorder]);
+        await engine.loadModelFromUrl('https://example.com/model.gguf');
+        return engine;
+      }
+
+      final userTurn = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Reply'),
+      ];
+
+      for (final worker in [true, false]) {
+        final path = worker
+            ? 'worker AbortError rejection'
+            : 'direct-mode resolution';
+        test('ends normally as cancelled after a $path', () async {
+          late LlamaEngine engine;
+          completeOnAbort(
+            abortRejection: worker
+                ? DOMException('Generation was cancelled.', 'AbortError')
+                : null,
+            afterToken: () => engine.cancelGeneration(),
+          );
+          engine = await loadEngine();
+
+          final completion = await engine.complete(userTurn);
+          expect(completion.text, 'partial');
+          expect(completion.finishReason, LlamaFinishReason.stop);
+          expect(await engine.generate('Hello').join(), 'partial');
+          expect(recorder.results, hasLength(2));
+          for (final result in recorder.results) {
+            expect(result.error, isNull);
+            expect(result.cancelled, isTrue);
+          }
+        });
+      }
+
+      test('parses a required tool call cut short by a cancel as partial, as '
+          'native does', () async {
+        bridgeRuntimeHints['tokenizer.chat_template'] =
+            '{#- [SYSTEM_PROMPT] [TOOL_CALLS] [ARGS] -#}'
+            '{% for message in messages %}[INST]{{ message["content"] }}'
+            '[/INST]{% endfor %}';
+        const partialCall = '[TOOL_CALLS]get_weather[ARGS]{"ci';
+        late LlamaEngine engine;
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final signal = opts.getProperty<AbortSignal>('signal'.toJS);
+            final onToken = opts.getProperty('onToken'.toJS) as JSFunction;
+            return JSPromise<JSAny?>(
+              ((JSFunction resolve, JSFunction reject) {
+                signal.addEventListener(
+                  'abort',
+                  ((JSAny? _) => reject.callAsFunction(
+                    null,
+                    DOMException('Generation was cancelled.', 'AbortError'),
+                  )).toJS,
+                );
+                onToken.callAsFunction(
+                  null,
+                  partialCall.toJS,
+                  partialCall.toJS,
+                );
+                engine.cancelGeneration();
+              }).toJS,
+            );
+          }).toJS,
+        );
+        engine = await loadEngine();
+
+        final completion = await engine.complete(
+          userTurn,
+          tools: [
+            ToolDefinition(
+              name: 'get_weather',
+              description: 'Get weather',
+              parameters: [ToolParam.string('city', required: true)],
+              handler: (_) async => 'ok',
+            ),
+          ],
+          toolChoice: ToolChoice.required,
+        );
+        expect(completion.finishReason, LlamaFinishReason.stop);
+        expect(completion.toolCalls, isEmpty);
+        expect(recorder.results.single.cancelled, isTrue);
+      });
+
+      test('surfaces an AbortError that no cancel requested', () async {
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) => _rejectPromise(
+            DOMException('The worker aborted.', 'AbortError'),
+          )).toJS,
+        );
+        final engine = await loadEngine();
+
+        await expectLater(
+          engine.complete(userTurn),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        expect(recorder.results.single.error, isA<LlamaInferenceException>());
+        expect(recorder.results.single.cancelled, isFalse);
+      });
+
+      test('surfaces a failure other than the abort after a cancel', () async {
+        late LlamaEngine engine;
+        completeOnAbort(
+          abortRejection: _jsError('device lost'),
+          afterToken: () => engine.cancelGeneration(),
+        );
+        engine = await loadEngine();
+
+        await expectLater(
+          engine.complete(userTurn),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        expect(recorder.results.single.error, isA<LlamaInferenceException>());
+      });
+
+      test(
+        'keeps a later generation unaffected by an earlier cancel',
+        () async {
+          late LlamaEngine engine;
+          completeOnAbort(
+            abortRejection: DOMException(
+              'Generation was cancelled.',
+              'AbortError',
+            ),
+            afterToken: () => engine.cancelGeneration(),
+          );
+          engine = await loadEngine();
+          await engine.complete(userTurn);
+
+          bridge.setProperty(
+            'createCompletion'.toJS,
+            ((String prompt, JSObject opts) => _rejectPromise(
+              DOMException('The worker aborted.', 'AbortError'),
+            )).toJS,
+          );
+          await expectLater(
+            engine.complete(userTurn),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+        },
+      );
     });
 
     test(
@@ -6904,4 +7097,21 @@ void main() {
       });
     });
   });
+}
+
+final class _ResultRecorder extends LlamaEngineObserver {
+  final List<LlamaOperationResult> results = <LlamaOperationResult>[];
+
+  @override
+  LlamaOperationObserver? onStart(LlamaOperation operation) =>
+      operation is LlamaModelLoadOperation ? null : _ResultObserver(results);
+}
+
+final class _ResultObserver extends LlamaOperationObserver {
+  _ResultObserver(this.results);
+
+  final List<LlamaOperationResult> results;
+
+  @override
+  void onEnd(LlamaOperationResult result) => results.add(result);
 }

@@ -1242,6 +1242,110 @@ void main() {
     expect(readerCancelCalls, 1);
   });
 
+  group('a cancelGeneration during a streamed reply', () {
+    // Mirrors @litert-lm/core 0.18.0: Conversation.cancel() stops the native
+    // run, whose cancelled status errors the stream and rejects the pending
+    // read. [error] errors the stream without a cancel instead.
+    String moduleUrl({String? error}) =>
+        'data:text/javascript;charset=utf-8,${Uri.encodeComponent('''
+      export const Backend = { CPU: 3, GPU_ARTISAN: 2, GPU: 4 };
+      export const Engine = {
+        async create() {
+          return {
+            async createConversation() {
+              let fail = () => {};
+              return {
+                sendMessageStreaming() {
+                  let pulls = 0;
+                  return new ReadableStream({
+                    start(controller) {
+                      fail = (error) => controller.error(error);
+                    },
+                    pull(controller) {
+                      if (pulls++ === 0) {
+                        controller.enqueue({
+                          content: [{ type: 'text', text: 'partial' }],
+                        });
+                        return;
+                      }
+                      globalThis.__llamadartLiteRtLmReadPending = true;
+                      ${error == null ? '' : 'fail($error);'}
+                    },
+                  }, { highWaterMark: 0 });
+                },
+                cancel() {
+                  fail(new Error('Task cancelled'));
+                },
+                async delete() {},
+              };
+            },
+            async delete() {},
+          };
+        },
+      };
+    ''')}';
+
+    final userTurn = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Reply'),
+    ];
+
+    Future<(LlamaEngine, _ResultRecorder)> loadEngine({String? error}) async {
+      final recorder = _ResultRecorder();
+      final engine = LlamaEngine(
+        LiteRtLmBackend(moduleUrl: moduleUrl(error: error)),
+        observers: [recorder],
+      );
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('https://example.com/model.litertlm');
+      return (engine, recorder);
+    }
+
+    Future<void> cancelAtPendingRead(LlamaEngine engine) async {
+      while (!globalContext.has('__llamadartLiteRtLmReadPending')) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      engine.cancelGeneration();
+    }
+
+    test('create ends with stop, as cancelled, when the pending read '
+        'rejects', () async {
+      final (engine, recorder) = await loadEngine();
+      final completion = engine.complete(userTurn);
+      await cancelAtPendingRead(engine);
+
+      expect((await completion).finishReason, api.LlamaFinishReason.stop);
+      expect(recorder.results.single.error, isNull);
+      expect(recorder.results.single.cancelled, isTrue);
+    });
+
+    test('generate keeps the text before a cancel whose pending read '
+        'rejects', () async {
+      final (engine, recorder) = await loadEngine();
+      final text = engine.generate('Reply').join();
+      await cancelAtPendingRead(engine);
+
+      expect(await text, 'partial');
+      expect(recorder.results.single.error, isNull);
+      expect(recorder.results.single.cancelled, isTrue);
+    });
+
+    for (final error in [
+      "new DOMException('aborted', 'AbortError')",
+      "new Error('Task cancelled')",
+    ]) {
+      test('surfaces $error that no cancel requested', () async {
+        final (engine, recorder) = await loadEngine(error: error);
+
+        await expectLater(
+          engine.create(userTurn).toList(),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        expect(recorder.results.single.error, isA<LlamaInferenceException>());
+        expect(recorder.results.single.cancelled, isFalse);
+      });
+    }
+  });
+
   test('reports missing web runtime with actionable setup error', () async {
     final backend = LiteRtLmBackend(readyTimeout: Duration.zero);
 
@@ -1564,4 +1668,24 @@ void _clearGlobals() {
   globalContext.delete('__llamadartLiteRtLmModulePrompt'.toJS);
   globalContext.delete('__llamadartLiteRtLmLogLevel'.toJS);
   globalContext.delete('__llamadartInstallLiteRtLmConsoleGuard'.toJS);
+  globalContext.delete('__llamadartLiteRtLmReadPending'.toJS);
+}
+
+final class _ResultRecorder extends LlamaEngineObserver {
+  final List<api.LlamaOperationResult> results = <api.LlamaOperationResult>[];
+
+  @override
+  LlamaOperationObserver? onStart(api.LlamaOperation operation) =>
+      operation is api.LlamaModelLoadOperation
+      ? null
+      : _ResultObserver(results);
+}
+
+final class _ResultObserver extends LlamaOperationObserver {
+  _ResultObserver(this.results);
+
+  final List<api.LlamaOperationResult> results;
+
+  @override
+  void onEnd(api.LlamaOperationResult result) => results.add(result);
 }
