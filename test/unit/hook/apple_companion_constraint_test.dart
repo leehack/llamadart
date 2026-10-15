@@ -34,7 +34,7 @@ void main() {
         ('0.13.4', '^0.13.0'),
         ('0.14.1', '^0.14.0'),
       ]) {
-        for (final firstPinning in [null, '0.0.23', '0.13.1']) {
+        for (final firstPinning in ['0.0.23', '0.13.1']) {
           if (firstPinning == '0.13.1' && core.startsWith('0.13.')) continue;
           expect(
             appleCompanionConstraint(core, firstPinningRelease: firstPinning),
@@ -61,7 +61,6 @@ void main() {
     });
 
     test('a 1.x core names a range a caret would widen', () {
-      expect(appleCompanionConstraint('1.2.3'), "'>=1.2.0 <1.3.0'");
       expect(
         appleCompanionConstraint('1.2.3', firstPinningRelease: '1.2.1'),
         "'>=1.2.1 <1.3.0'",
@@ -130,7 +129,10 @@ void main() {
     });
 
     test('names nothing when no constraint is known', () {
-      expect(_requirement('0.12.2'), isNull);
+      for (final core in ['0.12.2', '0.13.0', '0.13.2', '1.2.3']) {
+        expect(appleCompanionConstraint(core), isNull, reason: core);
+        expect(_requirement(core), isNull, reason: core);
+      }
       expect(_requirement(null, firstPinningRelease: '0.0.23'), isNull);
     });
   });

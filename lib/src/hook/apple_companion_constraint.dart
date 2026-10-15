@@ -49,21 +49,20 @@ bool isAppleCompanionLockstepCore(String coreVersion) {
 /// it shares the core's `MAJOR.MINOR`, because the pin moved within that
 /// minor, and otherwise the minor's first release: a caret on a 0.x release,
 /// or `'>=FROM <MAJOR.(MINOR+1).0'` once a caret would admit later minors. An
-/// earlier core names `^`[firstPinningRelease], when it is known. A missing
-/// [coreVersion], or one that is not a version, names nothing.
+/// earlier core names `^`[firstPinningRelease]. Without a known
+/// [firstPinningRelease] nothing names a release that pins the tag, and a
+/// missing [coreVersion], or one that is not a version, names nothing.
 String? appleCompanionConstraint(
   String? coreVersion, {
   String? firstPinningRelease,
 }) {
   final core = _parse(coreVersion);
-  if (core == null) return null;
-  if (!_isLockstep(core)) {
-    return firstPinningRelease == null ? null : '^$firstPinningRelease';
-  }
+  if (core == null || firstPinningRelease == null) return null;
+  if (!_isLockstep(core)) return '^$firstPinningRelease';
   final first = _parse(firstPinningRelease);
   final from =
       first != null && first.major == core.major && first.minor == core.minor
-      ? firstPinningRelease!
+      ? firstPinningRelease
       : '${core.major}.${core.minor}.0';
   return core.major == 0
       ? '^$from'

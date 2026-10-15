@@ -808,23 +808,15 @@ dependencies:
     );
   }
 
-  for (final (core, requirement) in [
-    (
-      '0.12.2',
-      'Resolve llamadart_stable_diffusion_flutter with a Package.swift pin '
-          'matching leehack/stable-diffusion-native@$stableDiffusionReleaseTag '
-          'and rerun flutter pub get.',
-    ),
-    (
-      '0.13.0',
-      'Depend on `llamadart_stable_diffusion_flutter: ^0.13.0`, the core '
-          '0.13.x companion releases pinning '
-          'leehack/stable-diffusion-native@$stableDiffusionReleaseTag, in '
-          'pubspec.yaml and rerun flutter pub get.',
-    ),
-  ]) {
+  // No first stable_diffusion companion release pinning the tag is recorded,
+  // so even a lockstep core must not claim a constraint that pins it.
+  for (final core in ['0.12.2', '0.13.0', '0.13.2']) {
+    final requirement =
+        'Resolve llamadart_stable_diffusion_flutter with a Package.swift pin '
+        'matching leehack/stable-diffusion-native@$stableDiffusionReleaseTag '
+        'and rerun flutter pub get.';
     test('core $core: the stable_diffusion companion rejection names the '
-        'release to depend on', () async {
+        'native pin and no companion release', () async {
       final defines = await _flutterAppleApp(
         companions: const [_stableDiffusionCompanionName],
         editManifest: (manifest) => manifest.replaceFirst(
@@ -846,10 +838,12 @@ dependencies:
         ),
         throwsA(
           predicate(
-            (error) => error.toString().contains(
-              'the required native runtime $stableDiffusionReleaseTag. '
-              '$requirement Upgrade the core and companion together',
-            ),
+            (error) =>
+                error.toString().contains(
+                  'the required native runtime $stableDiffusionReleaseTag. '
+                  '$requirement Upgrade the core and companion together',
+                ) &&
+                !error.toString().contains('Depend on'),
           ),
         ),
       );

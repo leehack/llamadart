@@ -12,8 +12,7 @@ For canonical full release notes, use:
 - From core `0.13.0`, the Flutter Apple build error or warning for a
   mismatched or earlier-build llama.cpp companion names the companion release
   of the core's own minor, such as `^0.13.0`, instead of the first `0.0.x`
-  release pinning the native runtime; the stable_diffusion companion error
-  names one too.
+  release pinning the native runtime.
 - A chat template that fails to render now names its source in the
   `LlamaInferenceException` message: the model's `tokenizer.chat_template`
   or its `tool_use` variant, `ModelParams.chatTemplate`, or `customTemplate`
