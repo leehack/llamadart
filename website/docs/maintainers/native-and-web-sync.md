@@ -146,6 +146,11 @@ Manifest checksums must agree with both `SHA256SUMS` and GitHub release asset
 digests before any pin files are written. The sync rewrites
 `llamaCppBundleSha256` from each bundle archive's release digest and fails
 without writing when the release lacks a pinned bundle.
+Any PR or push that changes the pin file also runs the Native Release Digests
+workflow, which compares `llamaCppBundleSha256` with the pinned release's
+`SHA256SUMS`. That catches a manual edit or conflict resolution that left stale
+digests. Run it locally with
+`dart run tool/testing/check_native_release_digests.dart`.
 Re-syncing the exact current tag remains idempotent for recovery and validation;
 the owning native release workflow is responsible for rejecting publication
 collisions.

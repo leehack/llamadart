@@ -7,6 +7,20 @@ void main() {
   const service = ConversationStateService();
 
   group('ConversationStateService', () {
+    test('issues distinct conversation IDs for the same clock reading', () {
+      final now = DateTime.fromMillisecondsSinceEpoch(1760000000000);
+
+      final first = service.newConversationId(now: now);
+      final second = service.newConversationId(now: now);
+      final earlier = service.newConversationId(
+        now: now.subtract(const Duration(seconds: 1)),
+      );
+
+      expect(<String>{first, second, earlier}, hasLength(3));
+      expect(int.parse(second), greaterThan(int.parse(first)));
+      expect(int.parse(earlier), greaterThan(int.parse(second)));
+    });
+
     test('builds title from first user message', () {
       final title = service.deriveConversationTitle(
         messages: <ChatMessage>[

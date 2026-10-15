@@ -6,9 +6,15 @@ import '../models/chat_settings.dart';
 class ConversationStateService {
   const ConversationStateService();
 
+  // Web clocks only resolve milliseconds, so raw timestamps can repeat.
+  static int _lastIssuedId = 0;
+
+  /// Returns a process-unique, monotonically increasing conversation ID
+  /// derived from the microsecond timestamp.
   String newConversationId({DateTime? now}) {
-    final timestamp = now ?? DateTime.now();
-    return timestamp.microsecondsSinceEpoch.toString();
+    final timestamp = (now ?? DateTime.now()).microsecondsSinceEpoch;
+    _lastIssuedId = timestamp > _lastIssuedId ? timestamp : _lastIssuedId + 1;
+    return _lastIssuedId.toString();
   }
 
   int activeConversationIndex({

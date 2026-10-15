@@ -273,6 +273,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'docs that pin either.',
   ),
   TestMatrixRow(
+    id: 'native-release-digests',
+    tier: 'targeted',
+    mode: 'CI + local (network)',
+    covers:
+        'every llamaCppBundleSha256 pin matches the pinned llama.cpp '
+        'release SHA256SUMS',
+    command:
+        'CI workflow "Native Release Digests", or dart run '
+        'tool/testing/check_native_release_digests.dart',
+    useWhen: 'Any edit to lib/src/hook/native_release_pins.dart.',
+  ),
+  TestMatrixRow(
     id: 'examples-tests',
     tier: 'targeted',
     mode: 'local',

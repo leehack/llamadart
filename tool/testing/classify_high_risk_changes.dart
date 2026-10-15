@@ -167,6 +167,7 @@ bool _isArtifactConsumer(String path) {
       path.startsWith('lib/src/hook/') ||
       path.startsWith('tool/native/') ||
       path == 'tool/testing/check_webgpu_bridge_tag.dart' ||
+      path == 'tool/testing/check_native_release_digests.dart' ||
       path == 'scripts/check_native_link_deps.sh' ||
       path == 'scripts/fetch_webgpu_bridge_assets.sh' ||
       path == 'scripts/build_chat_app_web.sh' ||

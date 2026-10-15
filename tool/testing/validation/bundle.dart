@@ -71,6 +71,60 @@ Future<Map<String, dynamic>> readValidationProvenance(
   };
 }
 
+/// Resolves the JDK Flutter builds Android with, so the direct Gradle step
+/// uses the same one. Like Flutter, it replaces any `JAVA_HOME` that differs.
+///
+/// Order: `flutter config --jdk-dir`, then the `Java binary at:` line of
+/// `flutter doctor -v` (which covers the Android Studio JBR), then
+/// `JAVA_HOME`. Throws a [StateError] naming the fix when none is a JDK home.
+Future<String> resolveAndroidJavaHome({
+  CommandExecutor execute = executeCommand,
+  Map<String, String>? environment,
+}) async {
+  bool isJdk(String home) => File(
+    p.join(home, 'bin', Platform.isWindows ? 'java.exe' : 'java'),
+  ).existsSync();
+  final config = await execute('flutter', [
+    'config',
+    '--machine',
+  ], timeout: const Duration(minutes: 2));
+  if (config.code == 0) {
+    final start = config.output.indexOf('{');
+    try {
+      final settings = start < 0
+          ? null
+          : jsonDecode(config.output.substring(start));
+      final jdkDir = settings is Map ? settings['jdk-dir'] : null;
+      if (jdkDir is String && jdkDir.isNotEmpty && isJdk(jdkDir)) {
+        return jdkDir;
+      }
+    } on FormatException {
+      // Fall through to doctor output.
+    }
+  }
+  final doctor = await execute('flutter', [
+    'doctor',
+    '-v',
+  ], timeout: const Duration(minutes: 5));
+  final javaBinary = RegExp(
+    r'Java binary at: (.+)$',
+    multiLine: true,
+  ).firstMatch(doctor.output)?.group(1)?.trim();
+  if (doctor.code == 0 && javaBinary != null && javaBinary.isNotEmpty) {
+    final home = p.dirname(p.dirname(javaBinary));
+    if (isJdk(home)) return home;
+  }
+  final javaHome = (environment ?? Platform.environment)['JAVA_HOME'];
+  if (javaHome != null && javaHome.isNotEmpty && isJdk(javaHome)) {
+    return javaHome;
+  }
+  throw StateError(
+    'Android bundles need a JDK for ./gradlew: Flutter reported none and '
+    'JAVA_HOME is unset or not a JDK. Run `flutter doctor -v`, then '
+    '`flutter config --jdk-dir=<jdk>` or set JAVA_HOME.',
+  );
+}
+
 /// Creates a portable bundle and an exhaustive checksum inventory.
 Future<Directory> buildValidationBundle(
   String root,
@@ -84,6 +138,7 @@ Future<Directory> buildValidationBundle(
   String executionPath = 'public_api',
   String? internalDiagnosticRunId,
   CommandExecutor execute = executeCommand,
+  Map<String, String>? environment,
 }) async {
   if (internalDiagnosticRunId != null && target != 'android') {
     throw const FormatException('Internal diagnostic reports require Android');
@@ -184,14 +239,21 @@ Future<Directory> buildValidationBundle(
     provenance['internal_diagnostic'] = contract.binding;
   }
   String? npuStage;
-  Future<void> command(String binary, List<String> args, String cwd) async {
+  Future<void> command(
+    String binary,
+    List<String> args,
+    String cwd, {
+    Map<String, String> environment = const {},
+  }) async {
     final result = await execute(
-      npuStage == null ? binary : 'env',
-      npuStage == null
-          ? args
-          : ['LLAMADART_VALIDATION_NPU_STAGE=$npuStage', binary, ...args],
+      binary,
+      args,
       directory: cwd,
       timeout: const Duration(minutes: 30),
+      environment: {
+        'LLAMADART_VALIDATION_NPU_STAGE': ?npuStage,
+        ...environment,
+      },
     );
     if (result.code != 0) {
       stdout.write(result.output);
@@ -301,6 +363,10 @@ Future<Directory> buildValidationBundle(
           'Android instrumentation currently uses debug; performance is labelled separately',
         );
       }
+      final javaHome = await resolveAndroidJavaHome(
+        execute: execute,
+        environment: environment,
+      );
       await command('flutter', ['pub', 'get'], app);
       destination.createSync(recursive: true);
       // The interactive app runs text profiles only.
@@ -336,12 +402,18 @@ Future<Directory> buildValidationBundle(
         'android-arm64',
         ...defines.map((value) => '--dart-define=$value'),
       ], app);
-      await command(Platform.isWindows ? 'gradlew.bat' : './gradlew', [
-        'app:assembleAndroidTest',
-        '-Ptarget=$testTarget',
-        '-Ptarget-platform=android-arm64',
-        '-Pdart-defines=${defines.map((value) => base64Encode(utf8.encode(value))).join(',')}',
-      ], p.join(app, 'android'));
+      final gradlew = Platform.isWindows ? 'gradlew.bat' : './gradlew';
+      await command(
+        gradlew,
+        [
+          'app:assembleAndroidTest',
+          '-Ptarget=$testTarget',
+          '-Ptarget-platform=android-arm64',
+          '-Pdart-defines=${defines.map((value) => base64Encode(utf8.encode(value))).join(',')}',
+        ],
+        p.join(app, 'android'),
+        environment: {'JAVA_HOME': javaHome},
+      );
       destination.createSync(recursive: true);
       File(
         p.join(app, 'build', 'app', 'outputs', 'flutter-apk', 'app-debug.apk'),

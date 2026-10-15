@@ -194,7 +194,7 @@ void main() {
           root.path,
           'desktop',
           output.path,
-          execute: (binary, args, {directory, timeout}) async {
+          execute: (binary, args, {directory, timeout, environment}) async {
             if (binary == 'git') {
               return CommandResult(
                 0,
@@ -281,8 +281,9 @@ void main() {
         scratch,
         identity,
         abi: Abi.windowsArm64,
-        execute: (executable, arguments, {directory, timeout}) async =>
-            throw StateError('No extraction should run'),
+        execute:
+            (executable, arguments, {directory, timeout, environment}) async =>
+                throw StateError('No extraction should run'),
       );
       expect(identity['litert_runtime_supported'], false);
       expect(scratch.listSync(), isEmpty);
@@ -299,8 +300,9 @@ void main() {
         scratch,
         macOsX64,
         abi: Abi.macosX64,
-        execute: (executable, arguments, {directory, timeout}) async =>
-            throw StateError('No extraction should run'),
+        execute:
+            (executable, arguments, {directory, timeout, environment}) async =>
+                throw StateError('No extraction should run'),
       );
       expect(macOsX64['litert_runtime_supported'], false);
       expect(
@@ -486,13 +488,20 @@ void main() {
             Directory.current.path,
             plan(target: 'firebase-ios', profile: 'decision-gguf-metal'),
             run,
-            execute: (executable, arguments, {directory, timeout}) async {
-              final index = arguments.indexOf('--native-log');
-              if (index >= 0) {
-                log = File(arguments[index + 1]).readAsStringSync();
-              }
-              return const CommandResult(0, '', '');
-            },
+            execute:
+                (
+                  executable,
+                  arguments, {
+                  directory,
+                  timeout,
+                  environment,
+                }) async {
+                  final index = arguments.indexOf('--native-log');
+                  if (index >= 0) {
+                    log = File(arguments[index + 1]).readAsStringSync();
+                  }
+                  return const CommandResult(0, '', '');
+                },
           );
         } on ValidationAssessmentFailure catch (error) {
           expect('$error', contains('wrote no results.json'));
@@ -1073,13 +1082,20 @@ void main() {
             Directory.current.path,
             plan(target: target, profile: 'gemma4-litert-gpu'),
             run,
-            execute: (executable, arguments, {directory, timeout}) async {
-              final index = arguments.indexOf('--native-log');
-              if (index >= 0) {
-                log = File(arguments[index + 1]).readAsStringSync();
-              }
-              return const CommandResult(0, '', '');
-            },
+            execute:
+                (
+                  executable,
+                  arguments, {
+                  directory,
+                  timeout,
+                  environment,
+                }) async {
+                  final index = arguments.indexOf('--native-log');
+                  if (index >= 0) {
+                    log = File(arguments[index + 1]).readAsStringSync();
+                  }
+                  return const CommandResult(0, '', '');
+                },
           );
         } on ValidationAssessmentFailure catch (error) {
           expect('$error', contains('wrote no results.json'));
@@ -1190,25 +1206,25 @@ void main() {
       File(
         p.join(pulled.path, 'events.jsonl'),
       ).writeAsStringSync(jsonEncode({'type': 'manifest', 'profile': profile}));
-      Future<bool> assess(Map<String, dynamic> environment) =>
-          assessCollectedRun(
-            Directory.current.path,
-            plan(),
-            run,
-            execute: (executable, arguments, {directory, timeout}) async {
+      Future<bool> assess(Map<String, dynamic> bound) => assessCollectedRun(
+        Directory.current.path,
+        plan(),
+        run,
+        execute:
+            (executable, arguments, {directory, timeout, environment}) async {
               if (arguments.first == 'pub') {
                 return const CommandResult(0, '', '');
               }
               expect(arguments, contains('bin/report.dart'));
               File(p.join(arguments[2], 'results.json')).writeAsStringSync(
                 jsonEncode({
-                  'manifest': {'environment': environment, 'profile': profile},
+                  'manifest': {'environment': bound, 'profile': profile},
                   'summary': {'qualified': true},
                 }),
               );
               return const CommandResult(0, '', '');
             },
-          );
+      );
       expect(await assess(identity), true);
       for (final key in identity.keys) {
         expect(
@@ -1252,20 +1268,21 @@ void main() {
       scratch.path,
       plan(),
       run,
-      execute: (executable, arguments, {directory, timeout}) async {
-        expect(directory, package);
-        calls.add(arguments.take(2).join(' '));
-        if (arguments.first == 'pub') return pubGet;
-        if (qualified != null) {
-          File(p.join(arguments[2], 'results.json')).writeAsStringSync(
-            jsonEncode({
-              'manifest': {'environment': {}, 'profile': profile},
-              'summary': {'qualified': qualified},
-            }),
-          );
-        }
-        return report;
-      },
+      execute:
+          (executable, arguments, {directory, timeout, environment}) async {
+            expect(directory, package);
+            calls.add(arguments.take(2).join(' '));
+            if (arguments.first == 'pub') return pubGet;
+            if (qualified != null) {
+              File(p.join(arguments[2], 'results.json')).writeAsStringSync(
+                jsonEncode({
+                  'manifest': {'environment': {}, 'profile': profile},
+                  'summary': {'qualified': qualified},
+                }),
+              );
+            }
+            return report;
+          },
     );
 
     Matcher failure(List<Object> parts) => throwsA(
@@ -1404,8 +1421,14 @@ void main() {
       await expectLater(
         readValidationProvenance(
           scratch.path,
-          execute: (executable, arguments, {directory, timeout}) async =>
-              throw StateError('Git must not run'),
+          execute:
+              (
+                executable,
+                arguments, {
+                directory,
+                timeout,
+                environment,
+              }) async => throw StateError('Git must not run'),
         ),
         throwsA(
           isA<StateError>().having(
@@ -1439,21 +1462,22 @@ void main() {
   test('billing mode is explicit and live account must match', () async {
     Map<String, dynamic> billing = {'billingEnabled': false};
     final provider = GcloudProvider(
-      execute: (binary, args, {directory, timeout}) async => CommandResult(
-        0,
-        jsonEncode(
-          args.first == 'billing'
-              ? billing
-              : [
-                  {
-                    'id': 'test-device',
-                    'form': 'PHYSICAL',
-                    'supportedVersionIds': ['35'],
-                  },
-                ],
-        ),
-        '',
-      ),
+      execute: (binary, args, {directory, timeout, environment}) async =>
+          CommandResult(
+            0,
+            jsonEncode(
+              args.first == 'billing'
+                  ? billing
+                  : [
+                      {
+                        'id': 'test-device',
+                        'form': 'PHYSICAL',
+                        'supportedVersionIds': ['35'],
+                      },
+                    ],
+            ),
+            '',
+          ),
     );
     await provider.preflight(plan());
     await expectLater(provider.preflight(blazePlan()), throwsStateError);
@@ -1770,7 +1794,7 @@ void main() {
                 ],
               },
             },
-            execute: (binary, args, {directory, timeout}) async {
+            execute: (binary, args, {directory, timeout, environment}) async {
               calls.add(args);
               return CommandResult(
                 0,
@@ -1824,11 +1848,12 @@ void main() {
               ],
             },
           },
-          execute: (binary, args, {directory, timeout}) async => CommandResult(
-            0,
-            jsonEncode('https://console.firebase.google.com/'),
-            receipt,
-          ),
+          execute: (binary, args, {directory, timeout, environment}) async =>
+              CommandResult(
+                0,
+                jsonEncode('https://console.firebase.google.com/'),
+                receipt,
+              ),
         );
         await expectLater(
           provider.start(plan(), checkpoints.add),
@@ -1856,7 +1881,7 @@ void main() {
             ],
           },
         },
-        execute: (binary, args, {directory, timeout}) async =>
+        execute: (binary, args, {directory, timeout, environment}) async =>
             const CommandResult(
               1,
               '',
@@ -1973,6 +1998,28 @@ void main() {
     expect(explicitResult.code, defaultResult.code);
     expect(explicitResult.output, defaultResult.output);
     expect(explicitResult.error, defaultResult.error);
+  });
+
+  test('command environment adds to the inherited environment', () async {
+    final result = await executeCommand(
+      Platform.isWindows ? 'python' : 'python3',
+      const <String>[
+        '-c',
+        'import os; '
+            'print(os.environ.get("LLAMADART_COMMAND_FIXTURE")); '
+            'print(os.environ.get("PATH") == os.environ.get("PARENT_PATH"))',
+      ],
+      timeout: const Duration(seconds: 5),
+      environment: <String, String>{
+        'LLAMADART_COMMAND_FIXTURE': 'passed',
+        'PARENT_PATH': Platform.environment['PATH']!,
+      },
+    );
+    expect(result.code, 0, reason: result.error);
+    expect(const LineSplitter().convert(result.output), <String>[
+      'passed',
+      'True',
+    ]);
   });
 
   test('literal host entry binds its maintained direct-child callback', () async {
@@ -2224,7 +2271,7 @@ void main() {
     () async {
       for (final status in [403, 429, 503]) {
         final provider = GcloudProvider(
-          execute: (_, _, {directory, timeout}) async =>
+          execute: (_, _, {directory, timeout, environment}) async =>
               const CommandResult(0, 'secret-token', ''),
           createHttpClient: () => MockClient((request) async {
             expect(request.headers['Authorization'], 'Bearer secret-token');
@@ -2248,7 +2295,7 @@ void main() {
       var transferred = false;
       final provider = MatrixProvider(
         {'state': 'PENDING'},
-        execute: (_, _, {directory, timeout}) async {
+        execute: (_, _, {directory, timeout, environment}) async {
           transferred = true;
           return const CommandResult(0, '', '');
         },
@@ -2466,7 +2513,7 @@ void main() {
       () async {
         final transfers = <List<String>>[];
         final provider = GcloudProvider(
-          execute: (_, args, {directory, timeout}) async {
+          execute: (_, args, {directory, timeout, environment}) async {
             if (args.contains('scp')) {
               transfers.add(args);
               // Stop before executing the uploaded fixture, and exercise the
@@ -2522,7 +2569,7 @@ void main() {
     'uncertain GCE creation cannot be cleared by an empty inventory',
     () async {
       final provider = GcloudProvider(
-        execute: (binary, args, {directory, timeout}) async =>
+        execute: (binary, args, {directory, timeout, environment}) async =>
             const CommandResult(0, '[]', ''),
       );
       expect(
@@ -2537,7 +2584,7 @@ void main() {
   test('cleanup refuses a changed or auxiliary boot disk', () async {
     final calls = <List<String>>[];
     final provider = GcloudProvider(
-      execute: (binary, args, {directory, timeout}) async {
+      execute: (binary, args, {directory, timeout, environment}) async {
         calls.add(args);
         return CommandResult(
           0,
