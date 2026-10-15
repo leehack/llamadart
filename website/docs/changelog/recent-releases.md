@@ -42,6 +42,12 @@ For canonical full release notes, use:
 - `WebGpuLlamaBackend(bridgeScriptUrl: ...)` now loads the bridge in dart2js
   builds instead of failing with `WebGPU bridge init failed`
   ([#735](https://github.com/leehack/llamadart/issues/735)).
+- An attached `SpeechToTextEngine` whose `LlamaEngine` was disposed now
+  reports the disposed engine, instead of asking to load a model
+  ([#924](https://github.com/leehack/llamadart/issues/924)).
+- A `ModelLoadOptions.sha256` mismatch in `ImageGenerationEngine.load` names
+  the main file by position, not by its local path or URL
+  ([#907](https://github.com/leehack/llamadart/issues/907)).
 
 ## 0.12.2
 
