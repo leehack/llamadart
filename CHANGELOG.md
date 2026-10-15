@@ -9,8 +9,10 @@
   `MAJOR.MINOR`, starting at `0.13.0`, with independent patch versions. Each
   companion depends on `llamadart` within its core minor
   (`'>=0.13.0 <0.14.0'`), so pub refuses a mismatched companion and core
-  instead of the iOS or macOS build failing. Apps that take `llamadart` from a
-  path or git checkout add it under `dependency_overrides`
+  instead of the iOS or macOS build failing, and the Apple build error or
+  warning for a mismatched or older llama.cpp companion names that minor,
+  such as `^0.13.0`. Apps that take `llamadart` from a path or git checkout
+  add it under `dependency_overrides`
   ([#857](https://github.com/leehack/llamadart/issues/857)).
 - **Behavior change:** LiteRT-LM caps each cache directory's GPU program cache
   files at 1 GiB by default

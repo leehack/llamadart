@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:pub_semver/pub_semver.dart';
@@ -395,21 +396,18 @@ List<String> checkCompanionCoreConstraints(
   return errors;
 }
 
-/// The first core release whose companions share its `MAJOR.MINOR`.
+/// Checks that every companion's `version` shares [coreVersion]'s
+/// `MAJOR.MINOR` once [isAppleCompanionLockstepCore] holds for it.
 ///
 /// Earlier companions are numbered `0.0.x` and stay valid beside an earlier
-/// core, so the check starts with the release that renumbers them.
-final Version companionVersionAlignmentStart = Version(0, 13, 0);
-
-/// Checks that every companion's `version` shares [coreVersion]'s
-/// `MAJOR.MINOR`, from [companionVersionAlignmentStart] on.
-///
-/// Companion patch numbers move independently of the core's.
+/// core. The hook decides with the same predicate, so the companion
+/// constraint a build error names always admits the companion this check
+/// aligns. Companion patch numbers move independently of the core's.
 List<String> checkCompanionVersionAlignment(
   Directory repoRoot,
   Version coreVersion,
 ) {
-  if (coreVersion < companionVersionAlignmentStart) return const <String>[];
+  if (!isAppleCompanionLockstepCore('$coreVersion')) return const <String>[];
   final errors = <String>[];
   final series = '${coreVersion.major}.${coreVersion.minor}';
   for (final companion in companionSwiftPins) {

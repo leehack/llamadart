@@ -3243,6 +3243,37 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
                 self.assertIn("cleared compatible Apple llama.cpp companion tags", result.stdout)
                 self.assertIn("v0.0.1-1", result.stdout)
 
+    def test_a_lockstep_pin_move_records_the_next_same_minor_companion(
+        self,
+    ) -> None:
+        # From core 0.13.0 the hook names this constant when it shares the
+        # core MAJOR.MINOR, so a pin moved inside a minor must record the
+        # first companion release of that minor that pins it.
+        current = pins.read_hook_native_tag(self.pins.read_text(encoding="utf-8"))
+        upstream = pins.parse_native_release_tag(current).upstream_tag
+        build = int(current.rsplit("-", 1)[1]) if "-" in current else 0
+        target = f"{upstream}-{build + 1}"
+        for extra in ((), ("--bump-companion-versions",)):
+            with self.subTest(extra=extra):
+                self.make_repo()
+                pubspec = self.repo_root / self.COMPANION / "pubspec.yaml"
+                pubspec.write_text(
+                    pins.replace_pubspec_version(
+                        pubspec.read_text(encoding="utf-8"), "0.13.0", pubspec
+                    ),
+                    encoding="utf-8",
+                )
+                result = self.run_sync(target, *extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(
+                    "const llamaCppAppleCompanionVersion = '0.13.1';",
+                    self.pins.read_text(encoding="utf-8"),
+                )
+                self.assertIn(
+                    f"version: {'0.13.1' if extra else '0.13.0'}\n",
+                    pubspec.read_text(encoding="utf-8"),
+                )
+
     def test_a_same_tag_resync_keeps_compatible_tags(self) -> None:
         original = self.pins.read_text(encoding="utf-8")
         compatible = re.search(

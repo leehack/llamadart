@@ -85,7 +85,8 @@ Pair companion `0.13.0` with core `0.13.0` and `0.0.23` with core `0.12.2`;
 keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
-names the companion version to depend on. That check also accepts, with a
+names the companion release of your core's minor to depend on, such as
+`^0.13.0` with core `0.13.0`. That check also accepts, with a
 build warning, a companion whose pin is an earlier build of the same llama.cpp
 release: companion `0.0.22` (`v0.6.0-2`) still builds with core `0.12.2` and `0.13.0`,
 but its frameworks lack the minimum OS version keys that App Store validation
