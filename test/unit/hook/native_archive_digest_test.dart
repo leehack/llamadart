@@ -73,6 +73,18 @@ void main() {
       expect(entry('$digest *a.tar.gz\r\n'), digest);
     });
 
+    test('accepts a leading BOM and uppercase hex as lowercase', () {
+      expect(entry('\uFEFF${digest.toUpperCase()}  a.tar.gz\n'), digest);
+      expect(entry('\uFEFF$digest  a.tar.gz'), digest);
+    });
+
+    test('rejects a BOM that does not lead the text', () {
+      expect(
+        () => entry('$otherDigest  b.tar.gz\n\uFEFF$digest  a.tar.gz'),
+        throwsA(isA<NativeArchiveDigestException>()),
+      );
+    });
+
     test('returns null when the file is not listed', () {
       expect(entry('$digest  b.tar.gz\n\n'), isNull);
       expect(entry(''), isNull);
@@ -85,7 +97,6 @@ void main() {
     test('rejects malformed lines and duplicate entries', () {
       for (final text in [
         'not-a-digest  a.tar.gz',
-        '${digest.toUpperCase()}  a.tar.gz',
         '$digest a.tar.gz',
         '$digest  a.tar.gz trailing',
       ]) {
