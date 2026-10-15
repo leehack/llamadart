@@ -736,12 +736,15 @@ So the engine works with two figures:
   when the driver reports a budget (`VK_EXT_memory_budget`): what this
   process can still allocate, which accounts for other processes and for
   image models already loaded. Without a budget the runtime reports the
-  total as free, so the engine uses the total, and does the same for a free
-  figure of 0. A model whose estimate exceeds this figure loads, and the
-  engine logs one warning through [`LlamaLogging`](#runtime-logs) with both
-  numbers and the device, saying that part of the model stays in system
-  memory and generation will be slower. It is a `warn` record, so the
-  default level `none` hides it.
+  total as free, so the engine uses the total. A free figure of 0 against a
+  positive total means the process is over its budget and counts as no free
+  memory: every model gets the warning below, and that GPU adds nothing to
+  the sum that refuses a load on Linux, so with one GPU a model above
+  `MemAvailable` is refused. A model whose estimate exceeds this figure
+  loads, and the engine logs one warning through
+  [`LlamaLogging`](#runtime-logs) with both numbers and the device, saying
+  that part of the model stays in system memory and generation will be
+  slower. It is a `warn` record, so the default level `none` hides it.
 - **The memory of every discrete GPU plus system memory** (`MemAvailable`,
   as for the CPU). On Linux a model whose estimate exceeds this sum is
   refused. Windows does not read system memory, so nothing is refused there
