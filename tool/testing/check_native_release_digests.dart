@@ -70,14 +70,25 @@ Future<String> _fetchSha256Sums(Uri url, Duration timeout) async {
   }
 }
 
-Future<void> main(List<String> args) async {
+/// Runs the check and returns its exit code, writing to [out] and [err]
+/// (stdout and stderr by default).
+///
+/// Tests call this in-process: a child `dart run` re-bundles native assets
+/// that the test VM holds open, which Windows refuses to overwrite.
+Future<int> run(
+  List<String> args, {
+  StringSink? out,
+  StringSink? err,
+  Future<String> Function(Uri url)? fetch,
+}) async {
+  out ??= stdout;
+  err ??= stderr;
   if (args.isNotEmpty && (args.length != 2 || args.first != '--sums-file')) {
-    stderr.writeln(
+    err.writeln(
       'Usage: dart run tool/testing/check_native_release_digests.dart '
       '[--sums-file <path>]',
     );
-    exitCode = 64;
-    return;
+    return 64;
   }
   final url = Uri.parse(
     'https://github.com/$nativeReleaseRepository/releases/download/'
@@ -91,12 +102,13 @@ Future<void> main(List<String> args) async {
       checksumText = File(source).readAsStringSync();
     } else {
       source = url.toString();
-      checksumText = await _fetchSha256Sums(url, const Duration(seconds: 30));
+      checksumText =
+          await (fetch ??
+              (url) => _fetchSha256Sums(url, const Duration(seconds: 30)))(url);
     }
   } on Exception catch (error) {
-    stderr.writeln('Could not read SHA256SUMS for $llamaCppTag: $error');
-    exitCode = 1;
-    return;
+    err.writeln('Could not read SHA256SUMS for $llamaCppTag: $error');
+    return 1;
   }
   final problems = nativeReleaseDigestProblems(
     tag: llamaCppTag,
@@ -105,18 +117,22 @@ Future<void> main(List<String> args) async {
     source: source,
   );
   if (problems.isEmpty) {
-    stdout.writeln(
+    out.writeln(
       'llamaCppBundleSha256 matches $llamaCppTag SHA256SUMS '
       '(${llamaCppBundleSha256.length} bundles).',
     );
-    return;
+    return 0;
   }
-  stderr
+  err
     ..writeln('llamaCppBundleSha256 does not match $llamaCppTag SHA256SUMS:')
     ..writeAll(problems.map((problem) => '  $problem\n'))
     ..writeln(
       'Regenerate the pins with tool/native/sync_native_release_pins.py '
       '(or the sync_native_bindings workflow) instead of editing them.',
     );
-  exitCode = 1;
+  return 1;
+}
+
+Future<void> main(List<String> args) async {
+  exitCode = await run(args);
 }

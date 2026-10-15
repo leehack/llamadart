@@ -39,7 +39,8 @@ void main() {
   CommandExecutor flutter({
     String? jdkDir,
     String? doctorJava,
-  }) => (binary, args, {directory, timeout}) async {
+    String lineEnding = '\n',
+  }) => (binary, args, {directory, timeout, environment}) async {
     expect(binary, 'flutter');
     if (args.join(' ') == 'config --machine') {
       return CommandResult(
@@ -52,8 +53,9 @@ void main() {
       return CommandResult(
         0,
         doctorJava == null
-            ? '[!] Android toolchain\n'
-            : '[✓] Android toolchain\n    • Java binary at: $doctorJava\n',
+            ? '[!] Android toolchain$lineEnding'
+            : '[✓] Android toolchain$lineEnding'
+                  '    • Java binary at: $doctorJava$lineEnding',
         '',
       );
     }
@@ -78,6 +80,19 @@ void main() {
       expect(
         await resolveAndroidJavaHome(
           execute: flutter(doctorJava: javaBinary(doctorJdk)),
+          environment: {'JAVA_HOME': envJdk},
+        ),
+        doctorJdk,
+      );
+    });
+
+    test('parses CRLF flutter doctor output', () async {
+      expect(
+        await resolveAndroidJavaHome(
+          execute: flutter(
+            doctorJava: javaBinary(doctorJdk),
+            lineEnding: '\r\n',
+          ),
           environment: {'JAVA_HOME': envJdk},
         ),
         doctorJdk,
@@ -116,7 +131,7 @@ void main() {
 
   group('Android bundle Gradle step', () {
     late String root;
-    late List<(String, List<String>)> commands;
+    late List<(String, List<String>, Map<String, String>?)> commands;
 
     setUp(() {
       root = p.join(scratch.path, 'checkout');
@@ -137,8 +152,8 @@ void main() {
     });
 
     CommandExecutor build({String? jdkDir}) =>
-        (binary, args, {directory, timeout}) async {
-          commands.add((binary, args));
+        (binary, args, {directory, timeout, environment}) async {
+          commands.add((binary, args, environment));
           if (binary == 'git') {
             return CommandResult(
               0,
@@ -182,38 +197,34 @@ void main() {
           return const CommandResult(0, '', '');
         };
 
-    test(
-      'passes the Flutter JDK to ./gradlew when JAVA_HOME is unset',
-      () async {
-        await buildValidationBundle(
-          root,
-          'android',
-          p.join(scratch.path, 'out'),
-          execute: build(jdkDir: configJdk),
-          environment: const {},
-        );
-        final gradle = commands.singleWhere(
-          (command) => command.$2.contains('app:assembleAndroidTest'),
-        );
-        expect(gradle.$1, 'env');
-        expect(gradle.$2.take(2), ['JAVA_HOME=$configJdk', './gradlew']);
-      },
-      skip: Platform.isWindows ? 'Windows requires JAVA_HOME' : false,
-    );
-
-    test('runs ./gradlew directly when JAVA_HOME is the Flutter JDK', () async {
+    Future<(String, List<String>, Map<String, String>?)> gradleStep(
+      Map<String, String> environment,
+    ) async {
       await buildValidationBundle(
         root,
         'android',
         p.join(scratch.path, 'out'),
         execute: build(jdkDir: configJdk),
-        environment: {'JAVA_HOME': configJdk},
+        environment: environment,
       );
-      final gradle = commands.singleWhere(
+      return commands.singleWhere(
         (command) => command.$2.contains('app:assembleAndroidTest'),
       );
-      expect(gradle.$1, Platform.isWindows ? 'gradlew.bat' : './gradlew');
+    }
+
+    final gradlew = Platform.isWindows ? 'gradlew.bat' : './gradlew';
+
+    test('passes the Flutter JDK to Gradle when JAVA_HOME is unset', () async {
+      final gradle = await gradleStep(const {});
+      expect(gradle.$1, gradlew);
       expect(gradle.$2.first, 'app:assembleAndroidTest');
+      expect(gradle.$3, containsPair('JAVA_HOME', configJdk));
+    });
+
+    test('replaces a JAVA_HOME that differs from the Flutter JDK', () async {
+      final gradle = await gradleStep({'JAVA_HOME': envJdk});
+      expect(gradle.$1, gradlew);
+      expect(gradle.$3, containsPair('JAVA_HOME', configJdk));
     });
 
     test('fails before any Android build without a JDK', () async {

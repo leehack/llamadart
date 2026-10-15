@@ -78,35 +78,63 @@ void main() {
 
   group('CLI', () {
     late Directory scratch;
+    late StringBuffer out;
+    late StringBuffer err;
 
     setUp(() {
       scratch = Directory.systemTemp.createTempSync('native-digests-');
+      out = StringBuffer();
+      err = StringBuffer();
     });
 
     tearDown(() => scratch.deleteSync(recursive: true));
 
-    Future<ProcessResult> run(Map<String, String> digests) {
+    Future<int> runWith(Map<String, String> digests) {
       final file = File(p.join(scratch.path, 'SHA256SUMS'))
         ..writeAsStringSync(sums(digests));
-      return Process.run(Platform.resolvedExecutable, [
-        'run',
-        'tool/testing/check_native_release_digests.dart',
-        '--sums-file',
-        file.path,
-      ]);
+      return run(['--sums-file', file.path], out: out, err: err);
     }
 
     test('passes for the committed pins', () async {
-      final result = await run(llamaCppBundleSha256);
-      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(await runWith(llamaCppBundleSha256), 0, reason: '$err');
+      expect(out.toString(), contains('matches $llamaCppTag'));
     });
 
     test('fails and names the drifted bundle', () async {
       final bundle = llamaCppBundleSha256.keys.first;
-      final result = await run({...llamaCppBundleSha256, bundle: 'f' * 64});
-      expect(result.exitCode, 1);
-      expect(result.stderr, contains('$bundle pins'));
-      expect(result.stderr, contains('sync_native_release_pins.py'));
+      expect(await runWith({...llamaCppBundleSha256, bundle: 'f' * 64}), 1);
+      expect(err.toString(), contains('$bundle pins'));
+      expect(err.toString(), contains('sync_native_release_pins.py'));
+    });
+
+    test('fetches the pinned release SHA256SUMS without --sums-file', () async {
+      Uri? fetched;
+      final code = await run(
+        const [],
+        out: out,
+        err: err,
+        fetch: (url) async {
+          fetched = url;
+          return sums(llamaCppBundleSha256);
+        },
+      );
+      expect(code, 0, reason: '$err');
+      expect(fetched?.path, endsWith('/$llamaCppTag/SHA256SUMS'));
+    });
+
+    test('fails when SHA256SUMS cannot be read', () async {
+      final code = await run(
+        ['--sums-file', p.join(scratch.path, 'missing')],
+        out: out,
+        err: err,
+      );
+      expect(code, 1);
+      expect(err.toString(), contains('Could not read SHA256SUMS'));
+    });
+
+    test('rejects unknown arguments with a usage error', () async {
+      expect(await run(['--bogus'], out: out, err: err), 64);
+      expect(err.toString(), contains('Usage:'));
     });
   });
 }

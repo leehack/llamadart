@@ -72,7 +72,7 @@ Future<Map<String, dynamic>> readValidationProvenance(
 }
 
 /// Resolves the JDK Flutter builds Android with, so the direct Gradle step
-/// uses the same one when `JAVA_HOME` is unset.
+/// uses the same one. Like Flutter, it replaces any `JAVA_HOME` that differs.
 ///
 /// Order: `flutter config --jdk-dir`, then the `Java binary at:` line of
 /// `flutter doctor -v` (which covers the Android Studio JBR), then
@@ -239,14 +239,21 @@ Future<Directory> buildValidationBundle(
     provenance['internal_diagnostic'] = contract.binding;
   }
   String? npuStage;
-  Future<void> command(String binary, List<String> args, String cwd) async {
+  Future<void> command(
+    String binary,
+    List<String> args,
+    String cwd, {
+    Map<String, String> environment = const {},
+  }) async {
     final result = await execute(
-      npuStage == null ? binary : 'env',
-      npuStage == null
-          ? args
-          : ['LLAMADART_VALIDATION_NPU_STAGE=$npuStage', binary, ...args],
+      binary,
+      args,
       directory: cwd,
       timeout: const Duration(minutes: 30),
+      environment: {
+        'LLAMADART_VALIDATION_NPU_STAGE': ?npuStage,
+        ...environment,
+      },
     );
     if (result.code != 0) {
       stdout.write(result.output);
@@ -356,21 +363,10 @@ Future<Directory> buildValidationBundle(
           'Android instrumentation currently uses debug; performance is labelled separately',
         );
       }
-      final hostEnvironment = environment ?? Platform.environment;
       final javaHome = await resolveAndroidJavaHome(
         execute: execute,
-        environment: hostEnvironment,
+        environment: environment,
       );
-      final inheritedJavaHome = hostEnvironment['JAVA_HOME'] ?? '';
-      // Windows has no `env` wrapper, so gradlew.bat keeps any JAVA_HOME set.
-      if (Platform.isWindows && inheritedJavaHome.isEmpty) {
-        throw StateError(
-          'Set JAVA_HOME to the JDK Flutter uses ($javaHome) before building '
-          'Android bundles on Windows',
-        );
-      }
-      final inheritsJavaHome =
-          inheritedJavaHome == javaHome || Platform.isWindows;
       await command('flutter', ['pub', 'get'], app);
       destination.createSync(recursive: true);
       // The interactive app runs text profiles only.
@@ -407,13 +403,17 @@ Future<Directory> buildValidationBundle(
         ...defines.map((value) => '--dart-define=$value'),
       ], app);
       final gradlew = Platform.isWindows ? 'gradlew.bat' : './gradlew';
-      await command(inheritsJavaHome ? gradlew : 'env', [
-        if (!inheritsJavaHome) ...['JAVA_HOME=$javaHome', gradlew],
-        'app:assembleAndroidTest',
-        '-Ptarget=$testTarget',
-        '-Ptarget-platform=android-arm64',
-        '-Pdart-defines=${defines.map((value) => base64Encode(utf8.encode(value))).join(',')}',
-      ], p.join(app, 'android'));
+      await command(
+        gradlew,
+        [
+          'app:assembleAndroidTest',
+          '-Ptarget=$testTarget',
+          '-Ptarget-platform=android-arm64',
+          '-Pdart-defines=${defines.map((value) => base64Encode(utf8.encode(value))).join(',')}',
+        ],
+        p.join(app, 'android'),
+        environment: {'JAVA_HOME': javaHome},
+      );
       destination.createSync(recursive: true);
       File(
         p.join(app, 'build', 'app', 'outputs', 'flutter-apk', 'app-debug.apk'),

@@ -124,6 +124,19 @@ void main() {
       );
     });
 
+    test('classifies runtime pin checks as artifact consumers', () {
+      for (final path in [
+        'tool/testing/check_webgpu_bridge_tag.dart',
+        'tool/testing/check_native_release_digests.dart',
+      ]) {
+        expect(
+          assessHighRiskFiles([path]).surfaces,
+          contains(HighRiskSurface.artifactConsumer),
+          reason: path,
+        );
+      }
+    });
+
     test(
       'classifies every Flutter Apple companion as an artifact consumer',
       () {

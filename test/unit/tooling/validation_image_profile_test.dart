@@ -309,6 +309,7 @@ void main() {
       List<String> args, {
       String? directory,
       Duration? timeout,
+      Map<String, String>? environment,
     }) async {
       commands.add((binary, args, directory));
       if (binary == 'git') {
@@ -589,7 +590,7 @@ void main() {
       Future<List<String>> pulls(String id) async {
         final calls = <List<String>>[];
         await _OwnedMatrix(
-          execute: (binary, args, {directory, timeout}) async {
+          execute: (binary, args, {directory, timeout, environment}) async {
             calls.add(args);
             return const CommandResult(
               0,
@@ -732,7 +733,7 @@ void main() {
       scratch.path,
       selected,
       run,
-      execute: (binary, args, {directory, timeout}) =>
+      execute: (binary, args, {directory, timeout, environment}) =>
           throw StateError('Image grading runs no text report: $args'),
     );
 
@@ -938,7 +939,7 @@ void main() {
             'profile': 'tiny-gguf-cpu',
           }),
           run,
-          execute: (binary, args, {directory, timeout}) =>
+          execute: (binary, args, {directory, timeout, environment}) =>
               throw StateError('No journal, so no report: $args'),
         ),
         isFalse,
@@ -1093,7 +1094,7 @@ void main() {
       await sealBundle('image-settings-cpu');
       final calls = <List<String>>[];
       await _OwnedMatrix(
-        execute: (binary, args, {directory, timeout}) async {
+        execute: (binary, args, {directory, timeout, environment}) async {
           calls.add(args);
           return const CommandResult(
             0,
@@ -1200,7 +1201,7 @@ void main() {
         scratch.path,
         selected,
         run,
-        execute: (binary, args, {directory, timeout}) =>
+        execute: (binary, args, {directory, timeout, environment}) =>
             throw StateError('Image grading runs no text report: $args'),
       );
 

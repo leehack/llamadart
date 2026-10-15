@@ -22,6 +22,7 @@ void main() {
     List<String> args, {
     String? directory,
     Duration? timeout,
+    Map<String, String>? environment,
   }) async => CommandResult(inventoryExit, inventory, '');
   Future<({List<String> defines, Map<String, dynamic> binding})> derive({
     String run = 'attempt-one',
@@ -143,7 +144,7 @@ void main() {
         'desktop',
         p.join(root.path, 'out'),
         internalDiagnosticRunId: 'attempt-one',
-        execute: (binary, args, {directory, timeout}) async =>
+        execute: (binary, args, {directory, timeout, environment}) async =>
             throw StateError('Unexpected build command'),
       ),
       throwsFormatException,
@@ -180,7 +181,7 @@ void main() {
       p.join(root.path, 'out'),
       internalDiagnosticRunId: diagnostic ? 'attempt-one' : null,
       environment: {'JAVA_HOME': javaHome},
-      execute: (binary, args, {directory, timeout}) async {
+      execute: (binary, args, {directory, timeout, environment}) async {
         if (binary == 'git') {
           return CommandResult(0, switch (args.first) {
             'rev-parse' => 'a' * 40,

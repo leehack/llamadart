@@ -191,7 +191,7 @@ void main() {
           target,
           p.join(root.path, 'output-$target'),
           profile: 'gemma3-litert-cpu',
-          execute: (binary, args, {directory, timeout}) async {
+          execute: (binary, args, {directory, timeout, environment}) async {
             invoked = true;
             throw StateError('Build command must not run');
           },
@@ -239,7 +239,7 @@ void main() {
             target,
             p.join(root.path, 'output-$target-$id'),
             profile: id,
-            execute: (binary, args, {directory, timeout}) async {
+            execute: (binary, args, {directory, timeout, environment}) async {
               invoked = true;
               throw StateError('Build command must not run');
             },
@@ -386,7 +386,7 @@ void main() {
         'android',
         p.join(root.path, 'out'),
         profile: id,
-        execute: (binary, arguments, {directory, timeout}) async {
+        execute: (binary, arguments, {directory, timeout, environment}) async {
           calls++;
           throw StateError('must not reach build executor');
         },

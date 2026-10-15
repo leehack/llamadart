@@ -19,9 +19,12 @@ typedef CommandExecutor =
       List<String> arguments, {
       String? directory,
       Duration? timeout,
+      Map<String, String>? environment,
     });
 
 /// Executes without a shell, bounds retained output and kills timed-out children.
+///
+/// [environment] adds to or overrides the inherited environment.
 ///
 /// [onProcessStarted] optionally records the returned host process ID, without
 /// command arguments. This ID alone does not establish descendant ownership.
@@ -34,6 +37,7 @@ Future<CommandResult> executeCommand(
   List<String> arguments, {
   String? directory,
   Duration? timeout,
+  Map<String, String>? environment,
   void Function(int processId)? onProcessStarted,
   String? processHostEntryPath,
 }) async {
@@ -48,14 +52,18 @@ Future<CommandResult> executeCommand(
     root = root.parent;
   }
   final duration = timeout ?? const Duration(minutes: 5);
-  final process =
-      await Process.start(Platform.isWindows ? 'python' : 'python3', [
-        processHostEntryPath ??
-            p.join(root.path, 'tool/testing/validation/process_host.py'),
-        (duration.inMilliseconds / 1000).toString(),
-        executable,
-        ...arguments,
-      ], workingDirectory: directory);
+  final process = await Process.start(
+    Platform.isWindows ? 'python' : 'python3',
+    [
+      processHostEntryPath ??
+          p.join(root.path, 'tool/testing/validation/process_host.py'),
+      (duration.inMilliseconds / 1000).toString(),
+      executable,
+      ...arguments,
+    ],
+    workingDirectory: directory,
+    environment: environment,
+  );
   final elapsed = Stopwatch()..start();
   final deadline = duration + const Duration(seconds: 10);
   final output = StringBuffer();

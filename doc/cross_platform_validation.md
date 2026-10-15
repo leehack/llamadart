@@ -530,10 +530,11 @@ dart run tool/testing/validation.dart build --target ios-inputs --out .dart_tool
 dart run tool/testing/validation.dart build --target ios --profile tiny-gguf-cpu --out .dart_tool/validation/bundles/ios
 ```
 
-Android bundles run `./gradlew` with the JDK Flutter builds with: `flutter config
---jdk-dir`, else the `Java binary at:` JDK that `flutter doctor -v` reports
-(such as the Android Studio JBR), else `JAVA_HOME`. The build fails before
-compiling when none is a JDK. On Windows, set `JAVA_HOME` to that JDK.
+Android bundles run Gradle (`./gradlew`, or `gradlew.bat` on Windows) with
+`JAVA_HOME` set to the JDK Flutter builds with: `flutter config --jdk-dir`,
+else the `Java binary at:` JDK that `flutter doctor -v` reports (such as the
+Android Studio JBR), else `JAVA_HOME`. Like Flutter, this replaces a different
+`JAVA_HOME`. The build fails before compiling when none is a JDK.
 
 Desktop bundles include `bin/llamadart-validate`, `bin/llamadart-report`, native
 code assets, profiles and remote wrappers.
