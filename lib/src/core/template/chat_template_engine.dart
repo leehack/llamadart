@@ -282,6 +282,14 @@ class ChatTemplateEngine {
       );
     }
 
+    final retryWithToolResultsAsUser =
+        !caps.supportsToolResponses &&
+        effectiveMessages.any(
+          (message) =>
+              message.role == LlamaChatRole.tool ||
+              message.parts.any((part) => part is LlamaToolResultContent),
+        );
+
     // No template gets a media part: each becomes the media marker in the
     // message text, as llama.cpp renders it. Templates that also read string
     // content take it through renderWithMultimodalContent. Templates that
@@ -304,6 +312,7 @@ class ChatTemplateEngine {
       );
       var rendered = _renderTemplate(
         templateName,
+        retryWithToolResultsAsUser: retryWithToolResultsAsUser,
         () => handler.renderWithMultimodalContent(
           templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
           messages: effectiveMessages,
@@ -352,6 +361,7 @@ class ChatTemplateEngine {
 
     var baseResult = _renderTemplate(
       templateName,
+      retryWithToolResultsAsUser: retryWithToolResultsAsUser,
       () => handler.render(
         templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
         messages: effectiveMessages,
@@ -382,15 +392,29 @@ class ChatTemplateEngine {
   /// [LlamaInferenceException] that names the template by [templateName]. An
   /// [Error] the renderer throws, such as an integer division by zero or a
   /// stack overflow, is left as it is.
+  ///
+  /// With [retryWithToolResultsAsUser], a render that fails that way is
+  /// retried once with tool results as user turns, for a template that
+  /// rejects the `tool` role (see [renderWithToolResultsAsUserTurns]). A
+  /// request the template renders as given is never changed. When the retry
+  /// fails too, the first failure is reported.
   static LlamaChatTemplateResult _renderTemplate(
     String templateName,
-    LlamaChatTemplateResult Function() render,
-  ) {
+    LlamaChatTemplateResult Function() render, {
+    required bool retryWithToolResultsAsUser,
+  }) {
     try {
       return render();
     } on LlamaException {
       rethrow;
     } on Exception catch (error, stackTrace) {
+      if (retryWithToolResultsAsUser) {
+        try {
+          return renderWithToolResultsAsUserTurns(render);
+        } on Exception {
+          // Report the template's error for the request as given.
+        }
+      }
       final cause = error.toString();
       const prefix = 'Exception: ';
       Error.throwWithStackTrace(

@@ -39,9 +39,11 @@ class TemplateCaps {
   ///
   /// `false` only when the template raises on that message but renders it
   /// under the `user` role, as Gemma 2/3/3n and legacy Mistral templates do
-  /// with their role-alternation check. Tool results are then sent as user
-  /// turns, as llama.cpp's minja-based `supports_tool_responses` polyfill
-  /// did. Not part of [toMap], which matches llama.cpp's current caps.
+  /// with their role-alternation check. When such a template fails to render
+  /// a request with tool results, `ChatTemplateEngine` retries it with the
+  /// results as user turns, as llama.cpp's minja-based
+  /// `supports_tool_responses` polyfill sent them. Not part of [toMap], which
+  /// matches llama.cpp's current caps.
   final bool supportsToolResponses;
 
   /// Creates a [TemplateCaps] with the specified capabilities.

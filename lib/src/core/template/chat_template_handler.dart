@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dinja/dinja.dart';
 
 import '../exceptions.dart';
@@ -50,10 +52,11 @@ abstract class ChatTemplateHandler {
   /// reads them as objects, and string content becomes a text part when it
   /// reads content only as parts, as llama.cpp does. A handler that builds
   /// typed parts itself passes `typedContent: false` to keep string content.
-  /// Tool results become user turns when [TemplateCaps] finds the template
-  /// rejects the `tool` role, with tool calls in `content` when it cannot
-  /// render them either. With [multimodal], each media part becomes
-  /// [mediaMarker] in the message text.
+  /// Inside [renderWithToolResultsAsUserTurns], tool results become user
+  /// turns when [TemplateCaps] finds the template rejects the `tool` role,
+  /// with tool calls in `content` when it cannot render them either. With
+  /// [multimodal], each media part becomes [mediaMarker] in the message
+  /// text.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
     bool multimodal = false,
@@ -64,6 +67,8 @@ abstract class ChatTemplateHandler {
     final caps = templateSource == null
         ? null
         : TemplateCaps.detect(templateSource);
+    final polyfill =
+        caps != null && Zone.current[_toolResultsAsUserTurns] == true;
     try {
       return TemplateRenderContext.messagesForTemplate(
         messages,
@@ -76,8 +81,8 @@ abstract class ChatTemplateHandler {
             caps != null &&
             caps.supportsTypedContent &&
             !caps.supportsStringContent,
-        toolResultsAsUser: caps != null && !caps.supportsToolResponses,
-        toolCallsAsContent: caps != null && !caps.supportsToolCalls,
+        toolResultsAsUser: polyfill && !caps.supportsToolResponses,
+        toolCallsAsContent: polyfill && !caps.supportsToolCalls,
       );
     } catch (e, stackTrace) {
       if (toolCallSerialization.isEmpty) rethrow;
@@ -239,6 +244,16 @@ abstract class ChatTemplateHandler {
     return DateTime.now();
   }
 }
+
+final Object _toolResultsAsUserTurns = Object();
+
+/// Runs [render] so that [ChatTemplateHandler.templateMessages] sends tool
+/// results as user turns to a template that rejects the `tool` role.
+///
+/// `ChatTemplateEngine` uses it only to retry a render that already failed,
+/// so a request the template renders as given is never changed.
+T renderWithToolResultsAsUserTurns<T>(T Function() render) =>
+    runZoned(render, zoneValues: {_toolResultsAsUserTurns: true});
 
 /// Optional handler contract for output formats whose argument decoding depends
 /// on the tool JSON schemas supplied for the completion request.
