@@ -28,7 +28,8 @@ import '../tool_schema_utils.dart';
 /// content, as for the single-brace form. Otherwise the envelope text stays in
 /// content and parsing continues after the call. This differs from upstream:
 /// llama.cpp `7fe450e1` fails to parse this output and extracts no call.
-class HermesHandler extends ChatTemplateHandler {
+class HermesHandler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static const List<String> _openTags = <String>[
     '<tool_call>',
     '<function_call>',
@@ -74,12 +75,25 @@ class HermesHandler extends ChatTemplateHandler {
 
   static final RegExp _regexSpace = RegExp(r'\s');
 
-  /// Whether final text contains an actual tool opening, excluding prefixes
-  /// held back only while tokens are still arriving.
+  /// Whether final text contains a tool-call envelope opening, excluding
+  /// prefixes held back only while tokens are still arriving.
+  ///
+  /// Bare or fenced `{"name"` JSON and generic answer tags such as `<json>`
+  /// are answer text unless they parse as a call to a declared tool.
   static bool hasCompleteToolCallOpening(String text) =>
-      _openRegex.hasMatch(text) ||
       text.contains('<tool_call>') ||
-      text.contains('<function_call>');
+      text.contains('<function_call>') ||
+      _openRegex
+          .allMatches(text)
+          .any(
+            (match) =>
+                _isToolEnvelopeTag(match.group(2) ?? '') ||
+                match.group(5) != null ||
+                match.group(6) != null,
+          );
+
+  static bool _isToolEnvelopeTag(String tag) =>
+      tag.startsWith('<tool') || tag.startsWith('<function');
 
   /// Finds where [parse] may find a tool-call opening in [text].
   ///
@@ -193,6 +207,39 @@ class HermesHandler extends ChatTemplateHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  /// Parses like [parse]; with canonical schema tools, an untagged or
+  /// generically tagged `{"name"` object is a call only when it is complete
+  /// and names a declared tool. Otherwise it stays answer content.
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+    declaredNames: tools != null && tools.any(toolUsesJsonSchema)
+        ? {for (final tool in tools) tool.name}
+        : null,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
+    Set<String>? declaredNames,
   }) {
     final thinking = extractThinking(
       output,
@@ -254,11 +301,22 @@ class HermesHandler extends ChatTemplateHandler {
           jsonStart++;
         }
         final jsonRange = _extractJsonObjectRange(text, jsonStart);
+        final toolCall = jsonRange == null
+            ? null
+            : _toNamedToolCall(jsonRange.value, toolCalls.length);
+        if (declaredNames != null &&
+            !_isToolEnvelopeTag(openTag) &&
+            (jsonRange != null || !isPartial) &&
+            !declaredNames.contains(toolCall?.function?.name)) {
+          final end = jsonRange?.end ?? match.end;
+          content.write(text.substring(match.start, end));
+          cursor = end;
+          continue;
+        }
         if (jsonRange == null) {
           parseFailed = true;
           break;
         }
-        final toolCall = _toNamedToolCall(jsonRange.value, toolCalls.length);
         if (toolCall == null) {
           parseFailed = true;
           break;
@@ -367,14 +425,17 @@ class HermesHandler extends ChatTemplateHandler {
     if (tools.any(toolUsesJsonSchema)) {
       final grammar = ToolCallGrammarUtils.buildWrappedObjectGrammar(
         tools: tools,
-        prefix: '<tool_call>',
-        suffix: '</tool_call>',
+        prefix: '',
+        suffix: '',
       )!;
+      // Qwen-style output puts a newline after <tool_call>, as the legacy
+      // grammar allows.
       return grammar
           .split('\n')
           .map((line) {
             if (!line.startsWith('root ::= ')) return line;
-            return 'root ::= (${line.substring('root ::= '.length)} space)+';
+            final call = line.substring('root ::= '.length);
+            return 'root ::= ("<tool_call>" space $call "</tool_call>" space)+';
           })
           .join('\n');
     }

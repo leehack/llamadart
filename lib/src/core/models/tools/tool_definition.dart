@@ -71,10 +71,15 @@ class ToolDefinition {
   /// Missing object property policy follows JSON Schema (additionalProperties:
   /// true). The legacy constructor retains its existing closed-property policy.
   /// Specialized formats have a narrower supported subset and reject unsupported
-  /// constraints before generation. See doc/tool_input_schemas.md.
+  /// constraints before generation. Schemas beyond the documented size limits
+  /// (nesting, subschema count, anyOf/enum size, length/item bounds above
+  /// llama.cpp's repetition limit, generated grammar size) throw
+  /// [LlamaUnsupportedException]. See doc/tool_input_schemas.md.
   ///
   /// [parameters] is empty for this constructor; consumers must use
-  /// [toJsonSchema] as the canonical schema. Returned maps are fresh copies.
+  /// [toJsonSchema] as the canonical schema. Returned maps are fresh copies in
+  /// which every object schema has explicit `properties` and
+  /// `additionalProperties`.
   factory ToolDefinition.fromJsonSchema({
     required String name,
     required String description,

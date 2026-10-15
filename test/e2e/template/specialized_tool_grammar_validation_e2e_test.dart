@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -1176,6 +1177,115 @@ void main() {
         hunyuan.replaceFirst('<arg_value>null', '<arg_value>true'),
       ],
     );
+  });
+
+  test('open schema objects constrain declared optional properties', () {
+    for (final open in [true, false]) {
+      final tool = ToolDefinition.fromJsonSchema(
+        name: 'weather',
+        description: 'Weather',
+        schema: {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+            'count': {'type': 'integer'},
+            'mode': {
+              'enum': ['c', 'f'],
+            },
+          },
+          'required': ['city'],
+          if (!open) 'additionalProperties': false,
+        },
+      );
+      String hermes(Map<String, dynamic> args) =>
+          '<tool_call>${jsonEncode({'name': 'weather', 'arguments': args})}</tool_call>';
+      String generic(Map<String, dynamic> args) => jsonEncode({
+        'tool_call': {'name': 'weather', 'arguments': args},
+      });
+      final rendered = ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+      );
+      for (final (grammar, output) in [
+        (HermesHandler().buildGrammar([tool])!, hermes),
+        (rendered.grammar!, generic),
+      ]) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [
+            output({'city': 'Seoul'}),
+            output({'city': 'Seoul', 'count': 3, 'mode': 'c'}),
+            if (open) output({'city': 'Seoul', 'count': 3, 'extra': 'x'}),
+            if (open) output({'city': 'Seoul', 'cit': 1, 'counter': 'x'}),
+          ],
+          invalid: [
+            output({'city': 'Seoul', 'count': 'three'}),
+            output({'city': 'Seoul', 'count': 1.5}),
+            output({'city': 'Seoul', 'mode': 'zzz'}),
+            output({'city': 1}),
+            output({'count': 3}),
+            output({
+              'city': 'Seoul',
+            }).replaceFirst('"Seoul"', '"Seoul","city":"dup"'),
+            if (!open) output({'city': 'Seoul', 'extra': 'x'}),
+          ],
+        );
+      }
+    }
+  });
+
+  test('Hermes schema calls accept newlines inside the tool_call tags', () {
+    final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});
+    _expectGrammar(
+      validator,
+      HermesHandler().buildGrammar([rawSchemaTool()])!,
+      valid: [
+        '<tool_call>$call</tool_call>',
+        '<tool_call>\n$call\n</tool_call>\n<tool_call>\n$call\n</tool_call>',
+      ],
+      invalid: ['$call</tool_call>', '<tool_call>\n$call\n'],
+    );
+  });
+
+  test('legacy GLM integer parameters reject fractional values', () {
+    final tool = ToolDefinition(
+      name: 'weather',
+      description: 'Weather',
+      parameters: [ToolParam.integer('count', required: true)],
+    );
+    const call =
+        '<tool_call>weather\n<arg_key>count</arg_key>\n<arg_value>15</arg_value>\n</tool_call>\n';
+    _expectGrammar(
+      validator,
+      Glm45Handler().buildGrammar([tool])!,
+      valid: [call],
+      invalid: [call.replaceFirst('15', '1.5')],
+    );
+  });
+
+  test('llama.cpp grammar repetition limit matches the schema bound', () {
+    final directory = Directory.systemTemp.createTempSync('llamadart-gbnf-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    String run(int bound) {
+      final grammar = File('${directory.path}/bound.gbnf')
+        ..writeAsStringSync(
+          JsonSchemaConverter.convert({'type': 'string', 'maxLength': bound}),
+        );
+      final input = File('${directory.path}/bound.txt')
+        ..writeAsStringSync('"${'a' * bound}"');
+      final result = Process.runSync(validator, [grammar.path, input.path]);
+      return '${result.stdout}\n${result.stderr}';
+    }
+
+    expect(
+      run(1999),
+      contains('Input string is valid according to the grammar.'),
+    );
+    expect(run(2000), contains('failed to parse grammar'));
   });
 }
 

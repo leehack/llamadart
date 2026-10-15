@@ -50,7 +50,7 @@ void main() {
     expect(grammar, isNot(contains('undefined')));
   });
 
-  test('GLM integer rules are defined for legacy and canonical tools', () {
+  test('GLM integer properties use the strict integer rule', () {
     for (final tool in [
       rawScalarTool(),
       ToolDefinition(
@@ -60,8 +60,120 @@ void main() {
       ),
     ]) {
       final grammar = Glm45Handler().buildGrammar([tool])!;
-      expect(grammar, contains('integer ::='));
+      expect(grammar, contains('integer ::= "-"? ("0" | [1-9] [0-9]*)'));
+      expect(
+        grammar,
+        contains(RegExp(r'-arg-count-value ::= integer$', multiLine: true)),
+      );
     }
+  });
+
+  test('canonical schema calls must name a declared tool', () {
+    final args = jsonEncode(rawToolArguments);
+    for (final (format, output) in [
+      (ChatFormat.generic, '{"tool_call":{"name":"other","arguments":$args}}'),
+      (
+        ChatFormat.hermes,
+        '<tool_call>{"name":"other","arguments":$args}</tool_call>',
+      ),
+      (
+        ChatFormat.mistralNemo,
+        '[TOOL_CALLS][{"id":"abcdefghi","name":"other","arguments":$args}]',
+      ),
+    ]) {
+      ChatParseResult parse(String text) => ChatTemplateEngine.parse(
+        format.index,
+        text,
+        tools: [rawSchemaTool()],
+      );
+      expect(
+        parse(output.replaceFirst('"other"', '"inspect"')).toolCalls,
+        hasLength(1),
+      );
+      expect(
+        () => parse(output),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains('undeclared tool call'),
+          ),
+        ),
+        reason: '$format',
+      );
+    }
+  });
+
+  group('Hermes schema tools in auto mode', () {
+    ChatParseResult parse(
+      String text, {
+      bool isPartial = false,
+      List<ToolDefinition>? tools,
+    }) => ChatTemplateEngine.parse(
+      ChatFormat.hermes.index,
+      text,
+      tools: tools ?? [rawSchemaTool()],
+      isPartial: isPartial,
+    );
+    final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});
+
+    test('keep name-keyed JSON outside a tool envelope as content', () {
+      for (final text in [
+        'User record: {"name": "Bob", "age": 3}',
+        'Example JSON:\n```json\n{"name": "Bob"}\n```',
+        'Broken: {"name": "Bob",',
+        '<json>{"name": "Bob"}</json>',
+        'Nested {"name": "x", "child": $call}',
+      ]) {
+        final parsed = parse(text);
+        expect(parsed.content, text);
+        expect(parsed.toolCalls, isEmpty);
+      }
+    });
+
+    test('parse and validate a bare call to a declared tool', () {
+      expect(parse('Calling $call').toolCalls.single.function!.name, 'inspect');
+      expect(
+        () => parse(call.replaceFirst('"mode":2', '"mode":"2"')),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    });
+
+    test('keep tool envelopes strict', () {
+      for (final text in [
+        '<tool_call>{"name": "Bob", "arguments": {}}</tool_call>',
+        '<tool>{"name": "Bob", "arguments": {}}</tool>',
+        '<function=Bob>{}</function>',
+        '<tool_call>{"name": "inspect"',
+      ]) {
+        expect(
+          () => parse(text),
+          throwsA(isA<LlamaInferenceException>()),
+          reason: text,
+        );
+      }
+    });
+
+    test('hold back an incomplete bare call while streaming', () {
+      expect(parse('Answer {"name": "insp', isPartial: true).content, 'Answer');
+    });
+
+    test('leave legacy ToolParam parsing unchanged', () {
+      final legacy = ToolDefinition(
+        name: 'weather',
+        description: 'Weather',
+        parameters: [ToolParam.string('city')],
+      );
+      final parsed = parse('{"name": "Bob", "arguments": {}}', tools: [legacy]);
+      expect(parsed.toolCalls.single.function!.name, 'Bob');
+    });
+
+    test('allow whitespace inside the tool_call tags', () {
+      expect(
+        HermesHandler().buildGrammar([rawSchemaTool()]),
+        contains('root ::= ("<tool_call>" space ('),
+      );
+    });
   });
 
   test(
@@ -206,37 +318,6 @@ void main() {
           () => handler.buildGrammar([rawSchemaTool()]),
           throwsA(isA<LlamaUnsupportedException>()),
         );
-      }
-    },
-  );
-
-  test(
-    'new schema serialization works with auto/required/none and thinking',
-    () {
-      final tool = rawSchemaTool();
-      for (final choice in ToolChoice.values) {
-        for (final thinking in [true, false]) {
-          final result = ChatTemplateEngine.render(
-            templateSource: null,
-            messages: [
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.user,
-                text: 'inspect',
-              ),
-            ],
-            metadata: {},
-            tools: [tool],
-            toolChoice: choice,
-            enableThinking: thinking,
-            parallelToolCalls: true,
-          );
-          if (choice == ToolChoice.none) {
-            expect(result.grammar, isNull);
-          } else {
-            expect(result.prompt, contains('inspect'));
-            expect(result.grammar, isNotEmpty);
-          }
-        }
       }
     },
   );

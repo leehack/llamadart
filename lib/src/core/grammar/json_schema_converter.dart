@@ -426,6 +426,66 @@ class JsonSchemaConverter {
         .join(' | ');
   }
 
+  /// Returns a JSON string rule (with trailing space) that matches none of
+  /// [strings] in their canonical `jsonEncode` wire form.
+  ///
+  /// Follows llama.cpp's `_not_strings` trie, with two corrections: a proper
+  /// prefix of a declared key stays available, and the divergent character
+  /// excludes `"`, `\` and control characters so the key remains valid JSON.
+  /// Where a declared key continues with an escape sequence, other escapes
+  /// are not offered at that position. Escaped spellings of a declared key
+  /// (such as `\u0063ity` for `city`) still match; final validation checks
+  /// their decoded values.
+  String _notStrings(List<String> strings) {
+    final trie = _KeyTrieNode();
+    for (final string in strings) {
+      final wire = jsonEncode(string);
+      var node = trie;
+      for (final token in _wireTokens(wire.substring(1, wire.length - 1))) {
+        node = node.children.putIfAbsent(token, _KeyTrieNode.new);
+      }
+      node.isEnd = true;
+    }
+    final char = _addPrimitive('char', _primitiveRules['char']!);
+
+    String visitNode(_KeyTrieNode node) {
+      final alternatives = <String>[];
+      final plain = <int>[];
+      var escapedChild = false;
+      final tokens = node.children.keys.toList()..sort();
+      for (final token in tokens) {
+        final child = node.children[token]!;
+        if (token.length > 1) {
+          escapedChild = true;
+          alternatives.add(_formatLiteral(token));
+        } else {
+          plain.add(token.runes.single);
+          alternatives.add('[${_classChar(token.runes.single)}]');
+        }
+        final last = alternatives.removeLast();
+        if (child.children.isEmpty) {
+          alternatives.add('$last $char+');
+        } else {
+          alternatives.add(
+            '$last (${visitNode(child)})${child.isEnd ? '' : '?'}',
+          );
+        }
+      }
+      final other = StringBuffer(r'[^"\\\x7F\x00-\x1F');
+      for (final rune in plain) {
+        other.write(_classChar(rune));
+      }
+      other.write(']');
+      final divergent = escapedChild
+          ? other.toString()
+          : '($other | [\\\\] (["\\\\bfnrt] | "u" [0-9a-fA-F]{4}))';
+      alternatives.add('$divergent $char*');
+      return alternatives.join(' | ');
+    }
+
+    return '"\\"" (${visitNode(trie)})${trie.isEnd ? '' : '?'} "\\"" space';
+  }
+
   String _buildObjectRule(
     List<MapEntry<String, dynamic>> properties,
     Set<String> required,
@@ -465,7 +525,7 @@ class JsonSchemaConverter {
           : _addPrimitive('value', _primitiveRules['value']!);
       final keyRule = sortedPropNames.isEmpty
           ? _addPrimitive('string', _primitiveRules['string']!)
-          : _addPrimitive('string', _primitiveRules['string']!);
+          : _addRule('$subName-k', _notStrings(sortedPropNames));
 
       var extraKey = '*';
       while (propKvRuleNames.containsKey(extraKey)) {
@@ -521,6 +581,40 @@ class JsonSchemaConverter {
     rule += ' "}" space';
     return rule;
   }
+}
+
+class _KeyTrieNode {
+  final Map<String, _KeyTrieNode> children = {};
+  bool isEnd = false;
+}
+
+/// Splits JSON string contents into characters and whole escape sequences.
+List<String> _wireTokens(String wire) {
+  final tokens = <String>[];
+  final runes = wire.runes.toList();
+  for (var i = 0; i < runes.length; i++) {
+    if (runes[i] == 0x5C) {
+      final length = runes[i + 1] == 0x75 ? 6 : 2;
+      tokens.add(String.fromCharCodes(runes.sublist(i, i + length)));
+      i += length - 1;
+    } else {
+      tokens.add(String.fromCharCode(runes[i]));
+    }
+  }
+  return tokens;
+}
+
+/// Encodes [rune] for a GBNF character class.
+String _classChar(int rune) {
+  final isAsciiAlphaNumeric =
+      (rune >= 0x30 && rune <= 0x39) ||
+      (rune >= 0x41 && rune <= 0x5A) ||
+      (rune >= 0x61 && rune <= 0x7A);
+  if (isAsciiAlphaNumeric) return String.fromCharCode(rune);
+  final hex = rune.toRadixString(16).toUpperCase();
+  if (rune <= 0xFF) return '\\x${hex.padLeft(2, '0')}';
+  if (rune <= 0xFFFF) return '\\u${hex.padLeft(4, '0')}';
+  return '\\U${hex.padLeft(8, '0')}';
 }
 
 /// Compiles the supported subset of JSON Schema `pattern` regexes into a GBNF

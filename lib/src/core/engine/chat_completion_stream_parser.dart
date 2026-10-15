@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import '../exceptions.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
+import '../template/chat_parse_result.dart';
 import '../template/chat_template_engine.dart';
 import '../template/handlers/apertus_handler.dart';
 import '../template/handlers/command_r7b_handler.dart';
@@ -350,14 +352,26 @@ class ChatCompletionStreamParser {
     }
 
     final fullOutput = buffer.toString();
-    final parsed = ChatTemplateEngine.parse(
-      templateResult.format,
-      fullOutput,
-      parseToolCalls: parseToolCallsEnabled,
-      thinkingForcedOpen: templateResult.thinkingForcedOpen,
-      parser: templateResult.parser,
-      tools: tools,
-    );
+    final endedAtLimit = stoppedAtLimit?.call() == true;
+    ChatParseResult parse({required bool isPartial}) =>
+        ChatTemplateEngine.parse(
+          templateResult.format,
+          fullOutput,
+          isPartial: isPartial,
+          parseToolCalls: parseToolCallsEnabled,
+          thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          parser: templateResult.parser,
+          tools: tools,
+        );
+    ChatParseResult parsed;
+    try {
+      parsed = parse(isPartial: false);
+    } on LlamaInferenceException {
+      // A reply cut off by a generation limit finishes with `length`, like
+      // other truncated replies, rather than failing as a malformed tool call.
+      if (!endedAtLimit) rethrow;
+      parsed = parse(isPartial: true);
+    }
 
     final finalReasoning = parsed.reasoningContent ?? '';
     final reasoningDelta = _computeFinalReconciliationDelta(
@@ -403,7 +417,6 @@ class ChatCompletionStreamParser {
       'toolCallCount=${parsed.toolCalls.length}',
     );
 
-    final endedAtLimit = stoppedAtLimit?.call() == true;
     if (parsed.hasToolCalls && !endedAtLimit) {
       final toolCallsWithIds = parsed.toolCalls
           .map(

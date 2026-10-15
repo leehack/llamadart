@@ -236,6 +236,32 @@ arrays, container literals and unsupported constraint combinations throw
 `LlamaUnsupportedException`. Malformed schemas throw `LlamaArgumentException`.
 This API supports a bounded subset of JSON Schema.
 
+`toJsonSchema()` and `toJson()` return the validated schema with object
+defaults made explicit: every object schema includes `properties` (empty when
+absent) and `additionalProperties` (`true` when absent).
+
+### Limits
+
+Imported schemas may come from untrusted sources, so the factory bounds them
+and throws `LlamaUnsupportedException`, naming the keyword or path and the
+limit, when a schema exceeds one:
+
+| Limit | Value |
+| --- | --- |
+| JSON nesting of the schema document, including `default`/`examples` values | 128 levels |
+| Subschema nesting | 32 levels |
+| Subschemas per tool | 1024 |
+| `anyOf` alternatives | 64 |
+| `enum` values | 1024 |
+| Property name length | 128 characters |
+| `minLength`, `maxLength`, `minItems`, `maxItems` | 1999 |
+| Generated grammar per tool | 262,144 characters |
+
+The bound limit is llama.cpp's grammar repetition limit
+(`MAX_REPETITION_THRESHOLD`, 2000 at the pinned b10549): the grammar parser
+rejects a repetition count of 2000 or more and silently drops a larger upper
+bound.
+
 | Selected tool format | Canonical schema support |
 | --- | --- |
 | Generic JSON fallback, Hermes, Mistral Nemo JSON | The subset above |
@@ -252,7 +278,22 @@ tool permissions and side effects.
 
 Active schema tools cannot be combined with `responseFormat`, which would
 replace the tool grammar. Use separate requests. Undeclared calls and malformed
-tool envelopes fail the turn before handlers run.
+tool envelopes fail the turn before handlers run. In an open object, an extra
+property cannot reuse a declared property name, so declared properties keep
+their own schema. The grammar does not exclude escaped spellings of a
+declared name (such as `\u0063ity`); final validation checks the decoded
+values against the schema.
+
+In Hermes `auto` mode, a JSON object with a `name` key outside a
+`<tool_call>`, `<tool>` or `<function…>` envelope stays answer text unless it
+is a complete call to a declared tool, which is then validated like any other
+call. A reply cut off by `maxTokens` or the context size finishes with
+`length` (tool loops stop with `truncated`) rather than failing as a malformed
+call.
+
+Known gaps: templates that force reasoning open (such as QwQ) cannot emit
+reasoning before a `ToolChoice.required` call, as with `ToolParam` tools; and
+`required` may only name declared properties.
 
 On WebGPU, an automatic tool loop changes to `auto` after its first tool round.
 Hermes and Mistral then need lazy grammars, so their schema-backed automatic

@@ -1,32 +1,60 @@
 import 'dart:convert';
 
 import '../../exceptions.dart';
+import '../../grammar/json_schema_converter.dart';
 
 /// Validates and owns the supported JSON tool-input schema subset.
 ///
 /// Object defaults are made explicit so raw schemas retain JSON Schema's open
 /// property policy without changing the legacy ToolParam constructor.
+///
+/// Schemas may come from untrusted sources, so their size is bounded before
+/// any recursive walk; doc/tool_input_schemas.md lists the limits.
 Map<String, dynamic> copyToolInputSchema(Map<String, dynamic> schema) {
-  if (!_jsonValue(schema)) {
+  final depth = _jsonDepth(schema);
+  if (depth == null) {
     throw LlamaArgumentException(
       'Tool input schemas must contain JSON values.',
     );
   }
-  final Map<String, dynamic> owned;
-  try {
-    owned = jsonDecode(jsonEncode(schema)) as Map<String, dynamic>;
-  } on Object {
-    throw LlamaArgumentException(
-      'Tool input schemas must contain JSON values.',
+  if (depth > _maxJsonDepth) {
+    throw LlamaUnsupportedException(
+      'Tool input schemas may nest JSON values at most $_maxJsonDepth levels deep.',
     );
   }
+  final owned = jsonDecode(jsonEncode(schema)) as Map<String, dynamic>;
   if (owned['type'] != 'object') {
     throw LlamaArgumentException(
       'Tool input schemas need an object root; tool handlers receive a Map.',
     );
   }
-  _validate(owned, 'input');
+  _validate(owned, 'input', _SchemaBudget(), 0);
+  final grammar = JsonSchemaConverter.convert(
+    jsonDecode(jsonEncode(owned)) as Map<String, dynamic>,
+  );
+  if (grammar.length > _maxGrammarLength) {
+    throw LlamaUnsupportedException(
+      'Tool input schema grammar has ${grammar.length} characters; the limit is $_maxGrammarLength. Split the tool or simplify its schema.',
+    );
+  }
   return owned;
+}
+
+const _maxJsonDepth = 128;
+const _maxSchemaDepth = 32;
+const _maxSchemaNodes = 1024;
+const _maxAlternatives = 64;
+const _maxEnumValues = 1024;
+const _maxPropertyNameLength = 128;
+const _maxGrammarLength = 256 * 1024;
+
+/// llama.cpp's grammar parser rejects a repetition count of
+/// `MAX_REPETITION_THRESHOLD` (2000) or more, and silently drops an upper bound
+/// above it.
+const _maxRepetition = 1999;
+
+final class _SchemaBudget {
+  int nodes = 0;
 }
 
 const _types = {
@@ -58,7 +86,22 @@ const _keywords = {
   r'$schema',
 };
 
-void _validate(Map<String, dynamic> schema, String path) {
+void _validate(
+  Map<String, dynamic> schema,
+  String path,
+  _SchemaBudget budget,
+  int depth,
+) {
+  if (++budget.nodes > _maxSchemaNodes) {
+    throw LlamaUnsupportedException(
+      'Tool input schemas may contain at most $_maxSchemaNodes subschemas.',
+    );
+  }
+  if (depth > _maxSchemaDepth) {
+    throw LlamaUnsupportedException(
+      'Tool input schema at $path nests deeper than $_maxSchemaDepth levels.',
+    );
+  }
   for (final keyword in schema.keys) {
     if (!_keywords.contains(keyword)) {
       throw LlamaUnsupportedException(
@@ -71,6 +114,11 @@ void _validate(Map<String, dynamic> schema, String path) {
     if (alternatives is! List || alternatives.isEmpty) {
       throw LlamaArgumentException(
         'anyOf at $path needs a nonempty schema list.',
+      );
+    }
+    if (alternatives.length > _maxAlternatives) {
+      throw LlamaUnsupportedException(
+        'anyOf at $path has ${alternatives.length} alternatives; the limit is $_maxAlternatives.',
       );
     }
     if (schema.keys.any(
@@ -94,7 +142,7 @@ void _validate(Map<String, dynamic> schema, String path) {
           'anyOf alternatives at $path must be schemas.',
         );
       }
-      _validate(item, '$path.anyOf[$i]');
+      _validate(item, '$path.anyOf[$i]', budget, depth + 1);
     }
     return;
   }
@@ -124,6 +172,11 @@ void _validate(Map<String, dynamic> schema, String path) {
         values.map(jsonEncode).toSet().length != values.length) {
       throw LlamaArgumentException(
         'enum at $path needs nonempty unique values.',
+      );
+    }
+    if (values.length > _maxEnumValues) {
+      throw LlamaUnsupportedException(
+        'enum at $path has ${values.length} values; the limit is $_maxEnumValues.',
       );
     }
     for (final value in values) {
@@ -163,7 +216,17 @@ void _validate(Map<String, dynamic> schema, String path) {
           'Properties at $path need nonempty names and schemas.',
         );
       }
-      _validate(entry.value as Map<String, dynamic>, '$path.${entry.key}');
+      if (entry.key.runes.length > _maxPropertyNameLength) {
+        throw LlamaUnsupportedException(
+          'Property names at $path may have at most $_maxPropertyNameLength characters.',
+        );
+      }
+      _validate(
+        entry.value as Map<String, dynamic>,
+        '$path.${entry.key}',
+        budget,
+        depth + 1,
+      );
     }
     final required = schema.containsKey('required')
         ? schema['required']
@@ -177,7 +240,7 @@ void _validate(Map<String, dynamic> schema, String path) {
     }
     final additional = schema.putIfAbsent('additionalProperties', () => true);
     if (additional is Map<String, dynamic>) {
-      _validate(additional, '$path.additionalProperties');
+      _validate(additional, '$path.additionalProperties', budget, depth + 1);
     } else if (additional is! bool) {
       throw LlamaArgumentException(
         'additionalProperties at $path needs a boolean or schema.',
@@ -191,7 +254,7 @@ void _validate(Map<String, dynamic> schema, String path) {
         'Arrays at $path need one items schema; tuple schemas are not supported.',
       );
     }
-    _validate(items, '$path.items');
+    _validate(items, '$path.items', budget, depth + 1);
   } else if (schema.containsKey('items')) {
     throw LlamaUnsupportedException('items at $path requires an array type.');
   }
@@ -262,18 +325,32 @@ void _bounds(
       minimum is int && maximum is int && minimum > maximum) {
     throw LlamaArgumentException('Invalid $suffix bounds at $path.');
   }
+  for (final keyword in ['min$suffix', 'max$suffix']) {
+    final bound = schema[keyword];
+    if (bound is int && bound > _maxRepetition) {
+      throw LlamaUnsupportedException(
+        '$keyword at $path is $bound; llama.cpp grammars accept at most $_maxRepetition.',
+      );
+    }
+  }
 }
 
 /// Validates a tool value using the same schema consumed by templates.
 ({bool valid, Object? value}) validateToolInputValue(
   Object? value,
   Map<String, dynamic> schema,
+) => _jsonDepth(value) == null
+    ? (valid: false, value: null)
+    : _validateValue(value, schema);
+
+({bool valid, Object? value}) _validateValue(
+  Object? value,
+  Map<String, dynamic> schema,
 ) {
-  if (!_jsonValue(value)) return (valid: false, value: null);
   final alternatives = schema['anyOf'];
   if (alternatives is List) {
     for (final alternative in alternatives) {
-      final candidate = validateToolInputValue(
+      final candidate = _validateValue(
         value,
         Map<String, dynamic>.from(alternative as Map),
       );
@@ -284,10 +361,7 @@ void _bounds(
   final type = schema['type'];
   if (type is List) {
     for (final alternative in type) {
-      final candidate = validateToolInputValue(value, {
-        ...schema,
-        'type': alternative,
-      });
+      final candidate = _validateValue(value, {...schema, 'type': alternative});
       if (candidate.valid) return candidate;
     }
     return (valid: false, value: null);
@@ -336,7 +410,7 @@ void _bounds(
           propertySchema ??
           (additional is Map ? Map<String, dynamic>.from(additional) : null);
       if (effective == null) return (valid: false, value: null);
-      final nested = validateToolInputValue(entry.value, effective);
+      final nested = _validateValue(entry.value, effective);
       if (!nested.valid) return (valid: false, value: null);
       object[entry.key as String] = nested.value;
     }
@@ -356,7 +430,7 @@ void _bounds(
     if (itemSchema is Map) {
       final items = <Object?>[];
       for (final item in value) {
-        final nested = validateToolInputValue(
+        final nested = _validateValue(
           item,
           Map<String, dynamic>.from(itemSchema),
         );
@@ -373,20 +447,44 @@ void _bounds(
   return (valid: true, value: normalized);
 }
 
-bool _jsonValue(Object? value, [Set<Object>? parents]) {
-  if (value == null || value is String || value is bool) return true;
-  if (value is num) return value.isFinite;
-  if (value is! Map && value is! List) return false;
-  final active = parents ?? Set<Object>.identity();
-  if (!active.add(value)) return false;
-  try {
-    if (value is Map) {
-      return value.entries.every(
-        (entry) => entry.key is String && _jsonValue(entry.value, active),
-      );
+/// Returns the container nesting depth of a JSON value, or `null` when
+/// [value] is not JSON (a non-string key, non-finite number, cycle or other
+/// object). Iterative so deep untrusted input cannot exhaust the stack.
+int? _jsonDepth(Object? value) {
+  bool scalar(Object? value) =>
+      value == null ||
+      value is String ||
+      value is bool ||
+      value is num && value.isFinite;
+  Iterator<Object?>? children(Object? value) => switch (value) {
+    Map() => value.entries.iterator,
+    List() => value.iterator,
+    _ => null,
+  };
+  if (scalar(value)) return 0;
+  final root = children(value);
+  if (root == null) return null;
+  final active = Set<Object>.identity()..add(value!);
+  final path = <(Object, Iterator<Object?>)>[(value, root)];
+  var depth = 1;
+  while (path.isNotEmpty) {
+    final (container, iterator) = path.last;
+    if (!iterator.moveNext()) {
+      active.remove(container);
+      path.removeLast();
+      continue;
     }
-    return (value as List).every((item) => _jsonValue(item, active));
-  } finally {
-    active.remove(value);
+    var child = iterator.current;
+    if (container is Map) {
+      final entry = child as MapEntry;
+      if (entry.key is! String) return null;
+      child = entry.value;
+    }
+    if (scalar(child)) continue;
+    final next = children(child);
+    if (next == null || !active.add(child!)) return null;
+    path.add((child, next));
+    if (path.length > depth) depth = path.length;
   }
+  return depth;
 }

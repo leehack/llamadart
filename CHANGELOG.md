@@ -2,6 +2,12 @@
 
 - Add `ToolDefinition.fromJsonSchema` for owned, validated tool input schemas,
   with explicit errors for unsupported constraints, formats and runtimes.
+- **Behavior change:** Existing `ToolParam` tool grammars are stricter. GLM-4.5,
+  Laguna and Hunyuan V3 integer parameters reject fractional values and
+  `ToolParam.nullType` parameters accept only `null`; Gemma 2/3 multi-tool
+  grammars require the `{"tool_call": ...}` wrapper around every tool. Open
+  JSON Schema objects, including `responseFormat` schemas, no longer accept a
+  declared property through the extra-property slot.
 
 ## 0.12.2
 

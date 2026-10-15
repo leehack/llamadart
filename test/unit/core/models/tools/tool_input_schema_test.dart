@@ -406,9 +406,163 @@ void main() {
   );
 
   test('non-JSON values fail with a typed argument error', () {
-    expect(
-      () => copyToolInputSchema({'type': 'object', 'default': double.nan}),
-      throwsA(isA<LlamaArgumentException>()),
+    final cycle = <Object?>[];
+    cycle.add(cycle);
+    for (final value in <Object?>[
+      double.nan,
+      [const MapEntry('a', 1)],
+      {1: 'x'},
+      cycle,
+      Object(),
+    ]) {
+      expect(
+        () => copyToolInputSchema({'type': 'object', 'default': value}),
+        throwsA(isA<LlamaArgumentException>()),
+        reason: '$value',
+      );
+    }
+  });
+
+  group('untrusted schema limits', () {
+    ToolDefinition build(Map<String, dynamic> schema) =>
+        ToolDefinition.fromJsonSchema(
+          name: 'limited',
+          description: 'Limited',
+          schema: schema,
+        );
+    Map<String, dynamic> object(Map<String, dynamic> properties) => {
+      'type': 'object',
+      'properties': properties,
+      'required': properties.keys.toList(),
+      'additionalProperties': false,
+    };
+    Map<String, dynamic> nest(int depth) {
+      Map<String, dynamic> schema = {'type': 'string'};
+      for (var i = 0; i < depth; i++) {
+        schema = object({'a': schema});
+      }
+      return schema;
+    }
+
+    Matcher unsupported(String message) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        contains(message),
+      ),
     );
+
+    test('nesting is bounded without exhausting the stack', () {
+      expect(() => build(nest(32)), returnsNormally);
+      expect(() => build(nest(33)), unsupported('deeper than 32 levels'));
+      expect(() => build(nest(20000)), unsupported('at most 128 levels'));
+      Object deep = 'leaf';
+      for (var i = 0; i < 200; i++) {
+        deep = [deep];
+      }
+      expect(
+        () => build(
+          object({
+            'x': {'type': 'string', 'default': deep},
+          }),
+        ),
+        unsupported('at most 128 levels'),
+      );
+    });
+
+    test('subschema count, alternatives, enums and names are bounded', () {
+      Map<String, dynamic> wide(int count) => object({
+        for (var i = 0; i < count; i++) 'p$i': {'type': 'string'},
+      });
+      expect(() => build(wide(1023)), returnsNormally);
+      expect(() => build(wide(1024)), unsupported('at most 1024 subschemas'));
+
+      Map<String, dynamic> alternatives(int count) => object({
+        'x': {
+          'anyOf': [
+            for (var i = 0; i < count; i++) {'const': i},
+          ],
+        },
+      });
+      expect(() => build(alternatives(64)), returnsNormally);
+      expect(
+        () => build(alternatives(65)),
+        unsupported('anyOf at input.x has 65 alternatives; the limit is 64'),
+      );
+
+      Map<String, dynamic> enumerated(int count) => object({
+        'x': {
+          'enum': [for (var i = 0; i < count; i++) i],
+        },
+      });
+      expect(() => build(enumerated(1024)), returnsNormally);
+      expect(
+        () => build(enumerated(1025)),
+        unsupported('enum at input.x has 1025 values; the limit is 1024'),
+      );
+
+      expect(
+        () => build(
+          object({
+            '😀' * 128: {'type': 'string'},
+          }),
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => build(
+          object({
+            'a' * 129: {'type': 'string'},
+          }),
+        ),
+        unsupported('at most 128 characters'),
+      );
+    });
+
+    test('generated grammar size is bounded', () {
+      expect(
+        () => build(
+          object({
+            'x': {
+              'enum': [for (var i = 0; i < 1000; i++) '$i${'v' * 300}'],
+            },
+          }),
+        ),
+        unsupported('the limit is 262144'),
+      );
+    });
+
+    for (final keyword in ['minLength', 'maxLength', 'minItems', 'maxItems']) {
+      test('$keyword stays within the llama.cpp repetition limit', () {
+        Map<String, dynamic> bounded(int bound) => object({
+          'x': keyword.endsWith('Length')
+              ? {'type': 'string', keyword: bound}
+              : {
+                  'type': 'array',
+                  'items': {'type': 'string'},
+                  keyword: bound,
+                },
+        });
+        expect(() => build(bounded(1999)), returnsNormally);
+        expect(
+          () => build(bounded(2000)),
+          unsupported(
+            '$keyword at input.x is 2000; llama.cpp grammars accept at most 1999',
+          ),
+        );
+      });
+    }
+
+    test('deep values validate without exhausting the stack', () {
+      Object deep = 'leaf';
+      for (var i = 0; i < 100000; i++) {
+        deep = [deep];
+      }
+      final schema = build({'type': 'object'}).toJsonSchema();
+      expect(validateToolInputValue({'x': deep}, schema).valid, isTrue);
+      final cycle = <Object?>[];
+      cycle.add(cycle);
+      expect(validateToolInputValue({'x': cycle}, schema).valid, isFalse);
+    });
   });
 }

@@ -978,6 +978,53 @@ void main() {
         },
       );
     }
+    test('a schema call cut off at maxTokens finishes with length', () async {
+      var invocations = 0;
+      final tool = rawSchemaTool(
+        handler: (_) async {
+          invocations++;
+          return true;
+        },
+      );
+      runtime
+        ..generationText = '{"tool_call":{"name":"inspect","arguments":{'
+        ..nextLimit = BackendGenerationLimit.maxTokens;
+      final chunks = await toolEngine
+          .create(
+            [
+              const LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'hi',
+              ),
+            ],
+            tools: [tool],
+          )
+          .toList();
+      expect(chunks.last.choices.first.finishReason, 'length');
+      expect(
+        chunks.expand((chunk) => chunk.choices.first.delta.toolCalls ?? []),
+        isEmpty,
+      );
+      final result = await session.sendWithTools('Inspect', tools: [tool]);
+      expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+      expect(invocations, 0);
+
+      runtime.nextLimit = null;
+      await expectLater(
+        toolEngine
+            .create(
+              [
+                const LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'hi',
+                ),
+              ],
+              tools: [tool],
+            )
+            .toList(),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    });
   });
 
   group('LlamaEngine log levels', () {

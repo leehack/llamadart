@@ -117,7 +117,10 @@ and Hunyuan require closed scalar objects (GLM/Laguna also allow string enums).
 Other formats and runtimes without an active tool grammar are rejected.
 WebGPU cannot use lazy auto grammars; use a supported non-lazy required-tool
 format. LiteRT-LM is unsupported. Final parsed calls and direct invocation
-are validated. See the guide's "Import a JSON Schema" section for an example.
+are validated. Schemas past the guide's size limits (for example 32 nesting
+levels, 64 `anyOf` alternatives, or length/item bounds above 1999) throw
+`LlamaUnsupportedException`. See the guide's "Import a JSON Schema" section
+for an example.
 
 ## Examples
 
