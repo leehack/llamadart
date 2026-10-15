@@ -1030,6 +1030,44 @@ void main() {
     },
   );
 
+  test('Hermes canonical alternatives bind both tags around every tool', () {
+    final first = rawSchemaTool();
+    final second = ToolDefinition.fromJsonSchema(
+      name: 'other',
+      description: 'Another tool',
+      schema: first.toJsonSchema(),
+    );
+    final legacy = ToolDefinition(
+      name: 'legacy',
+      description: 'Legacy',
+      parameters: [ToolParam.string('city', required: true)],
+    );
+    String call(String name, Map<String, dynamic> args) =>
+        '<tool_call>${jsonEncode({'name': name, 'arguments': args})}</tool_call>';
+    final a = call('inspect', rawToolArguments);
+    final b = call('other', rawToolArguments);
+    final c = call('legacy', {'city': 'Seoul'});
+    for (final tools in [
+      [first, second],
+      [second, first],
+      [first, legacy],
+      [legacy, first],
+    ]) {
+      final other = tools.any((tool) => tool.name == 'legacy') ? c : b;
+      _expectGrammar(
+        validator,
+        HermesHandler().buildGrammar(tools)!,
+        valid: [a, other, '$a$other', '$other$a'],
+        invalid: [
+          a.replaceFirst('</tool_call>', ''),
+          other.replaceFirst('<tool_call>', ''),
+          a.replaceFirst('inspect', 'unknown'),
+          '$a<tool_call>',
+        ],
+      );
+    }
+  });
+
   test('Hermes and Mistral compile canonical nullable nested constraints', () {
     final tool = rawSchemaTool();
     for (final hermes in [true, false]) {

@@ -104,7 +104,7 @@ class ToolCallGrammarUtils {
     final rootExpr = lines[rootIndex].substring('root ::= '.length).trim();
     final prefixExpr = prefix.isEmpty ? '' : '${literal(prefix)} ';
     final suffixExpr = suffix.isEmpty ? '' : ' ${literal(suffix)}';
-    lines[rootIndex] = 'root ::= $prefixExpr$rootExpr$suffixExpr';
+    lines[rootIndex] = 'root ::= $prefixExpr($rootExpr)$suffixExpr';
 
     return '${lines.join('\n')}\n';
   }
