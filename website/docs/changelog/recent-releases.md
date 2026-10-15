@@ -20,6 +20,11 @@ For canonical full release notes, use:
   parse, including in `ChatTemplateEngine.parse`, throws
   `LlamaInferenceException` instead of `StateError`
   ([#890](https://github.com/leehack/llamadart/issues/890)).
+- The image model memory check now treats a GPU that reports 0 bytes free,
+  as a Vulkan driver does once the process is over its memory budget, as
+  having no free GPU memory instead of all of it: loads warn that generation
+  will be slower and, on Linux, are refused above system memory alone
+  ([#980](https://github.com/leehack/llamadart/issues/980)).
 
 ## 0.12.2
 

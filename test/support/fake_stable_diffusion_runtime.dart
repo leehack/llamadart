@@ -534,13 +534,14 @@ final class _FakeCalls {
               read: _logRead,
               dropped: () {
                 _record('sd_dart_log_dropped');
+                final dropped = _longs[_logDropped ~/ 8];
                 // The last call of a drain, so what it read is settled.
                 if (_inWorker && _state[_holdLogDrain] == 1) {
                   _state[_holdLogDrain] = 2;
                   _log.send(('signal', 'log-drain-held'));
                   _waitWhile(() => _state[_holdLogDrain] == 2);
                 }
-                return _longs[_logDropped ~/ 8];
+                return dropped;
               },
               lastError: _readLastError,
             ),
