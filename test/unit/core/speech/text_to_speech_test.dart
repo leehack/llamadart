@@ -112,6 +112,8 @@ void main() {
       expect(backend.lastRequest?.seed, 7);
       expect(backend.lastSynthesisContextHandle, 2);
       expect(backend.lastSynthesisMmContextHandle, 3);
+      expect(backend.lastCapabilitiesContextHandle, 2);
+      expect(backend.lastCapabilitiesMmContextHandle, 3);
 
       final wav = finalEvent.result.toWavBytes();
       expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
@@ -716,6 +718,8 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
   BackendTextToSpeechRequest? lastRequest;
   int? lastSynthesisContextHandle;
   int? lastSynthesisMmContextHandle;
+  int? lastCapabilitiesContextHandle;
+  int? lastCapabilitiesMmContextHandle;
 
   @override
   bool get isReady => _ready;
@@ -747,6 +751,8 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
     int contextHandle,
     int mmContextHandle,
   ) async {
+    lastCapabilitiesContextHandle = contextHandle;
+    lastCapabilitiesMmContextHandle = mmContextHandle;
     if (!capabilityProbeStarted.isCompleted) {
       capabilityProbeStarted.complete();
     }
