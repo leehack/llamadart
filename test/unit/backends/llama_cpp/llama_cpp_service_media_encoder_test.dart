@@ -3,12 +3,15 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -278,6 +281,48 @@ void main() {
         _untyped('Failed to load media part 0'),
       );
     });
+  });
+
+  test('a runtime without mtmd fails a media request as unsupported, also '
+      'through the worker, and serves it once mtmd is back', () async {
+    attach(vision: true, audio: true);
+    final unsupported = throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (e) => e.message,
+        'message',
+        contains('`mtmd_input_chunks_init` cannot run'),
+      ),
+    );
+    final parts = [LlamaImageContent(bytes: _png)];
+    fake.setFallback(present: false);
+    // The projector is freed through the fallback.
+    addTearDown(() => fake.setFallback(present: true));
+
+    await expectLater(send(parts), unsupported);
+
+    final workerPort = ReceivePort();
+    runLlamaWorkerForTesting(
+      workerPort.sendPort,
+      service,
+      exitOnDispose: false,
+    );
+    final backend = NativeLlamaBackend(
+      initialSendPort: await workerPort.first as SendPort,
+    );
+    Future<void> sendThroughWorker() => backend
+        .generate(context, '<__media__>', _greedy, parts: parts)
+        .drain<void>();
+    try {
+      await expectLater(sendThroughWorker(), unsupported);
+
+      fake.setFallback(present: true);
+      await sendThroughWorker();
+      expect(fake.calls, contains('mtmd_tokenize'));
+      expect(fake.evaluations, 1);
+    } finally {
+      fake.setFallback(present: true);
+      await backend.dispose();
+    }
   });
 
   test('a runtime without the mtmd encoder probe leaves the mtmd error as it '

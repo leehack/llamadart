@@ -110,9 +110,15 @@ abstract class LlamaBackend {
   Future<void> multimodalContextFree(int mmContextHandle);
 
   /// Checks if the model supports vision input.
+  ///
+  /// Throws `LlamaUnsupportedException` when the runtime cannot run the probe,
+  /// as for a native llama.cpp runtime without the mtmd functions.
   Future<bool> supportsVision(int mmContextHandle);
 
   /// Checks if the model supports audio input.
+  ///
+  /// Throws `LlamaUnsupportedException` when the runtime cannot run the probe,
+  /// as for a native llama.cpp runtime without the mtmd functions.
   Future<bool> supportsAudio(int mmContextHandle);
 
   /// Returns the total and free VRAM in bytes.
