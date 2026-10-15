@@ -240,6 +240,26 @@ void main() {
         );
       }
     });
+
+    test('names a prerelease core instead of a window that excludes it', () {
+      final root = _tempRoot();
+      _writeCompanions(root);
+
+      final errors = checkCompanionCoreConstraints(
+        root,
+        Version.parse('0.13.0-dev.1'),
+      );
+
+      expect(errors, hasLength(companionSwiftPins.length));
+      expect(
+        errors.first,
+        allOf(
+          contains('but core is the prerelease 0.13.0-dev.1'),
+          contains('publishes only stable core versions'),
+          isNot(contains("`'>=0.13.0 <0.14.0'` for a new minor")),
+        ),
+      );
+    });
   });
 
   group('checkPublishedCompanionPins', () {

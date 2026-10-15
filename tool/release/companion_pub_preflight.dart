@@ -17,6 +17,7 @@
 /// ```
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -217,7 +218,12 @@ bool _sameConstraint(String? local, Object? published) {
   }
 }
 
-Future<PubDevResponse> _httpGet(Uri uri) async {
+/// Fetches [uri], failing when the connection takes over 30 seconds, or the
+/// response headers or [bodyTimeout] pass first.
+Future<PubDevResponse> pubDevGet(
+  Uri uri, {
+  Duration bodyTimeout = const Duration(seconds: 60),
+}) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
   try {
     final request = await client.getUrl(uri);
@@ -225,11 +231,63 @@ Future<PubDevResponse> _httpGet(Uri uri) async {
     final body = await response
         .transform(utf8.decoder)
         .join()
-        .timeout(const Duration(seconds: 60));
+        .timeout(bodyTimeout);
     return (status: response.statusCode, body: body);
   } finally {
     client.close(force: true);
   }
+}
+
+/// Calls [get] for [uri], and once more after [retryDelay] when it throws an
+/// [Exception], such as a stalled body's [TimeoutException], or pub.dev
+/// answers a 5xx status.
+Future<PubDevResponse> getWithOneRetry(
+  Uri uri,
+  Future<PubDevResponse> Function(Uri uri) get, {
+  Duration retryDelay = const Duration(seconds: 5),
+}) async {
+  try {
+    final response = await get(uri);
+    if (response.status < HttpStatus.internalServerError) return response;
+  } on Exception {
+    // Retried below; a second failure reaches the caller.
+  }
+  await Future<void>.delayed(retryDelay);
+  return get(uri);
+}
+
+/// Runs both preflight checks on the companions under [repoRoot], fetching
+/// pub.dev through [get], reports to [out] or [err], and returns the exit
+/// code: `0` only when no problem stops the release.
+Future<int> runCompanionPubPreflight(
+  Directory repoRoot,
+  Future<PubDevResponse> Function(Uri uri) get, {
+  required StringSink out,
+  required StringSink err,
+}) async {
+  final companions = discoverAppleCompanionPackages(repoRoot);
+  if (companions.isEmpty) {
+    err.writeln('No Flutter Apple companion packages found under packages/.');
+    return 1;
+  }
+  final problems = [
+    ...await companionPubPreflightProblems(
+      companions,
+      (uri) async => (await get(uri)).status,
+    ),
+    ...await companionPublishedConstraintProblems(repoRoot, companions, get),
+  ];
+  if (problems.isNotEmpty) {
+    err.writeln('Companion pub.dev preflight failed:');
+    problems.forEach(err.writeln);
+    return 1;
+  }
+  out.writeln(
+    'Companion packages exist on pub.dev, and no published companion '
+    'version declares a different llamadart constraint: '
+    '${companions.map((companion) => companion.name).join(', ')}.',
+  );
+  return 0;
 }
 
 String _baseName(String path) =>
@@ -241,34 +299,10 @@ Future<void> main(List<String> arguments) async {
     exitCode = 64;
     return;
   }
-  final companions = discoverAppleCompanionPackages(Directory.current);
-  if (companions.isEmpty) {
-    stderr.writeln(
-      'No Flutter Apple companion packages found under packages/.',
-    );
-    exitCode = 1;
-    return;
-  }
-  final problems = [
-    ...await companionPubPreflightProblems(
-      companions,
-      (uri) async => (await _httpGet(uri)).status,
-    ),
-    ...await companionPublishedConstraintProblems(
-      Directory.current,
-      companions,
-      _httpGet,
-    ),
-  ];
-  if (problems.isNotEmpty) {
-    stderr.writeln('Companion pub.dev preflight failed:');
-    problems.forEach(stderr.writeln);
-    exitCode = 1;
-    return;
-  }
-  stdout.writeln(
-    'Companion packages exist on pub.dev, and no published companion '
-    'version declares a different llamadart constraint: '
-    '${companions.map((companion) => companion.name).join(', ')}.',
+  exitCode = await runCompanionPubPreflight(
+    Directory.current,
+    (uri) => getWithOneRetry(uri, pubDevGet),
+    out: stdout,
+    err: stderr,
   );
 }

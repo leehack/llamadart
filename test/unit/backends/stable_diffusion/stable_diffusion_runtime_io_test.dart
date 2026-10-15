@@ -358,6 +358,17 @@ void main() {
       );
     });
 
+    test('detects a flutter test host from FLUTTER_TEST', () {
+      expect(isFlutterTestEnvironment({'FLUTTER_TEST': 'true'}), isTrue);
+      expect(isFlutterTestEnvironment({'FLUTTER_TEST': 'false'}), isFalse);
+      expect(isFlutterTestEnvironment({'FLUTTER_TESTS': 'true'}), isFalse);
+      expect(isFlutterTestEnvironment(const {}), isFalse);
+      expect(
+        isFlutterTestEnvironment(),
+        Platform.environment['FLUTTER_TEST'] == 'true',
+      );
+    });
+
     group('Windows error 126', () {
       final error126 = ArgumentError(
         "Couldn't resolve native function 'sd_version' in "
