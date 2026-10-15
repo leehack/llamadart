@@ -16,6 +16,8 @@ import 'package:llamadart/src/backends/backend.dart'
 import 'package:llamadart/src/core/engine/engine.dart'
     show completionGenerationLimit;
 
+import '../../../support/raw_tool_schema_fixture.dart';
+
 class MockLlamaBackend
     implements
         LlamaBackend,
@@ -1057,6 +1059,11 @@ class MockBatchEmbeddingBackend extends MockLlamaBackend
   }
 }
 
+class CanonicalToolBackend extends LimitReportingMockBackend {
+  @override
+  bool get supportsGrammarConstraints => true;
+}
+
 void main() {
   late MockLlamaBackend backend;
   late LlamaEngine engine;
@@ -1064,6 +1071,179 @@ void main() {
   setUp(() {
     backend = MockLlamaBackend();
     engine = LlamaEngine(backend);
+  });
+
+  group('canonical schema tool loops', () {
+    late CanonicalToolBackend runtime;
+    late LlamaEngine toolEngine;
+    late ChatSession session;
+    setUp(() async {
+      runtime = CanonicalToolBackend();
+      toolEngine = LlamaEngine(runtime);
+      await toolEngine.loadModel('test-model.gguf');
+      session = ChatSession(toolEngine, maxContextTokens: 0);
+    });
+    tearDown(() => toolEngine.dispose());
+
+    test(
+      'Hermes auto follow-up commits a code-fenced answer after a tool result',
+      () async {
+        const template =
+            '<|im_start|>{{ messages | tojson }}{{ tools | tojson }}<tool_call>';
+        await toolEngine.unloadModel();
+        await toolEngine.loadModel(
+          'test-model.gguf',
+          modelParams: const ModelParams(chatTemplate: template),
+        );
+        runtime.generationText =
+            '<tool_call>${jsonEncode({'name': 'inspect', 'arguments': rawToolArguments})}</tool_call>';
+        const answer = 'Here:\n```dart\nprint(42);\n```';
+        var calls = 0;
+        final tool = rawSchemaTool(
+          handler: (_) async {
+            calls++;
+            runtime.generationText = answer;
+            return 42;
+          },
+        );
+        expect(
+          (await toolEngine.chatTemplate(const [], tools: [tool])).format,
+          ChatFormat.hermes.index,
+        );
+        final result = await session.sendWithTools('Inspect', tools: [tool]);
+        expect(result.stopReason, LlamaToolLoopStopReason.completed);
+        expect(result.text, answer);
+        expect(calls, 1);
+        expect(
+          session.history.last.parts.whereType<LlamaTextContent>().single.text,
+          answer,
+        );
+        expect(
+          session.history
+              .expand((message) => message.parts)
+              .whereType<LlamaToolResultContent>(),
+          hasLength(1),
+        );
+      },
+    );
+
+    test(
+      'valid tool loop invokes typed input and commits matched result',
+      () async {
+        runtime.generationText = jsonEncode({
+          'tool_call': {'name': 'inspect', 'arguments': rawToolArguments},
+        });
+        var invocations = 0;
+        final tool = rawSchemaTool(
+          handler: (params) async {
+            invocations++;
+            expect(params.getInt('mode'), 2);
+            expect(params.getList<String>('tags'), ['a']);
+            runtime.generationText = '{"response":"Done"}';
+            return {'ok': true};
+          },
+        );
+        final result = await session.sendWithTools('Inspect', tools: [tool]);
+        expect(result.stopReason, LlamaToolLoopStopReason.completed);
+        expect(result.text, 'Done');
+        expect(invocations, 1);
+        final calls = session.history
+            .expand((message) => message.parts)
+            .whereType<LlamaToolCallContent>()
+            .toList();
+        final results = session.history
+            .expand((message) => message.parts)
+            .whereType<LlamaToolResultContent>()
+            .toList();
+        expect(calls, hasLength(1));
+        expect(results.single.id, calls.single.id);
+        expect(results.single.result, {'ok': true});
+        expect(runtime.lastGenerationParams!.grammar, isNotEmpty);
+        expect(runtime.nativeGenerateChatCalls, 0);
+      },
+    );
+
+    for (final malformed in [
+      jsonEncode({
+        'tool_call': {
+          'name': 'inspect',
+          'arguments': {...rawToolArguments, 'mode': '2'},
+        },
+      }),
+      '{"tool_call":{"name":"inspect","arguments":{',
+    ]) {
+      test(
+        'invalid final tool output fails without invoking or committing: $malformed',
+        () async {
+          var invocations = 0;
+          final tool = rawSchemaTool(
+            handler: (_) async {
+              invocations++;
+              return true;
+            },
+          );
+          runtime.generationText = malformed;
+          await expectLater(
+            session.sendWithTools('Inspect', tools: [tool]),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+          expect(invocations, 0);
+          expect(session.history, isEmpty);
+          runtime.generationText = '{"response":"Recovered"}';
+          expect(
+            (await session.sendWithTools('Again', tools: [tool])).text,
+            'Recovered',
+          );
+        },
+      );
+    }
+    test('a schema call cut off at maxTokens finishes with length', () async {
+      var invocations = 0;
+      final tool = rawSchemaTool(
+        handler: (_) async {
+          invocations++;
+          return true;
+        },
+      );
+      runtime
+        ..generationText = '{"tool_call":{"name":"inspect","arguments":{'
+        ..nextLimit = BackendGenerationLimit.maxTokens;
+      final chunks = await toolEngine
+          .create(
+            [
+              const LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'hi',
+              ),
+            ],
+            tools: [tool],
+          )
+          .toList();
+      expect(chunks.last.choices.first.finishReason, 'length');
+      expect(
+        chunks.expand((chunk) => chunk.choices.first.delta.toolCalls ?? []),
+        isEmpty,
+      );
+      final result = await session.sendWithTools('Inspect', tools: [tool]);
+      expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+      expect(invocations, 0);
+
+      runtime.nextLimit = null;
+      await expectLater(
+        toolEngine
+            .create(
+              [
+                const LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'hi',
+                ),
+              ],
+              tools: [tool],
+            )
+            .toList(),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    });
   });
 
   group('LlamaEngine log levels', () {

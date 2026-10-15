@@ -384,6 +384,7 @@ the same libraries. Details and the pub workspace rules:
 | Stream text and collect output | [Generation and streaming](https://llamadart.leehack.com/docs/guides/generation-and-streaming) |
 | Generate typed JSON | [Structured output](https://llamadart.leehack.com/docs/guides/generation-and-streaming#structured-json-output) |
 | Use tool calling | [Tool calling](https://llamadart.leehack.com/docs/guides/tool-calling) |
+| Import a tool input schema | [`ToolDefinition.fromJsonSchema`](https://llamadart.leehack.com/docs/next/guides/tool-calling#import-a-json-schema) |
 | Use images, audio, or projectors | [Multimodal](https://llamadart.leehack.com/docs/guides/multimodal) |
 | Transcribe speech on device | [Speech to text](https://llamadart.leehack.com/docs/guides/speech-to-text) |
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |

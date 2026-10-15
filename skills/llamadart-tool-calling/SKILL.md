@@ -61,7 +61,7 @@ description: >-
   entries with decoded `arguments` (empty when they are not a JSON object;
   `rawJson` keeps the text).
 - By hand, invoke through `tool.invoke(call.arguments)`, which wraps the
-  arguments in `ToolParams` for typed access; it does not validate them, and
+  arguments in `ToolParams` for typed access; schema-factory tools validate them, and
   throws `LlamaStateException` for a tool without a handler. Read required
   arguments with `getRequired*`, which throws when one is missing. Catch errors
   and return them to the model as the tool result rather than crashing the
@@ -101,6 +101,26 @@ description: >-
   `(await engine.capabilities).supportsToolCalling`,
   `supportsStructuredOutput` and `supportsLazyGrammar` report these per
   loaded model. Test tool flows on every target runtime.
+
+## Existing JSON schemas
+
+Use `ToolDefinition.fromJsonSchema(name: ..., description: ..., schema: ...,
+handler: ...)` for imported schemas; do not flatten them to `ToolParam`s. The
+factory owns a deep copy and exposes fresh canonical copies through
+`toJsonSchema()`; `parameters` is empty. The root must be an object. Missing
+`additionalProperties` means true; legacy helper tools retain closed behavior.
+The supported subset includes nested objects/arrays, scalar enum/const,
+nullable type lists, anyOf and length/item bounds. References, patterns,
+numeric bounds, oneOf/allOf and other unsupported constraints fail explicitly.
+Generic JSON, Hermes and Mistral Nemo JSON support this subset; GLM/Laguna
+and Hunyuan require closed scalar objects (GLM/Laguna also allow string enums).
+Other formats and runtimes without an active tool grammar are rejected.
+WebGPU cannot use lazy auto grammars; use a supported non-lazy required-tool
+format. LiteRT-LM is unsupported. Final parsed calls and direct invocation
+are validated. Schemas past the guide's size limits (for example 32 nesting
+levels, 64 `anyOf` alternatives, or length/item bounds above 1999) throw
+`LlamaUnsupportedException`. See the guide's "Import a JSON Schema" section
+for an example.
 
 ## Examples
 

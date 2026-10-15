@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -19,13 +20,16 @@ import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
 import '../../support/litert_qwen_content_fixture.dart';
+import '../../support/llama_cpp_grammar_load.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
+import '../../support/raw_tool_schema_fixture.dart';
 
 void main() {
   late String validator;
@@ -979,6 +983,464 @@ void main() {
       ],
     );
   });
+  test(
+    'canonical JSON schema grammar enforces nullable enums and containers',
+    () {
+      final tool = rawSchemaTool();
+      final rendered = ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'inspect'),
+        ],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: true,
+      );
+      String envelope(Map<String, dynamic> args) => jsonEncode({
+        'tool_call': {'name': 'inspect', 'arguments': args},
+      });
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          envelope(rawToolArguments),
+          envelope({
+            ...rawToolArguments,
+            'code': '001',
+            'mode': 1,
+            'tags': ['a', 'b'],
+          }),
+        ],
+        invalid: [
+          envelope({...rawToolArguments, 'code': 42}),
+          envelope({...rawToolArguments, 'mode': '2'}),
+          envelope({...rawToolArguments, 'mode': 3}),
+          envelope({...rawToolArguments, 'tags': []}),
+          envelope({
+            ...rawToolArguments,
+            'tags': ['a', 'b', 'c'],
+          }),
+          envelope({
+            ...rawToolArguments,
+            'nested': {'active': 'true'},
+          }),
+          envelope({...rawToolArguments, 'extra': true}),
+          envelope({...rawToolArguments}..remove('code')),
+        ],
+      );
+    },
+  );
+
+  test('Hermes canonical alternatives bind both tags around every tool', () {
+    final first = rawSchemaTool();
+    final second = ToolDefinition.fromJsonSchema(
+      name: 'other',
+      description: 'Another tool',
+      schema: first.toJsonSchema(),
+    );
+    final legacy = ToolDefinition(
+      name: 'legacy',
+      description: 'Legacy',
+      parameters: [ToolParam.string('city', required: true)],
+    );
+    String call(String name, Map<String, dynamic> args) =>
+        '<tool_call>${jsonEncode({'name': name, 'arguments': args})}</tool_call>';
+    final a = call('inspect', rawToolArguments);
+    final b = call('other', rawToolArguments);
+    final c = call('legacy', {'city': 'Seoul'});
+    for (final tools in [
+      [first, second],
+      [second, first],
+      [first, legacy],
+      [legacy, first],
+    ]) {
+      final other = tools.any((tool) => tool.name == 'legacy') ? c : b;
+      _expectGrammar(
+        validator,
+        HermesHandler().buildGrammar(tools)!,
+        valid: [a, other, '$a$other', '$other$a'],
+        invalid: [
+          a.replaceFirst('</tool_call>', ''),
+          other.replaceFirst('<tool_call>', ''),
+          a.replaceFirst('inspect', 'unknown'),
+          '$a<tool_call>',
+        ],
+      );
+    }
+  });
+
+  test('Hermes and Mistral compile canonical nullable nested constraints', () {
+    final tool = rawSchemaTool();
+    for (final hermes in [true, false]) {
+      final grammar = hermes
+          ? HermesHandler().buildGrammar([tool])!
+          : MistralHandler().buildGrammar([tool])!;
+      String output(Map<String, dynamic> args) => hermes
+          ? '<tool_call>${jsonEncode({'name': 'inspect', 'arguments': args})}</tool_call>'
+          : '[TOOL_CALLS]${jsonEncode([
+              {'name': 'inspect', 'arguments': args, 'id': 'abcdefghi'},
+            ])}';
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output(rawToolArguments),
+          output({...rawToolArguments, 'code': '001'}),
+        ],
+        invalid: [
+          output({...rawToolArguments, 'mode': 3}),
+          output({...rawToolArguments, 'tags': []}),
+          output({
+            ...rawToolArguments,
+            'nested': {'active': 'true'},
+          }),
+          output({...rawToolArguments, 'code': 1}),
+        ],
+      );
+    }
+  });
+
+  test(
+    'canonical wire keys and annotation values are not schema references',
+    () {
+      for (final open in [true, false]) {
+        final tool = ToolDefinition.fromJsonSchema(
+          name: 'literal',
+          description: 'Literal keys',
+          schema: {
+            'type': 'object',
+            'properties': {
+              r'$ref': {'type': 'integer'},
+              '*': {'type': 'string'},
+            },
+            'required': [r'$ref', '*'],
+            'additionalProperties': open,
+            'default': {r'$ref': '#/missing'},
+            'examples': [
+              {r'$ref': '#/example'},
+            ],
+          },
+        );
+        final rendered = ChatTemplateEngine.render(
+          templateSource: null,
+          messages: const [],
+          metadata: const {},
+          tools: [tool],
+          toolChoice: ToolChoice.required,
+        );
+        String output(Map<String, dynamic> args) => jsonEncode({
+          'tool_call': {'name': 'literal', 'arguments': args},
+        });
+        _expectGrammar(
+          validator,
+          rendered.grammar!,
+          valid: [
+            output({r'$ref': 1, '*': 'yes'}),
+            if (open) output({r'$ref': 1, '*': 'yes', 'extra': true}),
+          ],
+          invalid: [
+            output({r'$ref': 1, 'other': 'yes'}),
+            output({r'$ref': 1, '*': 2}),
+            output({'*': 'yes'}),
+          ],
+        );
+      }
+    },
+  );
+
+  test('canonical scalar GLM and Hunyuan grammars enforce integer and null', () {
+    final tool = rawScalarTool();
+    const glm =
+        '<tool_call>weather\n<arg_key>city</arg_key>\n<arg_value>Seoul</arg_value>\n<arg_key>count</arg_key>\n<arg_value>2</arg_value>\n<arg_key>nothing</arg_key>\n<arg_value>null</arg_value>\n</tool_call>';
+    _expectGrammar(
+      validator,
+      Glm45Handler().buildGrammar([tool])!,
+      valid: ['$glm\n'],
+      invalid: [
+        glm.replaceFirst('<arg_value>2', '<arg_value>2.5'),
+        glm.replaceFirst('<arg_value>null', '<arg_value>true'),
+      ],
+    );
+    const hunyuan =
+        '<tool_calls>\n<tool_call>weather<tool_sep>\n<arg_key>city</arg_key>\n<arg_value>Seoul</arg_value>\n<arg_key>count</arg_key>\n<arg_value>2</arg_value>\n<arg_key>nothing</arg_key>\n<arg_value>null</arg_value>\n</tool_call>\n</tool_calls>';
+    _expectGrammar(
+      validator,
+      HunyuanV3Handler().buildGrammar([tool])!,
+      valid: [
+        hunyuan.replaceAllMapped(
+          RegExp(r'</?(?:tool_calls|tool_call|tool_sep|arg_key|arg_value)>'),
+          (match) => match[0]!.replaceFirst('>', ':opensource>'),
+        ),
+      ],
+      invalid: [
+        hunyuan.replaceFirst('<arg_value>2', '<arg_value>2.5'),
+        hunyuan.replaceFirst('<arg_value>null', '<arg_value>true'),
+      ],
+    );
+  });
+
+  test('open schema objects constrain declared optional properties', () {
+    for (final open in [true, false]) {
+      final tool = ToolDefinition.fromJsonSchema(
+        name: 'weather',
+        description: 'Weather',
+        schema: {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+            'count': {'type': 'integer'},
+            'mode': {
+              'enum': ['c', 'f'],
+            },
+          },
+          'required': ['city'],
+          if (!open) 'additionalProperties': false,
+        },
+      );
+      String hermes(Map<String, dynamic> args) =>
+          '<tool_call>${jsonEncode({'name': 'weather', 'arguments': args})}</tool_call>';
+      String generic(Map<String, dynamic> args) => jsonEncode({
+        'tool_call': {'name': 'weather', 'arguments': args},
+      });
+      final rendered = ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+      );
+      for (final (grammar, output) in [
+        (HermesHandler().buildGrammar([tool])!, hermes),
+        (rendered.grammar!, generic),
+      ]) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [
+            output({'city': 'Seoul'}),
+            output({'city': 'Seoul', 'count': 3, 'mode': 'c'}),
+            if (open) output({'city': 'Seoul', 'count': 3, 'extra': 'x'}),
+            if (open) output({'city': 'Seoul', 'cit': 1, 'counter': 'x'}),
+          ],
+          invalid: [
+            output({'city': 'Seoul', 'count': 'three'}),
+            output({'city': 'Seoul', 'count': 1.5}),
+            output({'city': 'Seoul', 'mode': 'zzz'}),
+            output({'city': 1}),
+            output({'count': 3}),
+            output({
+              'city': 'Seoul',
+            }).replaceFirst('"Seoul"', '"Seoul","city":"dup"'),
+            if (!open) output({'city': 'Seoul', 'extra': 'x'}),
+          ],
+        );
+      }
+    }
+  });
+
+  test('large open-object key sets load and exclude declared keys', () {
+    for (final names in [...largeKeySets.values, overBudgetKeySet]) {
+      final withinBudget = !identical(names, overBudgetKeySet);
+      final schema = <String, dynamic>{
+        'type': 'object',
+        'properties': {
+          for (final name in names) name: {'type': 'integer'},
+        },
+        'additionalProperties': true,
+      };
+      final first = jsonEncode(names.first);
+      final duplicate = '{$first:1,$first:2}';
+      for (final (grammar, output) in _openObjectGrammars(schema)) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [
+            output('{$first:1}'),
+            output('{$first:1,${jsonEncode('${names.first}x')}:"v"}'),
+            output('{${jsonEncode(names.last)}:2,"zz-extra":true}'),
+            // Beyond the budget, final validation checks declared keys.
+            if (!withinBudget) ...[output(duplicate), output('{$first:"x"}')],
+          ],
+          invalid: [
+            if (withinBudget) ...[output(duplicate), output('{$first:"x"}')],
+            output('{$first:1,}'),
+          ],
+        );
+      }
+    }
+  });
+
+  test('closed objects with 1023 optional properties load', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        for (final name in largeKeySets['1023 properties']!)
+          name: {'type': 'integer'},
+      },
+      'additionalProperties': false,
+    };
+    for (final (grammar, output) in _openObjectGrammars(schema)) {
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [output('{"p5":1}'), output('{"p5":1,"p1022":2}')],
+        invalid: [output('{"p5":1,"zz":1}'), output('{"p5":"x"}')],
+      );
+    }
+  });
+
+  test('open objects exclude non-BMP declared keys', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        for (final name in ['é', 'éa', '😀', '😀b']) name: {'type': 'boolean'},
+      },
+      'additionalProperties': true,
+    };
+    for (final (grammar, output) in _openObjectGrammars(schema)) {
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output('{"😀":true}'),
+          output('{"😀c":1}'),
+          output('{"éb":1}'),
+          output('{"😀b":true,"😁":1}'),
+        ],
+        invalid: [output('{"😀":1}'), output('{"é":1}'), output('{"😀b":1}')],
+      );
+    }
+  });
+
+  test('maxItems 1999 loads for every minItems and item type', () {
+    for (final item in boundedArrayItemSchemas) {
+      final value = jsonEncode(boundedArrayItemValue(item));
+      String items(int count) => '[${List.filled(count, value).join(',')}]';
+      for (final minItems in [0, 1, 1999]) {
+        final schema = <String, dynamic>{
+          'type': 'object',
+          'properties': {
+            'list': {
+              'type': 'array',
+              'items': item,
+              'minItems': minItems,
+              'maxItems': 1999,
+            },
+          },
+          'required': ['list'],
+          'additionalProperties': false,
+        };
+        for (final (grammar, output) in _openObjectGrammars(schema)) {
+          _expectGrammar(
+            validator,
+            grammar,
+            valid: [
+              if (minItems == 0) output('{"list":[]}'),
+              if (minItems <= 1) output('{"list":${items(1)}}'),
+              output('{"list":${items(1999)}}'),
+            ],
+            invalid: [
+              output('{"list":${items(2000)}}'),
+              if (minItems > 0) output('{"list":[]}'),
+              if (minItems == 1999) output('{"list":${items(1998)}}'),
+            ],
+          );
+        }
+      }
+    }
+  });
+
+  test('Hermes schema calls accept newlines inside the tool_call tags', () {
+    final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});
+    _expectGrammar(
+      validator,
+      HermesHandler().buildGrammar([rawSchemaTool()])!,
+      valid: [
+        '<tool_call>$call</tool_call>',
+        '<tool_call>\n$call\n</tool_call>\n<tool_call>\n$call\n</tool_call>',
+      ],
+      invalid: ['$call</tool_call>', '<tool_call>\n$call\n'],
+    );
+  });
+
+  test('legacy GLM integer parameters reject fractional values', () {
+    final tool = ToolDefinition(
+      name: 'weather',
+      description: 'Weather',
+      parameters: [ToolParam.integer('count', required: true)],
+    );
+    const call =
+        '<tool_call>weather\n<arg_key>count</arg_key>\n<arg_value>15</arg_value>\n</tool_call>\n';
+    _expectGrammar(
+      validator,
+      Glm45Handler().buildGrammar([tool])!,
+      valid: [call],
+      invalid: [call.replaceFirst('15', '1.5')],
+    );
+  });
+
+  test('llama.cpp grammar repetition limit matches the schema bound', () {
+    final directory = Directory.systemTemp.createTempSync('llamadart-gbnf-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    String run(int bound) {
+      final grammar = File('${directory.path}/bound.gbnf')
+        ..writeAsStringSync(
+          JsonSchemaConverter.convert({'type': 'string', 'maxLength': bound}),
+        );
+      final input = File('${directory.path}/bound.txt')
+        ..writeAsStringSync('"${'a' * bound}"');
+      final result = Process.runSync(validator, [grammar.path, input.path]);
+      return '${result.stdout}\n${result.stderr}';
+    }
+
+    expect(
+      run(1999),
+      contains('Input string is valid according to the grammar.'),
+    );
+    expect(run(2000), contains('failed to parse grammar'));
+  });
+}
+
+/// Returns Hermes, generic required-tool and `responseFormat` grammars for an
+/// object [schema], each with a function that wraps JSON arguments in the
+/// grammar's output envelope.
+List<(String, String Function(String))> _openObjectGrammars(
+  Map<String, dynamic> schema,
+) {
+  final tool = ToolDefinition.fromJsonSchema(
+    name: 'spec',
+    description: 'Spec',
+    schema: schema,
+  );
+  return [
+    (
+      HermesHandler().buildGrammar([tool])!,
+      (args) => '<tool_call>{"name":"spec","arguments":$args}</tool_call>',
+    ),
+    (
+      ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+      ).grammar!,
+      (args) => '{"tool_call":{"name":"spec","arguments":$args}}',
+    ),
+    (
+      ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        responseFormat: {
+          'type': 'json_schema',
+          'json_schema': {'schema': schema},
+        },
+      ).grammar!,
+      (args) => args,
+    ),
+  ];
 }
 
 void _expectGrammar(
@@ -1007,13 +1469,21 @@ void _validate(
 }) {
   final inputFile = File('${grammar.parent.path}/input.txt')
     ..writeAsStringSync(input);
-  final result = Process.runSync(validator, [grammar.path, inputFile.path]);
-  final output = '${result.stdout}\n${result.stderr}';
-  expect(result.exitCode, 0, reason: output);
+  // The validator prints the rejected input byte by byte, which can split a
+  // multi-byte UTF-8 character.
+  const lenient = Utf8Codec(allowMalformed: true);
+  final result = Process.runSync(
+    validator,
+    [grammar.path, inputFile.path],
+    stdoutEncoding: lenient,
+    stderrEncoding: lenient,
+  );
+  final text = '${result.stdout}\n${result.stderr}';
+  expect(result.exitCode, 0, reason: text);
   expect(
-    output.contains('Input string is valid according to the grammar.'),
+    text.contains('Input string is valid according to the grammar.'),
     expected,
-    reason: 'Input: $input\n$output\nGrammar:\n${grammar.readAsStringSync()}',
+    reason: 'Input: $input\n$text\nGrammar:\n${grammar.readAsStringSync()}',
   );
 }
 

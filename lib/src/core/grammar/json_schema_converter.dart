@@ -39,12 +39,27 @@ const _primitiveRules = <String, _BuiltinRule>{
     r'[^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
     [],
   ),
+  'char-escape': _BuiltinRule(r'[\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})', []),
   'string': _BuiltinRule(r'"\"" char* "\"" space', ['char']),
   'null': _BuiltinRule('"null" space', []),
 };
 
 /// Reserved rule names that need a suffix to avoid collision.
 final _reservedNames = <String>{'root', ..._primitiveRules.keys};
+
+/// Largest alternative count or repetition bound kept in an inline group.
+///
+/// llama.cpp rejects a repeated group once the symbols created inside it,
+/// including first references to named rules, multiplied by the repetition
+/// count reach `MAX_REPETITION_THRESHOLD` (2000). Larger generated groups move
+/// into named rules, each of which counts as one symbol.
+const _maxInlineGroupSize = 256;
+
+/// Most characters the declared-key exclusion rules may add to one grammar.
+///
+/// Open objects beyond this budget use the plain `string` key rule, so the
+/// grammar still loads and final validation checks declared properties.
+const _maxKeyTrieGrammarLength = 64 * 1024;
 
 /// Escapes for GBNF literal strings.
 const _literalEscapes = <String, String>{
@@ -61,6 +76,7 @@ class JsonSchemaConverter {
   final Map<String, String> _rules = {'space': _spaceRule};
   final Map<String, dynamic> _refs = {};
   final Set<String> _refsBeingResolved = {};
+  int _keyTrieGrammarLength = 0;
 
   /// Access accumulated rules (for multi-tool grammar assembly).
   Map<String, String> get rules => _rules;
@@ -163,10 +179,40 @@ class JsonSchemaConverter {
         // Resolve refs nested inside the target as well.
         resolveRefs(target, rootSchema);
       }
-      // Always walk children so refs nested as siblings of a $ref (or inside an
-      // already-registered ref-bearing node) are resolved too.
-      for (final value in node.values) {
-        resolveRefs(value, rootSchema);
+      // Only schema-bearing positions contain references. Property names and
+      // annotation payloads such as examples are ordinary JSON data.
+      for (final key in [
+        'properties',
+        'patternProperties',
+        r'$defs',
+        'definitions',
+        'dependentSchemas',
+      ]) {
+        final schemas = node[key];
+        if (schemas is Map) {
+          for (final schema in schemas.values) {
+            resolveRefs(schema, rootSchema);
+          }
+        }
+      }
+      for (final key in [
+        'items',
+        'prefixItems',
+        'additionalProperties',
+        'additionalItems',
+        'contains',
+        'not',
+        'if',
+        'then',
+        'else',
+        'anyOf',
+        'oneOf',
+        'allOf',
+        'unevaluatedProperties',
+        'unevaluatedItems',
+        'propertyNames',
+      ]) {
+        resolveRefs(node[key], rootSchema);
       }
     }
   }
@@ -322,7 +368,7 @@ class JsonSchemaConverter {
         final maxItems = schema['maxItems'] as int?;
         return _addRule(
           ruleName,
-          '"[" space ${_buildRepetition(itemRuleName, minItems, maxItems, separatorRule: '"," space')} "]" space',
+          '"[" space ${_itemsRepetition(itemRuleName, minItems, maxItems, name)} "]" space',
         );
       }
     }
@@ -371,6 +417,28 @@ class JsonSchemaConverter {
   // Helpers
   // ---------------------------------------------------------------------------
 
+  String _itemsRepetition(
+    String itemRule,
+    int minItems,
+    int? maxItems,
+    String name,
+  ) {
+    final bound = maxItems ?? minItems;
+    if (bound <= _maxInlineGroupSize || bound < minItems) {
+      return _buildRepetition(
+        itemRule,
+        minItems,
+        maxItems,
+        separatorRule: '"," space',
+      );
+    }
+    final prefix = '${name.isNotEmpty ? '$name-' : ''}item';
+    final tail = _addRule('$prefix-tail', '"," space $itemRule');
+    final items =
+        '$itemRule ${_buildRepetition(tail, minItems > 0 ? minItems - 1 : 0, maxItems == null ? null : maxItems - 1)}';
+    return minItems > 0 ? items : '${_addRule('$prefix-list', items)}?';
+  }
+
   String? _visitPattern(String pattern, String ruleName) {
     final snapshot = Map<String, String>.from(_rules);
     final expr = _PatternGrammarBuilder(_addRule, ruleName).build(pattern);
@@ -394,6 +462,109 @@ class JsonSchemaConverter {
           ),
         )
         .join(' | ');
+  }
+
+  /// Returns the name of a JSON string rule (with trailing space) that
+  /// matches none of [strings] in their canonical `jsonEncode` wire form, or
+  /// `null` when its rules would exceed this grammar's remaining
+  /// [_maxKeyTrieGrammarLength].
+  ///
+  /// Follows llama.cpp's `_not_strings` trie, with two corrections: a proper
+  /// prefix of a declared key stays available, and the divergent character
+  /// excludes `"`, `\` and control characters so the key remains valid JSON.
+  /// Where a declared key continues with an escape sequence, other escapes
+  /// are not offered at that position. Escaped spellings of a declared key
+  /// (such as `\u0063ity` for `city`) still match; final validation checks
+  /// their decoded values.
+  ///
+  /// A subtree whose inline groups would create more than
+  /// [_maxInlineGroupSize] llama.cpp symbols becomes a named rule, so no
+  /// repeated group reaches `MAX_REPETITION_THRESHOLD`.
+  String? _notStrings(List<String> strings, String name) {
+    final trie = _KeyTrieNode();
+    for (final string in strings) {
+      final wire = jsonEncode(string);
+      var node = trie;
+      for (final token in _wireTokens(wire.substring(1, wire.length - 1))) {
+        node = node.children.putIfAbsent(token, _KeyTrieNode.new);
+      }
+      node.isEnd = true;
+    }
+
+    String build(
+      String Function(String name, String rule) emit,
+      String char,
+      String escape,
+    ) {
+      var index = 0;
+
+      // Each record holds GBNF text and an upper bound on the symbols
+      // llama.cpp creates while parsing it inside a group: one per group, per
+      // repetition operator and per first reference to a named rule.
+      (String, int) group((String, int) body) {
+        final (text, symbols) = body;
+        if (symbols <= _maxInlineGroupSize) return ('($text)', symbols + 1);
+        return (emit('$name-${index++}', text), 1);
+      }
+
+      (String, int) visitNode(_KeyTrieNode node) {
+        final alternatives = <String>[];
+        final plain = <int>[];
+        var symbols = 0;
+        var escapedChild = false;
+        final tokens = node.children.keys.toList()..sort();
+        for (final token in tokens) {
+          final child = node.children[token]!;
+          final String head;
+          if (token.startsWith(r'\')) {
+            escapedChild = true;
+            head = _formatLiteral(token);
+          } else {
+            plain.add(token.runes.single);
+            head = '[${_classChar(token.runes.single)}]';
+          }
+          if (child.children.isEmpty) {
+            alternatives.add('$head $char+');
+            symbols += 2;
+          } else {
+            final (text, childSymbols) = group(visitNode(child));
+            alternatives.add('$head $text${child.isEnd ? '' : '?'}');
+            symbols += childSymbols + 1;
+          }
+        }
+        final other = StringBuffer(r'[^"\\\x7F\x00-\x1F');
+        for (final rune in plain) {
+          other.write(_classChar(rune));
+        }
+        other.write(']');
+        final divergent = escapedChild
+            ? other.toString()
+            : '($other | $escape)';
+        alternatives.add('$divergent $char*');
+        symbols += escapedChild ? 1 : 3;
+        return (alternatives.join(' | '), symbols);
+      }
+
+      final (root, _) = group(visitNode(trie));
+      return emit(name, '"\\"" $root${trie.isEnd ? '' : '?'} "\\"" space');
+    }
+
+    var length = 0;
+    build(
+      (name, rule) {
+        length += name.length + rule.length;
+        return name;
+      },
+      'char',
+      'char-escape',
+    );
+    if (_keyTrieGrammarLength + length > _maxKeyTrieGrammarLength) return null;
+    _keyTrieGrammarLength += length;
+    return build(
+      _addRule,
+      _addPrimitive('char', _primitiveRules['char']!),
+      _addPrimitive('char-escape', _primitiveRules['char-escape']!),
+    );
   }
 
   String _buildObjectRule(
@@ -425,6 +596,8 @@ class JsonSchemaConverter {
         .where((k) => !required.contains(k))
         .toList();
 
+    // Keep the extra-property slot separate from every declared wire key.
+    String? additionalKey;
     // Handle additionalProperties
     if (additionalProperties != null && additionalProperties != false) {
       final subName = '${name.isNotEmpty ? '$name-' : ''}additional';
@@ -432,14 +605,19 @@ class JsonSchemaConverter {
           ? visit(additionalProperties, '$subName-value')
           : _addPrimitive('value', _primitiveRules['value']!);
       final keyRule = sortedPropNames.isEmpty
-          ? _addPrimitive('string', _primitiveRules['string']!)
-          : _addPrimitive('string', _primitiveRules['string']!);
+          ? null
+          : _notStrings(sortedPropNames, '$subName-k');
 
-      propKvRuleNames['*'] = _addRule(
+      var extraKey = '*';
+      while (propKvRuleNames.containsKey(extraKey)) {
+        extraKey = '$extraKey*';
+      }
+      additionalKey = extraKey;
+      propKvRuleNames[extraKey] = _addRule(
         '$subName-kv',
-        '$keyRule ":" space $valueRule',
+        '${keyRule ?? _addPrimitive('string', _primitiveRules['string']!)} ":" space $valueRule',
       );
-      optionalProps.add('*');
+      optionalProps.add(extraKey);
     }
 
     var rule = '"{" space ';
@@ -458,9 +636,9 @@ class JsonSchemaConverter {
         String res;
         final commaRef = '( "," space $kvRuleName )';
         if (firstIsOptional) {
-          res = '$commaRef${k == '*' ? '*' : '?'}';
+          res = '$commaRef${k == additionalKey ? '*' : '?'}';
         } else {
-          res = '$kvRuleName${k == '*' ? ' $commaRef*' : ''}';
+          res = '$kvRuleName${k == additionalKey ? ' $commaRef*' : ''}';
         }
         if (rest.isNotEmpty) {
           res +=
@@ -473,7 +651,10 @@ class JsonSchemaConverter {
       for (var i = 0; i < optionalProps.length; i++) {
         optAlternatives.add(getRecursiveRefs(optionalProps.sublist(i), false));
       }
-      rule += optAlternatives.join(' | ');
+      final alternatives = optAlternatives.join(' | ');
+      rule += optAlternatives.length > _maxInlineGroupSize
+          ? _addRule('${name.isNotEmpty ? '$name-' : ''}optional', alternatives)
+          : alternatives;
 
       if (requiredProps.isNotEmpty) {
         rule += ' )';
@@ -484,6 +665,40 @@ class JsonSchemaConverter {
     rule += ' "}" space';
     return rule;
   }
+}
+
+class _KeyTrieNode {
+  final Map<String, _KeyTrieNode> children = {};
+  bool isEnd = false;
+}
+
+/// Splits JSON string contents into characters and whole escape sequences.
+List<String> _wireTokens(String wire) {
+  final tokens = <String>[];
+  final runes = wire.runes.toList();
+  for (var i = 0; i < runes.length; i++) {
+    if (runes[i] == 0x5C) {
+      final length = runes[i + 1] == 0x75 ? 6 : 2;
+      tokens.add(String.fromCharCodes(runes.sublist(i, i + length)));
+      i += length - 1;
+    } else {
+      tokens.add(String.fromCharCode(runes[i]));
+    }
+  }
+  return tokens;
+}
+
+/// Encodes [rune] for a GBNF character class.
+String _classChar(int rune) {
+  final isAsciiAlphaNumeric =
+      (rune >= 0x30 && rune <= 0x39) ||
+      (rune >= 0x41 && rune <= 0x5A) ||
+      (rune >= 0x61 && rune <= 0x7A);
+  if (isAsciiAlphaNumeric) return String.fromCharCode(rune);
+  final hex = rune.toRadixString(16).toUpperCase();
+  if (rune <= 0xFF) return '\\x${hex.padLeft(2, '0')}';
+  if (rune <= 0xFFFF) return '\\u${hex.padLeft(4, '0')}';
+  return '\\U${hex.padLeft(8, '0')}';
 }
 
 /// Compiles the supported subset of JSON Schema `pattern` regexes into a GBNF

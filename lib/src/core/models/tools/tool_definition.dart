@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import '../../exceptions.dart';
+import 'tool_input_schema.dart';
 import 'tool_param.dart';
 import 'tool_params.dart';
 
@@ -59,6 +62,36 @@ class ToolDefinition {
     this.handler,
   });
 
+  /// Creates a tool with an owned JSON Schema rather than parameter helpers.
+  ///
+  /// The root must be an object. Scalar types, nested objects/arrays, scalar
+  /// enum/const, type alternatives, anyOf and length/item bounds are supported.
+  /// References, patterns, numeric bounds and oneOf/allOf throw
+  /// [LlamaUnsupportedException]; malformed schemas throw [LlamaArgumentException].
+  /// Missing object property policy follows JSON Schema (additionalProperties:
+  /// true). The legacy constructor retains its existing closed-property policy.
+  /// Specialized formats have a narrower supported subset and reject unsupported
+  /// constraints before generation. Schemas beyond the documented size limits
+  /// (nesting, subschema count, anyOf/enum size, length/item bounds above
+  /// llama.cpp's repetition limit, generated grammar size) throw
+  /// [LlamaUnsupportedException]. See doc/tool_input_schemas.md.
+  ///
+  /// [parameters] is empty for this constructor; consumers must use
+  /// [toJsonSchema] as the canonical schema. Returned maps are fresh copies in
+  /// which every object schema has explicit `properties` and
+  /// `additionalProperties`.
+  factory ToolDefinition.fromJsonSchema({
+    required String name,
+    required String description,
+    required Map<String, dynamic> schema,
+    ToolHandler? handler,
+  }) => _JsonSchemaToolDefinition(
+    name: name,
+    description: description,
+    schema: copyToolInputSchema(schema),
+    handler: handler,
+  );
+
   /// Converts the tool's parameters to a JSON Schema object.
   ///
   /// This is used internally to generate GBNF grammar or for API compatibility.
@@ -107,4 +140,34 @@ class ToolDefinition {
 
   @override
   String toString() => 'ToolDefinition($name)';
+}
+
+/// Whether the tool opts into canonical JSON Schema input semantics.
+/// Internal consumer seam; not exported by the package barrel.
+bool toolUsesJsonSchema(ToolDefinition tool) =>
+    tool is _JsonSchemaToolDefinition;
+
+final class _JsonSchemaToolDefinition extends ToolDefinition {
+  _JsonSchemaToolDefinition({
+    required super.name,
+    required super.description,
+    required Map<String, dynamic> schema,
+    super.handler,
+  }) : _schema = schema,
+       super(parameters: const []);
+  final Map<String, dynamic> _schema;
+
+  @override
+  Future<Object?> invoke(Map<String, dynamic> args) async {
+    if (handler != null && !validateToolInputValue(args, _schema).valid) {
+      throw LlamaArgumentException(
+        'Tool arguments do not match the input schema for "$name".',
+      );
+    }
+    return await super.invoke(args);
+  }
+
+  @override
+  Map<String, dynamic> toJsonSchema() =>
+      jsonDecode(jsonEncode(_schema)) as Map<String, dynamic>;
 }

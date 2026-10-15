@@ -49,6 +49,8 @@ import 'handlers/solar_open_handler.dart';
 import 'handlers/translate_gemma_handler.dart';
 import 'handlers/xiaomi_mimo_handler.dart';
 import 'response_format.dart';
+import 'tool_schema_utils.dart';
+import 'thinking_utils.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
@@ -216,6 +218,22 @@ class ChatTemplateEngine {
     if (effectiveFormat == ChatFormat.contentOnly &&
         (effectiveTemplate == null || allowToolCalls)) {
       effectiveFormat = ChatFormat.generic;
+    }
+
+    if (effectiveTools?.any(toolUsesJsonSchema) ?? false) {
+      const supported = {
+        ChatFormat.generic,
+        ChatFormat.mistralNemo,
+        ChatFormat.hermes,
+        ChatFormat.glm45,
+        ChatFormat.laguna,
+        ChatFormat.hunyuanV3,
+      };
+      if (!supported.contains(effectiveFormat)) {
+        throw LlamaUnsupportedException(
+          'Canonical JSON Schema tools are not qualified for $effectiveFormat. Use a supported JSON-envelope format or the legacy ToolParam API.',
+        );
+      }
     }
 
     final handler = handlerFor(effectiveFormat);
@@ -393,6 +411,12 @@ class ChatTemplateEngine {
     Map<String, dynamic>? responseSchema,
   ) {
     if (responseSchema != null) {
+      if (toolChoice != ToolChoice.none &&
+          (tools?.any(toolUsesJsonSchema) ?? false)) {
+        throw LlamaUnsupportedException(
+          'Canonical schema tools cannot be combined with responseFormat: the response grammar would replace the tool grammar. Use separate requests.',
+        );
+      }
       return LlamaChatTemplateResult(
         prompt: result.prompt,
         format: result.format,
@@ -564,32 +588,85 @@ class ChatTemplateEngine {
     final format = resolved.format;
 
     final pegFormat = pegParseFormat(format, parser);
+    final ChatParseResult result;
     if (pegFormat != null) {
-      return PegChatParser.parse(
+      result = PegChatParser.parse(
         parser: parser ?? '',
         format: pegFormat,
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
       );
-    }
-
-    if (handler is ToolSchemaAwareChatTemplateHandler) {
-      return (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
+    } else if (handler is ToolSchemaAwareChatTemplateHandler) {
+      result = (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
         output,
         tools: tools,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
         thinkingForcedOpen: thinkingForcedOpen,
       );
+    } else {
+      result = handler.parse(
+        output,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
     }
-
-    return handler.parse(
-      output,
-      isPartial: isPartial,
-      parseToolCalls: parseToolCalls,
-      thinkingForcedOpen: thinkingForcedOpen,
-    );
+    if (!isPartial && tools != null && tools.any(toolUsesJsonSchema)) {
+      if (parseToolCalls) {
+        final residual = result.content;
+        final malformed = switch (format) {
+          ChatFormat.generic =>
+            result.toolCalls.isEmpty &&
+                RegExp(r'^\{\s*"tool_calls?"\s*:').hasMatch(
+                  extractThinking(
+                    output,
+                    thinkingForcedOpen: thinkingForcedOpen,
+                  ).content.trimLeft(),
+                ),
+          ChatFormat.hermes => HermesHandler.hasCompleteToolCallOpening(
+            residual,
+          ),
+          ChatFormat.mistralNemo => residual.contains('[TOOL_CALLS]'),
+          ChatFormat.glm45 ||
+          ChatFormat.laguna => residual.contains('<tool_call>'),
+          ChatFormat.hunyuanV3 =>
+            residual.contains('<tool_call:opensource>') ||
+                residual.contains('<tool_calls:opensource>'),
+          _ => false,
+        };
+        if (malformed) {
+          throw LlamaInferenceException(
+            'The model returned a malformed or incomplete tool call.',
+          );
+        }
+      }
+      final declared = {for (final tool in tools) tool.name: tool};
+      for (final call in result.toolCalls) {
+        final tool = declared[call.function?.name];
+        if (tool == null) {
+          throw LlamaInferenceException(
+            'The model returned an undeclared tool call.',
+          );
+        }
+        if (!toolUsesJsonSchema(tool)) continue;
+        final Object? arguments;
+        try {
+          arguments = jsonDecode(call.function?.arguments ?? '{}');
+        } on FormatException {
+          throw LlamaInferenceException(
+            'The model returned malformed tool arguments.',
+          );
+        }
+        if (!validateToolSchemaValue(arguments, tool.toJsonSchema()).valid) {
+          throw LlamaInferenceException(
+            'Tool arguments do not match the input schema for "${tool.name}".',
+          );
+        }
+      }
+    }
+    return result;
   }
 
   /// Returns the thinking tags used by the selected parser handler.
