@@ -49,6 +49,37 @@ void main() {
     expect(backend.lastRequest?.speakerAudioBytes, isNotEmpty);
   });
 
+  test('typed text-to-speech reports a Web synthesis failure through done '
+      'and result, not events', () async {
+    final backend = _WebBackend()..synthesisError = StateError('bridge failed');
+    final engine = LlamaEngine(backend);
+    addTearDown(engine.dispose);
+    await engine.loadModelFromUrl('https://example.com/qwen3-tts.gguf');
+    await engine.loadMultimodalProjector(
+      'https://example.com/qwen3-tts-mmproj.gguf',
+    );
+    final speechEngine = TextToSpeechEngine.attach(
+      engine,
+      adapter: const Qwen3TtsAdapter(),
+    );
+
+    final task = await speechEngine.synthesize(
+      const TextToSpeechRequest(text: 'Fail on Web.'),
+    );
+
+    expect(await task.events.toList(), isEmpty);
+    final completion = await task.done;
+    expect(completion.state, TextToSpeechCompletionState.failed);
+    expect(completion.error, isA<LlamaTextToSpeechException>());
+    await expectLater(task.result, throwsA(same(completion.error)));
+
+    backend.synthesisError = null;
+    final retry = await speechEngine.synthesize(
+      const TextToSpeechRequest(text: 'Retry on Web.'),
+    );
+    expect((await retry.done).state, TextToSpeechCompletionState.completed);
+  });
+
   test('load reports the Web model fetch from 0 to 0.5', () async {
     final backend = _WebBackend();
     final progress = <ModelDownloadProgress>[];
@@ -97,6 +128,7 @@ void main() {
 class _WebBackend implements LlamaBackend, BackendTextToSpeech {
   bool _ready = false;
   BackendTextToSpeechRequest? lastRequest;
+  Object? synthesisError;
   String? modelUrl;
   String? projectorUrl;
 
@@ -168,6 +200,8 @@ class _WebBackend implements LlamaBackend, BackendTextToSpeech {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
     lastRequest = request;
+    final error = synthesisError;
+    if (error != null) throw error;
     return BackendTextToSpeechResult(
       samples: Float32List.fromList(<double>[0.25, -0.25]),
       sampleRateHz: 24000,

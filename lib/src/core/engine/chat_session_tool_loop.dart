@@ -115,7 +115,10 @@ class LlamaToolLoopResult {
   ///
   /// To resume a rolled-back turn, add [messages] back with
   /// `ChatSession.addMessage`, answer [pendingToolCalls], and call
-  /// `completeWithTools(const [], ...)`.
+  /// `completeWithTools(const [], ...)`. After
+  /// [LlamaToolLoopStopReason.truncated], raise `maxTokens` and send the
+  /// turn again instead: [messages] ends with the partial reply, and
+  /// templates such as Ministral 3's can reject the next user turn after it.
   final bool rolledBack;
 
   /// Creates a tool loop result.
@@ -236,8 +239,13 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// [LlamaToolLoopResult.rolledBack].
   /// For empty [parts] that is the open turn being continued, including the
   /// messages added before this call, such as the app's tool results.
-  /// Messages that other callers added meanwhile stay. Older turns that
-  /// context trimming dropped stay dropped, as after [ChatSession.create].
+  /// Messages that other callers added meanwhile stay. Messages that a
+  /// [ChatSession.addMessage] override appends while the loop adds a
+  /// message, including those a synchronous listener adds from inside the
+  /// override, belong to the turn: a rollback removes them too, and they are
+  /// neither in [LlamaToolLoopResult.messages] nor reported to
+  /// [onMessageAdded]. Older turns that context trimming dropped stay
+  /// dropped, as after [ChatSession.create].
   /// [LlamaToolLoopResult.rolledBack] reports a rollback,
   /// [LlamaToolLoopResult.messages] keeps the turn, and [onMessageAdded] has
   /// already reported the messages this call added.

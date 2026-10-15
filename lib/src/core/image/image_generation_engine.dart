@@ -96,7 +96,9 @@ class ImageGenerationTask {
   /// The generated images.
   ///
   /// Throws the task's [LlamaException] when it fails, and
-  /// [LlamaStateException] when it is cancelled.
+  /// [LlamaStateException] when it is cancelled. Await this future or attach
+  /// an error handler as soon as you read it: a stored future that fails
+  /// before it has a handler reports an uncaught async error.
   Future<ImageGenerationResult> get result => _result;
 
   late final Future<ImageGenerationResult> _result = done.then(
@@ -407,15 +409,30 @@ class ImageGenerationEngine {
     };
 
     final effectiveStore = store ?? ModelFileStore();
-    final paths = await resolveModelSourceFiles(
-      sources,
-      store: effectiveStore,
-      download: download,
-      onProgress: onProgress,
-      operation: 'Image model loading',
-      knownSizes: knownSizes,
-      assetType: 'image model',
-    );
+    final List<String> paths;
+    try {
+      paths = await resolveModelSourceFiles(
+        sources,
+        store: effectiveStore,
+        download: download,
+        onProgress: onProgress,
+        operation: 'Image model loading',
+        knownSizes: knownSizes,
+        assetType: 'image model',
+      );
+    } on LlamaModelException catch (error) {
+      // The download manager names a local file by its path; image errors
+      // name files by position. ModelLoadOptions.sha256 applies only to a
+      // single (main) file.
+      if (download.sha256 == null ||
+          !error.message.startsWith('Checksum mismatch')) {
+        rethrow;
+      }
+      throw LlamaModelException(
+        'Checksum mismatch for ${describeImageModelFile(0)}: its SHA-256 '
+        'does not match ModelLoadOptions.sha256.',
+      );
+    }
     void throwIfCancelled() {
       if (download.cancelToken?.isCancelled ?? false) {
         throw LlamaStateException('Image model loading was cancelled.');

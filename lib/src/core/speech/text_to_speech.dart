@@ -373,7 +373,9 @@ class TextToSpeechTask {
   /// The complete synthesized audio.
   ///
   /// Throws the task's [LlamaException] when it fails, and
-  /// [LlamaStateException] when it is cancelled.
+  /// [LlamaStateException] when it is cancelled. Await this future or attach
+  /// an error handler as soon as you read it: a stored future that fails
+  /// before it has a handler reports an uncaught async error.
   Future<TextToSpeechResult> get result => _result;
 
   late final Future<TextToSpeechResult> _result = done.then(

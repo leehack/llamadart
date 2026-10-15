@@ -469,7 +469,9 @@ class SpeechToTextTask {
   /// The final transcript.
   ///
   /// Throws the task's [LlamaException] when it fails, and
-  /// [LlamaStateException] when it is cancelled.
+  /// [LlamaStateException] when it is cancelled. Await this future or attach
+  /// an error handler as soon as you read it: a stored future that fails
+  /// before it has a handler reports an uncaught async error.
   Future<SpeechToTextResult> get result => _result;
 
   late final Future<SpeechToTextResult> _result = done.then(
@@ -933,6 +935,14 @@ class SpeechToTextEngine {
     }
 
     final engine = _engine!;
+    if (engine.isDisposed) {
+      return const SpeechToTextCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The attached LlamaEngine is disposed. Create a new LlamaEngine '
+            'and attach a new SpeechToTextEngine.',
+      );
+    }
     if (speechToTextRequiresBackendCapability) {
       final backend = engine.backend;
       final speechBackend = backend is BackendPromptSpeechToTextSupport

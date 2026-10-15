@@ -7,6 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- An attached `SpeechToTextEngine` whose `LlamaEngine` was disposed now
+  reports the disposed engine, instead of asking to load a model
+  ([#924](https://github.com/leehack/llamadart/issues/924)).
+- A `ModelLoadOptions.sha256` mismatch in `ImageGenerationEngine.load` names
+  the main file by position, not by its local path or URL
+  ([#907](https://github.com/leehack/llamadart/issues/907)).
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`
