@@ -339,7 +339,8 @@ hooks:
   the llamadart package's `.dart_tool/llamadart/native_bundles/`. A cached archive that it lists is
   used without network access; any download is checked against a freshly
   fetched `SHA256SUMS`. To build an override offline, pre-seed both files in
-  the directory the error names, or use `llamadart_native_path`.
+  the directory the error names (`SHA256SUMS` as UTF-8 or ASCII text), or use
+  `llamadart_native_path`.
 - `llamadart_native_repository` takes an `owner/repo` slug or a
   `https://github.com/owner/repo` URL.
 - `llamadart_native_path` wins over downloads. It can point at an archive, an

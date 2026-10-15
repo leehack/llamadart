@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -29,6 +30,21 @@ const _llamaLibraries = [
   'libggml-cpu.so',
 ];
 
+const _windowsLibraries = [
+  'llamadart-windows-x64.dll',
+  'llama-windows-x64.dll',
+  'ggml-windows-x64.dll',
+  'ggml-base-windows-x64.dll',
+  'ggml-cpu-windows-x64.dll',
+];
+
+/// A Windows bundle with a CUDA module but no CUDA runtime, which the hook
+/// treats as incomplete.
+const _windowsCudaLibraries = [
+  ..._windowsLibraries,
+  'ggml-cuda-windows-x64.dll',
+];
+
 void main() {
   final nativeBundlesDir = path.join(
     '.dart_tool',
@@ -40,6 +56,9 @@ void main() {
   );
   final overrideCacheDir = Directory(
     path.join(nativeBundlesDir, _overrideTag, _bundle),
+  );
+  final windowsOverrideCacheDir = Directory(
+    path.join(nativeBundlesDir, _overrideTag, 'windows-x64'),
   );
   final forkCacheDir = Directory(
     path.joinAll([
@@ -82,6 +101,7 @@ void main() {
   final touched = <FileSystemEntity>[
     defaultCacheDir,
     overrideCacheDir,
+    windowsOverrideCacheDir,
     forkCacheDir,
     stableDiffusionArchive,
     stableDiffusionBundleDir,
@@ -199,6 +219,35 @@ void main() {
         isNot(_exists),
       );
     });
+  });
+
+  test('the pinned release ignores a cached SHA256SUMS', () async {
+    final tampered = _archive('tampered');
+    final cached = File(
+      path.join(defaultCacheDir.path, archiveName(llamaCppTag)),
+    );
+    await cached.parent.create(recursive: true);
+    await cached.writeAsBytes(tampered);
+    await File(
+      path.join(defaultCacheDir.path, 'SHA256SUMS'),
+    ).writeAsString(sha256SumsFor({archiveName(llamaCppTag): tampered}));
+    final fixture = RuntimeBundleHttpFixture({defaultArchiveUrl: tampered});
+
+    await expectLater(
+      _runHook(fixture),
+      throwsA(
+        isA<NativeArchiveDigestException>().having(
+          (error) => error.message,
+          'message',
+          contains(llamaCppBundleSha256[_bundle]),
+        ),
+      ),
+    );
+    expect(fixture.requests, [defaultArchiveUrl]);
+    expect(
+      Directory(path.join(defaultCacheDir.path, 'extracted')),
+      isNot(_exists),
+    );
   });
 
   group('llama.cpp tag override', () {
@@ -471,7 +520,33 @@ void main() {
           throwsA(isA<NativeArchiveDigestException>()),
         );
         expect(fixture.requests, [overrideSumsUrl]);
+        expect(cachedArchive, _exists);
         expect(extractedDir, isNot(_exists));
+      },
+    );
+
+    test(
+      'reuses a cached archive the release lists when the cached list is stale',
+      () async {
+        final archive = _archive('cached-valid');
+        await seed(
+          archive: archive,
+          sumsFor: {archiveName(_overrideTag): _archive('older')},
+        );
+        final sums = sha256SumsFor({archiveName(_overrideTag): archive});
+        final fixture = RuntimeBundleHttpFixture({
+          overrideSumsUrl: sums.codeUnits,
+        });
+
+        final libraries = await _runHook(
+          fixture,
+          tag: _overrideTag,
+          check: () {},
+        );
+
+        expect(fixture.requests, [overrideSumsUrl]);
+        expect(libraries['libllamadart.so'], 'cached-valid-libllamadart.so');
+        expect(await cachedSums.readAsString(), sums);
       },
     );
 
@@ -504,6 +579,140 @@ void main() {
         expect(extractedDir, isNot(_exists));
       },
     );
+
+    test(
+      'refreshes a cached SHA256SUMS that is not UTF-8 from the release',
+      () async {
+        final archive = _archive('cached-valid');
+        await seed(archive: archive);
+        final sums = sha256SumsFor({archiveName(_overrideTag): archive});
+        await cachedSums.writeAsBytes(_utf16le(sums));
+        final fixture = RuntimeBundleHttpFixture({
+          overrideSumsUrl: sums.codeUnits,
+        });
+
+        final libraries = await _runHook(
+          fixture,
+          tag: _overrideTag,
+          check: () {},
+        );
+
+        expect(fixture.requests, [overrideSumsUrl]);
+        expect(libraries['libllamadart.so'], 'cached-valid-libllamadart.so');
+        expect(await cachedSums.readAsString(), sums);
+      },
+    );
+
+    test(
+      'names why a cached SHA256SUMS was rejected when it cannot refetch',
+      () async {
+        final archive = _archive('seeded');
+        await seed(archive: archive);
+        await cachedSums.writeAsBytes(
+          _utf16le(sha256SumsFor({archiveName(_overrideTag): archive})),
+        );
+        final fixture = RuntimeBundleHttpFixture.offline();
+
+        await expectLater(
+          _runHook(fixture, tag: _overrideTag),
+          throwsA(
+            isA<NativeArchiveDigestException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('The cached SHA256SUMS was not used'),
+                contains('is not UTF-8 text'),
+                contains(cachedSums.path),
+              ),
+            ),
+          ),
+        );
+        expect(extractedDir, isNot(_exists));
+      },
+    );
+
+    test('accepts a cached SHA256SUMS with a BOM and uppercase hex', () async {
+      final archive = _archive('seeded');
+      await seed(
+        archive: archive,
+        sums:
+            '\uFEFF${sha256.convert(archive).toString().toUpperCase()}  '
+            '${archiveName(_overrideTag)}\n',
+      );
+      final fixture = RuntimeBundleHttpFixture.offline();
+
+      final libraries = await _runHook(
+        fixture,
+        tag: _overrideTag,
+        check: () {},
+      );
+
+      expect(fixture.requests, isEmpty);
+      expect(libraries['libllamadart.so'], 'seeded-libllamadart.so');
+    });
+
+    test(
+      'builds when a directory occupies the cached SHA256SUMS path',
+      () async {
+        final archive = _archive('cached-valid');
+        await seed(archive: archive);
+        await Directory(cachedSums.path).create();
+        final fixture = RuntimeBundleHttpFixture({
+          overrideSumsUrl: sha256SumsFor({
+            archiveName(_overrideTag): archive,
+          }).codeUnits,
+        });
+
+        final libraries = await _runHook(
+          fixture,
+          tag: _overrideTag,
+          check: () {},
+        );
+
+        expect(fixture.requests, [overrideSumsUrl]);
+        expect(libraries['libllamadart.so'], 'cached-valid-libllamadart.so');
+      },
+    );
+
+    test('fetches a fresh SHA256SUMS before replacing an incomplete cached '
+        'archive', () async {
+      final windowsArchiveName =
+          'llamadart-native-windows-x64-$_overrideTag.tar.gz';
+      final stale = _archive('stale', libraries: _windowsCudaLibraries);
+      final complete = _archive('valid', libraries: _windowsLibraries);
+      await windowsOverrideCacheDir.create(recursive: true);
+      await File(
+        path.join(windowsOverrideCacheDir.path, windowsArchiveName),
+      ).writeAsBytes(stale);
+      await File(
+        path.join(windowsOverrideCacheDir.path, 'SHA256SUMS'),
+      ).writeAsString(sha256SumsFor({windowsArchiveName: stale}));
+      final archiveUrl = releaseUrl(
+        'leehack/llamadart-native',
+        _overrideTag,
+        windowsArchiveName,
+      );
+      final fixture = RuntimeBundleHttpFixture({
+        overrideSumsUrl: sha256SumsFor({
+          windowsArchiveName: complete,
+        }).codeUnits,
+        archiveUrl: complete,
+      });
+
+      final libraries = await _runHook(
+        fixture,
+        tag: _overrideTag,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        check: () {},
+      );
+
+      expect(fixture.requests, [overrideSumsUrl, archiveUrl]);
+      expect(
+        libraries['llamadart-windows-x64.dll'],
+        'valid-llamadart-windows-x64.dll',
+      );
+    });
 
     test('refreshes a malformed cached SHA256SUMS from the release', () async {
       final archive = _archive('cached-valid');
@@ -627,13 +836,22 @@ final _exists = predicate<FileSystemEntity>(
   'exists',
 );
 
-/// Runs the hook for Linux arm64 with every download served by [fixture], and
-/// returns the emitted llama.cpp libraries' contents by file name.
+List<int> _utf16le(String text) => [
+  0xFF,
+  0xFE,
+  for (final unit in text.codeUnits) ...[unit & 0xFF, unit >> 8],
+];
+
+/// Runs the hook (for Linux arm64 by default) with every download served by
+/// [fixture], and returns the emitted llama.cpp libraries' contents by file
+/// name.
 Future<Map<String, String>> _runHook(
   RuntimeBundleHttpFixture fixture, {
   String? tag,
   String? repository,
   List<String> runtimes = const ['llama_cpp'],
+  OS targetOS = OS.linux,
+  Architecture targetArchitecture = Architecture.arm64,
   void Function()? check,
 }) async {
   final libraries = <String, String>{};
@@ -641,8 +859,8 @@ Future<Map<String, String>> _runHook(
     fixture.createClient,
     () => testCodeBuildHook(
       mainMethod: build_hook.main,
-      targetOS: OS.linux,
-      targetArchitecture: Architecture.arm64,
+      targetOS: targetOS,
+      targetArchitecture: targetArchitecture,
       userDefines: PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(
           defines: {
@@ -673,9 +891,9 @@ Future<Map<String, String>> _runHook(
 }
 
 /// A `.tar.gz` bundle whose libraries hold `<label>-<library>`.
-List<int> _archive(String label) {
+List<int> _archive(String label, {List<String> libraries = _llamaLibraries}) {
   final archive = Archive();
-  for (final library in _llamaLibraries) {
+  for (final library in libraries) {
     final content = '$label-$library'.codeUnits;
     archive.addFile(ArchiveFile(library, content.length, content));
   }

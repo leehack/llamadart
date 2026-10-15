@@ -1952,7 +1952,7 @@ Future<Directory> _acquireBundleDirectory({
   final cachedArchiveSha256 = archiveFile.existsSync()
       ? await fileSha256(archiveFile)
       : null;
-  final expectedDigest = await _expectedNativeArchiveDigest(
+  var expectedDigest = await _expectedNativeArchiveDigest(
     nativeConfig: nativeConfig,
     bundle: bundle,
     archiveName: archiveName,
@@ -1994,6 +1994,16 @@ Future<Directory> _acquireBundleDirectory({
     }
   }
 
+  if (expectedDigest.cached) {
+    expectedDigest = await _expectedNativeArchiveDigest(
+      nativeConfig: nativeConfig,
+      bundle: bundle,
+      archiveName: archiveName,
+      cacheDir: cacheDir,
+      cachedArchiveSha256: null,
+      log: log,
+    );
+  }
   await _downloadReleaseAsset(
     repository: nativeConfig.repository,
     nativeTag: nativeConfig.tag,
@@ -2026,11 +2036,13 @@ Future<Directory> _acquireBundleDirectory({
 /// or the release's own `SHA256SUMS` entry for a tag or repository override.
 ///
 /// For an override, a cached archive whose [cachedArchiveSha256] the cached
-/// `SHA256SUMS` lists is verified offline. Otherwise the release's
-/// `SHA256SUMS` is fetched and kept beside the archive for later builds, so a
-/// download is always checked against the published list. The cached list is
-/// no less trusted than the cached `extracted/` bundle, which is reused as is.
-Future<({String sha256, String source})> _expectedNativeArchiveDigest({
+/// `SHA256SUMS` lists is verified offline, and the result is marked `cached`.
+/// Otherwise the release's `SHA256SUMS` is fetched and kept beside the archive
+/// for later builds. Callers fetch a fresh list before downloading, so a
+/// download is never checked against the cached list. The cached list is no
+/// less trusted than the cached `extracted/` bundle, which is reused as is.
+Future<({String sha256, String source, bool cached})>
+_expectedNativeArchiveDigest({
   required _NativeBundleConfig nativeConfig,
   required String bundle,
   required String archiveName,
@@ -2051,29 +2063,39 @@ Future<({String sha256, String source})> _expectedNativeArchiveDigest({
     return (
       sha256: pinned,
       source: 'the pinned $_nativeRepoSlug@$llamaCppTag digest',
+      cached: false,
     );
   }
 
   final source = '${nativeConfig.sourceLabel} SHA256SUMS';
   final checksumFile = File(path.join(cacheDir, 'SHA256SUMS'));
-  if (cachedArchiveSha256 != null && checksumFile.existsSync()) {
+  String? cachedListRejection;
+  if (cachedArchiveSha256 != null &&
+      FileSystemEntity.typeSync(checksumFile.path) !=
+          FileSystemEntityType.notFound) {
     final cachedSource = 'the cached $source at ${checksumFile.path}';
-    String? cachedSha256;
     try {
-      cachedSha256 = sha256SumsEntry(
-        await checksumFile.readAsString(),
+      final cachedSha256 = sha256SumsEntry(
+        await _readSha256Sums(checksumFile, source: cachedSource),
         fileName: archiveName,
         source: cachedSource,
       );
+      if (cachedSha256 != null && cachedSha256 == cachedArchiveSha256) {
+        return (sha256: cachedSha256, source: cachedSource, cached: true);
+      }
+      cachedListRejection = cachedSha256 == null
+          ? '$cachedSource lists no SHA-256 for $archiveName.'
+          : '$cachedSource lists SHA-256 $cachedSha256 for $archiveName, but '
+                'the cached archive has $cachedArchiveSha256.';
     } on NativeArchiveDigestException catch (error) {
-      log.warning(
-        'Ignoring a cached SHA256SUMS: ${error.message} Fetching the '
-        'release SHA256SUMS instead.',
-      );
+      cachedListRejection = error.message;
+    } on FileSystemException catch (error) {
+      cachedListRejection = '$cachedSource could not be read: $error.';
     }
-    if (cachedSha256 != null && cachedSha256 == cachedArchiveSha256) {
-      return (sha256: cachedSha256, source: cachedSource);
-    }
+    log.warning(
+      'Not using the cached SHA256SUMS: $cachedListRejection Fetching the '
+      'release SHA256SUMS instead.',
+    );
   }
 
   final url =
@@ -2098,15 +2120,18 @@ Future<({String sha256, String source})> _expectedNativeArchiveDigest({
           'bundle you trust.',
         );
       }
+      final rejectedCache = cachedListRejection == null
+          ? ''
+          : 'The cached SHA256SUMS was not used: $cachedListRejection ';
       throw NativeArchiveDigestException(
-        'Could not download $url to verify $archiveName: $error. To build '
-        'without network access, put that release\'s SHA256SUMS at '
-        '${checksumFile.path} with $archiveName beside it, or set '
-        '$nativePathUserDefineKey to a local bundle you trust.',
+        'Could not download $url to verify $archiveName: $error. '
+        '${rejectedCache}To build without network access, put that release\'s '
+        'SHA256SUMS at ${checksumFile.path} with $archiveName beside it, or '
+        'set $nativePathUserDefineKey to a local bundle you trust.',
       );
     }
     final listedSha256 = sha256SumsEntry(
-      await downloadedFile.readAsString(),
+      await _readSha256Sums(downloadedFile, source: source),
       fileName: archiveName,
       source: source,
     );
@@ -2117,15 +2142,36 @@ Future<({String sha256, String source})> _expectedNativeArchiveDigest({
         '$nativePathUserDefineKey to a local bundle you trust.',
       );
     }
-    if (checksumFile.existsSync()) {
-      await checksumFile.delete();
+    try {
+      if (checksumFile.existsSync()) {
+        await checksumFile.delete();
+      }
+      await downloadedFile.rename(checksumFile.path);
+    } on FileSystemException catch (error) {
+      log.warning(
+        'Could not keep $source at ${checksumFile.path} ($error); an offline '
+        'build will need it pre-seeded there.',
+      );
     }
-    await downloadedFile.rename(checksumFile.path);
-    return (sha256: listedSha256, source: source);
+    return (sha256: listedSha256, source: source, cached: false);
   } finally {
     if (downloadedFile.existsSync()) {
       await downloadedFile.delete();
     }
+  }
+}
+
+/// Reads a `SHA256SUMS` [file] as UTF-8, raising
+/// [NativeArchiveDigestException] when it is not UTF-8 text.
+Future<String> _readSha256Sums(File file, {required String source}) async {
+  final bytes = await file.readAsBytes();
+  try {
+    return utf8.decode(bytes);
+  } on FormatException {
+    throw NativeArchiveDigestException(
+      '$source is not UTF-8 text. Save it as UTF-8 or ASCII, for example '
+      'with `Out-File -Encoding ascii` in Windows PowerShell 5.',
+    );
   }
 }
 
