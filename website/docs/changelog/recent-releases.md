@@ -7,6 +7,14 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Fix `getPerformanceContext()` decode and prompt-eval times on a native
+  runtime without the llamadart exit-teardown exports (`v0.5.0` or older),
+  where an asynchronous GPU backend such as Metal counted its work as sampling
+  time and decode speed read about 10x too high
+  ([#671](https://github.com/leehack/llamadart/issues/671)).
+
 ## 0.13.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`,

@@ -749,7 +749,22 @@ final class LlamaCppObjectCalls {
   }
 
   /// The upstream llama.cpp functions; nothing is tracked.
-  static final LlamaCppObjectCalls upstream = LlamaCppObjectCalls._(
+  static final LlamaCppObjectCalls upstream = LlamaCppObjectCalls.untracked();
+
+  /// Calls llama.cpp directly, as [upstream] does; tests replace its
+  /// [decode], [encode] and [synchronize].
+  ///
+  /// An asynchronous backend such as Metal may still be computing when
+  /// [decode] or [encode] returns. The calls made through these wait for it
+  /// with [synchronize] before they return, as the tracked calls do, so the
+  /// duration of an evaluation includes the backend's work.
+  factory LlamaCppObjectCalls.untracked({
+    int Function(Pointer<llama_context> ctx, llama_batch batch) decode =
+        llama_decode,
+    int Function(Pointer<llama_context> ctx, llama_batch batch) encode =
+        llama_encode,
+    void Function(Pointer<llama_context> ctx) synchronize = llama_synchronize,
+  }) => LlamaCppObjectCalls._(
     exit: null,
     failures: NativeCallFailures(null, isWindows: false),
     loadModel: llama_model_load_from_file,
@@ -764,9 +779,17 @@ final class LlamaCppObjectCalls {
         Native.addressOf<NativeFunction<Void Function(Pointer<llama_context>)>>(
           llama_free,
         ).cast(),
-    decode: llama_decode,
-    encode: llama_encode,
-    synchronize: llama_synchronize,
+    decode: (ctx, batch) {
+      final status = decode(ctx, batch);
+      synchronize(ctx);
+      return status;
+    },
+    encode: (ctx, batch) {
+      final status = encode(ctx, batch);
+      synchronize(ctx);
+      return status;
+    },
+    synchronize: synchronize,
     samplerSample: llama_sampler_sample,
     samplerAccept: llama_sampler_accept,
     samplerInitGrammarLazyPatterns: llama_sampler_init_grammar_lazy_patterns,
@@ -841,10 +864,10 @@ final class LlamaCppObjectCalls {
   /// The function `IsolateShutdownReleases` frees a context with.
   final Pointer<NativeFinalizerFunction> contextFreeAddress;
 
-  /// `llama_decode`.
+  /// `llama_decode`, returning once the backend has finished the batch.
   final int Function(Pointer<llama_context> ctx, llama_batch batch) decode;
 
-  /// `llama_encode`.
+  /// `llama_encode`, returning once the backend has finished the batch.
   final int Function(Pointer<llama_context> ctx, llama_batch batch) encode;
 
   /// `llama_synchronize`.

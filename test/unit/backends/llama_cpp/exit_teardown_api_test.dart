@@ -718,6 +718,31 @@ void main() {
     llama_model_free(model);
   });
 
+  test('untracked decode and encode return once the backend has finished', () {
+    final context = Pointer<llama_context>.fromAddress(0x10);
+    final batch = calloc<llama_batch>();
+    addTearDown(() => calloc.free(batch));
+    final called = <String>[];
+    final calls = LlamaCppObjectCalls.untracked(
+      decode: (ctx, batch) {
+        called.add('decode');
+        return 1;
+      },
+      encode: (ctx, batch) {
+        called.add('encode');
+        return 2;
+      },
+      synchronize: (ctx) {
+        expect(ctx, context);
+        called.add('synchronize');
+      },
+    );
+
+    expect(calls.decode(context, batch.ref), 1);
+    expect(calls.encode(context, batch.ref), 2);
+    expect(called, ['decode', 'synchronize', 'encode', 'synchronize']);
+  });
+
   test('upstream calls create objects the runtime does not track', () {
     final calls = LlamaCppObjectCalls.upstream;
     expect(calls.exit, isNull);
