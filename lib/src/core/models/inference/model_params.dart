@@ -198,13 +198,23 @@ class ModelParams {
   /// missing and forwarded to `litert_lm_engine_settings_set_cache_dir`.
   final String? liteRtLmCacheDir;
 
-  /// Size cap in bytes for native LiteRT-LM GPU program cache files.
+  /// Size cap in bytes for the native LiteRT-LM GPU program cache files of
+  /// one cache directory.
   ///
-  /// `null` never deletes anything. Otherwise, before each native engine
-  /// create, files directly inside the effective cache directory whose name
-  /// ends with `_mldrift_program_cache.bin` and whose size exceeds this value
-  /// are deleted. Nothing is deleted when [liteRtLmCacheDir] is `null` on a
-  /// platform without a default cache directory.
+  /// `null` (default) applies [defaultLiteRtLmMaxProgramCacheBytes], 1 GiB.
+  /// [unlimitedLiteRtLmProgramCacheBytes] (`-1`) never deletes anything.
+  /// Before each native engine create, llamadart deletes files directly
+  /// inside the effective cache directory whose name ends with
+  /// `_mldrift_program_cache.bin` until their total size is at most the cap:
+  /// a file larger than the cap first, then the least recently modified
+  /// ones. Files of a model that another LiteRT-LM engine is using with the
+  /// same directory, in this or another process, are neither deleted nor
+  /// counted. `0` deletes every non-empty program cache file not in use.
+  ///
+  /// Nothing is deleted when no cache directory is passed to the runtime:
+  /// when [liteRtLmCacheDir] is `null` on a platform without a default cache
+  /// directory, or when the runtime runs uncached. Each deletion logs a Dart
+  /// `warn` record. Values below `-1` are rejected by [validate].
   final int? liteRtLmMaxProgramCacheBytes;
 
   /// Model tensor distribution strategy across GPU devices.
@@ -427,6 +437,17 @@ class ModelParams {
   /// This matches llama.cpp's default `n_ubatch`.
   static const int defaultMicroBatchSize = 512;
 
+  /// Program cache cap applied when [liteRtLmMaxProgramCacheBytes] is `null`:
+  /// 1 GiB per cache directory.
+  ///
+  /// Some models append to their LiteRT-LM GPU program cache on every engine
+  /// create without loading faster
+  /// ([#552](https://github.com/leehack/llamadart/issues/552)).
+  static const int defaultLiteRtLmMaxProgramCacheBytes = 1 << 30;
+
+  /// [liteRtLmMaxProgramCacheBytes] value that never deletes program caches.
+  static const int unlimitedLiteRtLmProgramCacheBytes = -1;
+
   /// Creates configuration for the model. Use [validate] to check for
   /// llama.cpp-incompatible combinations before passing to a load call.
   const ModelParams({
@@ -507,11 +528,13 @@ class ModelParams {
       );
     }
     if (liteRtLmMaxProgramCacheBytes != null &&
-        liteRtLmMaxProgramCacheBytes! < 0) {
+        liteRtLmMaxProgramCacheBytes! < unlimitedLiteRtLmProgramCacheBytes) {
       throw _invalid(
         'liteRtLmMaxProgramCacheBytes',
         liteRtLmMaxProgramCacheBytes,
-        'must be non-negative when provided',
+        'must be non-negative, or '
+            'ModelParams.unlimitedLiteRtLmProgramCacheBytes (-1) to keep '
+            'every program cache',
       );
     }
     if (speculativeRollbackTokenMax < 0) {

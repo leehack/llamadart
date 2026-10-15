@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
@@ -88,6 +90,7 @@ class LiteRtLmService {
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
+  LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
   String? _modelPath;
   LiteRtLmModelLink? _modelLink;
@@ -148,8 +151,7 @@ class LiteRtLmService {
       createLink: _createLink,
     );
 
-    _client?.dispose();
-    _client = null;
+    _disposeClient();
     _modelLink?.dispose();
     _modelPath = path;
     _modelLink = modelLink;
@@ -174,8 +176,7 @@ class LiteRtLmService {
   /// Frees the loaded model and any active LiteRT-LM client.
   void freeModel(int modelHandle) {
     _checkModelHandle(modelHandle);
-    _client?.dispose();
-    _client = null;
+    _disposeClient();
     _modelLink?.dispose();
     _modelLink = null;
     _modelPath = null;
@@ -902,8 +903,7 @@ class LiteRtLmService {
   }
 
   void _disposeContextRuntimeState() {
-    _client?.dispose();
-    _client = null;
+    _disposeClient();
     _activeSpeculativeDecoding = null;
     _activeMaxNumImages = null;
     _activeVisionEnabled = null;
@@ -955,8 +955,7 @@ class LiteRtLmService {
       return existing;
     }
 
-    existing?.dispose();
-    _client = null;
+    _disposeClient();
     _activeSpeculativeDecoding = null;
     _activeMaxNumImages = null;
     _activeVisionEnabled = null;
@@ -987,11 +986,18 @@ class LiteRtLmService {
               !resolvedSpeculativeDecoding,
         );
 
+    final runtimeModelPath = _modelLink?.path ?? modelPath;
+    final cacheLease = _leaseCacheDirectory(cacheDir, runtimeModelPath);
+
     Future<LiteRtLmRuntimeClient> initializeClient(
       String? audioBackend,
       String? cacheDirectory,
     ) async {
-      _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);
+      _pruneProgramCaches(
+        cacheDir,
+        modelParams.liteRtLmMaxProgramCacheBytes,
+        cacheLease,
+      );
       final client = _clientFactory();
       client.configureResponseThinkingTags(
         startTag: responseThinkingTags.startTag,
@@ -999,7 +1005,7 @@ class LiteRtLmService {
       );
       try {
         await client.initialize(
-          modelPath: _modelLink?.path ?? modelPath,
+          modelPath: runtimeModelPath,
           backend: backend,
           visionBackend: visionBackend,
           audioBackend: audioBackend,
@@ -1030,6 +1036,7 @@ class LiteRtLmService {
 
     late LiteRtLmRuntimeClient client;
     var resolvedAudioBackend = requestedAudioBackend;
+    var created = false;
     try {
       try {
         client = await initializeClient(requestedAudioBackend, runtimeCacheDir);
@@ -1066,6 +1073,7 @@ class LiteRtLmService {
           Error.throwWithStackTrace(initialError, initialStackTrace);
         }
       }
+      created = true;
     } on LiteRtLmEngineCreateError catch (error, stackTrace) {
       // From LiteRT-LM v0.18 a cache directory the runtime cannot write fails
       // engine creation on every backend, with no reason reported.
@@ -1101,8 +1109,11 @@ class LiteRtLmService {
         ),
         stackTrace,
       );
+    } finally {
+      if (!created) cacheLease?.release();
     }
     _client = client;
+    _cacheLease = cacheLease;
     if (resolvedAudioEnabled) {
       _workingAudioBackend = resolvedAudioBackend;
     }
@@ -1815,6 +1826,7 @@ class LiteRtLmService {
 
   String? _effectiveCacheDir(ModelParams params) {
     final configured = params.liteRtLmCacheDir;
+    if (configured == liteRtLmNoCacheDirectory) return configured;
     if (configured == null && !_useTempCacheDir) {
       return null;
     }
@@ -1827,15 +1839,50 @@ class LiteRtLmService {
     return dir.path;
   }
 
-  void _pruneProgramCaches(String? cacheDir, int? maxBytes) {
-    if (cacheDir == null || maxBytes == null) {
+  void _disposeClient() {
+    try {
+      _client?.dispose();
+      _client = null;
+    } finally {
+      _cacheLease?.release();
+      _cacheLease = null;
+    }
+  }
+
+  /// Marks the caches of [modelPath] in [cacheDir] as in use until the client
+  /// is disposed, so other engines pruning that directory keep them.
+  LiteRtLmCacheLease? _leaseCacheDirectory(String? cacheDir, String modelPath) {
+    if (cacheDir == null || cacheDir == liteRtLmNoCacheDirectory) return null;
+    try {
+      return LiteRtLmCacheLease.acquire(cacheDir, p.basename(modelPath));
+    } on FileSystemException catch (error) {
+      // Other engines cannot delete from a directory this one cannot write.
+      LlamaLogger.instance.debug(
+        'Could not mark LiteRT-LM caches in $cacheDir as in use: $error',
+      );
+      return null;
+    }
+  }
+
+  void _pruneProgramCaches(
+    String? cacheDir,
+    int? configuredMaxBytes,
+    LiteRtLmCacheLease? ownLease,
+  ) {
+    final maxBytes =
+        configuredMaxBytes ?? ModelParams.defaultLiteRtLmMaxProgramCacheBytes;
+    if (cacheDir == null ||
+        cacheDir == liteRtLmNoCacheDirectory ||
+        maxBytes == ModelParams.unlimitedLiteRtLmProgramCacheBytes) {
       return;
     }
     pruneLiteRtLmProgramCaches(
       cacheDir,
       maxBytes,
+      ownLease: ownLease,
       onDeleted: (path, bytes) => _warn(
-        'Deleted LiteRT-LM GPU program cache $path ($bytes bytes) above '
+        'Deleted LiteRT-LM GPU program cache $path ($bytes bytes) to keep the '
+        'program caches in its directory within '
         'liteRtLmMaxProgramCacheBytes=$maxBytes; see '
         'https://github.com/leehack/llamadart/issues/552',
       ),

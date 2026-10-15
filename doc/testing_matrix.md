@@ -62,6 +62,13 @@ For a typical code PR, include:
 - `root-chrome` when shared, web, template, or public API code changed
 - `coverage-lib` when `lib/` behavior changed or coverage is in doubt
 
+On macOS, run `root-vm` and other local VM rows with an isolated temp directory
+(`TMPDIR="$(mktemp -d)"`). LiteRT-LM engines without `liteRtLmCacheDir` prune
+the shared program caches in `$TMPDIR/llamadart_litert_lm`; local-only
+LiteRT-LM E2E rows prune that real cache like any 0.13 app. CI runs the VM
+lanes against a scratch temp directory and fails when a test deletes the
+oversized canary cache seeded there (`tool/ci/litert_lm_temp_canary.sh`).
+
 Docs-only PRs can mark runtime rows `N/A`, but should run `docs-site` when docs
 or website files changed.
 

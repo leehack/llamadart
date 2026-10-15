@@ -1694,7 +1694,10 @@ NativeAutoBackend _routerWithLinkDirectory(String links) {
     liteRtLmFactory: () => LiteRtLmBackend(
       workerEntryPoint: (sendPort) => runLiteRtLmWorkerForTesting(
         sendPort,
-        LiteRtLmService(linkParentDirectory: Directory(links)),
+        LiteRtLmService(
+          linkParentDirectory: Directory(links),
+          useTempCacheDir: false,
+        ),
       ),
     ),
   );

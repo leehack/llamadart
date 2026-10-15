@@ -13,7 +13,11 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:test/test.dart';
 
+import '../../../support/suite_system_temp.dart';
+
 void main() {
+  useSuiteSystemTemp();
+
   late Directory tempDir;
 
   setUp(() async {
