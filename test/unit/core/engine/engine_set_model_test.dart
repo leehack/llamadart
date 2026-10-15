@@ -968,6 +968,60 @@ void main() {
       await engine.dispose();
     });
 
+    test('unloads the model and projector when onProgress throws at full '
+        'progress', () async {
+      final backend = _Backend(urlLoadingSupported: true);
+      final engine = LlamaEngine(backend);
+      final progress = <double?>[];
+
+      await expectLater(
+        engine.setModel(
+          LlamaModel(otherModel, projector: remoteProjector),
+          onProgress: (event) {
+            progress.add(event.fraction);
+            if (event.fraction == 1) throw StateError('callback failed');
+          },
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(progress, [0.125, 1.0]);
+      expect(engine.isReady, isFalse);
+      expect(engine.hasMultimodalProjector, isFalse);
+      expect(backend.events, contains('modelFree'));
+      await engine.dispose();
+    });
+
+    test('dispose while the loaded model is read for observers reports no '
+        'full progress', () async {
+      final backend = _Backend(urlLoadingSupported: true)
+        ..metadataGate = Completer<void>();
+      final engine = LlamaEngine(backend, observers: [_LoadObserver()]);
+      final progress = <double?>[];
+
+      final outcome = expectLater(
+        engine.setModel(
+          LlamaModel(otherModel, projector: remoteProjector),
+          onProgress: (event) => progress.add(event.fraction),
+        ),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed while loading'),
+          ),
+        ),
+      );
+      await backend.metadataStarted.future;
+      final dispose = engine.dispose();
+      backend.metadataGate!.complete();
+      await outcome;
+      await dispose;
+
+      expect(progress, [0.125]);
+      expect(engine.isReady, isFalse);
+    });
+
     test('rejects a download option the runtime fetch cannot apply before it '
         'resolves anything, keeping the loaded model', () async {
       final backend = _Backend(urlLoadingSupported: true);

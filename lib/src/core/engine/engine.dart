@@ -530,6 +530,13 @@ class LlamaEngine {
           );
         }
         throwIfCancelled();
+        await _captureObservedModel(location);
+        _throwIfDisposedDuringLoad();
+        if (projector != null && backend.supportsUrlLoading) {
+          // The runtime reports no progress for the projector fetch, so its
+          // half completes once the projector has loaded.
+          onProgress?.call(const ModelDownloadProgress.fraction(1));
+        }
       } catch (_) {
         try {
           await _unloadModel();
@@ -537,13 +544,6 @@ class LlamaEngine {
           // The load failure is the error the caller needs.
         }
         rethrow;
-      }
-      await _captureObservedModel(location);
-      _throwIfDisposedDuringLoad();
-      if (projector != null && backend.supportsUrlLoading) {
-        // The runtime reports no progress for the projector fetch, so its
-        // half completes once the projector has loaded.
-        onProgress?.call(const ModelDownloadProgress.fraction(1));
       }
       companionLocations = locations.sublist(
         sources.length - companions.length,
