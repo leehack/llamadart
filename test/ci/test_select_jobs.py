@@ -16,7 +16,7 @@ spec.loader.exec_module(ci)
 
 class SelectionTest(unittest.TestCase):
     def test_documentation_omits_native_and_bundles(self):
-        for path in ('README.md', 'doc/testing_matrix.md', 'website/pubspec.lock',
+        for path in ('README.md', 'CHANGELOG.md', 'website/pubspec.lock',
                      'packages/llamadart_validation/README.md'):
             with self.subTest(path=path):
                 plan = ci.select([path])
@@ -24,6 +24,25 @@ class SelectionTest(unittest.TestCase):
                                  {'docs-check', 'docs-versions'})
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
+
+    def test_docs_pinned_by_tooling_tests_run_root_vm_tests(self):
+        for path in ('AGENTS.md', 'CONTRIBUTING.md', 'doc/testing_matrix.md',
+                     'doc/pr_branch_writer_inventory.md'):
+            with self.subTest(path=path):
+                plan = ci.select([path])
+                self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                                 {'docs-check', 'docs-versions', 'test-linux-coverage'})
+                self.assertEqual(plan['apps'], [])
+                self.assertEqual(plan['desktops'], [])
+
+    def test_chat_app_vm_only_tests_select_chat_app_tests_only(self):
+        for path in ('example/chat_app/test/unit_test.dart',
+                     'example/chat_app/test_vm/image_evidence_test.dart'):
+            with self.subTest(path=path):
+                plan = ci.select([path])
+                self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                                 {'analyze', 'web-chat-contract'})
+                self.assertEqual(plan['apps'], [])
 
     def test_shared_runtime_and_unknown_select_full(self):
         for path in ('lib/src/core/engine.dart', 'hook/build.dart', 'pubspec.yaml',
