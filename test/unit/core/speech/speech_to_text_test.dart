@@ -8,7 +8,10 @@ import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
-    show BackendGenerationLimit, BackendGenerationLimitReporting;
+    show
+        BackendGenerationLimit,
+        BackendGenerationLimitReporting,
+        BackendModelFormatRouting;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -1085,6 +1088,21 @@ void main() {
       );
     });
 
+    test('passes the declared model format to the backend', () async {
+      final routing = _FormatRoutingSpeechBackend();
+      final recognizer = await SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath, format: ModelFormat.gguf),
+          projector: ModelSource.path(projectorPath),
+          adapter: const Qwen3AsrAdapter(),
+        ),
+        backend: routing,
+      );
+
+      expect(routing.loadedFormats, [ModelFormat.gguf]);
+      await recognizer.dispose();
+    });
+
     test('dispose cancels a running task before freeing the engine', () async {
       backend.blockGeneration = true;
       final recognizer = await SpeechToTextEngine.load(
@@ -1574,6 +1592,25 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FormatRoutingSpeechBackend extends _SpeechBackend
+    implements BackendModelFormatRouting {
+  final List<ModelFormat> loadedFormats = <ModelFormat>[];
+
+  @override
+  Future<int> modelLoadAs(String path, ModelParams params, ModelFormat format) {
+    loadedFormats.add(format);
+    return modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  }) => throw UnimplementedError();
 }
 
 class _SpeechLlamaEngine extends LlamaEngine {

@@ -1101,6 +1101,36 @@ void main() {
     }
   });
 
+  test('renders with an empty load template instead of the built-in '
+      'one', () async {
+    final service = LiteRtLmService();
+    final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await gemmaModelFile.writeAsString('fake model');
+
+    try {
+      final modelHandle = await service.loadModel(
+        gemmaModelFile.path,
+        const ModelParams(chatTemplate: ''),
+      );
+
+      expect(
+        service.getMetadata(modelHandle),
+        containsPair('tokenizer.chat_template', ''),
+      );
+      const messages = [
+        {'role': 'user', 'content': 'hello'},
+      ];
+      final rendered = service.applyChatTemplate(modelHandle, messages);
+      expect(rendered, isNot(contains('<|turn>')));
+      expect(
+        rendered,
+        service.applyChatTemplate(modelHandle, messages, customTemplate: ''),
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('applies chat templates through the Dart template engine', () async {
     final service = LiteRtLmService();
     final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');

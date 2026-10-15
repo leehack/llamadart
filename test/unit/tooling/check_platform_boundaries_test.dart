@@ -76,6 +76,76 @@ void main() {
     );
   });
 
+  test('rejects dart:io and dart:ffi that an entrypoint reaches through '
+      'other libraries', () async {
+    final result = await _runBoundaries(
+      _fakeRepo(
+        overrides: <String, String>{
+          'lib/llamadart.dart': "export 'src/api.dart';\n",
+          'lib/src/api.dart':
+              "import 'package:llamadart/src/io_helper.dart';\n",
+          'lib/src/io_helper.dart': "import 'dart:io';\n",
+          'lib/backend.dart': "export 'src/backends/backend.dart';\n",
+          'lib/src/backends/backend.dart': "import '../ffi_helper.dart';\n",
+          'lib/src/ffi_helper.dart': "import 'dart:ffi';\n",
+        },
+      ),
+    );
+
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      allOf(
+        contains(
+          '${path.join('lib', 'src', 'io_helper.dart')}:1 '
+          '[public-entrypoint] import dart:io',
+        ),
+        contains(
+          '${path.join('lib', 'src', 'ffi_helper.dart')}:1 '
+          '[backend-entrypoint] import dart:ffi',
+        ),
+      ),
+    );
+  });
+
+  test('rejects package:ffi that an entrypoint reaches through other '
+      'libraries', () async {
+    final result = await _runBoundaries(
+      _fakeRepo(
+        overrides: <String, String>{
+          'lib/llama_cpp_bindings.dart': "export 'src/bindings.dart';\n",
+          'lib/src/bindings.dart': "import 'ffi_alloc.dart';\n",
+          'lib/src/ffi_alloc.dart': "import 'package:ffi/ffi.dart';\n",
+        },
+      ),
+    );
+
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      contains(
+        '${path.join('lib', 'src', 'ffi_alloc.dart')}:1 '
+        '[bindings-entrypoint] import package:ffi/ffi.dart',
+      ),
+    );
+  });
+
+  test('skips the conditional branches of an entrypoint export', () async {
+    final result = await _runBoundaries(
+      _fakeRepo(
+        overrides: <String, String>{
+          'lib/llama_cpp_bindings.dart':
+              "export 'src/bindings_stub.dart'\n"
+              "    if (dart.library.ffi) 'src/bindings_native.dart';\n",
+          'lib/src/bindings_stub.dart': "import 'dart:async';\n",
+          'lib/src/bindings_native.dart': "import 'dart:ffi';\n",
+        },
+      ),
+    );
+
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+  });
+
   test('reports a missing entrypoint as a scope error', () async {
     final root = _fakeRepo();
     File(path.join(root.path, 'lib/llama_cpp_bindings.dart')).deleteSync();

@@ -457,7 +457,7 @@ void main() {
     );
   });
 
-  test('dispose ends an active transcription task', () async {
+  test('dispose cancels an active task and waits for it', () async {
     final engine = await load();
     driver.blockWorkerPush = true;
     final task = await engine.transcribe(
@@ -466,8 +466,13 @@ void main() {
     final events = task.events.toList();
     await Future<void>.delayed(Duration.zero);
 
+    var settled = false;
+    unawaited(task.done.then((_) => settled = true));
+
     await engine.dispose();
 
+    expect(task.isCancellationRequested, isTrue);
+    expect(settled, isTrue);
     expect((await task.done).state, SpeechToTextCompletionState.cancelled);
     await events;
     expect(driver.worker.disposed, isTrue);

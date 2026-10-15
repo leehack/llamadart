@@ -114,6 +114,34 @@ void main() {
       expect(jsonDecode(calls.single.function!.arguments!), {'city': 'Paris'});
     });
 
+    test('fills call_<index> for parsed calls without an id', () async {
+      const output =
+          '[TOOL_CALLS][{"name":"weather","arguments":{"city":"Paris"}},'
+          '{"name":"weather","arguments":{"city":"Seoul"},"id":"abcdefghi"}]';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.mistralNemo.index,
+        output,
+        parseToolCalls: true,
+      );
+      expect(parsed.toolCalls.map((call) => call.id), [null, 'abcdefghi']);
+
+      final chunks = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable([output]),
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: ChatFormat.mistralNemo.index,
+        ),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: 'fallback-id',
+      ).toList();
+
+      expect(chunks.last.choices.single.finishReason, 'tool_calls');
+      final calls = chunks.last.choices.single.delta.toolCalls!;
+      expect(calls.map((call) => call.id), ['call_0', 'abcdefghi']);
+    });
+
     for (final endedAtLimit in [true, false]) {
       test('parallel Ministral calls preserve limit=$endedAtLimit', () async {
         const first = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
