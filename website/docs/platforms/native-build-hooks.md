@@ -164,11 +164,8 @@ hooks:
   companion, and `ImageGenerationEngine.checkRuntime()` reports it as not
   bundled. `flutter build macos`, Xcode and `xcodebuild` show the warning;
   `flutter build ios` output does not. Naming `stable_diffusion` still bundles
-  it through the hook there.
-  The hook reads the pubspec that carries the user-defines, so a Flutter app
-  that is a pub workspace member, whose user-defines live in the workspace
-  root pubspec, is not recognised as a Flutter app: `all` at the root bundles
-  the runtime through the hook with no warning.
+  it through the hook there. A pub workspace follows the app member described
+  under [Flutter Apple apps](#flutter-apple-apps).
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
   and `windows-x64`, built for iOS
@@ -335,6 +332,12 @@ hooks:
   target and a `SHA256SUMS` that lists it; otherwise the build fails before
   using the archive. The pinned release is verified against digests in
   `lib/src/hook/native_release_pins.dart` instead.
+- The hook keeps the release's `SHA256SUMS` beside the cached archive under
+  the llamadart package's `.dart_tool/llamadart/native_bundles/`. A cached archive that it lists is
+  used without network access; any download is checked against a freshly
+  fetched `SHA256SUMS`. To build an override offline, pre-seed both files in
+  the directory the error names (`SHA256SUMS` as UTF-8 or ASCII text), or use
+  `llamadart_native_path`.
 - `llamadart_native_repository` takes an `owner/repo` slug or a
   `https://github.com/owner/repo` URL.
 - `llamadart_native_path` wins over downloads. It can point at an archive, an
@@ -390,9 +393,7 @@ When the llama.cpp or LiteRT-LM companion is present, the installed companions
 choose the Apple `llama_cpp` and `litert_lm` families and the rest of
 `llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
 decided on its own: its companion selects it, and otherwise the hook bundles it
-when `llamadart_native_runtimes` names it, not when `all` only implies it;
-a pub workspace member is the exception described under
-[Opt-in stable_diffusion runtime](#opt-in-stable_diffusion-runtime-experimental).
+when `llamadart_native_runtimes` names it, not when `all` only implies it.
 Adding only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
@@ -416,6 +417,22 @@ any other LiteRT-LM release or a later build of the same release, such as
 `v0.18.0-2`, warns to upgrade the core and companion together.
 Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
+
+In a pub workspace, pub passes the hook the root `pubspec.yaml`. A root that
+is itself a Flutter app decides from its own pubspec, and member companions
+are not consulted. Otherwise the hook reads the companions from the member
+app: the member that reaches llamadart through its dependencies or dev
+dependencies and that no other member depends on, found through the root
+`.dart_tool/package_graph.json`. Debug and profile builds include the app's
+dev dependencies, so those count on every target; only Flutter builds target
+iOS, so for iOS the hook ignores non-Flutter members. Every member shares the
+hook's output, so when several such members exist they must be Flutter apps
+declaring the same companions. Otherwise, or when the graph cannot be read,
+the build writes a `warning: llamadart:` line and bundles the hook's Apple
+assets without checking or linking any companion; give the apps the same
+companions or move them into separate workspaces. `flutter build ios` does
+not show hook warnings; Xcode and `xcodebuild` do. A workspace with no
+Flutter member that uses llamadart bundles the hook's assets.
 
 Standalone Dart on macOS keeps LiteRT-LM libraries in the hook cache. A custom
 launcher can set `LLAMADART_LITERT_LM_LIB_DIR` to the extracted LiteRT-LM

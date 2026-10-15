@@ -137,6 +137,7 @@ void main() {
     test('rejects unknown arguments with a usage error', () async {
       for (final args in [
         ['--bogus'],
+        ['--bogus', 'x'],
         ['--sums-file'],
         ['--sums-file', 'a', 'b'],
       ]) {

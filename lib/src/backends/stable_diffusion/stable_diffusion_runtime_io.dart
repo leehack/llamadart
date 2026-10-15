@@ -188,14 +188,14 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
 /// lacks, and the Vulkan loader. On iOS and macOS the advice also names the
 /// `llamadart_stable_diffusion_flutter` companion, which links the runtime
 /// into the process through Swift Package Manager instead of the hook.
-/// [isFlutterTestHost] (default: `FLUTTER_TEST` is set) marks a host
+/// [isFlutterTestHost] (default: [isFlutterTestEnvironment]) marks a host
 /// `flutter test` run, which never links that companion.
 LlamaUnsupportedException stableDiffusionLoadFailure({
   required String platform,
   required ArgumentError error,
   List<String> Function(List<String> names) missingWindowsLibraries =
       findMissingWindowsLibraries,
-  bool Function() isFlutterTestHost = _isFlutterTestHost,
+  bool Function() isFlutterTestHost = isFlutterTestEnvironment,
 }) {
   final detail = '${error.message ?? error}';
   final isApple = platform.startsWith('ios-') || platform.startsWith('macos-');
@@ -312,7 +312,10 @@ const List<String> _windowsVisualCppRuntimeLibraries = [
   'vcruntime140_1.dll',
 ];
 
-bool _isFlutterTestHost() => Platform.environment['FLUTTER_TEST'] == 'true';
+/// Whether [environment] (default: this process's) is a host `flutter test`
+/// run, which sets `FLUTTER_TEST` to `true`.
+bool isFlutterTestEnvironment([Map<String, String>? environment]) =>
+    (environment ?? Platform.environment)['FLUTTER_TEST'] == 'true';
 
 String _abiLabel(Abi abi) => abi.toString().replaceAll('_', '-');
 

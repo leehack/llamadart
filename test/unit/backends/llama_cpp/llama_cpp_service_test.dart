@@ -2617,6 +2617,113 @@ void main() {
     });
   });
 
+  group('negative gpuLayers', () {
+    late Directory tempDir;
+    late String modelPath;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('negative_gpu_layers_');
+      modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+    });
+
+    tearDown(() => tempDir.deleteSync(recursive: true));
+
+    // What a load with [gpuLayers] passes to llama.cpp, resolves and reports,
+    // and whether its context offloads the KV cache and ops.
+    ({
+      int nativeGpuLayers,
+      int? resolvedGpuLayers,
+      String backendName,
+      bool offloadKqv,
+      bool opOffload,
+    })
+    load(int gpuLayers, {ComputeDevice device = ComputeDevice.auto}) {
+      final recorder = RecordingExitTeardown(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+      );
+      final service = LlamaCppService(
+        objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+      );
+      addTearDown(service.dispose);
+      final params = ModelParams(
+        contextSize: 64,
+        gpuLayers: gpuLayers,
+        device: device,
+      );
+      final handle = service.loadModel(modelPath, params);
+      final context = service.createContext(handle, params);
+      final contextParams =
+          _readPrivateForTesting<Map<int, llama_context_params>>(
+            service,
+            '_contextParams',
+          )[context]!;
+      return (
+        nativeGpuLayers: recorder.loadGpuLayers.single,
+        resolvedGpuLayers: service.getResolvedGpuLayers(),
+        backendName: service.getActiveBackendName(),
+        offloadKqv: contextParams.offload_kqv,
+        opOffload: contextParams.op_offload,
+      );
+    }
+
+    for (final gpuLayers in [-1, -2, -2147483648]) {
+      test('$gpuLayers loads, offloads and reports like maxGpuLayers', () {
+        final all = load(ModelParams.maxGpuLayers);
+        final negative = load(gpuLayers);
+
+        expect(all.nativeGpuLayers, ModelParams.maxGpuLayers);
+        expect(all.resolvedGpuLayers, ModelParams.maxGpuLayers);
+        expect(all.offloadKqv, isTrue);
+        expect(all.opOffload, isTrue);
+        expect(negative, all);
+      });
+    }
+
+    test('0 keeps the model, KV cache and backend name on the CPU', () {
+      final cpu = load(0);
+
+      expect(cpu.nativeGpuLayers, 0);
+      expect(cpu.resolvedGpuLayers, 0);
+      expect(cpu.backendName, 'CPU');
+      expect(cpu.offloadKqv, isFalse);
+      expect(cpu.opOffload, isFalse);
+    });
+
+    test('a positive count is passed through with context offload', () {
+      final partial = load(12);
+
+      expect(partial.nativeGpuLayers, 12);
+      expect(partial.resolvedGpuLayers, 12);
+      expect(partial.backendName, load(ModelParams.maxGpuLayers).backendName);
+      expect(partial.offloadKqv, isTrue);
+      expect(partial.opOffload, isTrue);
+    });
+
+    test('ComputeDevice.cpu still loads no GPU layers for -1', () {
+      final cpu = load(-1, device: ComputeDevice.cpu);
+
+      expect(cpu.nativeGpuLayers, 0);
+      expect(cpu.resolvedGpuLayers, 0);
+      expect(cpu.backendName, 'CPU');
+      expect(cpu.offloadKqv, isFalse);
+    });
+
+    test('ComputeDevice.gpu with -1 loads or throws like maxGpuLayers', () {
+      Object attempt(int gpuLayers) {
+        try {
+          return load(gpuLayers, device: ComputeDevice.gpu);
+        } on LlamaUnsupportedException catch (error) {
+          return error.message;
+        }
+      }
+
+      expect(attempt(-1), attempt(ModelParams.maxGpuLayers));
+    });
+  });
+
   group('ComputeDevice', () {
     test('auto keeps every llama.cpp field', () {
       const params = ModelParams(
@@ -4398,6 +4505,38 @@ void main() {
 
       expect(LlamaCppService.resolveGpuLayersForLoad(params), 42);
     });
+
+    test('resolves negative gpu layers to every layer', () {
+      for (final gpuLayers in [-1, -999]) {
+        for (final backend in [GpuBackend.auto, GpuBackend.vulkan]) {
+          expect(
+            LlamaCppService.resolveGpuLayersForLoad(
+              ModelParams(gpuLayers: gpuLayers, preferredBackend: backend),
+            ),
+            ModelParams.maxGpuLayers,
+          );
+        }
+      }
+    });
+
+    test('still forces negative gpu layers to zero on the CPU', () {
+      const negative = ModelParams(gpuLayers: -1);
+
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(
+          negative.copyWith(preferredBackend: GpuBackend.cpu),
+        ),
+        0,
+      );
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(negative, isAndroid: true),
+        0,
+      );
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(negative, isIosSimulator: true),
+        0,
+      );
+    });
   });
 
   group('resolveContextBatchSizes', () {
@@ -5315,6 +5454,19 @@ void main() {
       expect(LlamaCppService.shouldDisableContextGpuOffload(params), isFalse);
     });
 
+    test('keeps offload enabled for negative gpu layers', () {
+      const params = ModelParams(gpuLayers: -1);
+
+      expect(LlamaCppService.shouldDisableContextGpuOffload(params), isFalse);
+      expect(
+        LlamaCppService.resolveMtmdUseGpuForLoad(
+          params,
+          LlamaCppService.resolveGpuLayersForLoad(params),
+        ),
+        isTrue,
+      );
+    });
+
     test('honors resolved load-time fallback to zero gpu layers', () {
       const params = ModelParams(
         gpuLayers: 32,
@@ -5347,6 +5499,21 @@ void main() {
     test('returns true for Android Vulkan with GPU layers', () {
       const params = ModelParams(
         gpuLayers: 16,
+        preferredBackend: GpuBackend.vulkan,
+      );
+
+      expect(
+        LlamaCppService.shouldUseConservativeAndroidVulkanContextConfig(
+          params,
+          isAndroid: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('returns true for Android Vulkan with negative GPU layers', () {
+      const params = ModelParams(
+        gpuLayers: -1,
         preferredBackend: GpuBackend.vulkan,
       );
 

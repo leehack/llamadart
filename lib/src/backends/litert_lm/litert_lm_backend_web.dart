@@ -19,6 +19,7 @@ import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/model_format.dart';
 import '../../core/url_redaction.dart';
@@ -699,7 +700,15 @@ class LiteRtLmBackend
     final reader = conversation.sendMessageStreaming(prompt).getReader();
     try {
       while (!_cancelRequested) {
-        final result = await reader.read().toDart;
+        final _LiteRtLmStreamReadResult result;
+        try {
+          result = await reader.read().toDart;
+        } catch (_) {
+          // conversation.cancel() ends the run with a cancelled status, which
+          // rejects the pending read with a plain Error.
+          if (_cancelRequested) break;
+          rethrow;
+        }
         if (result.done) {
           break;
         }
@@ -1267,7 +1276,7 @@ class LiteRtLmBackend
       }
       return explicit;
     }
-    if (params.gpuLayers <= 0) {
+    if (resolveGpuLayerCount(params.gpuLayers) == 0) {
       return 'cpu';
     }
     return _backendNameForGpuPreference(params.preferredBackend);
@@ -1308,7 +1317,7 @@ class LiteRtLmBackend
     if (explicit != null) {
       return explicit;
     }
-    if (params.gpuLayers <= 0) {
+    if (resolveGpuLayerCount(params.gpuLayers) == 0) {
       return 'cpu';
     }
     if (params.preferredBackend != GpuBackend.auto) {

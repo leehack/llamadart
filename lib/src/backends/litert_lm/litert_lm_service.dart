@@ -15,6 +15,7 @@ import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
@@ -1357,7 +1358,7 @@ class LiteRtLmService {
     if (explicit != null) {
       return explicit;
     }
-    if (params.gpuLayers <= 0) {
+    if (resolveGpuLayerCount(params.gpuLayers) == 0) {
       return liteRtLmCpuBackend;
     }
     return _backendNameForGpuPreference(params.preferredBackend);
@@ -1481,7 +1482,7 @@ class LiteRtLmService {
     if (explicit != null) {
       return explicit;
     }
-    if (params.gpuLayers <= 0) {
+    if (resolveGpuLayerCount(params.gpuLayers) == 0) {
       return liteRtLmCpuBackend;
     }
     if (params.preferredBackend != GpuBackend.auto) {

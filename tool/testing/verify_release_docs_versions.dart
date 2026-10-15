@@ -386,10 +386,17 @@ List<String> checkCompanionCoreConstraints(
         min > coreVersion ||
         max != Version(coreVersion.major, coreVersion.minor + 1, 0)) {
       errors.add(
-        "${companion.pubspecPath} declares `llamadart: '$constraint'`, but "
-        'core is $coreVersion; a companion must allow exactly this core '
-        "minor, `'$expected'` for a new minor. Bump the companion version "
-        'with it, because pub.dev never changes a published constraint.',
+        coreVersion.isPreRelease
+            ? "${companion.pubspecPath} declares `llamadart: '$constraint'`, "
+                  'but core is the prerelease $coreVersion. Release '
+                  'automation publishes only stable core versions; set a '
+                  'stable core version, then constrain each companion to its '
+                  'minor.'
+            : "${companion.pubspecPath} declares `llamadart: '$constraint'`, "
+                  'but core is $coreVersion; a companion must allow exactly '
+                  "this core minor, `'$expected'` for a new minor. Bump the "
+                  'companion version with it, because pub.dev never changes a '
+                  'published constraint.',
       );
     }
   }
