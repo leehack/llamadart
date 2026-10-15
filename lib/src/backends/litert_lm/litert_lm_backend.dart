@@ -45,6 +45,8 @@ class LiteRtLmBackend
   Future<void>? _disposeFuture;
   int _workerGeneration = 0;
   void Function([Object? error])? _activeGenerationCleanup;
+  _WorkerGeneration? _runningGeneration;
+  _QueuedGeneration? _queuedGeneration;
   final Map<ReceivePort, Completer<Object?>> _pendingRequests = {};
   final String? _preferredBackend;
   final void Function(SendPort) _workerEntryPoint;
@@ -196,95 +198,15 @@ class LiteRtLmBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
-  }) {
-    late final StreamController<List<int>> controller;
-    ReceivePort? responsePort;
-    var cleanedUp = false;
-    var activeGeneration = false;
-
-    void cleanup([Object? error]) {
-      if (cleanedUp) {
-        return;
-      }
-      cleanedUp = true;
-      responsePort?.close();
-      if (!controller.isClosed) {
-        if (error != null) controller.addError(error);
-        unawaited(controller.close());
-      }
-      if (_activeGenerationCleanup == cleanup) {
-        _activeGenerationCleanup = null;
-      }
-    }
-
-    controller = StreamController<List<int>>(
-      onListen: () {
-        if (_activeGenerationCleanup != null) {
-          controller.addError(
-            StateError('LiteRT-LM generation is already in progress.'),
-          );
-          cleanup();
-          return;
-        }
-
-        final port = ReceivePort();
-        responsePort = port;
-        port.listen((message) {
-          if (cleanedUp) {
-            return;
-          }
-          if (message is LiteRtLmTokenResponse) {
-            controller.add(message.bytes);
-          } else if (message is LiteRtLmDoneResponse) {
-            cleanup();
-          } else if (message is LiteRtLmErrorResponse) {
-            controller.addError(_exceptionForErrorResponse(message));
-            cleanup();
-          }
-        });
-
-        activeGeneration = true;
-        _activeGenerationCleanup = cleanup;
-        unawaited(() async {
-          try {
-            await _ensureIsolate();
-            // Re-check after the await: a cancel during _ensureIsolate() runs
-            // cleanup(), which closes the response port and may clear
-            // _sendPort. Capture the port and guard in one synchronous step so
-            // we never send a generate request to a closed port (which would
-            // orphan a generation on the worker) or dereference a null port.
-            final sendPort = _sendPort;
-            if (cleanedUp || sendPort == null) {
-              cleanup();
-              return;
-            }
-            sendPort.send(
-              LiteRtLmGenerateRequest(
-                contextHandle,
-                prompt,
-                params,
-                port.sendPort,
-                parts: parts,
-              ),
-            );
-          } catch (error, stackTrace) {
-            if (!controller.isClosed) {
-              controller.addError(error, stackTrace);
-            }
-            cleanup();
-          }
-        }());
-      },
-      onCancel: () {
-        if (activeGeneration) {
-          cancelGeneration();
-        }
-        cleanup();
-      },
-    );
-
-    return controller.stream;
-  }
+  }) => _generateOnWorker(
+    (sendPort) => LiteRtLmGenerateRequest(
+      contextHandle,
+      prompt,
+      params,
+      sendPort,
+      parts: parts,
+    ),
+  );
 
   @override
   Stream<List<int>> generateChat(
@@ -302,104 +224,165 @@ class LiteRtLmBackend
     String? targetLangCode,
     DateTime? templateNow,
   }) {
-    late final StreamController<List<int>> controller;
-    ReceivePort? responsePort;
-    var cleanedUp = false;
-    var activeGeneration = false;
     final nativeTools = tools
         ?.map((tool) => tool.toJson())
         .toList(growable: false);
+    return _generateOnWorker(
+      (sendPort) => LiteRtLmGenerateChatRequest(
+        contextHandle,
+        messages,
+        params,
+        sendPort,
+        tools: nativeTools,
+        toolChoice: toolChoice,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+          chatTemplateKwargs,
+          sourceLangCode: sourceLangCode,
+          targetLangCode: targetLangCode,
+        ),
+        templateNow: templateNow,
+      ),
+    );
+  }
 
-    void cleanup([Object? error]) {
-      if (cleanedUp) {
+  /// Streams the worker generation that [buildRequest] describes.
+  ///
+  /// A generation listened to while a cancelled one is still running on the
+  /// worker waits for that run's terminal response, then starts.
+  Stream<List<int>> _generateOnWorker(
+    LiteRtLmWorkerRequest Function(SendPort responsePort) buildRequest,
+  ) {
+    late final StreamController<List<int>> controller;
+    _WorkerGeneration? generation;
+    _QueuedGeneration? queued;
+    var closed = false;
+
+    void close([Object? error]) {
+      if (closed) {
         return;
       }
-      cleanedUp = true;
-      responsePort?.close();
+      closed = true;
       if (!controller.isClosed) {
         if (error != null) controller.addError(error);
         unawaited(controller.close());
       }
-      if (_activeGenerationCleanup == cleanup) {
+      if (_activeGenerationCleanup == close) {
         _activeGenerationCleanup = null;
       }
     }
 
-    controller = StreamController<List<int>>(
-      onListen: () {
-        if (_activeGenerationCleanup != null) {
-          controller.addError(
-            StateError('LiteRT-LM generation is already in progress.'),
-          );
-          cleanup();
-          return;
+    void start() {
+      final port = ReceivePort();
+      final current = _WorkerGeneration(port);
+      generation = current;
+      _runningGeneration = current;
+      _activeGenerationCleanup = close;
+      port.listen((message) {
+        if (message is LiteRtLmTokenResponse) {
+          if (!closed) controller.add(message.bytes);
+        } else if (message is LiteRtLmDoneResponse) {
+          close();
+          _finishGeneration(current);
+        } else if (message is LiteRtLmErrorResponse) {
+          close(_exceptionForErrorResponse(message));
+          _finishGeneration(current);
         }
+      });
 
-        final port = ReceivePort();
-        responsePort = port;
-        port.listen((message) {
-          if (cleanedUp) {
+      unawaited(() async {
+        try {
+          await _ensureIsolate();
+          // Re-check after the await: a cancel during _ensureIsolate() may
+          // have closed this stream or cleared _sendPort. Capture the port and
+          // guard in one synchronous step so a cancelled generation never
+          // reaches the worker and a closed port is never sent to.
+          final sendPort = _sendPort;
+          if (closed || current.cancelRequested || sendPort == null) {
+            close();
+            _finishGeneration(current);
             return;
           }
-          if (message is LiteRtLmTokenResponse) {
-            controller.add(message.bytes);
-          } else if (message is LiteRtLmDoneResponse) {
-            cleanup();
-          } else if (message is LiteRtLmErrorResponse) {
-            controller.addError(_exceptionForErrorResponse(message));
-            cleanup();
+          sendPort.send(buildRequest(port.sendPort));
+        } catch (error, stackTrace) {
+          if (!closed && !controller.isClosed) {
+            controller.addError(error, stackTrace);
           }
-        });
+          close();
+          _finishGeneration(current);
+        }
+      }());
+    }
 
-        activeGeneration = true;
-        _activeGenerationCleanup = cleanup;
-        unawaited(() async {
-          try {
-            await _ensureIsolate();
-            final sendPort = _sendPort;
-            if (cleanedUp || sendPort == null) {
-              cleanup();
-              return;
-            }
-            sendPort.send(
-              LiteRtLmGenerateChatRequest(
-                contextHandle,
-                messages,
-                params,
-                port.sendPort,
-                tools: nativeTools,
-                toolChoice: toolChoice,
-                parallelToolCalls: parallelToolCalls,
-                enableThinking: enableThinking,
-                chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
-                  chatTemplateKwargs,
-                  sourceLangCode: sourceLangCode,
-                  targetLangCode: targetLangCode,
-                ),
-                templateNow: templateNow,
-              ),
-            );
-          } catch (error, stackTrace) {
-            if (!controller.isClosed) {
-              controller.addError(error, stackTrace);
-            }
-            cleanup();
-          }
-        }());
+    controller = StreamController<List<int>>(
+      onListen: () {
+        final running = _runningGeneration;
+        if (_queuedGeneration != null ||
+            (running != null && !running.cancelRequested)) {
+          close(
+            LlamaStateException(
+              'LiteRT-LM generation is already in progress. Cancel it or '
+              'wait for its stream to end before starting another.',
+            ),
+          );
+          return;
+        }
+        if (running == null) {
+          start();
+          return;
+        }
+        final waiting = _QueuedGeneration(start, close);
+        queued = waiting;
+        _queuedGeneration = waiting;
       },
       onCancel: () {
-        if (activeGeneration) {
-          cancelGeneration();
+        final current = generation;
+        if (current == null) {
+          if (_queuedGeneration == queued) {
+            _queuedGeneration = null;
+          }
+        } else if (identical(_runningGeneration, current) &&
+            !current.cancelRequested) {
+          // Raises only this run's cancel, so a generation queued behind it
+          // still starts once the worker reports that the run stopped.
+          current.cancelRequested = true;
+          unawaited(_cancelGeneration());
         }
-        cleanup();
+        close();
       },
     );
 
     return controller.stream;
   }
 
+  /// Releases [generation] after its terminal response, or when it never
+  /// reached the worker, and starts the generation queued behind it.
+  void _finishGeneration(_WorkerGeneration generation) {
+    generation.responsePort.close();
+    if (!identical(_runningGeneration, generation)) {
+      return;
+    }
+    _runningGeneration = null;
+    final queued = _queuedGeneration;
+    if (queued == null) {
+      return;
+    }
+    _queuedGeneration = null;
+    queued.start();
+  }
+
+  /// Ends the generation waiting for a cancelled run without starting it.
+  void _closeQueuedGeneration([Object? error]) {
+    final queued = _queuedGeneration;
+    _queuedGeneration = null;
+    queued?.close(error);
+  }
+
   @override
   void cancelGeneration() {
+    _runningGeneration?.cancelRequested = true;
+    _closeQueuedGeneration();
     unawaited(_cancelGeneration());
   }
 
@@ -603,6 +586,8 @@ class LiteRtLmBackend
 
   Future<void> _disposeWorker() async {
     _disposed = true;
+    _runningGeneration?.cancelRequested = true;
+    _closeQueuedGeneration();
     await _cancelGeneration();
     _activeGenerationCleanup?.call();
 
@@ -882,9 +867,14 @@ class LiteRtLmBackend
 
   void _killWorker() {
     if (_pendingRequests.isNotEmpty) _nativeSettlementUnverified = true;
-    _activeGenerationCleanup?.call(
-      _nativeSettlementUnverified ? _unsettledWorkerError() : null,
-    );
+    final generationError = _nativeSettlementUnverified
+        ? _unsettledWorkerError()
+        : null;
+    _activeGenerationCleanup?.call(generationError);
+    _closeQueuedGeneration(generationError);
+    // A killed worker sends no terminal response for the running generation.
+    _runningGeneration?.responsePort.close();
+    _runningGeneration = null;
     // A killed worker cannot reply. Closing its callers' ports alone would
     // leave their futures pending, while leaving ports open retains the VM.
     // This settles Dart requests only; an in-flight native call may still be
@@ -916,10 +906,12 @@ class LiteRtLmBackend
   );
 
   Future<void> _cancelActiveGeneration() async {
+    _closeQueuedGeneration();
     final cleanup = _activeGenerationCleanup;
     if (cleanup == null) {
       return;
     }
+    _runningGeneration?.cancelRequested = true;
     await _cancelGeneration();
     cleanup();
   }
@@ -997,4 +989,27 @@ class LiteRtLmBackend
     }
     return backend;
   }
+}
+
+/// A generation sent to the worker, tracked until its terminal response even
+/// after its stream closes.
+final class _WorkerGeneration {
+  /// Receives the worker's responses for this generation.
+  final ReceivePort responsePort;
+
+  /// Whether this generation was cancelled.
+  bool cancelRequested = false;
+
+  _WorkerGeneration(this.responsePort);
+}
+
+/// A generation waiting for the worker to finish a cancelled run.
+final class _QueuedGeneration {
+  /// Sends the generation to the worker.
+  final void Function() start;
+
+  /// Ends the generation's stream without output, or with [error].
+  final void Function([Object? error]) close;
+
+  _QueuedGeneration(this.start, this.close);
 }
