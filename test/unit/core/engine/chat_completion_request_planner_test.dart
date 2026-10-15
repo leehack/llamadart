@@ -1,6 +1,7 @@
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/grammar/llama_cpp_grammar_limits.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
@@ -9,6 +10,7 @@ import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:test/test.dart';
 import '../../../support/raw_tool_schema_fixture.dart';
 
@@ -203,6 +205,132 @@ void main() {
           ),
         );
       }
+    });
+
+    group('template grammar limits', () {
+      List<ToolDefinition> schemaTools(int count) => [
+        for (var i = 0; i < count; i++)
+          ToolDefinition.fromJsonSchema(
+            name: 'tool_$i',
+            description: 'Tool $i',
+            schema: const {
+              'type': 'object',
+              'properties': {
+                'a': {'type': 'string'},
+              },
+              'required': ['a'],
+            },
+          ),
+      ];
+
+      ChatCompletionRequestPlan plan(
+        LlamaBackend backend,
+        String? grammar, {
+        List<ToolDefinition>? tools,
+        GenerationParams? params,
+        Map<String, dynamic>? responseFormat,
+      }) => ChatCompletionRequestPlanner.build(
+        backend: backend,
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: ChatFormat.hermes.index,
+          grammar: grammar,
+        ),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: false,
+        tools: tools,
+        params: params,
+        responseFormat: responseFormat,
+      );
+
+      test('keeps Hermes grammars llama.cpp loads', () {
+        final tools = schemaTools(1000);
+        final grammar = HermesHandler().buildGrammar(tools)!;
+        expect(
+          plan(_BaseBackend(), grammar, tools: tools).generationParams.grammar,
+          grammar,
+        );
+      });
+
+      test('rejects Hermes grammars over the llama.cpp repetition limit', () {
+        final tools = schemaTools(2000);
+        expect(
+          () => plan(
+            _BaseBackend(),
+            HermesHandler().buildGrammar(tools)!,
+            tools: tools,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('exceeds llama.cpp grammar limits (rule root repeats'),
+            ),
+          ),
+        );
+      });
+
+      test('rejects template grammars over the length limit', () {
+        final grammar = 'root ::= "a"\n#${'x' * maxTemplateGrammarLength}';
+        expect(
+          () => plan(_BaseBackend(), grammar),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('the limit is $maxTemplateGrammarLength'),
+            ),
+          ),
+        );
+      });
+
+      test('rejects bounds llama.cpp would silently drop', () {
+        expect(
+          () => plan(
+            _BaseBackend(),
+            'root ::= "\\"" char{0,3000} "\\""\nchar ::= [a-z]',
+            responseFormat: const {
+              'type': 'json_schema',
+              'json_schema': {
+                'schema': {'type': 'string', 'maxLength': 3000},
+              },
+            },
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('llama.cpp ignores upper bounds above 2000'),
+            ),
+          ),
+        );
+      });
+
+      test('leaves grammars the plan does not apply unchecked', () {
+        final grammar =
+            'root ::= ( ${[for (var i = 0; i < 2000; i++) 'r$i'].join(' | ')} )+';
+        expect(llamaCppRepetitionRejection(grammar), isNotNull);
+        expect(
+          plan(
+            _NoGrammarBackend(),
+            grammar,
+            tools: [_weatherTool],
+          ).generationParams.grammar,
+          isNull,
+        );
+        const custom = 'root ::= "a"{0,3000}';
+        expect(
+          plan(
+            _BaseBackend(),
+            null,
+            params: const GenerationParams(grammar: custom),
+          ).generationParams.grammar,
+          custom,
+        );
+      });
     });
 
     test('keeps text response format unconstrained without grammar', () {

@@ -7,6 +7,20 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- **Behavior change:** Raw `responseFormat` JSON schemas throw
+  `LlamaUnsupportedException` before generation for constraints the grammar
+  cannot enforce (`format`, numeric bounds, `uniqueItems`, a `pattern` outside
+  the compiled subset and similar), for schemas nested more than 512 levels,
+  and for shapes the converter cannot represent, instead of silently dropping
+  the constraint, overflowing the stack or throwing `StateError`
+  ([#584](https://github.com/leehack/llamadart/issues/584)).
+- Reject a combined tool or schema grammar that llama.cpp would refuse or
+  that is longer than 8 MiB, such as about 2000 Hermes schema tools, with
+  `LlamaUnsupportedException` before generation
+  ([#1093](https://github.com/leehack/llamadart/issues/1093)).
+
 ## 0.13.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`,

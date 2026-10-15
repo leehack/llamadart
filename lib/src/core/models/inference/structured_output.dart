@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import '../../exceptions.dart';
 import '../../grammar/json_schema_converter.dart';
+import '../../grammar/json_value_depth.dart';
+import '../../template/response_format.dart';
 import '../chat/completion_chunk.dart';
 
 /// Converts a decoded JSON object into an application-specific value.
@@ -206,6 +208,13 @@ Map<String, dynamic> _schemaResponseFormat(
 }
 
 Map<String, dynamic> _validateStructuredSchema(Map<String, dynamic> schema) {
+  final depth = jsonValueDepth(schema);
+  if (depth != null && depth > maxResponseFormatSchemaDepth) {
+    throw LlamaUnsupportedException(
+      'Unsupported structured JSON schema: it nests $depth levels deep; the '
+      'limit is $maxResponseFormatSchemaDepth.',
+    );
+  }
   final normalizedSchema = _copyJsonMap(schema, 'schema');
   _validateSupportedSchemaSubset(normalizedSchema, r'$');
   try {

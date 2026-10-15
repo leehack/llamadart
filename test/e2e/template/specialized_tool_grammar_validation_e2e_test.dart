@@ -6,7 +6,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
+import 'package:llamadart/src/core/grammar/llama_cpp_grammar_limits.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -1380,6 +1382,122 @@ void main() {
     );
   });
 
+  test('grammar limit check agrees with llama.cpp on Hermes tool counts', () {
+    for (final (count, loads) in [(1000, true), (2000, false)]) {
+      final tools = [
+        for (var i = 0; i < count; i++)
+          ToolDefinition.fromJsonSchema(
+            name: 'tool_$i',
+            description: 'Tool $i',
+            schema: const {
+              'type': 'object',
+              'properties': {
+                'a': {'type': 'string'},
+              },
+              'required': ['a'],
+            },
+          ),
+      ];
+      final grammar = HermesHandler().buildGrammar(tools)!;
+      final last = count - 1;
+      if (loads) {
+        expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [
+            '<tool_call>{"name":"tool_$last","arguments":{"a":"x"}}</tool_call>',
+          ],
+          invalid: [
+            '<tool_call>{"name":"tool_$count","arguments":{"a":"x"}}</tool_call>',
+            '<tool_call>{"name":"tool_0","arguments":{"a":1}}</tool_call>',
+          ],
+        );
+      } else {
+        expect(
+          () => checkTemplateGrammarLimits(grammar),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(_load(validator, grammar, ''), contains('failed to parse'));
+      }
+    }
+  });
+
+  test('llama.cpp drops repetition bounds the limit check rejects', () {
+    final grammar = ChatTemplateEngine.render(
+      templateSource: null,
+      messages: const [],
+      metadata: const {},
+      responseFormat: const {
+        'type': 'json_schema',
+        'json_schema': {
+          'schema': {'type': 'string', 'maxLength': 2001},
+        },
+      },
+    ).grammar!;
+    expect(
+      _load(validator, grammar, '"${'a' * 2500}"'),
+      contains('Input string is valid according to the grammar.'),
+    );
+    expect(
+      () => checkTemplateGrammarLimits(grammar),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+  });
+
+  test('enforceable responseFormat schemas compile and constrain output', () {
+    String render(Map<String, dynamic> schema) {
+      final grammar = ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        responseFormat: {
+          'type': 'json_schema',
+          'json_schema': {'schema': schema},
+        },
+      ).grammar!;
+      checkTemplateGrammarLimits(grammar);
+      return grammar;
+    }
+
+    _expectGrammar(
+      validator,
+      render(const {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'pattern': r'^[a-z]{2}-[0-9]{3}$'},
+          'tags': {
+            'type': 'array',
+            'items': {'type': 'string', 'maxLength': 3},
+            'maxItems': 2,
+          },
+        },
+        'required': ['id'],
+        'additionalProperties': false,
+        'x-vendor': {'minimum': 1},
+      }),
+      valid: ['{"id":"ab-123"}', '{"id":"zz-000","tags":["a","bcd"]}'],
+      invalid: [
+        '{"id":"ab-12"}',
+        '{"id":"AB-123"}',
+        '{"id":"ab-123","tags":["abcd"]}',
+        '{"id":"ab-123","tags":["a","b","c"]}',
+        '{"id":"ab-123","extra":1}',
+      ],
+    );
+
+    Map<String, dynamic> schema = {'type': 'integer'};
+    for (var i = 0; i < 511; i++) {
+      schema = {'type': 'array', 'items': schema};
+    }
+    _expectGrammar(
+      validator,
+      render(schema),
+      valid: ['${'[' * 511}7${']' * 511}'],
+      invalid: ['${'[' * 511}"7"${']' * 511}', '${'[' * 510}7${']' * 510}'],
+    );
+  });
+
   test('llama.cpp grammar repetition limit matches the schema bound', () {
     final directory = Directory.systemTemp.createTempSync('llamadart-gbnf-');
     addTearDown(() => directory.deleteSync(recursive: true));
@@ -1441,6 +1559,18 @@ List<(String, String Function(String))> _openObjectGrammars(
       (args) => args,
     ),
   ];
+}
+
+/// Runs [validator] on [grammar] and [input] and returns its output.
+String _load(String validator, String grammar, String input) {
+  final directory = Directory.systemTemp.createTempSync('llamadart-gbnf-');
+  addTearDown(() => directory.deleteSync(recursive: true));
+  final grammarFile = File('${directory.path}/grammar.gbnf')
+    ..writeAsStringSync(grammar);
+  final inputFile = File('${directory.path}/input.txt')
+    ..writeAsStringSync(input);
+  final result = Process.runSync(validator, [grammarFile.path, inputFile.path]);
+  return '${result.stdout}\n${result.stderr}';
 }
 
 void _expectGrammar(

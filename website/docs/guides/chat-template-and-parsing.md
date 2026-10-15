@@ -41,8 +41,8 @@ print(result.format);
   `en-GB`; the `sourceLangCode` and `targetLangCode` parameters are
   deprecated.
 - `templateNow`: deterministic time injection for tests.
-- `responseFormat`: structured-output constraint; unrecognised shapes throw
-  `LlamaUnsupportedException`.
+- `responseFormat`: structured-output constraint; unrecognised shapes and
+  schemas the grammar cannot enforce throw `LlamaUnsupportedException`.
 
 Structured output (`responseFormat`, `LlamaStructuredOutput`,
 `parseStructuredJson`) is covered in

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
@@ -117,6 +119,38 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('bounds schema nesting before recursive validation', () {
+      Map<String, dynamic> nested(int levels) {
+        Map<String, dynamic> schema = {'type': 'integer'};
+        for (var i = 0; i < levels; i++) {
+          schema = {'type': 'array', 'items': schema};
+        }
+        return schema;
+      }
+
+      for (final levels in [512, 100000]) {
+        expect(
+          () => LlamaStructuredOutput<Object?>.jsonValueSchema(
+            schema: nested(levels),
+            decoder: (value) => value,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              'Unsupported structured JSON schema: it nests ${levels + 1} '
+                  'levels deep; the limit is 512.',
+            ),
+          ),
+        );
+      }
+      final output = LlamaStructuredOutput<Object?>.jsonValueSchema(
+        schema: nested(511),
+        decoder: (value) => value,
+      );
+      expect(jsonEncode(output.schema), jsonEncode(nested(511)));
     });
 
     test('rejects schema that cannot be represented safely', () {

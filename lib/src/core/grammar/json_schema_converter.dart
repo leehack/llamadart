@@ -91,6 +91,13 @@ class JsonSchemaConverter {
     return converter.formatGrammar();
   }
 
+  /// Whether [pattern] is inside the regex subset [convert] compiles.
+  ///
+  /// [convert] treats any other `pattern` as an unconstrained string.
+  static bool supportsPattern(String pattern) =>
+      _PatternGrammarBuilder((name, _) => name, 'pattern').build(pattern) !=
+      null;
+
   /// Format all accumulated rules into a GBNF grammar string.
   String formatGrammar() {
     final buf = StringBuffer();

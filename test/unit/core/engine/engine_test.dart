@@ -15,6 +15,7 @@ import 'package:llamadart/src/backends/backend.dart'
         BackendVideoRuntimeSupport;
 import 'package:llamadart/src/core/engine/engine.dart'
     show completionGenerationLimit;
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
 import '../../../support/raw_tool_schema_fixture.dart';
 
@@ -4028,6 +4029,135 @@ void main() {
         expect(noGrammarBackend.lastGenerationPrompt, isNull);
       },
     );
+
+    group('create rejects responseFormat schemas it cannot enforce', () {
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'status'),
+      ];
+      Map<String, dynamic> format(Map<String, dynamic> schema) => {
+        'type': 'json_schema',
+        'json_schema': {'schema': schema},
+      };
+      Object deepConst = 1;
+      for (var i = 0; i < 200000; i++) {
+        deepConst = [deepConst];
+      }
+      Map<String, dynamic> deepItems = {'type': 'integer'};
+      for (var i = 0; i < 100000; i++) {
+        deepItems = {'type': 'array', 'items': deepItems};
+      }
+      final cyclic = <String, dynamic>{'type': 'object'};
+      cyclic['properties'] = {'self': cyclic};
+      final cases = <String, (Map<String, dynamic>, Matcher)>{
+        'untyped property': (
+          {
+            'type': 'object',
+            'properties': {
+              'x': {'description': 'x'},
+            },
+          },
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Unrecognized schema: {"description":"x"}'),
+          ),
+        ),
+        'integer bounds': (
+          {
+            'type': 'object',
+            'properties': {
+              'n': {'type': 'integer', 'minimum': 1, 'maximum': 10},
+            },
+          },
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains(r'"$.properties.n.minimum" cannot be enforced'),
+          ),
+        ),
+        'uuid format': (
+          {'type': 'string', 'format': 'uuid'},
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains(r'"$.format" cannot be enforced'),
+          ),
+        ),
+        'uncompiled pattern': (
+          {'type': 'string', 'pattern': r'^\w+$'},
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('outside the supported regex subset'),
+          ),
+        ),
+        'deep const': (
+          {'const': deepConst},
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('nests 200001 levels deep'),
+          ),
+        ),
+        'deep items': (
+          deepItems,
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('nests 100001 levels deep'),
+          ),
+        ),
+        'cycle': (
+          cyclic,
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            contains('must contain only JSON values'),
+          ),
+        ),
+        'dropped length bound': (
+          {'type': 'string', 'maxLength': 3000},
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('llama.cpp ignores upper bounds above 2000'),
+          ),
+        ),
+      };
+
+      for (final MapEntry(key: name, value: (schema, matcher))
+          in cases.entries) {
+        test(name, () async {
+          await engine.loadModel('test-model.bin');
+
+          await expectLater(
+            engine.create(messages, responseFormat: format(schema)).drain(),
+            throwsA(matcher),
+          );
+          expect(backend.lastGenerationPrompt, isNull);
+          expect(backend.lastGenerationParams, isNull);
+        });
+      }
+
+      test('keeps enforceable schemas and their grammar', () async {
+        await engine.loadModel('test-model.bin');
+        const schema = {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'string', 'pattern': r'^[a-z]{3}$'},
+            'note': {'type': 'string', 'x-vendor': 'kept', 'maxLength': 1999},
+          },
+          'required': ['id'],
+        };
+
+        await engine.create(messages, responseFormat: format(schema)).drain();
+
+        expect(
+          backend.lastGenerationParams?.grammar,
+          JsonSchemaConverter.convert(schema),
+        );
+      });
+    });
 
     group('create rejects unrecognised responseFormat shapes', () {
       const messages = [
