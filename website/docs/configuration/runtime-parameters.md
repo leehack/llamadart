@@ -180,21 +180,51 @@ speculative decoding. Set `liteRtLmCacheDir` to a writable directory to keep
 every cache. Windows has no such check: set `liteRtLmCacheDir` there when the
 model's directory is read-only.
 
-`liteRtLmMaxProgramCacheBytes` caps GPU program cache files. `null` (default)
-never deletes anything. Otherwise, before each engine create, llamadart
-deletes regular files directly inside the effective cache directory whose name
-ends with `_mldrift_program_cache.bin` and whose size exceeds the cap. Weight
-and XNNPACK caches, subdirectories and symbolic links are left alone. When no
-directory is passed to the runtime, nothing is pruned; set `liteRtLmCacheDir`
-to enable pruning there. Each deletion, and each prune failure, logs a Dart
-`warn` record and never fails the load (see [Logging](./logging)).
+`liteRtLmMaxProgramCacheBytes` caps the GPU program cache files of one cache
+directory. `null` (default) applies
+`ModelParams.defaultLiteRtLmMaxProgramCacheBytes`, 1 GiB. Before each engine
+create, llamadart deletes regular files directly inside the effective cache
+directory whose name ends with `_mldrift_program_cache.bin` until their total
+size is at most the cap: files larger than the cap on their own first, then
+the least recently modified ones. `0` deletes every non-empty program cache
+file. Weight and XNNPACK caches, subdirectories and symbolic links are left
+alone. When no directory is passed to the runtime, nothing is pruned; set
+`liteRtLmCacheDir` to enable pruning there. A directory named `:nocache` is
+never pruned either. Each deletion, and each prune failure, logs a Dart `warn`
+record and never fails the load (see [Logging](./logging)).
+
+| `liteRtLmMaxProgramCacheBytes` | Before each engine create |
+| --- | --- |
+| `null` (default) | Prune to 1 GiB |
+| `0` or more | Prune to that many bytes |
+| `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) | Delete nothing |
 
 ```dart
 const params = ModelParams(
   liteRtLmCacheDir: '/data/app/litert-cache',
-  liteRtLmMaxProgramCacheBytes: 1024 * 1024 * 1024,
+  // Raise the cap, or pass ModelParams.unlimitedLiteRtLmProgramCacheBytes.
+  liteRtLmMaxProgramCacheBytes: 4 * 1024 * 1024 * 1024,
 );
 ```
+
+Engines that share a cache directory, in one process or several, do not
+delete each other's program caches. While a native engine is alive, llamadart
+keeps two `.llamadart_litert_lm_lease_*` files in its cache directory naming
+the model file, and holds a file lock on one of them. Pruning keeps, and does
+not count toward the cap, the program caches named after a model with a lease,
+including the vision encoder's. A lease of another process counts while that
+process holds its lock, so a process that ends releases it, and a later prune
+deletes its files. A lease of the same process counts until its engine is
+disposed, or until the process exits when the engine's worker was stopped
+without disposing it. An engine prunes the caches of its own model, since it
+disposes its previous native engine first, but while two engines use the same
+model file with one directory neither deletes that model's program caches.
+
+A lease left by a process that crashed is taken for one of the pruning
+process when the two share a process ID, as can happen when a container
+restarts with the same PID. That lease never expires, so its model's program
+caches stay unpruned until its two lease files are deleted while no engine of
+that model is running.
 
 The cap mitigates a known runtime issue
 ([#552](https://github.com/leehack/llamadart/issues/552)): with Qwen3.5-0.8B
@@ -209,7 +239,7 @@ With the pinned `v0.18.0` on the macOS GPU backend, the program cache of
 Qwen3 0.6B (4 MB) and Gemma 4 E2B (11 MB) no longer grows after the first
 engine create, where `v0.17.0-8` doubled Qwen3 0.6B's on the second. The
 Qwen3.5 0.8B VL int8 bundle still appends about 270 MB per create, as it did
-on `v0.17.0-8`, so keep the cap for models that grow.
+on `v0.17.0-8`; the default cap keeps it from filling the disk.
 
 The cache file names carry the model file's name, modification time and size,
 not the runtime version, so an app that updates llamadart keeps the files the
@@ -217,7 +247,9 @@ previous runtime wrote. Over a `v0.17.0-8` cache, `v0.18.0` leaves the weight
 cache at its size and appends its own programs to the program cache, which
 keeps the bytes the older runtime wrote. To reclaim them, delete the
 `*_mldrift_program_cache.bin` files once after updating, or run once with
-`liteRtLmMaxProgramCacheBytes: 0`; the runtime rebuilds the file.
+`liteRtLmMaxProgramCacheBytes: 0`; the runtime rebuilds the file. In a
+directory llamadart prunes, the default cap deletes them once their total
+exceeds 1 GiB.
 
 From `v0.18.0` the runtime fails engine creation when it cannot write the
 cache directory, on the CPU backend too: `v0.17.0-8` ran the CPU backend

@@ -498,17 +498,39 @@ void main() {
       );
     });
 
-    test('negative program cache cap throws LlamaArgumentException', () {
-      const p = ModelParams(liteRtLmMaxProgramCacheBytes: -1);
+    test('program cache cap below -1 throws LlamaArgumentException', () {
+      const p = ModelParams(liteRtLmMaxProgramCacheBytes: -2);
       expect(
         p.validate,
         throwsA(
-          isA<LlamaArgumentException>().having(
-            (error) => error.name,
-            'name',
-            'liteRtLmMaxProgramCacheBytes',
-          ),
+          isA<LlamaArgumentException>()
+              .having(
+                (error) => error.name,
+                'name',
+                'liteRtLmMaxProgramCacheBytes',
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('unlimitedLiteRtLmProgramCacheBytes (-1)'),
+              ),
         ),
+      );
+    });
+
+    test('unlimited program cache cap is -1 and valid', () {
+      expect(ModelParams.unlimitedLiteRtLmProgramCacheBytes, -1);
+      const p = ModelParams(
+        liteRtLmMaxProgramCacheBytes:
+            ModelParams.unlimitedLiteRtLmProgramCacheBytes,
+      );
+      expect(p.validate, returnsNormally);
+    });
+
+    test('default program cache cap is 1 GiB', () {
+      expect(
+        ModelParams.defaultLiteRtLmMaxProgramCacheBytes,
+        1024 * 1024 * 1024,
       );
     });
 

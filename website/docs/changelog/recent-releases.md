@@ -69,6 +69,18 @@ For canonical full release notes, use:
   ([#857](https://github.com/leehack/llamadart/issues/857)).
 - From core `0.13.0`, Apple companion versions share the core `MAJOR.MINOR`,
   starting with companions `0.13.0`; their patch versions move independently.
+- **Behavior change:** LiteRT-LM now caps the GPU program cache files of each
+  cache directory at 1 GiB by default
+  ([#552](https://github.com/leehack/llamadart/issues/552)). Before each
+  engine create, `ModelParams.liteRtLmMaxProgramCacheBytes: null` prunes to
+  `ModelParams.defaultLiteRtLmMaxProgramCacheBytes`, where it deleted nothing,
+  and an explicit cap now bounds the directory's total, least recently
+  modified files first, where it bounded each file. Pass a larger value to
+  raise the cap, or `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) to
+  keep every file. Engines sharing a cache directory, in one process or
+  several, no longer delete the program caches of a model another one is
+  running, and `liteRtLmCacheDir: ':nocache'` no longer creates a `:nocache`
+  directory, which failed the load on Windows.
 
 ## 0.12.2
 

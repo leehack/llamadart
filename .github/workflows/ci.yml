@@ -312,12 +312,21 @@ jobs:
             | tar -xz -C .dart_tool/llama_cpp_templates --strip-components=3 \
               "llama.cpp-$ref/models/templates"
 
+      - name: Isolate system temp with a LiteRT-LM cache canary
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh seed
+
       - name: Run VM tests (with coverage)
         env:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
           LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
           REQUIRE_LLAMA_CPP_TEMPLATES: '1'
         run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage
+
+      - name: Check the LiteRT-LM cache canary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh check
 
       - name: Format coverage
         run: |
@@ -627,11 +636,20 @@ jobs:
             "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M.gguf" \
             --output .dart_tool/test_models/stories15M.gguf
 
+      - name: Isolate system temp with a LiteRT-LM cache canary
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh seed
+
       - name: Run native tests
         env:
           GGML_METAL_DEVICES: "0"
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
         run: dart test -p vm -j 1 --exclude-tags local-only
+
+      - name: Check the LiteRT-LM cache canary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh check
 
       - name: Verify Flutter Apple companion cache transitions
         if: runner.os == 'macOS'

@@ -10,7 +10,11 @@ import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
+import '../../../support/suite_system_temp.dart';
+
 void main() {
+  useSuiteSystemTemp();
+
   late Directory tempDir;
   late File modelFile;
 

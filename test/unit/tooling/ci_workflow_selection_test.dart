@@ -457,6 +457,25 @@ void main() {
     },
   );
 
+  test('VM test lanes run against a temp directory guarded by a LiteRT-LM '
+      'cache canary', () {
+    final jobs = readWorkflow('ci')['jobs'];
+    for (final job in ['test-linux-coverage', 'test-other-os']) {
+      final steps = jobs[job]['steps'] as List;
+      int index(String run) => steps.indexWhere((s) => s['run'] == run);
+      final seed = index('bash tool/ci/litert_lm_temp_canary.sh seed');
+      final tests = steps.indexWhere(
+        (s) => '${s['run']}'.startsWith('dart test -p vm -j 1 '),
+      );
+      final check = index('bash tool/ci/litert_lm_temp_canary.sh check');
+      expect(seed, greaterThanOrEqualTo(0), reason: job);
+      expect(tests, greaterThan(seed), reason: job);
+      expect(check, greaterThan(tests), reason: job);
+      expect((steps[seed] as Map).containsKey('if'), isFalse, reason: job);
+      expect(steps[check]['if'], r'${{ !cancelled() }}', reason: job);
+    }
+  });
+
   test('the coverage formatter version is pinned exactly in pubspec.yaml', () {
     final pubspec =
         loadYaml(File('pubspec.yaml').readAsStringSync()) as YamlMap;
