@@ -114,7 +114,8 @@ export 'src/core/models/chat/completion.dart'
 export 'src/core/models/chat/completion_chunk.dart';
 
 // Tools
-export 'src/core/models/tools/tool_definition.dart';
+export 'src/core/models/tools/tool_definition.dart'
+    show ToolDefinition, ToolHandler;
 export 'src/core/models/tools/tool_param.dart' show ToolParam;
 export 'src/core/models/tools/tool_params.dart';
 

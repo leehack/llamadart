@@ -357,6 +357,21 @@ class HermesHandler extends ChatTemplateHandler {
     if (tools == null || tools.isEmpty) return null;
     toolSchemas(tools);
 
+    if (tools.any(toolUsesJsonSchema)) {
+      final grammar = ToolCallGrammarUtils.buildWrappedObjectGrammar(
+        tools: tools,
+        prefix: '<tool_call>',
+        suffix: '</tool_call>',
+      )!;
+      return grammar
+          .split('\n')
+          .map((line) {
+            if (!line.startsWith('root ::= ')) return line;
+            return 'root ::= (${line.substring('root ::= '.length)} space)+';
+          })
+          .join('\n');
+    }
+
     // Build a GBNF grammar that constrains output to valid Hermes tool calls
     final toolRules = <String>[];
     final toolChoices = <String>[];

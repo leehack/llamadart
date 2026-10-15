@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Add `ToolDefinition.fromJsonSchema` for owned, validated tool input schemas,
+  with explicit errors for unsupported constraints, formats and runtimes.
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`

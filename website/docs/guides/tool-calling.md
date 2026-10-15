@@ -195,6 +195,65 @@ message with several results is rendered as one tool message per result.
 For an OpenAI-compatible reference, see
 [OpenAI-compatible server](../examples/llamadart-server).
 
+## Import a JSON Schema
+
+Use `ToolDefinition.fromJsonSchema` when another library already provides the
+input schema. The factory owns a deep copy; `toJsonSchema()` returns a fresh
+copy. Its `parameters` list is empty, so integrations must read `toJsonSchema()`.
+
+```dart
+final ToolDefinition searchTool = ToolDefinition.fromJsonSchema(
+  name: 'search',
+  description: 'Search selected collections',
+  schema: {
+    'type': 'object',
+    'properties': {
+      'query': {'type': 'string', 'minLength': 1},
+      'collections': {
+        'type': 'array',
+        'items': {'type': 'string'},
+        'minItems': 1,
+      },
+    },
+    'required': ['query', 'collections'],
+    'additionalProperties': false,
+  },
+  handler: (params) async => {
+    'query': params.getRequiredString('query'),
+    'collections': params.getList('collections'),
+  },
+);
+```
+
+The initial subset supports scalar types, nested objects and arrays, scalar
+`enum`/`const`, nullable type lists, `anyOf`, string length and array item
+bounds, and boolean or schema-valued `additionalProperties`. The root must be
+an object. Missing `additionalProperties` means `true`; the existing
+`ToolParam` constructor keeps its closed-property behavior.
+
+References (local and remote), patterns, numeric bounds, `oneOf`/`allOf`, tuple
+arrays, container literals and unsupported constraint combinations throw
+`LlamaUnsupportedException`. Malformed schemas throw `LlamaArgumentException`.
+This API supports a bounded subset of JSON Schema.
+
+| Selected tool format | Canonical schema support |
+| --- | --- |
+| Generic JSON fallback, Hermes, Mistral Nemo JSON | The subset above |
+| GLM-4.5, Laguna, Hunyuan V3 | Closed root objects with scalar properties; GLM/Laguna also support string enums |
+| Other formats | Rejected before generation |
+
+Active schema tools require grammar-constrained decoding. Native llama.cpp
+supports it; WebGPU works only when the selected grammar starts at the first
+token (usually `ToolChoice.required`). Lazy auto grammars and LiteRT-LM are
+rejected. `ToolChoice.none` can retain declarations for replay without enabling
+calls. Final parsed calls and direct `invoke` arguments are validated before
+handlers run. A schema constrains the input shape; the app still controls
+tool permissions and side effects.
+
+Active schema tools cannot be combined with `responseFormat`, which would
+replace the tool grammar. Use separate requests. Undeclared calls and malformed
+tool envelopes fail the turn before handlers run.
+
 ## Generic JSON fallback
 
 For templates without a recognized tool-call format, and for Gemma 2/3/3n,

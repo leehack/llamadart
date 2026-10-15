@@ -20,6 +20,17 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 
 ## Usage
 
+To try an imported JSON Schema with nested array arguments, run:
+
+```bash
+dart run bin/llamadart_schema_tool_example.dart /path/to/model.gguf
+```
+
+It runs a bounded tool loop and prints the tool result and answer. Use a GGUF
+whose template selects a supported JSON tool format (generic JSON fallback,
+Hermes or Mistral Nemo JSON). Unsupported formats and runtimes fail explicitly;
+see the [schema subset](../../website/docs/guides/tool-calling.md#import-a-json-schema).
+
 Await engine disposal before ending a session. A native host calling C
 `exit()` must also join other native workers and shut down its Dart isolates
 or Flutter engine first; a worker kill request can leave native work running.

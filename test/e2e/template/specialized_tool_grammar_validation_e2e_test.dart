@@ -19,6 +19,7 @@ import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
@@ -26,6 +27,7 @@ import 'package:test/test.dart';
 import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
+import '../../support/raw_tool_schema_fixture.dart';
 
 void main() {
   late String validator;
@@ -976,6 +978,164 @@ void main() {
         call.replaceFirst('<|tool_call_end|>', ''),
         '{"tool_call": {"name": "weather", "arguments": {"city": "Seoul"}}}',
         'No tool',
+      ],
+    );
+  });
+  test(
+    'canonical JSON schema grammar enforces nullable enums and containers',
+    () {
+      final tool = rawSchemaTool();
+      final rendered = ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'inspect'),
+        ],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: true,
+      );
+      String envelope(Map<String, dynamic> args) => jsonEncode({
+        'tool_call': {'name': 'inspect', 'arguments': args},
+      });
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          envelope(rawToolArguments),
+          envelope({
+            ...rawToolArguments,
+            'code': '001',
+            'mode': 1,
+            'tags': ['a', 'b'],
+          }),
+        ],
+        invalid: [
+          envelope({...rawToolArguments, 'code': 42}),
+          envelope({...rawToolArguments, 'mode': '2'}),
+          envelope({...rawToolArguments, 'mode': 3}),
+          envelope({...rawToolArguments, 'tags': []}),
+          envelope({
+            ...rawToolArguments,
+            'tags': ['a', 'b', 'c'],
+          }),
+          envelope({
+            ...rawToolArguments,
+            'nested': {'active': 'true'},
+          }),
+          envelope({...rawToolArguments, 'extra': true}),
+          envelope({...rawToolArguments}..remove('code')),
+        ],
+      );
+    },
+  );
+
+  test('Hermes and Mistral compile canonical nullable nested constraints', () {
+    final tool = rawSchemaTool();
+    for (final hermes in [true, false]) {
+      final grammar = hermes
+          ? HermesHandler().buildGrammar([tool])!
+          : MistralHandler().buildGrammar([tool])!;
+      String output(Map<String, dynamic> args) => hermes
+          ? '<tool_call>${jsonEncode({'name': 'inspect', 'arguments': args})}</tool_call>'
+          : '[TOOL_CALLS]${jsonEncode([
+              {'name': 'inspect', 'arguments': args, 'id': 'abcdefghi'},
+            ])}';
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output(rawToolArguments),
+          output({...rawToolArguments, 'code': '001'}),
+        ],
+        invalid: [
+          output({...rawToolArguments, 'mode': 3}),
+          output({...rawToolArguments, 'tags': []}),
+          output({
+            ...rawToolArguments,
+            'nested': {'active': 'true'},
+          }),
+          output({...rawToolArguments, 'code': 1}),
+        ],
+      );
+    }
+  });
+
+  test(
+    'canonical wire keys and annotation values are not schema references',
+    () {
+      for (final open in [true, false]) {
+        final tool = ToolDefinition.fromJsonSchema(
+          name: 'literal',
+          description: 'Literal keys',
+          schema: {
+            'type': 'object',
+            'properties': {
+              r'$ref': {'type': 'integer'},
+              '*': {'type': 'string'},
+            },
+            'required': [r'$ref', '*'],
+            'additionalProperties': open,
+            'default': {r'$ref': '#/missing'},
+            'examples': [
+              {r'$ref': '#/example'},
+            ],
+          },
+        );
+        final rendered = ChatTemplateEngine.render(
+          templateSource: null,
+          messages: const [],
+          metadata: const {},
+          tools: [tool],
+          toolChoice: ToolChoice.required,
+        );
+        String output(Map<String, dynamic> args) => jsonEncode({
+          'tool_call': {'name': 'literal', 'arguments': args},
+        });
+        _expectGrammar(
+          validator,
+          rendered.grammar!,
+          valid: [
+            output({r'$ref': 1, '*': 'yes'}),
+            if (open) output({r'$ref': 1, '*': 'yes', 'extra': true}),
+          ],
+          invalid: [
+            output({r'$ref': 1, 'other': 'yes'}),
+            output({r'$ref': 1, '*': 2}),
+            output({'*': 'yes'}),
+          ],
+        );
+      }
+    },
+  );
+
+  test('canonical scalar GLM and Hunyuan grammars enforce integer and null', () {
+    final tool = rawScalarTool();
+    const glm =
+        '<tool_call>weather\n<arg_key>city</arg_key>\n<arg_value>Seoul</arg_value>\n<arg_key>count</arg_key>\n<arg_value>2</arg_value>\n<arg_key>nothing</arg_key>\n<arg_value>null</arg_value>\n</tool_call>';
+    _expectGrammar(
+      validator,
+      Glm45Handler().buildGrammar([tool])!,
+      valid: ['$glm\n'],
+      invalid: [
+        glm.replaceFirst('<arg_value>2', '<arg_value>2.5'),
+        glm.replaceFirst('<arg_value>null', '<arg_value>true'),
+      ],
+    );
+    const hunyuan =
+        '<tool_calls>\n<tool_call>weather<tool_sep>\n<arg_key>city</arg_key>\n<arg_value>Seoul</arg_value>\n<arg_key>count</arg_key>\n<arg_value>2</arg_value>\n<arg_key>nothing</arg_key>\n<arg_value>null</arg_value>\n</tool_call>\n</tool_calls>';
+    _expectGrammar(
+      validator,
+      HunyuanV3Handler().buildGrammar([tool])!,
+      valid: [
+        hunyuan.replaceAllMapped(
+          RegExp(r'</?(?:tool_calls|tool_call|tool_sep|arg_key|arg_value)>'),
+          (match) => match[0]!.replaceFirst('>', ':opensource>'),
+        ),
+      ],
+      invalid: [
+        hunyuan.replaceFirst('<arg_value>2', '<arg_value>2.5'),
+        hunyuan.replaceFirst('<arg_value>null', '<arg_value>true'),
       ],
     );
   });

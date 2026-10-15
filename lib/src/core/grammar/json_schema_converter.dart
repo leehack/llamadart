@@ -163,10 +163,40 @@ class JsonSchemaConverter {
         // Resolve refs nested inside the target as well.
         resolveRefs(target, rootSchema);
       }
-      // Always walk children so refs nested as siblings of a $ref (or inside an
-      // already-registered ref-bearing node) are resolved too.
-      for (final value in node.values) {
-        resolveRefs(value, rootSchema);
+      // Only schema-bearing positions contain references. Property names and
+      // annotation payloads such as examples are ordinary JSON data.
+      for (final key in [
+        'properties',
+        'patternProperties',
+        r'$defs',
+        'definitions',
+        'dependentSchemas',
+      ]) {
+        final schemas = node[key];
+        if (schemas is Map) {
+          for (final schema in schemas.values) {
+            resolveRefs(schema, rootSchema);
+          }
+        }
+      }
+      for (final key in [
+        'items',
+        'prefixItems',
+        'additionalProperties',
+        'additionalItems',
+        'contains',
+        'not',
+        'if',
+        'then',
+        'else',
+        'anyOf',
+        'oneOf',
+        'allOf',
+        'unevaluatedProperties',
+        'unevaluatedItems',
+        'propertyNames',
+      ]) {
+        resolveRefs(node[key], rootSchema);
       }
     }
   }
@@ -425,6 +455,8 @@ class JsonSchemaConverter {
         .where((k) => !required.contains(k))
         .toList();
 
+    // Keep the extra-property slot separate from every declared wire key.
+    String? additionalKey;
     // Handle additionalProperties
     if (additionalProperties != null && additionalProperties != false) {
       final subName = '${name.isNotEmpty ? '$name-' : ''}additional';
@@ -435,11 +467,16 @@ class JsonSchemaConverter {
           ? _addPrimitive('string', _primitiveRules['string']!)
           : _addPrimitive('string', _primitiveRules['string']!);
 
-      propKvRuleNames['*'] = _addRule(
+      var extraKey = '*';
+      while (propKvRuleNames.containsKey(extraKey)) {
+        extraKey = '$extraKey*';
+      }
+      additionalKey = extraKey;
+      propKvRuleNames[extraKey] = _addRule(
         '$subName-kv',
         '$keyRule ":" space $valueRule',
       );
-      optionalProps.add('*');
+      optionalProps.add(extraKey);
     }
 
     var rule = '"{" space ';
@@ -458,9 +495,9 @@ class JsonSchemaConverter {
         String res;
         final commaRef = '( "," space $kvRuleName )';
         if (firstIsOptional) {
-          res = '$commaRef${k == '*' ? '*' : '?'}';
+          res = '$commaRef${k == additionalKey ? '*' : '?'}';
         } else {
-          res = '$kvRuleName${k == '*' ? ' $commaRef*' : ''}';
+          res = '$kvRuleName${k == additionalKey ? ' $commaRef*' : ''}';
         }
         if (rest.isNotEmpty) {
           res +=

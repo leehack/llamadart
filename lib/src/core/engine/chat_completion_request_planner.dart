@@ -131,6 +131,14 @@ class ChatCompletionRequestPlanner {
         templateResult.grammar != null &&
         backendSupportsGrammarConstraints &&
         !skipsLazyTemplateGrammar;
+    final schemaTools =
+        toolChoice != ToolChoice.none &&
+        (tools?.any(toolUsesJsonSchema) ?? false);
+    if (schemaTools && !hasTemplateGrammar) {
+      throw LlamaUnsupportedException(
+        'Canonical JSON Schema tools require an active tool grammar. This backend/runtime cannot enforce the selected format and tool choice; use a grammar-capable backend or a supported non-lazy required-tool format.',
+      );
+    }
     final effectiveGrammar = hasTemplateGrammar
         ? templateResult.grammar
         : params?.grammar;
@@ -167,12 +175,14 @@ class ChatCompletionRequestPlanner {
       preservedTokens: effectivePreservedTokens,
     );
 
-    final nativeChatBackend = _nativeChatBackendFor(
-      backend,
-      messages,
-      toolChoice: toolChoice,
-      parallelToolCalls: parallelToolCalls,
-    );
+    final nativeChatBackend = schemaTools
+        ? null
+        : _nativeChatBackendFor(
+            backend,
+            messages,
+            toolChoice: toolChoice,
+            parallelToolCalls: parallelToolCalls,
+          );
     final parseToolCallsEnabled =
         tools != null && tools.isNotEmpty && toolChoice != ToolChoice.none;
 
