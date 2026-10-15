@@ -7,6 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- With `llamadart_native_tag` or `llamadart_native_repository` set, the build
+  hook keeps the release's `SHA256SUMS` beside the cached archive and verifies
+  a cached archive against it without network access, so offline builds work
+  again. When it cannot fetch `SHA256SUMS`, the build fails with
+  `NativeArchiveDigestException` naming where to pre-seed it
+  ([#1040](https://github.com/leehack/llamadart/issues/1040)).
+
 ## 0.13.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`,

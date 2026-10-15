@@ -360,6 +360,171 @@ void main() {
     );
   });
 
+  group('llama.cpp tag override offline', () {
+    final cachedArchive = File(
+      path.join(overrideCacheDir.path, archiveName(_overrideTag)),
+    );
+    final cachedSums = File(path.join(overrideCacheDir.path, 'SHA256SUMS'));
+    final extractedDir = Directory(
+      path.join(overrideCacheDir.path, 'extracted'),
+    );
+
+    Future<void> seed({
+      required List<int> archive,
+      Map<String, List<int>>? sumsFor,
+      String? sums,
+    }) async {
+      await overrideCacheDir.create(recursive: true);
+      await cachedArchive.writeAsBytes(archive);
+      final sumsText =
+          sums ?? (sumsFor == null ? null : sha256SumsFor(sumsFor));
+      if (sumsText != null) {
+        await cachedSums.writeAsString(sumsText);
+      }
+    }
+
+    test(
+      'extracts a pre-seeded archive verified by a pre-seeded SHA256SUMS',
+      () async {
+        final archive = _archive('seeded');
+        await seed(
+          archive: archive,
+          sumsFor: {archiveName(_overrideTag): archive},
+        );
+        final fixture = RuntimeBundleHttpFixture.offline();
+
+        final libraries = await _runHook(
+          fixture,
+          tag: _overrideTag,
+          check: () {},
+        );
+
+        expect(fixture.requests, isEmpty);
+        expect(libraries['libllamadart.so'], 'seeded-libllamadart.so');
+      },
+    );
+
+    test('keeps the fetched SHA256SUMS for a later offline build', () async {
+      final archive = _archive('valid');
+      final online = RuntimeBundleHttpFixture({
+        overrideSumsUrl: sha256SumsFor({
+          archiveName(_overrideTag): archive,
+        }).codeUnits,
+        overrideArchiveUrl: archive,
+      });
+      await _runHook(online, tag: _overrideTag, check: () {});
+      expect(
+        await cachedSums.readAsString(),
+        sha256SumsFor({archiveName(_overrideTag): archive}),
+      );
+
+      await extractedDir.delete(recursive: true);
+      final offline = RuntimeBundleHttpFixture.offline();
+      final libraries = await _runHook(
+        offline,
+        tag: _overrideTag,
+        check: () {},
+      );
+
+      expect(offline.requests, isEmpty);
+      expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
+    });
+
+    test(
+      'fails with a typed error naming the pre-seed path without SHA256SUMS',
+      () async {
+        await seed(archive: _archive('seeded'));
+        final fixture = RuntimeBundleHttpFixture.offline();
+
+        await expectLater(
+          _runHook(fixture, tag: _overrideTag),
+          throwsA(
+            isA<NativeArchiveDigestException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains(overrideSumsUrl),
+                contains('OfflineFixtureException'),
+                contains(cachedSums.path),
+                contains('llamadart_native_path'),
+              ),
+            ),
+          ),
+        );
+        expect(fixture.requests, [overrideSumsUrl]);
+        expect(cachedArchive, _exists);
+        expect(extractedDir, isNot(_exists));
+      },
+    );
+
+    test(
+      'rejects a pre-seeded archive that differs from the cached SHA256SUMS',
+      () async {
+        await seed(
+          archive: _archive('tampered'),
+          sumsFor: {archiveName(_overrideTag): _archive('published')},
+        );
+        final fixture = RuntimeBundleHttpFixture.offline();
+
+        await expectLater(
+          _runHook(fixture, tag: _overrideTag),
+          throwsA(isA<NativeArchiveDigestException>()),
+        );
+        expect(fixture.requests, [overrideSumsUrl]);
+        expect(extractedDir, isNot(_exists));
+      },
+    );
+
+    test(
+      'verifies a download against the fetched SHA256SUMS, not the cache',
+      () async {
+        final evil = _archive('evil');
+        await seed(
+          archive: _archive('stale'),
+          sumsFor: {archiveName(_overrideTag): evil},
+        );
+        final fixture = RuntimeBundleHttpFixture({
+          overrideSumsUrl: sha256SumsFor({
+            archiveName(_overrideTag): _archive('published'),
+          }).codeUnits,
+          overrideArchiveUrl: evil,
+        });
+
+        await expectLater(
+          _runHook(fixture, tag: _overrideTag),
+          throwsA(
+            isA<NativeArchiveDigestException>().having(
+              (error) => error.message,
+              'message',
+              contains('was deleted and not used'),
+            ),
+          ),
+        );
+        expect(fixture.requests, [overrideSumsUrl, overrideArchiveUrl]);
+        expect(extractedDir, isNot(_exists));
+      },
+    );
+
+    test('refreshes a malformed cached SHA256SUMS from the release', () async {
+      final archive = _archive('cached-valid');
+      await seed(archive: archive, sums: 'not a checksum line\n');
+      final sums = sha256SumsFor({archiveName(_overrideTag): archive});
+      final fixture = RuntimeBundleHttpFixture({
+        overrideSumsUrl: sums.codeUnits,
+      });
+
+      final libraries = await _runHook(
+        fixture,
+        tag: _overrideTag,
+        check: () {},
+      );
+
+      expect(fixture.requests, [overrideSumsUrl]);
+      expect(libraries['libllamadart.so'], 'cached-valid-libllamadart.so');
+      expect(await cachedSums.readAsString(), sums);
+    });
+  });
+
   test(
     'a repository override verifies against that release, not the pin',
     () async {

@@ -1949,18 +1949,21 @@ Future<Directory> _acquireBundleDirectory({
   }
 
   await Directory(cacheDir).create(recursive: true);
+  final cachedArchiveSha256 = archiveFile.existsSync()
+      ? await fileSha256(archiveFile)
+      : null;
   final expectedDigest = await _expectedNativeArchiveDigest(
     nativeConfig: nativeConfig,
     bundle: bundle,
     archiveName: archiveName,
     cacheDir: cacheDir,
+    cachedArchiveSha256: cachedArchiveSha256,
     log: log,
   );
 
   var extractedLibraryPaths = const <String>[];
-  if (archiveFile.existsSync()) {
-    final actualSha256 = await fileSha256(archiveFile);
-    if (actualSha256 == expectedDigest.sha256) {
+  if (cachedArchiveSha256 != null) {
+    if (cachedArchiveSha256 == expectedDigest.sha256) {
       extractedLibraryPaths = await _extractCachedArchive(
         archivePath: archivePath,
         extractedDir: extractedDir,
@@ -1981,7 +1984,7 @@ Future<Directory> _acquireBundleDirectory({
     } else {
       log.warning(
         'Cached native bundle archive $archivePath has SHA-256 '
-        '$actualSha256, but ${expectedDigest.source} expects '
+        '$cachedArchiveSha256, but ${expectedDigest.source} expects '
         '${expectedDigest.sha256}; redownloading.',
       );
     }
@@ -2021,11 +2024,18 @@ Future<Directory> _acquireBundleDirectory({
 
 /// The SHA-256 a llama.cpp archive must have: the pin for the default release,
 /// or the release's own `SHA256SUMS` entry for a tag or repository override.
+///
+/// For an override, a cached archive whose [cachedArchiveSha256] the cached
+/// `SHA256SUMS` lists is verified offline. Otherwise the release's
+/// `SHA256SUMS` is fetched and kept beside the archive for later builds, so a
+/// download is always checked against the published list. The cached list is
+/// no less trusted than the cached `extracted/` bundle, which is reused as is.
 Future<({String sha256, String source})> _expectedNativeArchiveDigest({
   required _NativeBundleConfig nativeConfig,
   required String bundle,
   required String archiveName,
   required String cacheDir,
+  required String? cachedArchiveSha256,
   required Logger log,
 }) async {
   if (nativeConfig.tag == llamaCppTag &&
@@ -2045,31 +2055,58 @@ Future<({String sha256, String source})> _expectedNativeArchiveDigest({
   }
 
   final source = '${nativeConfig.sourceLabel} SHA256SUMS';
+  final checksumFile = File(path.join(cacheDir, 'SHA256SUMS'));
+  if (cachedArchiveSha256 != null && checksumFile.existsSync()) {
+    final cachedSource = 'the cached $source at ${checksumFile.path}';
+    String? cachedSha256;
+    try {
+      cachedSha256 = sha256SumsEntry(
+        await checksumFile.readAsString(),
+        fileName: archiveName,
+        source: cachedSource,
+      );
+    } on NativeArchiveDigestException catch (error) {
+      log.warning(
+        'Ignoring a cached SHA256SUMS: ${error.message} Fetching the '
+        'release SHA256SUMS instead.',
+      );
+    }
+    if (cachedSha256 != null && cachedSha256 == cachedArchiveSha256) {
+      return (sha256: cachedSha256, source: cachedSource);
+    }
+  }
+
   final url =
       'https://github.com/${nativeConfig.repository}/releases/download/'
       '${nativeConfig.tag}/SHA256SUMS';
-  final checksumFile = File(path.join(cacheDir, 'SHA256SUMS'));
+  final downloadedFile = File('${checksumFile.path}.download');
   try {
     try {
       await _downloadRuntimeBundle(
         url: url,
-        destination: checksumFile,
+        destination: downloadedFile,
         description: 'native release SHA256SUMS',
         log: log,
       );
-    } on _RuntimeBundleDownloadHttpException catch (error) {
-      if (error.statusCode != HttpStatus.notFound) {
-        rethrow;
+    } on Exception catch (error) {
+      if (error is _RuntimeBundleDownloadHttpException &&
+          error.statusCode == HttpStatus.notFound) {
+        throw NativeArchiveDigestException(
+          '${nativeConfig.sourceLabel} publishes no SHA256SUMS ($url returned '
+          '404), so the hook cannot verify $archiveName. Use a release that '
+          'publishes SHA256SUMS, or set $nativePathUserDefineKey to a local '
+          'bundle you trust.',
+        );
       }
       throw NativeArchiveDigestException(
-        '${nativeConfig.sourceLabel} publishes no SHA256SUMS ($url returned '
-        '404), so the hook cannot verify $archiveName. Use a release that '
-        'publishes SHA256SUMS, or set $nativePathUserDefineKey to a local '
-        'bundle you trust.',
+        'Could not download $url to verify $archiveName: $error. To build '
+        'without network access, put that release\'s SHA256SUMS at '
+        '${checksumFile.path} with $archiveName beside it, or set '
+        '$nativePathUserDefineKey to a local bundle you trust.',
       );
     }
     final listedSha256 = sha256SumsEntry(
-      await checksumFile.readAsString(),
+      await downloadedFile.readAsString(),
       fileName: archiveName,
       source: source,
     );
@@ -2080,10 +2117,14 @@ Future<({String sha256, String source})> _expectedNativeArchiveDigest({
         '$nativePathUserDefineKey to a local bundle you trust.',
       );
     }
-    return (sha256: listedSha256, source: source);
-  } finally {
     if (checksumFile.existsSync()) {
       await checksumFile.delete();
+    }
+    await downloadedFile.rename(checksumFile.path);
+    return (sha256: listedSha256, source: source);
+  } finally {
+    if (downloadedFile.existsSync()) {
+      await downloadedFile.delete();
     }
   }
 }
