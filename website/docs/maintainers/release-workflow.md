@@ -65,6 +65,10 @@ version alignment:
   core's; the `0.0.x` companions released beside earlier cores predate the
   rule. Native pin sync records changed companion native pins under
   `Unreleased` but does not bump companion package versions by default.
+- Release automation publishes only stable core versions and stops before any
+  tag on a prerelease such as `0.13.0-dev.1`: no companion constraint
+  `>=M.m.0 <M.(m+1).0` admits a prerelease of `M.m.0`. Build metadata, as in
+  `0.13.0+1`, is not a prerelease.
 - A companion-only release still needs a new core version: the release
   workflow publishes only for a core version that has no release tag at
   another commit, so bump the core patch with the companion.
@@ -165,21 +169,40 @@ pub.dev yet. The release sequence is:
    curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version"
    ```
 
+   For each missing companion version, also confirm on
+   `https://pub.dev/packages/<package>/admin` that automated publishing from
+   GitHub Actions is enabled for `leehack/llamadart` with tag pattern
+   `<package>-v{{version}}`. The preflight cannot see that setting, and without
+   it the companion's publish run fails after the core has shipped.
+
 3. If a changed companion version is missing, keep the PR scoped to release
    prep and merge it only when the release is approved. The post-merge release
    workflow pushes the core `vX.Y.Z` tag and waits until the pub.dev package
    listing, which pub resolves against, includes the new core.
 4. The workflow then pushes each missing companion's package-specific tag,
    waits for `publish_companion_pubdev.yml` to publish it, and re-checks the
-   pub.dev listing.
+   pub.dev listing. Pub.dev serves that listing with `max-age=120`, so the
+   companion publish retries `flutter pub get` twice, a minute apart, when
+   its first resolution misses the new core.
 5. A rerun at the same merge commit finds the core tag already there, skips
    pushing it, and publishes the companions still missing; a core tag at any
-   other commit stops the run. A companion whose tag exists but whose version
-   is not on pub.dev also stops the rerun, because that tag already ran
+   other commit stops the run.
+   - If `publish_pubdev.yml` failed after the core tag was pushed, a rerun of
+     `release_on_prep_merge.yml` alone waits for the core on pub.dev and fails.
+     Rerun the tag's failed `publish_pubdev.yml` run first, wait for the core
+     version on pub.dev, then rerun `release_on_prep_merge.yml`.
+   - A companion tag at another commit whose version is not on pub.dev stops
+     the run: rerunning its publish would ship that commit's package. Release
+     it from a new release-prep PR that bumps the core version and the
+     companion's patch version.
+
+   A companion whose tag exists at the release commit but whose version is
+   not on pub.dev also stops the rerun, because that tag already ran
    `publish_companion_pubdev.yml`:
-   - For a transient failure, such as a pub.dev or runner outage, rerun that
-     tag's failed `publish_companion_pubdev.yml` run, wait for the version on
-     pub.dev, then rerun `release_on_prep_merge.yml`.
+   - For a transient failure, such as a pub.dev or runner outage, or
+     automated publishing not yet enabled for the package, fix the cause,
+     rerun that tag's failed `publish_companion_pubdev.yml` run, wait for the
+     version on pub.dev, then rerun `release_on_prep_merge.yml`.
    - For a cause in the repository, such as a package that fails
      `pub publish` validation, the tagged commit cannot publish that version.
      Fix it in a new release-prep PR that bumps the core version and the
@@ -236,7 +259,9 @@ rsync -a --delete \
   the GitHub Release exists. Before pushing any tag,
   `tool/release/companion_pub_preflight.dart` checks that every companion
   under `packages/` exists on pub.dev and otherwise stops with the
-  first-publish steps above; publish the package, then rerun the run.
+  first-publish steps above; publish the package, then rerun the run. It
+  retries each pub.dev request once after a timeout, including a stalled
+  body, or a 5xx answer.
 
 ## 4. Post-release verification
 
