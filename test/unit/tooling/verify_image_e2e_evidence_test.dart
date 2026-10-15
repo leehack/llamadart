@@ -12,7 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../../example/chat_app/integration_test/support/image_evidence.dart';
-import '../../../example/chat_app/test/evidence_png_fixture.dart';
+import '../../../example/chat_app/test_vm/evidence_png_fixture.dart';
 // Use the same maintained lock as the production verifier.
 // ignore: avoid_relative_lib_imports
 import '../../../example/chat_app/lib/models/image_model_profile.dart';

@@ -90,10 +90,13 @@ runtime they ship beside `llamadart`.
 ### 1.1 Run Tests
 ```bash
 cd example/chat_app
-flutter test
+flutter test test test_vm
 ```
 
 Note: this is a Flutter app, so use `flutter test` (not `dart test`).
+`test_vm/` holds VM-only tests that import `integration_test/support/` or
+`dart:ffi`; keep them out of `test/` so `flutter test --platform chrome`
+still compiles.
 
 Slow device E2E tests are tagged `local-only` and skipped by default. To run
 the real model/mmproj download-cache-load check manually on a selected device:

@@ -360,8 +360,9 @@ void main() {
       );
       expect(
         appSteps.any(
-          (s) =>
-              (s['run'] as String? ?? '').split('\n').contains('flutter test'),
+          (s) => (s['run'] as String? ?? '')
+              .split('\n')
+              .contains('flutter test test test_vm'),
         ),
         isTrue,
       );

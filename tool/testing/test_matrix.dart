@@ -291,7 +291,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers: 'example package unit tests and Flutter app regressions',
     command:
         'Run tests in each touched example package, for example '
-        '(cd example/chat_app && flutter test).',
+        '(cd example/chat_app && flutter test test test_vm).',
     useWhen: 'Any example app, CLI, or server package change.',
   ),
   TestMatrixRow(

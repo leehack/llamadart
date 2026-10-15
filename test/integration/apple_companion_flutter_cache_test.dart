@@ -41,7 +41,7 @@ void main() {
     const testArguments = [
       'test',
       '--no-pub',
-      'test/physical_ios_speech_e2e_support_test.dart',
+      'test_vm/physical_ios_speech_e2e_support_test.dart',
     ];
 
     // Fresh success must not register a missing directory for Flutter scanning.
