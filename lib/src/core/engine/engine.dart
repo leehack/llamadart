@@ -1493,6 +1493,7 @@ class LlamaEngine {
       await backend.contextFree(_contextHandle!);
       _contextHandle = null;
     }
+    _stalePerformanceContext = null;
     // Always queue the projector unload (even when no handle is set yet): a
     // projector load may be in flight and not have assigned _mmContextHandle.
     // Routing through the serialized lifecycle makes this wait behind that load

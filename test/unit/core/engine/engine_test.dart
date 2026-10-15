@@ -4705,6 +4705,51 @@ void main() {
           expect((await perfEngine.getPerformanceContext())?.evalTokens, 1);
         });
 
+        for (final MapEntry(key: path, value: (nativeChat, start))
+            in paths.entries) {
+          test('$path cancelled before the backend while another request '
+              'runs leaves that one\'s counters', () async {
+            final perfBackend = PerformanceCounterBackend(
+              nativeChat: nativeChat,
+            );
+            final perfEngine = LlamaEngine(perfBackend);
+            addTearDown(perfEngine.dispose);
+            await perfEngine.loadModel('qwen-test.gguf');
+
+            final release = Completer<void>();
+            perfBackend.hold = release.future;
+            final running = start(perfEngine).drain<void>();
+            while (perfBackend.generations == 0) {
+              await pumpEventQueue();
+            }
+            perfBackend.hold = null;
+
+            final cancelled = start(perfEngine).toList();
+            perfEngine.cancelGeneration();
+            await cancelled;
+            expect(perfBackend.generations, 1);
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+
+            release.complete();
+            await running;
+          });
+        }
+
+        test('a reloaded model reports the counters of a context that '
+            'reuses the cancelled request\'s handle', () async {
+          final perfEngine = LlamaEngine(
+            PerformanceCounterBackend(nativeChat: false),
+          );
+          addTearDown(perfEngine.dispose);
+          await cancelOneEarly(perfEngine);
+          final cancelledHandle = perfEngine.contextHandle;
+
+          await perfEngine.unloadModel();
+          await perfEngine.loadModel('qwen-test.gguf');
+          expect(perfEngine.contextHandle, cancelledHandle);
+          expect(await perfEngine.getPerformanceContext(), isNotNull);
+        });
+
         test(
           'embeddings after the cancelled request report their counters',
           () async {
