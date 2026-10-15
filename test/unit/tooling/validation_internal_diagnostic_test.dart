@@ -170,11 +170,16 @@ void main() {
     }
     var builds = 0;
     final contracts = <List<String>>[];
+    final javaHome = p.join(root.path, 'jdk');
+    File(
+      p.join(javaHome, 'bin', Platform.isWindows ? 'java.exe' : 'java'),
+    ).createSync(recursive: true);
     final output = await buildValidationBundle(
       root.path,
       'android',
       p.join(root.path, 'out'),
       internalDiagnosticRunId: diagnostic ? 'attempt-one' : null,
+      environment: {'JAVA_HOME': javaHome},
       execute: (binary, args, {directory, timeout}) async {
         if (binary == 'git') {
           return CommandResult(0, switch (args.first) {

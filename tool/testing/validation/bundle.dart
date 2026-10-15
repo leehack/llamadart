@@ -71,6 +71,60 @@ Future<Map<String, dynamic>> readValidationProvenance(
   };
 }
 
+/// Resolves the JDK Flutter builds Android with, so the direct Gradle step
+/// uses the same one when `JAVA_HOME` is unset.
+///
+/// Order: `flutter config --jdk-dir`, then the `Java binary at:` line of
+/// `flutter doctor -v` (which covers the Android Studio JBR), then
+/// `JAVA_HOME`. Throws a [StateError] naming the fix when none is a JDK home.
+Future<String> resolveAndroidJavaHome({
+  CommandExecutor execute = executeCommand,
+  Map<String, String>? environment,
+}) async {
+  bool isJdk(String home) => File(
+    p.join(home, 'bin', Platform.isWindows ? 'java.exe' : 'java'),
+  ).existsSync();
+  final config = await execute('flutter', [
+    'config',
+    '--machine',
+  ], timeout: const Duration(minutes: 2));
+  if (config.code == 0) {
+    final start = config.output.indexOf('{');
+    try {
+      final settings = start < 0
+          ? null
+          : jsonDecode(config.output.substring(start));
+      final jdkDir = settings is Map ? settings['jdk-dir'] : null;
+      if (jdkDir is String && jdkDir.isNotEmpty && isJdk(jdkDir)) {
+        return jdkDir;
+      }
+    } on FormatException {
+      // Fall through to doctor output.
+    }
+  }
+  final doctor = await execute('flutter', [
+    'doctor',
+    '-v',
+  ], timeout: const Duration(minutes: 5));
+  final javaBinary = RegExp(
+    r'Java binary at: (.+)$',
+    multiLine: true,
+  ).firstMatch(doctor.output)?.group(1)?.trim();
+  if (doctor.code == 0 && javaBinary != null && javaBinary.isNotEmpty) {
+    final home = p.dirname(p.dirname(javaBinary));
+    if (isJdk(home)) return home;
+  }
+  final javaHome = (environment ?? Platform.environment)['JAVA_HOME'];
+  if (javaHome != null && javaHome.isNotEmpty && isJdk(javaHome)) {
+    return javaHome;
+  }
+  throw StateError(
+    'Android bundles need a JDK for ./gradlew: Flutter reported none and '
+    'JAVA_HOME is unset or not a JDK. Run `flutter doctor -v`, then '
+    '`flutter config --jdk-dir=<jdk>` or set JAVA_HOME.',
+  );
+}
+
 /// Creates a portable bundle and an exhaustive checksum inventory.
 Future<Directory> buildValidationBundle(
   String root,
@@ -84,6 +138,7 @@ Future<Directory> buildValidationBundle(
   String executionPath = 'public_api',
   String? internalDiagnosticRunId,
   CommandExecutor execute = executeCommand,
+  Map<String, String>? environment,
 }) async {
   if (internalDiagnosticRunId != null && target != 'android') {
     throw const FormatException('Internal diagnostic reports require Android');
@@ -301,6 +356,21 @@ Future<Directory> buildValidationBundle(
           'Android instrumentation currently uses debug; performance is labelled separately',
         );
       }
+      final hostEnvironment = environment ?? Platform.environment;
+      final javaHome = await resolveAndroidJavaHome(
+        execute: execute,
+        environment: hostEnvironment,
+      );
+      final inheritedJavaHome = hostEnvironment['JAVA_HOME'] ?? '';
+      // Windows has no `env` wrapper, so gradlew.bat keeps any JAVA_HOME set.
+      if (Platform.isWindows && inheritedJavaHome.isEmpty) {
+        throw StateError(
+          'Set JAVA_HOME to the JDK Flutter uses ($javaHome) before building '
+          'Android bundles on Windows',
+        );
+      }
+      final inheritsJavaHome =
+          inheritedJavaHome == javaHome || Platform.isWindows;
       await command('flutter', ['pub', 'get'], app);
       destination.createSync(recursive: true);
       // The interactive app runs text profiles only.
@@ -336,7 +406,9 @@ Future<Directory> buildValidationBundle(
         'android-arm64',
         ...defines.map((value) => '--dart-define=$value'),
       ], app);
-      await command(Platform.isWindows ? 'gradlew.bat' : './gradlew', [
+      final gradlew = Platform.isWindows ? 'gradlew.bat' : './gradlew';
+      await command(inheritsJavaHome ? gradlew : 'env', [
+        if (!inheritsJavaHome) ...['JAVA_HOME=$javaHome', gradlew],
         'app:assembleAndroidTest',
         '-Ptarget=$testTarget',
         '-Ptarget-platform=android-arm64',

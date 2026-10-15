@@ -274,6 +274,7 @@ void main() {
   group('bundle build', () {
     late String root;
     late List<(String, List<String>, String?)> commands;
+    late Map<String, String> jdkEnvironment;
 
     setUp(() {
       root = p.join(scratch.path, 'checkout');
@@ -296,6 +297,11 @@ void main() {
         File(path).copySync(target.path);
       }
       commands = [];
+      final javaHome = p.join(scratch.path, 'jdk');
+      File(
+        p.join(javaHome, 'bin', Platform.isWindows ? 'java.exe' : 'java'),
+      ).createSync(recursive: true);
+      jdkEnvironment = {'JAVA_HOME': javaHome};
     });
 
     Future<CommandResult> fake(
@@ -359,6 +365,7 @@ void main() {
           output,
           profile: 'image-sdxs-cpu',
           execute: fake,
+          environment: jdkEnvironment,
         );
         final builds = [
           for (final (binary, args, _) in commands)
@@ -420,6 +427,7 @@ void main() {
         output,
         profile: 'image-settings-cpu',
         execute: fake,
+        environment: jdkEnvironment,
       );
       final apk = commands
           .singleWhere(
@@ -445,7 +453,13 @@ void main() {
 
     test('text Android bundles keep the shared validation test', () async {
       final output = p.join(scratch.path, 'text');
-      await buildValidationBundle(root, 'android', output, execute: fake);
+      await buildValidationBundle(
+        root,
+        'android',
+        output,
+        execute: fake,
+        environment: jdkEnvironment,
+      );
       final targets = [
         for (final (binary, args, _) in commands)
           if (binary == 'flutter' && args.first == 'build')
