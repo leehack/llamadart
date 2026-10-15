@@ -8,10 +8,12 @@ import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_mtmd.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 const _params = ModelParams(gpuLayers: 0, contextSize: 64);
@@ -19,6 +21,7 @@ const _greedy = GenerationParams(maxTokens: 8, temp: 0, topK: 1, seed: 1);
 
 // The time the fake backend keeps computing after each llama_decode returns.
 const _backendMicros = 5000;
+const _backendMs = _backendMicros / 1000;
 
 // Runs the real llama.cpp runtime on the CPU behind a decode that returns
 // before its backend has finished, as Metal's does: the backend stays busy
@@ -27,8 +30,10 @@ const _backendMicros = 5000;
 void main() {
   late Directory dir;
   late LlamaCppService service;
+  late int model;
   late int context;
   late List<String> calls;
+  late int Function(Pointer<llama_context> ctx, llama_batch batch) decode;
 
   setUp(() {
     dir = Directory.systemTemp.createTempSync('llamadart_decode_timing_');
@@ -36,23 +41,23 @@ void main() {
     calls = [];
     final clock = Stopwatch()..start();
     var busyUntil = 0;
+    decode = (ctx, batch) {
+      calls.add('decode');
+      final status = llama_decode(ctx, batch);
+      busyUntil = clock.elapsedMicroseconds + _backendMicros;
+      return status;
+    };
     service = LlamaCppService(
       objectCalls: LlamaCppObjectCalls.untracked(
-        decode: (ctx, batch) {
-          calls.add('decode');
-          final status = llama_decode(ctx, batch);
-          busyUntil = clock.elapsedMicroseconds + _backendMicros;
-          return status;
-        },
+        decode: decode,
         synchronize: (ctx) {
           calls.add('synchronize');
-          final remaining = busyUntil - clock.elapsedMicroseconds;
-          if (remaining > 0) sleep(Duration(microseconds: remaining));
+          while (clock.elapsedMicroseconds < busyUntil) {}
           llama_synchronize(ctx);
         },
       ),
     )..initializeBackend();
-    final model = service.loadModel('${dir.path}/model.gguf', _params);
+    model = service.loadModel('${dir.path}/model.gguf', _params);
     context = service.createContext(model, _params);
   });
 
@@ -61,26 +66,52 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
+  Future<void> generate(String prompt, {List<LlamaContentPart>? parts}) async {
+    final cancel = calloc<Int8>();
+    try {
+      await service
+          .generate(context, prompt, _greedy, cancel.address, parts: parts)
+          .drain<void>();
+    } finally {
+      calloc.free(cancel);
+    }
+  }
+
   test('getPerformanceContext counts the backend work of a decode as '
       'decode time', () async {
-    final cancel = calloc<Int8>();
-    addTearDown(() => calloc.free(cancel));
-
-    await service
-        .generate(context, 'ab', _greedy, cancel.address)
-        .drain<void>();
+    await generate('ab');
     final perf = service.getPerformanceContext(context);
 
     expect(perf.evalTokens, greaterThan(0));
-    expect(
-      perf.decodeMs,
-      greaterThanOrEqualTo(perf.evalTokens * _backendMicros / 1000),
-    );
-    expect(perf.promptEvalMs, greaterThanOrEqualTo(_backendMicros / 1000));
+    expect(perf.decodeMs, greaterThanOrEqualTo(perf.evalTokens * _backendMs));
+    expect(perf.promptEvalMs, greaterThanOrEqualTo(_backendMs));
     // Every decode waits for its backend before the next call.
     expect(
       calls.join(' '),
       matches(RegExp(r'^synchronize( decode synchronize)+$')),
     );
   });
+
+  for (final chunkEval in [false, true]) {
+    test('getPerformanceContext counts the backend work of a media prompt '
+        'as prompt time (chunk-level eval: $chunkEval)', () async {
+      final projectorPath = '${dir.path}/mmproj.gguf';
+      File(projectorPath).writeAsStringSync('GGUF');
+      // libmtmd decodes the prompt with llama_decode itself.
+      final fake = FakeMtmd.install(
+        service,
+        tokens: service.tokenize(model, 'ab', true),
+        chunkEval: chunkEval,
+        decode: decode,
+      );
+      addTearDown(fake.dispose);
+      service.createMultimodalContext(model, projectorPath);
+
+      await generate('<__media__>', parts: fake.parts);
+      final perf = service.getPerformanceContext(context);
+
+      expect(fake.evaluations, 1);
+      expect(perf.promptEvalMs, greaterThanOrEqualTo(_backendMs));
+    });
+  }
 }

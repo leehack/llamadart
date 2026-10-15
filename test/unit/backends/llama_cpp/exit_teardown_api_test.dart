@@ -743,6 +743,34 @@ void main() {
     expect(called, ['decode', 'synchronize', 'encode', 'synchronize']);
   });
 
+  test('upstream decode returns once llama.cpp has finished the batch', () {
+    final calls = LlamaCppObjectCalls.upstream;
+    final model = load(calls);
+    final context = calls.createContext(
+      model,
+      llama_context_default_params()..n_ctx = 64,
+    );
+    final batch = llama_batch_init(2, 0, 1);
+    try {
+      batch.n_tokens = 2;
+      for (var i = 0; i < 2; i++) {
+        batch.token[i] = 1 + i;
+        batch.pos[i] = i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = i;
+      }
+
+      expect(calls.decode(context, batch), 0);
+      // llama.cpp counts queued prompt tokens when it synchronizes.
+      expect(llama_perf_context(context).n_p_eval, 2);
+    } finally {
+      llama_batch_free(batch);
+      calls.freeContext(context);
+      calls.freeModel(model);
+    }
+  });
+
   test('upstream calls create objects the runtime does not track', () {
     final calls = LlamaCppObjectCalls.upstream;
     expect(calls.exit, isNull);
