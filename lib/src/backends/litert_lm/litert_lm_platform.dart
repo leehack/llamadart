@@ -30,8 +30,8 @@ List<String> liteRtLmAvailableNativeBackendsForCurrentPlatform() {
 
 /// Returns the native LiteRT-LM backend used for automatic selection.
 ///
-/// Linux, Windows, and macOS x86_64 retain CPU defaults; GPU execution on
-/// Linux and Windows requires explicit selection.
+/// Linux and Windows default to CPU; GPU execution there requires explicit
+/// selection. macOS x86_64 reports CPU, but LiteRT-LM has no runtime there.
 String liteRtLmDefaultNativeBackendForCurrentPlatform() {
   if (Platform.isAndroid ||
       Platform.isIOS ||
