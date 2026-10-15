@@ -26,6 +26,7 @@ import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handl
 import 'package:test/test.dart';
 
 import '../../support/litert_qwen_content_fixture.dart';
+import '../../support/llama_cpp_grammar_load.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 import '../../support/raw_tool_schema_fixture.dart';
@@ -1238,6 +1239,118 @@ void main() {
     }
   });
 
+  test('large open-object key sets load and exclude declared keys', () {
+    for (final names in [...largeKeySets.values, overBudgetKeySet]) {
+      final withinBudget = !identical(names, overBudgetKeySet);
+      final schema = <String, dynamic>{
+        'type': 'object',
+        'properties': {
+          for (final name in names) name: {'type': 'integer'},
+        },
+        'additionalProperties': true,
+      };
+      final first = jsonEncode(names.first);
+      final duplicate = '{$first:1,$first:2}';
+      for (final (grammar, output) in _openObjectGrammars(schema)) {
+        _expectGrammar(
+          validator,
+          grammar,
+          valid: [
+            output('{$first:1}'),
+            output('{$first:1,${jsonEncode('${names.first}x')}:"v"}'),
+            output('{${jsonEncode(names.last)}:2,"zz-extra":true}'),
+            // Beyond the budget, final validation checks declared keys.
+            if (!withinBudget) ...[output(duplicate), output('{$first:"x"}')],
+          ],
+          invalid: [
+            if (withinBudget) ...[output(duplicate), output('{$first:"x"}')],
+            output('{$first:1,}'),
+          ],
+        );
+      }
+    }
+  });
+
+  test('closed objects with 1023 optional properties load', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        for (final name in largeKeySets['1023 properties']!)
+          name: {'type': 'integer'},
+      },
+      'additionalProperties': false,
+    };
+    for (final (grammar, output) in _openObjectGrammars(schema)) {
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [output('{"p5":1}'), output('{"p5":1,"p1022":2}')],
+        invalid: [output('{"p5":1,"zz":1}'), output('{"p5":"x"}')],
+      );
+    }
+  });
+
+  test('open objects exclude non-BMP declared keys', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        for (final name in ['é', 'éa', '😀', '😀b']) name: {'type': 'boolean'},
+      },
+      'additionalProperties': true,
+    };
+    for (final (grammar, output) in _openObjectGrammars(schema)) {
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output('{"😀":true}'),
+          output('{"😀c":1}'),
+          output('{"éb":1}'),
+          output('{"😀b":true,"😁":1}'),
+        ],
+        invalid: [output('{"😀":1}'), output('{"é":1}'), output('{"😀b":1}')],
+      );
+    }
+  });
+
+  test('maxItems 1999 loads for every minItems and item type', () {
+    for (final item in boundedArrayItemSchemas) {
+      final value = jsonEncode(boundedArrayItemValue(item));
+      String items(int count) => '[${List.filled(count, value).join(',')}]';
+      for (final minItems in [0, 1, 1999]) {
+        final schema = <String, dynamic>{
+          'type': 'object',
+          'properties': {
+            'list': {
+              'type': 'array',
+              'items': item,
+              'minItems': minItems,
+              'maxItems': 1999,
+            },
+          },
+          'required': ['list'],
+          'additionalProperties': false,
+        };
+        for (final (grammar, output) in _openObjectGrammars(schema)) {
+          _expectGrammar(
+            validator,
+            grammar,
+            valid: [
+              if (minItems == 0) output('{"list":[]}'),
+              if (minItems <= 1) output('{"list":${items(1)}}'),
+              output('{"list":${items(1999)}}'),
+            ],
+            invalid: [
+              output('{"list":${items(2000)}}'),
+              if (minItems > 0) output('{"list":[]}'),
+              if (minItems == 1999) output('{"list":${items(1998)}}'),
+            ],
+          );
+        }
+      }
+    }
+  });
+
   test('Hermes schema calls accept newlines inside the tool_call tags', () {
     final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});
     _expectGrammar(
@@ -1289,6 +1402,47 @@ void main() {
   });
 }
 
+/// Returns Hermes, generic required-tool and `responseFormat` grammars for an
+/// object [schema], each with a function that wraps JSON arguments in the
+/// grammar's output envelope.
+List<(String, String Function(String))> _openObjectGrammars(
+  Map<String, dynamic> schema,
+) {
+  final tool = ToolDefinition.fromJsonSchema(
+    name: 'spec',
+    description: 'Spec',
+    schema: schema,
+  );
+  return [
+    (
+      HermesHandler().buildGrammar([tool])!,
+      (args) => '<tool_call>{"name":"spec","arguments":$args}</tool_call>',
+    ),
+    (
+      ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+      ).grammar!,
+      (args) => '{"tool_call":{"name":"spec","arguments":$args}}',
+    ),
+    (
+      ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        responseFormat: {
+          'type': 'json_schema',
+          'json_schema': {'schema': schema},
+        },
+      ).grammar!,
+      (args) => args,
+    ),
+  ];
+}
+
 void _expectGrammar(
   String validator,
   String grammar, {
@@ -1315,13 +1469,21 @@ void _validate(
 }) {
   final inputFile = File('${grammar.parent.path}/input.txt')
     ..writeAsStringSync(input);
-  final result = Process.runSync(validator, [grammar.path, inputFile.path]);
-  final output = '${result.stdout}\n${result.stderr}';
-  expect(result.exitCode, 0, reason: output);
+  // The validator prints the rejected input byte by byte, which can split a
+  // multi-byte UTF-8 character.
+  const lenient = Utf8Codec(allowMalformed: true);
+  final result = Process.runSync(
+    validator,
+    [grammar.path, inputFile.path],
+    stdoutEncoding: lenient,
+    stderrEncoding: lenient,
+  );
+  final text = '${result.stdout}\n${result.stderr}';
+  expect(result.exitCode, 0, reason: text);
   expect(
-    output.contains('Input string is valid according to the grammar.'),
+    text.contains('Input string is valid according to the grammar.'),
     expected,
-    reason: 'Input: $input\n$output\nGrammar:\n${grammar.readAsStringSync()}',
+    reason: 'Input: $input\n$text\nGrammar:\n${grammar.readAsStringSync()}',
   );
 }
 

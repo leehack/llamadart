@@ -5,9 +5,11 @@ import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
+import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:llamadart/src/core/template/tool_schema_utils.dart';
 import 'package:test/test.dart';
 
+import '../../../support/llama_cpp_grammar_load.dart';
 import '../../../support/raw_tool_schema_fixture.dart';
 
 void main() {
@@ -321,4 +323,63 @@ void main() {
       }
     },
   );
+
+  group('schema tool grammars stay within llama.cpp repetition limits', () {
+    Map<String, String> grammars(ToolDefinition tool) => {
+      'Hermes': HermesHandler().buildGrammar([tool])!,
+      'Mistral Nemo': MistralHandler().buildGrammar([tool])!,
+      for (final choice in [ToolChoice.auto, ToolChoice.required])
+        'generic $choice': ChatTemplateEngine.render(
+          templateSource: null,
+          messages: const [],
+          metadata: const {},
+          tools: [tool],
+          toolChoice: choice,
+        ).grammar!,
+    };
+
+    final schemas = <String, Map<String, dynamic>>{
+      for (final MapEntry(key: label, value: names) in largeKeySets.entries)
+        'open object with $label': {
+          'type': 'object',
+          'properties': {
+            for (final name in names) name: {'type': 'integer'},
+          },
+        },
+      'open object beyond the key budget': {
+        'type': 'object',
+        'properties': {
+          for (final name in overBudgetKeySet) name: {'type': 'integer'},
+        },
+      },
+      for (final item in boundedArrayItemSchemas)
+        for (final minItems in [0, 1999])
+          'maxItems 1999 minItems $minItems of $item': {
+            'type': 'object',
+            'properties': {
+              'list': {
+                'type': 'array',
+                'items': item,
+                'minItems': minItems,
+                'maxItems': 1999,
+              },
+            },
+            'required': ['list'],
+          },
+    };
+    for (final MapEntry(key: label, value: schema) in schemas.entries) {
+      test(label, () {
+        final tool = ToolDefinition.fromJsonSchema(
+          name: 'spec',
+          description: 'Spec',
+          schema: schema,
+        );
+        for (final MapEntry(key: format, value: grammar) in grammars(
+          tool,
+        ).entries) {
+          expect(llamaCppRepetitionRejection(grammar), isNull, reason: format);
+        }
+      });
+    }
+  });
 }

@@ -39,12 +39,27 @@ const _primitiveRules = <String, _BuiltinRule>{
     r'[^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
     [],
   ),
+  'char-escape': _BuiltinRule(r'[\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})', []),
   'string': _BuiltinRule(r'"\"" char* "\"" space', ['char']),
   'null': _BuiltinRule('"null" space', []),
 };
 
 /// Reserved rule names that need a suffix to avoid collision.
 final _reservedNames = <String>{'root', ..._primitiveRules.keys};
+
+/// Largest alternative count or repetition bound kept in an inline group.
+///
+/// llama.cpp rejects a repeated group once the symbols created inside it,
+/// including first references to named rules, multiplied by the repetition
+/// count reach `MAX_REPETITION_THRESHOLD` (2000). Larger generated groups move
+/// into named rules, each of which counts as one symbol.
+const _maxInlineGroupSize = 256;
+
+/// Most characters the declared-key exclusion rules may add to one grammar.
+///
+/// Open objects beyond this budget use the plain `string` key rule, so the
+/// grammar still loads and final validation checks declared properties.
+const _maxKeyTrieGrammarLength = 64 * 1024;
 
 /// Escapes for GBNF literal strings.
 const _literalEscapes = <String, String>{
@@ -61,6 +76,7 @@ class JsonSchemaConverter {
   final Map<String, String> _rules = {'space': _spaceRule};
   final Map<String, dynamic> _refs = {};
   final Set<String> _refsBeingResolved = {};
+  int _keyTrieGrammarLength = 0;
 
   /// Access accumulated rules (for multi-tool grammar assembly).
   Map<String, String> get rules => _rules;
@@ -352,7 +368,7 @@ class JsonSchemaConverter {
         final maxItems = schema['maxItems'] as int?;
         return _addRule(
           ruleName,
-          '"[" space ${_buildRepetition(itemRuleName, minItems, maxItems, separatorRule: '"," space')} "]" space',
+          '"[" space ${_itemsRepetition(itemRuleName, minItems, maxItems, name)} "]" space',
         );
       }
     }
@@ -401,6 +417,28 @@ class JsonSchemaConverter {
   // Helpers
   // ---------------------------------------------------------------------------
 
+  String _itemsRepetition(
+    String itemRule,
+    int minItems,
+    int? maxItems,
+    String name,
+  ) {
+    final bound = maxItems ?? minItems;
+    if (bound <= _maxInlineGroupSize || bound < minItems) {
+      return _buildRepetition(
+        itemRule,
+        minItems,
+        maxItems,
+        separatorRule: '"," space',
+      );
+    }
+    final prefix = '${name.isNotEmpty ? '$name-' : ''}item';
+    final tail = _addRule('$prefix-tail', '"," space $itemRule');
+    final items =
+        '$itemRule ${_buildRepetition(tail, minItems > 0 ? minItems - 1 : 0, maxItems == null ? null : maxItems - 1)}';
+    return minItems > 0 ? items : '${_addRule('$prefix-list', items)}?';
+  }
+
   String? _visitPattern(String pattern, String ruleName) {
     final snapshot = Map<String, String>.from(_rules);
     final expr = _PatternGrammarBuilder(_addRule, ruleName).build(pattern);
@@ -426,8 +464,10 @@ class JsonSchemaConverter {
         .join(' | ');
   }
 
-  /// Returns a JSON string rule (with trailing space) that matches none of
-  /// [strings] in their canonical `jsonEncode` wire form.
+  /// Returns the name of a JSON string rule (with trailing space) that
+  /// matches none of [strings] in their canonical `jsonEncode` wire form, or
+  /// `null` when its rules would exceed this grammar's remaining
+  /// [_maxKeyTrieGrammarLength].
   ///
   /// Follows llama.cpp's `_not_strings` trie, with two corrections: a proper
   /// prefix of a declared key stays available, and the divergent character
@@ -436,7 +476,11 @@ class JsonSchemaConverter {
   /// are not offered at that position. Escaped spellings of a declared key
   /// (such as `\u0063ity` for `city`) still match; final validation checks
   /// their decoded values.
-  String _notStrings(List<String> strings) {
+  ///
+  /// A subtree whose inline groups would create more than
+  /// [_maxInlineGroupSize] llama.cpp symbols becomes a named rule, so no
+  /// repeated group reaches `MAX_REPETITION_THRESHOLD`.
+  String? _notStrings(List<String> strings, String name) {
     final trie = _KeyTrieNode();
     for (final string in strings) {
       final wire = jsonEncode(string);
@@ -446,44 +490,81 @@ class JsonSchemaConverter {
       }
       node.isEnd = true;
     }
-    final char = _addPrimitive('char', _primitiveRules['char']!);
 
-    String visitNode(_KeyTrieNode node) {
-      final alternatives = <String>[];
-      final plain = <int>[];
-      var escapedChild = false;
-      final tokens = node.children.keys.toList()..sort();
-      for (final token in tokens) {
-        final child = node.children[token]!;
-        if (token.length > 1) {
-          escapedChild = true;
-          alternatives.add(_formatLiteral(token));
-        } else {
-          plain.add(token.runes.single);
-          alternatives.add('[${_classChar(token.runes.single)}]');
-        }
-        final last = alternatives.removeLast();
-        if (child.children.isEmpty) {
-          alternatives.add('$last $char+');
-        } else {
-          alternatives.add(
-            '$last (${visitNode(child)})${child.isEnd ? '' : '?'}',
-          );
-        }
+    String build(
+      String Function(String name, String rule) emit,
+      String char,
+      String escape,
+    ) {
+      var index = 0;
+
+      // Each record holds GBNF text and an upper bound on the symbols
+      // llama.cpp creates while parsing it inside a group: one per group, per
+      // repetition operator and per first reference to a named rule.
+      (String, int) group((String, int) body) {
+        final (text, symbols) = body;
+        if (symbols <= _maxInlineGroupSize) return ('($text)', symbols + 1);
+        return (emit('$name-${index++}', text), 1);
       }
-      final other = StringBuffer(r'[^"\\\x7F\x00-\x1F');
-      for (final rune in plain) {
-        other.write(_classChar(rune));
+
+      (String, int) visitNode(_KeyTrieNode node) {
+        final alternatives = <String>[];
+        final plain = <int>[];
+        var symbols = 0;
+        var escapedChild = false;
+        final tokens = node.children.keys.toList()..sort();
+        for (final token in tokens) {
+          final child = node.children[token]!;
+          final String head;
+          if (token.startsWith(r'\')) {
+            escapedChild = true;
+            head = _formatLiteral(token);
+          } else {
+            plain.add(token.runes.single);
+            head = '[${_classChar(token.runes.single)}]';
+          }
+          if (child.children.isEmpty) {
+            alternatives.add('$head $char+');
+            symbols += 2;
+          } else {
+            final (text, childSymbols) = group(visitNode(child));
+            alternatives.add('$head $text${child.isEnd ? '' : '?'}');
+            symbols += childSymbols + 1;
+          }
+        }
+        final other = StringBuffer(r'[^"\\\x7F\x00-\x1F');
+        for (final rune in plain) {
+          other.write(_classChar(rune));
+        }
+        other.write(']');
+        final divergent = escapedChild
+            ? other.toString()
+            : '($other | $escape)';
+        alternatives.add('$divergent $char*');
+        symbols += escapedChild ? 1 : 3;
+        return (alternatives.join(' | '), symbols);
       }
-      other.write(']');
-      final divergent = escapedChild
-          ? other.toString()
-          : '($other | [\\\\] (["\\\\bfnrt] | "u" [0-9a-fA-F]{4}))';
-      alternatives.add('$divergent $char*');
-      return alternatives.join(' | ');
+
+      final (root, _) = group(visitNode(trie));
+      return emit(name, '"\\"" $root${trie.isEnd ? '' : '?'} "\\"" space');
     }
 
-    return '"\\"" (${visitNode(trie)})${trie.isEnd ? '' : '?'} "\\"" space';
+    var length = 0;
+    build(
+      (name, rule) {
+        length += name.length + rule.length;
+        return name;
+      },
+      'char',
+      'char-escape',
+    );
+    if (_keyTrieGrammarLength + length > _maxKeyTrieGrammarLength) return null;
+    _keyTrieGrammarLength += length;
+    return build(
+      _addRule,
+      _addPrimitive('char', _primitiveRules['char']!),
+      _addPrimitive('char-escape', _primitiveRules['char-escape']!),
+    );
   }
 
   String _buildObjectRule(
@@ -524,8 +605,8 @@ class JsonSchemaConverter {
           ? visit(additionalProperties, '$subName-value')
           : _addPrimitive('value', _primitiveRules['value']!);
       final keyRule = sortedPropNames.isEmpty
-          ? _addPrimitive('string', _primitiveRules['string']!)
-          : _addRule('$subName-k', _notStrings(sortedPropNames));
+          ? null
+          : _notStrings(sortedPropNames, '$subName-k');
 
       var extraKey = '*';
       while (propKvRuleNames.containsKey(extraKey)) {
@@ -534,7 +615,7 @@ class JsonSchemaConverter {
       additionalKey = extraKey;
       propKvRuleNames[extraKey] = _addRule(
         '$subName-kv',
-        '$keyRule ":" space $valueRule',
+        '${keyRule ?? _addPrimitive('string', _primitiveRules['string']!)} ":" space $valueRule',
       );
       optionalProps.add(extraKey);
     }
@@ -570,7 +651,10 @@ class JsonSchemaConverter {
       for (var i = 0; i < optionalProps.length; i++) {
         optAlternatives.add(getRecursiveRefs(optionalProps.sublist(i), false));
       }
-      rule += optAlternatives.join(' | ');
+      final alternatives = optAlternatives.join(' | ');
+      rule += optAlternatives.length > _maxInlineGroupSize
+          ? _addRule('${name.isNotEmpty ? '$name-' : ''}optional', alternatives)
+          : alternatives;
 
       if (requiredProps.isNotEmpty) {
         rule += ' )';

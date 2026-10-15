@@ -282,7 +282,11 @@ tool envelopes fail the turn before handlers run. In an open object, an extra
 property cannot reuse a declared property name, so declared properties keep
 their own schema. The grammar does not exclude escaped spellings of a
 declared name (such as `\u0063ity`); final validation checks the decoded
-values against the schema.
+values against the schema. Where a declared name needs a JSON escape
+(such as `a"b`), the grammar also rejects extra names with a different escape
+at that position (such as `a\nb`). Open objects whose declared names would add
+more than 65,536 characters of exclusion rules to one grammar accept any extra
+name instead; for tools, final validation still checks declared properties.
 
 In Hermes `auto` mode, a JSON object with a `name` key outside a
 `<tool_call>`, `<tool>` or `<function…>` envelope stays answer text unless it

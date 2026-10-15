@@ -7,7 +7,8 @@
   `ToolParam.nullType` parameters accept only `null`; Gemma 2/3 multi-tool
   grammars require the `{"tool_call": ...}` wrapper around every tool. Open
   JSON Schema objects, including `responseFormat` schemas, no longer accept a
-  declared property through the extra-property slot.
+  declared property through the extra-property slot unless their declared
+  names exceed the grammar's size budget.
 
 ## 0.12.2
 

@@ -3,12 +3,96 @@ import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
+import '../../../support/llama_cpp_grammar_load.dart';
+
 const _maxCount = 1024;
 const _maxGroupDepth = 32;
 
 String _nestedGroups(int depth) => '^${'(' * depth}a${')' * depth}\$';
 
 void main() {
+  group('llama.cpp grammar loading', () {
+    // Boundaries checked against b10549 test-gbnf-validator.
+    test('the repetition emulator matches llama.cpp at the limit', () {
+      for (final (grammar, loads) in [
+        ('root ::= ("a" "b"{0,1998})?', true),
+        ('root ::= ("a" "b"{0,1999})?', false),
+        ('root ::= ("a" b){0,999}\nb ::= "b"', true),
+        ('root ::= ("a" b){0,1000}\nb ::= "b"', false),
+      ]) {
+        expect(
+          llamaCppRepetitionRejection(grammar) == null,
+          loads,
+          reason: grammar,
+        );
+      }
+    });
+
+    for (final MapEntry(key: label, value: names) in largeKeySets.entries) {
+      test('open objects with $label load and exclude declared keys', () {
+        final grammar = JsonSchemaConverter.convert({
+          'type': 'object',
+          'properties': {
+            for (final name in names) name: {'type': 'integer'},
+          },
+          'additionalProperties': true,
+        });
+        expect(llamaCppRepetitionRejection(grammar), isNull);
+        final key = _ruleRegExp(grammar, 'root-additional-k');
+        for (final name in [names.first, names.last]) {
+          expect(key.hasMatch(jsonEncode(name)), isFalse, reason: name);
+          expect(key.hasMatch(jsonEncode('${name}x')), isTrue, reason: name);
+        }
+      });
+    }
+
+    test('objects with 1023 closed optional properties load', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'object',
+        'properties': {
+          for (final name in largeKeySets['1023 properties']!)
+            name: {'type': 'integer'},
+        },
+        'additionalProperties': false,
+      });
+      expect(llamaCppRepetitionRejection(grammar), isNull);
+    });
+
+    test('key exclusion beyond its budget falls back to a string key', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'object',
+        'properties': {
+          for (final name in overBudgetKeySet) name: {'type': 'integer'},
+        },
+        'additionalProperties': true,
+      });
+      expect(
+        grammar,
+        contains('root-additional-kv ::= string ":" space value'),
+      );
+      expect(grammar, isNot(contains('root-additional-k ::=')));
+      expect(llamaCppRepetitionRejection(grammar), isNull);
+    });
+
+    test('maxItems 1999 loads for every minItems and item type', () {
+      for (final item in boundedArrayItemSchemas) {
+        for (final minItems in [0, 1, 1998, 1999]) {
+          final grammar = JsonSchemaConverter.convert({
+            'type': 'array',
+            'items': item,
+            'minItems': minItems,
+            'maxItems': 1999,
+          });
+          expect(
+            llamaCppRepetitionRejection(grammar),
+            isNull,
+            reason: '$item minItems $minItems',
+          );
+        }
+      }
+    });
+  });
+
   group('JsonSchemaConverter', () {
     test('converts simple string schema', () {
       final grammar = JsonSchemaConverter.convert({'type': 'string'});
@@ -591,6 +675,24 @@ void main() {
         expect(key.hasMatch('"a\u0001"'), isFalse, reason: 'control');
       });
 
+      test('exclude non-BMP keys as single characters', () {
+        final grammar = JsonSchemaConverter.convert({
+          'type': 'object',
+          'properties': {
+            for (final name in ['é', 'éa', '😀', '😀b'])
+              name: {'type': 'boolean'},
+          },
+          'additionalProperties': true,
+        });
+        final key = _ruleRegExp(grammar, 'root-additional-k');
+        for (final name in ['é', 'éa', '😀', '😀b']) {
+          expect(key.hasMatch(jsonEncode(name)), isFalse, reason: name);
+        }
+        for (final name in ['😀c', '😀bc', '😁', 'éb', 'é😀']) {
+          expect(key.hasMatch(jsonEncode(name)), isTrue, reason: name);
+        }
+      });
+
       test('keep closed objects free of an extra-key slot', () {
         final grammar = JsonSchemaConverter.convert({
           ...schema,
@@ -637,7 +739,14 @@ RegExp _ruleRegExp(String grammar, String rule) {
           if (body[i] == r'\') i++;
         }
         i++;
-        out.write(body.substring(start, i));
+        out.write(
+          body
+              .substring(start, i)
+              .replaceAllMapped(
+                RegExp(r'\\U([0-9A-F]{8})'),
+                (m) => '\\u{${m[1]}}',
+              ),
+        );
       } else if (c == '{') {
         final end = body.indexOf('}', i) + 1;
         out.write(body.substring(i, end));
