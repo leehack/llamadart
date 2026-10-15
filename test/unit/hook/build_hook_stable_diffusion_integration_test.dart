@@ -13,6 +13,7 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_core_version.dart';
 import '../../support/hooks_runner_layout.dart';
 
 const _stableDiffusionAssetId = 'package:llamadart/stable_diffusion';
@@ -805,6 +806,53 @@ dependencies:
         expect(emitted, isFalse);
       },
     );
+  }
+
+  for (final (core, requirement) in [
+    (
+      '0.12.2',
+      'Resolve llamadart_stable_diffusion_flutter with a Package.swift pin '
+          'matching leehack/stable-diffusion-native@$stableDiffusionReleaseTag '
+          'and rerun flutter pub get.',
+    ),
+    (
+      '0.13.0',
+      'Depend on `llamadart_stable_diffusion_flutter: ^0.13.0`, the releases '
+          'paired with core 0.13.x, in pubspec.yaml and rerun flutter pub '
+          'get.',
+    ),
+  ]) {
+    test('core $core: the stable_diffusion companion rejection names the '
+        'release to depend on', () async {
+      final defines = await _flutterAppleApp(
+        companions: const [_stableDiffusionCompanionName],
+        editManifest: (manifest) => manifest.replaceFirst(
+          'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+          'let stableDiffusionTag = "v0.1.1"',
+        ),
+      );
+      await expectLater(
+        withHookCoreVersion(
+          core,
+          () => testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: OS.iOS,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: IOSSdk.iPhoneOS,
+            userDefines: defines,
+            check: (_, _) => fail('Must not emit in-process assets'),
+          ),
+        ),
+        throwsA(
+          predicate(
+            (error) => error.toString().contains(
+              'the required native runtime $stableDiffusionReleaseTag. '
+              '$requirement Upgrade the core and companion together',
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
 

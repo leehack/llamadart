@@ -1,5 +1,10 @@
 ## Unreleased
 
+- From core `0.13.0`, the Flutter Apple build error or warning for a
+  mismatched or earlier-build llama.cpp companion names the companion release
+  of the core's own minor, such as `^0.13.0`, instead of the first `0.0.x`
+  release pinning the native runtime; the stable_diffusion companion error
+  names one too.
 - With `llamadart_litert_lm_flutter` `0.0.15`, the Flutter macOS build now
   only warns to upgrade the companion to `0.0.16`, the release pinning
   `v0.18.0-1`, instead of claiming that the app cannot load LiteRT-LM and needs

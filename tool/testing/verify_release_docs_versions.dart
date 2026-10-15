@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:pub_semver/pub_semver.dart';
@@ -398,8 +399,14 @@ List<String> checkCompanionCoreConstraints(
 /// The first core release whose companions share its `MAJOR.MINOR`.
 ///
 /// Earlier companions are numbered `0.0.x` and stay valid beside an earlier
-/// core, so the check starts with the release that renumbers them.
-final Version companionVersionAlignmentStart = Version(0, 13, 0);
+/// core, so the check starts with the release that renumbers them. It is the
+/// hook's [appleCompanionLockstepStart], so the companion constraint a build
+/// error names always admits the companion this check aligns.
+final Version companionVersionAlignmentStart = Version(
+  appleCompanionLockstepStart.major,
+  appleCompanionLockstepStart.minor,
+  0,
+);
 
 /// Checks that every companion's `version` shares [coreVersion]'s
 /// `MAJOR.MINOR`, from [companionVersionAlignmentStart] on.

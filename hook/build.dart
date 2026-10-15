@@ -19,6 +19,7 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
+import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -685,7 +686,13 @@ _AppleCompanions? _flutterAppleCompanions({
   final runtimes = <String>[];
   String? liteRtLmMacOsWarning;
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
-    _validateAppleCompanion(_llamaCppCompanion, consumerRoot, output, log);
+    _validateAppleCompanion(
+      _llamaCppCompanion,
+      consumerRoot,
+      packageRoot,
+      output,
+      log,
+    );
     runtimes.add(nativeRuntimeLlamaCpp);
   }
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
@@ -704,6 +711,7 @@ _AppleCompanions? _flutterAppleCompanions({
     _validateAppleCompanion(
       _stableDiffusionCompanion,
       consumerRoot,
+      packageRoot,
       output,
       log,
     );
@@ -727,8 +735,9 @@ _AppleCompanions? _flutterAppleCompanions({
 /// its SwiftPM framework: the companion pins [nativeRepository]@[nativeTag]
 /// through `let [tagVariable]` in the maintained manifest template.
 /// [compatibleTags] maps earlier tags accepted with a warning to what their
-/// frameworks lack. [companionVersion] is the first companion release pinning
-/// [nativeTag], when the core records it.
+/// frameworks lack. [companionVersion] is the first `0.0.x` companion release
+/// pinning [nativeTag], when the core records it; only a core before
+/// [appleCompanionLockstepStart] names it.
 typedef _AppleCompanionContract = ({
   String label,
   String packageName,
@@ -765,22 +774,24 @@ const _AppleCompanionContract _stableDiffusionCompanion = (
 void _validateAppleCompanion(
   _AppleCompanionContract contract,
   Directory consumerRoot,
+  Directory packageRoot,
   BuildOutputBuilder output,
   Logger log,
 ) {
-  final companionVersion = contract.companionVersion;
-  final requiredCompanion = companionVersion == null
-      ? 'Resolve ${contract.packageName} with a Package.swift pin matching '
-            '${contract.nativeRepository}@${contract.nativeTag} and rerun '
-            'flutter pub get. '
-      : 'Depend on `${contract.packageName}: ^$companionVersion`, the first '
-            'release pinning ${contract.nativeRepository}@'
-            '${contract.nativeTag}, in pubspec.yaml and rerun flutter pub '
-            'get; a caret constraint on an earlier 0.0.x release never '
-            'resolves it. ';
+  final coreVersion = _corePackageVersion(packageRoot);
+  final nativePin = '${contract.nativeRepository}@${contract.nativeTag}';
+  final requiredCompanion =
+      appleCompanionRequirement(
+        packageName: contract.packageName,
+        coreVersion: coreVersion,
+        nativePin: nativePin,
+        firstPinningRelease: contract.companionVersion,
+      ) ??
+      'Resolve ${contract.packageName} with a Package.swift pin matching '
+          '$nativePin and rerun flutter pub get.';
   Never reject(String reason) => throw StateError(
     'Incompatible Apple ${contract.label} companion: $reason '
-    '$requiredCompanion'
+    '$requiredCompanion '
     'Upgrade the core and companion together to a matching released pair; '
     'native tag/path overrides do not replace SPM frameworks. '
     'No in-process native asset was emitted.',
@@ -859,12 +870,18 @@ void _validateAppleCompanion(
     }
     final missing = contract.compatibleTags[pinnedTag];
     if (missing != null) {
+      final constraint = appleCompanionConstraint(
+        coreVersion,
+        firstPinningRelease: contract.companionVersion,
+      );
+      final next = constraint == null
+          ? 'Upgrade ${contract.packageName} to a release pinning'
+          : 'Depend on `${contract.packageName}: $constraint` to link';
       final upgrade =
           'Resolved ${contract.packageName} ${metadata['version']} pins '
           '${contract.nativeRepository}@$pinnedTag, an earlier build of the '
           'same ${contract.label} runtime as ${contract.nativeTag}, so this '
-          'build links it. Its frameworks lack $missing. Depend on '
-          '`${contract.packageName}: ^${contract.companionVersion}` to link '
+          'build links it. Its frameworks lack $missing. $next '
           '${contract.nativeTag}.';
       log.warning(upgrade);
       stderr.writeln('warning: llamadart: $upgrade');
@@ -873,6 +890,23 @@ void _validateAppleCompanion(
     reject('Unable to read resolved companion metadata.');
   } on FormatException {
     reject('Resolved companion metadata is malformed.');
+  }
+}
+
+/// This core's pubspec `version`, which decides the companion constraint a
+/// build error or warning names, or `null` when it cannot be read.
+///
+/// It is not a build dependency: a cached build emits no error or warning.
+String? _corePackageVersion(Directory packageRoot) {
+  final pubspec = File(path.join(packageRoot.path, 'pubspec.yaml'));
+  try {
+    final metadata = loadYaml(pubspec.readAsStringSync());
+    final version = metadata is Map ? metadata['version'] : null;
+    return version is String ? version : null;
+  } on FileSystemException {
+    return null;
+  } on FormatException {
+    return null;
   }
 }
 
