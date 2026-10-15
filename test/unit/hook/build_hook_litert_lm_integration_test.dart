@@ -952,6 +952,20 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       '$coreUpstream-${coreRebuild + 1}',
       false,
     ),
+    for (final malformed in [
+      '$coreUpstream-0',
+      '$coreUpstream-01',
+      coreUpstream.substring(0, coreUpstream.lastIndexOf('.')),
+      coreUpstream.substring(1),
+      '$coreUpstream-llamadart.1',
+      '$coreUpstream-99999999999999999999',
+    ])
+      (
+        'a macOS-complete manifest pinning the malformed tag $malformed',
+        () => pinningLiteRtLm(malformed),
+        malformed,
+        false,
+      ),
   ]) {
     final advice = upgradeCompanion
         ? 'only asks to upgrade the companion'

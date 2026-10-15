@@ -412,7 +412,8 @@ A companion with the maintained manifest pinning an earlier build of the same
 LiteRT-LM release, such as `0.0.15` (`v0.18.0`), still embeds the complete
 macOS runtime, which the app loads from its bundle, so the build only warns to
 upgrade the companion to `0.0.16` (`v0.18.0-1`). A maintained manifest pinning
-any other LiteRT-LM release warns to upgrade the core and companion together.
+any other LiteRT-LM release or a later build of the same release, such as
+`v0.18.0-2`, warns to upgrade the core and companion together.
 Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
 

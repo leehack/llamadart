@@ -1020,8 +1020,12 @@ bool _isEarlierLiteRtLmRebuild(String pin) {
   if (core == null || candidate == null || candidate[1] != core[1]) {
     return false;
   }
-  int rebuild(RegExpMatch tag) => int.parse(tag[2] ?? '0');
-  return rebuild(candidate) < rebuild(core);
+  int? rebuild(RegExpMatch tag) => int.tryParse(tag[2] ?? '0');
+  final candidateRebuild = rebuild(candidate);
+  final coreRebuild = rebuild(core);
+  return candidateRebuild != null &&
+      coreRebuild != null &&
+      candidateRebuild < coreRebuild;
 }
 
 class _CompanionGap implements Exception {
