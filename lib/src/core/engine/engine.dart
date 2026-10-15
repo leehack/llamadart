@@ -1551,13 +1551,14 @@ class LlamaEngine {
   ///   optionally with `name`, `description` and `strict` beside `schema`
   /// - `{'type': 'text'}`, which requests unconstrained text
   /// Any other type or key throws [LlamaUnsupportedException] before
-  /// generation on every backend. So does a schema the grammar cannot
-  /// enforce: one nested more than 512 levels deep, one using `format`,
-  /// numeric bounds, `uniqueItems` or another unenforced assertion keyword,
-  /// or one whose `pattern` is outside the compiled regex subset. A schema
-  /// holding values that are not JSON throws [LlamaArgumentException].
-  /// On grammar-capable backends, a tool or schema grammar that llama.cpp
-  /// would reject, or that is longer than 8 MiB, throws
+  /// generation on every backend. A schema the grammar converter cannot
+  /// represent, such as an untyped `{'description': ...}` property, a
+  /// non-local `$ref` or one nested too deeply for the stack, throws
+  /// [LlamaUnsupportedException]; one holding a cycle or another non-JSON
+  /// value that stops conversion throws [LlamaArgumentException]. The grammar
+  /// covers a subset of JSON Schema; other keywords, such as `format` or
+  /// numeric bounds, are not enforced. On grammar-capable backends, a tool or
+  /// schema grammar that llama.cpp would refuse to load throws
   /// [LlamaUnsupportedException] before generation.
   /// Use [LlamaStructuredOutput.responseFormat] or [createStructuredJson] for a
   /// typed helper that also validates and decodes the final JSON output.

@@ -4030,7 +4030,7 @@ void main() {
       },
     );
 
-    group('create rejects responseFormat schemas it cannot enforce', () {
+    group('create reports responseFormat schemas it cannot convert', () {
       const messages = [
         LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'status'),
       ];
@@ -4048,6 +4048,11 @@ void main() {
       }
       final cyclic = <String, dynamic>{'type': 'object'};
       cyclic['properties'] = {'self': cyclic};
+      final unsupported = isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        startsWith('Unsupported responseFormat JSON schema: '),
+      );
       final cases = <String, (Map<String, dynamic>, Matcher)>{
         'untyped property': (
           {
@@ -4056,71 +4061,20 @@ void main() {
               'x': {'description': 'x'},
             },
           },
-          isA<LlamaUnsupportedException>().having(
+          unsupported.having(
             (error) => error.message,
             'message',
             contains('Unrecognized schema: {"description":"x"}'),
           ),
         ),
-        'integer bounds': (
-          {
-            'type': 'object',
-            'properties': {
-              'n': {'type': 'integer', 'minimum': 1, 'maximum': 10},
-            },
-          },
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains(r'"$.properties.n.minimum" cannot be enforced'),
-          ),
-        ),
-        'uuid format': (
-          {'type': 'string', 'format': 'uuid'},
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains(r'"$.format" cannot be enforced'),
-          ),
-        ),
-        'uncompiled pattern': (
-          {'type': 'string', 'pattern': r'^\w+$'},
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains('outside the supported regex subset'),
-          ),
-        ),
-        'deep const': (
-          {'const': deepConst},
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains('nests 200001 levels deep'),
-          ),
-        ),
-        'deep items': (
-          deepItems,
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains('nests 100001 levels deep'),
-          ),
-        ),
+        'deep const': ({'const': deepConst}, unsupported),
+        'deep items': (deepItems, unsupported),
         'cycle': (
           cyclic,
           isA<LlamaArgumentException>().having(
             (error) => error.message,
             'message',
             contains('must contain only JSON values'),
-          ),
-        ),
-        'dropped length bound': (
-          {'type': 'string', 'maxLength': 3000},
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains('llama.cpp ignores upper bounds above 2000'),
           ),
         ),
       };
@@ -4139,23 +4093,28 @@ void main() {
         });
       }
 
-      test('keeps enforceable schemas and their grammar', () async {
+      test('keeps the grammar of every schema that converts', () async {
         await engine.loadModel('test-model.bin');
-        const schema = {
-          'type': 'object',
-          'properties': {
-            'id': {'type': 'string', 'pattern': r'^[a-z]{3}$'},
-            'note': {'type': 'string', 'x-vendor': 'kept', 'maxLength': 1999},
+        for (final schema in <Map<String, dynamic>>[
+          {
+            'type': 'object',
+            'properties': {
+              'n': {'type': 'integer', 'minimum': 1, 'maximum': 10},
+              'id': {'type': 'string', 'format': 'uuid'},
+              'code': {'type': 'string', 'pattern': r'^\w+$'},
+              'tag': {'type': 'string', 'pattern': r'^[a-z]{3}$'},
+            },
+            'required': ['n'],
           },
-          'required': ['id'],
-        };
+          {'type': 'string', 'maxLength': 3000},
+        ]) {
+          await engine.create(messages, responseFormat: format(schema)).drain();
 
-        await engine.create(messages, responseFormat: format(schema)).drain();
-
-        expect(
-          backend.lastGenerationParams?.grammar,
-          JsonSchemaConverter.convert(schema),
-        );
+          expect(
+            backend.lastGenerationParams?.grammar,
+            JsonSchemaConverter.convert(schema),
+          );
+        }
       });
     });
 

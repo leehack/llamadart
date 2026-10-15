@@ -147,11 +147,7 @@ void main() {
     }
   });
 
-  group('validateResponseFormatSchema', () {
-    Matcher throwsTyped<T extends LlamaException>(String message) => throwsA(
-      isA<T>().having((error) => error.message, 'message', contains(message)),
-    );
-
+  group('responseFormatGrammar', () {
     Map<String, dynamic> nestedItems(int levels) {
       Map<String, dynamic> schema = {'type': 'integer'};
       for (var i = 0; i < levels; i++) {
@@ -160,259 +156,46 @@ void main() {
       return schema;
     }
 
-    for (final (schema, path) in <(Map<String, dynamic>, String)>[
-      ({'type': 'integer', 'minimum': 1, 'maximum': 10}, r'$.minimum'),
-      ({'type': 'integer', 'maximum': 10}, r'$.maximum'),
-      ({'type': 'integer', 'exclusiveMinimum': 3}, r'$.exclusiveMinimum'),
-      ({'type': 'integer', 'exclusiveMaximum': 3}, r'$.exclusiveMaximum'),
-      ({'type': 'number', 'multipleOf': 0.5}, r'$.multipleOf'),
-      ({'type': 'string', 'format': 'uuid'}, r'$.format'),
-      (
-        {
-          'type': 'object',
-          'properties': {
-            'n': {'type': 'integer', 'minimum': 1},
-          },
-        },
-        r'$.properties.n.minimum',
-      ),
-      (
-        {
-          'type': 'array',
-          'items': {'type': 'string', 'format': 'date-time'},
-        },
-        r'$.items.format',
-      ),
-      (
+    test('keeps the converter grammar for every schema it converts', () {
+      final cyclicAnnotation = <String, dynamic>{};
+      cyclicAnnotation['self'] = cyclicAnnotation;
+      for (final schema in <Map<String, dynamic>>[
+        {'type': 'integer', 'minimum': 1, 'maximum': 10},
+        {'type': 'number', 'multipleOf': 0.5},
+        {'type': 'string', 'format': 'uuid'},
+        {'type': 'string', 'pattern': r'^\w+$'},
+        {'type': 'string', 'pattern': r'^[a-zA-Z0-9]{9}$'},
+        {'type': 'string', 'maxLength': 3000},
         {
           'type': 'array',
           'items': {'type': 'string'},
           'uniqueItems': true,
         },
-        r'$.uniqueItems',
-      ),
-      (
-        {
-          'anyOf': [
-            {'type': 'null'},
-            {'type': 'array', 'contains': <String, dynamic>{}},
-          ],
-        },
-        r'$.anyOf[1].contains',
-      ),
-      (
-        {
-          'oneOf': [
-            {'type': 'object', 'minProperties': 1},
-          ],
-        },
-        r'$.oneOf[0].minProperties',
-      ),
-      (
-        {
-          'allOf': [
-            {'maxProperties': 1},
-          ],
-        },
-        r'$.allOf[0].maxProperties',
-      ),
-      (
-        {
-          r'$defs': {
-            'n': {'type': 'number', 'multipleOf': 2},
-          },
-          r'$ref': r'#/$defs/n',
-        },
-        r'$.$defs.n.multipleOf',
-      ),
-      (
-        {
-          'definitions': {
-            'n': {'type': 'string', 'format': 'email'},
-          },
-          r'$ref': '#/definitions/n',
-        },
-        r'$.definitions.n.format',
-      ),
-      (
         {
           'type': 'object',
-          'additionalProperties': {
-            'type': 'object',
-            'propertyNames': {'pattern': r'^a$'},
+          'x-vendor': {'minimum': 1},
+          'nullable': true,
+          'properties': {
+            'n': {'type': 'integer', 'exclusiveMinimum': 3},
           },
         },
-        r'$.additionalProperties.propertyNames',
-      ),
-      (
-        {
-          'type': 'array',
-          'prefixItems': [
-            {'not': <String, dynamic>{}},
-          ],
-        },
-        r'$.prefixItems[0].not',
-      ),
-      (
-        {
-          'type': 'array',
-          'items': [
-            {'type': 'object', 'patternProperties': <String, dynamic>{}},
-          ],
-        },
-        r'$.items[0].patternProperties',
-      ),
-      (
-        {
-          'type': 'array',
-          'items': [
-            {'type': 'string'},
-          ],
-          'additionalItems': {'type': 'integer', 'minimum': 0},
-        },
-        r'$.additionalItems.minimum',
-      ),
-      (
-        {
-          'type': 'object',
-          'properties': <String, dynamic>{},
-          'dependentRequired': <String, dynamic>{},
-        },
-        r'$.dependentRequired',
-      ),
-      ({'if': <String, dynamic>{}, 'then': <String, dynamic>{}}, r'$.if'),
-      ({'type': 'array', 'unevaluatedItems': false}, r'$.unevaluatedItems'),
-    ]) {
-      test('rejects unenforced keyword at $path', () {
+        {'type': 'string', 'description': DateTime(2026)},
+        {'type': 'string', 'x-self': cyclicAnnotation},
+        nestedItems(600),
+      ]) {
+        expect(responseFormatSchema(format(schema)), same(schema));
         expect(
-          () => responseFormatSchema(format(schema)),
-          throwsTyped<LlamaUnsupportedException>(
-            'responseFormat schema keyword "$path" cannot be enforced',
-          ),
-        );
-      });
-    }
-
-    test('rejects patterns outside the compiled subset', () {
-      for (final pattern in [r'^\w+$', 'abc', r'^a|b$', r'^[^"]$']) {
-        expect(
-          () => responseFormatSchema(
-            format({'type': 'string', 'pattern': pattern}),
-          ),
-          throwsTyped<LlamaUnsupportedException>(
-            r'"$.pattern" is outside the supported regex subset',
-          ),
-          reason: pattern,
+          responseFormatGrammar(schema),
+          JsonSchemaConverter.convert(schema),
         );
       }
-      expect(
-        () => responseFormatSchema(
-          format({
-            'type': ['string', 'null'],
-            'pattern': 5,
-          }),
-        ),
-        throwsTyped<LlamaArgumentException>(r'"$.pattern" must be a string'),
-      );
     });
 
-    test('accepts supported patterns with their compiled grammar', () {
-      const schema = {
-        'type': 'object',
-        'properties': {
-          'id': {'type': 'string', 'pattern': r'^[a-zA-Z0-9]{9}$'},
-        },
-        'required': ['id'],
-      };
-      expect(responseFormatSchema(format(schema)), same(schema));
-      expect(
-        responseFormatGrammar(schema),
-        JsonSchemaConverter.convert(schema),
-      );
-      expect(responseFormatGrammar(schema), contains('[a-zA-Z0-9]'));
-    });
-
-    test('treats JSON data and unknown keywords as non-assertions', () {
-      const schema = {
-        'type': 'object',
-        'x-vendor': {'minimum': 1},
-        'nullable': true,
-        'default': {'format': 'uuid'},
-        'examples': [
-          {'maximum': 2},
-        ],
-        'properties': {
-          'format': {'type': 'string'},
-          'minimum': {
-            'const': {'multipleOf': 2},
-          },
-          'level': {
-            'enum': [
-              {'uniqueItems': true},
-              'low',
-            ],
-          },
-        },
-      };
-      expect(responseFormatSchema(format(schema)), same(schema));
-      expect(
-        responseFormatGrammar(schema),
-        JsonSchemaConverter.convert(schema),
-      );
-    });
-
-    test('bounds nesting before any recursive conversion', () {
+    test('reports converter failures as LlamaUnsupportedException', () {
       Object deepList = 1;
       for (var i = 0; i < 200000; i++) {
         deepList = [deepList];
       }
-      expect(
-        () => responseFormatSchema(format({'const': deepList})),
-        throwsTyped<LlamaUnsupportedException>(
-          'nests 200001 levels deep; the limit is 512',
-        ),
-      );
-      expect(
-        () => responseFormatSchema(format(nestedItems(100000))),
-        throwsTyped<LlamaUnsupportedException>(
-          'nests 100001 levels deep; the limit is 512',
-        ),
-      );
-      expect(
-        () => responseFormatSchema(format(nestedItems(512))),
-        throwsTyped<LlamaUnsupportedException>('nests 513 levels deep'),
-      );
-      final deepest = nestedItems(511);
-      expect(responseFormatSchema(format(deepest)), same(deepest));
-      expect(
-        responseFormatGrammar(deepest),
-        JsonSchemaConverter.convert(deepest),
-      );
-    });
-
-    test('rejects values that are not JSON', () {
-      final cyclic = <String, dynamic>{'type': 'object'};
-      cyclic['properties'] = {'self': cyclic};
-      for (final schema in <Map<String, dynamic>>[
-        {'const': double.nan},
-        {
-          'enum': [DateTime(2026)],
-        },
-        {
-          'const': {1: 'x'},
-        },
-        cyclic,
-      ]) {
-        expect(
-          () => responseFormatSchema(format(schema)),
-          throwsTyped<LlamaArgumentException>('must contain only JSON values'),
-        );
-      }
-    });
-  });
-
-  group('responseFormatGrammar', () {
-    test('reports converter failures as LlamaUnsupportedException', () {
       for (final (schema, message) in <(Map<String, dynamic>, String)>[
         (
           {
@@ -427,6 +210,8 @@ void main() {
         ({r'$ref': '#/missing'}, 'Error resolving ref'),
         ({'type': 'date'}, 'Unrecognized schema'),
         ({'type': 'object', 'properties': 'x'}, 'String'),
+        ({'const': deepList}, ''),
+        (nestedItems(100000), ''),
       ]) {
         expect(
           () => responseFormatGrammar(schema),
@@ -440,7 +225,32 @@ void main() {
               ),
             ),
           ),
-          reason: '$schema',
+        );
+      }
+    });
+
+    test('reports non-JSON values that stop conversion', () {
+      final cyclic = <String, dynamic>{'type': 'object'};
+      cyclic['properties'] = {'self': cyclic};
+      for (final schema in <Map<String, dynamic>>[
+        {'const': double.nan},
+        {
+          'enum': [DateTime(2026)],
+        },
+        {
+          'const': {1: 'x'},
+        },
+        cyclic,
+      ]) {
+        expect(
+          () => responseFormatGrammar(schema),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              contains('must contain only JSON values'),
+            ),
+          ),
         );
       }
     });

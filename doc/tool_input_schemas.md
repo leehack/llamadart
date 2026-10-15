@@ -68,10 +68,10 @@ rejects a repetition count of 2000 or more and silently drops a larger upper
 bound.
 
 The grammar for all tools in a request is checked again before generation on
-grammar-capable backends. It throws `LlamaUnsupportedException` when it is
-longer than 8 MiB, or when llama.cpp would reject it: a repeated group whose
-symbols times its repetition count reach 2000. Hermes, for example, puts every
-schema tool inside one repeated group, so about 2000 schema tools exceed it.
+grammar-capable backends. It throws `LlamaUnsupportedException` when llama.cpp
+would refuse to load it: a repeated group whose symbols times its repetition
+count reach 2000. Hermes, for example, puts every schema tool inside one
+repeated group, so about 2000 schema tools exceed it.
 
 | Selected tool format | Canonical schema support |
 | --- | --- |

@@ -1,33 +1,31 @@
 import '../exceptions.dart';
-
-/// Most characters a generated template grammar may have.
-///
-/// llama.cpp sets no length limit, but grammar setup time grows faster than
-/// the grammar: at b10549 a 4 MB generated grammar takes about 0.4 s and a
-/// 12 MB one about 3 s.
-const maxTemplateGrammarLength = 8 * 1024 * 1024;
+import '../llama_logger.dart';
 
 /// llama.cpp's `MAX_REPETITION_THRESHOLD`.
 const _maxRepetitionThreshold = 2000;
 const _unbounded = -1;
 
-/// Throws [LlamaUnsupportedException] when llama.cpp would reject [grammar]
-/// or silently drop one of its repetition bounds, or when it is longer than
-/// [maxTemplateGrammarLength].
+/// Throws [LlamaUnsupportedException] when llama.cpp would refuse to load
+/// [grammar] for its repetition limit.
+///
+/// A repetition upper bound above the threshold, which llama.cpp replaces
+/// with an unbounded repetition, logs a warning instead: the output still
+/// matches the rest of the grammar.
 void checkTemplateGrammarLimits(String grammar) {
-  if (grammar.length > maxTemplateGrammarLength) {
-    throw LlamaUnsupportedException(
-      'The generated grammar has ${grammar.length} characters; the limit is '
-      '$maxTemplateGrammarLength. Pass fewer tools or simpler schemas.',
-    );
-  }
-  final budget = _RepetitionBudget(grammar, rejectDroppedBounds: true);
+  final budget = _RepetitionBudget(grammar);
   final rejection = budget.rejection();
   if (rejection != null) {
     throw LlamaUnsupportedException(
       'The generated grammar exceeds llama.cpp grammar limits ($rejection). '
       'Pass fewer tools or simpler schemas, or use smaller repetition '
       'bounds.',
+    );
+  }
+  final dropped = budget.droppedBound;
+  if (dropped != null) {
+    LlamaLogger.instance.warning(
+      'The generated grammar $dropped; llama.cpp ignores repetition upper '
+      'bounds above $_maxRepetitionThreshold, so that bound is not enforced.',
     );
   }
 }
@@ -42,16 +40,15 @@ void checkTemplateGrammarLimits(String grammar) {
 /// rule names), and the product with the repetition count must stay below
 /// `MAX_REPETITION_THRESHOLD`.
 String? llamaCppRepetitionRejection(String grammar) =>
-    _RepetitionBudget(grammar, rejectDroppedBounds: false).rejection();
+    _RepetitionBudget(grammar).rejection();
 
 final class _RepetitionBudget {
-  _RepetitionBudget(this._source, {required this.rejectDroppedBounds});
+  _RepetitionBudget(this._source);
 
   final String _source;
 
-  /// Whether an upper bound above the threshold, which llama.cpp replaces
-  /// with an unbounded repetition, counts as a rejection.
-  final bool rejectDroppedBounds;
+  /// The first repetition upper bound llama.cpp drops, once [rejection] ran.
+  String? droppedBound;
   final Set<String> _names = {};
   int _generated = 0;
   int _pos = 0;
@@ -149,12 +146,7 @@ final class _RepetitionBudget {
           throw _Rejected('rule $_rule repeats $min times');
         }
         if (max > _maxRepetitionThreshold) {
-          if (rejectDroppedBounds) {
-            throw _Rejected(
-              'rule $_rule bounds a repetition at $max; llama.cpp ignores '
-              'upper bounds above $_maxRepetitionThreshold',
-            );
-          }
+          droppedBound ??= 'bounds a repetition in rule $_rule at $max';
           max = _unbounded;
         }
         repeat(min, max);

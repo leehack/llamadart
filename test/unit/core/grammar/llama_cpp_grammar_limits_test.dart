@@ -3,6 +3,21 @@ import 'package:llamadart/src/core/grammar/llama_cpp_grammar_limits.dart';
 import 'package:test/test.dart';
 
 void main() {
+  List<String> captureWarnings() {
+    final logger = LlamaLogger.instance;
+    final level = logger.level;
+    final logs = <String>[];
+    logger
+      ..setLevel(LlamaLogLevel.warn)
+      ..setHandler((record) => logs.add(record.message));
+    addTearDown(() {
+      logger
+        ..setHandler(null)
+        ..setLevel(level);
+    });
+    return logs;
+  }
+
   Matcher rejects(String reason) => throwsA(
     isA<LlamaUnsupportedException>().having(
       (error) => error.message,
@@ -41,32 +56,22 @@ void main() {
       }
     });
 
-    test('rejects upper bounds llama.cpp would drop', () {
+    test('warns about upper bounds llama.cpp drops', () {
+      final logs = captureWarnings();
       for (final grammar in ['root ::= "a"{0,2001}', 'root ::= [a]{3,5000}']) {
         expect(llamaCppRepetitionRejection(grammar), isNull);
-        expect(
-          () => checkTemplateGrammarLimits(grammar),
-          rejects('llama.cpp ignores upper bounds above 2000'),
-        );
+        expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
       }
+      expect(logs, hasLength(2));
+      expect(logs.first, contains('bounds a repetition in rule root at 2001'));
+      expect(logs.last, contains('at 5000'));
+      checkTemplateGrammarLimits('root ::= "a"{0,1999}');
+      expect(logs, hasLength(2));
     });
 
-    test('rejects grammars longer than the length limit', () {
-      String padded(int length) {
-        const rule = 'root ::= "a"\n';
-        return '$rule#${'x' * (length - rule.length - 1)}';
-      }
-
-      final atLimit = padded(maxTemplateGrammarLength);
-      expect(atLimit.length, maxTemplateGrammarLength);
-      expect(() => checkTemplateGrammarLimits(atLimit), returnsNormally);
-      expect(
-        () => checkTemplateGrammarLimits(padded(maxTemplateGrammarLength + 1)),
-        rejects(
-          'has ${maxTemplateGrammarLength + 1} characters; the limit is '
-          '$maxTemplateGrammarLength',
-        ),
-      );
+    test('sets no length limit of its own', () {
+      final grammar = 'root ::= "a"\n#${'x' * (12 * 1024 * 1024)}';
+      expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
     });
 
     test('leaves syntax it does not model to llama.cpp', () {

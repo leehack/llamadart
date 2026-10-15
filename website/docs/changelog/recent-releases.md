@@ -9,17 +9,16 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- **Behavior change:** Raw `responseFormat` JSON schemas throw
-  `LlamaUnsupportedException` before generation for constraints the grammar
-  cannot enforce (`format`, numeric bounds, `uniqueItems`, a `pattern` outside
-  the compiled subset and similar), for schemas nested more than 512 levels,
-  and for shapes the converter cannot represent, instead of silently dropping
-  the constraint, overflowing the stack or throwing `StateError`
-  ([#584](https://github.com/leehack/llamadart/issues/584)).
-- Reject a combined tool or schema grammar that llama.cpp would refuse or
-  that is longer than 8 MiB, such as about 2000 Hermes schema tools, with
-  `LlamaUnsupportedException` before generation
-  ([#1093](https://github.com/leehack/llamadart/issues/1093)).
+- Report `responseFormat` JSON schemas the grammar converter cannot represent,
+  such as an untyped property, a non-local `$ref` or one nested too deeply for
+  the stack, as `LlamaUnsupportedException`, and cyclic or other non-JSON
+  schemas as `LlamaArgumentException`, instead of `StateError` or a stack
+  overflow ([#584](https://github.com/leehack/llamadart/issues/584),
+  [#1093](https://github.com/leehack/llamadart/issues/1093)).
+- Reject a combined tool or schema grammar that llama.cpp would refuse to
+  load, such as about 2000 Hermes schema tools, with
+  `LlamaUnsupportedException` before generation instead of a sampler
+  initialization failure ([#1093](https://github.com/leehack/llamadart/issues/1093)).
 
 ## 0.13.0
 

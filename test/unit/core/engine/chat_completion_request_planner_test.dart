@@ -2,6 +2,8 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/grammar/llama_cpp_grammar_limits.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
@@ -273,40 +275,33 @@ void main() {
         );
       });
 
-      test('rejects template grammars over the length limit', () {
-        final grammar = 'root ::= "a"\n#${'x' * maxTemplateGrammarLength}';
+      test('applies bounds llama.cpp drops with a warning', () {
+        final logger = LlamaLogger.instance;
+        final level = logger.level;
+        final logs = <String>[];
+        logger
+          ..setLevel(LlamaLogLevel.warn)
+          ..setHandler((record) => logs.add(record.message));
+        addTearDown(() {
+          logger
+            ..setHandler(null)
+            ..setLevel(level);
+        });
+        const grammar = 'root ::= "\\"" char{0,3000} "\\""\nchar ::= [a-z]';
         expect(
-          () => plan(_BaseBackend(), grammar),
-          throwsA(
-            isA<LlamaUnsupportedException>().having(
-              (error) => error.message,
-              'message',
-              contains('the limit is $maxTemplateGrammarLength'),
-            ),
-          ),
-        );
-      });
-
-      test('rejects bounds llama.cpp would silently drop', () {
-        expect(
-          () => plan(
+          plan(
             _BaseBackend(),
-            'root ::= "\\"" char{0,3000} "\\""\nchar ::= [a-z]',
+            grammar,
             responseFormat: const {
               'type': 'json_schema',
               'json_schema': {
                 'schema': {'type': 'string', 'maxLength': 3000},
               },
             },
-          ),
-          throwsA(
-            isA<LlamaUnsupportedException>().having(
-              (error) => error.message,
-              'message',
-              contains('llama.cpp ignores upper bounds above 2000'),
-            ),
-          ),
+          ).generationParams.grammar,
+          grammar,
         );
+        expect(logs.single, contains('llama.cpp ignores repetition upper'));
       });
 
       test('leaves grammars the plan does not apply unchecked', () {

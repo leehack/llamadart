@@ -1423,27 +1423,27 @@ void main() {
     }
   });
 
-  test('llama.cpp drops repetition bounds the limit check rejects', () {
-    final grammar = ChatTemplateEngine.render(
-      templateSource: null,
-      messages: const [],
-      metadata: const {},
-      responseFormat: const {
-        'type': 'json_schema',
-        'json_schema': {
-          'schema': {'type': 'string', 'maxLength': 2001},
+  test(
+    'llama.cpp drops repetition bounds the limit check only warns about',
+    () {
+      final grammar = ChatTemplateEngine.render(
+        templateSource: null,
+        messages: const [],
+        metadata: const {},
+        responseFormat: const {
+          'type': 'json_schema',
+          'json_schema': {
+            'schema': {'type': 'string', 'maxLength': 2001},
+          },
         },
-      },
-    ).grammar!;
-    expect(
-      _load(validator, grammar, '"${'a' * 2500}"'),
-      contains('Input string is valid according to the grammar.'),
-    );
-    expect(
-      () => checkTemplateGrammarLimits(grammar),
-      throwsA(isA<LlamaUnsupportedException>()),
-    );
-  });
+      ).grammar!;
+      expect(
+        _load(validator, grammar, '"${'a' * 2500}"'),
+        contains('Input string is valid according to the grammar.'),
+      );
+      expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
+    },
+  );
 
   test('enforceable responseFormat schemas compile and constrain output', () {
     String render(Map<String, dynamic> schema) {

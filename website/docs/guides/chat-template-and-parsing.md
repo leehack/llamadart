@@ -42,7 +42,8 @@ print(result.format);
   deprecated.
 - `templateNow`: deterministic time injection for tests.
 - `responseFormat`: structured-output constraint; unrecognised shapes and
-  schemas the grammar cannot enforce throw `LlamaUnsupportedException`.
+  schemas the grammar converter cannot represent throw
+  `LlamaUnsupportedException`.
 
 Structured output (`responseFormat`, `LlamaStructuredOutput`,
 `parseStructuredJson`) is covered in
