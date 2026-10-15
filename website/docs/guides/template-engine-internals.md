@@ -113,8 +113,15 @@ sequenceDiagram
   the PEG parser requires, such as the tool call of `ToolChoice.required`.
   It is parsed as partial output instead: its content and thinking are kept,
   its tool calls are withheld, and it finishes with `length` at a limit and
-  `stop` on a cancel, as with `ToolChoice.auto`. A reply that ended normally
-  and does not parse throws `LlamaInferenceException`.
+  `stop` on a cancel, as with `ToolChoice.auto`. A limit counts only on a
+  backend that reports a token limit, such as native llama.cpp; on one that
+  does not, such as LiteRT-LM, a reply cut short by `maxTokens` is parsed as
+  a complete one. A reply parsed as complete that does not parse throws
+  `LlamaInferenceException`.
+- This deliberately differs from upstream llama.cpp (`b10549`), whose server
+  fails a cut-short `required` reply with a parse error. llamadart withholds
+  the calls and finishes with `length` or `stop` instead
+  ([#890](https://github.com/leehack/llamadart/issues/890)).
 
 ## Tool-call parsing
 

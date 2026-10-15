@@ -4,10 +4,12 @@
   `LlamaInferenceException` message: the model's `tokenizer.chat_template`
   or its `tool_use` variant, `ModelParams.chatTemplate`, or `customTemplate`
   ([#820](https://github.com/leehack/llamadart/issues/820)).
-- A `ToolChoice.required` reply cut short by a cancel or `maxTokens` no
-  longer throws a raw `StateError`; it ends with `stop` or `length` and no
-  tool calls, as with `ToolChoice.auto`. Other output a PEG parser cannot
-  parse throws `LlamaInferenceException`
+- A `ToolChoice.required` reply cut short by a cancel, or by `maxTokens` on
+  a backend that reports a token limit, no longer throws a raw
+  `StateError`; it ends with `stop` or `length` and no tool calls, as with
+  `ToolChoice.auto`. **Behavior change:** other output a PEG parser cannot
+  parse, including in `ChatTemplateEngine.parse`, throws
+  `LlamaInferenceException` instead of `StateError`
   ([#890](https://github.com/leehack/llamadart/issues/890)).
 
 ## 0.12.2

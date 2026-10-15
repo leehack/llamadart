@@ -160,6 +160,29 @@ void main() {
       );
     });
 
+    test('templateSourceName names the ChatML fallback when no template '
+        'is set', () {
+      expect(
+        ChatTemplateRenderer.templateSourceName(),
+        'the built-in ChatML fallback template',
+      );
+      expect(
+        ChatTemplateRenderer.templateSourceName(modelTemplate: ''),
+        'the built-in ChatML fallback template',
+      );
+      expect(
+        ChatTemplateRenderer.templateSourceName(metadataTemplate: 'm'),
+        "the model's tokenizer.chat_template",
+      );
+      expect(
+        ChatTemplateRenderer.templateSourceName(
+          modelTemplate: 'o',
+          metadataTemplate: 'm',
+        ),
+        'ModelParams.chatTemplate',
+      );
+    });
+
     test('modelTemplate renders when metadata cannot be read', () async {
       final result = await ChatTemplateRenderer.render(
         loadMetadata: () async => throw StateError('no metadata'),

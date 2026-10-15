@@ -21,6 +21,14 @@ ChatFormat? pegParseFormat(ChatFormat format, String? parser) {
   };
 }
 
+// llama.cpp's `common_chat_format_name` spelling, as its errors use.
+String _formatName(ChatFormat format) => switch (format) {
+  ChatFormat.pegSimple => 'peg-simple',
+  ChatFormat.pegNative => 'peg-native',
+  ChatFormat.pegConstructed => 'peg-constructed',
+  _ => format.name,
+};
+
 /// Runtime PEG parser for llama.cpp `parser.save()` payloads.
 ///
 /// This executes serialized PEG parsers and maps AST tags to chat payloads,
@@ -51,7 +59,7 @@ class PegChatParser {
     final parseResult = arena.parse(ctx);
     if (parseResult.isFail) {
       throw LlamaInferenceException(
-        'The model output does not match the expected ${format.name} '
+        'The model output does not match the expected ${_formatName(format)} '
         'format: the parse failed at character ${parseResult.end} of '
         '${output.length}.',
       );

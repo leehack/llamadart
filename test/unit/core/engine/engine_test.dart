@@ -5384,7 +5384,7 @@ void main() {
             (error) => error.message,
             'message',
             startsWith(
-              'The model output does not match the expected pegNative format',
+              'The model output does not match the expected peg-native format',
             ),
           ),
         ),

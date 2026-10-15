@@ -135,7 +135,7 @@ void main() {
               isA<LlamaInferenceException>().having(
                 (error) => error.message,
                 'message',
-                'The model output does not match the expected pegNative '
+                'The model output does not match the expected peg-native '
                     'format: the parse failed at character $end of '
                     '${output.length}.',
               ),

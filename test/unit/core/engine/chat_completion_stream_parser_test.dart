@@ -645,7 +645,7 @@ void main() {
                 (error) => error.message,
                 'message',
                 startsWith(
-                  'The model output does not match the expected pegNative '
+                  'The model output does not match the expected peg-native '
                   'format: the parse failed at character ',
                 ),
               ),
