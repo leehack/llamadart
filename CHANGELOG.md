@@ -31,6 +31,13 @@
   was cancelled before it reached the backend, instead of the counters of the
   request before it
   ([#677](https://github.com/leehack/llamadart/issues/677)).
+- On macOS x86_64, where LiteRT-LM has no runtime, a LiteRT-LM GPU request
+  now fails up front with `LlamaUnsupportedException`, and LiteRT-LM is no
+  longer reported or selected as GPU there
+  ([#711](https://github.com/leehack/llamadart/issues/711)).
+- `WebGpuLlamaBackend(bridgeScriptUrl: ...)` now loads the bridge in dart2js
+  builds instead of failing with `WebGPU bridge init failed`
+  ([#735](https://github.com/leehack/llamadart/issues/735)).
 
 ## 0.12.2
 

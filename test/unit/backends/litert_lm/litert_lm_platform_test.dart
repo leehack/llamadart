@@ -5,6 +5,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -51,7 +53,7 @@ void main() {
       return;
     }
 
-    if (Platform.isIOS || Platform.isMacOS) {
+    if (Platform.isIOS || liteRtLmGateAbi() == Abi.macosArm64) {
       expect(available, const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend]);
       expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'gpu');
       expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isTrue);
@@ -68,5 +70,68 @@ void main() {
     expect(available, const <String>[liteRtLmCpuBackend]);
     expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'cpu');
     expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isFalse);
+  });
+
+  group('macOS ABI backend defaults', () {
+    void runOn(Abi abi) {
+      debugLiteRtLmAbiOverride = abi;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+    }
+
+    final macOsX64Gpu = throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('LiteRT-LM GPU is not available on macOS x86_64'),
+          contains('leehack/litert-lm-native#72'),
+          contains('not under Rosetta'),
+          contains('llama.cpp backend'),
+        ),
+      ),
+    );
+
+    test('macOS arm64 defaults to GPU and accepts a GPU request', () {
+      runOn(Abi.macosArm64);
+
+      expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'gpu');
+      expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isTrue);
+      expect(liteRtLmAvailableNativeBackendsForCurrentPlatform(), const [
+        liteRtLmCpuBackend,
+        liteRtLmGpuBackend,
+      ]);
+      expect(
+        () => liteRtLmEnsureNativeBackendSupported('gpu'),
+        returnsNormally,
+      );
+    });
+
+    test('macOS x86_64 defaults to CPU and rejects a GPU request', () {
+      runOn(Abi.macosX64);
+
+      expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'cpu');
+      expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isFalse);
+      expect(liteRtLmAvailableNativeBackendsForCurrentPlatform(), const [
+        liteRtLmCpuBackend,
+      ]);
+      expect(() => liteRtLmEnsureNativeBackendSupported('gpu'), macOsX64Gpu);
+      expect(
+        () => liteRtLmEnsureNativeBackendSupported('cpu'),
+        returnsNormally,
+      );
+    });
+
+    test('other ABIs keep their unavailable-backend handling', () {
+      for (final abi in Abi.values.where((abi) => abi != Abi.macosX64)) {
+        runOn(abi);
+        for (final backend in const ['cpu', 'gpu', 'npu']) {
+          expect(
+            () => liteRtLmEnsureNativeBackendSupported(backend),
+            returnsNormally,
+            reason: '$abi $backend',
+          );
+        }
+      }
+    });
   });
 }
