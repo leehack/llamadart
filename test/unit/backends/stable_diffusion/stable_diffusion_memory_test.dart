@@ -465,26 +465,48 @@ void main() {
       }
     });
 
-    test('a discrete GPU that reports its total as free, or nothing as free, '
-        'uses its total memory and says that free memory is unknown', () {
-      for (final free in [8 * _gib, 0]) {
-        expect(limits([gpu(total: 8 * _gib, free: free)]), (
-          refuse: (
-            bytes: 13 * _gib,
-            source:
-                '8.00 GiB of GPU memory and 5.00 GiB of system memory: the '
-                'GPU memory of Vulkan0 (NVIDIA L4), whose driver does not '
-                'report how much of it is free; MemAvailable in '
-                '/proc/meminfo',
-          ),
-          slower: (
-            bytes: 8 * _gib,
-            source:
-                'the GPU memory of Vulkan0 (NVIDIA L4), whose driver does '
-                'not report how much of it is free',
-          ),
-        ), reason: '$free');
-      }
+    test('a discrete GPU that reports its total as free uses its total '
+        'memory and says that free memory is unknown', () {
+      expect(limits([gpu(total: 8 * _gib, free: 8 * _gib)]), (
+        refuse: (
+          bytes: 13 * _gib,
+          source:
+              '8.00 GiB of GPU memory and 5.00 GiB of system memory: the '
+              'GPU memory of Vulkan0 (NVIDIA L4), whose driver does not '
+              'report how much of it is free; MemAvailable in '
+              '/proc/meminfo',
+        ),
+        slower: (
+          bytes: 8 * _gib,
+          source:
+              'the GPU memory of Vulkan0 (NVIDIA L4), whose driver does '
+              'not report how much of it is free',
+        ),
+      ));
+    });
+
+    test('a discrete GPU over its budget, which reports 0 free, has no free '
+        'memory: any model is slower, and refused above host memory', () {
+      expect(limits([gpu(total: 8 * _gib, free: 0)]), (
+        refuse: (
+          bytes: 5 * _gib,
+          source:
+              '0.00 GiB of GPU memory and 5.00 GiB of system memory: free '
+              'GPU memory of Vulkan0 (NVIDIA L4), out of 8.00 GiB; '
+              'MemAvailable in /proc/meminfo',
+        ),
+        slower: (
+          bytes: 0,
+          source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 8.00 GiB',
+        ),
+      ));
+      expect(limits([gpu(total: 8 * _gib, free: 0)], hostBudget: null), (
+        refuse: null,
+        slower: (
+          bytes: 0,
+          source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 8.00 GiB',
+        ),
+      ));
     });
 
     test('a discrete GPU where host memory is not read, as on Windows, is '

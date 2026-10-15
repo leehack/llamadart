@@ -883,6 +883,31 @@ void main() {
         expect(logged, [(LlamaLogLevel.info, generating)]);
       });
 
+      test('a drain that finishes after a later one does not move the '
+          'dropped count back', () async {
+        final first = await loaded(logLevel: LlamaLogLevel.error);
+        final second = await loaded(logLevel: LlamaLogLevel.error);
+        final logged = records();
+
+        // The first drain reads no drops and is held before it sends that;
+        // the second one reads the three dropped meanwhile.
+        runtime.holdNextLogDrain();
+        final held = first.generate(_request(), (_, _) {});
+        await runtime.logDrainHeld();
+        runtime.dropUnrecorded(3);
+        await second.generate(_request(), (_, _) {});
+        runtime.releaseLogDrain();
+        await held;
+        await second.generate(_request(), (_, _) {});
+        await runtime.flush();
+
+        expect(logged, hasLength(1));
+        expect(
+          logged.single.$2,
+          startsWith('The stable_diffusion runtime dropped 3 log messages'),
+        );
+      });
+
       test('messages the runtime dropped are reported in one warning, after '
           'the ones it kept', () async {
         runtime.close();
