@@ -5,8 +5,9 @@ import '../inference/generation_usage.dart';
 ///
 /// `LlamaEngine.create` does not stream calls as fragments. It emits each
 /// call once, complete, in the final chunk, whose `finishReason` is
-/// `tool_calls`. A reply that ends at the token limit withholds every call,
-/// including complete ones, and finishes with `length`.
+/// `tool_calls`. When the backend reports that the reply ended at the token
+/// limit, every call is withheld, including complete ones, and the reply
+/// finishes with `length`.
 class LlamaCompletionChunkToolCall {
   /// The position of this call among the calls of the completion.
   final int index;
@@ -64,8 +65,8 @@ class LlamaCompletionChunkFunction {
   final String? name;
 
   /// The function arguments as text. From `LlamaEngine.create` this is the
-  /// complete arguments text the model emitted: usually a JSON object, but it
-  /// can be empty or not an object.
+  /// complete arguments as a string, not a streaming fragment: usually a JSON
+  /// object, but it can be empty or not an object.
   final String? arguments;
 
   /// Creates a new [LlamaCompletionChunkFunction].

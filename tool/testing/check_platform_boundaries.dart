@@ -41,19 +41,19 @@ const List<_BoundaryScope> _scopes = <_BoundaryScope>[
   _BoundaryScope(
     name: 'public-entrypoint',
     targetPath: 'lib/llamadart.dart',
-    forbiddenUris: <String>{'dart:io', 'dart:ffi'},
+    forbiddenUris: <String>{'dart:io', 'dart:ffi', 'package:ffi/ffi.dart'},
     followsDefaultImports: true,
   ),
   _BoundaryScope(
     name: 'backend-entrypoint',
     targetPath: 'lib/backend.dart',
-    forbiddenUris: <String>{'dart:io', 'dart:ffi'},
+    forbiddenUris: <String>{'dart:io', 'dart:ffi', 'package:ffi/ffi.dart'},
     followsDefaultImports: true,
   ),
   _BoundaryScope(
     name: 'bindings-entrypoint',
     targetPath: 'lib/llama_cpp_bindings.dart',
-    forbiddenUris: <String>{'dart:io', 'dart:ffi'},
+    forbiddenUris: <String>{'dart:io', 'dart:ffi', 'package:ffi/ffi.dart'},
     followsDefaultImports: true,
   ),
   _BoundaryScope(

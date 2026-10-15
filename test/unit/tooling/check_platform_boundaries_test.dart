@@ -108,6 +108,28 @@ void main() {
     );
   });
 
+  test('rejects package:ffi that an entrypoint reaches through other '
+      'libraries', () async {
+    final result = await _runBoundaries(
+      _fakeRepo(
+        overrides: <String, String>{
+          'lib/llama_cpp_bindings.dart': "export 'src/bindings.dart';\n",
+          'lib/src/bindings.dart': "import 'ffi_alloc.dart';\n",
+          'lib/src/ffi_alloc.dart': "import 'package:ffi/ffi.dart';\n",
+        },
+      ),
+    );
+
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      contains(
+        '${path.join('lib', 'src', 'ffi_alloc.dart')}:1 '
+        '[bindings-entrypoint] import package:ffi/ffi.dart',
+      ),
+    );
+  });
+
   test('skips the conditional branches of an entrypoint export', () async {
     final result = await _runBoundaries(
       _fakeRepo(
