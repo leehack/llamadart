@@ -10,10 +10,12 @@ const llamaCppTag = 'v0.6.0-3';
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
 ///
-/// A core before `appleCompanionLockstepStart` names it in incompatible-
-/// companion build errors, because a caret constraint on an earlier `0.0.x`
-/// companion can never resolve it; a later core names its own minor instead.
-/// The native pin sync sets it whenever it moves the companion pin.
+/// Incompatible-companion build errors name it, because a caret constraint on
+/// an earlier companion can never resolve it. A core from
+/// `appleCompanionLockstepStart` on names it only when it shares the core's
+/// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
+/// sync sets it to the companion's next release whenever it moves the
+/// companion pin.
 const llamaCppAppleCompanionVersion = '0.0.23';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp

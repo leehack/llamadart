@@ -404,7 +404,8 @@ void main() {
       checkoutCore,
       firstPinningRelease: llamaCppAppleCompanionVersion,
     )!,
-    '0.12.2': '^$llamaCppAppleCompanionVersion',
+    for (final core in ['0.12.2', '0.13.0-dev.1'])
+      core: '^$llamaCppAppleCompanionVersion',
     '0.13.0': '^0.13.0',
     '0.13.3': '^0.13.0',
   };
@@ -415,17 +416,18 @@ void main() {
       nativePin: 'leehack/llamadart-native@$llamaCppTag',
       firstPinningRelease: llamaCppAppleCompanionVersion,
     )!,
-    '0.12.2':
-        'Depend on `llamadart_llama_cpp_flutter: '
-        '^$llamaCppAppleCompanionVersion`, the first release pinning '
-        'leehack/llamadart-native@$llamaCppTag, in pubspec.yaml and rerun '
-        'flutter pub get; a caret constraint on an earlier 0.0.x release '
-        'never resolves it.',
+    for (final core in ['0.12.2', '0.13.0-dev.1'])
+      core:
+          'Depend on `llamadart_llama_cpp_flutter: '
+          '^$llamaCppAppleCompanionVersion`, the first release pinning '
+          'leehack/llamadart-native@$llamaCppTag, in pubspec.yaml and rerun '
+          'flutter pub get; a caret constraint on an earlier 0.0.x release '
+          'never resolves it.',
     for (final core in ['0.13.0', '0.13.3'])
       core:
-          'Depend on `llamadart_llama_cpp_flutter: ^0.13.0`, the releases '
-          'paired with core 0.13.x, in pubspec.yaml and rerun flutter pub '
-          'get.',
+          'Depend on `llamadart_llama_cpp_flutter: ^0.13.0`, the core 0.13.x '
+          'companion releases pinning leehack/llamadart-native@$llamaCppTag, '
+          'in pubspec.yaml and rerun flutter pub get.',
   };
   String coreLabel(String? core) => core ?? 'checkout $checkoutCore';
 

@@ -817,9 +817,10 @@ dependencies:
     ),
     (
       '0.13.0',
-      'Depend on `llamadart_stable_diffusion_flutter: ^0.13.0`, the releases '
-          'paired with core 0.13.x, in pubspec.yaml and rerun flutter pub '
-          'get.',
+      'Depend on `llamadart_stable_diffusion_flutter: ^0.13.0`, the core '
+          '0.13.x companion releases pinning '
+          'leehack/stable-diffusion-native@$stableDiffusionReleaseTag, in '
+          'pubspec.yaml and rerun flutter pub get.',
     ),
   ]) {
     test('core $core: the stable_diffusion companion rejection names the '

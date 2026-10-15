@@ -6,52 +6,75 @@ library;
 /// Companions paired with an earlier core are numbered `0.0.x`.
 const appleCompanionLockstepStart = (major: 0, minor: 13);
 
-final RegExp _coreVersionPattern = RegExp(
-  r'^(\d+)\.(\d+)\.\d+(?:[-+][0-9A-Za-z.-]+)?$',
+final RegExp _versionPattern = RegExp(
+  r'^(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$',
 );
 
-({int major, int minor})? _coreMinor(String? coreVersion) {
-  final match = coreVersion == null
-      ? null
-      : _coreVersionPattern.firstMatch(coreVersion);
+typedef _Version = ({int major, int minor, int patch, bool prerelease});
+
+_Version? _parse(String? version) {
+  final match = version == null ? null : _versionPattern.firstMatch(version);
   if (match == null) return null;
-  return (major: int.parse(match[1]!), minor: int.parse(match[2]!));
+  return (
+    major: int.parse(match[1]!),
+    minor: int.parse(match[2]!),
+    patch: int.parse(match[3]!),
+    prerelease: match[4] != null,
+  );
 }
 
-bool _isLockstep(({int major, int minor}) core) =>
-    core.major > appleCompanionLockstepStart.major ||
-    (core.major == appleCompanionLockstepStart.major &&
-        core.minor >= appleCompanionLockstepStart.minor);
+bool _isLockstep(_Version core) {
+  const start = appleCompanionLockstepStart;
+  if (core.major != start.major) return core.major > start.major;
+  if (core.minor != start.minor) return core.minor > start.minor;
+  // A prerelease of the first lockstep version precedes it.
+  return core.patch > 0 || !core.prerelease;
+}
+
+/// Whether core [coreVersion] is at or after `appleCompanionLockstepStart.0`
+/// in semver precedence, so its Apple companions share its `MAJOR.MINOR`.
+///
+/// A prerelease of that first version, such as `0.13.0-dev.1`, is not; a
+/// [coreVersion] that is not a version is not either.
+bool isAppleCompanionLockstepCore(String coreVersion) {
+  final core = _parse(coreVersion);
+  return core != null && _isLockstep(core);
+}
 
 /// The pubspec constraint that resolves an Apple companion core
-/// [coreVersion] pairs with, or `null` when there is none to name.
+/// [coreVersion] accepts, or `null` when there is none to name.
 ///
-/// From [appleCompanionLockstepStart] on, that is the core's own minor:
-/// `^0.MINOR.0`, or `'>=MAJOR.MINOR.0 <MAJOR.(MINOR+1).0'` once a caret
-/// would admit later minors. An earlier core names `^`[firstPinningRelease],
-/// the first `0.0.x` companion pinning its native tag, when it is known. A
-/// missing [coreVersion], or one that is not a version, names nothing.
+/// [firstPinningRelease] is the first companion release pinning the core's
+/// native tag. A lockstep core ([isAppleCompanionLockstepCore]) names it when
+/// it shares the core's `MAJOR.MINOR`, because the pin moved within that
+/// minor, and otherwise the minor's first release: a caret on a 0.x release,
+/// or `'>=FROM <MAJOR.(MINOR+1).0'` once a caret would admit later minors. An
+/// earlier core names `^`[firstPinningRelease], when it is known. A missing
+/// [coreVersion], or one that is not a version, names nothing.
 String? appleCompanionConstraint(
   String? coreVersion, {
   String? firstPinningRelease,
 }) {
-  final core = _coreMinor(coreVersion);
+  final core = _parse(coreVersion);
   if (core == null) return null;
-  if (_isLockstep(core)) {
-    return core.major == 0
-        ? '^0.${core.minor}.0'
-        : "'>=${core.major}.${core.minor}.0 "
-              "<${core.major}.${core.minor + 1}.0'";
+  if (!_isLockstep(core)) {
+    return firstPinningRelease == null ? null : '^$firstPinningRelease';
   }
-  return firstPinningRelease == null ? null : '^$firstPinningRelease';
+  final first = _parse(firstPinningRelease);
+  final from =
+      first != null && first.major == core.major && first.minor == core.minor
+      ? firstPinningRelease!
+      : '${core.major}.${core.minor}.0';
+  return core.major == 0
+      ? '^$from'
+      : "'>=$from <${core.major}.${core.minor + 1}.0'";
 }
 
 /// The sentence an incompatible Apple companion build error uses to tell the
 /// app which [packageName] release to depend on, or `null` when
 /// [appleCompanionConstraint] names none.
 ///
-/// [nativePin] is the `repository@tag` the core requires; an earlier core's
-/// sentence names it.
+/// [nativePin] is the `repository@tag` the core requires.
 String? appleCompanionRequirement({
   required String packageName,
   required String? coreVersion,
@@ -63,11 +86,11 @@ String? appleCompanionRequirement({
     firstPinningRelease: firstPinningRelease,
   );
   if (constraint == null) return null;
-  final core = _coreMinor(coreVersion)!;
+  final core = _parse(coreVersion)!;
   if (_isLockstep(core)) {
-    return 'Depend on `$packageName: $constraint`, the releases paired with '
-        'core ${core.major}.${core.minor}.x, in pubspec.yaml and rerun '
-        'flutter pub get.';
+    return 'Depend on `$packageName: $constraint`, the core '
+        '${core.major}.${core.minor}.x companion releases pinning $nativePin, '
+        'in pubspec.yaml and rerun flutter pub get.';
   }
   return 'Depend on `$packageName: $constraint`, the first release pinning '
       '$nativePin, in pubspec.yaml and rerun flutter pub get; a caret '

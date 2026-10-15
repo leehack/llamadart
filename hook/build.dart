@@ -735,9 +735,9 @@ _AppleCompanions? _flutterAppleCompanions({
 /// its SwiftPM framework: the companion pins [nativeRepository]@[nativeTag]
 /// through `let [tagVariable]` in the maintained manifest template.
 /// [compatibleTags] maps earlier tags accepted with a warning to what their
-/// frameworks lack. [companionVersion] is the first `0.0.x` companion release
-/// pinning [nativeTag], when the core records it; only a core before
-/// [appleCompanionLockstepStart] names it.
+/// frameworks lack. [companionVersion] is the first companion release pinning
+/// [nativeTag], when the core records it; [appleCompanionConstraint] decides
+/// whether a build error names it.
 typedef _AppleCompanionContract = ({
   String label,
   String packageName,

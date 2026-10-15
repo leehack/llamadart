@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:pub_semver/pub_semver.dart';
 import 'package:test/test.dart';
@@ -410,6 +411,29 @@ void main() {
       expect(
         checkCompanionVersionAlignment(root, Version.parse('0.13.0')),
         hasLength(companionSwiftPins.length),
+      );
+    });
+
+    test('starts where the hook names a lockstep companion constraint', () {
+      final root = companionsAt({});
+
+      for (final core in [
+        '0.12.9',
+        '0.13.0-dev.1',
+        '0.13.0',
+        '0.13.0+build.1',
+        '0.13.1-dev.1',
+        '1.0.0',
+      ]) {
+        expect(
+          checkCompanionVersionAlignment(root, Version.parse(core)).isEmpty,
+          !isAppleCompanionLockstepCore(core),
+          reason: core,
+        );
+      }
+      expect(
+        checkCompanionVersionAlignment(root, Version.parse('0.13.0-dev.1')),
+        isEmpty,
       );
     });
 
