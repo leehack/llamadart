@@ -34,7 +34,12 @@ YamlMap _step(String workflow, String job, String name) {
 /// Commands the workflow scripts call, replaced by stubs that log every call
 /// to `$STUB_LOG` and answer from files under `$STUB_STATE`.
 const _stubs = <String, String>{
-  'dart': 'exit 0\n',
+  'dart': r'''
+if [[ -f "$STUB_STATE/dart_failures" ]] && grep -Fxq "$2" "$STUB_STATE/dart_failures"; then
+  exit 1
+fi
+''',
+  'sleep': '',
   'gh': r'''
 if [[ "$1" == release ]]; then
   exit 0
@@ -46,6 +51,14 @@ case "$1" in
     echo "$STUB_HEAD"
     ;;
   ls-remote)
+    if [[ -f "$STUB_STATE/ls_remote_failures" ]]; then
+      for arg in "$@"; do
+        if grep -Fxq -- "$arg" "$STUB_STATE/ls_remote_failures"; then
+          echo "fatal: unable to access origin" >&2
+          exit 128
+        fi
+      done
+    fi
     found=false
     for arg in "$@"; do
       [[ "$arg" == refs/tags/* ]] || continue
@@ -68,13 +81,38 @@ esac
   'curl': r'''
 url="${*: -1}"
 body="$STUB_STATE/pub/${url//[!A-Za-z0-9]/_}"
-if [[ -f "$body" ]]; then
+out=""
+write_out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift ;;
+    -w) write_out="$2"; shift ;;
+  esac
+  shift
+done
+if [[ -n "$write_out" ]]; then
+  if [[ -f "$body" ]]; then
+    cat "$body" > "$out"
+    echo 200
+  else
+    echo '{}' > "$out"
+    echo 404
+  fi
+elif [[ -f "$body" ]]; then
   cat "$body"
 else
   exit 22
 fi
 ''',
   'flutter': r'''
+failures="$STUB_STATE/pub_get_failures"
+if [[ "$1 $2" == "pub get" && -f "$failures" ]]; then
+  left="$(cat "$failures")"
+  if (( left > 0 )); then
+    echo "$((left - 1))" > "$failures"
+    exit 1
+  fi
+fi
 {
   echo "pwd=$PWD"
   if [[ -f pubspec_overrides.yaml ]]; then
@@ -123,6 +161,11 @@ class _Sandbox {
     '$state/remote_tags',
   ).writeAsStringSync('$sha $ref\n', mode: FileMode.append);
 
+  /// Makes `git ls-remote` exit 128 whenever it is asked for [ref].
+  void lsRemoteFails(String ref) => File(
+    '$state/ls_remote_failures',
+  ).writeAsStringSync('$ref\n', mode: FileMode.append);
+
   void pub(String url, String body) => File(
     '$state/pub/${url.replaceAll(RegExp('[^A-Za-z0-9]'), '_')}',
   ).writeAsStringSync(body);
@@ -131,17 +174,24 @@ class _Sandbox {
     ..parent.createSync(recursive: true)
     ..writeAsStringSync(contents);
 
-  /// Runs [script] the way Actions runs a `shell: bash` step.
+  /// Runs [step]'s script the way Actions runs it on Linux: `shell: bash`
+  /// adds `-o pipefail` to the default `bash -e`.
   ProcessResult run(
-    String script, {
+    YamlMap step, {
     required String workingDirectory,
     Map<String, String> env = const {},
   }) {
     final path = '$root/step.sh';
-    File(path).writeAsStringSync(script);
+    File(path).writeAsStringSync('${step['run']}');
     return Process.runSync(
       'bash',
-      ['--noprofile', '--norc', '-eo', 'pipefail', path],
+      [
+        '--noprofile',
+        '--norc',
+        '-e',
+        if (step['shell'] == 'bash') ...['-o', 'pipefail'],
+        path,
+      ],
       workingDirectory: workingDirectory,
       environment: {
         'PATH': '$bin:${Platform.environment['PATH']}',
@@ -188,17 +238,45 @@ Map<String, String> _outputs(String path) => {
       ),
 };
 
-/// Remote state for one release run of core `0.13.0`.
+/// Remote state for one release run of core `0.13.0`, unless [version]
+/// names another core; [failingDart] lists the `dart run` scripts that fail.
 typedef _Release = ({
   String name,
   void Function(_Sandbox sandbox) remote,
   Set<String> missingCompanions,
+  String? version,
+  Set<String> failingDart,
 });
 
+/// A [_Release] of core `0.13.0` whose `dart run` scripts all pass.
+_Release _release(
+  String name, {
+  void Function(_Sandbox sandbox)? remote,
+  Set<String> missingCompanions = const {},
+}) => (
+  name: name,
+  remote: remote ?? (_) {},
+  missingCompanions: missingCompanions,
+  version: null,
+  failingDart: const {},
+);
+
 const _coreListing = 'https://pub.dev/api/packages/llamadart';
+const _preflightScript = 'tool/release/companion_pub_preflight.dart';
+const _verifierScript = 'tool/testing/verify_release_docs_versions.dart';
+
+/// Whether Actions keeps running the job's later steps after [step] fails.
+bool _continuesOnError(YamlMap step) =>
+    step['continue-on-error'] != null && step['continue-on-error'] != false;
+
+/// Whether [step]'s `if` overrides the implicit `success()` that skips it
+/// after an earlier step failed.
+bool _runsAfterFailure(YamlMap step) =>
+    RegExp(r'\b(always|failure|cancelled)\(\)').hasMatch('${step['if']}');
 
 /// Runs the release workflow's validation and publication steps from
 /// [workflow] against [release], and returns the step results and calls.
+/// Publication runs after a failed validation only when Actions would run it.
 ({
   ProcessResult validate,
   ProcessResult? publish,
@@ -207,12 +285,16 @@ const _coreListing = 'https://pub.dev/api/packages/llamadart';
   List<String> problems,
 })
 _runRelease(String workflow, _Release release) {
+  final version = release.version ?? '0.13.0';
   final sandbox = _Sandbox();
   final repo = '${sandbox.root}/repo';
   sandbox
-    ..file('repo/pubspec.yaml', 'name: llamadart\nversion: 0.13.0\n')
-    ..file('repo/CHANGELOG.md', '## 0.13.0\n\n- Release.\n')
-    ..pub(_coreListing, '{"versions":[{"version":"0.13.0"}]}');
+    ..file('repo/pubspec.yaml', 'name: llamadart\nversion: $version\n')
+    ..file('repo/CHANGELOG.md', '## $version\n\n- Release.\n')
+    ..pub(_coreListing, '{"versions":[{"version":"$version"}]}');
+  File(
+    '${sandbox.state}/dart_failures',
+  ).writeAsStringSync(release.failingDart.map((script) => '$script\n').join());
   for (final companion in _companions) {
     sandbox.file(
       'repo/packages/$companion/pubspec.yaml',
@@ -228,14 +310,21 @@ _runRelease(String workflow, _Release release) {
 
   final problems = <String>[];
   final validateStep = _step(workflow, 'release', 'Validate release state');
+  final publishStep = _step(
+    workflow,
+    'release',
+    'Publish core tag and companion packages',
+  );
   final githubOutput = '${sandbox.root}/validate_output';
   File(githubOutput).createSync();
   final validate = sandbox.run(
-    '${validateStep['run']}',
+    validateStep,
     workingDirectory: repo,
     env: {'GITHUB_OUTPUT': githubOutput},
   );
-  if (validate.exitCode != 0) {
+  if (validate.exitCode != 0 &&
+      !_continuesOnError(validateStep) &&
+      !_runsAfterFailure(publishStep)) {
     return (
       validate: validate,
       publish: null,
@@ -245,20 +334,15 @@ _runRelease(String workflow, _Release release) {
     );
   }
 
-  final publishStep = _step(
-    workflow,
-    'release',
-    'Publish core tag and companion packages',
-  );
   final resolved = _resolveEnv(publishStep, {
     for (final output in _outputs(githubOutput).entries)
       'steps.${validateStep['id']}.outputs.${output.key}': output.value,
     'github.token': 'github-token',
     'secrets.RELEASE_AUTOMATION_TOKEN': 'release-token',
   });
-  problems.addAll(resolved.problems);
+  if (validate.exitCode == 0) problems.addAll(resolved.problems);
   final publish = sandbox.run(
-    '${publishStep['run']}',
+    publishStep,
     workingDirectory: repo,
     env: {
       ...resolved.env,
@@ -278,6 +362,19 @@ _runRelease(String workflow, _Release release) {
   );
 }
 
+/// Why any of [steps] in [workflow]'s [job] could keep going past a failed
+/// command: each script must start with `set -euo pipefail`.
+List<String> _strictShellProblems(
+  String workflow,
+  String job,
+  List<String> steps,
+) => [
+  for (final name in steps)
+    if ('${_step(workflow, job, name)['run']}'.trimLeft().split('\n').first !=
+        'set -euo pipefail')
+      '$name must start with set -euo pipefail',
+];
+
 bool _pushed(List<String> calls, String tag) => calls.any(
   (call) =>
       call.startsWith('gh api') &&
@@ -285,19 +382,22 @@ bool _pushed(List<String> calls, String tag) => calls.any(
       call.contains('sha=$_releaseSha'),
 );
 
+bool _pushedAnyTag(List<String> calls) => calls.any(
+  (call) => call.startsWith('gh api') && call.contains('ref=refs/tags/'),
+);
+
 /// Why [workflow] could push the core tag twice, resume at another commit or
-/// leave a companion half-published without saying how to recover.
+/// leave a core or companion half-published without saying how to recover.
 List<String> _releaseResumeProblems(String workflow) {
   final problems = <String>[];
   void check(bool ok, String problem) {
     if (!ok) problems.add(problem);
   }
 
-  final fresh = _runRelease(workflow, (
-    name: 'fresh',
-    remote: (_) {},
-    missingCompanions: {_companions.first},
-  ));
+  final fresh = _runRelease(
+    workflow,
+    _release('fresh', missingCompanions: {_companions.first}),
+  );
   problems.addAll(fresh.problems);
   check(
     fresh.validate.exitCode == 0 && fresh.publish?.exitCode == 0,
@@ -326,17 +426,15 @@ List<String> _releaseResumeProblems(String workflow) {
   );
 
   for (final resume in <_Release>[
-    (
-      name: 'lightweight tag at the release commit',
+    _release(
+      'lightweight tag at the release commit',
       remote: (sandbox) => sandbox.remoteTag(_releaseSha, 'refs/tags/v0.13.0'),
-      missingCompanions: const {},
     ),
-    (
-      name: 'annotated tag at the release commit',
+    _release(
+      'annotated tag at the release commit',
       remote: (sandbox) => sandbox
         ..remoteTag(_tagObjectSha, 'refs/tags/v0.13.0')
         ..remoteTag(_releaseSha, 'refs/tags/v0.13.0^{}'),
-      missingCompanions: const {},
     ),
   ]) {
     final run = _runRelease(workflow, resume);
@@ -356,11 +454,13 @@ List<String> _releaseResumeProblems(String workflow) {
     );
   }
 
-  final moved = _runRelease(workflow, (
-    name: 'tag at another commit',
-    remote: (sandbox) => sandbox.remoteTag(_otherSha, 'refs/tags/v0.13.0'),
-    missingCompanions: const {},
-  ));
+  final moved = _runRelease(
+    workflow,
+    _release(
+      'tag at another commit',
+      remote: (sandbox) => sandbox.remoteTag(_otherSha, 'refs/tags/v0.13.0'),
+    ),
+  );
   check(
     moved.validate.exitCode != 0 &&
         '${moved.validate.stderr}'.contains(
@@ -373,23 +473,307 @@ List<String> _releaseResumeProblems(String workflow) {
     'a core tag at another commit must not reach publication',
   );
 
-  final halfPublished = _runRelease(workflow, (
-    name: 'companion tag without a pub.dev version',
-    remote: (sandbox) => sandbox
-      ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
-      ..remoteTag(_releaseSha, 'refs/tags/${_companions[1]}-v0.13.0'),
-    missingCompanions: {_companions[1]},
-  ));
-  final stderr = '${halfPublished.publish?.stderr}';
-  check(
-    halfPublished.publish != null &&
-        halfPublished.publish!.exitCode != 0 &&
-        stderr.contains('rerun that run') &&
-        stderr.contains('publish_companion_pubdev.yml') &&
-        stderr.contains('bumps the core version'),
-    'a companion tag without its pub.dev version must stop with both '
-    'recovery paths: $stderr',
+  final companionTag = 'refs/tags/${_companions[1]}-v0.13.0';
+  for (final halfPublished in <_Release>[
+    _release(
+      'lightweight companion tag at the release commit',
+      remote: (sandbox) => sandbox
+        ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
+        ..remoteTag(_releaseSha, companionTag),
+      missingCompanions: {_companions[1]},
+    ),
+    _release(
+      'annotated companion tag at the release commit',
+      remote: (sandbox) => sandbox
+        ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
+        ..remoteTag(_tagObjectSha, companionTag)
+        ..remoteTag(_releaseSha, '$companionTag^{}'),
+      missingCompanions: {_companions[1]},
+    ),
+  ]) {
+    final run = _runRelease(workflow, halfPublished);
+    final stderr = '${run.publish?.stderr}';
+    check(
+      run.publish != null &&
+          run.publish!.exitCode != 0 &&
+          stderr.contains('rerun that run') &&
+          stderr.contains('publish_companion_pubdev.yml') &&
+          stderr.contains('bumps the core version') &&
+          !stderr.contains('already exists at'),
+      'a ${halfPublished.name} without its pub.dev version must stop with '
+      'both recovery paths: $stderr',
+    );
+    check(
+      !run.calls.any((call) => call.contains('ref=$companionTag ')),
+      'a ${halfPublished.name} must not be pushed again',
+    );
+  }
+
+  final strayCompanion = _runRelease(
+    workflow,
+    _release(
+      'companion tag at another commit',
+      remote: (sandbox) => sandbox
+        ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
+        ..remoteTag(_tagObjectSha, companionTag)
+        ..remoteTag(_otherSha, '$companionTag^{}'),
+      missingCompanions: {_companions[1]},
+    ),
   );
+  final strayStderr = '${strayCompanion.publish?.stderr}';
+  check(
+    strayCompanion.publish != null &&
+        strayCompanion.publish!.exitCode != 0 &&
+        strayStderr.contains(
+          '${_companions[1]}-v0.13.0 already exists at $_otherSha, not '
+          '$_releaseSha',
+        ) &&
+        strayStderr.contains('bumps the core version') &&
+        !strayStderr.contains('rerun that run'),
+    'a companion tag at another commit must stop without advising a rerun '
+    'that would publish that commit: $strayStderr',
+  );
+  check(
+    !strayCompanion.calls.any((call) => call.contains('ref=$companionTag ')),
+    'a companion tag at another commit must not be pushed again',
+  );
+
+  final coreMissing = _runRelease(
+    workflow,
+    _release(
+      'core publish failure',
+      remote: (sandbox) => sandbox
+        ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
+        ..pub(_coreListing, '{"versions":[{"version":"0.12.9"}]}'),
+    ),
+  );
+  final coreStderr = '${coreMissing.publish?.stderr}';
+  check(
+    coreMissing.publish != null &&
+        coreMissing.publish!.exitCode != 0 &&
+        coreStderr.contains('llamadart 0.13.0 did not appear on pub.dev') &&
+        coreStderr.contains('publish_pubdev.yml run for v0.13.0 failed') &&
+        !_pushedAnyTag(coreMissing.calls),
+    'a core missing from pub.dev must stop before any companion and name '
+    'publish_pubdev.yml: $coreStderr',
+  );
+
+  final companionMissing = _runRelease(
+    workflow,
+    _release(
+      'companion publish failure',
+      remote: (sandbox) => sandbox.pub(
+        'https://pub.dev/api/packages/${_companions.first}',
+        '{"versions":[{"version":"0.0.24"}]}',
+      ),
+      missingCompanions: {_companions.first},
+    ),
+  );
+  final companionStderr = '${companionMissing.publish?.stderr}';
+  check(
+    companionMissing.publish != null &&
+        companionMissing.publish!.exitCode != 0 &&
+        companionStderr.contains(
+          'publish_companion_pubdev.yml run for ${_companions.first}-v0.13.0 '
+          'failed',
+        ) &&
+        companionStderr.contains('automated publishing is enabled'),
+    'a companion missing from pub.dev after its tag must name its publish '
+    'run and automated publishing: $companionStderr',
+  );
+  return problems;
+}
+
+/// Why [workflow] could push a tag for a prerelease core, or after the
+/// release verifier or companion preflight failed.
+List<String> _releaseGuardProblems(String workflow) {
+  final problems = <String>[
+    ..._strictShellProblems(workflow, 'release', [
+      'Check release-prep gate',
+      'Validate release state',
+      'Publish core tag and companion packages',
+    ]),
+  ];
+  void check(bool ok, String problem) {
+    if (!ok) problems.add(problem);
+  }
+
+  final prerelease = _runRelease(workflow, (
+    name: 'prerelease core',
+    remote: (_) {},
+    missingCompanions: const {},
+    version: '0.13.0-dev.1',
+    failingDart: const {},
+  ));
+  check(
+    prerelease.validate.exitCode != 0 &&
+        '${prerelease.validate.stderr}'.contains(
+          'publishes only stable core versions, but pubspec.yaml is the '
+          'prerelease 0.13.0-dev.1',
+        ) &&
+        !prerelease.calls.any((call) => call.startsWith('dart ')) &&
+        prerelease.publish == null &&
+        !_pushedAnyTag(prerelease.calls),
+    'a prerelease core must stop before the verifier and any tag: '
+    '${prerelease.validate.stderr}${prerelease.publish?.stderr}',
+  );
+
+  final buildMetadata = _runRelease(workflow, (
+    name: 'core with build metadata',
+    remote: (_) {},
+    missingCompanions: const {},
+    version: '0.13.0+build-1',
+    failingDart: const {},
+  ));
+  problems.addAll(buildMetadata.problems);
+  check(
+    buildMetadata.validate.exitCode == 0 &&
+        buildMetadata.publish?.exitCode == 0 &&
+        _pushed(buildMetadata.calls, 'v0.13.0+build-1'),
+    'a core with build metadata is not a prerelease and must publish: '
+    '${buildMetadata.validate.stderr}${buildMetadata.publish?.stderr}',
+  );
+
+  for (final script in [_verifierScript, _preflightScript]) {
+    final run = _runRelease(workflow, (
+      name: 'failing $script',
+      remote: (_) {},
+      missingCompanions: const {},
+      version: null,
+      failingDart: {script},
+    ));
+    check(
+      run.calls.contains('dart run $script') ||
+          run.calls.any((call) => call.startsWith('dart run $script ')),
+      'release validation must run $script',
+    );
+    check(
+      run.validate.exitCode != 0 &&
+          run.publish == null &&
+          !_pushedAnyTag(run.calls),
+      'a failing $script must stop the release before any tag: '
+      '${run.validate.stderr}${run.publish?.stderr}',
+    );
+  }
+
+  final unreachableCore = _runRelease(
+    workflow,
+    _release(
+      'unreachable core tag lookup',
+      remote: (sandbox) => sandbox.lsRemoteFails('refs/tags/v0.13.0'),
+    ),
+  );
+  check(
+    unreachableCore.validate.exitCode != 0 &&
+        unreachableCore.publish == null &&
+        !unreachableCore.output.contains('core_tag_exists=') &&
+        !_pushedAnyTag(unreachableCore.calls),
+    'a failed core tag lookup must stop the release before any tag: '
+    '${unreachableCore.validate.stderr}${unreachableCore.publish?.stderr}',
+  );
+
+  final companionTag = 'refs/tags/${_companions[1]}-v0.13.0';
+  final unreachableCompanion = _runRelease(
+    workflow,
+    _release(
+      'unreachable companion tag lookup',
+      remote: (sandbox) => sandbox
+        ..remoteTag(_releaseSha, 'refs/tags/v0.13.0')
+        ..lsRemoteFails(companionTag),
+      missingCompanions: {_companions[1]},
+    ),
+  );
+  check(
+    unreachableCompanion.validate.exitCode == 0 &&
+        unreachableCompanion.publish != null &&
+        unreachableCompanion.publish!.exitCode != 0 &&
+        !_pushedAnyTag(unreachableCompanion.calls),
+    'a failed companion tag lookup must stop before pushing the companion: '
+    '${unreachableCompanion.validate.stderr}'
+    '${unreachableCompanion.publish?.stderr}',
+  );
+  return problems;
+}
+
+/// Why [workflow]'s pub.dev checks could hang or misread a missing version.
+List<String> _companionDecideProblems(String workflow) {
+  final problems = <String>[
+    ..._strictShellProblems(workflow, 'publish-companion', [
+      'Resolve package from tag',
+      'Decide whether to publish',
+      'Install dependencies',
+    ]),
+  ];
+  final step = _step(
+    workflow,
+    'publish-companion',
+    'Decide whether to publish',
+  );
+  final resolved = _resolveEnv(step, {
+    'steps.package.outputs.name': 'companion',
+    'steps.package.outputs.version': '0.13.1',
+  });
+  problems.addAll(resolved.problems);
+  for (final published in [false, true]) {
+    final sandbox = _Sandbox();
+    sandbox.pub('https://pub.dev/api/packages/companion', '{}');
+    if (published) {
+      sandbox.pub(
+        'https://pub.dev/api/packages/companion/versions/0.13.1',
+        '{}',
+      );
+    }
+    final runnerTemp = '${sandbox.root}/runner';
+    Directory(runnerTemp).createSync();
+    final output = '${sandbox.root}/output';
+    File(output).createSync();
+    final result = sandbox.run(
+      step,
+      workingDirectory: sandbox.root,
+      env: {
+        ...resolved.env,
+        'RUNNER_TEMP': runnerTemp,
+        'GITHUB_OUTPUT': output,
+      },
+    );
+    final curls = sandbox.calls.where((call) => call.startsWith('curl '));
+    if (result.exitCode != 0 ||
+        _outputs(output)['should_publish'] != '${!published}') {
+      problems.add(
+        'a ${published ? 'published' : 'missing'} version must set '
+        'should_publish=${!published}: ${result.stderr}',
+      );
+    }
+    if (curls.length != 2 ||
+        !curls.every((call) => call.contains('--max-time '))) {
+      problems.add('every pub.dev request must set --max-time');
+    }
+  }
+  return problems;
+}
+
+/// Why [workflow]'s dependency install could fail on a pub.dev listing that
+/// is still stale, or retry without end.
+List<String> _companionInstallProblems(String workflow) {
+  final problems = <String>[];
+  final step = _step(workflow, 'publish-companion', 'Install dependencies');
+  for (final (failures, succeeds) in [(0, true), (2, true), (3, false)]) {
+    final sandbox = _Sandbox();
+    File('${sandbox.state}/pub_get_failures').writeAsStringSync('$failures');
+    final result = sandbox.run(step, workingDirectory: sandbox.root);
+    final pubGets = sandbox.calls.where((call) => call == 'flutter pub get');
+    final sleeps = sandbox.calls.where((call) => call == 'sleep 60');
+    final attempts = succeeds ? failures + 1 : 3;
+    if ((result.exitCode == 0) != succeeds ||
+        pubGets.length != attempts ||
+        sleeps.length != attempts - 1) {
+      problems.add(
+        '$failures failed flutter pub get runs must take $attempts attempts '
+        'and ${succeeds ? 'succeed' : 'fail'}; ran ${pubGets.length}, slept '
+        '${sleeps.length} times, exit ${result.exitCode}: ${result.stderr}',
+      );
+    }
+  }
   return problems;
 }
 
@@ -418,7 +802,7 @@ List<String> _companionPublishProblems(String workflow) {
   });
   problems.addAll(resolved.problems);
   final result = sandbox.run(
-    '${prepare['run']}',
+    prepare,
     workingDirectory: '${sandbox.root}/checkout',
     env: {...resolved.env, 'RUNNER_TEMP': runnerTemp},
   );
@@ -473,7 +857,7 @@ List<String> _ciDryRunProblems(String workflow) {
     problems.add('the dry-run must start in the companion package');
   }
   final result = sandbox.run(
-    '${step['run']}',
+    step,
     workingDirectory: package,
     env: {'RUNNER_TEMP': runnerTemp, 'GITHUB_WORKSPACE': workspace},
   );
@@ -546,12 +930,104 @@ void main() {
               RegExp(r'^.*rerun that run.*\n', multiLine: true),
               '',
             ),
+        'trusts a companion tag at another commit': (source) =>
+            source.replaceFirst(
+              'if [[ "\$companion_tag_sha" != "\$RELEASE_SHA" ]]; then',
+              'if false; then',
+            ),
+        'reads the companion tag object, not its commit': (source) =>
+            source.replaceFirst(' "refs/tags/\$companion_tag^{}"', ''),
+        'pushes a companion tag that already exists': (source) =>
+            source.replaceFirst(
+              'if [[ -n "\$companion_tag_sha" ]]; then',
+              'if false; then',
+            ),
+        'no recovery for a core publish failure': (source) =>
+            source.replaceFirst(
+              'If the publish_pubdev.yml run for \$CORE_TAG failed, ',
+              '',
+            ),
+        'no automated publishing hint for a companion': (source) =>
+            source.replaceFirst(
+              'confirm pub.dev automated publishing is enabled for '
+                  '\$package_name with tag pattern '
+                  '\$package_name-v{{version}}, ',
+              '',
+            ),
       };
       for (final mutation in mutations.entries) {
         final mutated = mutation.value(workflow);
         expect(mutated, isNot(workflow), reason: mutation.key);
         expect(
           _releaseResumeProblems(mutated),
+          isNotEmpty,
+          reason: mutation.key,
+        );
+      }
+    });
+
+    test('stops a prerelease core or a failed check before any tag', () {
+      expect(_releaseGuardProblems(workflow), isEmpty);
+    });
+
+    test('rejects a bypassed release guard', () {
+      const preflight = 'dart run $_preflightScript\n';
+      final mutations = <String, String Function(String)>{
+        'accepts a prerelease core': (source) => source.replaceFirst(
+          'if [[ "\${version%%+*}" == *-* ]]; then',
+          'if false; then',
+        ),
+        'treats build metadata as a prerelease': (source) => source
+            .replaceFirst('"\${version%%+*}" == *-*', '"\$version" == *[-+]*'),
+        'skips the companion preflight': (source) => source.replaceFirst(
+          '          $preflight',
+          '          if false; then\n            $preflight          fi\n',
+        ),
+        'ignores a failed companion preflight': (source) => source.replaceFirst(
+          preflight,
+          'dart run $_preflightScript || true\n',
+        ),
+        'ignores a failed release verifier': (source) => source.replaceFirst(
+          'dart run $_verifierScript --release-prep\n',
+          'dart run $_verifierScript --release-prep || true\n',
+        ),
+        'continues past a failed validation': (source) => source.replaceFirst(
+          '        id: release\n',
+          '        id: release\n        continue-on-error: true\n',
+        ),
+        'publishes after a failed validation': (source) => source.replaceFirst(
+          "      - name: Publish core tag and companion packages\n"
+              "        if: steps.gate.outputs.should_release == 'true'\n",
+          "      - name: Publish core tag and companion packages\n"
+              "        if: \${{ always() && steps.gate.outputs.should_release == 'true' }}\n",
+        ),
+        'validates without set -euo pipefail': (source) => source.replaceFirst(
+          '          set -euo pipefail\n\n          version=',
+          '          version=',
+        ),
+        'publishes without set -euo pipefail': (source) => source.replaceFirst(
+          '          set -euo pipefail\n\n          if [[ -z "\${RELEASE_TOKEN:-}" ]]',
+          '          if [[ -z "\${RELEASE_TOKEN:-}" ]]',
+        ),
+        'ignores a failed core tag lookup': (source) => source.replaceFirst(
+          '            git ls-remote --tags origin "refs/tags/\$core_tag" '
+              '"refs/tags/\$core_tag^{}" |\n',
+          '            { git ls-remote --tags origin "refs/tags/\$core_tag" '
+              '"refs/tags/\$core_tag^{}" || true; } |\n',
+        ),
+        'ignores a failed companion tag lookup': (source) => source.replaceFirst(
+          '              git ls-remote --tags origin '
+              '"refs/tags/\$companion_tag" "refs/tags/\$companion_tag^{}" |\n',
+          '              { git ls-remote --tags origin '
+              '"refs/tags/\$companion_tag" "refs/tags/\$companion_tag^{}" '
+              '|| true; } |\n',
+        ),
+      };
+      for (final mutation in mutations.entries) {
+        final mutated = mutation.value(workflow);
+        expect(mutated, isNot(workflow), reason: mutation.key);
+        expect(
+          _releaseGuardProblems(mutated),
           isNotEmpty,
           reason: mutation.key,
         );
@@ -564,6 +1040,44 @@ void main() {
 
     test('publishes a copy without the checkout override', () {
       expect(_companionPublishProblems(workflow), isEmpty);
+    });
+
+    test('bounds pub.dev requests and retries a stale listing', () {
+      expect(_companionDecideProblems(workflow), isEmpty);
+      expect(_companionInstallProblems(workflow), isEmpty);
+    });
+
+    test('rejects unbounded or unretried pub.dev access', () {
+      final decide = <String, String Function(String)>{
+        'pub.dev requests without --max-time': (source) =>
+            source.replaceAll('curl -sS --max-time 30 ', 'curl -sS '),
+        'decides without set -euo pipefail': (source) => source.replaceFirst(
+          '          set -euo pipefail\n          package_status=',
+          '          package_status=',
+        ),
+      };
+      final install = <String, String Function(String)>{
+        'no flutter pub get retry': (source) =>
+            source.replaceFirst('attempts=3\n', 'attempts=1\n'),
+        'retries without a pause': (source) =>
+            source.replaceFirst('              sleep 60\n', ''),
+        'reports success after every attempt failed': (source) =>
+            source.replaceFirst(
+              '          echo "flutter pub get failed \$attempts times." >&2\n'
+                  '          exit 1\n',
+              '',
+            ),
+      };
+      for (final (mutations, problems) in [
+        (decide, _companionDecideProblems),
+        (install, _companionInstallProblems),
+      ]) {
+        for (final mutation in mutations.entries) {
+          final mutated = mutation.value(workflow);
+          expect(mutated, isNot(workflow), reason: mutation.key);
+          expect(problems(mutated), isNotEmpty, reason: mutation.key);
+        }
+      }
     });
 
     test('rejects a publish that keeps the checkout override', () {

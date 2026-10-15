@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -54,7 +55,7 @@ List<String> _publishOrderProblems(String workflow) {
     multiLine: true,
   ).allMatches(step).toList();
   final coreWait = RegExp(
-    r'^\s+wait_for_pub_version "llamadart" "\$CORE_VERSION"\s*$',
+    r'^\s+wait_for_pub_version "llamadart" "\$CORE_VERSION"(?: \\)?$',
     multiLine: true,
   ).allMatches(step).toList();
   final companionPush = RegExp(
@@ -109,6 +110,9 @@ typedef _Fetch = Future<PubDevResponse> Function(Uri uri);
     name: 'llamadart_llama_cpp_flutter',
     path: 'packages/llamadart_llama_cpp_flutter',
   );
+  File(
+    '${root.path}/${companion.path}/darwin/${companion.name}/Package.swift',
+  ).createSync(recursive: true);
   File('${root.path}/${companion.path}/pubspec.yaml')
     ..parent.createSync(recursive: true)
     ..writeAsStringSync(
@@ -330,27 +334,208 @@ void main() {
     expect(steps, contains('already released'));
   });
 
-  test('the preflight CLI runs the published-constraint check', () {
-    final source = File(
-      'tool/release/companion_pub_preflight.dart',
-    ).readAsStringSync().replaceAll('\r\n', '\n');
-    final wired = RegExp(
-      r'final problems = \[[\s\S]*?\.\.\.await '
-      r'companionPublishedConstraintProblems\(\s*Directory\.current,\s*'
-      r'companions,\s*_httpGet,?\s*\),[\s\S]*?\];\s*'
-      r'if \(problems\.isNotEmpty\) \{',
-    );
+  group('runCompanionPubPreflight', () {
+    /// Answers the package listing with [listing] and the version with
+    /// [version], recording each [Uri] asked in [asked].
+    _Fetch pubDev({
+      int listing = HttpStatus.ok,
+      PubDevResponse version = (status: HttpStatus.notFound, body: ''),
+      List<Uri>? asked,
+    }) => (uri) async {
+      asked?.add(uri);
+      return uri.pathSegments.contains('versions')
+          ? version
+          : (status: listing, body: '{}');
+    };
 
-    expect(wired.hasMatch(source), isTrue);
-    expect(
-      wired.hasMatch(
-        source.replaceFirst(
-          'companionPublishedConstraintProblems(\n      Directory.current,',
-          'companionPublishedConstraintProblems(\n      Directory.systemTemp,',
+    Future<({int code, String out, String err})> run(
+      Directory root,
+      _Fetch get,
+    ) async {
+      final out = StringBuffer();
+      final err = StringBuffer();
+      final code = await runCompanionPubPreflight(
+        root,
+        get,
+        out: out,
+        err: err,
+      );
+      return (code: code, out: '$out', err: '$err');
+    }
+
+    test('passes when both checks pass', () async {
+      final repo = _repo();
+      final asked = <Uri>[];
+
+      final result = await run(repo.root, pubDev(asked: asked));
+
+      expect(result.code, 0);
+      expect(result.err, isEmpty);
+      expect(result.out, contains('llamadart_llama_cpp_flutter'));
+      expect(asked, [
+        Uri.parse('https://pub.dev/api/packages/llamadart_llama_cpp_flutter'),
+        Uri.parse(
+          'https://pub.dev/api/packages/llamadart_llama_cpp_flutter/'
+          'versions/0.0.24',
         ),
+      ]);
+    });
+
+    test('fails on a package missing from pub.dev', () async {
+      final result = await run(
+        _repo().root,
+        pubDev(listing: HttpStatus.notFound),
+      );
+
+      expect(result.code, 1);
+      expect(
+        result.err,
+        allOf(
+          startsWith('Companion pub.dev preflight failed:'),
+          contains('does not exist on pub.dev yet'),
+        ),
+      );
+    });
+
+    test('fails on a published version with another constraint', () async {
+      final result = await run(
+        _repo().root,
+        pubDev(version: await _published('>=0.12.0 <0.13.0')(Uri())),
+      );
+
+      expect(result.code, 1);
+      expect(result.err, contains('bump llamadart_llama_cpp_flutter past'));
+    });
+
+    test('fails without companions', () async {
+      final root = Directory.systemTemp.createTempSync('companion_preflight_');
+      addTearDown(() => root.deleteSync(recursive: true));
+
+      final result = await run(root, pubDev());
+
+      expect(result.code, 1);
+      expect(result.err, contains('No Flutter Apple companion packages'));
+    });
+  });
+
+  group('getWithOneRetry', () {
+    const ok = (status: HttpStatus.ok, body: 'ok');
+    final uri = Uri.parse('https://pub.dev/api/packages/companion');
+
+    Future<(PubDevResponse, int)> fetch(List<Object> answers) async {
+      var calls = 0;
+      final response = await getWithOneRetry(uri, (asked) async {
+        expect(asked, uri);
+        final answer = answers[calls++];
+        if (answer is Exception) throw answer;
+        return answer as PubDevResponse;
+      }, retryDelay: Duration.zero);
+      return (response, calls);
+    }
+
+    test('does not retry an answer below 500', () async {
+      expect(await fetch([ok]), (ok, 1));
+      const missing = (status: HttpStatus.notFound, body: '');
+      expect(await fetch([missing]), (missing, 1));
+    });
+
+    test('retries a stalled body or a 5xx answer once', () async {
+      expect(await fetch([TimeoutException('body'), ok]), (ok, 2));
+      expect(await fetch([const SocketException('reset'), ok]), (ok, 2));
+      expect(
+        await fetch([(status: HttpStatus.serviceUnavailable, body: ''), ok]),
+        (ok, 2),
+      );
+    });
+
+    test('reports a second failure', () async {
+      const unavailable = (status: HttpStatus.badGateway, body: '');
+      expect(await fetch([unavailable, unavailable]), (unavailable, 2));
+      await expectLater(
+        fetch([TimeoutException('first'), TimeoutException('second')]),
+        throwsA(
+          isA<TimeoutException>().having(
+            (error) => error.message,
+            'message',
+            'second',
+          ),
+        ),
+      );
+    });
+  });
+
+  test('pubDevGet times out a body that stalls after its headers', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response
+        ..contentLength = 1024
+        ..write('{"versions":');
+      await request.response.flush();
+    });
+
+    await expectLater(
+      pubDevGet(
+        Uri.http('127.0.0.1:${server.port}', '/api/packages/companion'),
+        bodyTimeout: const Duration(milliseconds: 200),
       ),
-      isFalse,
+      throwsA(isA<TimeoutException>()),
     );
+  }, timeout: const Timeout(Duration(seconds: 20)));
+
+  group('the preflight CLI', () {
+    const script = 'tool/release/companion_pub_preflight.dart';
+
+    ProcessResult runCli(List<String> arguments) {
+      final cwd = Directory.systemTemp.createTempSync('companion_preflight_');
+      addTearDown(() => cwd.deleteSync(recursive: true));
+      return Process.runSync(Platform.resolvedExecutable, [
+        '--packages=${File('.dart_tool/package_config.json').absolute.path}',
+        File(script).absolute.path,
+        ...arguments,
+      ], workingDirectory: cwd.path);
+    }
+
+    test('exits with the preflight result for the current directory', () {
+      final result = runCli(const []);
+
+      expect(result.exitCode, 1, reason: '${result.stderr}');
+      expect(
+        '${result.stderr}',
+        contains('No Flutter Apple companion packages found under packages/.'),
+      );
+    });
+
+    test('rejects arguments', () {
+      expect(runCli(const ['--release-prep']).exitCode, 64);
+    });
+
+    test('fetches pub.dev with one retry', () {
+      final source = File(script).readAsStringSync().replaceAll('\r\n', '\n');
+      final wired = RegExp(
+        r'exitCode = await runCompanionPubPreflight\(\s*Directory\.current,\s*'
+        r'\(uri\) => getWithOneRetry\(uri, pubDevGet\),',
+      );
+
+      expect(wired.hasMatch(source), isTrue);
+      for (final mutated in [
+        source.replaceFirst(
+          '(uri) => getWithOneRetry(uri, pubDevGet)',
+          'pubDevGet',
+        ),
+        source.replaceFirst(
+          'exitCode = await runCompanionPubPreflight(',
+          'await runCompanionPubPreflight(',
+        ),
+        source.replaceFirst(
+          'runCompanionPubPreflight(\n    Directory.current,',
+          'runCompanionPubPreflight(\n    Directory.systemTemp,',
+        ),
+      ]) {
+        expect(mutated, isNot(source));
+        expect(wired.hasMatch(mutated), isFalse);
+      }
+    });
   });
 
   test('the release workflow publishes the core before any companion', () {
@@ -365,11 +550,14 @@ void main() {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
     ).readAsStringSync().replaceAll('\r\n', '\n');
-    const coreBlock =
-        '          wait_for_pub_version "llamadart" "\$CORE_VERSION"\n';
-    const companionWait =
-        '            wait_for_pub_version "\$package_name" "\$package_version"\n'
-        '          done\n';
+    final coreBlock = RegExp(
+      r'^ +wait_for_pub_version "llamadart" .*\\\n.*\n',
+      multiLine: true,
+    ).firstMatch(workflow)![0]!;
+    final companionWait = RegExp(
+      r'^ +wait_for_pub_version "\$package_name" .*\\\n.*\n +done\n',
+      multiLine: true,
+    ).firstMatch(workflow)![0]!;
 
     for (final mutated in [
       workflow

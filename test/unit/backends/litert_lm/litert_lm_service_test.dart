@@ -1786,6 +1786,55 @@ void main() {
     });
   });
 
+  test('treats negative gpuLayers as every layer, not the CPU', () async {
+    final service = LiteRtLmService();
+    final throwsUnavailableGpu = liteRtLmGateAbi() == Abi.macosX64
+        ? throwsA(isA<LlamaUnsupportedException>())
+        : throwsArgumentError;
+
+    try {
+      for (final gpuLayers in [-1, -2]) {
+        var modelHandle = await service.loadModel(
+          modelFile.path,
+          ModelParams(gpuLayers: gpuLayers),
+        );
+        expect(
+          service.getActiveBackendName(),
+          'LiteRT-LM ${_expectedAutoLiteRtLmBackend()}',
+        );
+        service.freeModel(modelHandle);
+
+        final metal = ModelParams(
+          gpuLayers: gpuLayers,
+          preferredBackend: GpuBackend.metal,
+        );
+        if (service.getAvailableBackendInfo().contains('gpu')) {
+          modelHandle = await service.loadModel(modelFile.path, metal);
+          expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+          expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+          service.freeModel(modelHandle);
+        } else {
+          expect(
+            () => service.loadModel(modelFile.path, metal),
+            throwsUnavailableGpu,
+          );
+        }
+
+        modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(gpuLayers: 0),
+        );
+        expect(
+          () => service.createContext(modelHandle, metal),
+          anyOf(throwsArgumentError, throwsUnavailableGpu),
+        );
+        service.freeModel(modelHandle);
+      }
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('rejects explicit backend changes during context creation', () async {
     final service = LiteRtLmService();
 

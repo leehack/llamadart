@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 
-final _sha256SumsLine = RegExp(r'^([0-9a-f]{64}) [ *](\S+)$');
+final _sha256SumsLine = RegExp(r'^([0-9a-fA-F]{64}) [ *](\S+)$');
 
 /// Thrown when a native runtime archive cannot be verified against the
 /// SHA-256 it must have, or when no trusted SHA-256 exists for it.
@@ -73,14 +73,18 @@ Future<void> requireNativeArchiveSha256({
 /// [fileName], or `null` when it lists none.
 ///
 /// Each non-blank line must be `<sha256>  <file>` (or `<sha256> *<file>`), and
-/// [fileName] may appear only once.
+/// [fileName] may appear only once. A leading byte order mark and uppercase
+/// hex are accepted; the returned digest is lowercase.
 String? sha256SumsEntry(
   String checksumText, {
   required String fileName,
   required String source,
 }) {
   String? entry;
-  final lines = checksumText.split('\n');
+  final text = checksumText.startsWith('\uFEFF')
+      ? checksumText.substring(1)
+      : checksumText;
+  final lines = text.split('\n');
   for (var index = 0; index < lines.length; index++) {
     final line = lines[index].trimRight();
     if (line.isEmpty) {
@@ -101,7 +105,7 @@ String? sha256SumsEntry(
         '$source lists $fileName more than once.',
       );
     }
-    entry = match.group(1);
+    entry = match.group(1)!.toLowerCase();
   }
   return entry;
 }

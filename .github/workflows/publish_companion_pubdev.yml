@@ -66,7 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           package_status="$(
-            curl -sS -o "$RUNNER_TEMP/pubdev-package.json" -w '%{http_code}' \
+            curl -sS --max-time 30 -o "$RUNNER_TEMP/pubdev-package.json" -w '%{http_code}' \
               "https://pub.dev/api/packages/$PACKAGE_NAME"
           )"
           case "$package_status" in
@@ -85,7 +85,7 @@ jobs:
           esac
 
           version_status="$(
-            curl -sS -o "$RUNNER_TEMP/pubdev-version.json" -w '%{http_code}' \
+            curl -sS --max-time 30 -o "$RUNNER_TEMP/pubdev-version.json" -w '%{http_code}' \
               "https://pub.dev/api/packages/$PACKAGE_NAME/versions/$PACKAGE_VERSION"
           )"
           case "$version_status" in
@@ -127,9 +127,24 @@ jobs:
             --exclude='pubspec_overrides.yaml' \
             "$PACKAGE_PATH/" "$RUNNER_TEMP/pub-package/"
 
+      # pub.dev serves the package listing with max-age=120, so pub can
+      # briefly miss the core release_on_prep_merge.yml just saw there.
       - name: Install dependencies
         if: steps.publish.outputs.should_publish == 'true'
-        run: flutter pub get
+        run: |
+          set -euo pipefail
+          attempts=3
+          for attempt in $(seq 1 "$attempts"); do
+            if flutter pub get; then
+              exit 0
+            fi
+            if [[ "$attempt" -lt "$attempts" ]]; then
+              echo "flutter pub get failed ($attempt/$attempts); retrying in 60 seconds in case the pub.dev listing is stale." >&2
+              sleep 60
+            fi
+          done
+          echo "flutter pub get failed $attempts times." >&2
+          exit 1
         working-directory: ${{ runner.temp }}/pub-package
 
       - name: Publish - dry run

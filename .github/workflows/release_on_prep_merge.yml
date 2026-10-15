@@ -83,6 +83,13 @@ jobs:
             echo "Unsupported release version: $version" >&2
             exit 1
           fi
+          # No companion constraint `>=M.m.0 <M.(m+1).0` admits a prerelease
+          # of M.m.0, and the build hook pairs such a core with the previous
+          # minor's companions, so a prerelease core cannot ship beside them.
+          if [[ "${version%%+*}" == *-* ]]; then
+            echo "Release automation publishes only stable core versions, but pubspec.yaml is the prerelease $version. No tags were pushed; release a stable version from a new release-prep PR." >&2
+            exit 1
+          fi
 
           first_heading="$(awk '/^## / {print; exit}' CHANGELOG.md)"
           if [[ "$first_heading" != "## $version" ]]; then
@@ -177,6 +184,7 @@ jobs:
           wait_for_pub_version() {
             local package_name="$1"
             local package_version="$2"
+            local recovery="$3"
             local package_url="https://pub.dev/api/packages/$package_name"
             local attempts="$PUBDEV_WAIT_ATTEMPTS"
             local interval_seconds="$PUBDEV_WAIT_INTERVAL_SECONDS"
@@ -192,6 +200,7 @@ jobs:
             done
 
             echo "$package_name $package_version did not appear on pub.dev." >&2
+            echo "$recovery" >&2
             exit 1
           }
 
@@ -218,7 +227,8 @@ jobs:
           else
             push_tag "$CORE_TAG"
           fi
-          wait_for_pub_version "llamadart" "$CORE_VERSION"
+          wait_for_pub_version "llamadart" "$CORE_VERSION" \
+            "If the publish_pubdev.yml run for $CORE_TAG failed, rerun it, wait for llamadart $CORE_VERSION on pub.dev, then rerun this workflow."
 
           companion_paths=(
             packages/llamadart_llama_cpp_flutter
@@ -240,7 +250,16 @@ jobs:
             fi
 
             companion_tag="$package_name-v$package_version"
-            if git ls-remote --exit-code --tags origin "refs/tags/$companion_tag" >/dev/null 2>&1; then
+            companion_tag_sha="$(
+              git ls-remote --tags origin "refs/tags/$companion_tag" "refs/tags/$companion_tag^{}" |
+                awk 'END {print $1}'
+            )"
+            if [[ -n "$companion_tag_sha" ]]; then
+              if [[ "$companion_tag_sha" != "$RELEASE_SHA" ]]; then
+                echo "$companion_tag already exists at $companion_tag_sha, not $RELEASE_SHA, and $package_name $package_version is missing on pub.dev." >&2
+                echo "Rerunning that tag's publish_companion_pubdev.yml run would publish the other commit's $package_path, so this commit cannot publish $package_name $package_version: release it from a new release-prep PR that bumps the core version and $package_name's patch version." >&2
+                exit 1
+              fi
               echo "$companion_tag already exists, but $package_name $package_version is missing on pub.dev." >&2
               echo "If its publish_companion_pubdev.yml run failed transiently, rerun that run, wait for $package_name $package_version on pub.dev, then rerun this workflow." >&2
               echo "If the cause is in the repository, this commit cannot publish $package_name $package_version: fix it in a new release-prep PR that bumps the core version and $package_name's patch version." >&2
@@ -248,7 +267,8 @@ jobs:
             fi
 
             push_tag "$companion_tag"
-            wait_for_pub_version "$package_name" "$package_version"
+            wait_for_pub_version "$package_name" "$package_version" \
+              "If the publish_companion_pubdev.yml run for $companion_tag failed, confirm pub.dev automated publishing is enabled for $package_name with tag pattern $package_name-v{{version}}, rerun that run, wait for $package_name $package_version on pub.dev, then rerun this workflow."
           done
 
           wait_for_github_release "$CORE_TAG"

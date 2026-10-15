@@ -9,6 +9,33 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- With `llamadart_native_tag` or `llamadart_native_repository` set, the build
+  hook keeps the release's `SHA256SUMS` beside the cached archive and verifies
+  a cached archive against it without network access, so offline builds work
+  again. When it cannot fetch `SHA256SUMS`, the build fails with
+  `NativeArchiveDigestException` naming where to pre-seed it
+  ([#1040](https://github.com/leehack/llamadart/issues/1040)).
+- Apple builds in a pub workspace now find the member app that depends on the
+  llama.cpp, LiteRT-LM or stable_diffusion companion, so they check and link
+  it as outside a workspace instead of bundling the hook's Apple assets beside
+  it; members with different companions get a build warning
+  ([#1098](https://github.com/leehack/llamadart/issues/1098)).
+- `cancelGeneration()` during a Web generation now ends the stream normally,
+  as on native, instead of throwing `LlamaInferenceException`: on the WebGPU
+  worker path, which rejects with an `AbortError`, and on LiteRT-LM Web, whose
+  pending stream read rejects. Observers report the run as cancelled
+  ([#875](https://github.com/leehack/llamadart/issues/875)).
+- Fix `getPerformanceContext()` decode and prompt-eval times on a native
+  runtime without the llamadart exit-teardown exports (`v0.5.0` or older),
+  where an asynchronous GPU backend such as Metal counted its work as sampling
+  time and decode speed read about 10x too high
+  ([#671](https://github.com/leehack/llamadart/issues/671)).
+- A negative `ModelParams.gpuLayers` now means all layers on every runtime,
+  as in llama.cpp, exactly like `ModelParams.maxGpuLayers`. Native llama.cpp
+  now also offloads the KV cache and reports the GPU backend instead of
+  `CPU`, LiteRT-LM under `ComputeDevice.auto` uses its GPU backend instead
+  of the CPU, and the Web applies its GPU safety caps and CPU fallback
+  ([#920](https://github.com/leehack/llamadart/issues/920)).
 - Report `responseFormat` JSON schemas the grammar converter cannot represent,
   such as an untyped property, a non-local `$ref` or one nested too deeply for
   the stack, as `LlamaUnsupportedException`, and cyclic or other non-JSON
