@@ -1697,16 +1697,6 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         },
       ),
       (
-        'a Flutter package that dev-depends on llamadart',
-        const {
-          'app': app,
-          'harness': ['flutter'],
-        },
-        const {
-          'harness': ['llamadart'],
-        },
-      ),
-      (
         'a root that dev-depends on llamadart',
         const {'app': app},
         const {
@@ -1734,9 +1724,11 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       });
     }
 
-    for (final (scenario, members, devDependencies, setups) in [
+    const apple = [OS.iOS, OS.macOS];
+    for (final (scenario, targets, members, devDependencies, setups) in [
       (
         'Flutter apps with different companions',
+        apple,
         const {
           'app': app,
           'kiosk': ['flutter', 'llamadart'],
@@ -1747,6 +1739,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
       (
         'a Flutter app and a Dart package',
+        [OS.macOS],
         const {
           'app': app,
           'cli': ['llamadart'],
@@ -1756,6 +1749,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
       (
         'a Flutter app and a Dart package that dev-depends on llamadart',
+        [OS.macOS],
         const {'app': app, 'bench': <String>[]},
         const {
           'bench': ['llamadart'],
@@ -1764,6 +1758,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
       (
         'a Flutter app and a Flutter package that dev-depends on llamadart',
+        apple,
         const {
           'app': app,
           'harness': ['flutter'],
@@ -1775,7 +1770,21 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
             'companion)',
       ),
       (
+        'a Flutter app and an e2e Flutter app that dev-depends on llamadart',
+        apple,
+        const {
+          'app': app,
+          'e2e': ['flutter'],
+        },
+        const {
+          'e2e': ['flutter_test', 'llamadart'],
+        },
+        'app (Flutter, $llamaCppCompanion); e2e (Flutter, no Apple '
+            'companion)',
+      ),
+      (
         'a Flutter app and a root that dev-depends on llamadart',
+        [OS.macOS],
         const {'app': app},
         const {
           _workspaceRootName: ['llamadart'],
@@ -1785,6 +1794,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
       (
         'Flutter apps that differ only in the stable_diffusion companion',
+        apple,
         const {
           'app': app,
           'studio': [...app, _stableDiffusionCompanion],
@@ -1794,77 +1804,22 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
             '$llamaCppCompanion, $_stableDiffusionCompanion)',
       ),
     ]) {
-      test('macOS warns and bundles assets for $scenario', () async {
-        final stderrLines = await _capturingStderr(
-          () async => testCodeBuildHook(
-            mainMethod: build_hook.main,
-            targetOS: OS.macOS,
-            targetArchitecture: Architecture.arm64,
-            userDefines: await _appleWorkspaceUserDefines(
-              members: members,
-              devDependencies: devDependencies,
-              defines: {
-                'llamadart_native_runtimes': ['llama_cpp'],
-              },
-              llamaCppTag: 'v0.5.0',
-            ),
-            check: (_, output) => expect(
-              output.assets.encodedAssets.single.asCodeAsset.linkMode,
-              bundled,
-            ),
-          ),
-        );
-        expect(
-          stderrLines,
-          contains(
-            allOf(
-              startsWith(
-                'warning: llamadart: Cannot tell which member of the pub '
-                'workspace at ',
-              ),
-              contains('this Apple build is for: $setups. Every member'),
-              contains(
-                'Declare the same Apple companions in every Flutter app that '
-                'depends on llamadart',
-              ),
-            ),
-          ),
-        );
-      });
-    }
-
-    for (final (scenario, problem, edit) in [
-      ('missing', 'could not be read', (File graph) => graph.deleteSync()),
-      (
-        'malformed',
-        'is malformed',
-        (File graph) => graph.writeAsStringSync('{"roots": 1}'),
-      ),
-    ]) {
-      test(
-        'Apple warns and bundles assets for a $scenario package graph',
-        () async {
-          final defines = await _appleWorkspaceUserDefines(
-            members: const {'app': app},
-            defines: {
-              'llamadart_native_runtimes': ['llama_cpp'],
-            },
-          );
-          edit(
-            File(
-              path.join(
-                File.fromUri(defines.workspacePubspec!.basePath).parent.path,
-                _dartToolDir,
-                'package_graph.json',
-              ),
-            ),
-          );
+      for (final target in targets) {
+        test('$target warns and bundles assets for $scenario', () async {
           final stderrLines = await _capturingStderr(
-            () => testCodeBuildHook(
+            () async => testCodeBuildHook(
               mainMethod: build_hook.main,
-              targetOS: OS.macOS,
+              targetOS: target,
               targetArchitecture: Architecture.arm64,
-              userDefines: defines,
+              targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+              userDefines: await _appleWorkspaceUserDefines(
+                members: members,
+                devDependencies: devDependencies,
+                defines: {
+                  'llamadart_native_runtimes': ['llama_cpp'],
+                },
+                llamaCppTag: 'v0.5.0',
+              ),
               check: (_, output) => expect(
                 output.assets.encodedAssets.single.asCodeAsset.linkMode,
                 bundled,
@@ -1876,16 +1831,121 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
             contains(
               allOf(
                 startsWith(
-                  'warning: llamadart: Cannot find the Flutter app in the pub '
+                  'warning: llamadart: Cannot tell which member of the pub '
                   'workspace at ',
                 ),
-                contains(problem),
-                endsWith('Run flutter pub get in the workspace and rebuild.'),
+                contains('this Apple build is for: $setups. Every member'),
+                contains(
+                  'Declare the same Apple companions in every Flutter app that '
+                  'depends on llamadart',
+                ),
               ),
             ),
           );
-        },
+        });
+      }
+    }
+
+    test('a Flutter workspace root decides from its own pubspec', () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: await _appleWorkspaceUserDefines(
+            rootDependencies: app,
+            members: const {
+              'kiosk': ['flutter', 'llamadart'],
+            },
+            llamaCppTag: 'v0.5.0',
+          ),
+          check: (_, _) => fail('Must not emit in-process assets'),
+        ),
+        incompatibleLlamaCpp,
       );
+    });
+
+    for (final (scenario, file, problem, edit) in [
+      (
+        'missing package graph',
+        'package_graph.json',
+        'could not be read',
+        (File graph) => graph.deleteSync(),
+      ),
+      (
+        'malformed package graph',
+        'package_graph.json',
+        'is malformed',
+        (File graph) => graph.writeAsStringSync('{"roots": 1}'),
+      ),
+      (
+        'package graph entry without dependencies',
+        'package_graph.json',
+        'is malformed',
+        (File graph) => graph.writeAsStringSync(
+          jsonEncode({
+            'roots': [_workspaceRootName, 'app'],
+            'packages': [
+              {'name': 'app'},
+            ],
+          }),
+        ),
+      ),
+      (
+        'member root that is not a local directory',
+        'package_config.json',
+        'has no local root for workspace member app',
+        (File config) => config.writeAsStringSync(
+          config.readAsStringSync().replaceFirst(
+            '"rootUri":"../app"',
+            '"rootUri":"https://example.com/app/"',
+          ),
+        ),
+      ),
+    ]) {
+      test('Apple warns and bundles assets for a $scenario', () async {
+        final defines = await _appleWorkspaceUserDefines(
+          members: const {'app': app},
+          defines: {
+            'llamadart_native_runtimes': ['llama_cpp'],
+          },
+        );
+        edit(
+          File(
+            path.join(
+              File.fromUri(defines.workspacePubspec!.basePath).parent.path,
+              _dartToolDir,
+              file,
+            ),
+          ),
+        );
+        final stderrLines = await _capturingStderr(
+          () => testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: OS.macOS,
+            targetArchitecture: Architecture.arm64,
+            userDefines: defines,
+            check: (_, output) => expect(
+              output.assets.encodedAssets.single.asCodeAsset.linkMode,
+              bundled,
+            ),
+          ),
+        );
+        expect(
+          stderrLines,
+          contains(
+            allOf(
+              startsWith(
+                'warning: llamadart: Cannot find the Flutter app in the pub '
+                'workspace at ',
+              ),
+              contains(problem),
+              endsWith('Run flutter pub get in the workspace and rebuild.'),
+            ),
+          ),
+        );
+      });
     }
   });
 }
@@ -1897,7 +1957,8 @@ const _stableDiffusionCompanion = 'llamadart_stable_diffusion_flutter';
 /// A pub workspace whose root `pubspec.yaml` carries the user-defines, as pub
 /// passes them to the hook, with each of [members] as `name: dependencies` at
 /// `<root>/<name>` and [devDependencies] as the `dev_dependencies` of those
-/// members or of [_workspaceRootName], the root; a
+/// members or of [_workspaceRootName], the root, which has [rootDependencies];
+/// a
 /// `flutter` dependency is the Flutter SDK. Every companion
 /// a member names resolves to a copy of the maintained one, with [llamaCppTag]
 /// or [stableDiffusionTag] replacing its pin and [liteRtLmManifest] replacing
@@ -1905,6 +1966,7 @@ const _stableDiffusionCompanion = 'llamadart_stable_diffusion_flutter';
 /// `package_graph.json` only under the root `.dart_tool/`.
 Future<PackageUserDefines> _appleWorkspaceUserDefines({
   required Map<String, List<String>> members,
+  List<String> rootDependencies = const [],
   Map<String, List<String>> devDependencies = const {},
   Map<String, Object?> defines = const {},
   String? llamaCppTag,
@@ -1916,6 +1978,9 @@ Future<PackageUserDefines> _appleWorkspaceUserDefines({
   );
   addTearDown(() => root.delete(recursive: true));
   const rootName = _workspaceRootName;
+  String dependencyYaml(String dependency) => dependency == 'flutter'
+      ? '  flutter:\n    sdk: flutter'
+      : '  $dependency: any';
   final pubspec = File(path.join(root.path, 'pubspec.yaml'))
     ..writeAsStringSync('''
 name: $rootName
@@ -1927,6 +1992,9 @@ environment:
 workspace:
 ${members.keys.map((name) => '  - $name').join('\n')}
 
+dependencies:
+${rootDependencies.map(dependencyYaml).join('\n')}
+
 dev_dependencies:
 ${devDependencies[rootName]?.map((dependency) => '  $dependency: any').join('\n') ?? ''}
 ''');
@@ -1936,7 +2004,7 @@ ${devDependencies[rootName]?.map((dependency) => '  $dependency: any').join('\n'
   final graph = <Map<String, Object?>>[
     {
       'name': rootName,
-      'dependencies': <String>[],
+      'dependencies': rootDependencies,
       'devDependencies': devDependencies[rootName] ?? <String>[],
     },
     {'name': 'flutter', 'dependencies': <String>[]},
@@ -1953,7 +2021,7 @@ environment:
   sdk: ^3.10.7
 
 dependencies:
-${dependencies.map((dependency) => dependency == 'flutter' ? '  flutter:\n    sdk: flutter' : '  $dependency: any').join('\n')}
+${dependencies.map(dependencyYaml).join('\n')}
 
 dev_dependencies:
 ${devDependencies[name]?.map((dependency) => '  $dependency: any').join('\n') ?? ''}
@@ -1966,7 +2034,7 @@ ${devDependencies[name]?.map((dependency) => '  $dependency: any').join('\n') ??
     });
   }
   final companions = {
-    for (final dependencies in members.values)
+    for (final dependencies in [rootDependencies, ...members.values])
       for (final dependency in dependencies)
         if (dependency.startsWith('llamadart_')) dependency,
   };

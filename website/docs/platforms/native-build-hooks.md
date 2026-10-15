@@ -417,15 +417,15 @@ is itself a Flutter app decides from its own pubspec, and member companions
 are not consulted. Otherwise the hook reads the companions from the member
 app: the member that reaches llamadart through its dependencies or dev
 dependencies and that no other member depends on, found through the root
-`.dart_tool/package_graph.json`. Only Flutter builds target iOS, and they
-bundle no dev dependencies, so for iOS the hook ignores non-Flutter members
-and dev dependencies. Every member shares the hook's output, so when several
-such members exist they must be Flutter apps declaring the same companions.
-Otherwise, or when the graph cannot be read, the build writes a
-`warning: llamadart:` line and bundles the hook's Apple assets without
-checking or linking any companion; give the apps the same companions or move
-them into separate workspaces. `flutter build ios` does not show hook
-warnings; Xcode and `xcodebuild` do. A workspace with no
+`.dart_tool/package_graph.json`. Debug and profile builds include the app's
+dev dependencies, so those count on every target; only Flutter builds target
+iOS, so for iOS the hook ignores non-Flutter members. Every member shares the
+hook's output, so when several such members exist they must be Flutter apps
+declaring the same companions. Otherwise, or when the graph cannot be read,
+the build writes a `warning: llamadart:` line and bundles the hook's Apple
+assets without checking or linking any companion; give the apps the same
+companions or move them into separate workspaces. `flutter build ios` does
+not show hook warnings; Xcode and `xcodebuild` do. A workspace with no
 Flutter member that uses llamadart bundles the hook's assets.
 
 Standalone Dart on macOS keeps LiteRT-LM libraries in the hook cache. A custom

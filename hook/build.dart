@@ -755,10 +755,11 @@ _AppleCompanions? _flutterAppleCompanions({
 /// members do not all declare the same companions, or mix Flutter apps with
 /// other packages, the build warns and keeps the bundled assets.
 ///
-/// Only a Flutter build targets iOS, and it bundles no dev dependencies, so
-/// for [ios] non-Flutter members and dev dependencies are not considered.
-/// `flutter build ios` also hides hook warnings, which would leave such a
-/// member's fallback silent.
+/// Only a Flutter build targets iOS, so for [ios] non-Flutter members are not
+/// considered; `flutter build ios` also hides hook warnings, which would leave
+/// such a member's fallback silent. Debug and profile Flutter builds include
+/// the dev dependencies of the app they build, so those count on every
+/// target.
 ({String name, Set<String> dependencies})? _workspaceFlutterApp(
   Directory workspaceRoot,
   BuildOutputBuilder output,
@@ -843,7 +844,7 @@ _AppleCompanions? _flutterAppleCompanions({
   }.intersection(members.toSet());
   bool reachesCore(String member) {
     final reached = <String>{};
-    final pending = [member, if (!ios) ...?devDependencies[member]];
+    final pending = [member, ...?devDependencies[member]];
     while (pending.isNotEmpty) {
       final name = pending.removeLast();
       if (name == _packageName) return true;
