@@ -7,6 +7,14 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Apple builds in a pub workspace now find the member app that depends on the
+  llama.cpp, LiteRT-LM or stable_diffusion companion, so they check and link
+  it as outside a workspace instead of bundling the hook's Apple assets beside
+  it; members with different companions get a build warning
+  ([#1098](https://github.com/leehack/llamadart/issues/1098)).
+
 ## 0.13.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`,
