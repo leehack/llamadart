@@ -927,22 +927,44 @@ void main() {
     });
 
     test('reports the model fetch as the whole progress, or as its first '
-        'half when there is a projector', () async {
-      final engine = LlamaEngine(_Backend(urlLoadingSupported: true));
-      final alone = <double?>[];
-      final withProjector = <double?>[];
+        'half and then 1 once a projector loads', () async {
+      final backend = _Backend(urlLoadingSupported: true);
+      final engine = LlamaEngine(backend);
+      final alone = <Object?>[];
+      final withProjector = <Object?>[];
 
       await engine.setModel(
         LlamaModel(otherModel),
         onProgress: (progress) => alone.add(progress.fraction),
       );
+      backend.onProjectorLoad = () => withProjector.add('projector');
       await engine.setModel(
         LlamaModel(otherModel, projector: remoteProjector),
         onProgress: (progress) => withProjector.add(progress.fraction),
       );
 
       expect(alone, [0.25]);
-      expect(withProjector, [0.125]);
+      expect(withProjector, [0.125, 'projector', 1.0]);
+      await engine.dispose();
+    });
+
+    test('does not report full progress when the projector fails to '
+        'load', () async {
+      final backend = _Backend(urlLoadingSupported: true)
+        ..projectorError = Exception('bad projector');
+      final engine = LlamaEngine(backend);
+      final progress = <double?>[];
+
+      await expectLater(
+        engine.setModel(
+          LlamaModel(otherModel, projector: remoteProjector),
+          onProgress: (event) => progress.add(event.fraction),
+        ),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(progress, [0.125]);
+      expect(engine.isReady, isFalse);
       await engine.dispose();
     });
 

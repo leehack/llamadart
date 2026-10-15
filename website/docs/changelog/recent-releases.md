@@ -7,6 +7,14 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- **Behavior change:** on Web, `SpeechToTextEngine.load`,
+  `TextToSpeechEngine.load` and `LlamaEngine.setModel` with a projector now
+  report progress from 0 to 1, as `DecisionEngine.load` does: the model fetch
+  fills the first half and progress reaches 1 once the projector has loaded
+  ([#903](https://github.com/leehack/llamadart/issues/903)).
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`

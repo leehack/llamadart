@@ -49,7 +49,8 @@ void main() {
     expect(backend.lastRequest?.speakerAudioBytes, isNotEmpty);
   });
 
-  test('load reports the Web model fetch from 0 to 0.5', () async {
+  test('load reports Web progress from 0 to 1, ending once the projector '
+      'loads', () async {
     final backend = _WebBackend();
     final progress = <ModelDownloadProgress>[];
     final synthesizer = await TextToSpeechEngine.load(
@@ -67,7 +68,7 @@ void main() {
 
     expect(backend.modelUrl, 'https://example.com/qwen3-tts.gguf');
     expect(backend.projectorUrl, 'https://example.com/qwen3-tts-mmproj.gguf');
-    expect([for (final p in progress) p.fraction], [0.25, 0.5]);
+    expect([for (final p in progress) p.fraction], [0.25, 0.5, 1.0]);
   });
 
   test('typed text-to-speech rejects browser-local speaker paths', () async {
