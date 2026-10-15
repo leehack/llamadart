@@ -678,7 +678,12 @@ _AppleCompanions? _flutterAppleCompanions({
   if (_pubspecDeclaresFlutter(pubspecSource)) {
     dependencies = _pubspecDependencyNames(pubspecSource);
   } else if (_pubspecDeclaresWorkspace(pubspecSource)) {
-    final app = _workspaceFlutterApp(consumerRoot, output, log);
+    final app = _workspaceFlutterApp(
+      consumerRoot,
+      output,
+      log,
+      ios: code.targetOS == OS.iOS,
+    );
     if (app == null) return null;
     consumer = 'Flutter workspace member ${app.name} of ${consumerRoot.path}';
     dependencies = app.dependencies;
@@ -749,11 +754,17 @@ _AppleCompanions? _flutterAppleCompanions({
 /// member depends on it. Every member shares this hook output, so when those
 /// members do not all declare the same companions, or mix Flutter apps with
 /// other packages, the build warns and keeps the bundled assets.
+///
+/// Only a Flutter build targets iOS, and it bundles no dev dependencies, so
+/// for [ios] non-Flutter members and dev dependencies are not considered.
+/// `flutter build ios` also hides hook warnings, which would leave such a
+/// member's fallback silent.
 ({String name, Set<String> dependencies})? _workspaceFlutterApp(
   Directory workspaceRoot,
   BuildOutputBuilder output,
-  Logger log,
-) {
+  Logger log, {
+  required bool ios,
+}) {
   final dartTool = path.join(workspaceRoot.path, _dartToolDir);
   final graphFile = File(path.join(dartTool, 'package_graph.json'));
   final configFile = File(path.join(dartTool, 'package_config.json'));
@@ -832,7 +843,7 @@ _AppleCompanions? _flutterAppleCompanions({
   }.intersection(members.toSet());
   bool reachesCore(String member) {
     final reached = <String>{};
-    final pending = [member, ...?devDependencies[member]];
+    final pending = [member, if (!ios) ...?devDependencies[member]];
     while (pending.isNotEmpty) {
       final name = pending.removeLast();
       if (name == _packageName) return true;
@@ -873,7 +884,9 @@ _AppleCompanions? _flutterAppleCompanions({
       return null;
     }
     if (!_pubspecDeclaresFlutter(source)) {
-      apps.add((name: member, dependencies: null, setup: 'not Flutter'));
+      if (!ios) {
+        apps.add((name: member, dependencies: null, setup: 'not Flutter'));
+      }
       continue;
     }
     final declared = _pubspecDependencyNames(source);

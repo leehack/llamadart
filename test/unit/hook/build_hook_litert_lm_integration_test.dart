@@ -1680,6 +1680,60 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       });
     }
 
+    for (final (scenario, members, devDependencies) in [
+      (
+        'a Dart package',
+        const {
+          'app': app,
+          'cli': ['llamadart'],
+        },
+        const <String, List<String>>{},
+      ),
+      (
+        'a Dart package that dev-depends on llamadart',
+        const {'app': app, 'bench': <String>[]},
+        const {
+          'bench': ['llamadart'],
+        },
+      ),
+      (
+        'a Flutter package that dev-depends on llamadart',
+        const {
+          'app': app,
+          'harness': ['flutter'],
+        },
+        const {
+          'harness': ['llamadart'],
+        },
+      ),
+      (
+        'a root that dev-depends on llamadart',
+        const {'app': app},
+        const {
+          _workspaceRootName: ['llamadart'],
+        },
+      ),
+    ]) {
+      test('iOS validates the Flutter app next to $scenario, which no iOS '
+          'build bundles', () async {
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: OS.iOS,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: IOSSdk.iPhoneOS,
+            userDefines: await _appleWorkspaceUserDefines(
+              members: members,
+              devDependencies: devDependencies,
+              llamaCppTag: 'v0.5.0',
+            ),
+            check: (_, _) => fail('Must not emit in-process assets'),
+          ),
+          incompatibleLlamaCpp,
+        );
+      });
+    }
+
     for (final (scenario, members, devDependencies, setups) in [
       (
         'Flutter apps with different companions',
@@ -1708,8 +1762,39 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         },
         'app (Flutter, $llamaCppCompanion); bench (not Flutter)',
       ),
+      (
+        'a Flutter app and a Flutter package that dev-depends on llamadart',
+        const {
+          'app': app,
+          'harness': ['flutter'],
+        },
+        const {
+          'harness': ['llamadart'],
+        },
+        'app (Flutter, $llamaCppCompanion); harness (Flutter, no Apple '
+            'companion)',
+      ),
+      (
+        'a Flutter app and a root that dev-depends on llamadart',
+        const {'app': app},
+        const {
+          _workspaceRootName: ['llamadart'],
+        },
+        'app (Flutter, $llamaCppCompanion); $_workspaceRootName (not '
+            'Flutter)',
+      ),
+      (
+        'Flutter apps that differ only in the stable_diffusion companion',
+        const {
+          'app': app,
+          'studio': [...app, _stableDiffusionCompanion],
+        },
+        const <String, List<String>>{},
+        'app (Flutter, $llamaCppCompanion); studio (Flutter, '
+            '$llamaCppCompanion, $_stableDiffusionCompanion)',
+      ),
     ]) {
-      test('Apple warns and bundles assets for $scenario', () async {
+      test('macOS warns and bundles assets for $scenario', () async {
         final stderrLines = await _capturingStderr(
           () async => testCodeBuildHook(
             mainMethod: build_hook.main,
@@ -1806,11 +1891,13 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 }
 
 const _dartToolDir = '.dart_tool';
+const _workspaceRootName = 'llamadart_apple_workspace';
 const _stableDiffusionCompanion = 'llamadart_stable_diffusion_flutter';
 
 /// A pub workspace whose root `pubspec.yaml` carries the user-defines, as pub
 /// passes them to the hook, with each of [members] as `name: dependencies` at
-/// `<root>/<name>` and [devDependencies] as their `dev_dependencies`; a
+/// `<root>/<name>` and [devDependencies] as the `dev_dependencies` of those
+/// members or of [_workspaceRootName], the root; a
 /// `flutter` dependency is the Flutter SDK. Every companion
 /// a member names resolves to a copy of the maintained one, with [llamaCppTag]
 /// or [stableDiffusionTag] replacing its pin and [liteRtLmManifest] replacing
@@ -1828,7 +1915,7 @@ Future<PackageUserDefines> _appleWorkspaceUserDefines({
     'llamadart_apple_workspace_',
   );
   addTearDown(() => root.delete(recursive: true));
-  const rootName = 'llamadart_apple_workspace';
+  const rootName = _workspaceRootName;
   final pubspec = File(path.join(root.path, 'pubspec.yaml'))
     ..writeAsStringSync('''
 name: $rootName
@@ -1839,12 +1926,19 @@ environment:
 
 workspace:
 ${members.keys.map((name) => '  - $name').join('\n')}
+
+dev_dependencies:
+${devDependencies[rootName]?.map((dependency) => '  $dependency: any').join('\n') ?? ''}
 ''');
   final config = <Map<String, String>>[
     {'name': rootName, 'rootUri': '../'},
   ];
   final graph = <Map<String, Object?>>[
-    {'name': rootName, 'dependencies': <String>[], 'devDependencies': []},
+    {
+      'name': rootName,
+      'dependencies': <String>[],
+      'devDependencies': devDependencies[rootName] ?? <String>[],
+    },
     {'name': 'flutter', 'dependencies': <String>[]},
     {'name': 'llamadart', 'dependencies': <String>[]},
   ];
