@@ -7069,6 +7069,57 @@ void main() {
       );
     });
 
+    test('reports a vision probe without mtmd as unsupported', () {
+      final mmHandle = _registerMtmdContextForTesting(service);
+      addTearDown(
+        () => _readPrivateForTesting<Map<Object?, Object?>>(
+          service,
+          '_mtmdContexts',
+        ).remove(mmHandle),
+      );
+
+      expect(service.supportsVision(-1), isFalse);
+      expect(
+        () => service.supportsVision(mmHandle),
+        unsupportedFor('mtmd_support_vision'),
+      );
+    });
+
+    test('reports each mtmd generation call without mtmd as unsupported', () {
+      final calls = <String, (String, List<Object?>)>{
+        'mtmd_input_chunks_init': ('_mtmdInputChunksInit', []),
+        'mtmd_helper_bitmap_init_from_file': (
+          '_mtmdHelperBitmapInitFromFile',
+          [nullptr, nullptr],
+        ),
+        'mtmd_helper_bitmap_init_from_buf': (
+          '_mtmdHelperBitmapInitFromBuf',
+          [nullptr, nullptr, 0],
+        ),
+        'mtmd_bitmap_init_from_audio': (
+          '_mtmdBitmapInitFromAudio',
+          [0, nullptr],
+        ),
+        'mtmd_tokenize': (
+          '_mtmdTokenize',
+          [nullptr, nullptr, nullptr, nullptr, 0],
+        ),
+        'mtmd_helper_eval_chunks': (
+          '_mtmdHelperEvalChunks',
+          [nullptr, nullptr, nullptr, 0, 0, 1, true, nullptr],
+        ),
+      };
+
+      for (final MapEntry(key: symbol, value: (member, arguments))
+          in calls.entries) {
+        expect(
+          () => _invokePrivateForTesting<Object?>(service, member, arguments),
+          unsupportedFor(symbol),
+          reason: member,
+        );
+      }
+    });
+
     test('keeps the error types across the worker', () async {
       final mmHandle = _registerMtmdContextForTesting(service);
       final workerPort = ReceivePort();
@@ -7092,6 +7143,10 @@ void main() {
         await expectLater(
           backend.supportsAudio(mmHandle),
           unsupportedFor('mtmd_support_audio'),
+        );
+        await expectLater(
+          backend.supportsVision(mmHandle),
+          unsupportedFor('mtmd_support_vision'),
         );
       } finally {
         _readPrivateForTesting<Map<Object?, Object?>>(

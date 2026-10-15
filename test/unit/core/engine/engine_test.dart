@@ -518,6 +518,84 @@ class LimitReportingMockBackend extends NativeChatMockBackend
       _usages[generation];
 }
 
+/// Reports the output chunk count of the last generation it ran as its
+/// decoded tokens, as llama.cpp reports per-request counters.
+class PerformanceCounterBackend extends NativeChatMockBackend
+    implements BackendPerformanceDiagnostics {
+  PerformanceCounterBackend({required this.nativeChat});
+
+  final bool nativeChat;
+  int generations = 0;
+  int? _decodedTokens;
+
+  @override
+  bool get supportsNativeChatGeneration => nativeChat;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => _count(super.generate(contextHandle, prompt, params, parts: parts));
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) => _count(
+    super.generateChat(
+      contextHandle,
+      messages,
+      params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+    ),
+  );
+
+  Stream<List<int>> _count(Stream<List<int>> source) {
+    generations += 1;
+    _decodedTokens = 0;
+    return source.map((chunk) {
+      _decodedTokens = _decodedTokens! + 1;
+      return chunk;
+    });
+  }
+
+  @override
+  Future<BackendPerfContextData?> getPerformanceContext(
+    int contextHandle,
+  ) async {
+    final decodedTokens = _decodedTokens;
+    if (decodedTokens == null) return null;
+    return BackendPerfContextData(
+      loadMs: 1,
+      promptEvalMs: 1,
+      evalMs: decodedTokens.toDouble(),
+      sampleMs: 0,
+      promptEvalTokens: 1,
+      evalTokens: decodedTokens,
+      sampleCount: decodedTokens,
+      reusedGraphs: 0,
+    );
+  }
+}
+
 /// Models the llama.cpp backend: a cancel reaches only a generation whose
 /// cancel token [generate] has already created.
 class TokenCancelBackend extends MockLlamaBackend {
@@ -4482,6 +4560,44 @@ void main() {
 
         expect(await collect(stream), 'one two three');
         expect(tokenBackend.generateCalls, 1);
+      });
+
+      group('getPerformanceContext after a cancel before any output', () {
+        const user = LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'hello',
+        );
+        final paths = <String, (bool, Stream<Object?> Function(LlamaEngine))>{
+          'generate': (false, (engine) => engine.generate('hello')),
+          'create': (false, (engine) => engine.create(const [user])),
+          'native chat create': (true, (engine) => engine.create(const [user])),
+        };
+
+        for (final MapEntry(key: path, value: (nativeChat, start))
+            in paths.entries) {
+          test('$path reports no counters for the cancelled request and its '
+              'own for the next one', () async {
+            final perfBackend = PerformanceCounterBackend(
+              nativeChat: nativeChat,
+            );
+            final perfEngine = LlamaEngine(perfBackend);
+            addTearDown(perfEngine.dispose);
+            await perfEngine.loadModel('qwen-test.gguf');
+
+            await start(perfEngine).drain<void>();
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 1);
+
+            final cancelled = start(perfEngine).toList();
+            perfEngine.cancelGeneration();
+            await cancelled;
+            expect(perfBackend.generations, 1);
+            expect(await perfEngine.getPerformanceContext(), isNull);
+
+            await start(perfEngine).drain<void>();
+            expect(perfBackend.generations, 2);
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 1);
+          });
+        }
       });
 
       test('a cancel after the backend starts still reaches it', () async {

@@ -88,6 +88,9 @@ class LlamaEngine {
   LlamaRuntime? _observedRuntime;
   int? _modelHandle;
   int? _contextHandle;
+  // The context whose backend counters still belong to an earlier request,
+  // because the latest request on it ended before reaching the backend.
+  int? _stalePerformanceContext;
   int? _mmContextHandle;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
@@ -2003,6 +2006,7 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
+    _stalePerformanceContext = _contextHandle;
     await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
     if (request.isCancelled()) return;
     final resolvedParams = await _resolveDraftModel(params, request);
@@ -2011,6 +2015,7 @@ class LlamaEngine {
 
     try {
       final candidate = backend;
+      _stalePerformanceContext = null;
       final stream =
           chatMediaMarker != null && candidate is BackendChatPromptGeneration
           ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
@@ -2061,12 +2066,14 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
+    _stalePerformanceContext = _contextHandle;
     if (request.isCancelled()) return;
     final resolvedParams = await _resolveDraftModel(params, request);
     if (resolvedParams == null) return;
     _ensureReady();
 
     try {
+      _stalePerformanceContext = null;
       final stream = nativeBackend.generateChat(
         _contextHandle!,
         messages,
@@ -3195,10 +3202,14 @@ class LlamaEngine {
   }
 
   /// Returns native llama.cpp perf timings for the active context when available.
+  ///
+  /// Returns null after a generation that ended before reaching the backend,
+  /// such as one cancelled right after it was listened to, instead of the
+  /// counters of the request before it.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;
-    if (contextHandle == null) {
+    if (contextHandle == null || contextHandle == _stalePerformanceContext) {
       return Future<BackendPerfContextData?>.value(null);
     }
     if (candidate is BackendPerformanceDiagnostics) {
