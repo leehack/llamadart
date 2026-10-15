@@ -140,6 +140,10 @@ analyze and the relevant tests before the final commit.
   core minor bump re-releases every companion, and a companion native pin
   moves only in a core minor release; the release docs verifier and
   `tool/release/companion_pub_preflight.dart` enforce both.
+- Companion versions share the core `MAJOR.MINOR` and move their patch
+  independently: core `0.13.0` ships every companion at `0.13.0`. The release
+  docs verifier enforces this from core `0.13.0`. A companion-only release
+  still needs a new core version.
 - Never push release tags by hand unless release automation is disabled,
   blocked or being repaired. Give each new release-sensitive path a
   `.github/CODEOWNERS` entry. Release work follows

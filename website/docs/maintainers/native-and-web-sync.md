@@ -275,6 +275,11 @@ beside the patch and fail its Apple build, unless the core hook keeps accepting
 its earlier pin. `verify_release_docs_versions.dart --release-prep` enforces
 this from the published companion tags.
 
+Companion versions share the core's `MAJOR.MINOR` and move only their patch
+independently, so a core minor release sets every companion to `M.m.0` and a
+companion change within a minor bumps its patch. The release docs verifier
+fails on a mismatch from core `0.13.0` on.
+
 For every companion package whose `pubspec.yaml` version changed, or whose
 version is newly referenced by current install docs:
 

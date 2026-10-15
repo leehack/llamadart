@@ -57,9 +57,17 @@ version alignment:
 
 - Update `pubspec.yaml` version.
 - Update `CHANGELOG.md`.
-- Companion packages start at `0.0.1` and move independently from the core
-  package. Native pin sync records changed companion native pins under
+- Companion versions share the core's `MAJOR.MINOR`; their patch numbers move
+  independently. Core `0.13.0` ships with every companion at `0.13.0`, and a
+  later companion change within that minor bumps only the companion patch.
+  From core `0.13.0` on, `verify_release_docs_versions.dart` fails, with or
+  without `--release-prep`, when a companion's `MAJOR.MINOR` differs from the
+  core's; the `0.0.x` companions released beside earlier cores predate the
+  rule. Native pin sync records changed companion native pins under
   `Unreleased` but does not bump companion package versions by default.
+- A companion-only release still needs a new core version: the release
+  workflow publishes only for a core version that has no release tag at
+  another commit, so bump the core patch with the companion.
 - Each companion constrains the core to the core's own minor, for example
   `llamadart: '>=0.13.0 <0.14.0'` for core `0.13.x`, so pub refuses to pair it
   with a core minor whose native pins it does not match. A release that bumps
@@ -164,10 +172,18 @@ pub.dev yet. The release sequence is:
 4. The workflow then pushes each missing companion's package-specific tag,
    waits for `publish_companion_pubdev.yml` to publish it, and re-checks the
    pub.dev listing.
-5. If a companion fails to publish after the core shipped, fix the cause and
-   rerun the workflow. A rerun at the same merge commit finds the core tag
-   already there, skips pushing it, and publishes the remaining companions; a
-   core tag at any other commit stops the run.
+5. A rerun at the same merge commit finds the core tag already there, skips
+   pushing it, and publishes the companions still missing; a core tag at any
+   other commit stops the run. A companion whose tag exists but whose version
+   is not on pub.dev also stops the rerun, because that tag already ran
+   `publish_companion_pubdev.yml`:
+   - For a transient failure, such as a pub.dev or runner outage, rerun that
+     tag's failed `publish_companion_pubdev.yml` run, wait for the version on
+     pub.dev, then rerun `release_on_prep_merge.yml`.
+   - For a cause in the repository, such as a package that fails
+     `pub publish` validation, the tagged commit cannot publish that version.
+     Fix it in a new release-prep PR that bumps the core version and the
+     companion's patch version; what already published stays as it is.
 
 Current workflows involved:
 

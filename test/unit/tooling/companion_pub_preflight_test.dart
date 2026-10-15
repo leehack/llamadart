@@ -79,7 +79,7 @@ List<String> _publishOrderProblems(String workflow) {
   }
   final listingWait = RegExp(
     r'local package_url="https://pub\.dev/api/packages/\$package_name"\s*$'
-    r'[\s\S]*?curl -fsSL "\$package_url" \|\s*'
+    r'[\s\S]*?curl -fsSL --max-time [0-9]+ "\$package_url" \|\s*'
     r'jq -e --arg version "\$package_version" '
     "'any\\(\\.versions\\[\\]; \\.version == \\\$version\\)'",
     multiLine: true,
@@ -376,8 +376,8 @@ void main() {
           .replaceFirst(coreBlock, '')
           .replaceFirst(companionWait, '$companionWait$coreBlock'),
       workflow.replaceFirst(
-        'curl -fsSL "\$package_url" |',
-        'curl -fsSL "\$package_url/versions/\$package_version" |',
+        'curl -fsSL --max-time 30 "\$package_url" |',
+        'curl -fsSL --max-time 30 "\$package_url/versions/\$package_version" |',
       ),
       workflow.replaceFirst(
         'if [[ "\$core_tag_sha" != "\$release_sha" ]]; then',

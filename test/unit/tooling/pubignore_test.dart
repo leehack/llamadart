@@ -62,6 +62,23 @@ void main() {
       );
     }
   });
+
+  test('leaves companion checkout overrides out of the core archive', () async {
+    expect(
+      await _isIgnored(
+        repository,
+        'packages/llamadart_llama_cpp_flutter/pubspec_overrides.yaml',
+      ),
+      isTrue,
+    );
+    expect(
+      await _isIgnored(
+        repository,
+        'packages/llamadart_llama_cpp_flutter/pubspec.yaml',
+      ),
+      isFalse,
+    );
+  });
 }
 
 Future<bool> _isIgnored(Directory repository, String candidate) async {

@@ -100,6 +100,10 @@ List<String> _cliContractProblems(String source) {
     r'errors\.addAll\(\s*checkCompanionCoreConstraints\(\s*'
     r'Directory\.current,\s*coreVersion,?\s*\),?\s*\);',
   ).allMatches(source).toList();
+  final alignment = RegExp(
+    r'errors\.addAll\(\s*checkCompanionVersionAlignment\(\s*'
+    r'Directory\.current,\s*coreVersion,?\s*\),?\s*\);',
+  ).allMatches(source).toList();
   final strict = RegExp(
     r'if \(releasePrep\) \{\s*errors\.addAll\(\s*'
     r'checkPublishedCompanionPins\(\s*Directory\.current,\s*coreVersion,?\s*'
@@ -108,15 +112,27 @@ List<String> _cliContractProblems(String source) {
   if (always.length != 1) {
     problems.add('expected one unconditional core-constraint check');
   }
+  if (alignment.length != 1) {
+    problems.add('expected one unconditional version-alignment check');
+  }
   if (strict.length != 1) {
     problems.add('expected one release-prep published-pin check');
   }
   final errorGuard = source.indexOf('if (errors.isNotEmpty) {');
   if (always.length == 1 &&
+      alignment.length == 1 &&
       strict.length == 1 &&
-      !(always.single.start < strict.single.start &&
+      !(always.single.start < alignment.single.start &&
+          alignment.single.start < strict.single.start &&
           strict.single.start < errorGuard)) {
-    problems.add('both checks must run before success can be reported');
+    problems.add('every check must run before success can be reported');
+  }
+  if (alignment.length == 1) {
+    final before = source.substring(0, alignment.single.start);
+    if (before.lastIndexOf('if (releasePrep) {') >
+        before.lastIndexOf('final coreVersion = _parseCoreVersion(')) {
+      problems.add('the version-alignment check must not need --release-prep');
+    }
   }
   return problems;
 }
@@ -195,6 +211,7 @@ void main() {
     test('rejects a window that is not exactly the core minor', () {
       for (final core in [
         "'>=0.12.0 <0.13.0'",
+        "'>=0.12.5 <0.14.0'",
         "'>=0.13.0 <0.15.0'",
         "'>=0.13.0 <1.0.0'",
         "'>=0.13.3 <0.14.0'",
@@ -299,6 +316,26 @@ void main() {
       );
     });
 
+    test('rejects a published constraint pub cannot parse', () {
+      final root = _gitRepo();
+      _writeCompanions(root, core: "'>=0.13.0 <<0.14.0'");
+      _commitAndTag(root, ['v0.13.0', '$_llamaCpp-v0.0.3']);
+
+      expect(
+        checkPublishedCompanionPins(
+          root,
+          Version.parse('0.13.1'),
+          acceptedPins: _acceptedPins,
+        ),
+        [
+          startsWith(
+            '$_llamaCpp-v0.0.3 declares an unparsable `llamadart` '
+            'constraint: ',
+          ),
+        ],
+      );
+    });
+
     test('ignores companions whose constraint excludes this core', () {
       final root = _gitRepo();
       _writeCompanions(root, pins: {_stableDiffusion: 'v0.0.9'});
@@ -335,7 +372,114 @@ void main() {
     });
   });
 
-  test('release docs CLI runs both checks before reporting success', () {
+  group('checkCompanionVersionAlignment', () {
+    Directory companionsAt(Map<String, String> versions) {
+      final root = _tempRoot();
+      _writeCompanions(
+        root,
+        pubspecs: {
+          for (final entry in versions.entries)
+            entry.key: _pubspec(entry.value, core: "'>=0.13.0 <0.14.0'"),
+        },
+      );
+      return root;
+    }
+
+    test('the checkout passes', () {
+      final version = RegExp(
+        r'^version:\s*(\S+)',
+        multiLine: true,
+      ).firstMatch(File('pubspec.yaml').readAsStringSync())!.group(1)!;
+
+      expect(
+        checkCompanionVersionAlignment(
+          Directory.current,
+          Version.parse(version),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('starts with core 0.13.0', () {
+      final root = companionsAt({});
+
+      expect(
+        checkCompanionVersionAlignment(root, Version.parse('0.12.9')),
+        isEmpty,
+      );
+      expect(
+        checkCompanionVersionAlignment(root, Version.parse('0.13.0')),
+        hasLength(companionSwiftPins.length),
+      );
+    });
+
+    test('accepts any companion patch within the core minor', () {
+      final root = companionsAt({
+        _llamaCpp: '0.13.0',
+        _liteRtLm: '0.13.7',
+        _stableDiffusion: '0.13.2',
+      });
+
+      expect(
+        checkCompanionVersionAlignment(root, Version.parse('0.13.4')),
+        isEmpty,
+      );
+    });
+
+    test('rejects a companion outside the core MAJOR.MINOR', () {
+      for (final version in ['0.12.4', '0.0.23', '0.14.0', '1.13.0']) {
+        final root = companionsAt({
+          _llamaCpp: '0.13.0',
+          _liteRtLm: version,
+          _stableDiffusion: '0.13.0',
+        });
+
+        expect(checkCompanionVersionAlignment(root, Version.parse('0.13.0')), [
+          allOf(
+            startsWith(
+              'packages/$_liteRtLm/pubspec.yaml is version $version, but '
+              'core is 0.13.0',
+            ),
+            contains('share the core MAJOR.MINOR'),
+            contains('Set it to 0.13.0 for a new core minor'),
+          ),
+        ], reason: version);
+      }
+    });
+
+    test('compares the major as well as the minor', () {
+      final root = companionsAt({
+        _llamaCpp: '1.0.0',
+        _liteRtLm: '1.0.3',
+        _stableDiffusion: '2.0.0',
+      });
+
+      expect(checkCompanionVersionAlignment(root, Version.parse('1.0.1')), [
+        startsWith(
+          'packages/$_stableDiffusion/pubspec.yaml is version 2.0.0, but '
+          'core is 1.0.1',
+        ),
+      ]);
+    });
+
+    test('rejects a companion version it cannot read', () {
+      final root = companionsAt({
+        _llamaCpp: '0.13.0',
+        _liteRtLm: 'next',
+        _stableDiffusion: '0.13.0',
+      });
+      File(
+        '${root.path}/packages/$_llamaCpp/pubspec.yaml',
+      ).writeAsStringSync('name: $_llamaCpp\n');
+
+      expect(checkCompanionVersionAlignment(root, Version.parse('0.13.0')), [
+        'packages/$_llamaCpp/pubspec.yaml does not contain its version field.',
+        startsWith('packages/$_liteRtLm/pubspec.yaml version next is not '),
+      ]);
+    });
+  });
+
+  test('release docs CLI runs every check before reporting success', () {
     final source = File(
       'tool/testing/verify_release_docs_versions.dart',
     ).readAsStringSync().replaceAll('\r\n', '\n');
@@ -353,6 +497,24 @@ void main() {
       source.replaceFirst(
         RegExp(r'if \(releasePrep\) \{\s*errors\.addAll\(\s*checkPublished'),
         'if (false) {\n        errors.addAll(\n          checkPublished',
+      ),
+      source.replaceFirst(
+        'checkCompanionVersionAlignment(Directory.current, coreVersion)',
+        'checkCompanionVersionAlignment(Directory.systemTemp, coreVersion)',
+      ),
+      source.replaceFirst(
+        RegExp(
+          r'errors\.addAll\(\s*checkCompanionVersionAlignment\('
+          r'Directory\.current, coreVersion\),?\s*\);',
+        ),
+        '',
+      ),
+      source.replaceFirstMapped(
+        RegExp(
+          r'errors\.addAll\(\s*checkCompanionVersionAlignment\('
+          r'Directory\.current, coreVersion\),?\s*\);',
+        ),
+        (match) => 'if (releasePrep) {\n${match[0]}\n}',
       ),
     ]) {
       expect(_cliContractProblems(mutated), isNotEmpty);

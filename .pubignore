@@ -7,6 +7,9 @@ coverage/
 .flutter-plugins
 .flutter-plugins-dependencies
 
+# Companion overrides point at this checkout and resolve nowhere else.
+packages/*/pubspec_overrides.yaml
+
 # IDE / OS
 .idea/
 .vscode/

@@ -182,7 +182,7 @@ jobs:
             local interval_seconds="$PUBDEV_WAIT_INTERVAL_SECONDS"
 
             for attempt in $(seq 1 "$attempts"); do
-              if curl -fsSL "$package_url" |
+              if curl -fsSL --max-time 30 "$package_url" |
                 jq -e --arg version "$package_version" 'any(.versions[]; .version == $version)' >/dev/null; then
                 echo "$package_name $package_version is live on pub.dev."
                 return 0
@@ -234,7 +234,7 @@ jobs:
               exit 1
             fi
 
-            if curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version" >/dev/null; then
+            if curl -fsSL --max-time 30 "https://pub.dev/api/packages/$package_name/versions/$package_version" >/dev/null; then
               echo "$package_name $package_version already exists on pub.dev."
               continue
             fi
@@ -242,7 +242,8 @@ jobs:
             companion_tag="$package_name-v$package_version"
             if git ls-remote --exit-code --tags origin "refs/tags/$companion_tag" >/dev/null 2>&1; then
               echo "$companion_tag already exists, but $package_name $package_version is missing on pub.dev." >&2
-              echo "Inspect publish_companion_pubdev.yml before retrying the core release." >&2
+              echo "If its publish_companion_pubdev.yml run failed transiently, rerun that run, wait for $package_name $package_version on pub.dev, then rerun this workflow." >&2
+              echo "If the cause is in the repository, this commit cannot publish $package_name $package_version: fix it in a new release-prep PR that bumps the core version and $package_name's patch version." >&2
               exit 1
             fi
 

@@ -395,6 +395,56 @@ List<String> checkCompanionCoreConstraints(
   return errors;
 }
 
+/// The first core release whose companions share its `MAJOR.MINOR`.
+///
+/// Earlier companions are numbered `0.0.x` and stay valid beside an earlier
+/// core, so the check starts with the release that renumbers them.
+final Version companionVersionAlignmentStart = Version(0, 13, 0);
+
+/// Checks that every companion's `version` shares [coreVersion]'s
+/// `MAJOR.MINOR`, from [companionVersionAlignmentStart] on.
+///
+/// Companion patch numbers move independently of the core's.
+List<String> checkCompanionVersionAlignment(
+  Directory repoRoot,
+  Version coreVersion,
+) {
+  if (coreVersion < companionVersionAlignmentStart) return const <String>[];
+  final errors = <String>[];
+  final series = '${coreVersion.major}.${coreVersion.minor}';
+  for (final companion in companionSwiftPins) {
+    final version = _matchInFile(
+      repoRoot,
+      companion.pubspecPath,
+      RegExp(r'^version:\s*(\S+)\s*$', multiLine: true),
+      'version field',
+      errors,
+    );
+    if (version == null) continue;
+    final Version parsed;
+    try {
+      parsed = Version.parse(version);
+    } on FormatException catch (error) {
+      errors.add(
+        '${companion.pubspecPath} version $version is not semver: '
+        '${error.message}',
+      );
+      continue;
+    }
+    if (parsed.major == coreVersion.major &&
+        parsed.minor == coreVersion.minor) {
+      continue;
+    }
+    errors.add(
+      '${companion.pubspecPath} is version $version, but core is '
+      '$coreVersion; companions share the core MAJOR.MINOR. Set it to '
+      '$series.0 for a new core minor, or to the next $series patch for a '
+      'companion change within it.',
+    );
+  }
+  return errors;
+}
+
 /// Native tags the checkout's core accepts from each Apple companion,
 /// keyed by package name.
 Map<String, Set<String>> coreAcceptedCompanionPins() => <String, Set<String>>{
@@ -693,6 +743,9 @@ void main(List<String> arguments) {
     if (coreVersion != null) {
       errors.addAll(
         checkCompanionCoreConstraints(Directory.current, coreVersion),
+      );
+      errors.addAll(
+        checkCompanionVersionAlignment(Directory.current, coreVersion),
       );
       if (releasePrep) {
         errors.addAll(
