@@ -8269,7 +8269,9 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(_mtmdUnavailableMessage('mtmd_input_chunks_init'));
+      throw LlamaUnsupportedException(
+        _mtmdUnavailableMessage('mtmd_input_chunks_init'),
+      );
     }
     return fallback.inputChunksInit();
   }
@@ -8310,7 +8312,7 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(
+      throw LlamaUnsupportedException(
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_file'),
       );
     }
@@ -8346,7 +8348,7 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(
+      throw LlamaUnsupportedException(
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_buf'),
       );
     }
@@ -8373,7 +8375,9 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(_mtmdUnavailableMessage('mtmd_bitmap_init_from_audio'));
+      throw LlamaUnsupportedException(
+        _mtmdUnavailableMessage('mtmd_bitmap_init_from_audio'),
+      );
     }
     return fallback.bitmapInitFromAudio(n, samples);
   }
@@ -8428,7 +8432,7 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(_mtmdUnavailableMessage('mtmd_tokenize'));
+      throw LlamaUnsupportedException(_mtmdUnavailableMessage('mtmd_tokenize'));
     }
     return fallback.tokenize(ctx, output, text, bitmaps, nBitmaps);
   }
@@ -8482,7 +8486,9 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(_mtmdUnavailableMessage('mtmd_helper_eval_chunks'));
+      throw LlamaUnsupportedException(
+        _mtmdUnavailableMessage('mtmd_helper_eval_chunks'),
+      );
     }
     return fallback.helperEvalChunks(
       ctx,
@@ -8927,7 +8933,10 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
-    return _mtmdHasEncoder(mmCtx, audio: false) ?? false;
+    return _mtmdHasEncoder(mmCtx, audio: false) ??
+        (throw LlamaUnsupportedException(
+          _mtmdUnavailableMessage('mtmd_support_vision'),
+        ));
   }
 
   /// Returns whether the active multimodal projector supports audio input.

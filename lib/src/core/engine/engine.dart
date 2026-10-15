@@ -88,6 +88,11 @@ class LlamaEngine {
   LlamaRuntime? _observedRuntime;
   int? _modelHandle;
   int? _contextHandle;
+  // The context whose backend counters still belong to an earlier request,
+  // because the latest request on it ended before reaching the backend while
+  // no backend call was running on it.
+  int? _stalePerformanceContext;
+  int _contextCallsInFlight = 0;
   int? _mmContextHandle;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
@@ -1488,6 +1493,7 @@ class LlamaEngine {
       await backend.contextFree(_contextHandle!);
       _contextHandle = null;
     }
+    _stalePerformanceContext = null;
     // Always queue the projector unload (even when no handle is set yet): a
     // projector load may be in flight and not have assigned _mmContextHandle.
     // Routing through the serialized lifecycle makes this wait behind that load
@@ -2004,46 +2010,53 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
-    await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
-    if (request.isCancelled()) return;
-    final resolvedParams = await _resolveDraftModel(params, request);
-    if (resolvedParams == null) return;
-    _ensureReady();
-
+    var reachedBackend = false;
     try {
-      final candidate = backend;
-      final stream =
-          chatMediaMarker != null && candidate is BackendChatPromptGeneration
-          ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
-              _contextHandle!,
-              prompt,
-              resolvedParams,
-              mediaMarker: chatMediaMarker,
-              parts: parts,
-            )
-          : backend.generate(
-              _contextHandle!,
-              prompt,
-              resolvedParams,
-              parts: parts,
-            );
+      await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
+      if (request.isCancelled()) return;
+      final resolvedParams = await _resolveDraftModel(params, request);
+      if (resolvedParams == null) return;
+      _ensureReady();
 
-      await for (final token in _cancellableText(
-        stream,
-        request,
-        'Generation',
-      )) {
-        yield token;
+      try {
+        final candidate = backend;
+        reachedBackend = true;
+        _beginContextCall();
+        final stream =
+            chatMediaMarker != null && candidate is BackendChatPromptGeneration
+            ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
+                _contextHandle!,
+                prompt,
+                resolvedParams,
+                mediaMarker: chatMediaMarker,
+                parts: parts,
+              )
+            : backend.generate(
+                _contextHandle!,
+                prompt,
+                resolvedParams,
+                parts: parts,
+              );
+
+        await for (final token in _cancellableText(
+          stream,
+          request,
+          'Generation',
+        )) {
+          yield token;
+        }
+        _reportGenerationOutcome(stream, onLimit, onUsage);
+      } catch (error, stackTrace) {
+        // Wrap raw backend failures so callers catching LlamaException (the
+        // documented error contract) don't see unexpected error types escape,
+        // while preserving the original backend stack trace.
+        Error.throwWithStackTrace(
+          _generationFailure('Generation', error),
+          stackTrace,
+        );
       }
-      _reportGenerationOutcome(stream, onLimit, onUsage);
-    } catch (error, stackTrace) {
-      // Wrap raw backend failures so callers catching LlamaException (the
-      // documented error contract) don't see unexpected error types escape,
-      // while preserving the original backend stack trace.
-      Error.throwWithStackTrace(
-        _generationFailure('Generation', error),
-        stackTrace,
-      );
+    } finally {
+      _endContextRequest(reachedBackend: reachedBackend);
     }
   }
 
@@ -2062,37 +2075,72 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
-    if (request.isCancelled()) return;
-    final resolvedParams = await _resolveDraftModel(params, request);
-    if (resolvedParams == null) return;
-    _ensureReady();
-
+    var reachedBackend = false;
     try {
-      final stream = nativeBackend.generateChat(
-        _contextHandle!,
-        messages,
-        resolvedParams,
-        tools: tools,
-        toolChoice: toolChoice,
-        parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
-        chatTemplateKwargs: chatTemplateKwargs,
-        templateNow: templateNow,
-      );
+      if (request.isCancelled()) return;
+      final resolvedParams = await _resolveDraftModel(params, request);
+      if (resolvedParams == null) return;
+      _ensureReady();
 
-      await for (final token in _cancellableText(
-        stream,
-        request,
-        'Native chat generation',
-      )) {
-        yield token;
+      try {
+        reachedBackend = true;
+        _beginContextCall();
+        final stream = nativeBackend.generateChat(
+          _contextHandle!,
+          messages,
+          resolvedParams,
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
+        );
+
+        await for (final token in _cancellableText(
+          stream,
+          request,
+          'Native chat generation',
+        )) {
+          yield token;
+        }
+        _reportGenerationOutcome(stream, onLimit, onUsage);
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          _generationFailure('Native chat generation', error),
+          stackTrace,
+        );
       }
-      _reportGenerationOutcome(stream, onLimit, onUsage);
-    } catch (error, stackTrace) {
-      Error.throwWithStackTrace(
-        _generationFailure('Native chat generation', error),
-        stackTrace,
-      );
+    } finally {
+      _endContextRequest(reachedBackend: reachedBackend);
+    }
+  }
+
+  /// Records a backend call starting on the context, whose counters then
+  /// describe that call.
+  void _beginContextCall() {
+    _contextCallsInFlight += 1;
+    _stalePerformanceContext = null;
+  }
+
+  /// Records the end of a request: one that called [_beginContextCall] when
+  /// [reachedBackend] is true, otherwise one that ended before reaching the
+  /// backend.
+  void _endContextRequest({required bool reachedBackend}) {
+    if (reachedBackend) {
+      _contextCallsInFlight -= 1;
+    } else if (_contextCallsInFlight == 0) {
+      _stalePerformanceContext = _contextHandle;
+    }
+  }
+
+  /// Runs [call], a backend call on the context, such as embeddings.
+  Future<T> _contextCall<T>(Future<T> Function() call) async {
+    _beginContextCall();
+    try {
+      return await call();
+    } finally {
+      _endContextRequest(reachedBackend: true);
     }
   }
 
@@ -2250,10 +2298,9 @@ class LlamaEngine {
     _ensureReady();
     try {
       final embeddingBackend = _resolveEmbeddingBackend();
-      return await embeddingBackend.embed(
-        _contextHandle!,
-        text,
-        normalize: normalize,
+      return await _contextCall(
+        () =>
+            embeddingBackend.embed(_contextHandle!, text, normalize: normalize),
       );
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Embeddings', error);
@@ -2302,24 +2349,26 @@ class LlamaEngine {
 
     final embeddingBackend = _resolveEmbeddingBackend();
     try {
-      if (embeddingBackend is BackendBatchEmbeddings) {
-        return await embeddingBackend.embedBatch(
-          _contextHandle!,
-          texts,
-          normalize: normalize,
-        );
-      }
+      return await _contextCall(() async {
+        if (embeddingBackend is BackendBatchEmbeddings) {
+          return embeddingBackend.embedBatch(
+            _contextHandle!,
+            texts,
+            normalize: normalize,
+          );
+        }
 
-      final vectors = <List<double>>[];
-      for (final text in texts) {
-        final vector = await embeddingBackend.embed(
-          _contextHandle!,
-          text,
-          normalize: normalize,
-        );
-        vectors.add(vector);
-      }
-      return vectors;
+        final vectors = <List<double>>[];
+        for (final text in texts) {
+          final vector = await embeddingBackend.embed(
+            _contextHandle!,
+            text,
+            normalize: normalize,
+          );
+          vectors.add(vector);
+        }
+        return vectors;
+      });
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Embeddings', error);
     }
@@ -2424,12 +2473,14 @@ class LlamaEngine {
       );
     }
     try {
-      return await (candidate as BackendNextTokenScoring).scoreNextToken(
-        _contextHandle!,
-        prompt,
-        candidates: List<int>.of(candidates),
-        topK: topK,
-        reusePromptPrefix: reusePromptPrefix,
+      return await _contextCall(
+        () => (candidate as BackendNextTokenScoring).scoreNextToken(
+          _contextHandle!,
+          prompt,
+          candidates: List<int>.of(candidates),
+          topK: topK,
+          reusePromptPrefix: reusePromptPrefix,
+        ),
       );
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Next-token scoring', error);
@@ -3196,10 +3247,17 @@ class LlamaEngine {
   }
 
   /// Returns native llama.cpp perf timings for the active context when available.
+  ///
+  /// Returns null after a generation that ended before reaching the backend,
+  /// such as one cancelled right after it was listened to, instead of the
+  /// counters of the request before it. Counters return once a generation,
+  /// embedding, next-token scoring or text-to-speech call runs on the context.
+  /// A generation that ends that way while another request is running on the
+  /// context leaves that request's counters.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;
-    if (contextHandle == null) {
+    if (contextHandle == null || contextHandle == _stalePerformanceContext) {
       return Future<BackendPerfContextData?>.value(null);
     }
     if (candidate is BackendPerformanceDiagnostics) {
@@ -3583,11 +3641,13 @@ extension LlamaEngineBackendHooks on LlamaEngine {
       );
     }
     final textToSpeechBackend = candidate as BackendTextToSpeech;
-    return textToSpeechBackend.synthesizeTextToSpeech(
-      _contextHandle!,
-      mmContextHandle,
-      request,
-      onProgress: onProgress,
+    return _contextCall(
+      () => textToSpeechBackend.synthesizeTextToSpeech(
+        _contextHandle!,
+        mmContextHandle,
+        request,
+        onProgress: onProgress,
+      ),
     );
   }
 

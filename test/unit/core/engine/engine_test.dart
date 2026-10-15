@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:test/test.dart';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
@@ -516,6 +518,149 @@ class LimitReportingMockBackend extends NativeChatMockBackend
   @override
   LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
       _usages[generation];
+}
+
+/// Reports the output chunk count of the last generation it ran as its
+/// decoded tokens, as llama.cpp reports per-request counters. Embeddings,
+/// next-token scoring and text-to-speech report zero.
+class PerformanceCounterBackend extends NativeChatMockBackend
+    implements
+        BackendPerformanceDiagnostics,
+        BackendEmbeddings,
+        BackendNextTokenScoring,
+        BackendTextToSpeech {
+  PerformanceCounterBackend({required this.nativeChat});
+
+  final bool nativeChat;
+  int generations = 0;
+  int? _decodedTokens;
+
+  /// Holds the output of each generation started while it is set until it
+  /// completes.
+  Future<void>? hold;
+
+  @override
+  Future<List<double>> embed(
+    int contextHandle,
+    String text, {
+    bool normalize = true,
+  }) async {
+    _decodedTokens = 0;
+    return const <double>[1];
+  }
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) async {
+    _decodedTokens = 0;
+    return LlamaNextTokenScores(
+      candidates: const [],
+      top: const [],
+      promptTokens: 1,
+    );
+  }
+
+  @override
+  bool get supportsNativeChatGeneration => nativeChat;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => _count(super.generate(contextHandle, prompt, params, parts: parts));
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) => _count(
+    super.generateChat(
+      contextHandle,
+      messages,
+      params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+    ),
+  );
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async => const BackendTextToSpeechCapabilities(isSupported: true);
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    _decodedTokens = 0;
+    return BackendTextToSpeechResult(
+      samples: Float32List(0),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 0,
+      truncated: false,
+    );
+  }
+
+  @override
+  void cancelTextToSpeech() {}
+
+  Stream<List<int>> _count(Stream<List<int>> source) {
+    generations += 1;
+    _decodedTokens = 0;
+    final held = hold;
+    final output = held == null
+        ? source
+        : held.asStream().asyncExpand((_) => source);
+    return output.map((chunk) {
+      _decodedTokens = _decodedTokens! + 1;
+      return chunk;
+    });
+  }
+
+  @override
+  Future<BackendPerfContextData?> getPerformanceContext(
+    int contextHandle,
+  ) async {
+    final decodedTokens = _decodedTokens;
+    if (decodedTokens == null) return null;
+    return BackendPerfContextData(
+      loadMs: 1,
+      promptEvalMs: 1,
+      evalMs: decodedTokens.toDouble(),
+      sampleMs: 0,
+      promptEvalTokens: 1,
+      evalTokens: decodedTokens,
+      sampleCount: decodedTokens,
+      reusedGraphs: 0,
+    );
+  }
 }
 
 /// Models the llama.cpp backend: a cancel reaches only a generation whose
@@ -4580,6 +4725,182 @@ void main() {
 
         expect(await collect(stream), 'one two three');
         expect(tokenBackend.generateCalls, 1);
+      });
+
+      group('getPerformanceContext after a cancel before any output', () {
+        const user = LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'hello',
+        );
+        final paths = <String, (bool, Stream<Object?> Function(LlamaEngine))>{
+          'generate': (false, (engine) => engine.generate('hello')),
+          'create': (false, (engine) => engine.create(const [user])),
+          'native chat create': (true, (engine) => engine.create(const [user])),
+        };
+
+        for (final MapEntry(key: path, value: (nativeChat, start))
+            in paths.entries) {
+          test('$path reports no counters for the cancelled request and its '
+              'own for the next one', () async {
+            final perfBackend = PerformanceCounterBackend(
+              nativeChat: nativeChat,
+            );
+            final perfEngine = LlamaEngine(perfBackend);
+            addTearDown(perfEngine.dispose);
+            await perfEngine.loadModel('qwen-test.gguf');
+
+            await start(perfEngine).drain<void>();
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 1);
+
+            final cancelled = start(perfEngine).toList();
+            perfEngine.cancelGeneration();
+            await cancelled;
+            expect(perfBackend.generations, 1);
+            expect(await perfEngine.getPerformanceContext(), isNull);
+
+            await start(perfEngine).drain<void>();
+            expect(perfBackend.generations, 2);
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 1);
+          });
+        }
+
+        Future<PerformanceCounterBackend> cancelOneEarly(
+          LlamaEngine perfEngine,
+        ) async {
+          final perfBackend = perfEngine.backend as PerformanceCounterBackend;
+          await perfEngine.loadModel('qwen-test.gguf');
+          await perfEngine.generate('hello').drain<void>();
+          final cancelled = perfEngine.generate('hello').toList();
+          perfEngine.cancelGeneration();
+          await cancelled;
+          expect(await perfEngine.getPerformanceContext(), isNull);
+          return perfBackend;
+        }
+
+        test('a request cancelled while another runs leaves that one\'s '
+            'counters', () async {
+          final perfBackend = PerformanceCounterBackend(nativeChat: false);
+          final perfEngine = LlamaEngine(perfBackend);
+          addTearDown(perfEngine.dispose);
+          await perfEngine.loadModel('qwen-test.gguf');
+
+          final release = Completer<void>();
+          perfBackend.hold = release.future;
+          final running = perfEngine.generate('hello').join();
+          while (perfBackend.generations == 0) {
+            await pumpEventQueue();
+          }
+          perfBackend.hold = null;
+
+          final abandoned = perfEngine.generate('hello').listen((_) {});
+          await abandoned.cancel();
+          await pumpEventQueue();
+          expect(perfBackend.generations, 1);
+          expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+
+          release.complete();
+          await running;
+          expect((await perfEngine.getPerformanceContext())?.evalTokens, 1);
+        });
+
+        for (final MapEntry(key: path, value: (nativeChat, start))
+            in paths.entries) {
+          test('$path cancelled before the backend while another request '
+              'runs leaves that one\'s counters', () async {
+            final perfBackend = PerformanceCounterBackend(
+              nativeChat: nativeChat,
+            );
+            final perfEngine = LlamaEngine(perfBackend);
+            addTearDown(perfEngine.dispose);
+            await perfEngine.loadModel('qwen-test.gguf');
+
+            final release = Completer<void>();
+            perfBackend.hold = release.future;
+            final running = start(perfEngine).drain<void>();
+            while (perfBackend.generations == 0) {
+              await pumpEventQueue();
+            }
+            perfBackend.hold = null;
+
+            final cancelled = start(perfEngine).toList();
+            perfEngine.cancelGeneration();
+            await cancelled;
+            expect(perfBackend.generations, 1);
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+
+            release.complete();
+            await running;
+          });
+        }
+
+        test('a reloaded model reports the counters of a context that '
+            'reuses the cancelled request\'s handle', () async {
+          final perfEngine = LlamaEngine(
+            PerformanceCounterBackend(nativeChat: false),
+          );
+          addTearDown(perfEngine.dispose);
+          await cancelOneEarly(perfEngine);
+          final cancelledHandle = perfEngine.contextHandle;
+
+          await perfEngine.unloadModel();
+          await perfEngine.loadModel('qwen-test.gguf');
+          expect(perfEngine.contextHandle, cancelledHandle);
+          expect(await perfEngine.getPerformanceContext(), isNotNull);
+        });
+
+        test(
+          'embeddings after the cancelled request report their counters',
+          () async {
+            final perfEngine = LlamaEngine(
+              PerformanceCounterBackend(nativeChat: false),
+            );
+            addTearDown(perfEngine.dispose);
+            await cancelOneEarly(perfEngine);
+
+            await perfEngine.embed('hello');
+            expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+          },
+        );
+
+        test('batch embeddings after the cancelled request report their '
+            'counters', () async {
+          final perfEngine = LlamaEngine(
+            PerformanceCounterBackend(nativeChat: false),
+          );
+          addTearDown(perfEngine.dispose);
+          await cancelOneEarly(perfEngine);
+
+          await perfEngine.embedBatch(const ['hello', 'world']);
+          expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+        });
+
+        test('next-token scoring after the cancelled request reports its '
+            'counters', () async {
+          final perfEngine = LlamaEngine(
+            PerformanceCounterBackend(nativeChat: false),
+          );
+          addTearDown(perfEngine.dispose);
+          await cancelOneEarly(perfEngine);
+
+          await perfEngine.scoreNextToken('hello', topK: 1);
+          expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+        });
+
+        test('text-to-speech after the cancelled request reports its '
+            'counters', () async {
+          final perfEngine = LlamaEngine(
+            PerformanceCounterBackend(nativeChat: false),
+          );
+          addTearDown(perfEngine.dispose);
+          await cancelOneEarly(perfEngine);
+          await perfEngine.loadMultimodalProjector('mmproj.gguf');
+          expect(await perfEngine.getPerformanceContext(), isNull);
+
+          await perfEngine.synthesizeTextToSpeechBackend(
+            const BackendTextToSpeechRequest(text: 'hello'),
+          );
+          expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
+        });
       });
 
       test('a cancel after the backend starts still reaches it', () async {

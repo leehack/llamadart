@@ -25,6 +25,16 @@ For canonical full release notes, use:
   having no free GPU memory instead of all of it: loads warn that generation
   will be slower and, on Linux, are refused above system memory alone
   ([#980](https://github.com/leehack/llamadart/issues/980)).
+- On native llama.cpp, a runtime that lacks an mtmd function, with no
+  complete fallback mtmd library, fails image and audio requests with
+  `LlamaUnsupportedException` naming the function and the pinned runtime,
+  where they failed with `LlamaInferenceException`. `supportsVision` on the
+  backend throws it too, as `supportsAudio` does, instead of returning false
+  ([#640](https://github.com/leehack/llamadart/issues/640)).
+- `LlamaEngine.getPerformanceContext()` returns null after a generation that
+  was cancelled before it reached the backend, instead of the counters of the
+  request before it
+  ([#677](https://github.com/leehack/llamadart/issues/677)).
 
 ## 0.12.2
 
