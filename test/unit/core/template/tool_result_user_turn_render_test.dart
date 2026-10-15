@@ -247,6 +247,87 @@ void main() {
     });
   }
 
+  group('gemma-3-4b-it.jinja renders a tool message as given when it can', () {
+    const result = LlamaChatMessage.withContent(
+      role: LlamaChatRole.tool,
+      content: [
+        LlamaToolResultContent(
+          id: 'call00001',
+          name: 'get_weather',
+          result: '21C',
+        ),
+      ],
+    );
+    const next = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'And Rome?',
+    );
+    const instruction =
+        'Respond in JSON format, either with `tool_call` (a request to call '
+        "tools) or with `response` reply to the user's request\n\n";
+    for (final (name, messages, tail) in [
+      ('[user, tool]', const [_user, result], ''),
+      (
+        '[user, tool, user]',
+        const [_user, result, next],
+        '<start_of_turn>user\nAnd Rome?<end_of_turn>\n',
+      ),
+    ]) {
+      for (final tools in [false, true]) {
+        test('$name ${tools ? 'with' : 'without'} tools', () {
+          final prompt = _render(
+            'test/fixtures/templates/gemma-3-4b-it.jinja',
+            messages,
+            tools: tools,
+          ).prompt;
+
+          expect(
+            prompt,
+            '<start_of_turn>user\n'
+            '${tools ? instruction : ''}'
+            'What is the weather in Paris and Rome?<end_of_turn>\n'
+            '<start_of_turn>tool\n21C<end_of_turn>\n'
+            '$tail'
+            '<start_of_turn>model\n',
+          );
+        });
+      }
+    }
+  });
+
+  test('reports the first error when the user-turn retry fails too', () {
+    const template = '''
+{%- set ns = namespace(last='') -%}
+{%- for message in messages -%}
+{%- if message.role == 'tool' -%}{{ raise_exception('no tool role') }}{%- endif -%}
+{%- if message.role == 'user' and ns.last == 'user' -%}{{ raise_exception('no two user turns') }}{%- endif -%}
+{%- set ns.last = message.role -%}
+{{- message.content -}}
+{%- endfor -%}''';
+    expect(TemplateCaps.detect(template).supportsToolResponses, isFalse);
+
+    expect(
+      () => ChatTemplateEngine.render(
+        templateSource: template,
+        messages: [
+          ..._oneResult,
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'And Rome?',
+          ),
+        ],
+        metadata: const {},
+      ),
+      throwsA(
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('no tool role'), isNot(contains('no two user'))),
+        ),
+      ),
+    );
+  });
+
   test('keeps the error of a template that rejects user turns too', () {
     const template = '''
 {%- for message in messages -%}
