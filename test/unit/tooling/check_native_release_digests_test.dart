@@ -8,6 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../../tool/testing/check_native_release_digests.dart';
+import '../../../tool/testing/check_native_release_digests.dart'
+    as check_native_release_digests;
 
 String sums(Map<String, String> digests, {String tag = llamaCppTag}) => [
   for (final MapEntry(key: bundle, value: digest) in digests.entries)
@@ -133,8 +135,85 @@ void main() {
     });
 
     test('rejects unknown arguments with a usage error', () async {
-      expect(await run(['--bogus'], out: out, err: err), 64);
-      expect(err.toString(), contains('Usage:'));
+      for (final args in [
+        ['--bogus'],
+        ['--sums-file'],
+        ['--sums-file', 'a', 'b'],
+      ]) {
+        err.clear();
+        expect(
+          await run(args, out: out, err: err),
+          64,
+          reason: '$args',
+        );
+        expect(err.toString(), contains('Usage:'), reason: '$args');
+      }
+    });
+
+    test('main sets the process exit code', () async {
+      final bundle = llamaCppBundleSha256.keys.first;
+      final file = File(p.join(scratch.path, 'SHA256SUMS'))
+        ..writeAsStringSync(sums({...llamaCppBundleSha256, bundle: 'f' * 64}));
+      addTearDown(() => exitCode = 0);
+      await check_native_release_digests.main(['--sums-file', file.path]);
+      expect(exitCode, 1);
+    });
+  });
+
+  group('fetchSha256Sums', () {
+    late HttpServer server;
+    late Uri url;
+    var status = HttpStatus.ok;
+    var body = '';
+
+    setUp(() async {
+      status = HttpStatus.ok;
+      body = '';
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      url = Uri.parse(
+        'http://${server.address.host}:${server.port}/SHA256SUMS',
+      );
+      server.listen((request) {
+        request.response
+          ..statusCode = status
+          ..write(body)
+          ..close();
+      });
+    });
+
+    tearDown(() => server.close(force: true));
+
+    test('returns a body of exactly the size limit', () async {
+      body = 'a' * maxSha256SumsBytes;
+      expect(await fetchSha256Sums(url), body);
+    });
+
+    test('rejects a body over the size limit', () async {
+      body = 'a' * (maxSha256SumsBytes + 1);
+      await expectLater(
+        fetchSha256Sums(url),
+        throwsA(
+          isA<HttpException>().having(
+            (error) => error.message,
+            'message',
+            contains('body exceeds'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a non-200 response', () async {
+      status = HttpStatus.notFound;
+      await expectLater(
+        fetchSha256Sums(url),
+        throwsA(
+          isA<HttpException>().having(
+            (error) => error.message,
+            'message',
+            'HTTP 404',
+          ),
+        ),
+      );
     });
   });
 }

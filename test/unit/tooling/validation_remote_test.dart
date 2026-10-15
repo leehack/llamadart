@@ -2000,6 +2000,28 @@ void main() {
     expect(explicitResult.error, defaultResult.error);
   });
 
+  test('command environment adds to the inherited environment', () async {
+    final result = await executeCommand(
+      Platform.isWindows ? 'python' : 'python3',
+      const <String>[
+        '-c',
+        'import os; '
+            'print(os.environ.get("LLAMADART_COMMAND_FIXTURE")); '
+            'print(os.environ.get("PATH") == os.environ.get("PARENT_PATH"))',
+      ],
+      timeout: const Duration(seconds: 5),
+      environment: <String, String>{
+        'LLAMADART_COMMAND_FIXTURE': 'passed',
+        'PARENT_PATH': Platform.environment['PATH']!,
+      },
+    );
+    expect(result.code, 0, reason: result.error);
+    expect(const LineSplitter().convert(result.output), <String>[
+      'passed',
+      'True',
+    ]);
+  });
+
   test('literal host entry binds its maintained direct-child callback', () async {
     final newline = Platform.isWindows ? '\r\n' : '\n';
     final wrapper = File(p.join(scratch.path, 'private-host.py'));

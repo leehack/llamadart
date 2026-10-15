@@ -49,7 +49,12 @@ List<String> nativeReleaseDigestProblems({
   return problems;
 }
 
-Future<String> _fetchSha256Sums(Uri url, Duration timeout) async {
+/// Downloads the `SHA256SUMS` body at [url], rejecting a non-200 status or a
+/// body over [maxSha256SumsBytes].
+Future<String> fetchSha256Sums(
+  Uri url, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
   final client = HttpClient();
   try {
     final request = await client.getUrl(url).timeout(timeout);
@@ -102,9 +107,7 @@ Future<int> run(
       checksumText = File(source).readAsStringSync();
     } else {
       source = url.toString();
-      checksumText =
-          await (fetch ??
-              (url) => _fetchSha256Sums(url, const Duration(seconds: 30)))(url);
+      checksumText = await (fetch ?? fetchSha256Sums)(url);
     }
   } on Exception catch (error) {
     err.writeln('Could not read SHA256SUMS for $llamaCppTag: $error');

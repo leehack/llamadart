@@ -95,6 +95,7 @@ void main() {
         'tool/git/safe_pr_head_update.dart',
         'tool/git/pr_head_update_evidence.schema.json',
         'test/unit/tooling/safe_pr_head_update_test.dart',
+        'tool/testing/check_native_release_digests.dart',
       ]) {
         final rule = path.endsWith(' @leehack') ? path : '$path @leehack';
         expect(codeowners, contains(rule), reason: path);
