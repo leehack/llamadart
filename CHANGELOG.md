@@ -1,3 +1,11 @@
+## Unreleased
+
+- `cancelGeneration()` during a Web generation now ends the stream normally,
+  as on native, instead of throwing `LlamaInferenceException`: on the WebGPU
+  worker path, which rejects with an `AbortError`, and on LiteRT-LM Web, whose
+  pending stream read rejects. Observers report the run as cancelled
+  ([#875](https://github.com/leehack/llamadart/issues/875)).
+
 ## 0.13.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`,

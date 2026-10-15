@@ -121,15 +121,13 @@ collects the reply. `completion.message` keeps the whitespace the model ended
 the reply with; `ChatSession` stores the turn without it, so `trimRight()` the
 text of a turn you keep yourself if the next prompt should not carry it.
 
-`finishReason` does not tell you that a generation was cancelled. On native
-llama.cpp and LiteRT-LM, a stream stopped by `engine.cancelGeneration()`,
+`finishReason` does not tell you that a generation was cancelled. On every
+backend, native and Web, a stream stopped by `engine.cancelGeneration()`,
 before or during generation, usually still ends with `LlamaFinishReason.stop`
 and whatever text it produced. `ChatSession` instead throws
 `LlamaStateException` and rolls back its turn when cancelled before any reply
-content, including through `createStructuredJson`. On WebGPU, `cancelGeneration()` can instead
-fail the stream with a generation error. Track cancels in the code that issues
-them; on native llama.cpp and LiteRT-LM you can also read
-`LlamaOperationResult.cancelled` from an
+content, including through `createStructuredJson`. Track cancels in the code
+that issues them, or read `LlamaOperationResult.cancelled` from an
 [operation observer](#observing-operations).
 
 `chunk.model` is the last path segment of the source the model was loaded

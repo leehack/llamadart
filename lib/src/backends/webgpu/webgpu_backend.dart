@@ -101,7 +101,7 @@ class WebGpuLlamaBackend
   bool _isReady = false;
   String? _chatTemplate;
   LlamaLogLevel _logLevel = LlamaLogLevel.info;
-  AbortController? _abortController;
+  _GenerationAbort? _generationAbort;
   AbortController? _textToSpeechAbortController;
   int? _lastNCtx;
   bool _mmContextActive = false;
@@ -408,9 +408,9 @@ class WebGpuLlamaBackend
 
   Future<void> _safeDisposeBridge() async {
     final bridge = _bridge;
-    final abortController = _abortController;
+    final abortController = _generationAbort?.controller;
     _bridge = null;
-    _abortController = null;
+    _generationAbort = null;
     _chatTemplate = null;
     _decisionHeads.clear();
     _loraAdapters.forget();
@@ -1911,7 +1911,8 @@ class WebGpuLlamaBackend
         ? cpuMultimodalLimits?.mediaMaxImageEdge
         : (isGpuMultimodalRuntime ? _gpuMultimodalMaxImageEdge : null);
 
-    final abortController = AbortController();
+    final generationAbort = _GenerationAbort();
+    final abortController = generationAbort.controller;
     late final StreamController<List<int>> controller;
     late final Stream<List<int>> generation;
     LlamaGenerationUsage? reportedUsage;
@@ -1924,8 +1925,8 @@ class WebGpuLlamaBackend
           return null;
         }
         canceledByCaller = true;
-        if (identical(_abortController, abortController)) {
-          _abortController = null;
+        if (identical(_generationAbort, generationAbort)) {
+          _generationAbort = null;
         }
         abortController.abort();
         bridge.cancel();
@@ -1936,7 +1937,7 @@ class WebGpuLlamaBackend
       },
     );
     generation = controller.stream;
-    _abortController = abortController;
+    _generationAbort = generationAbort;
     var emittedLength = 0;
     var latestText = '';
     var stoppedBySequence = false;
@@ -1966,6 +1967,13 @@ class WebGpuLlamaBackend
 
     void emitText(String text) {
       emitBytes(utf8.encode(text));
+    }
+
+    void releaseHeldBackText() {
+      if (latestText.length > emittedLength) {
+        emitText(latestText.substring(emittedLength));
+        emittedLength = latestText.length;
+      }
     }
 
     bool emittedBytesArePrefixOf(List<int> bytes) {
@@ -2061,7 +2069,7 @@ class WebGpuLlamaBackend
       tokenEventFlushMs: tokenEventFlushMs,
       tokenEventFlushChars: tokenEventFlushChars,
       parts: mediaParts,
-      signal: _abortController?.signal,
+      signal: abortController.signal,
     );
 
     unawaited(
@@ -2098,11 +2106,8 @@ class WebGpuLlamaBackend
           final completion = bridge.createCompletion(normalizedPrompt, options);
           final completionResult = await _toFuture(completion);
 
-          if (hasStopSequences &&
-              !stoppedBySequence &&
-              latestText.length > emittedLength) {
-            emitText(latestText.substring(emittedLength));
-            emittedLength = latestText.length;
+          if (hasStopSequences && !stoppedBySequence) {
+            releaseHeldBackText();
           } else if (!hasStopSequences) {
             final emittedBytes = emittedOutputBytes!;
             final completionText = _jsValueAsString(completionResult);
@@ -2113,7 +2118,15 @@ class WebGpuLlamaBackend
             }
           }
         } catch (e, st) {
-          if (!stoppedBySequence && !canceledByCaller && !controller.isClosed) {
+          if (generationAbort.cancelRequested && _isAbortError(e)) {
+            // The worker path of the bridge rejects with an AbortError once
+            // cancelGeneration aborts the signal, where the direct path and
+            // native llama.cpp end normally with the text held back for stop
+            // sequences.
+            if (!stoppedBySequence) releaseHeldBackText();
+          } else if (!stoppedBySequence &&
+              !canceledByCaller &&
+              !controller.isClosed) {
             failed = true;
             controller.addError(
               speculative == null
@@ -2123,8 +2136,8 @@ class WebGpuLlamaBackend
             );
           }
         } finally {
-          if (identical(_abortController, abortController)) {
-            _abortController = null;
+          if (identical(_generationAbort, generationAbort)) {
+            _generationAbort = null;
           }
           if (!failed && reportedUsage != null) {
             _generationUsages[generation] = reportedUsage;
@@ -2189,7 +2202,11 @@ class WebGpuLlamaBackend
 
   @override
   void cancelGeneration() {
-    _abortController?.abort();
+    final generationAbort = _generationAbort;
+    if (generationAbort != null) {
+      generationAbort.cancelRequested = true;
+      generationAbort.controller.abort();
+    }
     _bridge?.cancel();
   }
 
@@ -2625,6 +2642,15 @@ class WebGpuLlamaBackend
       );
     }
     return out;
+  }
+
+  bool _isAbortError(Object error) {
+    try {
+      final name = (error as JSObject).getProperty<JSAny?>('name'.toJS);
+      return name.isA<JSString>() && (name as JSString).toDart == 'AbortError';
+    } catch (_) {
+      return false;
+    }
   }
 
   String _errorMessage(Object error) {
@@ -3196,4 +3222,12 @@ class WebGpuLlamaBackend
     final jsValue = await result.toDart;
     return jsValue.toDart;
   }
+}
+
+/// The abort controller of one generation.
+final class _GenerationAbort {
+  final AbortController controller = AbortController();
+
+  /// Whether [WebGpuLlamaBackend.cancelGeneration] aborted [controller].
+  bool cancelRequested = false;
 }
