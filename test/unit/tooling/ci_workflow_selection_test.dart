@@ -319,6 +319,35 @@ void main() {
   });
 
   test(
+    'pinned tooling docs and chat-app VM tests select their gates',
+    () async {
+      Future<Set<String>> enabled(String path) async {
+        final jobs = (await selected([path]))['jobs'] as Map;
+        return {
+          for (final entry in jobs.entries)
+            if (entry.value == true) entry.key as String,
+        };
+      }
+
+      for (final path in [
+        'AGENTS.md',
+        'CONTRIBUTING.md',
+        'doc/testing_matrix.md',
+      ]) {
+        expect(await enabled(path), {
+          'docs-check',
+          'docs-versions',
+          'test-linux-coverage',
+        }, reason: path);
+      }
+      expect(
+        await enabled('example/chat_app/test_vm/chat_settings_test.dart'),
+        {'analyze', 'web-chat-contract'},
+      );
+    },
+  );
+
+  test(
     'isolated validation keeps root and Flutter consumer assertions',
     () async {
       final jobs = readWorkflow('ci')['jobs'];
@@ -360,8 +389,9 @@ void main() {
       );
       expect(
         appSteps.any(
-          (s) =>
-              (s['run'] as String? ?? '').split('\n').contains('flutter test'),
+          (s) => (s['run'] as String? ?? '')
+              .split('\n')
+              .contains('flutter test test test_vm'),
         ),
         isTrue,
       );

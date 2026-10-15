@@ -191,6 +191,16 @@ jobs:
           swift package --package-path "darwin/$package_name" \
             --scratch-path "$RUNNER_TEMP/$package_name-spm" resolve
 
+      - name: Check the lane leaves the package unchanged
+        working-directory: ${{ matrix.package }}
+        run: |
+          changes="$(git status --porcelain --untracked-files=all -- .)"
+          if [ -n "$changes" ]; then
+            printf '%s\n' "$changes"
+            echo "::error::The companion lane modified tracked or untracked files; commit the migration or ignore the output."
+            exit 1
+          fi
+
       - name: Publish dry-run
         working-directory: ${{ matrix.package }}
         run: |
@@ -381,7 +391,7 @@ jobs:
       - name: Run chat app tests
         working-directory: example/chat_app
         run: |
-          flutter test
+          flutter test test test_vm
           flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart \
             test/unit_test.dart test/conversation_state_service_test.dart
 

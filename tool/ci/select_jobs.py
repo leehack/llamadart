@@ -34,6 +34,8 @@ VALIDATION_IMPORTED_CHAT_APP_FILES = (
     'example/chat_app/integration_test/support/image_settings_evidence.dart',
 )
 
+TOOLING_PINNED_DOCS = ('AGENTS.md', 'CONTRIBUTING.md')
+
 
 def inventory(raw):
     """Return both endpoints of renames/copies and deleted paths; reject truncation."""
@@ -79,6 +81,9 @@ def select(paths, force_full=False):
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
               or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):
             jobs.update(('docs-check', 'docs-versions'))
+            if path in TOOLING_PINNED_DOCS or path.startswith('doc/'):
+                # test/unit/tooling pins wording in these files.
+                jobs.add('test-linux-coverage')
         elif any(path.startswith('packages/' + name + '/') for name in COMPANIONS):
             name = path.split('/')[1]
             companions.add(name)
@@ -107,7 +112,7 @@ def select(paths, force_full=False):
         elif path.startswith('example/chat_app/web/'):
             jobs.update(('analyze', 'web-chat-contract'))
             apps.add('web')
-        elif path.startswith('example/chat_app/test/'):
+        elif path.startswith(('example/chat_app/test/', 'example/chat_app/test_vm/')):
             jobs.update(('analyze', 'web-chat-contract'))
         elif path.startswith('example/chat_app/'):
             jobs.update(('analyze', 'web-chat-contract', 'validation-harness'))

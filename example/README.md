@@ -184,7 +184,7 @@ dart test
 
 ```bash
 cd chat_app
-flutter test
+flutter test test test_vm
 ```
 
 - `llamadart_server` (Relic HTTP API):
