@@ -673,8 +673,21 @@ _AppleCompanions? _flutterAppleCompanions({
 
   final pubspecSource = pubspec.readAsStringSync();
   output.dependencies.add(pubspec.uri);
-  final isFlutter = _pubspecDeclaresFlutter(pubspecSource);
-  if (!isFlutter) {
+  var consumer = 'Flutter package ${consumerRoot.path}';
+  final Set<String> dependencies;
+  if (_pubspecDeclaresFlutter(pubspecSource)) {
+    dependencies = _pubspecDependencyNames(pubspecSource);
+  } else if (_pubspecDeclaresWorkspace(pubspecSource)) {
+    final app = _workspaceFlutterApp(
+      consumerRoot,
+      output,
+      log,
+      ios: code.targetOS == OS.iOS,
+    );
+    if (app == null) return null;
+    consumer = 'Flutter workspace member ${app.name} of ${consumerRoot.path}';
+    dependencies = app.dependencies;
+  } else {
     log.info(
       'Using bundled Apple native assets for non-Flutter package '
       '${consumerRoot.path}.',
@@ -682,7 +695,6 @@ _AppleCompanions? _flutterAppleCompanions({
     return null;
   }
 
-  final dependencies = _pubspecDependencyNames(pubspecSource);
   final runtimes = <String>[];
   String? liteRtLmMacOsWarning;
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
@@ -719,7 +731,7 @@ _AppleCompanions? _flutterAppleCompanions({
   if (runtimes.isEmpty) {
     log.info(
       'Using bundled Apple native assets for llama_cpp and litert_lm in '
-      'Flutter package ${consumerRoot.path}; neither '
+      '$consumer; neither '
       '$_llamaCppFlutterPackageName nor $_liteRtLmFlutterPackageName is a '
       'dependency.',
     );
@@ -729,6 +741,187 @@ _AppleCompanions? _flutterAppleCompanions({
     stableDiffusion: stableDiffusion,
     liteRtLmMacOsWarning: liteRtLmMacOsWarning,
   );
+}
+
+/// The Flutter app of the pub workspace rooted at [workspaceRoot] whose
+/// pubspec `dependencies` choose the Apple companions, or `null` to keep the
+/// bundled Apple native assets.
+///
+/// pub passes the workspace root pubspec, which holds the user-defines, and
+/// the build does not tell the hook which member it builds, so the hook reads
+/// `.dart_tool/package_graph.json`. A member builds llamadart into an app when
+/// its dependencies or dev dependencies reach [_packageName] and no other
+/// member depends on it. Every member shares this hook output, so when those
+/// members do not all declare the same companions, or mix Flutter apps with
+/// other packages, the build warns and keeps the bundled assets.
+///
+/// Only a Flutter build targets iOS, so for [ios] non-Flutter members are not
+/// considered; `flutter build ios` also hides hook warnings, which would leave
+/// such a member's fallback silent. Debug and profile Flutter builds include
+/// the dev dependencies of the app they build, so those count on every
+/// target.
+({String name, Set<String> dependencies})? _workspaceFlutterApp(
+  Directory workspaceRoot,
+  BuildOutputBuilder output,
+  Logger log, {
+  required bool ios,
+}) {
+  final dartTool = path.join(workspaceRoot.path, _dartToolDir);
+  final graphFile = File(path.join(dartTool, 'package_graph.json'));
+  final configFile = File(path.join(dartTool, 'package_config.json'));
+  void warn(String message) {
+    log.warning(message);
+    stderr.writeln('warning: llamadart: $message');
+  }
+
+  const skipped =
+      'so llamadart bundles its own Apple native assets and skips Apple '
+      'companion validation and Swift Package Manager linking.';
+  output.dependencies.addAll([graphFile.uri, configFile.uri]);
+  final List<String> members;
+  final Map<String, List<String>> dependencies;
+  final Map<String, List<String>> devDependencies;
+  final Map<String, Uri> roots;
+  try {
+    final graph = jsonDecode(graphFile.readAsStringSync());
+    final config = jsonDecode(configFile.readAsStringSync());
+    if (graph case {
+      'roots': final List<Object?> graphRoots,
+      'packages': final List<Object?> packages,
+    } when graphRoots.every((root) => root is String)) {
+      members = [...graphRoots.cast<String>()]..sort();
+      dependencies = {};
+      devDependencies = {};
+      for (final package in packages) {
+        if (package case {
+          'name': final String name,
+          'dependencies': final List<Object?> direct,
+        }) {
+          dependencies[name] = direct.whereType<String>().toList();
+          if (package['devDependencies'] case final List<Object?> dev) {
+            devDependencies[name] = dev.whereType<String>().toList();
+          }
+        } else {
+          throw const FormatException();
+        }
+      }
+    } else {
+      throw const FormatException();
+    }
+    if (config case {'packages': final List<Object?> entries}) {
+      roots = {
+        for (final entry in entries)
+          if (entry case {
+            'name': final String name,
+            'rootUri': final String rootUri,
+          })
+            name: configFile.uri.resolve(
+              rootUri.endsWith('/') ? rootUri : '$rootUri/',
+            ),
+      };
+    } else {
+      throw const FormatException();
+    }
+  } on FileSystemException {
+    warn(
+      'Cannot find the Flutter app in the pub workspace at '
+      '${workspaceRoot.path}: ${graphFile.path} or ${configFile.path} could '
+      'not be read, $skipped Run flutter pub get in the workspace and '
+      'rebuild.',
+    );
+    return null;
+  } on FormatException {
+    warn(
+      'Cannot find the Flutter app in the pub workspace at '
+      '${workspaceRoot.path}: ${graphFile.path} or ${configFile.path} is '
+      'malformed, $skipped Run flutter pub get in the workspace and rebuild.',
+    );
+    return null;
+  }
+
+  final libraries = {
+    for (final member in members) ...?dependencies[member],
+  }.intersection(members.toSet());
+  bool reachesCore(String member) {
+    final reached = <String>{};
+    final pending = [member, ...?devDependencies[member]];
+    while (pending.isNotEmpty) {
+      final name = pending.removeLast();
+      if (name == _packageName) return true;
+      if (reached.add(name)) pending.addAll(dependencies[name] ?? const []);
+    }
+    return false;
+  }
+
+  const companions = {
+    _llamaCppFlutterPackageName,
+    _liteRtLmFlutterPackageName,
+    _stableDiffusionFlutterPackageName,
+  };
+  final apps = <({String name, Set<String>? dependencies, String setup})>[];
+  for (final member in members) {
+    if (libraries.contains(member) || !reachesCore(member)) continue;
+    final root = roots[member];
+    if (root == null || root.scheme != 'file') {
+      warn(
+        'Cannot find the Flutter app in the pub workspace at '
+        '${workspaceRoot.path}: ${configFile.path} has no local root for '
+        'workspace member $member, $skipped Run flutter pub get in the '
+        'workspace and rebuild.',
+      );
+      return null;
+    }
+    final pubspec = File.fromUri(root.resolve('pubspec.yaml'));
+    output.dependencies.add(pubspec.uri);
+    final String source;
+    try {
+      source = pubspec.readAsStringSync();
+    } on FileSystemException {
+      warn(
+        'Cannot find the Flutter app in the pub workspace at '
+        '${workspaceRoot.path}: ${pubspec.path} could not be read, $skipped '
+        'Run flutter pub get in the workspace and rebuild.',
+      );
+      return null;
+    }
+    if (!_pubspecDeclaresFlutter(source)) {
+      if (!ios) {
+        apps.add((name: member, dependencies: null, setup: 'not Flutter'));
+      }
+      continue;
+    }
+    final declared = _pubspecDependencyNames(source);
+    final selected = companions.where(declared.contains).toList()..sort();
+    apps.add((
+      name: member,
+      dependencies: declared,
+      setup: selected.isEmpty
+          ? 'Flutter, no Apple companion'
+          : 'Flutter, ${selected.join(', ')}',
+    ));
+  }
+
+  if (apps.map((app) => app.setup).toSet().length > 1) {
+    warn(
+      'Cannot tell which member of the pub workspace at '
+      '${workspaceRoot.path} this Apple build is for: '
+      '${apps.map((app) => '${app.name} (${app.setup})').join('; ')}. Every '
+      'member shares this hook output, $skipped Declare the same Apple '
+      'companions in every Flutter app that depends on $_packageName, or move '
+      'apps with different companions into separate workspaces.',
+    );
+    return null;
+  }
+  final app = apps.firstOrNull;
+  final appDependencies = app?.dependencies;
+  if (app == null || appDependencies == null) {
+    log.info(
+      'Using bundled Apple native assets; no Flutter app in the pub workspace '
+      'at ${workspaceRoot.path} depends on $_packageName.',
+    );
+    return null;
+  }
+  return (name: app.name, dependencies: appDependencies);
 }
 
 /// What a resolved Flutter Apple companion must match before the hook trusts
@@ -1161,6 +1354,11 @@ bool _pubspecDeclaresFlutter(String source) {
   if (dependencies is! Map) return false;
   final flutter = dependencies['flutter'];
   return flutter is Map && flutter['sdk'] == 'flutter';
+}
+
+bool _pubspecDeclaresWorkspace(String source) {
+  final pubspec = _readConsumerPubspec(source);
+  return pubspec is Map && pubspec['workspace'] is List;
 }
 
 Set<String> _pubspecDependencyNames(String source) {
