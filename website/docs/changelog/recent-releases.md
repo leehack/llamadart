@@ -19,7 +19,8 @@ For canonical full release notes, use:
   raise the cap, or `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) to
   keep every file. Engines sharing a cache directory, in one process or
   several, no longer delete the program caches of a model another one is
-  running.
+  running, and `liteRtLmCacheDir: ':nocache'` no longer creates a `:nocache`
+  directory, which failed the load on Windows.
 
 ## 0.12.2
 

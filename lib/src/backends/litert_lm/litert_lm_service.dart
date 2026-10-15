@@ -1837,10 +1837,13 @@ class LiteRtLmService {
   }
 
   void _disposeClient() {
-    _client?.dispose();
-    _client = null;
-    _cacheLease?.release();
-    _cacheLease = null;
+    try {
+      _client?.dispose();
+      _client = null;
+    } finally {
+      _cacheLease?.release();
+      _cacheLease = null;
+    }
   }
 
   /// Marks the caches of [modelPath] in [cacheDir] as in use until the client

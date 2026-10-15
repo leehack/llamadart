@@ -114,6 +114,24 @@ void main() {
     expect(empty.existsSync(), isTrue);
   });
 
+  test('a cap above zero keeps an old empty program cache', () {
+    final empty = writeAged('a_1_2_mldrift_program_cache.bin', 0, 30);
+    final older = writeAged('b_1_2_mldrift_program_cache.bin', 20, 20);
+    final newer = writeAged('c_1_2_mldrift_program_cache.bin', 20, 10);
+    final deleted = <String>[];
+
+    pruneLiteRtLmProgramCaches(
+      tempDir.path,
+      32,
+      onDeleted: (path, bytes) => deleted.add(path),
+    );
+
+    expect(empty.existsSync(), isTrue);
+    expect(older.existsSync(), isFalse);
+    expect(newer.existsSync(), isTrue);
+    expect(deleted, [older.path]);
+  });
+
   test('does not descend into subdirectories', () {
     final nested = Directory('${tempDir.path}/nested')..createSync();
     final file = write('a_mldrift_program_cache.bin', 50, dir: nested);
@@ -236,6 +254,21 @@ void main() {
       expect(File(lease.path).existsSync(), isTrue);
     });
 
+    for (final suffix in ['/', '//']) {
+      test("do not protect the caches of the pruning engine in a directory "
+          "ending in '$suffix'", () {
+        final directory = '${tempDir.path}$suffix';
+        final lease = LiteRtLmCacheLease.acquire(directory, model);
+        addTearDown(lease.release);
+        final text = write('m.litertlm_1_2_mldrift_program_cache.bin', 50);
+
+        pruneLiteRtLmProgramCaches(directory, 10, ownLease: lease);
+
+        expect(text.existsSync(), isFalse);
+        expect(File(lease.path).existsSync(), isTrue);
+      });
+    }
+
     test('release deletes the lease files and ends the protection', () {
       final lease = LiteRtLmCacheLease.acquire(tempDir.path, model);
       expect(leaseFiles(tempDir), hasLength(2));
@@ -260,6 +293,53 @@ void main() {
       expect(text.existsSync(), isFalse);
       expect(leaseFiles(tempDir), isEmpty);
     });
+
+    test('files of a process that ended are removed once an hour old', () {
+      final orphan = '$liteRtLmCacheLeasePrefix${pid + 1}_0123456789abcdef';
+      final young = '$liteRtLmCacheLeasePrefix${pid + 1}_fedcba9876543210';
+      writeAged('$orphan.lock', 0, 61);
+      writeAged('$orphan.tmp', 0, 61);
+      write('$young.lock', 0);
+      write('$young.tmp', 0);
+
+      pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+      expect(
+        leaseFiles(tempDir),
+        unorderedEquals(['$young.lock', '$young.tmp']),
+      );
+    });
+
+    test('files of this process are kept however old', () {
+      final own = '$liteRtLmCacheLeasePrefix${pid}_0123456789abcdef';
+      writeAged('$own.lock', 0, 120);
+      writeAged('$own.tmp', 0, 120);
+
+      pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+      expect(leaseFiles(tempDir), unorderedEquals(['$own.lock', '$own.tmp']));
+    });
+
+    test('whose lock file cannot be opened count as held', () {
+      final lease = '$liteRtLmCacheLeasePrefix${pid + 1}_0123456789abcdef';
+      write(lease, 0).writeAsStringSync(model);
+      final lock = write('$lease.lock', 0);
+      final text = write('m.litertlm_1_2_mldrift_program_cache.bin', 50);
+      Process.runSync('chmod', ['a-r', lock.path]);
+      addTearDown(() => Process.runSync('chmod', ['u+r', lock.path]));
+      try {
+        lock.openSync().closeSync();
+        markTestSkipped('This user opens a file without read permission.');
+        return;
+      } on FileSystemException {
+        // Expected: the lock file cannot be opened.
+      }
+
+      pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+      expect(text.existsSync(), isTrue);
+      expect(leaseFiles(tempDir), hasLength(2));
+    }, testOn: '!windows');
 
     test('of another running process protect until it ends', () async {
       final script = File('${tempDir.path}/hold_lease.dart')
@@ -296,6 +376,12 @@ Future<void> main(List<String> args) async {
         dir: cache,
       );
 
+      // An old lock file still counts while its holder runs.
+      for (final lease in leaseFiles(cache)) {
+        File('${cache.path}/$lease').setLastModifiedSync(
+          DateTime.now().subtract(const Duration(hours: 2)),
+        );
+      }
       pruneLiteRtLmProgramCaches(cache.path, 10);
       expect(text.existsSync(), isTrue);
       expect(leaseFiles(cache), hasLength(2));

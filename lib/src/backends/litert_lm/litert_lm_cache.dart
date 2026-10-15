@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:path/path.dart' as p;
+
 /// File name suffix of the LiteRT-LM GPU program cache.
 const String liteRtLmProgramCacheSuffix = '_mldrift_program_cache.bin';
 
@@ -16,8 +18,16 @@ const String liteRtLmCacheLeasePrefix = '.llamadart_litert_lm_lease_';
 
 const String _leaseLockSuffix = '.lock';
 
+const String _leaseStagingSuffix = '.tmp';
+
+/// Age after which a `.lock` or `.tmp` file without a held lock is left over
+/// from a process that ended, rather than one a lease is being taken with.
+const Duration _orphanedLeaseFileAge = Duration(hours: 1);
+
 final RegExp _leaseName = RegExp(
-  '^${RegExp.escape(liteRtLmCacheLeasePrefix)}([0-9]{1,10})_[0-9a-f]{16}\$',
+  '^${RegExp.escape(liteRtLmCacheLeasePrefix)}([0-9]{1,10})_[0-9a-f]{16}'
+  '(${RegExp.escape(_leaseLockSuffix)}|'
+  '${RegExp.escape(_leaseStagingSuffix)})?\$',
 );
 
 typedef _ProgramCache = ({File file, String name, int size, DateTime modified});
@@ -51,11 +61,12 @@ final class LiteRtLmCacheLease {
       for (var i = 0; i < 8; i++)
         random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ].join();
-    final path =
-        '$directory${Platform.pathSeparator}'
-        '$liteRtLmCacheLeasePrefix${pid}_$token';
+    final path = p.join(
+      p.normalize(directory),
+      '$liteRtLmCacheLeasePrefix${pid}_$token',
+    );
     final lockFile = File('$path$_leaseLockSuffix');
-    final staged = File('$path.tmp');
+    final staged = File('$path$_leaseStagingSuffix');
     final lock = lockFile.openSync(mode: FileMode.writeOnly);
     try {
       lock.lockSync(FileLock.exclusive);
@@ -103,7 +114,8 @@ void _deleteQuietly(File file) {
 /// model with a [LiteRtLmCacheLease] in [directory], other than [ownLease],
 /// are neither deleted nor counted. Files larger than [maxBytes] on their own
 /// are deleted first, then the least recently modified ones until the rest
-/// fit. Leases of processes that ended are removed.
+/// fit. Leases of processes that ended are removed, as are lease files they
+/// left behind for more than an hour.
 ///
 /// Each deletion is reported through [onDeleted] with the file path and its
 /// size in bytes. File system errors are reported through [onError] and never
@@ -128,6 +140,8 @@ void pruneLiteRtLmProgramCaches(
     return;
   }
 
+  // The directory may be spelled with trailing separators the listing drops.
+  final ownLeaseName = ownLease == null ? null : p.basename(ownLease.path);
   final leasedModels = <String>[];
   final caches = <_ProgramCache>[];
   for (final entry in entries) {
@@ -135,8 +149,14 @@ void pruneLiteRtLmProgramCaches(
     final name = entry.uri.pathSegments.last;
     final lease = _leaseName.firstMatch(name);
     if (lease != null) {
-      if (entry.path == ownLease?.path) continue;
-      if (int.parse(lease.group(1)!) != pid && !_isLeaseHeld(entry.path)) {
+      final ofThisProcess = int.parse(lease.group(1)!) == pid;
+      final suffix = lease.group(2);
+      if (suffix != null) {
+        if (!ofThisProcess) _deleteOrphanedLeaseFile(entry, suffix);
+        continue;
+      }
+      if (name == ownLeaseName) continue;
+      if (!ofThisProcess && !_isLeaseHeld(entry.path)) {
         _deleteQuietly(entry);
         _deleteQuietly(File('${entry.path}$_leaseLockSuffix'));
         continue;
@@ -199,7 +219,26 @@ void pruneLiteRtLmProgramCaches(
   }
 }
 
+/// Deletes [file], the [suffix] file of a lease of another process, when it
+/// is old and no process holds the lock of its lease.
+///
+/// A `.lock` file exists for a moment before its holder locks it, so a young
+/// one is kept.
+void _deleteOrphanedLeaseFile(File file, String suffix) {
+  final leasePath = file.path.substring(0, file.path.length - suffix.length);
+  try {
+    final age = DateTime.now().difference(file.statSync().modified);
+    if (age < _orphanedLeaseFileAge) return;
+  } on FileSystemException {
+    return;
+  }
+  if (!_isLeaseHeld(leasePath)) _deleteQuietly(file);
+}
+
 /// Whether a process holds the lock of the lease at [leasePath].
+///
+/// A lock file that cannot be opened counts as held unless it is missing,
+/// since the files a lease protects must never be deleted in error.
 ///
 /// Never call this for a lease of this process: closing the descriptor would
 /// drop the lock its holder keeps.
@@ -207,8 +246,10 @@ bool _isLeaseHeld(String leasePath) {
   final RandomAccessFile lock;
   try {
     lock = File('$leasePath$_leaseLockSuffix').openSync();
-  } on FileSystemException {
+  } on PathNotFoundException {
     return false;
+  } on FileSystemException {
+    return true;
   }
   try {
     lock.lockSync(FileLock.shared);
