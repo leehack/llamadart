@@ -7,6 +7,20 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- **Behavior change:** LiteRT-LM now caps the GPU program cache files of each
+  cache directory at 1 GiB by default
+  ([#552](https://github.com/leehack/llamadart/issues/552)). Before each
+  engine create, `ModelParams.liteRtLmMaxProgramCacheBytes: null` prunes to
+  `ModelParams.defaultLiteRtLmMaxProgramCacheBytes`, where it deleted nothing,
+  and an explicit cap now bounds the directory's total, least recently
+  modified files first, where it bounded each file. Pass a larger value to
+  raise the cap, or `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) to
+  keep every file. Engines sharing a cache directory, in one process or
+  several, no longer delete the program caches of a model another one is
+  running.
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`

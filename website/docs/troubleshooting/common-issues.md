@@ -247,9 +247,12 @@ See [Performance tuning](../guides/performance-tuning).
 
 With some models on the LiteRT-LM GPU backend, each engine create appends to
 `*_mldrift_program_cache.bin`
-([#552](https://github.com/leehack/llamadart/issues/552)). Set
-`ModelParams.liteRtLmMaxProgramCacheBytes` to prune oversized program cache
-files before each create; see
+([#552](https://github.com/leehack/llamadart/issues/552)). Before each create,
+llamadart prunes the program cache files of the cache directory to
+`ModelParams.liteRtLmMaxProgramCacheBytes`, 1 GiB by default. Without a cache
+directory, as on Linux, Windows and iOS when `liteRtLmCacheDir` is unset, the
+runtime writes them next to the model file and nothing is pruned; set
+`liteRtLmCacheDir` there. See
 [LiteRT-LM cache directory](../configuration/runtime-parameters#litert-lm-cache-directory).
 
 ## llama.cpp errors

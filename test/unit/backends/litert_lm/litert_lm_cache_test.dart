@@ -1,7 +1,9 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:test/test.dart';
@@ -30,10 +32,19 @@ void main() {
     return file;
   }
 
-  test('deletes only program caches above the cap', () {
+  File writeAged(String name, int bytes, int ageMinutes, {Directory? dir}) =>
+      write(name, bytes, dir: dir)..setLastModifiedSync(
+        DateTime.now().subtract(Duration(minutes: ageMinutes)),
+      );
+
+  List<String> leaseFiles(Directory dir) => [
+    for (final entry in dir.listSync())
+      if (entry.uri.pathSegments.last.startsWith(liteRtLmCacheLeasePrefix))
+        entry.uri.pathSegments.last,
+  ];
+
+  test('deletes an oversized program cache and keeps other files', () {
     final over = write('model_1_10_mldrift_program_cache.bin', 11);
-    final atCap = write('model_2_10_mldrift_program_cache.bin', 10);
-    final under = write('model_3_10_mldrift_program_cache.bin', 1);
     final weights = write('model_1_10_mldrift_weight_cache.bin', 100);
     final xnnpack = write('model.litertlm.xnnpack_cache', 100);
     final other = write('mldrift_program_cache.bin.bak', 100);
@@ -48,13 +59,49 @@ void main() {
     );
 
     expect(over.existsSync(), isFalse);
-    expect(atCap.existsSync(), isTrue);
-    expect(under.existsSync(), isTrue);
     expect(weights.existsSync(), isTrue);
     expect(xnnpack.existsSync(), isTrue);
     expect(other.existsSync(), isTrue);
     expect(deleted, {over.path: 11});
     expect(errors, isEmpty);
+  });
+
+  test('a total at the cap deletes nothing', () {
+    final first = write('a_1_2_mldrift_program_cache.bin', 6);
+    final second = write('b_1_2_mldrift_program_cache.bin', 4);
+
+    pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+    expect(first.existsSync(), isTrue);
+    expect(second.existsSync(), isTrue);
+  });
+
+  test('evicts the least recently modified caches until the total fits', () {
+    final oldest = writeAged('a_1_2_mldrift_program_cache.bin', 4, 30);
+    final middle = writeAged('b_1_2_mldrift_program_cache.bin', 4, 20);
+    final newest = writeAged('c_1_2_mldrift_program_cache.bin', 4, 10);
+    final deleted = <String>[];
+
+    pruneLiteRtLmProgramCaches(
+      tempDir.path,
+      8,
+      onDeleted: (path, bytes) => deleted.add(path),
+    );
+
+    expect(oldest.existsSync(), isFalse);
+    expect(middle.existsSync(), isTrue);
+    expect(newest.existsSync(), isTrue);
+    expect(deleted, [oldest.path]);
+  });
+
+  test('evicts oversized caches before older ones that fit', () {
+    final old = writeAged('a_1_2_mldrift_program_cache.bin', 2, 30);
+    final big = writeAged('b_1_2_mldrift_program_cache.bin', 11, 10);
+
+    pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+    expect(big.existsSync(), isFalse);
+    expect(old.existsSync(), isTrue);
   });
 
   test('zero cap deletes non-empty program caches and keeps empty ones', () {
@@ -155,4 +202,144 @@ void main() {
       expect(errorPaths, [locked.path]);
     }
   }, testOn: '!windows');
+
+  group('leases', () {
+    const model = 'm.litertlm';
+
+    test('protect the caches of their model and are not counted', () {
+      final lease = LiteRtLmCacheLease.acquire(tempDir.path, model);
+      addTearDown(lease.release);
+      final text = write('m.litertlm_1_2_mldrift_program_cache.bin', 50);
+      final vision = write(
+        'm.litertlm.vision_encoder_1_2_mldrift_program_cache.bin',
+        50,
+      );
+      final sameStem = write('m.litertlm2_1_2_mldrift_program_cache.bin', 50);
+      final other = write('n.litertlm_1_2_mldrift_program_cache.bin', 5);
+
+      pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+      expect(text.existsSync(), isTrue);
+      expect(vision.existsSync(), isTrue);
+      expect(sameStem.existsSync(), isFalse);
+      expect(other.existsSync(), isTrue);
+    });
+
+    test('do not protect the caches of the pruning engine', () {
+      final lease = LiteRtLmCacheLease.acquire(tempDir.path, model);
+      addTearDown(lease.release);
+      final text = write('m.litertlm_1_2_mldrift_program_cache.bin', 50);
+
+      pruneLiteRtLmProgramCaches(tempDir.path, 10, ownLease: lease);
+
+      expect(text.existsSync(), isFalse);
+      expect(File(lease.path).existsSync(), isTrue);
+    });
+
+    test('release deletes the lease files and ends the protection', () {
+      final lease = LiteRtLmCacheLease.acquire(tempDir.path, model);
+      expect(leaseFiles(tempDir), hasLength(2));
+      final text = write('m.litertlm_1_2_mldrift_program_cache.bin', 50);
+
+      lease.release();
+      lease.release();
+      pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+      expect(leaseFiles(tempDir), isEmpty);
+      expect(text.existsSync(), isFalse);
+    });
+
+    test('of a process that ended are removed and protect nothing', () {
+      final stale = '$liteRtLmCacheLeasePrefix${pid + 1}_0123456789abcdef';
+      write(stale, 0).writeAsStringSync(model);
+      write('$stale.lock', 0);
+      final text = write('m.litertlm_1_2_mldrift_program_cache.bin', 50);
+
+      pruneLiteRtLmProgramCaches(tempDir.path, 10);
+
+      expect(text.existsSync(), isFalse);
+      expect(leaseFiles(tempDir), isEmpty);
+    });
+
+    test('of another running process protect until it ends', () async {
+      final script = File('${tempDir.path}/hold_lease.dart')
+        ..writeAsStringSync('''
+import 'dart:io';
+
+import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
+
+Future<void> main(List<String> args) async {
+  LiteRtLmCacheLease.acquire(args[0], args[1]);
+  stdout.writeln('leased');
+  await stdin.drain<void>();
 }
+''');
+      final cache = Directory('${tempDir.path}/cache')..createSync();
+      final packages = (await Isolate.packageConfig)!.toFilePath();
+      final holder = await Process.start(Platform.resolvedExecutable, [
+        '--packages=$packages',
+        script.path,
+        cache.path,
+        model,
+      ]);
+      addTearDown(() => holder.kill(ProcessSignal.sigkill));
+      final stderrText = holder.stderr.transform(utf8.decoder).join();
+      final firstLine = await holder.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .first
+          .timeout(const Duration(seconds: 60), onTimeout: () => '');
+      expect(firstLine, 'leased', reason: await _pending(stderrText));
+      final text = write(
+        'm.litertlm_1_2_mldrift_program_cache.bin',
+        50,
+        dir: cache,
+      );
+
+      pruneLiteRtLmProgramCaches(cache.path, 10);
+      expect(text.existsSync(), isTrue);
+      expect(leaseFiles(cache), hasLength(2));
+
+      // Killed without releasing: the OS drops its lock, so the lease is
+      // stale.
+      holder.kill(ProcessSignal.sigkill);
+      await holder.exitCode;
+      pruneLiteRtLmProgramCaches(cache.path, 10);
+      expect(text.existsSync(), isFalse);
+      expect(leaseFiles(cache), isEmpty);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('that cannot be read stop the prune', () {
+      final lease = LiteRtLmCacheLease.acquire(tempDir.path, model);
+      addTearDown(lease.release);
+      final text = write('n.litertlm_1_2_mldrift_program_cache.bin', 50);
+      Process.runSync('chmod', ['a-r', lease.path]);
+      final errorPaths = <String>[];
+
+      pruneLiteRtLmProgramCaches(
+        tempDir.path,
+        10,
+        onError: (path, error) => errorPaths.add(path),
+      );
+
+      Process.runSync('chmod', ['u+r', lease.path]);
+      if (errorPaths.isEmpty) {
+        markTestSkipped('This user reads a file without read permission.');
+        return;
+      }
+      expect(errorPaths, [lease.path]);
+      expect(text.existsSync(), isTrue);
+    }, testOn: '!windows');
+
+    test('cannot be taken in a missing directory and leave nothing', () {
+      expect(
+        () => LiteRtLmCacheLease.acquire('${tempDir.path}/missing', model),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(leaseFiles(tempDir), isEmpty);
+    });
+  });
+}
+
+Future<String> _pending(Future<String> stderr) =>
+    stderr.timeout(const Duration(seconds: 1), onTimeout: () => '');

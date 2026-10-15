@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -3639,14 +3640,70 @@ void main() {
       }
     });
 
-    test('null cap keeps an oversized program cache', () async {
+    File sparseCache(Directory dir, String name, int bytes) {
+      final file = File('${dir.path}${Platform.pathSeparator}$name');
+      final raf = file.openSync(mode: FileMode.write);
+      try {
+        raf.truncateSync(bytes);
+      } finally {
+        raf.closeSync();
+      }
+      return file;
+    }
+
+    List<String> leaseFiles(Directory dir) => [
+      for (final entry in dir.listSync())
+        if (entry.uri.pathSegments.last.startsWith(liteRtLmCacheLeasePrefix))
+          entry.path,
+    ];
+
+    for (final (bytes, kept) in [
+      (ModelParams.defaultLiteRtLmMaxProgramCacheBytes, true),
+      (ModelParams.defaultLiteRtLmMaxProgramCacheBytes + 1, false),
+    ]) {
+      test('null cap applies the 1 GiB default to a $bytes byte program '
+          'cache', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+        final program = sparseCache(
+          cacheDir,
+          'm_1_2_mldrift_program_cache.bin',
+          bytes,
+        );
+        try {
+          await createEngine(
+            service,
+            client,
+            ModelParams(
+              liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+              liteRtLmCacheDir: cacheDir.path,
+            ),
+          );
+          expect(ModelParams.defaultLiteRtLmMaxProgramCacheBytes, 1 << 30);
+          expect(program.existsSync(), kept);
+          if (kept) {
+            expect(records, isEmpty);
+          } else {
+            expect(
+              records.single.message,
+              contains('liteRtLmMaxProgramCacheBytes=1073741824'),
+            );
+          }
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a raised cap keeps a program cache above the default', () async {
       final client = _FakeLiteRtLmRuntimeClient();
       final service = LiteRtLmService(clientFactory: () => client);
       final cacheDir = Directory('${tempDir.path}/cache')..createSync();
-      final program = writeCache(
+      final program = sparseCache(
         cacheDir,
         'm_1_2_mldrift_program_cache.bin',
-        64,
+        ModelParams.defaultLiteRtLmMaxProgramCacheBytes + 1,
       );
       try {
         await createEngine(
@@ -3655,6 +3712,8 @@ void main() {
           ModelParams(
             liteRtLmBackend: LiteRtLmBackendPreference.cpu,
             liteRtLmCacheDir: cacheDir.path,
+            liteRtLmMaxProgramCacheBytes:
+                2 * ModelParams.defaultLiteRtLmMaxProgramCacheBytes,
           ),
         );
         expect(program.existsSync(), isTrue);
@@ -3663,6 +3722,227 @@ void main() {
         service.dispose();
       }
     });
+
+    test('unlimited cap keeps every program cache and still leases the '
+        'directory', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final program = sparseCache(
+        cacheDir,
+        'm_1_2_mldrift_program_cache.bin',
+        4 * ModelParams.defaultLiteRtLmMaxProgramCacheBytes,
+      );
+      List<String>? leasesAtInitialize;
+      client.onInitialize = () => leasesAtInitialize = leaseFiles(cacheDir);
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+            liteRtLmMaxProgramCacheBytes:
+                ModelParams.unlimitedLiteRtLmProgramCacheBytes,
+          ),
+        );
+        expect(program.existsSync(), isTrue);
+        expect(records, isEmpty);
+        expect(leasesAtInitialize, hasLength(2));
+      } finally {
+        service.dispose();
+      }
+      expect(leaseFiles(cacheDir), isEmpty);
+    });
+
+    test('pruning keeps the program caches of a model another engine is '
+        'using, until that engine is disposed', () async {
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmCacheDir: cacheDir.path,
+        liteRtLmMaxProgramCacheBytes: 32,
+      );
+      final firstClient = _FakeLiteRtLmRuntimeClient();
+      final first = LiteRtLmService(clientFactory: () => firstClient);
+      final secondClient = _FakeLiteRtLmRuntimeClient();
+      final second = LiteRtLmService(clientFactory: () => secondClient);
+      final thirdClient = _FakeLiteRtLmRuntimeClient();
+      final third = LiteRtLmService(clientFactory: () => thirdClient);
+      try {
+        await createEngine(first, firstClient, params);
+        final inUse = writeCache(
+          cacheDir,
+          'model.litertlm_1_2_mldrift_program_cache.bin',
+          64,
+        );
+        final unused = writeCache(
+          cacheDir,
+          'other.litertlm_1_2_mldrift_program_cache.bin',
+          64,
+        );
+
+        await createEngine(second, secondClient, params);
+        expect(inUse.existsSync(), isTrue);
+        expect(unused.existsSync(), isFalse);
+
+        first.dispose();
+        second.dispose();
+        await createEngine(third, thirdClient, params);
+        expect(inUse.existsSync(), isFalse);
+      } finally {
+        first.dispose();
+        second.dispose();
+        third.dispose();
+      }
+      expect(leaseFiles(cacheDir), isEmpty);
+    });
+
+    test('a failed engine create releases its lease', () async {
+      final client = _FakeLiteRtLmRuntimeClient(
+        initializeError: LiteRtLmEngineCreateError('no engine.'),
+      );
+      final service = LiteRtLmService(clientFactory: () => client);
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      try {
+        final params = ModelParams(
+          device: ComputeDevice.cpu,
+          liteRtLmCacheDir: cacheDir.path,
+        );
+        final model = await service.loadModel(modelFile.path, params);
+        service.createContext(model, params);
+        await expectLater(
+          service.tokenize(model, 'hi', true),
+          throwsA(isA<LlamaModelException>()),
+        );
+        expect(leaseFiles(cacheDir), isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('bundle-side caches are neither pruned nor leased without a cache '
+        'directory', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        useTempCacheDir: false,
+      );
+      final program = writeCache(
+        tempDir,
+        'model.litertlm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      try {
+        await createEngine(
+          service,
+          client,
+          const ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmMaxProgramCacheBytes: 0,
+          ),
+        );
+        expect(client.lastCacheDir, isNull);
+        expect(program.existsSync(), isTrue);
+        expect(leaseFiles(tempDir), isEmpty);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('caches next to a linked bundle are neither pruned nor leased '
+        'without a cache directory', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        linkParentDirectory: await Directory('${tempDir.path}/links').create(),
+        useTempCacheDir: false,
+      );
+      final models = await Directory('${tempDir.path}/models').create();
+      final extensionless = File('${models.path}/download');
+      await extensionless.writeAsString('LITERTLM fake model');
+      final program = writeCache(
+        models,
+        'download_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmMaxProgramCacheBytes: 0,
+      );
+      try {
+        final model = await service.loadModel(extensionless.path, params);
+        await startEngine(service, client, model, params);
+        expect(client.lastCacheDir, models.absolute.path);
+        expect(program.existsSync(), isTrue);
+        expect(leaseFiles(models), isEmpty);
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
+
+    test('a :nocache cache directory is forwarded without creating, pruning '
+        'or leasing a directory', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final relative = Directory(liteRtLmNoCacheDirectory);
+      final existedBefore = relative.existsSync();
+      try {
+        await createEngine(
+          service,
+          client,
+          const ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: liteRtLmNoCacheDirectory,
+            liteRtLmMaxProgramCacheBytes: 0,
+          ),
+        );
+        expect(client.lastCacheDir, liteRtLmNoCacheDirectory);
+        expect(relative.existsSync(), existedBefore);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+        if (!existedBefore && relative.existsSync()) {
+          relative.deleteSync(recursive: true);
+        }
+      }
+    });
+
+    test('a :nocache cache directory never prunes or leases a directory of '
+        'that name', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final relative = Directory(liteRtLmNoCacheDirectory);
+      if (relative.existsSync()) {
+        markTestSkipped('${relative.absolute.path} already exists.');
+        return;
+      }
+      relative.createSync();
+      final program = writeCache(
+        relative,
+        'model.litertlm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      List<String>? leasesAtInitialize;
+      client.onInitialize = () => leasesAtInitialize = leaseFiles(relative);
+      try {
+        await createEngine(
+          service,
+          client,
+          const ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: liteRtLmNoCacheDirectory,
+            liteRtLmMaxProgramCacheBytes: 0,
+          ),
+        );
+        expect(program.existsSync(), isTrue);
+        expect(leasesAtInitialize, isEmpty);
+      } finally {
+        service.dispose();
+        relative.deleteSync(recursive: true);
+      }
+    }, testOn: '!windows');
 
     test('cap deletes an oversized program cache before engine create and '
         'logs one warning', () async {
