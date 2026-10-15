@@ -547,7 +547,7 @@ Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
   required List<String>? appleSpmRuntimes,
-  required String? liteRtLmMacOsCompanionGap,
+  required _LiteRtLmMacOsCompanionGap? liteRtLmMacOsCompanionGap,
   required Object? rawNativeRuntimeConfig,
   required bool hasNativeSourceOverride,
   required bool hasNativeBackendOverride,
@@ -601,12 +601,17 @@ Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
   }
   if (includeLiteRtLm) {
     if (code.targetOS == OS.macOS && liteRtLmMacOsCompanionGap != null) {
-      final fallback =
-          'The resolved $_liteRtLmFlutterPackageName does not link the '
-          'complete macOS LiteRT-LM runtime ($liteRtLmMacOsCompanionGap), so '
-          'LiteRT-LM stays in the hook cache, which a sandboxed or relocated '
-          'app cannot load. Upgrade $_liteRtLmFlutterPackageName together '
-          'with $_packageName.';
+      final reason = liteRtLmMacOsCompanionGap.reason;
+      final fallback = liteRtLmMacOsCompanionGap.embedsRuntime
+          ? 'The resolved $_liteRtLmFlutterPackageName $reason. It still '
+                'embeds its complete macOS LiteRT-LM runtime, which the app '
+                'loads from its bundle. Upgrade $_liteRtLmFlutterPackageName '
+                'to the release pinning $liteRtLmReleaseTag.'
+          : 'The resolved $_liteRtLmFlutterPackageName does not link the '
+                'complete macOS LiteRT-LM runtime ($reason), so LiteRT-LM '
+                'stays in the hook cache, which a sandboxed or relocated app '
+                'cannot load. Upgrade $_liteRtLmFlutterPackageName together '
+                'with $_packageName.';
       log.warning(fallback);
       stderr.writeln('warning: llamadart: $fallback');
     } else {
@@ -632,12 +637,12 @@ bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 /// companion is a dependency and those families come from the hook.
 /// [stableDiffusion] is decided on its own, so adding only the
 /// stable_diffusion companion never moves llama_cpp or litert_lm off the hook.
-/// [liteRtLmMacOsGap] says why a macOS LiteRT-LM companion cannot supply the
-/// runtime, or is `null` when it can or the build is not macOS LiteRT-LM.
+/// [liteRtLmMacOsGap] says why a macOS LiteRT-LM companion does not match this
+/// core, or is `null` when it does or the build is not macOS LiteRT-LM.
 typedef _AppleCompanions = ({
   List<String>? runtimes,
   bool stableDiffusion,
-  String? liteRtLmMacOsGap,
+  _LiteRtLmMacOsCompanionGap? liteRtLmMacOsGap,
 });
 
 /// The companions of a Flutter iOS/macOS app build, or `null` for every other
@@ -689,7 +694,7 @@ _AppleCompanions? _flutterAppleCompanions({
 
   final dependencies = _pubspecDependencyNames(pubspecSource);
   final runtimes = <String>[];
-  String? liteRtLmMacOsGap;
+  _LiteRtLmMacOsCompanionGap? liteRtLmMacOsGap;
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
     _validateAppleCompanion(_llamaCppCompanion, consumerRoot, output, log);
     runtimes.add(nativeRuntimeLlamaCpp);
@@ -697,7 +702,7 @@ _AppleCompanions? _flutterAppleCompanions({
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
     runtimes.add(nativeRuntimeLiteRtLm);
     if (code.targetOS == OS.macOS) {
-      liteRtLmMacOsGap = _liteRtLmMacOsCompanionGap(consumerRoot, output);
+      liteRtLmMacOsGap = _liteRtLmMacOsCompanionGapFor(consumerRoot, output);
     }
   }
   final stableDiffusion = dependencies.contains(
@@ -932,10 +937,16 @@ Directory _resolvedCompanionRoot(
   return Directory.fromUri(uri);
 }
 
-/// Why the resolved LiteRT-LM companion cannot supply the macOS runtime
-/// through SwiftPM, or `null` when its manifest is the maintained one pinning
+/// Why the resolved LiteRT-LM companion does not match this core on macOS.
+/// [embedsRuntime] is true when only its pin differs: its manifest is the
+/// macOS-complete one, so the app still embeds and loads a complete runtime
+/// from its bundle (companion 0.0.15 pins the same upstream release).
+typedef _LiteRtLmMacOsCompanionGap = ({String reason, bool embedsRuntime});
+
+/// The gap between the resolved LiteRT-LM companion and this core on macOS,
+/// or `null` when its manifest is the maintained one pinning
 /// [liteRtLmReleaseTag].
-String? _liteRtLmMacOsCompanionGap(
+_LiteRtLmMacOsCompanionGap? _liteRtLmMacOsCompanionGapFor(
   Directory consumerRoot,
   BuildOutputBuilder output,
 ) {
@@ -959,18 +970,16 @@ String? _liteRtLmMacOsCompanionGap(
     output.dependencies.add(manifest.uri);
     if (!manifest.existsSync()) gap('Package.swift is missing');
     final source = manifest.readAsStringSync().replaceAll('\r\n', '\n');
-    final pins = RegExp(
+    final pinPattern = RegExp(
       r'^let liteRtLmTag = "([^"\n]+)"$',
       multiLine: true,
-    ).allMatches(source).toList();
-    if (pins.length != 1 || pins.single.group(1) != liteRtLmReleaseTag) {
+    );
+    final pins = pinPattern.allMatches(source).toList();
+    if (pins.length != 1) {
       gap('it does not pin leehack/litert-lm-native@$liteRtLmReleaseTag');
     }
     final template = source
-        .replaceFirst(
-          RegExp(r'^let liteRtLmTag = "[^"\n]+"$', multiLine: true),
-          'let liteRtLmTag = "PIN"',
-        )
+        .replaceFirst(pinPattern, 'let liteRtLmTag = "PIN"')
         .replaceAll(
           RegExp(r'checksum: "[0-9a-f]{64}"'),
           'checksum: "CHECKSUM"',
@@ -979,13 +988,25 @@ String? _liteRtLmMacOsCompanionGap(
         _liteRtLmCompanionManifestTemplateSha256) {
       gap('its Package.swift is not the macOS-complete manifest');
     }
+    final pin = pins.single.group(1);
+    if (pin != liteRtLmReleaseTag) {
+      return (
+        reason:
+            'pins leehack/litert-lm-native@$pin rather than this core\'s '
+            '$liteRtLmReleaseTag',
+        embedsRuntime: true,
+      );
+    }
     return null;
   } on _CompanionGap catch (error) {
-    return error.reason;
+    return (reason: error.reason, embedsRuntime: false);
   } on FileSystemException {
-    return 'its metadata could not be read';
+    return (reason: 'its metadata could not be read', embedsRuntime: false);
   } on FormatException {
-    return 'the resolved package configuration is malformed';
+    return (
+      reason: 'the resolved package configuration is malformed',
+      embedsRuntime: false,
+    );
   }
 }
 

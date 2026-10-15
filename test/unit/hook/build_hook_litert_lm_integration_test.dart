@@ -857,15 +857,6 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
     ),
     (
-      'a manifest pinning another LiteRT-LM tag',
-      () => _flutterLiteRtLmOnlyUserDefines(
-        liteRtLmManifest: _liteRtLmCompanionManifest().replaceFirst(
-          'let liteRtLmTag = "${_readPinnedConst('liteRtLmReleaseTag')}"',
-          'let liteRtLmTag = "v0.17.0-8"',
-        ),
-      ),
-    ),
-    (
       'an edited manifest',
       () => _flutterLiteRtLmOnlyUserDefines(
         liteRtLmManifest: _liteRtLmCompanionManifest().replaceFirst(
@@ -907,9 +898,77 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
             ),
           ),
         );
+        expect(stderrLines, isNot(contains(contains('embeds its complete'))));
       });
     }
   }
+
+  for (final (scenario, manifest, pin) in [
+    (
+      'the published 0.0.15 manifest',
+      _publishedLiteRtLmCompanion0015Manifest,
+      'v0.18.0',
+    ),
+    (
+      'a macOS-complete manifest pinning another LiteRT-LM tag',
+      () => _liteRtLmCompanionManifest().replaceFirst(
+        'let liteRtLmTag = "${_readPinnedConst('liteRtLmReleaseTag')}"',
+        'let liteRtLmTag = "v0.17.0-8"',
+      ),
+      'v0.17.0-8',
+    ),
+  ]) {
+    test('build hook only asks to upgrade a Flutter macOS LiteRT-LM companion '
+        'that embeds the complete runtime for $scenario', () async {
+      final coreTag = _readPinnedConst('liteRtLmReleaseTag');
+      final stderrLines = await _capturingStderr(
+        () async => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.arm64,
+          userDefines: await _flutterLiteRtLmOnlyUserDefines(
+            liteRtLmManifest: manifest(),
+          ),
+          check: (_, _) {},
+        ),
+      );
+      final warnings = stderrLines
+          .where((line) => line.startsWith('warning: llamadart:'))
+          .toList(growable: false);
+      expect(warnings, [
+        'warning: llamadart: The resolved llamadart_litert_lm_flutter pins '
+            'leehack/litert-lm-native@$pin rather than this core\'s $coreTag. '
+            'It still embeds its complete macOS LiteRT-LM runtime, which the '
+            'app loads from its bundle. Upgrade llamadart_litert_lm_flutter '
+            'to the release pinning $coreTag.',
+      ]);
+    });
+  }
+
+  test('build hook prints no companion warning for a Flutter macOS app '
+      'without the LiteRT-LM companion', () async {
+    final stderrLines = await _capturingStderr(
+      () async => testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: await _flutterAppleUserDefines(
+          dependencies: const [],
+          defines: {
+            'llamadart_native_runtimes': ['litert_lm'],
+          },
+        ),
+        check: (input, output) {
+          final outputDir = input.outputDirectory.toFilePath();
+          expect(
+            Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+            isTrue,
+          );
+        },
+      ),
+    );
+    expect(stderrLines, isNot(contains(contains('warning: llamadart:'))));
+  });
 
   for (final (scenario, dependencies, expectedAssetIds) in [
     ('the LiteRT-LM companion', const ['llamadart_litert_lm_flutter'], []),
@@ -1400,6 +1459,12 @@ String _liteRtLmCompanionManifest() => File(
 /// the CLiteRTLM shim on macOS.
 String _publishedLiteRtLmCompanion0014Manifest() => File(
   'test/fixtures/litert_lm/llamadart_litert_lm_flutter_0.0.14_Package.swift',
+).readAsStringSync();
+
+/// The manifest published as companion 0.0.15: the macOS-complete manifest
+/// pinning v0.18.0 rather than this core's rebuild of the same release.
+String _publishedLiteRtLmCompanion0015Manifest() => File(
+  'test/fixtures/litert_lm/llamadart_litert_lm_flutter_0.0.15_Package.swift',
 ).readAsStringSync();
 
 Future<PackageUserDefines> _nonFlutterConsumerUserDefines({
