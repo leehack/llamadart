@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import '../exceptions.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
+import '../template/chat_parse_result.dart';
 import '../template/chat_template_engine.dart';
 import '../template/handlers/apertus_handler.dart';
 import '../template/handlers/command_r7b_handler.dart';
@@ -77,6 +79,12 @@ class ChatCompletionStreamParser {
   /// the call set is not safe to execute. Otherwise parsed calls finish with
   /// `tool_calls`, and a reply without calls finishes with `stop`.
   /// The final chunk carries what [usage] returns after [tokenStream] ends.
+  ///
+  /// A reply that ended at a limit, or that [cancelled] reports cancelled,
+  /// may stop short of what a PEG parser requires, such as the tool call of
+  /// `ToolChoice.required`. When the parse of the whole reply fails, it is
+  /// parsed as partial output instead and its tool calls are withheld. Any
+  /// other reply that does not parse throws [LlamaInferenceException].
   static Stream<LlamaCompletionChunk> parse({
     required Stream<String> tokenStream,
     required LlamaChatTemplateResult templateResult,
@@ -86,6 +94,7 @@ class ChatCompletionStreamParser {
     required String completionId,
     List<ToolDefinition>? tools,
     bool Function()? stoppedAtLimit,
+    bool Function()? cancelled,
     LlamaGenerationUsage? Function()? usage,
   }) async* {
     final buffer = StringBuffer();
@@ -350,14 +359,26 @@ class ChatCompletionStreamParser {
     }
 
     final fullOutput = buffer.toString();
-    final parsed = ChatTemplateEngine.parse(
-      templateResult.format,
-      fullOutput,
-      parseToolCalls: parseToolCallsEnabled,
-      thinkingForcedOpen: templateResult.thinkingForcedOpen,
-      parser: templateResult.parser,
-      tools: tools,
-    );
+    final endedAtLimit = stoppedAtLimit?.call() == true;
+    ChatParseResult parseOutput({required bool isPartial}) =>
+        ChatTemplateEngine.parse(
+          templateResult.format,
+          fullOutput,
+          isPartial: isPartial,
+          parseToolCalls: parseToolCallsEnabled,
+          thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          parser: templateResult.parser,
+          tools: tools,
+        );
+    ChatParseResult parsed;
+    var parsedAsPartial = false;
+    try {
+      parsed = parseOutput(isPartial: false);
+    } on LlamaInferenceException {
+      if (!endedAtLimit && cancelled?.call() != true) rethrow;
+      parsed = parseOutput(isPartial: true);
+      parsedAsPartial = true;
+    }
 
     final finalReasoning = parsed.reasoningContent ?? '';
     final reasoningDelta = _computeFinalReconciliationDelta(
@@ -403,8 +424,7 @@ class ChatCompletionStreamParser {
       'toolCallCount=${parsed.toolCalls.length}',
     );
 
-    final endedAtLimit = stoppedAtLimit?.call() == true;
-    if (parsed.hasToolCalls && !endedAtLimit) {
+    if (parsed.hasToolCalls && !endedAtLimit && !parsedAsPartial) {
       final toolCallsWithIds = parsed.toolCalls
           .map(
             (toolCall) => LlamaCompletionChunkToolCall(

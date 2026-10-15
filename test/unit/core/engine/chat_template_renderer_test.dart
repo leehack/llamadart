@@ -1,4 +1,5 @@
 import 'package:llamadart/src/core/engine/chat_template_renderer.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
@@ -93,6 +94,92 @@ void main() {
           customTemplate: 'CUSTOM:{{ messages[0]["content"] }}',
         ),
         'CUSTOM:hello',
+      );
+    });
+
+    test('a render failure names the template that failed', () async {
+      const raising = "{{ raise_exception('roles must alternate') }}";
+      Future<void> expectNamed(
+        String name, {
+        Map<String, String> metadata = const {
+          'tokenizer.chat_template': raising,
+          'tokenizer.chat_template.tool_use': raising,
+        },
+        String? modelTemplate,
+        String? customTemplate,
+        List<ToolDefinition>? tools,
+      }) async {
+        await expectLater(
+          ChatTemplateRenderer.render(
+            loadMetadata: () async => metadata,
+            tokenize: (text, {bool addSpecial = true}) async => const [],
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            tools: tools,
+            modelTemplate: modelTemplate,
+            customTemplate: customTemplate,
+            includeTokenCount: false,
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              'The chat template from $name failed to render: '
+                  'roles must alternate',
+            ),
+          ),
+        );
+      }
+
+      final tools = [
+        ToolDefinition(
+          name: 'noop',
+          description: 'Does nothing',
+          parameters: const [],
+          handler: (_) async => null,
+        ),
+      ];
+
+      await expectNamed("the model's tokenizer.chat_template");
+      await expectNamed(
+        "the model's tokenizer.chat_template.tool_use",
+        tools: tools,
+      );
+      await expectNamed('ModelParams.chatTemplate', modelTemplate: raising);
+      await expectNamed(
+        'ModelParams.chatTemplate',
+        modelTemplate: raising,
+        tools: tools,
+      );
+      await expectNamed(
+        'customTemplate',
+        metadata: const {'tokenizer.chat_template': '{{ "ok" }}'},
+        modelTemplate: '{{ "ok" }}',
+        customTemplate: raising,
+      );
+    });
+
+    test('templateSourceName names the ChatML fallback when no template '
+        'is set', () {
+      expect(
+        ChatTemplateRenderer.templateSourceName(),
+        'the built-in ChatML fallback template',
+      );
+      expect(
+        ChatTemplateRenderer.templateSourceName(modelTemplate: ''),
+        'the built-in ChatML fallback template',
+      );
+      expect(
+        ChatTemplateRenderer.templateSourceName(metadataTemplate: 'm'),
+        "the model's tokenizer.chat_template",
+      );
+      expect(
+        ChatTemplateRenderer.templateSourceName(
+          modelTemplate: 'o',
+          metadataTemplate: 'm',
+        ),
+        'ModelParams.chatTemplate',
       );
     });
 

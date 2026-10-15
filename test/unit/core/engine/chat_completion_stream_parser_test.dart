@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -10,6 +11,7 @@ import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/completion.dart';
 import 'package:llamadart/src/core/models/chat/completion_chunk.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -18,6 +20,7 @@ import 'package:llamadart/src/core/template/chat_template_handler.dart';
 import 'package:llamadart/src/core/template/handlers/ministral_handler.dart';
 import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 import 'package:llamadart/src/core/template/handlers/solar_open_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -545,6 +548,149 @@ void main() {
         'Parsed completion: contentChars=0, reasoningChars=14, '
             'toolCallCount=1',
       ]);
+    });
+
+    group('a Ministral PEG reply cut short', () {
+      LlamaChatTemplateResult ministral(ToolChoice toolChoice) =>
+          MinistralHandler().render(
+            templateSource: '{{ messages[0]["content"] }}',
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            metadata: {internalToolChoiceMetadataKey: toolChoice.name},
+            tools: [_weatherTool],
+          );
+
+      Future<List<LlamaCompletionChunk>> parse(
+        ToolChoice toolChoice,
+        List<String> tokens, {
+        bool atLimit = false,
+        bool cancelled = false,
+      }) => ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable(tokens),
+        templateResult: ministral(toolChoice),
+        parseToolCallsEnabled: toolChoice != ToolChoice.none,
+        enableThinking: true,
+        modelName: 'Ministral-3-3B-Reasoning',
+        completionId: 'cut-short',
+        tools: [_weatherTool],
+        stoppedAtLimit: () => atLimit,
+        cancelled: () => cancelled,
+      ).toList();
+
+      String joined(
+        List<LlamaCompletionChunk> chunks,
+        String? Function(LlamaCompletionChunkDelta delta) field,
+      ) =>
+          chunks.map((chunk) => field(chunk.choices.single.delta) ?? '').join();
+
+      List<LlamaCompletionChunkToolCall> calls(
+        List<LlamaCompletionChunk> chunks,
+      ) => chunks
+          .expand(
+            (chunk) =>
+                chunk.choices.single.delta.toolCalls ??
+                const <LlamaCompletionChunkToolCall>[],
+          )
+          .toList();
+
+      const partialCall = '[TOOL_CALLS]weather[ARGS]{"city":"Par';
+      const completeCall = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
+
+      for (final toolChoice in [ToolChoice.required, ToolChoice.auto]) {
+        group('with ${toolChoice.name}', () {
+          for (final (name, atLimit, cancelled, finishReason) in const [
+            ('at a limit', true, false, 'length'),
+            ('by a cancel', false, true, 'stop'),
+          ]) {
+            test('ends $name before any output with $finishReason', () async {
+              final chunks = await parse(
+                toolChoice,
+                const [],
+                atLimit: atLimit,
+                cancelled: cancelled,
+              );
+
+              expect(chunks.last.choices.single.finishReason, finishReason);
+              expect(joined(chunks, (delta) => delta.content), isEmpty);
+              expect(calls(chunks), isEmpty);
+            });
+
+            test('ends $name in a tool call with $finishReason and no '
+                'calls', () async {
+              final chunks = await parse(
+                toolChoice,
+                const ['[THINK]Check.[/THINK]', partialCall],
+                atLimit: atLimit,
+                cancelled: cancelled,
+              );
+
+              expect(chunks.last.choices.single.finishReason, finishReason);
+              expect(joined(chunks, (delta) => delta.thinking), 'Check.');
+              expect(joined(chunks, (delta) => delta.content), isEmpty);
+              expect(calls(chunks), isEmpty);
+            });
+          }
+
+          test('keeps a complete call after a cancel', () async {
+            final chunks = await parse(toolChoice, const [
+              completeCall,
+            ], cancelled: true);
+
+            expect(chunks.last.choices.single.finishReason, 'tool_calls');
+            expect(
+              calls(chunks).single.function?.arguments,
+              '{"city":"Paris"}',
+            );
+          });
+        });
+      }
+
+      test('ends a required reply cut short in its thought without a '
+          'call', () async {
+        final chunks = await parse(ToolChoice.required, const [
+          '[THINK]Check',
+          ' the city.',
+        ], atLimit: true);
+
+        expect(chunks.last.choices.single.finishReason, 'length');
+        expect(joined(chunks, (delta) => delta.thinking), 'Check the city.');
+        expect(joined(chunks, (delta) => delta.content), isEmpty);
+        expect(calls(chunks), isEmpty);
+      });
+
+      for (final (name, tokens) in const [
+        ('no output', <String>[]),
+        ('text without a call', ['It is sunny.']),
+        ('a partial call', [partialCall]),
+      ]) {
+        test('throws a typed exception for a required reply that ended '
+            'normally with $name', () async {
+          await expectLater(
+            parse(ToolChoice.required, tokens),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (error) => error.message,
+                'message',
+                startsWith(
+                  'The model output does not match the expected peg-native '
+                  'format: the parse failed at character ',
+                ),
+              ),
+            ),
+          );
+        });
+      }
+
+      test('none and auto replies that ended normally still parse', () async {
+        final none = await parse(ToolChoice.none, const ['It is sunny.']);
+        expect(none.last.choices.single.finishReason, 'stop');
+        expect(joined(none, (delta) => delta.content), 'It is sunny.');
+
+        final auto = await parse(ToolChoice.auto, const ['It is sunny.']);
+        expect(auto.last.choices.single.finishReason, 'stop');
+        expect(joined(auto, (delta) => delta.content), 'It is sunny.');
+      });
     });
 
     test('carries tool schemas into specialized final parsing', () async {

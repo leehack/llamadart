@@ -125,7 +125,9 @@ class ChatTemplateEngine {
   /// any other shape throws `LlamaUnsupportedException`.
   ///
   /// A template that fails to render, by raising or through invalid syntax,
-  /// throws `LlamaInferenceException` with the template's message.
+  /// throws `LlamaInferenceException` with the template's message. The
+  /// message names the template: [customTemplate], the `tool_use` variant in
+  /// [metadata], or [templateSource].
   ///
   /// [mediaMarker] is written where each image, audio or video part was.
   /// Pass one that message text cannot hold to tell the parts from a
@@ -152,10 +154,13 @@ class ChatTemplateEngine {
     final allowToolCalls = hasTools && toolChoice != ToolChoice.none;
     final effectiveTools = allowToolCalls ? tools : null;
     var metadataTemplate = templateSource;
+    var templateName =
+        metadata[internalTemplateSourceNameMetadataKey] ?? 'templateSource';
 
     if (allowToolCalls &&
         metadata.containsKey('tokenizer.chat_template.tool_use')) {
       metadataTemplate = metadata['tokenizer.chat_template.tool_use'];
+      templateName = "the model's tokenizer.chat_template.tool_use";
       LlamaLogger.instance.debug(
         'ChatTemplateEngine: Using tool_use template variant',
       );
@@ -163,6 +168,7 @@ class ChatTemplateEngine {
 
     var effectiveTemplate = customTemplate;
     if (effectiveTemplate != null) {
+      templateName = 'customTemplate';
       LlamaLogger.instance.debug(
         'ChatTemplateEngine: Using per-call custom template override',
       );
@@ -279,6 +285,7 @@ class ChatTemplateEngine {
         'for template that accesses content as list',
       );
       var rendered = _renderTemplate(
+        templateName,
         () => handler.renderWithMultimodalContent(
           templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
           messages: effectiveMessages,
@@ -326,6 +333,7 @@ class ChatTemplateEngine {
     }
 
     var baseResult = _renderTemplate(
+      templateName,
       () => handler.render(
         templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
         messages: effectiveMessages,
@@ -353,9 +361,11 @@ class ChatTemplateEngine {
   /// Runs a handler [render], turning an [Exception] that is not already a
   /// [LlamaException] (a template's own `raise_exception`, a failure the
   /// Jinja runtime throws as an `Exception`, invalid template syntax) into a
-  /// [LlamaInferenceException]. An [Error] the renderer throws, such as an
-  /// integer division by zero or a stack overflow, is left as it is.
+  /// [LlamaInferenceException] that names the template by [templateName]. An
+  /// [Error] the renderer throws, such as an integer division by zero or a
+  /// stack overflow, is left as it is.
   static LlamaChatTemplateResult _renderTemplate(
+    String templateName,
     LlamaChatTemplateResult Function() render,
   ) {
     try {
@@ -367,7 +377,7 @@ class ChatTemplateEngine {
       const prefix = 'Exception: ';
       Error.throwWithStackTrace(
         LlamaInferenceException(
-          'The chat template failed to render: '
+          'The chat template from $templateName failed to render: '
           '${cause.startsWith(prefix) ? cause.substring(prefix.length) : cause}',
         ),
         stackTrace,
@@ -497,6 +507,9 @@ class ChatTemplateEngine {
   ///
   /// Content that ends [output] keeps the whitespace after it, as llama.cpp
   /// does, unless [isPartial] is true: more output may follow a partial one.
+  ///
+  /// Output that a PEG [parser] cannot parse throws
+  /// [LlamaInferenceException].
   static ChatParseResult parse(
     int formatIndex,
     String output, {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../exceptions.dart';
 import '../models/chat/completion_chunk.dart';
 import 'chat_format.dart';
 import 'chat_parse_result.dart';
@@ -20,6 +21,14 @@ ChatFormat? pegParseFormat(ChatFormat format, String? parser) {
   };
 }
 
+// llama.cpp's `common_chat_format_name` spelling, as its errors use.
+String _formatName(ChatFormat format) => switch (format) {
+  ChatFormat.pegSimple => 'peg-simple',
+  ChatFormat.pegNative => 'peg-native',
+  ChatFormat.pegConstructed => 'peg-constructed',
+  _ => format.name,
+};
+
 /// Runtime PEG parser for llama.cpp `parser.save()` payloads.
 ///
 /// This executes serialized PEG parsers and maps AST tags to chat payloads,
@@ -28,6 +37,8 @@ class PegChatParser {
   static final Map<String, _PegArena> _arenaCache = <String, _PegArena>{};
 
   /// Parses [output] with a serialized [parser] definition.
+  ///
+  /// Throws [LlamaInferenceException] when [output] does not match [parser].
   static ChatParseResult parse({
     required String parser,
     required ChatFormat format,
@@ -47,7 +58,11 @@ class PegChatParser {
     final ctx = _PegParseContext(input: output, isPartial: isPartial);
     final parseResult = arena.parse(ctx);
     if (parseResult.isFail) {
-      throw StateError('Failed to parse input at pos ${parseResult.end}.');
+      throw LlamaInferenceException(
+        'The model output does not match the expected ${_formatName(format)} '
+        'format: the parse failed at character ${parseResult.end} of '
+        '${output.length}.',
+      );
     }
 
     final message = _PegChatMessage();

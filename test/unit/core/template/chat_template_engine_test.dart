@@ -549,7 +549,7 @@ void main() {
             metadata: const {},
           ),
           throwsRenderFailure(
-            'The chat template failed to render: '
+            'The chat template from templateSource failed to render: '
             'Conversation roles must alternate',
           ),
         );
@@ -592,7 +592,7 @@ void main() {
             metadata: const {},
           ),
           throwsRenderFailure(
-            'The chat template failed to render: '
+            'The chat template from templateSource failed to render: '
             'Conversation roles must alternate',
           ),
         );
@@ -606,7 +606,10 @@ void main() {
             metadata: const {},
           ),
           throwsRenderFailure(
-            startsWith('The chat template failed to render: ParserException'),
+            startsWith(
+              'The chat template from templateSource failed to render: '
+              'ParserException',
+            ),
           ),
         );
       });

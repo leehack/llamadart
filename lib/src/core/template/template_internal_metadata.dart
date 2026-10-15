@@ -41,3 +41,10 @@ Map<String, dynamic> chatTemplateKwargsFromMetadata(
 ///
 /// Value is serialized as an ISO-8601 timestamp string in UTC.
 const String internalTemplateNowMetadataKey = 'llamadart.internal.now';
+
+/// Internal metadata key naming where the `templateSource` of
+/// `ChatTemplateEngine.render` came from, such as `ModelParams.chatTemplate`.
+///
+/// A template that fails to render is named by it in the error.
+const String internalTemplateSourceNameMetadataKey =
+    'llamadart.internal.template_source_name';

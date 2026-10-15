@@ -1,7 +1,15 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/handlers/ministral_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/template/peg_chat_parser.dart';
 
@@ -91,6 +99,61 @@ void main() {
             ChatTemplateEngine.parse(ChatFormat.pegNative.index, 'raw-output'),
         throwsA(isA<StateError>()),
       );
+    });
+
+    group('with a Ministral ToolChoice.required parser', () {
+      String requiredParser() => MinistralHandler()
+          .render(
+            templateSource: '{{ messages[0]["content"] }}',
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            metadata: {internalToolChoiceMetadataKey: ToolChoice.required.name},
+            tools: [
+              ToolDefinition(
+                name: 'weather',
+                description: 'Weather',
+                parameters: [ToolParam.string('city', required: true)],
+              ),
+            ],
+          )
+          .parser!;
+
+      for (final (output, end) in const [
+        ('', 0),
+        ('[THINK]Check.[/THINK]', 21),
+        ('[TOOL_CALLS]weather[ARGS]{"ci', 0),
+      ]) {
+        test('throws a typed exception for ${jsonEncode(output)}', () {
+          expect(
+            () => ChatTemplateEngine.parse(
+              ChatFormat.ministral.index,
+              output,
+              parser: requiredParser(),
+            ),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (error) => error.message,
+                'message',
+                'The model output does not match the expected peg-native '
+                    'format: the parse failed at character $end of '
+                    '${output.length}.',
+              ),
+            ),
+          );
+        });
+
+        test('parses ${jsonEncode(output)} as partial output', () {
+          final result = ChatTemplateEngine.parse(
+            ChatFormat.ministral.index,
+            output,
+            isPartial: true,
+            parser: requiredParser(),
+          );
+
+          expect(result.content, isEmpty);
+        });
+      }
     });
 
     test('rethrows parse failures for partial PEG parse', () {
