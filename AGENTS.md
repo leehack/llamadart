@@ -17,6 +17,13 @@ dart test -p chrome --exclude-tags local-only
 - Run `prepare_workspace.dart` first, on a clean checkout; CI fails if it leaves
   tracked files modified. Never hand-edit a `pubspec.lock`: constrain
   `pubspec.yaml` and let pub regenerate it.
+- On macOS, run local VM tests with an isolated temp directory
+  (`TMPDIR="$(mktemp -d)" dart test -p vm ...`): LiteRT-LM engines without
+  `liteRtLmCacheDir` prune the program caches apps share in
+  `$TMPDIR/llamadart_litert_lm`, and local-only LiteRT-LM E2E tests prune it
+  like any 0.13 app. Suites that load LiteRT-LM models call
+  `useSuiteSystemTemp()` (`test/support/suite_system_temp.dart`); CI fails a VM
+  lane whose tests delete its canary there.
 - Use the Flutter SDK in `.flutter-version`; other SDKs format differently from
   CI. A pin bump is its own PR that updates `.flutter-version`, every workflow
   `flutter-version:`, and the reformat it causes.

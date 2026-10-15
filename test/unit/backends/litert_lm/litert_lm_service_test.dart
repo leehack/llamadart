@@ -3967,6 +3967,37 @@ void main() {
       }
     }, testOn: '!windows');
 
+    test('a linked bundle leases its caches under the name the runtime '
+        'loads it by', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        linkParentDirectory: await Directory('${tempDir.path}/links').create(),
+      );
+      final models = await Directory('${tempDir.path}/models').create();
+      final extensionless = File('${models.path}/download');
+      await extensionless.writeAsString('LITERTLM fake model');
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      List<String>? leasedModels;
+      client.onInitialize = () => leasedModels = [
+        for (final lease in leaseFiles(cacheDir))
+          if (!lease.endsWith('.lock')) File(lease).readAsStringSync(),
+      ];
+      final params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmCacheDir: cacheDir.path,
+      );
+      try {
+        final model = await service.loadModel(extensionless.path, params);
+        await startEngine(service, client, model, params);
+        final runtimeName = File(client.lastModelPath!).uri.pathSegments.last;
+        expect(runtimeName, isNot('download'));
+        expect(leasedModels, [runtimeName]);
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
+
     test('a :nocache cache directory is forwarded without creating, pruning '
         'or leasing a directory', () async {
       final client = _FakeLiteRtLmRuntimeClient();
@@ -3978,6 +4009,12 @@ void main() {
           entry.uri.pathSegments.lastWhere((segment) => segment.isNotEmpty),
       };
       final before = workingDirectoryNames();
+      if (!Platform.isWindows && !before.contains(liteRtLmNoCacheDirectory)) {
+        addTearDown(() {
+          final created = Directory(liteRtLmNoCacheDirectory);
+          if (created.existsSync()) created.deleteSync(recursive: true);
+        });
+      }
       try {
         await createEngine(
           service,

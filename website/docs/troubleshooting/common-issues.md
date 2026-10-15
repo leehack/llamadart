@@ -255,6 +255,12 @@ runtime writes them next to the model file and nothing is pruned; set
 `liteRtLmCacheDir` there. See
 [LiteRT-LM cache directory](../configuration/runtime-parameters#litert-lm-cache-directory).
 
+If one model's program cache still exceeds the cap, check its cache directory
+for a `.llamadart_litert_lm_lease_<pid>_*` file whose process ID is that of
+the app itself, left by an earlier run that crashed with the same process ID,
+as in a container. Such a lease keeps that model's caches unpruned; delete it
+and its `.lock` file while no engine of that model is running.
+
 ## llama.cpp errors
 
 ### `llama.cpp raised an exception in <function>.`

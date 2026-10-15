@@ -170,7 +170,7 @@ You can still target specific platforms if needed:
 
 ```bash
 # Run only VM tests
-dart test -p vm
+TMPDIR="$(mktemp -d)" dart test -p vm
 
 # Run only Chrome tests
 dart test -p chrome
@@ -178,6 +178,14 @@ dart test -p chrome
 # Verify architecture boundaries (shared/web-safe code has no dart:io/dart:ffi)
 dart run tool/testing/check_platform_boundaries.dart
 ```
+
+On macOS, give local VM runs an isolated temp directory. LiteRT-LM engines
+without `liteRtLmCacheDir` prune GPU program caches in
+`$TMPDIR/llamadart_litert_lm`, a cache apps share, and local-only LiteRT-LM
+E2E tests prune it like any app on 0.13 or later. Suites that load LiteRT-LM
+models must call `useSuiteSystemTemp()` from
+`test/support/suite_system_temp.dart`; CI fails a VM lane whose tests delete a
+canary cache there.
 
 ### 3. Coverage
 To collect and view coverage reports:

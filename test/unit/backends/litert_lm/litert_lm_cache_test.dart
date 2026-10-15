@@ -269,6 +269,28 @@ void main() {
       });
     }
 
+    test('in a directory spelled through a link and .. protect caches '
+        'where the system resolves it', () {
+      final a = Directory('${tempDir.path}/a')..createSync();
+      final b = Directory('${tempDir.path}/b')..createSync();
+      final c = Directory('${b.path}/c')..createSync();
+      Link('${a.path}/link').createSync(c.path);
+      final directory = '${a.path}/link/..';
+      final lease = LiteRtLmCacheLease.acquire(directory, model);
+      addTearDown(lease.release);
+      final text = write(
+        'm.litertlm_1_2_mldrift_program_cache.bin',
+        50,
+        dir: b,
+      );
+
+      pruneLiteRtLmProgramCaches(b.path, 10);
+
+      expect(leaseFiles(b), hasLength(2));
+      expect(leaseFiles(a), isEmpty);
+      expect(text.existsSync(), isTrue);
+    }, testOn: '!windows');
+
     test('release deletes the lease files and ends the protection', () {
       final lease = LiteRtLmCacheLease.acquire(tempDir.path, model);
       expect(leaseFiles(tempDir), hasLength(2));
@@ -400,6 +422,14 @@ Future<void> main(List<String> args) async {
       addTearDown(lease.release);
       final text = write('n.litertlm_1_2_mldrift_program_cache.bin', 50);
       Process.runSync('chmod', ['a-r', lease.path]);
+      addTearDown(() => Process.runSync('chmod', ['u+r', lease.path]));
+      try {
+        File(lease.path).readAsStringSync();
+        markTestSkipped('This user reads a file without read permission.');
+        return;
+      } on FileSystemException {
+        // Expected: the lease file cannot be read.
+      }
       final errorPaths = <String>[];
 
       pruneLiteRtLmProgramCaches(
@@ -408,11 +438,6 @@ Future<void> main(List<String> args) async {
         onError: (path, error) => errorPaths.add(path),
       );
 
-      Process.runSync('chmod', ['u+r', lease.path]);
-      if (errorPaths.isEmpty) {
-        markTestSkipped('This user reads a file without read permission.');
-        return;
-      }
       expect(errorPaths, [lease.path]);
       expect(text.existsSync(), isTrue);
     }, testOn: '!windows');

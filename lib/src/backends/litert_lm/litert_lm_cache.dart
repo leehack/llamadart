@@ -61,10 +61,7 @@ final class LiteRtLmCacheLease {
       for (var i = 0; i < 8; i++)
         random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ].join();
-    final path = p.join(
-      p.normalize(directory),
-      '$liteRtLmCacheLeasePrefix${pid}_$token',
-    );
+    final path = p.join(directory, '$liteRtLmCacheLeasePrefix${pid}_$token');
     final lockFile = File('$path$_leaseLockSuffix');
     final staged = File('$path$_leaseStagingSuffix');
     final lock = lockFile.openSync(mode: FileMode.writeOnly);

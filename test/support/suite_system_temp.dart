@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -26,18 +27,20 @@ Directory Function() useSuiteSystemTemp() {
   setUpAll(() {
     realCacheFiles = _fileNames(realCacheRoot);
     root = Directory.systemTemp.createTempSync('llamadart_suite_temp_');
-    previous = IOOverrides.current;
+    // The root zone sees only the global overrides, not those of a zone
+    // the suite runs in, which must not become global.
+    previous = Zone.root.run(() => IOOverrides.current);
     IOOverrides.global = _SystemTempOverrides(root);
   });
 
   tearDownAll(() {
     IOOverrides.global = previous;
-    root.deleteSync(recursive: true);
     expect(
       realCacheFiles.difference(_fileNames(realCacheRoot)),
       isEmpty,
       reason: 'files deleted from ${realCacheRoot.path}',
     );
+    root.deleteSync(recursive: true);
   });
 
   return () => root;

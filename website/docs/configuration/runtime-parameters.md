@@ -220,6 +220,12 @@ without disposing it. An engine prunes the caches of its own model, since it
 disposes its previous native engine first, but while two engines use the same
 model file with one directory neither deletes that model's program caches.
 
+A lease left by a process that crashed is taken for one of the pruning
+process when the two share a process ID, as can happen when a container
+restarts with the same PID. That lease never expires, so its model's program
+caches stay unpruned until its two lease files are deleted while no engine of
+that model is running.
+
 The cap mitigates a known runtime issue
 ([#552](https://github.com/leehack/llamadart/issues/552)): with Qwen3.5-0.8B
 on the macOS GPU backend, every engine create appended about 0.5 GB to
