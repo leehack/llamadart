@@ -689,9 +689,9 @@ class SpeechToTextEngine {
   /// load, disposes both. Adapters in [ModelParams.loras] given as sources
   /// download as [LlamaEngine.setModel] downloads them. A URL-loading
   /// backend, as on the web, fetches each file itself, as
-  /// [LlamaEngine.setModel] describes. [onProgress] then reports only the
-  /// main file's fetch, as a fraction from 0 to 0.5 of the two files when
-  /// there is a projector; the projector fetch reports no progress.
+  /// [LlamaEngine.setModel] describes. [onProgress] then reports a fraction
+  /// from 0 to 1: with a projector, the main file's fetch fills the first
+  /// half and the projector reports 1 once it has loaded.
   ///
   /// With a [LiteRtLmAsrAdapter], [load] probes the LiteRT-LM ASR runtime
   /// before any download and then resolves [SpeechToTextModel.source] and

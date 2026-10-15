@@ -422,8 +422,9 @@ class LlamaEngine {
   /// the load, so the old model is unloaded before the new one is fetched,
   /// and a fetch that fails leaves nothing loaded. There a local path is a
   /// URL relative to the document, or a `blob:` URL, [download] must leave
-  /// every option at its default, and [onProgress] reports only the model's
-  /// fetch, as a fraction that ends at 0.5 when there is a projector.
+  /// every option at its default, and [onProgress] reports a fraction: the
+  /// model's fetch fills it, or with a projector its first half, and 1 once
+  /// the projector has loaded.
   ///
   /// While a call runs, another [setModel] and [unloadModel] throw
   /// [LlamaStateException]; stop it with [download]'s cancel token.
@@ -534,6 +535,13 @@ class LlamaEngine {
           );
         }
         throwIfCancelled();
+        await _captureObservedModel(location);
+        _throwIfDisposedDuringLoad();
+        if (projector != null && backend.supportsUrlLoading) {
+          // The runtime reports no progress for the projector fetch, so its
+          // half completes once the projector has loaded.
+          onProgress?.call(const ModelDownloadProgress.fraction(1));
+        }
       } catch (_) {
         try {
           await _unloadModel();
@@ -542,8 +550,6 @@ class LlamaEngine {
         }
         rethrow;
       }
-      await _captureObservedModel(location);
-      _throwIfDisposedDuringLoad();
       companionLocations = locations.sublist(
         sources.length - companions.length,
       );
