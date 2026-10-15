@@ -333,7 +333,7 @@ void main() {
   test('the preflight CLI runs the published-constraint check', () {
     final source = File(
       'tool/release/companion_pub_preflight.dart',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     final wired = RegExp(
       r'final problems = \[[\s\S]*?\.\.\.await '
       r'companionPublishedConstraintProblems\(\s*Directory\.current,\s*'
@@ -356,7 +356,7 @@ void main() {
   test('the release workflow publishes the core before any companion', () {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(_publishOrderProblems(workflow), isEmpty);
   });
@@ -364,7 +364,7 @@ void main() {
   test('the publish-order contract rejects companions first', () {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     const coreBlock =
         '          wait_for_pub_version "llamadart" "\$CORE_VERSION"\n';
     const companionWait =
@@ -391,7 +391,7 @@ void main() {
   test('the release workflow runs the preflight before any tag push', () {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(_preflightContractProblems(workflow), isEmpty);
   });
@@ -399,7 +399,7 @@ void main() {
   test('the preflight contract rejects deletion, bypass and late runs', () {
     final workflow = File(
       '.github/workflows/release_on_prep_merge.yml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     for (final mutated in [
       workflow.replaceFirst(_preflightCommand, ''),

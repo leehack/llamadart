@@ -338,7 +338,7 @@ void main() {
   test('release docs CLI runs both checks before reporting success', () {
     final source = File(
       'tool/testing/verify_release_docs_versions.dart',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     expect(_cliContractProblems(source), isEmpty);
     for (final mutated in [
