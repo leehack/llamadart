@@ -1,3 +1,11 @@
+## Unreleased
+
+- Send tool results back on Gemma 2/3/3n and legacy Mistral templates, which
+  failed with `Conversation roles must alternate user/assistant/...`: a
+  template that rejects the `tool` role now gets each run of results as one
+  user turn, and the earlier calls as JSON in the model turn
+  ([#885](https://github.com/leehack/llamadart/issues/885)).
+
 ## 0.13.0
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`,

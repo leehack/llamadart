@@ -39,6 +39,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
       '11011011',
   'test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja':
       '11011001',
+  'test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja': '00001000',
   'test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja':
       '11111111',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja':
@@ -57,6 +58,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja': '10101000',
   'test/fixtures/templates/Llama-3_2-3B-Instruct.jinja': '11101001',
   'test/fixtures/templates/Ministral-3-3B-Reasoning.jinja': '11111011',
+  'test/fixtures/templates/Mistral-7B-Instruct-v0_2.jinja': '00001000',
   'test/fixtures/templates/Phi-4-mini-instruct-reasoning.jinja': '10001000',
   'test/fixtures/templates/Qwen3-4B.jinja': '11111011',
   'test/fixtures/templates/Qwen3_5-0_8B.jinja': '11111111',
@@ -83,6 +85,17 @@ const List<String> _capsOrder = <String>[
   'supports_thinking',
   'supports_object_arguments',
 ];
+
+/// Fixture templates that raise on a `tool` message but render it under the
+/// `user` role, so tool results reach them as user turns.
+const Set<String> _rejectsToolRole = <String>{
+  'test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja',
+  'test/fixtures/templates/Mistral-7B-Instruct-v0_2.jinja',
+  'test/fixtures/templates/gemma-3-4b-it.jinja',
+  'test/fixtures/templates/gemma-3n-E4B-it.jinja',
+  'tool/litert_lm_templates/gemma.jinja',
+  'tool/litert_lm_templates/gemma3n.jinja',
+};
 
 String _capsBits(TemplateCaps caps) {
   final map = caps.toMap();
@@ -120,6 +133,18 @@ void main() {
 
     expect(detected, _pinnedCaps);
     expect(failed, isEmpty);
+  });
+
+  test('pins the fixture templates that reject the tool role', () {
+    final rejecting = <String>{
+      for (final file in _fixtureTemplates())
+        if (!JinjaAnalyzer.analyze(
+          file.readAsStringSync(),
+        ).supportsToolResponses)
+          file.path.replaceAll(r'\', '/'),
+    };
+
+    expect(rejecting, _rejectsToolRole);
   });
 
   test('caches every fixture template', () {

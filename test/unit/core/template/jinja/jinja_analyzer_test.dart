@@ -432,6 +432,70 @@ void main() {
       );
     });
 
+    test('reports no tool responses when only the tool role is rejected', () {
+      final outcome = JinjaAnalyzer.analyzeWithOutcome(_noToolRoleTemplate);
+
+      expect(outcome.caps.supportsToolResponses, isFalse);
+      expect(
+        messages,
+        contains(
+          allOf(
+            contains('tool-responses capability probe failed to render'),
+            contains('tool role is not supported'),
+          ),
+        ),
+      );
+      expect(
+        messages,
+        isNot(contains(contains('tool-responses-as-user capability probe'))),
+      );
+    });
+
+    test('keeps tool responses when the user role is rejected there too', () {
+      const template = '''
+{%- for message in messages -%}
+{%- if loop.index0 == 2 -%}{{ raise_exception('two messages only') }}{%- endif -%}
+{{- message.content -}}
+{%- endfor -%}''';
+
+      final caps = JinjaAnalyzer.analyze(template);
+
+      expect(caps.supportsToolResponses, isTrue);
+      expect(
+        messages,
+        contains(
+          contains('tool-responses-as-user capability probe failed to render'),
+        ),
+      );
+    });
+
+    test('keeps tool responses for templates that render the tool role', () {
+      expect(
+        JinjaAnalyzer.analyze(_strictTurnsTemplate).supportsToolResponses,
+        isTrue,
+      );
+      expect(
+        JinjaAnalyzer.analyze(
+          '{% for m in messages %}{{ m.content }}{% endfor %}',
+        ).supportsToolResponses,
+        isTrue,
+      );
+    });
+
+    test('keeps tool responses when the probes cannot run', () {
+      expect(
+        JinjaAnalyzer.analyzeWithOutcome(
+          _noToolRoleTemplate,
+          prepare: (_) => throw UnsupportedError('unprobeable'),
+        ).caps.supportsToolResponses,
+        isTrue,
+      );
+      expect(
+        JinjaAnalyzer.analyze('{% for m in messages %').supportsToolResponses,
+        isTrue,
+      );
+    });
+
     test('does not report a failure when no tool conversation renders', () {
       const template = '''
 {% for message in messages %}{{ message.content }}{% endfor %}

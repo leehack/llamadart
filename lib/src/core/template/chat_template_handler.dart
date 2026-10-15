@@ -50,8 +50,10 @@ abstract class ChatTemplateHandler {
   /// reads them as objects, and string content becomes a text part when it
   /// reads content only as parts, as llama.cpp does. A handler that builds
   /// typed parts itself passes `typedContent: false` to keep string content.
-  /// With [multimodal], each media part becomes [mediaMarker] in the message
-  /// text.
+  /// Tool results become user turns when [TemplateCaps] finds the template
+  /// rejects the `tool` role, with tool calls in `content` when it cannot
+  /// render them either. With [multimodal], each media part becomes
+  /// [mediaMarker] in the message text.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
     bool multimodal = false,
@@ -74,6 +76,8 @@ abstract class ChatTemplateHandler {
             caps != null &&
             caps.supportsTypedContent &&
             !caps.supportsStringContent,
+        toolResultsAsUser: caps != null && !caps.supportsToolResponses,
+        toolCallsAsContent: caps != null && !caps.supportsToolCalls,
       );
     } catch (e, stackTrace) {
       if (toolCallSerialization.isEmpty) rethrow;

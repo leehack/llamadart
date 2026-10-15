@@ -692,4 +692,194 @@ void main() {
       },
     );
   });
+
+  group('TemplateRenderContext tool results as user turns', () {
+    const user = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Weather?',
+    );
+    const call = LlamaChatMessage.withContent(
+      role: LlamaChatRole.assistant,
+      content: [
+        LlamaToolCallContent(
+          id: 'call00001',
+          name: 'get_weather',
+          arguments: {'city': 'Paris'},
+          rawJson: '{"city":"Paris"}',
+        ),
+      ],
+    );
+    LlamaChatMessage result(String id, Object? value) =>
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: [
+            LlamaToolResultContent(id: id, name: 'get_weather', result: value),
+          ],
+        );
+
+    test('writes each result as llama.cpp minja did', () {
+      final turns = TemplateRenderContext.toolResultsAsUserTurns([
+        {'role': 'user', 'content': 'Weather?'},
+        {
+          'role': 'tool',
+          'tool_call_id': 'call00001',
+          'name': 'get_weather',
+          'content': 'sunny',
+        },
+      ]);
+
+      expect(turns, [
+        {'role': 'user', 'content': 'Weather?'},
+        {
+          'role': 'user',
+          'content':
+              '{\n'
+              '  "tool_response": {\n'
+              '    "tool": "get_weather",\n'
+              '    "content": "sunny",\n'
+              '    "tool_call_id": "call00001"\n'
+              '  }\n'
+              '}',
+        },
+      ]);
+    });
+
+    test('leaves out an absent name or id', () {
+      final turns = TemplateRenderContext.toolResultsAsUserTurns([
+        {'role': 'tool', 'tool_call_id': null, 'content': 'sunny'},
+      ]);
+
+      expect(
+        turns.single['content'],
+        '{\n  "tool_response": {\n'
+        '    "content": "sunny"\n  }\n}',
+      );
+    });
+
+    test('joins only consecutive results', () {
+      Map<String, dynamic> tool(String content) => {
+        'role': 'tool',
+        'content': content,
+      };
+      final assistant = {'role': 'assistant', 'content': 'Next.'};
+      final turns = TemplateRenderContext.toolResultsAsUserTurns([
+        tool('one'),
+        tool('two'),
+        assistant,
+        tool('three'),
+      ]);
+
+      expect(turns.map((turn) => turn['role']), ['user', 'assistant', 'user']);
+      expect(turns[0]['content'], allOf(contains('one'), contains('two')));
+      expect(turns[0]['content'], contains('}\n{'));
+      expect(turns[1], same(assistant));
+      expect(
+        turns[2]['content'],
+        allOf(contains('three'), isNot(contains('two'))),
+      );
+    });
+
+    test('keeps tool messages without toolResultsAsUser', () {
+      final rendered = TemplateRenderContext.messagesForTemplate([
+        user,
+        call,
+        result('call00001', 'sunny'),
+      ], toolCallsAsContent: true);
+
+      expect(rendered.map((message) => message['role']), [
+        'user',
+        'assistant',
+        'tool',
+      ]);
+      expect(rendered[1]['tool_calls'], isA<List>());
+    });
+
+    test('changes nothing without a tool message', () {
+      final plain = TemplateRenderContext.messagesForTemplate([user, call]);
+      final flagged = TemplateRenderContext.messagesForTemplate(
+        [user, call],
+        toolResultsAsUser: true,
+        toolCallsAsContent: true,
+      );
+
+      expect(flagged, plain);
+      expect(flagged[1]['tool_calls'], isA<List>());
+    });
+
+    test('moves tool calls into content only with toolCallsAsContent', () {
+      final messages = [user, call, result('call00001', 'sunny')];
+      final kept = TemplateRenderContext.messagesForTemplate(
+        messages,
+        toolResultsAsUser: true,
+      );
+      final moved = TemplateRenderContext.messagesForTemplate(
+        messages,
+        toolResultsAsUser: true,
+        toolCallsAsContent: true,
+      );
+
+      expect(kept.map((message) => message['role']), [
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(kept[1]['tool_calls'], isA<List>());
+      expect(moved[1].containsKey('tool_calls'), isFalse);
+      expect(
+        moved[1]['content'],
+        '{\n'
+        '  "tool_calls": [\n'
+        '    {\n'
+        '      "name": "get_weather",\n'
+        '      "arguments": {\n'
+        '        "city": "Paris"\n'
+        '      },\n'
+        '      "id": "call00001"\n'
+        '    }\n'
+        '  ]\n'
+        '}',
+      );
+      expect(moved[2], kept[2]);
+    });
+
+    test('keeps arguments that are not a JSON object as a string', () {
+      final rendered = TemplateRenderContext.messagesForTemplate(
+        [
+          user,
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaToolCallContent(
+                id: 'call00001',
+                name: 'get_weather',
+                arguments: {},
+                rawJson: '{"ci',
+              ),
+            ],
+          ),
+          result('call00001', 'sunny'),
+        ],
+        toolResultsAsUser: true,
+        toolCallsAsContent: true,
+      );
+
+      final content = rendered[1]['content'] as String;
+      final calls = (jsonDecode(content) as Map)['tool_calls'] as List;
+      expect(calls.single['arguments'], '{"ci');
+      expect(rendered[2]['role'], 'user');
+    });
+
+    test('gives a typed-content template the user turn as a text part', () {
+      final rendered = TemplateRenderContext.messagesForTemplate(
+        [user, call, result('call00001', 'sunny')],
+        toolResultsAsUser: true,
+        typedContentOnly: true,
+      );
+
+      final content = rendered.last['content'] as List;
+      expect(rendered.last['role'], 'user');
+      expect(content.single['type'], 'text');
+      expect(content.single['text'], contains('"tool_response"'));
+    });
+  });
 }

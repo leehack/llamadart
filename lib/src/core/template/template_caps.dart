@@ -34,6 +34,16 @@ class TemplateCaps {
   /// earlier tool calls are rendered with their arguments parsed from JSON.
   final bool supportsObjectArguments;
 
+  /// Whether the template renders a `tool` message after an assistant tool
+  /// call.
+  ///
+  /// `false` only when the template raises on that message but renders it
+  /// under the `user` role, as Gemma 2/3/3n and legacy Mistral templates do
+  /// with their role-alternation check. Tool results are then sent as user
+  /// turns, as llama.cpp's minja-based `supports_tool_responses` polyfill
+  /// did. Not part of [toMap], which matches llama.cpp's current caps.
+  final bool supportsToolResponses;
+
   /// Creates a [TemplateCaps] with the specified capabilities.
   const TemplateCaps({
     this.supportsSystemRole = true,
@@ -44,6 +54,7 @@ class TemplateCaps {
     this.supportsTypedContent = false,
     this.supportsThinking = false,
     this.supportsObjectArguments = false,
+    this.supportsToolResponses = true,
   });
 
   /// Detects capabilities with llama.cpp's capability probes, as
