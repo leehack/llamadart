@@ -857,15 +857,6 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
     ),
     (
-      'a manifest pinning another LiteRT-LM tag',
-      () => _flutterLiteRtLmOnlyUserDefines(
-        liteRtLmManifest: _liteRtLmCompanionManifest().replaceFirst(
-          'let liteRtLmTag = "${_readPinnedConst('liteRtLmReleaseTag')}"',
-          'let liteRtLmTag = "v0.17.0-8"',
-        ),
-      ),
-    ),
-    (
       'an edited manifest',
       () => _flutterLiteRtLmOnlyUserDefines(
         liteRtLmManifest: _liteRtLmCompanionManifest().replaceFirst(
@@ -907,9 +898,142 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
             ),
           ),
         );
+        expect(stderrLines, isNot(contains(contains('embeds its complete'))));
       });
     }
   }
+
+  final coreLiteRtLmTag = _readPinnedConst('liteRtLmReleaseTag');
+  final coreLiteRtLmTagParts = RegExp(
+    r'^v(\d+)\.(\d+)\.(\d+)(?:-(\d+))?$',
+  ).firstMatch(coreLiteRtLmTag)!;
+  final coreUpstream =
+      'v${coreLiteRtLmTagParts[1]}.${coreLiteRtLmTagParts[2]}.'
+      '${coreLiteRtLmTagParts[3]}';
+  final coreRebuild = int.parse(coreLiteRtLmTagParts[4] ?? '0');
+  final newerUpstream =
+      'v${coreLiteRtLmTagParts[1]}.${int.parse(coreLiteRtLmTagParts[2]!) + 1}'
+      '.0';
+  String pinningLiteRtLm(String pin) =>
+      _liteRtLmCompanionManifest().replaceFirst(
+        'let liteRtLmTag = "$coreLiteRtLmTag"',
+        'let liteRtLmTag = "$pin"',
+      );
+
+  for (final (scenario, manifest, pin, upgradeCompanion) in [
+    (
+      'the published 0.0.15 manifest',
+      _publishedLiteRtLmCompanion0015Manifest,
+      'v0.18.0',
+      coreUpstream == 'v0.18.0',
+    ),
+    if (coreRebuild > 0)
+      (
+        'a macOS-complete manifest pinning the bare upstream release',
+        () => pinningLiteRtLm(coreUpstream),
+        coreUpstream,
+        true,
+      ),
+    (
+      'a macOS-complete manifest pinning an older LiteRT-LM release',
+      () => pinningLiteRtLm('v0.17.0-8'),
+      'v0.17.0-8',
+      false,
+    ),
+    (
+      'a macOS-complete manifest pinning a newer LiteRT-LM release',
+      () => pinningLiteRtLm(newerUpstream),
+      newerUpstream,
+      false,
+    ),
+    (
+      'a macOS-complete manifest pinning a newer build of the same release',
+      () => pinningLiteRtLm('$coreUpstream-${coreRebuild + 1}'),
+      '$coreUpstream-${coreRebuild + 1}',
+      false,
+    ),
+    for (final malformed in [
+      '$coreUpstream-0',
+      '$coreUpstream-01',
+      coreUpstream.substring(0, coreUpstream.lastIndexOf('.')),
+      coreUpstream.substring(1),
+      '$coreUpstream-llamadart.1',
+      '$coreUpstream-99999999999999999999',
+    ])
+      (
+        'a macOS-complete manifest pinning the malformed tag $malformed',
+        () => pinningLiteRtLm(malformed),
+        malformed,
+        false,
+      ),
+  ]) {
+    final advice = upgradeCompanion
+        ? 'only asks to upgrade the companion'
+        : 'asks to upgrade core and companion together';
+    test('build hook keeps Flutter macOS LiteRT-LM on the hook cache and '
+        '$advice for $scenario', () async {
+      final stderrLines = await _capturingStderr(
+        () async => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.arm64,
+          userDefines: await _flutterLiteRtLmOnlyUserDefines(
+            liteRtLmManifest: manifest(),
+          ),
+          check: (input, output) {
+            expect(output.assets.encodedAssets, isEmpty);
+            final outputDir = input.outputDirectory.toFilePath();
+            expect(
+              Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+              isTrue,
+            );
+          },
+        ),
+      );
+      final warnings = stderrLines
+          .where((line) => line.startsWith('warning: llamadart:'))
+          .toList(growable: false);
+      expect(warnings, [
+        upgradeCompanion
+            ? 'warning: llamadart: The resolved llamadart_litert_lm_flutter '
+                  'pins leehack/litert-lm-native@$pin, an earlier build of '
+                  'this core\'s LiteRT-LM release $coreLiteRtLmTag. It still '
+                  'embeds its complete macOS LiteRT-LM runtime, which the app '
+                  'loads from its bundle. Upgrade llamadart_litert_lm_flutter '
+                  'to the release pinning $coreLiteRtLmTag.'
+            : 'warning: llamadart: The resolved llamadart_litert_lm_flutter '
+                  'pins leehack/litert-lm-native@$pin rather than this '
+                  'core\'s $coreLiteRtLmTag, so LiteRT-LM stays in the hook '
+                  'cache. Upgrade llamadart_litert_lm_flutter and llamadart '
+                  'together to a matching released pair.',
+      ]);
+    });
+  }
+
+  test('build hook prints no companion warning for a Flutter macOS app '
+      'without the LiteRT-LM companion', () async {
+    final stderrLines = await _capturingStderr(
+      () async => testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: await _flutterAppleUserDefines(
+          dependencies: const [],
+          defines: {
+            'llamadart_native_runtimes': ['litert_lm'],
+          },
+        ),
+        check: (input, output) {
+          final outputDir = input.outputDirectory.toFilePath();
+          expect(
+            Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+            isTrue,
+          );
+        },
+      ),
+    );
+    expect(stderrLines, isNot(contains(contains('warning: llamadart:'))));
+  });
 
   for (final (scenario, dependencies, expectedAssetIds) in [
     ('the LiteRT-LM companion', const ['llamadart_litert_lm_flutter'], []),
@@ -1400,6 +1524,12 @@ String _liteRtLmCompanionManifest() => File(
 /// the CLiteRTLM shim on macOS.
 String _publishedLiteRtLmCompanion0014Manifest() => File(
   'test/fixtures/litert_lm/llamadart_litert_lm_flutter_0.0.14_Package.swift',
+).readAsStringSync();
+
+/// The manifest published as companion 0.0.15: the macOS-complete manifest
+/// pinning v0.18.0 rather than this core's rebuild of the same release.
+String _publishedLiteRtLmCompanion0015Manifest() => File(
+  'test/fixtures/litert_lm/llamadart_litert_lm_flutter_0.0.15_Package.swift',
 ).readAsStringSync();
 
 Future<PackageUserDefines> _nonFlutterConsumerUserDefines({

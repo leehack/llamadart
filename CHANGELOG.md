@@ -1,3 +1,11 @@
+## Unreleased
+
+- With `llamadart_litert_lm_flutter` `0.0.15`, the Flutter macOS build now
+  only warns to upgrade the companion to `0.0.16`, the release pinning
+  `v0.18.0-1`, instead of claiming that the app cannot load LiteRT-LM and needs
+  the build phase; the app already loads the companion's runtime from its
+  bundle ([#1064](https://github.com/leehack/llamadart/issues/1064)).
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`

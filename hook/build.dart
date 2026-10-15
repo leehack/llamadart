@@ -185,7 +185,7 @@ void main(List<String> args) async {
     );
     final appleSpmRuntimes = appleCompanions?.runtimes;
     final stableDiffusionCompanion = appleCompanions?.stableDiffusion ?? false;
-    final liteRtLmMacOsCompanionGap = appleCompanions?.liteRtLmMacOsGap;
+    final liteRtLmMacOsCompanionWarning = appleCompanions?.liteRtLmMacOsWarning;
     final configuredRuntimes = selectNativeRuntimesForBundle(
       bundle: spec.bundle,
       rawUserConfig: rawNativeRuntimeConfig,
@@ -346,7 +346,7 @@ void main(List<String> args) async {
       includeLlamaCpp: selectedRuntimes.contains(nativeRuntimeLlamaCpp),
       includeLiteRtLm: selectedRuntimes.contains(nativeRuntimeLiteRtLm),
       appleSpmRuntimes: appleSpmRuntimes,
-      liteRtLmMacOsCompanionGap: liteRtLmMacOsCompanionGap,
+      liteRtLmMacOsCompanionWarning: liteRtLmMacOsCompanionWarning,
       rawNativeRuntimeConfig: rawNativeRuntimeConfig,
       hasNativeSourceOverride: _hasNativeSourceOverride(input.userDefines),
       hasNativeBackendOverride:
@@ -547,7 +547,7 @@ Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
   required List<String>? appleSpmRuntimes,
-  required String? liteRtLmMacOsCompanionGap,
+  required String? liteRtLmMacOsCompanionWarning,
   required Object? rawNativeRuntimeConfig,
   required bool hasNativeSourceOverride,
   required bool hasNativeBackendOverride,
@@ -600,15 +600,9 @@ Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
     handledRuntimes.add(nativeRuntimeLlamaCpp);
   }
   if (includeLiteRtLm) {
-    if (code.targetOS == OS.macOS && liteRtLmMacOsCompanionGap != null) {
-      final fallback =
-          'The resolved $_liteRtLmFlutterPackageName does not link the '
-          'complete macOS LiteRT-LM runtime ($liteRtLmMacOsCompanionGap), so '
-          'LiteRT-LM stays in the hook cache, which a sandboxed or relocated '
-          'app cannot load. Upgrade $_liteRtLmFlutterPackageName together '
-          'with $_packageName.';
-      log.warning(fallback);
-      stderr.writeln('warning: llamadart: $fallback');
+    if (code.targetOS == OS.macOS && liteRtLmMacOsCompanionWarning != null) {
+      log.warning(liteRtLmMacOsCompanionWarning);
+      stderr.writeln('warning: llamadart: $liteRtLmMacOsCompanionWarning');
     } else {
       log.info(
         'LiteRT-LM will resolve symbols from the SPM-linked process image.',
@@ -632,12 +626,12 @@ bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 /// companion is a dependency and those families come from the hook.
 /// [stableDiffusion] is decided on its own, so adding only the
 /// stable_diffusion companion never moves llama_cpp or litert_lm off the hook.
-/// [liteRtLmMacOsGap] says why a macOS LiteRT-LM companion cannot supply the
-/// runtime, or is `null` when it can or the build is not macOS LiteRT-LM.
+/// [liteRtLmMacOsWarning] says how a macOS LiteRT-LM companion does not match
+/// this core, or is `null` when it does or the build is not macOS LiteRT-LM.
 typedef _AppleCompanions = ({
   List<String>? runtimes,
   bool stableDiffusion,
-  String? liteRtLmMacOsGap,
+  String? liteRtLmMacOsWarning,
 });
 
 /// The companions of a Flutter iOS/macOS app build, or `null` for every other
@@ -689,7 +683,7 @@ _AppleCompanions? _flutterAppleCompanions({
 
   final dependencies = _pubspecDependencyNames(pubspecSource);
   final runtimes = <String>[];
-  String? liteRtLmMacOsGap;
+  String? liteRtLmMacOsWarning;
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
     _validateAppleCompanion(_llamaCppCompanion, consumerRoot, output, log);
     runtimes.add(nativeRuntimeLlamaCpp);
@@ -697,7 +691,10 @@ _AppleCompanions? _flutterAppleCompanions({
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
     runtimes.add(nativeRuntimeLiteRtLm);
     if (code.targetOS == OS.macOS) {
-      liteRtLmMacOsGap = _liteRtLmMacOsCompanionGap(consumerRoot, output);
+      liteRtLmMacOsWarning = _liteRtLmMacOsCompanionWarning(
+        consumerRoot,
+        output,
+      );
     }
   }
   final stableDiffusion = dependencies.contains(
@@ -722,7 +719,7 @@ _AppleCompanions? _flutterAppleCompanions({
   return (
     runtimes: runtimes.isEmpty ? null : runtimes,
     stableDiffusion: stableDiffusion,
-    liteRtLmMacOsGap: liteRtLmMacOsGap,
+    liteRtLmMacOsWarning: liteRtLmMacOsWarning,
   );
 }
 
@@ -932,10 +929,10 @@ Directory _resolvedCompanionRoot(
   return Directory.fromUri(uri);
 }
 
-/// Why the resolved LiteRT-LM companion cannot supply the macOS runtime
-/// through SwiftPM, or `null` when its manifest is the maintained one pinning
-/// [liteRtLmReleaseTag].
-String? _liteRtLmMacOsCompanionGap(
+/// The build warning for a resolved LiteRT-LM companion that does not match
+/// this core on macOS, or `null` when its manifest is the maintained one
+/// pinning [liteRtLmReleaseTag].
+String? _liteRtLmMacOsCompanionWarning(
   Directory consumerRoot,
   BuildOutputBuilder output,
 ) {
@@ -959,18 +956,16 @@ String? _liteRtLmMacOsCompanionGap(
     output.dependencies.add(manifest.uri);
     if (!manifest.existsSync()) gap('Package.swift is missing');
     final source = manifest.readAsStringSync().replaceAll('\r\n', '\n');
-    final pins = RegExp(
+    final pinPattern = RegExp(
       r'^let liteRtLmTag = "([^"\n]+)"$',
       multiLine: true,
-    ).allMatches(source).toList();
-    if (pins.length != 1 || pins.single.group(1) != liteRtLmReleaseTag) {
+    );
+    final pins = pinPattern.allMatches(source).toList();
+    if (pins.length != 1) {
       gap('it does not pin leehack/litert-lm-native@$liteRtLmReleaseTag');
     }
     final template = source
-        .replaceFirst(
-          RegExp(r'^let liteRtLmTag = "[^"\n]+"$', multiLine: true),
-          'let liteRtLmTag = "PIN"',
-        )
+        .replaceFirst(pinPattern, 'let liteRtLmTag = "PIN"')
         .replaceAll(
           RegExp(r'checksum: "[0-9a-f]{64}"'),
           'checksum: "CHECKSUM"',
@@ -979,14 +974,58 @@ String? _liteRtLmMacOsCompanionGap(
         _liteRtLmCompanionManifestTemplateSha256) {
       gap('its Package.swift is not the macOS-complete manifest');
     }
-    return null;
+    final pin = pins.single.group(1)!;
+    if (pin == liteRtLmReleaseTag) return null;
+    if (_isEarlierLiteRtLmRebuild(pin)) {
+      return 'The resolved $_liteRtLmFlutterPackageName pins '
+          'leehack/litert-lm-native@$pin, an earlier build of this core\'s '
+          'LiteRT-LM release $liteRtLmReleaseTag. It still embeds its '
+          'complete macOS LiteRT-LM runtime, which the app loads from its '
+          'bundle. Upgrade $_liteRtLmFlutterPackageName to the release '
+          'pinning $liteRtLmReleaseTag.';
+    }
+    return 'The resolved $_liteRtLmFlutterPackageName pins '
+        'leehack/litert-lm-native@$pin rather than this core\'s '
+        '$liteRtLmReleaseTag, so LiteRT-LM stays in the hook cache. Upgrade '
+        '$_liteRtLmFlutterPackageName and $_packageName together to a '
+        'matching released pair.';
   } on _CompanionGap catch (error) {
-    return error.reason;
+    return _liteRtLmIncompleteCompanionWarning(error.reason);
   } on FileSystemException {
-    return 'its metadata could not be read';
+    return _liteRtLmIncompleteCompanionWarning(
+      'its metadata could not be read',
+    );
   } on FormatException {
-    return 'the resolved package configuration is malformed';
+    return _liteRtLmIncompleteCompanionWarning(
+      'the resolved package configuration is malformed',
+    );
   }
+}
+
+String _liteRtLmIncompleteCompanionWarning(String reason) =>
+    'The resolved $_liteRtLmFlutterPackageName does not link the complete '
+    'macOS LiteRT-LM runtime ($reason), so LiteRT-LM stays in the hook cache, '
+    'which a sandboxed or relocated app cannot load. Upgrade '
+    '$_liteRtLmFlutterPackageName together with $_packageName.';
+
+/// Whether [pin] is an earlier build of this core's upstream LiteRT-LM
+/// release: the same `vMAJOR.MINOR.PATCH` prefix as [liteRtLmReleaseTag]
+/// with a lower wrapper rebuild counter, which a bare `vMAJOR.MINOR.PATCH`
+/// has as 0. The native release manifest binds that prefix to one upstream
+/// commit, so such a companion embeds the same LiteRT-LM release.
+bool _isEarlierLiteRtLmRebuild(String pin) {
+  final tagPattern = RegExp(r'^(v\d+\.\d+\.\d+)(?:-([1-9]\d*))?$');
+  final core = tagPattern.firstMatch(liteRtLmReleaseTag);
+  final candidate = tagPattern.firstMatch(pin);
+  if (core == null || candidate == null || candidate[1] != core[1]) {
+    return false;
+  }
+  int? rebuild(RegExpMatch tag) => int.tryParse(tag[2] ?? '0');
+  final candidateRebuild = rebuild(candidate);
+  final coreRebuild = rebuild(core);
+  return candidateRebuild != null &&
+      coreRebuild != null &&
+      candidateRebuild < coreRebuild;
 }
 
 class _CompanionGap implements Exception {
