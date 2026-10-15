@@ -612,10 +612,10 @@ class ChatTemplateEngine {
                     thinkingForcedOpen: thinkingForcedOpen,
                   ).content.trimLeft(),
                 ),
-          ChatFormat.hermes =>
-            HermesHandler.toolCallOpening(residual) < residual.length,
-          ChatFormat.mistralNemo =>
-            MistralHandler.toolCallOpening(residual) < residual.length,
+          ChatFormat.hermes => HermesHandler.hasCompleteToolCallOpening(
+            residual,
+          ),
+          ChatFormat.mistralNemo => residual.contains('[TOOL_CALLS]'),
           ChatFormat.glm45 ||
           ChatFormat.laguna => residual.contains('<tool_call>'),
           ChatFormat.hunyuanV3 =>

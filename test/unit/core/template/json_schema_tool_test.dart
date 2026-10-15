@@ -11,6 +11,38 @@ import 'package:test/test.dart';
 import '../../../support/raw_tool_schema_fixture.dart';
 
 void main() {
+  for (final format in [ChatFormat.hermes, ChatFormat.mistralNemo]) {
+    test('$format final answers preserve punctuation and code fences', () {
+      for (final text in [
+        'Here:\n```dart\nprint(1);\n```',
+        'Use `x`',
+        'A brace {',
+        'Less than <',
+        'An array [',
+        'Prefix [T',
+      ]) {
+        final parsed = ChatTemplateEngine.parse(
+          format.index,
+          text,
+          tools: [rawSchemaTool()],
+        );
+        expect(parsed.content, text);
+        expect(parsed.toolCalls, isEmpty);
+      }
+      final malformed = format == ChatFormat.hermes
+          ? '<tool_call>{"name":'
+          : '[TOOL_CALLS][{"name":';
+      expect(
+        () => ChatTemplateEngine.parse(
+          format.index,
+          malformed,
+          tools: [rawSchemaTool()],
+        ),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    });
+  }
+
   test('Hermes builds nullable and constrained canonical argument grammar', () {
     final grammar = HermesHandler().buildGrammar([rawSchemaTool()])!;
     expect(grammar, contains('null'));

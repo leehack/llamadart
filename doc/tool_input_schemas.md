@@ -60,6 +60,11 @@ replace the tool grammar. Use separate requests. Undeclared calls and malformed
 tool envelopes fail the turn before handlers run. Open objects use JSON's
 decoded values; final validation also checks constraints after decoding.
 
+On WebGPU, Hermes and Mistral schema-backed automatic tool loops cannot finish:
+follow-up rounds use `auto`, which needs a lazy grammar. Use the generic
+non-lazy JSON format there, or manage the required-tool request and follow-up
+explicitly.
+
 ## Qualification
 
 Tests cover schema ownership, typed argument reconstruction, raw and legacy

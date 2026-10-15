@@ -254,6 +254,11 @@ Active schema tools cannot be combined with `responseFormat`, which would
 replace the tool grammar. Use separate requests. Undeclared calls and malformed
 tool envelopes fail the turn before handlers run.
 
+On WebGPU, an automatic tool loop changes to `auto` after its first tool round.
+Hermes and Mistral then need lazy grammars, so their schema-backed automatic
+loops cannot finish on WebGPU. Use the generic non-lazy JSON format there, or
+manage a single required-tool request and its follow-up explicitly.
+
 ## Generic JSON fallback
 
 For templates without a recognized tool-call format, and for Gemma 2/3/3n,

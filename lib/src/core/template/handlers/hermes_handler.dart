@@ -74,6 +74,13 @@ class HermesHandler extends ChatTemplateHandler {
 
   static final RegExp _regexSpace = RegExp(r'\s');
 
+  /// Whether final text contains an actual tool opening, excluding prefixes
+  /// held back only while tokens are still arriving.
+  static bool hasCompleteToolCallOpening(String text) =>
+      _openRegex.hasMatch(text) ||
+      text.contains('<tool_call>') ||
+      text.contains('<function_call>');
+
   /// Finds where [parse] may find a tool-call opening in [text].
   ///
   /// Returns the first index at or after [from] where an opening starts, or

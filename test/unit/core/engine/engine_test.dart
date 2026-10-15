@@ -867,6 +867,48 @@ void main() {
     tearDown(() => toolEngine.dispose());
 
     test(
+      'Hermes auto follow-up commits a code-fenced answer after a tool result',
+      () async {
+        const template =
+            '<|im_start|>{{ messages | tojson }}{{ tools | tojson }}<tool_call>';
+        await toolEngine.unloadModel();
+        await toolEngine.loadModel(
+          'test-model.gguf',
+          modelParams: const ModelParams(chatTemplate: template),
+        );
+        runtime.generationText =
+            '<tool_call>${jsonEncode({'name': 'inspect', 'arguments': rawToolArguments})}</tool_call>';
+        const answer = 'Here:\n```dart\nprint(42);\n```';
+        var calls = 0;
+        final tool = rawSchemaTool(
+          handler: (_) async {
+            calls++;
+            runtime.generationText = answer;
+            return 42;
+          },
+        );
+        expect(
+          (await toolEngine.chatTemplate(const [], tools: [tool])).format,
+          ChatFormat.hermes.index,
+        );
+        final result = await session.sendWithTools('Inspect', tools: [tool]);
+        expect(result.stopReason, LlamaToolLoopStopReason.completed);
+        expect(result.text, answer);
+        expect(calls, 1);
+        expect(
+          session.history.last.parts.whereType<LlamaTextContent>().single.text,
+          answer,
+        );
+        expect(
+          session.history
+              .expand((message) => message.parts)
+              .whereType<LlamaToolResultContent>(),
+          hasLength(1),
+        );
+      },
+    );
+
+    test(
       'valid tool loop invokes typed input and commits matched result',
       () async {
         runtime.generationText = jsonEncode({
