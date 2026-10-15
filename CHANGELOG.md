@@ -1,3 +1,13 @@
+## Unreleased
+
+- LiteRT-LM `auto` selection now uses the CPU on macOS x86_64, which has no
+  LiteRT-LM GPU runtime, and an explicit GPU request there throws
+  `LlamaUnsupportedException`
+  ([#711](https://github.com/leehack/llamadart/issues/711)).
+- `WebGpuLlamaBackend(bridgeScriptUrl: ...)` now loads the bridge in dart2js
+  builds instead of failing with `WebGPU bridge init failed`
+  ([#735](https://github.com/leehack/llamadart/issues/735)).
+
 ## 0.12.2
 
 - Pair this release with Apple companions `llamadart_llama_cpp_flutter`
