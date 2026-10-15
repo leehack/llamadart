@@ -1,20 +1,29 @@
 #!/usr/bin/env dart
 
 /// Fails a release before any tag is pushed when a Flutter Apple companion
-/// package does not exist on pub.dev yet.
+/// package does not exist on pub.dev yet, or when its checked-out version is
+/// already published with a different `llamadart` constraint.
 ///
-/// `release_on_prep_merge.yml` pushes a `<package>-v<version>` tag for every
-/// companion version missing from pub.dev, but pub.dev automated publishing
-/// cannot create a package: the tag's publish job would fail, the release
-/// would wait for a version that never appears, and the core tag would never
-/// be pushed. The owner publishes a package's first version by hand instead.
+/// `release_on_prep_merge.yml` publishes the core first, then pushes a
+/// `<package>-v<version>` tag for every companion version missing from
+/// pub.dev. Pub.dev automated publishing cannot create a package: the tag's
+/// publish job would fail after the core already shipped, so the owner
+/// publishes a package's first version by hand instead. The workflow also
+/// skips a companion version that is already published, so a constraint
+/// changed without a version bump would never reach pub.dev.
 ///
 /// ```bash
 /// dart run tool/release/companion_pub_preflight.dart
 /// ```
 library;
 
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:pub_semver/pub_semver.dart';
+import 'package:yaml/yaml.dart';
+
+import '../testing/verify_release_docs_versions.dart';
 
 /// A Flutter Apple SwiftPM companion package checked out under `packages/`.
 typedef CompanionPackage = ({String name, String path});
@@ -85,21 +94,139 @@ release, the package owner must:
   1. Publish the first version by hand from a temporary copy of ${companion.path}:
        tmp_package="\$(mktemp -d)"
        rsync -a --delete --exclude='.dart_tool' --exclude='build' \\
-         --exclude='pubspec.lock' ${companion.path}/ "\$tmp_package/"
+         --exclude='pubspec.lock' --exclude='pubspec_overrides.yaml' \\
+         ${companion.path}/ "\$tmp_package/"
        (cd "\$tmp_package" && flutter pub publish)
+     Its `llamadart` constraint must resolve on pub.dev, so a companion can
+     first publish only against a core minor that is already released.
   2. On https://pub.dev/packages/$name/admin, transfer the package to the
      leehack.com publisher.
   3. On the same page, enable automated publishing from GitHub Actions for
      repository leehack/llamadart with tag pattern $name-v{{version}}.''';
 }
 
-Future<int> _httpStatus(Uri uri) async {
+/// The pub.dev endpoint describing [version] of [package], including the
+/// pubspec it was published with.
+Uri pubDevVersionUri(String package, String version) =>
+    Uri.https('pub.dev', '/api/packages/$package/versions/$version');
+
+/// A response body and status from pub.dev.
+typedef PubDevResponse = ({int status, String body});
+
+/// Problems that must stop the release before any tag is pushed: one per
+/// companion whose checked-out version is already on pub.dev with a
+/// different `llamadart` constraint, or whose published pubspec could not be
+/// confirmed. [get] fetches a URL, or throws when the request fails.
+///
+/// Release automation skips a companion version that is already published,
+/// so the core would ship beside the published constraint, not the checked
+/// out one.
+Future<List<String>> companionPublishedConstraintProblems(
+  Directory repoRoot,
+  List<CompanionPackage> companions,
+  Future<PubDevResponse> Function(Uri uri) get,
+) async {
+  final problems = <String>[];
+  for (final companion in companions) {
+    final pubspecPath = '${companion.path}/pubspec.yaml';
+    final String source;
+    try {
+      source = File('${repoRoot.path}/$pubspecPath').readAsStringSync();
+    } on FileSystemException catch (error) {
+      problems.add('Could not read $pubspecPath: ${error.message}.');
+      continue;
+    }
+    final version = _pubspecVersion(source);
+    if (version == null) {
+      problems.add('$pubspecPath does not declare a version.');
+      continue;
+    }
+    final local = companionCoreConstraint(source).constraint;
+    final uri = pubDevVersionUri(companion.name, version);
+    final PubDevResponse response;
+    try {
+      response = await get(uri);
+    } on Object catch (error) {
+      problems.add(
+        'Could not confirm whether ${companion.name} $version is on pub.dev '
+        '($uri): $error. No release tags were pushed; retry once pub.dev '
+        'answers.',
+      );
+      continue;
+    }
+    if (response.status == HttpStatus.notFound) continue;
+    if (response.status != HttpStatus.ok) {
+      problems.add(
+        'Could not confirm whether ${companion.name} $version is on pub.dev: '
+        '$uri answered HTTP ${response.status}. No release tags were pushed; '
+        'retry once pub.dev answers.',
+      );
+      continue;
+    }
+    final Object? published;
+    try {
+      published = _publishedCoreConstraint(response.body);
+    } on FormatException catch (error) {
+      problems.add(
+        '$uri did not describe the published ${companion.name} $version '
+        'pubspec: ${error.message}. No release tags were pushed.',
+      );
+      continue;
+    }
+    if (_sameConstraint(local, published)) continue;
+    problems.add(
+      '${companion.name} $version is already on pub.dev with '
+      '`llamadart: ${published ?? '<none>'}`, but $pubspecPath declares '
+      '`llamadart: ${local ?? '<none>'}`. Release automation skips a '
+      'published version, so bump ${companion.name} past $version in the '
+      'release-prep PR. No release tags were pushed.',
+    );
+  }
+  return problems;
+}
+
+String? _pubspecVersion(String source) {
+  try {
+    final pubspec = loadYaml(source);
+    final version = pubspec is YamlMap ? pubspec['version'] : null;
+    return version is String ? version : null;
+  } on YamlException {
+    return null;
+  }
+}
+
+/// The `llamadart` dependency in a pub.dev version response [body]: a
+/// constraint string, another source description, or `null` for none.
+Object? _publishedCoreConstraint(String body) {
+  final decoded = jsonDecode(body);
+  final pubspec = decoded is Map ? decoded['pubspec'] : null;
+  if (pubspec is! Map) {
+    throw const FormatException('the response has no pubspec');
+  }
+  final dependencies = pubspec['dependencies'];
+  return dependencies is Map ? dependencies['llamadart'] : null;
+}
+
+bool _sameConstraint(String? local, Object? published) {
+  if (local == null || published == null) return local == published;
+  if (published is! String) return false;
+  try {
+    return VersionConstraint.parse(local) == VersionConstraint.parse(published);
+  } on FormatException {
+    return false;
+  }
+}
+
+Future<PubDevResponse> _httpGet(Uri uri) async {
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
   try {
     final request = await client.getUrl(uri);
     final response = await request.close().timeout(const Duration(seconds: 60));
-    await response.drain<void>();
-    return response.statusCode;
+    final body = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(const Duration(seconds: 60));
+    return (status: response.statusCode, body: body);
   } finally {
     client.close(force: true);
   }
@@ -122,7 +249,17 @@ Future<void> main(List<String> arguments) async {
     exitCode = 1;
     return;
   }
-  final problems = await companionPubPreflightProblems(companions, _httpStatus);
+  final problems = [
+    ...await companionPubPreflightProblems(
+      companions,
+      (uri) async => (await _httpGet(uri)).status,
+    ),
+    ...await companionPublishedConstraintProblems(
+      Directory.current,
+      companions,
+      _httpGet,
+    ),
+  ];
   if (problems.isNotEmpty) {
     stderr.writeln('Companion pub.dev preflight failed:');
     problems.forEach(stderr.writeln);
@@ -130,7 +267,8 @@ Future<void> main(List<String> arguments) async {
     return;
   }
   stdout.writeln(
-    'Companion packages exist on pub.dev: '
+    'Companion packages exist on pub.dev, and no published companion '
+    'version declares a different llamadart constraint: '
     '${companions.map((companion) => companion.name).join(', ')}.',
   );
 }

@@ -1206,16 +1206,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'release',
     mode: 'manual/release',
     covers:
-        'Flutter Apple SPM companion package pub.dev availability before the '
-        'post-merge core tag',
+        'Flutter Apple SPM companion package pub.dev availability and core '
+        'constraints around the post-merge core tag',
     command:
         'Before merging the release-prep PR, verify each referenced companion '
         'version with '
         'https://pub.dev/api/packages/<package>/versions/<version>. If a '
         'changed version is missing, keep the PR scoped to release prep; after '
-        'merge, release_on_prep_merge.yml pushes the missing companion tag, '
-        'waits for publish_companion_pubdev.yml, verifies pub.dev, and only '
-        'then pushes the core release tag.',
+        'merge, release_on_prep_merge.yml pushes the core release tag, waits '
+        'for it on pub.dev, then pushes the missing companion tag, waits for '
+        'publish_companion_pubdev.yml, and verifies pub.dev.',
     useWhen:
         'Any release that changes companion packages or documents companion '
         'package versions.',

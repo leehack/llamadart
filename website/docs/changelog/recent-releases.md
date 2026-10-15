@@ -62,6 +62,13 @@ For canonical full release notes, use:
   report progress from 0 to 1, as `DecisionEngine.load` does: the model fetch
   fills the first half and progress reaches 1 once the files have loaded,
   before any capability check ([#903](https://github.com/leehack/llamadart/issues/903)).
+- Apple companion packages now depend on `llamadart` and constrain it to the
+  core minor they pair with, so pub refuses a mismatched companion and core
+  instead of the iOS or macOS build failing. Apps that take `llamadart` from a
+  path or git checkout add it under `dependency_overrides`
+  ([#857](https://github.com/leehack/llamadart/issues/857)).
+- From core `0.13.0`, Apple companion versions share the core `MAJOR.MINOR`,
+  starting with companions `0.13.0`; their patch versions move independently.
 
 ## 0.12.2
 

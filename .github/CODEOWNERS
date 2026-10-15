@@ -58,6 +58,7 @@ website/tool/cut_version.dart @leehack
 packages/*/CHANGELOG.md @leehack
 packages/*/darwin/*/Package.swift @leehack
 packages/*/pubspec.yaml @leehack
+packages/*/pubspec_overrides.yaml @leehack
 
 tool/ci/web_deployment.py @leehack
 tool/ci/deploy_guard.py @leehack

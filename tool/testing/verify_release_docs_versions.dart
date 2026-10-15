@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
+import 'package:pub_semver/pub_semver.dart';
+import 'package:yaml/yaml.dart';
 
 // Keep these maps in sync when adding companion packages or moving the current
 // installation docs. Historical website/versioned_docs pages are intentionally
@@ -308,6 +311,245 @@ List<PendingCompanionBump> checkCompanionSwiftPins(
   return pending;
 }
 
+/// The `llamadart` constraint a companion declares for a new core minor:
+/// every release of [coreVersion]'s minor and nothing newer.
+///
+/// Pub then refuses to pair a companion with a core minor it was not built
+/// for. The window is honest only because a core patch release never moves a
+/// companion's native pin; [checkPublishedCompanionPins] enforces that.
+String companionCoreConstraintFor(Version coreVersion) =>
+    '>=${coreVersion.major}.${coreVersion.minor}.0 '
+    '<${coreVersion.major}.${coreVersion.minor + 1}.0';
+
+final RegExp _companionCoreConstraint = RegExp(
+  r'^>=([0-9]+\.[0-9]+\.[0-9]+) <([0-9]+\.[0-9]+\.[0-9]+)$',
+);
+
+/// Reads the hosted `llamadart` constraint from a companion pubspec's
+/// [source], or returns why it has none.
+({String? constraint, String? problem}) companionCoreConstraint(String source) {
+  final Object? pubspec;
+  try {
+    pubspec = loadYaml(source);
+  } on YamlException catch (error) {
+    return (constraint: null, problem: 'is not valid YAML: ${error.message}');
+  }
+  final dependencies = pubspec is YamlMap ? pubspec['dependencies'] : null;
+  final core = dependencies is YamlMap ? dependencies['llamadart'] : null;
+  if (core == null) {
+    return (constraint: null, problem: 'declares no `llamadart` dependency');
+  }
+  if (core is! String) {
+    return (
+      constraint: null,
+      problem:
+          'declares `llamadart` as a $core source instead of a hosted '
+          'version constraint',
+    );
+  }
+  return (constraint: core, problem: null);
+}
+
+/// Checks that every companion constrains `llamadart` to [coreVersion]'s
+/// minor, written `>=M.m.P <M.(m+1).0` with `P` no later than [coreVersion].
+///
+/// `P` above `0` keeps an earlier companion honest about the first core patch
+/// that accepts its native pin; a new minor starts at
+/// [companionCoreConstraintFor].
+List<String> checkCompanionCoreConstraints(
+  Directory repoRoot,
+  Version coreVersion,
+) {
+  final errors = <String>[];
+  final expected = companionCoreConstraintFor(coreVersion);
+  for (final companion in companionSwiftPins) {
+    final source = _readFromRoot(repoRoot, companion.pubspecPath, errors);
+    if (source == null) continue;
+    final read = companionCoreConstraint(source);
+    final constraint = read.constraint;
+    if (constraint == null) {
+      errors.add(
+        '${companion.pubspecPath} ${read.problem}; declare '
+        "`llamadart: '$expected'` so pub only pairs it with core "
+        '${coreVersion.major}.${coreVersion.minor}.x.',
+      );
+      continue;
+    }
+    final match = _companionCoreConstraint.firstMatch(constraint);
+    final min = match == null ? null : Version.parse(match.group(1)!);
+    final max = match == null ? null : Version.parse(match.group(2)!);
+    if (min == null ||
+        max == null ||
+        min.major != coreVersion.major ||
+        min.minor != coreVersion.minor ||
+        min > coreVersion ||
+        max != Version(coreVersion.major, coreVersion.minor + 1, 0)) {
+      errors.add(
+        "${companion.pubspecPath} declares `llamadart: '$constraint'`, but "
+        'core is $coreVersion; a companion must allow exactly this core '
+        "minor, `'$expected'` for a new minor. Bump the companion version "
+        'with it, because pub.dev never changes a published constraint.',
+      );
+    }
+  }
+  return errors;
+}
+
+/// The first core release whose companions share its `MAJOR.MINOR`.
+///
+/// Earlier companions are numbered `0.0.x` and stay valid beside an earlier
+/// core, so the check starts with the release that renumbers them.
+final Version companionVersionAlignmentStart = Version(0, 13, 0);
+
+/// Checks that every companion's `version` shares [coreVersion]'s
+/// `MAJOR.MINOR`, from [companionVersionAlignmentStart] on.
+///
+/// Companion patch numbers move independently of the core's.
+List<String> checkCompanionVersionAlignment(
+  Directory repoRoot,
+  Version coreVersion,
+) {
+  if (coreVersion < companionVersionAlignmentStart) return const <String>[];
+  final errors = <String>[];
+  final series = '${coreVersion.major}.${coreVersion.minor}';
+  for (final companion in companionSwiftPins) {
+    final version = _matchInFile(
+      repoRoot,
+      companion.pubspecPath,
+      RegExp(r'^version:\s*(\S+)\s*$', multiLine: true),
+      'version field',
+      errors,
+    );
+    if (version == null) continue;
+    final Version parsed;
+    try {
+      parsed = Version.parse(version);
+    } on FormatException catch (error) {
+      errors.add(
+        '${companion.pubspecPath} version $version is not semver: '
+        '${error.message}',
+      );
+      continue;
+    }
+    if (parsed.major == coreVersion.major &&
+        parsed.minor == coreVersion.minor) {
+      continue;
+    }
+    errors.add(
+      '${companion.pubspecPath} is version $version, but core is '
+      '$coreVersion; companions share the core MAJOR.MINOR. Set it to '
+      '$series.0 for a new core minor, or to the next $series patch for a '
+      'companion change within it.',
+    );
+  }
+  return errors;
+}
+
+/// Native tags the checkout's core accepts from each Apple companion,
+/// keyed by package name.
+Map<String, Set<String>> coreAcceptedCompanionPins() => <String, Set<String>>{
+  'llamadart_llama_cpp_flutter': <String>{
+    llamaCppTag,
+    ...llamaCppCompatibleAppleCompanionTags.keys,
+  },
+  'llamadart_litert_lm_flutter': <String>{liteRtLmReleaseTag},
+  'llamadart_stable_diffusion_flutter': <String>{stableDiffusionReleaseTag},
+};
+
+/// Checks that every companion version release automation already published,
+/// read from its `<package>-v<version>` tag in [repoRoot], either declares a
+/// `llamadart` constraint that excludes [coreVersion] or pins a native tag in
+/// [acceptedPins].
+///
+/// Published constraints are immutable, so a core patch that moved a
+/// companion's pin would still resolve beside every earlier companion of the
+/// same minor and fail its Apple build. Companions published without a
+/// constraint predate it and stay the hook's job. Needs the full tag history,
+/// and fails closed without it.
+List<String> checkPublishedCompanionPins(
+  Directory repoRoot,
+  Version coreVersion, {
+  Map<String, Set<String>>? acceptedPins,
+}) {
+  final accepted = acceptedPins ?? coreAcceptedCompanionPins();
+  final errors = <String>[];
+  final coreTags = _git(repoRoot, ['tag', '--list', 'v*'], errors);
+  if (coreTags == null) return errors;
+  if (coreTags.trim().isEmpty) {
+    return [
+      'No core `v*` release tags are checked out, so published companion '
+          'pins cannot be verified; fetch the full tag history '
+          '(`git fetch --tags`).',
+    ];
+  }
+  for (final companion in companionSwiftPins) {
+    final tags = _git(repoRoot, [
+      'tag',
+      '--list',
+      '${companion.package}-v*',
+    ], errors);
+    if (tags == null) continue;
+    for (final tag in const LineSplitter().convert(tags)) {
+      if (tag.isEmpty) continue;
+      final pubspec = _git(repoRoot, [
+        'show',
+        '$tag:${companion.pubspecPath}',
+      ], errors);
+      if (pubspec == null) continue;
+      final constraint = companionCoreConstraint(pubspec).constraint;
+      if (constraint == null) continue;
+      final VersionConstraint allowed;
+      try {
+        allowed = VersionConstraint.parse(constraint);
+      } on FormatException catch (error) {
+        errors.add(
+          '$tag declares an unparsable `llamadart` constraint: '
+          '${error.message}',
+        );
+        continue;
+      }
+      if (!allowed.allows(coreVersion)) continue;
+      final manifest = _git(repoRoot, [
+        'show',
+        '$tag:${companion.swiftPackagePath}',
+      ], errors);
+      if (manifest == null) continue;
+      final pin = companion.swiftTag.firstMatch(manifest)?.group(1);
+      final corePins = accepted[companion.package] ?? const <String>{};
+      if (pin != null && corePins.contains(pin)) continue;
+      errors.add(
+        "$tag published ${companion.package} with `llamadart: '$constraint'`, "
+        'which pub resolves beside core $coreVersion, but it pins '
+        '${companion.nativeRepo}@${pin ?? '<none>'} and this core accepts '
+        '${corePins.join(', ')}. Move a companion native pin only in a new '
+        'core minor release, or keep the core hook accepting the earlier pin.',
+      );
+    }
+  }
+  return errors;
+}
+
+String? _git(Directory repoRoot, List<String> arguments, List<String> errors) {
+  final ProcessResult result;
+  try {
+    result = Process.runSync('git', [
+      '-C',
+      repoRoot.path,
+      ...arguments,
+    ], stdoutEncoding: utf8);
+  } on ProcessException catch (error) {
+    errors.add('Could not run git ${arguments.join(' ')}: ${error.message}');
+    return null;
+  }
+  if (result.exitCode != 0) {
+    errors.add(
+      'git ${arguments.join(' ')} failed: ${'${result.stderr}'.trim()}',
+    );
+    return null;
+  }
+  return result.stdout as String;
+}
+
 /// Returns section bodies keyed by heading text, or null when unreadable.
 Map<String, String>? _changelogSections(
   Directory repoRoot,
@@ -497,6 +739,20 @@ void main(List<String> arguments) {
     if (releasePrep) {
       errors.addAll(pending.map((bump) => bump.toString()));
     }
+    final coreVersion = _parseCoreVersion(versions['llamadart']!, errors);
+    if (coreVersion != null) {
+      errors.addAll(
+        checkCompanionCoreConstraints(Directory.current, coreVersion),
+      );
+      errors.addAll(
+        checkCompanionVersionAlignment(Directory.current, coreVersion),
+      );
+      if (releasePrep) {
+        errors.addAll(
+          checkPublishedCompanionPins(Directory.current, coreVersion),
+        );
+      }
+    }
   }
 
   if (errors.isNotEmpty) {
@@ -568,6 +824,15 @@ String? _checkCurrentNativePins(List<String> errors) {
     }
   }
   return expectedPin;
+}
+
+Version? _parseCoreVersion(String version, List<String> errors) {
+  try {
+    return Version.parse(version);
+  } on FormatException catch (error) {
+    errors.add('pubspec.yaml version $version is not semver: ${error.message}');
+    return null;
+  }
 }
 
 String? _readPubspecVersion(String path, List<String> errors) {

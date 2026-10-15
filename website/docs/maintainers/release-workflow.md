@@ -57,9 +57,32 @@ version alignment:
 
 - Update `pubspec.yaml` version.
 - Update `CHANGELOG.md`.
-- Companion packages start at `0.0.1` and move independently from the core
-  package. Native pin sync records changed companion native pins under
+- Companion versions share the core's `MAJOR.MINOR`; their patch numbers move
+  independently. Core `0.13.0` ships with every companion at `0.13.0`, and a
+  later companion change within that minor bumps only the companion patch.
+  From core `0.13.0` on, `verify_release_docs_versions.dart` fails, with or
+  without `--release-prep`, when a companion's `MAJOR.MINOR` differs from the
+  core's; the `0.0.x` companions released beside earlier cores predate the
+  rule. Native pin sync records changed companion native pins under
   `Unreleased` but does not bump companion package versions by default.
+- A companion-only release still needs a new core version: the release
+  workflow publishes only for a core version that has no release tag at
+  another commit, so bump the core patch with the companion.
+- Each companion constrains the core to the core's own minor, for example
+  `llamadart: '>=0.13.0 <0.14.0'` for core `0.13.x`, so pub refuses to pair it
+  with a core minor whose native pins it does not match. A release that bumps
+  the core minor must therefore set that constraint in every companion and
+  bump every companion version, even one whose native pin did not move:
+  pub.dev never changes a published version's constraint, and the release
+  workflow skips a companion version that is already published.
+- Move a companion's native pin only in a core minor release. Earlier
+  companions of the same minor would otherwise still resolve beside the new
+  core and fail their Apple build. The only exception is an earlier pin the
+  core hook still accepts, such as a `llamaCppCompatibleAppleCompanionTags`
+  entry. With `--release-prep`, the verifier reads every published
+  companion's `<package>-v<version>` tag and fails when a companion whose
+  constraint admits the new core pins a tag that core rejects, so run it from
+  a checkout with full tag history.
 - In the release-prep PR, bump only companion packages whose native pins or
   publishable package contents changed, move their accumulated `Unreleased`
   notes into the new version section, and keep unchanged companion package
@@ -77,6 +100,9 @@ version alignment:
   `release_on_prep_merge.yml` runs the same strict check, so an unresolved
   pending bump aborts the release before any tag is pushed instead of shipping
   the previous pin.
+- Before any tag is pushed, `tool/release/companion_pub_preflight.dart` also
+  fails when a companion's checked-out version is already on pub.dev with a
+  different `llamadart` constraint; bump that companion's version.
 - Move accumulated `Unreleased` entries into the new version section; remove
   the `Unreleased` heading when it would otherwise be empty. Add it back only
   when the next unreleased change is documented.
@@ -121,9 +147,11 @@ repository-variable defaults that can be tuned without editing the workflow:
 | `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_ATTEMPTS` | `180` | Number of GitHub Release existence checks. |
 | `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_INTERVAL_SECONDS` | `10` | Delay between GitHub Release checks. |
 
-Release automation must not push the core `vX.Y.Z` release tag until every
-companion package version named in the current install docs is already
-published on pub.dev. The release sequence is:
+Companions depend on the core version they constrain, and `pub publish`
+resolves that dependency from pub.dev, so release automation publishes the core
+first and every missing companion version right after it. For the few minutes
+in between, the core's install docs name a companion version that is not on
+pub.dev yet. The release sequence is:
 
 1. Confirm the native GitHub releases referenced by `Package.swift` are live and
    include the pinned XCFramework zip/checksum assets.
@@ -139,11 +167,23 @@ published on pub.dev. The release sequence is:
 
 3. If a changed companion version is missing, keep the PR scoped to release
    prep and merge it only when the release is approved. The post-merge release
-   workflow then pushes that companion's package-specific tag, waits for
-   `publish_companion_pubdev.yml` to publish the package, and re-checks the
-   pub.dev version URL.
-4. Automation pushes the core `vX.Y.Z` tag only after the companion packages
-   referenced by the release docs are resolvable from pub.dev.
+   workflow pushes the core `vX.Y.Z` tag and waits until the pub.dev package
+   listing, which pub resolves against, includes the new core.
+4. The workflow then pushes each missing companion's package-specific tag,
+   waits for `publish_companion_pubdev.yml` to publish it, and re-checks the
+   pub.dev listing.
+5. A rerun at the same merge commit finds the core tag already there, skips
+   pushing it, and publishes the companions still missing; a core tag at any
+   other commit stops the run. A companion whose tag exists but whose version
+   is not on pub.dev also stops the rerun, because that tag already ran
+   `publish_companion_pubdev.yml`:
+   - For a transient failure, such as a pub.dev or runner outage, rerun that
+     tag's failed `publish_companion_pubdev.yml` run, wait for the version on
+     pub.dev, then rerun `release_on_prep_merge.yml`.
+   - For a cause in the repository, such as a package that fails
+     `pub publish` validation, the tagged commit cannot publish that version.
+     Fix it in a new release-prep PR that bumps the core version and the
+     companion's patch version; what already published stays as it is.
 
 Current workflows involved:
 
@@ -158,7 +198,10 @@ Current workflows involved:
   cannot create a new package, so publish each companion's first version
   manually from a temporary copy, then configure automated publishing on that
   package's pub.dev Admin tab with the matching tag pattern. Use the same
-  temp-copy shape as CI before running `flutter pub publish`:
+  temp-copy shape as the publish workflow before running `flutter pub publish`.
+  Leaving out the checkout's `pubspec_overrides.yaml` makes pub resolve the
+  companion's `llamadart` constraint from pub.dev, so a new companion can first
+  publish only against a core minor that is already released:
 
 ```bash
 package_path=packages/llamadart_llama_cpp_flutter
@@ -167,9 +210,16 @@ rsync -a --delete \
   --exclude='.dart_tool' \
   --exclude='build' \
   --exclude='pubspec.lock' \
+  --exclude='pubspec_overrides.yaml' \
   "$package_path/" "$tmp_package/"
 (cd "$tmp_package" && flutter pub publish)
 ```
+
+- Each companion commits a `pubspec_overrides.yaml` that resolves `llamadart`
+  from this checkout, because a release-prep PR constrains companions to a
+  core version pub.dev does not have yet. Pub leaves the file out of published
+  archives. CI's companion publish dry-run points the same override at the
+  checkout; the real publish drops it.
 
 - `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags and
   pushes it to `main` with `GITHUB_TOKEN`, so that commit starts no CI or demo
@@ -181,9 +231,9 @@ rsync -a --delete \
   demos. Each upload is skipped, without failing, only when a newer `main`
   commit changes that demo's inputs; the docs snapshot commit does not.
 - `release_on_prep_merge.yml`: runs after a release-prep PR is merged into
-  `main`, validates the prepared version, publishes any missing companion
-  package versions first, pushes the core release tag, waits for pub.dev, and
-  confirms the GitHub Release exists. Before pushing any tag,
+  `main`, validates the prepared version, pushes the core release tag, waits
+  for pub.dev, publishes any missing companion package versions, and confirms
+  the GitHub Release exists. Before pushing any tag,
   `tool/release/companion_pub_preflight.dart` checks that every companion
   under `packages/` exists on pub.dev and otherwise stops with the
   first-publish steps above; publish the package, then rerun the run.
