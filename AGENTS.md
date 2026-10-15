@@ -24,7 +24,8 @@ dart test -p chrome --exclude-tags local-only
   format does not): companion packages keep their own dependency, analyze,
   test, SwiftPM and publish-validation lanes, and the Jaspr docs site its own
   analyze and test lane (`ci.yml`).
-- Chat app changes: `(cd example/chat_app && flutter test)`, plus
+- Chat app changes: `(cd example/chat_app && flutter test test test_vm)`
+  (`test_vm/` holds VM-only tests kept out of the Web compile), plus
   `flutter test --platform chrome test/chat_generation_service_test.dart
   test/image_generation_screen_test.dart` there for Web-only paths such as
   LiteRT-LM generation settings and the image screen's unsupported state.
