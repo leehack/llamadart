@@ -1,6 +1,9 @@
 import 'dart:ffi';
 import 'dart:io';
 
+import '../../core/exceptions.dart';
+import 'litert_lm_runtime.dart';
+
 /// CPU backend selector accepted by the native LiteRT-LM runtime.
 const String liteRtLmCpuBackend = 'cpu';
 
@@ -27,9 +30,12 @@ List<String> liteRtLmAvailableNativeBackendsForCurrentPlatform() {
 
 /// Returns the native LiteRT-LM backend used for automatic selection.
 ///
-/// Linux and Windows retain CPU defaults; GPU execution requires explicit selection.
+/// Linux and Windows default to CPU; GPU execution there requires explicit
+/// selection. macOS x86_64 reports CPU, but LiteRT-LM has no runtime there.
 String liteRtLmDefaultNativeBackendForCurrentPlatform() {
-  if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
+  if (Platform.isAndroid ||
+      Platform.isIOS ||
+      liteRtLmGateAbi() == Abi.macosArm64) {
     return liteRtLmGpuBackend;
   }
   return liteRtLmCpuBackend;
@@ -37,10 +43,31 @@ String liteRtLmDefaultNativeBackendForCurrentPlatform() {
 
 /// Returns whether the current native LiteRT-LM target exposes a GPU backend.
 bool liteRtLmNativeGpuSupportedOnCurrentPlatform() {
+  final abi = liteRtLmGateAbi();
   return Platform.isAndroid ||
       Platform.isIOS ||
-      Platform.isMacOS ||
-      liteRtLmDesktopGpuSupportedForAbi(Abi.current());
+      abi == Abi.macosArm64 ||
+      liteRtLmDesktopGpuSupportedForAbi(abi);
+}
+
+/// Throws a [LlamaUnsupportedException] when the current target cannot run
+/// the native LiteRT-LM [backend] and the request must fail with a typed
+/// error instead of an unavailable-backend [ArgumentError].
+///
+/// litert-lm-native publishes arm64-only macOS runtimes
+/// ([leehack/litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)),
+/// so macOS x86_64, including an Apple-silicon app under Rosetta, has no
+/// LiteRT-LM runtime at all.
+void liteRtLmEnsureNativeBackendSupported(String backend) {
+  if (backend != liteRtLmGpuBackend || liteRtLmGateAbi() != Abi.macosX64) {
+    return;
+  }
+  throw LlamaUnsupportedException(
+    'LiteRT-LM GPU is not available on macOS x86_64 because LiteRT-LM is not '
+    'available there; litert-lm-native publishes arm64-only macOS runtimes '
+    '(leehack/litert-lm-native#72). Run the app natively on Apple silicon, '
+    'not under Rosetta, or use the llama.cpp backend.',
+  );
 }
 
 /// Returns whether a Linux or Windows ABI has qualified GPU runtime support.

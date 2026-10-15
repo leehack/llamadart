@@ -986,6 +986,7 @@ class LiteRtLmBackend
     if (backend == null) {
       return null;
     }
+    liteRtLmEnsureNativeBackendSupported(backend);
     final available = liteRtLmAvailableNativeBackendsForCurrentPlatform();
     if (!available.contains(backend)) {
       throw ArgumentError(

@@ -1231,6 +1231,9 @@ void main() {
 
   test('resolves LiteRT-LM backend preference from model params', () async {
     final service = LiteRtLmService();
+    final throwsUnavailableGpu = liteRtLmGateAbi() == Abi.macosX64
+        ? throwsA(isA<LlamaUnsupportedException>())
+        : throwsArgumentError;
 
     try {
       var modelHandle = await service.loadModel(
@@ -1271,7 +1274,7 @@ void main() {
               modelFile.path,
               ModelParams(preferredBackend: preferredBackend),
             ),
-            throwsArgumentError,
+            throwsUnavailableGpu,
           );
         }
       }
@@ -1316,7 +1319,7 @@ void main() {
             modelFile.path,
             const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
           ),
-          throwsArgumentError,
+          throwsUnavailableGpu,
         );
       }
 
@@ -1338,6 +1341,109 @@ void main() {
     } finally {
       service.dispose();
     }
+  });
+
+  group('macOS ABI GPU selection', () {
+    void runOn(Abi abi) {
+      debugLiteRtLmAbiOverride = abi;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+    }
+
+    final macOsX64Gpu = throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        contains('LiteRT-LM GPU is not available on macOS x86_64'),
+      ),
+    );
+
+    test('macOS arm64 auto selection loads GPU', () async {
+      runOn(Abi.macosArm64);
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        expect(service.getGpuSupport(), isTrue);
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+        expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+        service.freeModel(model);
+
+        await service.loadModel(
+          modelFile.path,
+          const ModelParams(device: ComputeDevice.gpu),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('macOS x86_64 auto selection loads CPU', () async {
+      runOn(Abi.macosX64);
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        expect(service.getGpuSupport(), isFalse);
+        expect(service.getAvailableBackendInfo(), const ['cpu']);
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        expect(service.getResolvedGpuLayers(), 0);
+        service.freeModel(model);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('macOS x86_64 GPU requests throw LlamaUnsupportedException', () async {
+      runOn(Abi.macosX64);
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        for (final params in const [
+          ModelParams(device: ComputeDevice.gpu),
+          ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+          ModelParams(preferredBackend: GpuBackend.metal),
+        ]) {
+          await expectLater(
+            service.loadModel(modelFile.path, params),
+            macOsX64Gpu,
+            reason: '$params',
+          );
+        }
+        await expectLater(
+          service.loadModel(
+            modelFile.path,
+            const ModelParams(),
+            backendOverride: 'gpu',
+          ),
+          macOsX64Gpu,
+        );
+
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(device: ComputeDevice.cpu),
+        );
+        expect(
+          () => service.createContext(
+            model,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          macOsX64Gpu,
+        );
+      } finally {
+        service.dispose();
+      }
+    });
   });
 
   group('ModelParams.device', () {
@@ -1384,10 +1490,11 @@ void main() {
         ]) {
           await expectLater(
             service.loadModel(modelFile.path, ModelParams(device: device)),
-            unsupported([
-              'ComputeDevice.${device.name}',
-              Platform.operatingSystem,
-            ]),
+            unsupported(
+              device == ComputeDevice.gpu && liteRtLmGateAbi() == Abi.macosX64
+                  ? ['LiteRT-LM GPU is not available on macOS x86_64']
+                  : ['ComputeDevice.${device.name}', Platform.operatingSystem],
+            ),
           );
         }
       } finally {
@@ -5169,11 +5276,11 @@ void main() {
     try {
       expect(
         service.getGpuSupport(),
-        Platform.isMacOS ||
-            Platform.isIOS ||
+        Platform.isIOS ||
             Platform.isAndroid ||
-            Abi.current() == Abi.linuxX64 ||
-            Abi.current() == Abi.windowsX64,
+            liteRtLmGateAbi() == Abi.macosArm64 ||
+            liteRtLmGateAbi() == Abi.linuxX64 ||
+            liteRtLmGateAbi() == Abi.windowsX64,
       );
       expect(service.getVramInfo(), (total: 0, free: 0));
       expect(() => service.freeMultimodalContext(1), throwsUnsupportedError);
@@ -5186,7 +5293,7 @@ void main() {
 }
 
 String _expectedAutoLiteRtLmBackend() {
-  if (Platform.isAndroid || Platform.isMacOS) {
+  if (Platform.isAndroid || liteRtLmGateAbi() == Abi.macosArm64) {
     return 'gpu';
   }
   return 'cpu';

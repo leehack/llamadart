@@ -13,7 +13,8 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
-import 'package:web/web.dart' show Response, URL, document, window;
+import 'package:web/web.dart'
+    show Blob, BlobPropertyBag, Response, URL, document, window;
 
 import '../../../support/fake_navigator_gpu.dart';
 import '../../../support/fake_webgpu_decision_bridge.dart';
@@ -595,6 +596,35 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('loads the bridge module named by bridgeScriptUrl', () async {
+      const stubGlobal = '__llamadartTestBridgeInstance';
+      globalContext.setProperty(stubGlobal.toJS, bridge);
+      addTearDown(() => globalContext.delete(stubGlobal.toJS));
+      // The constructor returns the shared fake so the loaded module drives
+      // the same bridge as the factory-based tests.
+      final moduleUrl = URL.createObjectURL(
+        Blob(
+          <JSAny>[
+            'export class LlamaWebGpuBridge { '
+                    'constructor() { return globalThis.$stubGlobal; } }'
+                .toJS,
+          ].toJS,
+          BlobPropertyBag(type: 'text/javascript'),
+        ),
+      );
+      addTearDown(() => URL.revokeObjectURL(moduleUrl));
+      final scriptBackend = WebGpuLlamaBackend(bridgeScriptUrl: moduleUrl);
+      addTearDown(scriptBackend.dispose);
+
+      final modelHandle = await scriptBackend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(contextSize: 4096),
+      );
+
+      expect(modelHandle, 1);
+      expect(await scriptBackend.getBackendName(), 'WebGPU (Mock)');
     });
 
     test('uses bridge when available', () async {

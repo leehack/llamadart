@@ -240,9 +240,11 @@ class WebGpuLlamaBackend
     final completer = Completer<void>();
     const callbackName = '__llamadart_webgpu_init';
 
+    // The injected script calls this with no argument on success; dart2js
+    // rejects a call that omits a required parameter.
     globalContext.setProperty(
       callbackName.toJS,
-      (JSAny? err) {
+      ([JSAny? err]) {
         if (err != null) {
           if (!completer.isCompleted) {
             completer.completeError(

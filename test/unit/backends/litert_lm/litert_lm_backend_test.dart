@@ -11,6 +11,7 @@ import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
@@ -201,10 +202,10 @@ void main() {
       );
       expect(
         results[3],
-        Platform.isMacOS ||
-            Platform.isAndroid ||
-            Abi.current() == Abi.linuxX64 ||
-            Abi.current() == Abi.windowsX64,
+        Platform.isAndroid ||
+            liteRtLmGateAbi() == Abi.macosArm64 ||
+            liteRtLmGateAbi() == Abi.linuxX64 ||
+            liteRtLmGateAbi() == Abi.windowsX64,
       );
     } finally {
       await backend.dispose();
@@ -244,6 +245,31 @@ void main() {
           ),
         );
       }
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('reports a direct GPU preference by macOS ABI', () async {
+    addTearDown(() => debugLiteRtLmAbiOverride = null);
+    final backend = LiteRtLmBackend(preferredBackend: 'gpu');
+
+    try {
+      debugLiteRtLmAbiOverride = Abi.macosArm64;
+      expect(await backend.getBackendName(), 'LiteRT-LM gpu');
+      expect(await backend.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+
+      debugLiteRtLmAbiOverride = Abi.macosX64;
+      await expectLater(
+        backend.getBackendName(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('LiteRT-LM GPU is not available on macOS x86_64'),
+          ),
+        ),
+      );
     } finally {
       await backend.dispose();
     }
@@ -1525,7 +1551,7 @@ void main() {
 }
 
 String _expectedAutoLiteRtLmBackend() {
-  if (Platform.isAndroid || Platform.isMacOS) {
+  if (Platform.isAndroid || liteRtLmGateAbi() == Abi.macosArm64) {
     return 'gpu';
   }
   return 'cpu';
