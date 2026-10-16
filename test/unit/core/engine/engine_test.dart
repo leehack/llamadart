@@ -15,6 +15,7 @@ import 'package:llamadart/src/backends/backend.dart'
         BackendVideoRuntimeSupport;
 import 'package:llamadart/src/core/engine/engine.dart'
     show completionGenerationLimit;
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
 import '../../../support/raw_tool_schema_fixture.dart';
 
@@ -4028,6 +4029,94 @@ void main() {
         expect(noGrammarBackend.lastGenerationPrompt, isNull);
       },
     );
+
+    group('create reports responseFormat schemas it cannot convert', () {
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'status'),
+      ];
+      Map<String, dynamic> format(Map<String, dynamic> schema) => {
+        'type': 'json_schema',
+        'json_schema': {'schema': schema},
+      };
+      Object deepConst = 1;
+      for (var i = 0; i < 200000; i++) {
+        deepConst = [deepConst];
+      }
+      Map<String, dynamic> deepItems = {'type': 'integer'};
+      for (var i = 0; i < 100000; i++) {
+        deepItems = {'type': 'array', 'items': deepItems};
+      }
+      final cyclic = <String, dynamic>{'type': 'object'};
+      cyclic['properties'] = {'self': cyclic};
+      final unsupported = isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        startsWith('Unsupported responseFormat JSON schema: '),
+      );
+      final cases = <String, (Map<String, dynamic>, Matcher)>{
+        'untyped property': (
+          {
+            'type': 'object',
+            'properties': {
+              'x': {'description': 'x'},
+            },
+          },
+          unsupported.having(
+            (error) => error.message,
+            'message',
+            contains('Unrecognized schema: {"description":"x"}'),
+          ),
+        ),
+        'deep const': ({'const': deepConst}, unsupported),
+        'deep items': (deepItems, unsupported),
+        'cycle': (
+          cyclic,
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            contains('must contain only JSON values'),
+          ),
+        ),
+      };
+
+      for (final MapEntry(key: name, value: (schema, matcher))
+          in cases.entries) {
+        test(name, () async {
+          await engine.loadModel('test-model.bin');
+
+          await expectLater(
+            engine.create(messages, responseFormat: format(schema)).drain(),
+            throwsA(matcher),
+          );
+          expect(backend.lastGenerationPrompt, isNull);
+          expect(backend.lastGenerationParams, isNull);
+        });
+      }
+
+      test('keeps the grammar of every schema that converts', () async {
+        await engine.loadModel('test-model.bin');
+        for (final schema in <Map<String, dynamic>>[
+          {
+            'type': 'object',
+            'properties': {
+              'n': {'type': 'integer', 'minimum': 1, 'maximum': 10},
+              'id': {'type': 'string', 'format': 'uuid'},
+              'code': {'type': 'string', 'pattern': r'^\w+$'},
+              'tag': {'type': 'string', 'pattern': r'^[a-z]{3}$'},
+            },
+            'required': ['n'],
+          },
+          {'type': 'string', 'maxLength': 3000},
+        ]) {
+          await engine.create(messages, responseFormat: format(schema)).drain();
+
+          expect(
+            backend.lastGenerationParams?.grammar,
+            JsonSchemaConverter.convert(schema),
+          );
+        }
+      });
+    });
 
     group('create rejects unrecognised responseFormat shapes', () {
       const messages = [

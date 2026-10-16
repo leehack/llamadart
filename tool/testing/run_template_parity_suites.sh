@@ -20,5 +20,7 @@ echo "[template-parity] upstream llama.cpp chat/template parser suites"
 dart test -p vm -j 1 test/e2e/template/llama_cpp_chat_tests_e2e_test.dart --run-skipped
 
 echo "[template-parity] compiled structured-output grammar acceptance"
-LLAMA_CPP_GBNF_VALIDATOR="${LLAMA_CPP_CHAT_TEST_BUILD_DIR:-${repo_root}/.dart_tool/llama_cpp_chat_tests}/bin/test-gbnf-validator" \
+# Grammar load limits must match the llama.cpp release the native runtime ships.
+gbnf_validator="${LLAMA_CPP_GBNF_VALIDATOR:-$("${repo_root}/tool/testing/build_llama_cpp_runtime_gbnf_validator.sh")}"
+LLAMA_CPP_GBNF_VALIDATOR="${gbnf_validator}" \
   dart test -p vm -j 1 test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart --run-skipped

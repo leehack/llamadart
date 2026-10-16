@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../exceptions.dart';
 import '../../grammar/json_schema_converter.dart';
+import '../../grammar/json_value_depth.dart';
 
 /// Validates and owns the supported JSON tool-input schema subset.
 ///
@@ -11,7 +12,7 @@ import '../../grammar/json_schema_converter.dart';
 /// Schemas may come from untrusted sources, so their size is bounded before
 /// any recursive walk; doc/tool_input_schemas.md lists the limits.
 Map<String, dynamic> copyToolInputSchema(Map<String, dynamic> schema) {
-  final depth = _jsonDepth(schema);
+  final depth = jsonValueDepth(schema);
   if (depth == null) {
     throw LlamaArgumentException(
       'Tool input schemas must contain JSON values.',
@@ -339,7 +340,7 @@ void _bounds(
 ({bool valid, Object? value}) validateToolInputValue(
   Object? value,
   Map<String, dynamic> schema,
-) => _jsonDepth(value) == null
+) => jsonValueDepth(value) == null
     ? (valid: false, value: null)
     : _validateValue(value, schema);
 
@@ -445,46 +446,4 @@ void _bounds(
     return (valid: false, value: null);
   }
   return (valid: true, value: normalized);
-}
-
-/// Returns the container nesting depth of a JSON value, or `null` when
-/// [value] is not JSON (a non-string key, non-finite number, cycle or other
-/// object). Iterative so deep untrusted input cannot exhaust the stack.
-int? _jsonDepth(Object? value) {
-  bool scalar(Object? value) =>
-      value == null ||
-      value is String ||
-      value is bool ||
-      value is num && value.isFinite;
-  Iterator<Object?>? children(Object? value) => switch (value) {
-    Map() => value.entries.iterator,
-    List() => value.iterator,
-    _ => null,
-  };
-  if (scalar(value)) return 0;
-  final root = children(value);
-  if (root == null) return null;
-  final active = Set<Object>.identity()..add(value!);
-  final path = <(Object, Iterator<Object?>)>[(value, root)];
-  var depth = 1;
-  while (path.isNotEmpty) {
-    final (container, iterator) = path.last;
-    if (!iterator.moveNext()) {
-      active.remove(container);
-      path.removeLast();
-      continue;
-    }
-    var child = iterator.current;
-    if (container is Map) {
-      final entry = child as MapEntry;
-      if (entry.key is! String) return null;
-      child = entry.value;
-    }
-    if (scalar(child)) continue;
-    final next = children(child);
-    if (next == null || !active.add(child!)) return null;
-    path.add((child, next));
-    if (path.length > depth) depth = path.length;
-  }
-  return depth;
 }

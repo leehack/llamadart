@@ -311,6 +311,21 @@ value is `null` counts as absent. Any other type or key, such as a misspelled
 `json_shema` or `schma`, throws `LlamaUnsupportedException` before generation
 on every backend.
 
+A raw `json_schema` is converted with the same JSON-schema-to-GBNF subset
+listed below. Keywords outside it, such as `format`, `minimum` or
+`uniqueItems`, are not enforced by the grammar; use `LlamaStructuredOutput`
+to have them rejected, or validate them after generation. A schema the
+converter cannot represent, such as an untyped `{'description': ...}`
+property, a non-local `$ref`, or one nested too deeply for the stack, throws
+`LlamaUnsupportedException` before generation. One holding a cycle or another
+non-JSON value that stops conversion throws `LlamaArgumentException`.
+
+On grammar-capable backends, a tool or schema grammar that llama.cpp would
+refuse to load throws `LlamaUnsupportedException` before generation. A
+repetition upper bound above 2000, such as `maxLength: 3000`, is one llama.cpp
+replaces with an unbounded repetition; generation proceeds and a warning is
+logged.
+
 For live rendering, keep the stream returned by
 `engine.create(..., responseFormat: output.responseFormat)` and finalize it with
 `await stream.parseStructuredJson(output)`. Validation is a final-output step

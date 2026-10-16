@@ -27,6 +27,16 @@
   `CPU`, LiteRT-LM under `ComputeDevice.auto` uses its GPU backend instead
   of the CPU, and the Web applies its GPU safety caps and CPU fallback
   ([#920](https://github.com/leehack/llamadart/issues/920)).
+- Report `responseFormat` JSON schemas the grammar converter cannot represent,
+  such as an untyped property, a non-local `$ref` or one nested too deeply for
+  the stack, as `LlamaUnsupportedException`, and cyclic or other non-JSON
+  schemas as `LlamaArgumentException`, instead of `StateError` or a stack
+  overflow ([#584](https://github.com/leehack/llamadart/issues/584),
+  [#1093](https://github.com/leehack/llamadart/issues/1093)).
+- Reject a combined tool or schema grammar that llama.cpp would refuse to
+  load, such as about 2000 Hermes schema tools, with
+  `LlamaUnsupportedException` before generation instead of a sampler
+  initialization failure ([#1093](https://github.com/leehack/llamadart/issues/1093)).
 
 ## 0.13.0
 

@@ -63,9 +63,15 @@ limit, when a schema exceeds one:
 | Generated grammar per tool | 262,144 characters |
 
 The bound limit is llama.cpp's grammar repetition limit
-(`MAX_REPETITION_THRESHOLD`, 2000 at the pinned b10549): the grammar parser
-rejects a repetition count of 2000 or more and silently drops a larger upper
-bound.
+(`MAX_REPETITION_THRESHOLD`, 2000): the grammar parser of the llama.cpp release
+the native runtime ships (upstream `v0.6.0`) rejects a repetition count above
+2000 and silently drops a larger upper bound.
+
+The grammar for all tools in a request is checked again before generation on
+grammar-capable backends. It throws `LlamaUnsupportedException` when llama.cpp
+would refuse to load it: a repeated group whose symbols times its repetition
+count exceed 2000. Hermes, for example, puts every schema tool inside one
+repeated group, so about 2000 schema tools exceed it.
 
 | Selected tool format | Canonical schema support |
 | --- | --- |

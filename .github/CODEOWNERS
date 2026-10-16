@@ -28,6 +28,7 @@ tool/testing/high_risk_readiness_evidence.v1.schema.json @leehack
 tool/testing/run_template_parity_suites.sh @leehack
 tool/testing/run_llama_cpp_chat_tests.sh @leehack
 tool/testing/prepare_llama_cpp_source.sh @leehack
+tool/testing/build_llama_cpp_runtime_gbnf_validator.sh @leehack
 tool/testing/llama_cpp_templates.ref @leehack
 tool/gen_litert_lm_templates.dart @leehack
 tool/litert_lm_templates/ @leehack

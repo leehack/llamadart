@@ -1,5 +1,6 @@
 import '../../backends/backend.dart';
 import '../exceptions.dart';
+import '../grammar/llama_cpp_grammar_limits.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
@@ -138,6 +139,9 @@ class ChatCompletionRequestPlanner {
       throw LlamaUnsupportedException(
         'Canonical JSON Schema tools require an active tool grammar. This backend/runtime cannot enforce the selected format and tool choice; use a grammar-capable backend or a supported non-lazy required-tool format.',
       );
+    }
+    if (hasTemplateGrammar) {
+      checkTemplateGrammarLimits(templateResult.grammar!);
     }
     final effectiveGrammar = hasTemplateGrammar
         ? templateResult.grammar
