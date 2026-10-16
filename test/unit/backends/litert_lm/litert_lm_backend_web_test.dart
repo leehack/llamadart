@@ -1847,6 +1847,74 @@ void main() {
       },
     );
 
+    test('a generation requested right after cancelGeneration ends the '
+        'queued one takes its place', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      backend.cancelGeneration();
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(third.error, isNull);
+
+      firstRun.finish();
+      final thirdRun = await fake.started(1);
+      thirdRun.finish();
+      await third.done;
+      expect(second.text, isEmpty);
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+    });
+
+    test('an admitted queued run leaves the queue', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      firstRun.finish();
+      final secondRun = await fake.started(1);
+      await second.firstChunk;
+      await secondRun.holding;
+
+      backend.cancelGeneration();
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(third.error, isNull);
+
+      secondRun.finish();
+      final thirdRun = await fake.started(2);
+      thirdRun.finish();
+      await third.done;
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+    });
+
+    test('a subscription cancel completes after its run releases the '
+        'conversation', () async {
+      await backend.dispose();
+      await load(rejectOnCancel: true);
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      await first.subscription.cancel();
+      expect(fake.conversationsDeleted, 1);
+    });
+
     test('dispose ends a queued generation without running it', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
       final firstRun = await fake.started(0);
@@ -2348,6 +2416,9 @@ final class _QueueFakeEngine {
 
   /// How many times `createConversation` was called.
   int conversationsCreated = 0;
+
+  /// How many conversations were deleted.
+  int conversationsDeleted = 0;
   final List<Completer<_QueueFakeRun>> _started = List.generate(
     8,
     (_) => Completer<_QueueFakeRun>(),
@@ -2398,7 +2469,10 @@ final class _QueueFakeEngine {
     );
     conversation.setProperty(
       'delete'.toJS,
-      (() => Future<JSAny?>.value(null).toJS).toJS,
+      (() {
+        conversationsDeleted += 1;
+        return Future<JSAny?>.value(null).toJS;
+      }).toJS,
     );
     return conversation;
   }
