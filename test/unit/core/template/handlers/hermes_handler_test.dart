@@ -137,6 +137,82 @@ void main() {
       }
     });
 
+    final schemaTool = ToolDefinition.fromJsonSchema(
+      name: 'weather',
+      description: 'Get weather',
+      schema: {
+        'type': 'object',
+        'properties': {
+          'city': {'type': 'string'},
+        },
+        'required': ['city'],
+      },
+    );
+    for (final (label, output, completeCalls) in [
+      (
+        'unfinished arguments',
+        'Checking. <tool_call>\n{"name":"weather","arguments":{"city":"Par',
+        0,
+      ),
+      ('unfinished name', 'Checking. <tool_call>\n{"name":"weather"', 0),
+      (
+        'unfinished second call',
+        'Checking. $complete<tool_call>\n{"name":"weather"',
+        1,
+      ),
+    ]) {
+      test('cancelled named envelope stays schema-strict: $label', () {
+        expect(
+          () => ChatTemplateEngine.parse(
+            ChatFormat.hermes.index,
+            output,
+            tools: [schemaTool],
+            cancelled: true,
+          ),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        final partial = ChatTemplateEngine.parse(
+          ChatFormat.hermes.index,
+          output,
+          tools: [schemaTool],
+          cancelled: true,
+          isPartial: true,
+        );
+        expect(partial.content, 'Checking.');
+        expect(partial.toolCalls, hasLength(completeCalls));
+        final legacy = ChatTemplateEngine.parse(
+          ChatFormat.hermes.index,
+          output,
+          cancelled: true,
+        );
+        expect(legacy.content, 'Checking.');
+        expect(legacy.toolCalls, hasLength(completeCalls));
+        if (completeCalls > 0) {
+          expect(legacy.toolCalls.single.function?.name, 'weather');
+          expect(
+            legacy.toolCalls.single.function?.arguments,
+            '{"city":"Paris"}',
+          );
+        }
+      });
+    }
+
+    test('partial cancel drops an unclosed schema-valid second call', () {
+      const output =
+          'Checking. $complete<tool_call>\n'
+          '{"name":"weather","arguments":{"city":"Rome"}}';
+      final partial = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        output,
+        tools: [schemaTool],
+        cancelled: true,
+        isPartial: true,
+      );
+      expect(partial.content, 'Checking.');
+      expect(partial.toolCalls, hasLength(1));
+      expect(partial.toolCalls.single.function?.arguments, '{"city":"Paris"}');
+    });
+
     test('cancelled double-brace calls retain legacy recovery', () {
       const output =
           '<tool_call>\n{{"name":"weather","arguments":{"city":"Paris"}}}';
