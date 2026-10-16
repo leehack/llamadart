@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import '../../exceptions.dart';
-import '../../grammar/json_schema_converter.dart';
+import '../../grammar/response_schema_validation.dart';
+import '../../template/response_format.dart';
 import '../chat/completion_chunk.dart';
 
 /// Converts a decoded JSON object into an application-specific value.
@@ -65,7 +66,7 @@ class LlamaStructuredOutput<T> {
   /// [schema] must be representable by the current JSON-schema-to-GBNF subset:
   /// primitives, objects with properties/required/additionalProperties, arrays
   /// with `items` or fixed `prefixItems`, enum/const, local `$ref`, `anyOf`,
-  /// `oneOf`, `allOf`, string length, and array item-count bounds. Unsupported
+  /// `oneOf`, compiled patterns, string length, and array item-count bounds. Unsupported
   /// constraint keywords throw [LlamaUnsupportedException] before generation.
   /// Annotation metadata such as `title` and `description` is preserved but not
   /// enforced by constrained decoding.
@@ -206,371 +207,8 @@ Map<String, dynamic> _schemaResponseFormat(
 }
 
 Map<String, dynamic> _validateStructuredSchema(Map<String, dynamic> schema) {
-  final normalizedSchema = _copyJsonMap(schema, 'schema');
-  _validateSupportedSchemaSubset(normalizedSchema, r'$');
-  try {
-    JsonSchemaConverter.convert(normalizedSchema);
-  } on LlamaException {
-    rethrow;
-  } catch (error) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $error',
-    );
-  }
-  return normalizedSchema;
-}
-
-const _supportedSchemaTypes = <String>{
-  'object',
-  'array',
-  'string',
-  'integer',
-  'number',
-  'boolean',
-  'null',
-};
-
-const _supportedSchemaKeywords = <String>{
-  r'$comment',
-  r'$defs',
-  r'$id',
-  r'$ref',
-  r'$schema',
-  'additionalProperties',
-  'allOf',
-  'anyOf',
-  'const',
-  'default',
-  'definitions',
-  'deprecated',
-  'description',
-  'enum',
-  'examples',
-  'items',
-  'maxItems',
-  'maxLength',
-  'minItems',
-  'minLength',
-  'oneOf',
-  'prefixItems',
-  'properties',
-  'readOnly',
-  'required',
-  'title',
-  'type',
-  'writeOnly',
-};
-
-const _annotationSchemaKeywords = <String>{
-  r'$comment',
-  r'$id',
-  r'$schema',
-  'default',
-  'deprecated',
-  'description',
-  'examples',
-  'readOnly',
-  'title',
-  'writeOnly',
-};
-
-void _validateSupportedSchemaSubset(Map<String, dynamic> schema, String path) {
-  for (final keyword in schema.keys) {
-    if (!_supportedSchemaKeywords.contains(keyword)) {
-      throw LlamaUnsupportedException(
-        'Unsupported structured JSON schema: keyword "$path.$keyword" is not '
-        'supported by the current JSON-schema-to-GBNF subset.',
-      );
-    }
-  }
-
-  final schemaTypes = _schemaTypes(schema['type'], path);
-  _validateRefSchemaShape(schema, path);
-  _validateKeywordContexts(schema, schemaTypes, path);
-  _validateKeywordValues(schema, path);
-  _validateNestedSchemas(schema, path);
-}
-
-Set<String>? _schemaTypes(Object? type, String path) {
-  if (type == null) {
-    return null;
-  }
-  if (type is String) {
-    _validateSchemaType(type, '$path.type');
-    return {type};
-  }
-  if (type is List) {
-    final types = <String>{};
-    for (var i = 0; i < type.length; i++) {
-      final item = type[i];
-      if (item is! String) {
-        throw LlamaUnsupportedException(
-          'Unsupported structured JSON schema: $path.type[$i] must be a '
-          'schema type string.',
-        );
-      }
-      _validateSchemaType(item, '$path.type[$i]');
-      types.add(item);
-    }
-    if (types.isEmpty) {
-      throw LlamaUnsupportedException(
-        'Unsupported structured JSON schema: $path.type must not be empty.',
-      );
-    }
-    return types;
-  }
-  throw LlamaUnsupportedException(
-    'Unsupported structured JSON schema: $path.type must be a string or list '
-    'of strings.',
-  );
-}
-
-void _validateSchemaType(String type, String path) {
-  if (!_supportedSchemaTypes.contains(type)) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path uses unsupported type '
-      '"$type".',
-    );
-  }
-}
-
-void _validateRefSchemaShape(Map<String, dynamic> schema, String path) {
-  if (!schema.containsKey(r'$ref')) {
-    return;
-  }
-  final ref = schema[r'$ref'];
-  if (ref is! String || !ref.startsWith('#/')) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path.\$ref must be a local "#/..." '
-      'reference.',
-    );
-  }
-
-  final siblingKeywords = schema.keys.where(
-    (keyword) =>
-        keyword != r'$ref' &&
-        keyword != 'definitions' &&
-        keyword != r'$defs' &&
-        !_annotationSchemaKeywords.contains(keyword),
-  );
-  if (siblingKeywords.isNotEmpty) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path.\$ref cannot be combined with '
-      'sibling validation keywords.',
-    );
-  }
-}
-
-void _validateKeywordContexts(
-  Map<String, dynamic> schema,
-  Set<String>? schemaTypes,
-  String path,
-) {
-  final hasObjectKeywords =
-      schema.containsKey('properties') ||
-      schema.containsKey('required') ||
-      schema.containsKey('additionalProperties');
-  final objectContext =
-      schemaTypes?.contains('object') ??
-      (schema.containsKey('properties') ||
-          schema.containsKey('additionalProperties'));
-  if (hasObjectKeywords && !objectContext) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: object keyword at $path requires '
-      'type "object" or object-shaped properties.',
-    );
-  }
-
-  final hasArrayKeywords =
-      schema.containsKey('items') ||
-      schema.containsKey('prefixItems') ||
-      schema.containsKey('minItems') ||
-      schema.containsKey('maxItems');
-  final arrayContext =
-      schemaTypes?.contains('array') ??
-      (schema.containsKey('items') || schema.containsKey('prefixItems'));
-  if (hasArrayKeywords && !arrayContext) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: array keyword at $path requires '
-      'type "array" or an item schema.',
-    );
-  }
-
-  final hasStringKeywords =
-      schema.containsKey('minLength') || schema.containsKey('maxLength');
-  final stringContext = schemaTypes?.contains('string') ?? false;
-  if (hasStringKeywords && !stringContext) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: string length keyword at $path '
-      'requires type "string".',
-    );
-  }
-}
-
-void _validateKeywordValues(Map<String, dynamic> schema, String path) {
-  final enumValues = schema['enum'];
-  if (enumValues != null) {
-    if (enumValues is! List || enumValues.isEmpty) {
-      throw LlamaUnsupportedException(
-        'Unsupported structured JSON schema: $path.enum must be a non-empty '
-        'list.',
-      );
-    }
-  }
-
-  final required = schema['required'];
-  if (required != null) {
-    if (required is! List) {
-      throw LlamaUnsupportedException(
-        'Unsupported structured JSON schema: $path.required must be a list.',
-      );
-    }
-    for (var i = 0; i < required.length; i++) {
-      if (required[i] is! String) {
-        throw LlamaUnsupportedException(
-          'Unsupported structured JSON schema: $path.required[$i] must be a '
-          'property name string.',
-        );
-      }
-    }
-  }
-
-  _validateNonNegativeIntKeyword(schema, 'minItems', path);
-  _validateNonNegativeIntKeyword(schema, 'maxItems', path);
-  _validateNonNegativeIntKeyword(schema, 'minLength', path);
-  _validateNonNegativeIntKeyword(schema, 'maxLength', path);
-  _validateBounds(schema, 'minItems', 'maxItems', path);
-  _validateBounds(schema, 'minLength', 'maxLength', path);
-}
-
-void _validateNonNegativeIntKeyword(
-  Map<String, dynamic> schema,
-  String keyword,
-  String path,
-) {
-  if (!schema.containsKey(keyword)) {
-    return;
-  }
-  final value = schema[keyword];
-  if (value is! int || value < 0) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path.$keyword must be a '
-      'non-negative integer.',
-    );
-  }
-}
-
-void _validateBounds(
-  Map<String, dynamic> schema,
-  String minKeyword,
-  String maxKeyword,
-  String path,
-) {
-  final min = schema[minKeyword];
-  final max = schema[maxKeyword];
-  if (min is int && max is int && max < min) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path.$maxKeyword must be greater '
-      'than or equal to $path.$minKeyword.',
-    );
-  }
-}
-
-void _validateNestedSchemas(Map<String, dynamic> schema, String path) {
-  final properties = schema['properties'];
-  if (properties != null) {
-    final propertySchemas = _schemaMapForKeyword(
-      properties,
-      '$path.properties',
-    );
-    for (final entry in propertySchemas.entries) {
-      _validateSupportedSchemaSubset(
-        _schemaMapForKeyword(entry.value, '$path.properties.${entry.key}'),
-        '$path.properties.${entry.key}',
-      );
-    }
-  }
-
-  final additionalProperties = schema['additionalProperties'];
-  if (additionalProperties != null &&
-      additionalProperties != true &&
-      additionalProperties != false) {
-    _validateSupportedSchemaSubset(
-      _schemaMapForKeyword(additionalProperties, '$path.additionalProperties'),
-      '$path.additionalProperties',
-    );
-  }
-
-  final items = schema['items'];
-  if (items != null) {
-    _validateSupportedSchemaSubset(
-      _schemaMapForKeyword(items, '$path.items'),
-      '$path.items',
-    );
-  }
-
-  final prefixItems = schema['prefixItems'];
-  if (prefixItems != null) {
-    _validateSchemaList(prefixItems, '$path.prefixItems');
-  }
-
-  for (final keyword in const ['oneOf', 'anyOf', 'allOf']) {
-    final alternatives = schema[keyword];
-    if (alternatives != null) {
-      _validateSchemaList(alternatives, '$path.$keyword');
-    }
-  }
-
-  for (final keyword in const ['definitions', r'$defs']) {
-    final definitions = schema[keyword];
-    if (definitions != null) {
-      final definitionSchemas = _schemaMapForKeyword(
-        definitions,
-        '$path.$keyword',
-      );
-      for (final entry in definitionSchemas.entries) {
-        _validateSupportedSchemaSubset(
-          _schemaMapForKeyword(entry.value, '$path.$keyword.${entry.key}'),
-          '$path.$keyword.${entry.key}',
-        );
-      }
-    }
-  }
-}
-
-void _validateSchemaList(Object? value, String path) {
-  if (value is! List || value.isEmpty) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path must be a non-empty list of '
-      'schemas.',
-    );
-  }
-  for (var i = 0; i < value.length; i++) {
-    _validateSupportedSchemaSubset(
-      _schemaMapForKeyword(value[i], '$path[$i]'),
-      '$path[$i]',
-    );
-  }
-}
-
-Map<String, dynamic> _schemaMapForKeyword(Object? value, String path) {
-  if (value is! Map) {
-    throw LlamaUnsupportedException(
-      'Unsupported structured JSON schema: $path must be a JSON object.',
-    );
-  }
-  final result = <String, dynamic>{};
-  for (final entry in value.entries) {
-    final key = entry.key;
-    if (key is! String) {
-      throw LlamaUnsupportedException(
-        'Unsupported structured JSON schema: $path must contain only string '
-        'keys.',
-      );
-    }
-    result[key] = entry.value;
-  }
-  return result;
+  responseFormatGrammar(schema);
+  return _copyJsonMap(schema, 'schema');
 }
 
 void _validateJsonSchemaRootObject(Map<String, dynamic> schema) {
@@ -599,7 +237,7 @@ bool _schemaRequiresJsonObject(
         _schemaRequiresJsonObject(target, rootSchema, {...resolvingRefs, ref});
   }
 
-  final schemaTypes = _schemaTypes(schema['type'], r'$');
+  final schemaTypes = responseSchemaTypes(schema['type'], r'$');
   if (schemaTypes != null) {
     if (schemaTypes.length != 1 || !schemaTypes.contains('object')) {
       return false;
@@ -620,7 +258,7 @@ bool _schemaRequiresJsonObject(
   if (oneOf is List) {
     return oneOf.every(
       (value) => _schemaRequiresJsonObject(
-        _schemaMapForKeyword(value, r'$.oneOf'),
+        responseSchemaMap(value, r'$.oneOf'),
         rootSchema,
         resolvingRefs,
       ),
@@ -631,7 +269,7 @@ bool _schemaRequiresJsonObject(
   if (anyOf is List) {
     return anyOf.every(
       (value) => _schemaRequiresJsonObject(
-        _schemaMapForKeyword(value, r'$.anyOf'),
+        responseSchemaMap(value, r'$.anyOf'),
         rootSchema,
         resolvingRefs,
       ),
@@ -642,7 +280,7 @@ bool _schemaRequiresJsonObject(
   if (allOf is List) {
     return allOf.every(
       (value) => _schemaRequiresJsonObject(
-        _schemaMapForKeyword(value, r'$.allOf'),
+        responseSchemaMap(value, r'$.allOf'),
         rootSchema,
         resolvingRefs,
       ),
@@ -670,7 +308,7 @@ Map<String, dynamic>? _resolveLocalSchemaRef(
       return null;
     }
   }
-  return target is Map ? _schemaMapForKeyword(target, ref) : null;
+  return target is Map ? responseSchemaMap(target, ref) : null;
 }
 
 Map<String, dynamic> _copyJsonMap(
@@ -790,6 +428,15 @@ class _JsonSchemaOutputValidator {
       }
     }
 
+    final pattern = schema['pattern'];
+    if (value is String &&
+        pattern is String &&
+        RegExp(pattern).stringMatch(value) != value) {
+      throw _JsonSchemaValidationFailure(
+        '$path must match the requested pattern.',
+      );
+    }
+
     final schemaType = schema['type'];
     if (schemaType is List) {
       final matched = schemaType.any(
@@ -811,6 +458,11 @@ class _JsonSchemaOutputValidator {
     if (schema.containsKey('properties') ||
         schema.containsKey('additionalProperties')) {
       _validateType(value, 'object', schema, path);
+      return;
+    }
+
+    if (schema.containsKey('pattern')) {
+      _validateType(value, 'string', schema, path);
       return;
     }
 

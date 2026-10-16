@@ -2,7 +2,7 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
+## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI and strict schemas
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
 The llama.cpp companion now pins native `v0.7.0`; LiteRT-LM and image companions
@@ -13,6 +13,28 @@ layouts as well as its exported symbols. v0.6.0 and older native bundles are
 ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
+
+Raw `responseFormat` schemas and `LlamaStructuredOutput` now use the same
+validation. Previously ignored assertions (including `format`, integer/number
+bounds such as Pydantic `ge=`, `multipleOf`, uniqueness and conditional/object
+constraints), unsupported patterns, shadowed constraint siblings and repetition
+bounds above 2000 throw a path-bearing `LlamaUnsupportedException` before
+generation. `allOf` is rejected because its former property merge did not enforce
+the intersection. Put complete alternatives inside `anyOf` instead of adding
+sibling constraints. Numeric bounds and formats are rejected even where upstream
+llama.cpp supports them; this Dart converter does not implement them.
+
+Schemas must contain JSON values, nested at most 128 container levels, including
+annotations. Non-JSON values throw `LlamaArgumentException`. Annotations and
+`x-*` extension metadata remain accepted. A nonempty annotation-only untyped
+schema accepts any JSON value, including in imported tool properties; `{}` keeps
+its existing object grammar. Use `jsonValueSchema` for an unconstrained response
+root. Imported tools keep their narrower subset and object root, and `required`
+still names declared properties only (see
+[tool input schemas](doc/tool_input_schemas.md)).
+
+Decoded tool-call arguments nested beyond 128 containers now fail with
+`LlamaInferenceException` on final and partial parsing instead of overflowing.
 
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 

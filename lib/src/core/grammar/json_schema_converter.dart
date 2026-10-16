@@ -78,6 +78,11 @@ class JsonSchemaConverter {
   final Set<String> _refsBeingResolved = {};
   int _keyTrieGrammarLength = 0;
 
+  /// Whether a pattern can be enforced by the compiled regex subset.
+  static bool supportsPattern(String pattern) =>
+      _PatternGrammarBuilder((name, rule) => name, 'pattern').build(pattern) !=
+      null;
+
   /// Access accumulated rules (for multi-tool grammar assembly).
   Map<String, String> get rules => _rules;
 
@@ -168,7 +173,8 @@ class JsonSchemaConverter {
         // Local ref
         dynamic target = rootSchema;
         final selectors = ref.substring(2).split('/');
-        for (final sel in selectors) {
+        for (final segment in selectors) {
+          final sel = segment.replaceAll('~1', '/').replaceAll('~0', '~');
           if (target is Map<String, dynamic> && target.containsKey(sel)) {
             target = target[sel];
           } else {
@@ -407,6 +413,14 @@ class JsonSchemaConverter {
       return _addPrimitive(
         ruleName == 'root' ? 'root' : schemaType,
         _primitiveRules[schemaType]!,
+      );
+    }
+
+    // Untyped annotation-only schemas impose no restriction on the value.
+    if (schemaType == null) {
+      return _addRule(
+        ruleName,
+        _addPrimitive('value', _primitiveRules['value']!),
       );
     }
 

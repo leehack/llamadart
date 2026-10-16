@@ -156,32 +156,15 @@ void main() {
       return schema;
     }
 
-    test('keeps the converter grammar for every schema it converts', () {
-      final cyclicAnnotation = <String, dynamic>{};
-      cyclicAnnotation['self'] = cyclicAnnotation;
+    // 0.14 intentionally rejects constraints previously discarded by conversion.
+    test('keeps the converter grammar for supported schemas', () {
       for (final schema in <Map<String, dynamic>>[
-        {'type': 'integer', 'minimum': 1, 'maximum': 10},
-        {'type': 'number', 'multipleOf': 0.5},
-        {'type': 'string', 'format': 'uuid'},
-        {'type': 'string', 'pattern': r'^\w+$'},
         {'type': 'string', 'pattern': r'^[a-zA-Z0-9]{9}$'},
-        {'type': 'string', 'maxLength': 3000},
-        {
-          'type': 'array',
-          'items': {'type': 'string'},
-          'uniqueItems': true,
-        },
+        {'type': 'string', 'maxLength': 2000},
         {
           'type': 'object',
           'x-vendor': {'minimum': 1},
-          'nullable': true,
-          'properties': {
-            'n': {'type': 'integer', 'exclusiveMinimum': 3},
-          },
         },
-        {'type': 'string', 'description': DateTime(2026)},
-        {'type': 'string', 'x-self': cyclicAnnotation},
-        nestedItems(600),
       ]) {
         expect(responseFormatSchema(format(schema)), same(schema));
         expect(
@@ -191,38 +174,21 @@ void main() {
       }
     });
 
-    test('reports converter failures as LlamaUnsupportedException', () {
-      Object deepList = 1;
-      for (var i = 0; i < 200000; i++) {
-        deepList = [deepList];
-      }
-      for (final (schema, message) in <(Map<String, dynamic>, String)>[
-        (
-          {
-            'type': 'object',
-            'properties': {
-              'x': {'description': 'x'},
-            },
-          },
-          'Unrecognized schema: {"description":"x"}',
-        ),
-        ({r'$ref': 'https://example.com/s.json'}, r'Cannot resolve $ref'),
-        ({r'$ref': '#/missing'}, 'Error resolving ref'),
-        ({'type': 'date'}, 'Unrecognized schema'),
-        ({'type': 'object', 'properties': 'x'}, 'String'),
-        ({'const': deepList}, ''),
-        (nestedItems(100000), ''),
+    test('reports unsupported schemas with paths before conversion', () {
+      for (final (schema, path) in <(Map<String, dynamic>, String)>[
+        ({r'$ref': 'https://example.com/s.json'}, r'$.$ref'),
+        ({r'$ref': '#/missing'}, r'$.$ref'),
+        ({'type': 'date'}, r'$.type'),
+        ({'type': 'object', 'properties': 'x'}, r'$.properties'),
+        (nestedItems(100000), r'$'),
       ]) {
         expect(
           () => responseFormatGrammar(schema),
           throwsA(
             isA<LlamaUnsupportedException>().having(
               (error) => error.message,
-              'message',
-              allOf(
-                startsWith('Unsupported responseFormat JSON schema: '),
-                contains(message),
-              ),
+              'path',
+              contains(path),
             ),
           ),
         );
@@ -278,7 +244,7 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            startsWith('Unsupported responseFormat JSON schema: '),
+            allOf(contains('Unsupported'), contains(r'$')),
           ),
         ),
       );

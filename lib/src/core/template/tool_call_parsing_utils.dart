@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../exceptions.dart';
+import '../grammar/json_value_depth.dart';
 import '../models/chat/completion_chunk.dart';
 
 /// A parsed JSON value and the exclusive end offset where it stopped.
@@ -199,6 +201,12 @@ class ToolCallParsingUtils {
   static String encodeArguments(Object? arguments) {
     if (arguments == null) {
       return '';
+    }
+    final depth = jsonValueDepth(arguments);
+    if (depth == null || depth > 128) {
+      throw LlamaInferenceException(
+        'Tool-call arguments must contain JSON values nested at most 128 levels deep.',
+      );
     }
     return arguments is String ? arguments : jsonEncode(arguments);
   }

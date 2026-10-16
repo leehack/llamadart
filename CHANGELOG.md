@@ -1,3 +1,7 @@
+## Unreleased
+
+- **Behavior change:** Reject unsupported or shadowed JSON response-schema constraints before generation; accept annotation-only schemas and bound tool-call argument nesting.
+
 ## 0.14.0
 
 - Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple

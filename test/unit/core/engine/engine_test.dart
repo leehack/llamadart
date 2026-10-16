@@ -4051,20 +4051,39 @@ void main() {
       final unsupported = isA<LlamaUnsupportedException>().having(
         (error) => error.message,
         'message',
-        startsWith('Unsupported responseFormat JSON schema: '),
+        allOf(contains('Unsupported'), contains(r'$')),
       );
       final cases = <String, (Map<String, dynamic>, Matcher)>{
-        'untyped property': (
-          {
-            'type': 'object',
-            'properties': {
-              'x': {'description': 'x'},
-            },
-          },
+        'unsupported numeric bound': (
+          {'type': 'integer', 'minimum': 1},
           unsupported.having(
             (error) => error.message,
-            'message',
-            contains('Unrecognized schema: {"description":"x"}'),
+            'path',
+            contains(r'$.minimum'),
+          ),
+        ),
+        'unsupported format': (
+          {'type': 'string', 'format': 'uuid'},
+          unsupported.having(
+            (error) => error.message,
+            'path',
+            contains(r'$.format'),
+          ),
+        ),
+        'unsupported pattern': (
+          {'type': 'string', 'pattern': r'^\w+$'},
+          unsupported.having(
+            (error) => error.message,
+            'path',
+            contains(r'$.pattern'),
+          ),
+        ),
+        'oversized upper bound': (
+          {'type': 'string', 'maxLength': 3000},
+          unsupported.having(
+            (error) => error.message,
+            'path',
+            contains(r'$.maxLength'),
           ),
         ),
         'deep const': ({'const': deepConst}, unsupported),
@@ -4093,29 +4112,33 @@ void main() {
         });
       }
 
-      test('keeps the grammar of every schema that converts', () async {
-        await engine.loadModel('test-model.bin');
-        for (final schema in <Map<String, dynamic>>[
-          {
-            'type': 'object',
-            'properties': {
-              'n': {'type': 'integer', 'minimum': 1, 'maximum': 10},
-              'id': {'type': 'string', 'format': 'uuid'},
-              'code': {'type': 'string', 'pattern': r'^\w+$'},
-              'tag': {'type': 'string', 'pattern': r'^[a-z]{3}$'},
+      test(
+        'keeps supported grammar and accepts annotation-only properties',
+        () async {
+          await engine.loadModel('test-model.bin');
+          for (final schema in <Map<String, dynamic>>[
+            {
+              'type': 'object',
+              'properties': {
+                'n': {'type': 'integer'},
+                'id': {'description': 'Any JSON value'},
+                'tag': {'type': 'string', 'pattern': r'^[a-z]{3}$'},
+              },
+              'required': ['n'],
             },
-            'required': ['n'],
-          },
-          {'type': 'string', 'maxLength': 3000},
-        ]) {
-          await engine.create(messages, responseFormat: format(schema)).drain();
+            {'type': 'string', 'maxLength': 2000},
+          ]) {
+            await engine
+                .create(messages, responseFormat: format(schema))
+                .drain();
 
-          expect(
-            backend.lastGenerationParams?.grammar,
-            JsonSchemaConverter.convert(schema),
-          );
-        }
-      });
+            expect(
+              backend.lastGenerationParams?.grammar,
+              JsonSchemaConverter.convert(schema),
+            );
+          }
+        },
+      );
     });
 
     group('create rejects unrecognised responseFormat shapes', () {

@@ -73,7 +73,11 @@ description: >-
   `{'type': 'json_schema', 'json_schema': {'schema': ...}}`, where
   `json_schema` may also hold `name`, `description` and `strict`, or
   `{'type': 'text'}`; a `null`-valued key counts as absent, and any other type
-  or key throws. A `ChatSession` turn that throws this way, or fails or has
+  or key throws. Raw and typed schemas share strict validation: unsupported
+  assertions (including numeric bounds and formats), shadowed siblings and
+  length/item bounds above 2000 throw with a schema path. Nonempty annotation-only
+  untyped schemas accept any value; `{}` keeps its object grammar. JSON nesting,
+  including annotation payloads, is limited to 128 containers. A `ChatSession` turn that throws this way, or fails or has
   its subscription cancelled before any reply content, removes its user
   message from `session.history`; empty terminal chunks are not content.
   Generation cancellation before content throws `LlamaStateException`.

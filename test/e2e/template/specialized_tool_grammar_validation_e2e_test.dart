@@ -13,6 +13,7 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/template/response_format.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 
@@ -45,6 +46,30 @@ void main() {
     );
     expect(File(validator).existsSync(), isTrue);
   });
+
+  test(
+    'strict response schemas compile annotation-only values and patterns',
+    () {
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({'description': 'Any value'}),
+        valid: ['null', 'true', '3', '"text"', '[]', '{}'],
+        invalid: ['undefined', '{', '[1,]', '"unterminated'],
+      );
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({'type': 'string', 'pattern': r'^[a-z]{2,4}$'}),
+        valid: ['"ab"', '"abcd"'],
+        invalid: ['"A"', '"abcde"', '3'],
+      );
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({}),
+        valid: ['{}', '{"x":null}'],
+        invalid: ['null', '[]', '3'],
+      );
+    },
+  );
 
   test('LiteRT Qwen normalized history preserves compiled JSON schema', () {
     for (final thinking in [true, false]) {
@@ -1482,27 +1507,25 @@ void main() {
     }
   });
 
-  test(
-    'llama.cpp drops repetition bounds the limit check only warns about',
-    () {
-      final grammar = ChatTemplateEngine.render(
-        templateSource: null,
-        messages: const [],
-        metadata: const {},
-        responseFormat: const {
-          'type': 'json_schema',
-          'json_schema': {
-            'schema': {'type': 'string', 'maxLength': 2001},
-          },
-        },
-      ).grammar!;
-      expect(
-        _load(validator, grammar, '"${'a' * 2500}"'),
-        contains('Input string is valid according to the grammar.'),
-      );
-      expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
-    },
-  );
+  test('raw schemas reject repetition bounds that llama.cpp drops', () {
+    const schema = {'type': 'string', 'maxLength': 2001};
+    final grammar = JsonSchemaConverter.convert(schema);
+    expect(
+      () => responseFormatGrammar(schema),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'path',
+          contains(r'$.maxLength'),
+        ),
+      ),
+    );
+    expect(
+      _load(validator, grammar, '"${'a' * 2500}"'),
+      contains('Input string is valid according to the grammar.'),
+    );
+    expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
+  });
 
   test('enforceable responseFormat schemas compile and constrain output', () {
     String render(Map<String, dynamic> schema) {
@@ -1546,14 +1569,25 @@ void main() {
     );
 
     Map<String, dynamic> schema = {'type': 'integer'};
-    for (var i = 0; i < 511; i++) {
+    for (var i = 0; i < 127; i++) {
       schema = {'type': 'array', 'items': schema};
     }
     _expectGrammar(
       validator,
       render(schema),
-      valid: ['${'[' * 511}7${']' * 511}'],
-      invalid: ['${'[' * 511}"7"${']' * 511}', '${'[' * 510}7${']' * 510}'],
+      valid: ['${'[' * 127}7${']' * 127}'],
+      invalid: ['${'[' * 127}"7"${']' * 127}', '${'[' * 126}7${']' * 126}'],
+    );
+    // 0.14 bounds validation walks before recursion, including schema nesting.
+    expect(
+      () => render({'type': 'array', 'items': schema}),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'limit',
+          contains('128'),
+        ),
+      ),
     );
   });
 

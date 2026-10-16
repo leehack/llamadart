@@ -49,6 +49,19 @@ Public APIs are exported directly from `lib/llamadart_server.dart`.
 - The default Qwen3.6 27B GGUF is loaded text-only; this example does not
   download or load its separate vision projector.
 
+### JSON Schema clients
+
+This example currently does not forward `response_format` to the engine. Its
+legacy tool-parameter parser also does not preserve a complete imported schema;
+do not assume Pydantic assertions such as `Field(ge=0)` are enforced here.
+For strict schemas in an integration, forward `responseFormat` to `engine.create`
+or use `LlamaStructuredOutput`, and preserve tool inputs with
+`ToolDefinition.fromJsonSchema`. In core 0.14, numeric bounds (`minimum`, etc.),
+formats and other unsupported constraints throw `LlamaUnsupportedException`
+with the schema path before generation; remove an assertion only when the
+application intentionally accepts the wider values. See
+[the migration guide](../../MIGRATION.md).
+
 ## Run
 
 ```bash

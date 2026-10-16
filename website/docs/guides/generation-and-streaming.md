@@ -311,20 +311,25 @@ value is `null` counts as absent. Any other type or key, such as a misspelled
 `json_shema` or `schma`, throws `LlamaUnsupportedException` before generation
 on every backend.
 
-A raw `json_schema` is converted with the same JSON-schema-to-GBNF subset
-listed below. Keywords outside it, such as `format`, `minimum` or
-`uniqueItems`, are not enforced by the grammar; use `LlamaStructuredOutput`
-to have them rejected, or validate them after generation. A schema the
-converter cannot represent, such as an untyped `{'description': ...}`
-property, a non-local `$ref`, or one nested too deeply for the stack, throws
-`LlamaUnsupportedException` before generation. One holding a cycle or another
-non-JSON value that stops conversion throws `LlamaArgumentException`.
+Raw `json_schema` and typed helpers use the same validation before generation.
+Unsupported assertions throw `LlamaUnsupportedException` with a schema path:
+formats (including UUID/date/time), numeric bounds (including integer bounds),
+`multipleOf`, uniqueness/contains, object-count/property/dependency constraints,
+conditionals, unevaluated keywords and dynamic references are not implemented.
+`allOf` is also unsupported: its former property merge did not enforce an
+intersection. No constraints are silently removed.
 
-On grammar-capable backends, a tool or schema grammar that llama.cpp would
-refuse to load throws `LlamaUnsupportedException` before generation. A
-repetition upper bound above 2000, such as `maxLength: 3000`, is one llama.cpp
-replaces with an unbounded repetition; generation proceeds and a warning is
-logged.
+Validation also rejects siblings shadowed by `$ref`, `anyOf`/`oneOf`,
+`const`/`enum` (except compatible literal `type`), pattern plus length bounds,
+and `prefixItems` plus `items` or item-count bounds. `required` names declared
+properties only. Length/item bounds must be integers from 0 to 2000,
+inclusive; larger bounds now fail instead of becoming unbounded.
+
+Schema JSON nesting is limited to 128 containers, including annotation values.
+Cycles and non-JSON values throw `LlamaArgumentException`; deep or unsupported
+schemas and unresolved local references throw `LlamaUnsupportedException`.
+On grammar-capable backends a grammar llama.cpp would refuse to load also fails
+before generation.
 
 For live rendering, keep the stream returned by
 `engine.create(..., responseFormat: output.responseFormat)` and finalize it with
@@ -334,10 +339,14 @@ because partial stream chunks are often not valid JSON yet.
 Supported schema features match the built-in JSON-schema-to-GBNF subset:
 primitive types, objects with `properties`, `required`, and
 `additionalProperties`, arrays with `items` or fixed `prefixItems`,
-`enum`/`const`, local `$ref`, `anyOf`, `oneOf`, `allOf`, `minLength`,
+`enum`/`const`, local `$ref`, `anyOf`, `oneOf`, compiled `pattern`, `minLength`,
 `maxLength`, `minItems`, and `maxItems`. Unsupported schemas fail before
 generation. Annotation metadata such as `title`, `description`, and `default`
-is preserved but not enforced as a decoding constraint. Backends without
+and unknown `x-*` extensions are preserved but not enforced. Nonempty untyped
+annotation-only schemas accept any JSON value; `{}` retains its object grammar.
+Patterns must be anchored `^...$` sequences of safe literals, positive character
+classes/ranges and groups, with group alternation and repetition counts up to
+1024; unsupported regex constructs are rejected. Backends without
 grammar constraints, including current LiteRT-LM native and web paths, still
 fail early for strict structured output.
 

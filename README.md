@@ -402,6 +402,11 @@ the same libraries. Details and the pub workspace rules:
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |
 | Tune performance | [Performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning) |
 
+Raw `responseFormat` and `LlamaStructuredOutput` reject unsupported or shadowed
+schema assertions with a schema path before generation, including numeric bounds,
+formats and length/item bounds above 2000. Nonempty annotation-only untyped schemas
+accept any JSON value. See [0.14 migration](MIGRATION.md) for the breaking changes.
+
 ## Examples
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
