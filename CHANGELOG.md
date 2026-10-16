@@ -37,6 +37,12 @@
   load, such as about 2000 Hermes schema tools, with
   `LlamaUnsupportedException` before generation instead of a sampler
   initialization failure ([#1093](https://github.com/leehack/llamadart/issues/1093)).
+- Send tool results back on Gemma 2/3/3n and legacy Mistral templates, which
+  failed with `Conversation roles must alternate user/assistant/...`: when a
+  template that rejects the `tool` role fails such a request, it is rendered
+  again with each run of results as one user turn and the earlier calls as
+  JSON in the model turn
+  ([#885](https://github.com/leehack/llamadart/issues/885)).
 
 ## 0.13.0
 

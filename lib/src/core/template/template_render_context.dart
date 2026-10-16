@@ -95,6 +95,15 @@ class TemplateRenderContext {
   /// With [objectArguments], tool-call `arguments` that decode to a JSON
   /// object are passed as that object, as llama.cpp does for templates with
   /// `supports_object_arguments`; other arguments stay strings.
+  ///
+  /// With [toolResultsAsUser], for a template that rejects the `tool` role,
+  /// each run of consecutive `tool` messages becomes one `user` message, as
+  /// [toolResultsAsUserTurns] describes. When one is converted and
+  /// [toolCallsAsContent] is set, tool calls the serialization left in place
+  /// move into `content` in the generic schema, as llama.cpp's minja
+  /// `polyfill_tool_calls` did for templates that cannot render them:
+  /// arguments that decode to a JSON object become that object, and others
+  /// stay strings.
   static List<Map<String, dynamic>> messagesForTemplate(
     List<LlamaChatMessage> messages, {
     TemplateToolCallSerialization toolCallSerialization =
@@ -103,8 +112,10 @@ class TemplateRenderContext {
     String mediaMarker = mtmdMediaMarker,
     bool objectArguments = false,
     bool typedContentOnly = false,
+    bool toolResultsAsUser = false,
+    bool toolCallsAsContent = false,
   }) {
-    final renderedMessages = <Map<String, dynamic>>[];
+    var renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
     for (final message in splitToolResults(messages)) {
       final rendered =
@@ -139,6 +150,19 @@ class TemplateRenderContext {
       }
     }
 
+    if (toolResultsAsUser &&
+        renderedMessages.any((message) => message['role'] == 'tool')) {
+      if (hasToolCalls && toolCallsAsContent) {
+        _decodeObjectArguments(renderedMessages);
+        useGenericSchema(renderedMessages);
+        moveToolCallsToContent(
+          renderedMessages,
+          preserveContentList: multimodal,
+        );
+      }
+      renderedMessages = toolResultsAsUserTurns(renderedMessages);
+    }
+
     if (typedContentOnly) {
       for (final message in renderedMessages) {
         final content = message['content'];
@@ -151,6 +175,48 @@ class TemplateRenderContext {
     }
 
     return renderedMessages;
+  }
+
+  /// Replaces each run of consecutive `tool` messages in [messages] with one
+  /// `user` message, for templates that reject the `tool` role.
+  ///
+  /// Each result is written as llama.cpp's minja `polyfill_tool_responses`
+  /// wrote it, `{"tool_response": {"tool": name, "content": content,
+  /// "tool_call_id": id}}` with two-space indentation and absent fields
+  /// left out. Results in one run are joined with a newline, so templates
+  /// that require alternating user and assistant turns accept several
+  /// results.
+  static List<Map<String, dynamic>> toolResultsAsUserTurns(
+    List<Map<String, dynamic>> messages,
+  ) {
+    final turns = <Map<String, dynamic>>[];
+    final results = <String>[];
+    void flush() {
+      if (results.isEmpty) return;
+      turns.add({'role': 'user', 'content': results.join('\n')});
+      results.clear();
+    }
+
+    for (final message in messages) {
+      if (message['role'] != 'tool') {
+        flush();
+        turns.add(message);
+        continue;
+      }
+      final name = message['name'];
+      final id = message['tool_call_id'];
+      results.add(
+        _defaultToolCallEncoder.convert({
+          'tool_response': {
+            'tool': ?name,
+            'content': message['content'],
+            'tool_call_id': ?id,
+          },
+        }),
+      );
+    }
+    flush();
+    return turns;
   }
 
   static LlamaChatMessage _withMediaMarkers(

@@ -1591,6 +1591,93 @@ void main() {
     });
   });
 
+  group('ChatTemplateEngine tool results for a template without the tool '
+      'role', () {
+    // llama.cpp models/templates/google-gemma-2-2b-it.jinja, inline so the
+    // test runs on Chrome as well.
+    const gemma2 =
+        "{{ bos_token }}{% if messages[0]['role'] == 'system' %}"
+        "{{ raise_exception('System role not supported') }}{% endif %}"
+        "{% for message in messages %}"
+        "{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}"
+        "{{ raise_exception('Conversation roles must alternate "
+        "user/assistant/user/assistant/...') }}{% endif %}"
+        "{% if (message['role'] == 'assistant') %}{% set role = 'model' %}"
+        "{% else %}{% set role = message['role'] %}{% endif %}"
+        "{{ '<start_of_turn>' + role + '\n' + message['content'] | trim + "
+        "'<end_of_turn>\n' }}{% endfor %}"
+        "{% if add_generation_prompt %}{{'<start_of_turn>model\n'}}{% endif %}";
+    final messages = [
+      const LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'Weather in Paris?',
+      ),
+      const LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: [
+          LlamaToolCallContent(
+            id: 'call00001',
+            name: 'get_weather',
+            arguments: {'city': 'Paris'},
+            rawJson: '{"city":"Paris"}',
+          ),
+        ],
+      ),
+      const LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [
+          LlamaToolResultContent(
+            id: 'call00001',
+            name: 'get_weather',
+            result: 'sunny',
+          ),
+        ],
+      ),
+    ];
+
+    for (final choice in ToolChoice.values) {
+      test('sends the result as a user turn with tool_choice '
+          '${choice.name}', () {
+        final result = ChatTemplateEngine.render(
+          templateSource: gemma2,
+          messages: messages,
+          metadata: const {'tokenizer.ggml.bos_token': ''},
+          tools: [
+            ToolDefinition(
+              name: 'get_weather',
+              description: 'Get weather',
+              parameters: [ToolParam.string('city')],
+              handler: _noopHandler,
+            ),
+          ],
+          toolChoice: choice,
+        );
+
+        expect(
+          result.prompt,
+          endsWith(
+            '<start_of_turn>user\n'
+            '{\n'
+            '  "tool_response": {\n'
+            '    "tool": "get_weather",\n'
+            '    "content": "sunny",\n'
+            '    "tool_call_id": "call00001"\n'
+            '  }\n'
+            '}<end_of_turn>\n'
+            '<start_of_turn>model\n',
+          ),
+        );
+        expect(result.prompt, contains('<start_of_turn>model\n{\n'));
+        expect(
+          result.format,
+          choice == ToolChoice.none
+              ? ChatFormat.contentOnly.index
+              : ChatFormat.generic.index,
+        );
+      });
+    }
+  });
+
   group('ChatTemplateEngine.parse whitespace after content', () {
     const hermesCall =
         '<tool_call>\n'
