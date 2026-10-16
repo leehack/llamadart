@@ -2288,9 +2288,29 @@ def validate_litert_lm_release_manifest(
             "compatibilityTag",
             "developmentIdentity",
             "prebuiltOverrides",
-        },
+        } | ({"sourcePatches"} if "sourcePatches" in upstream else set()),
         "upstream provenance",
     )
+    if "sourcePatches" in upstream:
+        source_patches = upstream["sourcePatches"]
+        if not isinstance(source_patches, list) or not source_patches:
+            raise ReleaseError(
+                "LiteRT-LM upstream sourcePatches must be a non-empty list"
+            )
+        for index, source_patch in enumerate(source_patches):
+            label = f"upstream sourcePatches[{index}]"
+            require_exact_keys(
+                source_patch,
+                {
+                    "id", "path", "sha256", "source",
+                    "preimageSha256Lf", "postimageSha256Lf", "scope",
+                },
+                label,
+            )
+            for field in ("id", "path", "source", "scope"):
+                require_string(source_patch[field], f"{label} {field}")
+            for field in ("sha256", "preimageSha256Lf", "postimageSha256Lf"):
+                require_sha256(source_patch[field], f"{label} {field}")
     require_exact_keys(native, {"repository", "commit"}, "native provenance")
     if not isinstance(upstream.get("prebuiltOverrides"), list):
         raise ReleaseError("LiteRT-LM manifest prebuiltOverrides must be a list")

@@ -89,6 +89,12 @@ so development assets use `g<sha>` directly and never synthesize `vg<sha>` URLs.
 Schema 1 manifests remain accepted only when the downloaded bytes, GitHub asset
 digest, and immutable tag commit match the checked-in historical allowlist.
 
+Schema 2 optionally accepts `upstream.sourcePatches` as a non-empty list of
+objects with exactly `id`, `path`, `sha256`, `source`, `preimageSha256Lf`,
+`postimageSha256Lf` and `scope`. All fields are non-empty strings; the three
+hashes must be lowercase 64-hex SHA-256 digests. The owner validates patch
+contents and applicability; sync validates the declared provenance shape.
+
 For schema 2, Apple target selection follows the per-platform owner inventory.
 Sync removes a formerly required iOS Gemma constraint-provider target from a
 modern Swift manifest when the new iOS bundles no longer require it. An optional
