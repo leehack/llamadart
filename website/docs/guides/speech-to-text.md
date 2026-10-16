@@ -253,6 +253,9 @@ adapter carries the runtime settings (`backend`, `numberOfThreads`,
 so `params:` and `backend:` must be null. A `LiteRtLmAsrAdapter` model takes
 no projector, and a prompt adapter model no tokenizer.
 
+Native runtime `v0.18.0-2` removes duplicated words at untimed ASR window
+boundaries with the default overlap. Recognition errors can remain.
+
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
 `finish` flushes a partial final window.

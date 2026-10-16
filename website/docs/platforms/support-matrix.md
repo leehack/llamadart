@@ -164,7 +164,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   adapter's 128 MiB storage-buffer binding limit is smaller than one of the
   model's weight buffers, so expect the same from any model and adapter with
   that mismatch. `v0.17.0-8` and earlier generated wrong text there. With the
-  pinned `v0.18.0` GPU engine creation fails instead: on a Galaxy S24 the
+  native `v0.18.0` GPU engine creation fails instead: on a Galaxy S24 the
   first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
   requested and `LlamaModelException` under `auto`. Gemma 4 E2B runs on that
   GPU. Load Qwen3 0.6B with `ModelParams(device: ComputeDevice.cpu)`, which
@@ -173,7 +173,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
 - Windows x64 LiteRT-LM GPU needs `litert-lm-native` `v0.17.0-6` or later,
   which bundles `dxil.dll` and `dxcompiler.dll`. The pinned runtime includes
-  them. The pinned `v0.18.0` GPU accelerator and sampler load
+  them. The `v0.18.0` GPU accelerator and sampler load
   `webgpu_dawn.dll`, which the hook bundles. Qwen3 0.6B ran on an NVIDIA L4
   (Direct3D 12) through `dart run` and a `dart build cli` bundle; a Flutter
   Windows app has not been run with it.
@@ -248,13 +248,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.7.0` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.18.0` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.18.0-2` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0-3`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.7.0` and
-`litert-lm-native` release `v0.18.0` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.18.0-2` (`lib/src/hook/native_release_pins.dart`).
 Apps can override the llama.cpp release with `llamadart_native_tag`, which
 takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
 `bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading

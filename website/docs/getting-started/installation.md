@@ -93,12 +93,14 @@ including the GPU accelerators. The build uses it only when the resolved
 companion's `Package.swift` is the one this core release expects; any other
 companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
-Companion `0.0.15` is the exception: it pins `v0.18.0` rather than this core's
-`v0.18.0-1`, but the app still embeds and loads the companion's complete macOS
-arm64 runtime and needs no build phase, so the build only warns to upgrade the
-companion to `0.0.16` or later, the releases pinning `v0.18.0-1`.
-On iOS the build does not check the LiteRT-LM companion pin. `v0.18.0-1`
-rebuilds the same LiteRT-LM release with arm64-only macOS XCFrameworks.
+Earlier maintained companions are the exception: `0.0.15` pins `v0.18.0`,
+and `0.0.16` and `0.13.0` pin `v0.18.0-1`. They still embed and load their
+complete macOS arm64 runtime and need no build phase. The build warns to
+upgrade the companion to `0.14.0` with core `0.14.x`, pinning `v0.18.0-2`.
+On iOS the build does not check the LiteRT-LM companion pin. `v0.18.0-2`
+keeps the arm64-only macOS XCFrameworks introduced in `v0.18.0-1` and fixes
+untimed ASR overlap duplication with the default overlap; recognition errors
+can remain.
 
 The companion's macOS XCFrameworks are published for arm64 only, so a
 universal `flutter build macos` prints

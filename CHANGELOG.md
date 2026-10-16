@@ -1,10 +1,7 @@
 ## Unreleased
 
-* Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@v0.7.0`, regenerated matching Dart FFI bindings, refreshed
-  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
-  aligned current README/website native override docs.
-
+- Update the LiteRT-LM native runtime to v0.18.0-2, which removes duplicated
+  words at untimed ASR window boundaries with the default overlap.
 - Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
   native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
 - Document a fresh macOS SwiftPM bootstrap for generated deployment-target

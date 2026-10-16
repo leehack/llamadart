@@ -263,7 +263,7 @@ Use this checklist in native sync PRs:
 ## Companion package release handoff
 
 Core `0.14.0` adoption preparation pairs all three Apple companions at `0.14.0`,
-with SwiftPM pins `v0.7.0`, `v0.18.0-1` and `v0.2.0-3`, respectively. This
+with SwiftPM pins `v0.7.0`, `v0.18.0-2` and `v0.2.0-3`, respectively. This
 metadata does not publish packages; matching published Web assets and consumer
 qualification remain adoption gates.
 
