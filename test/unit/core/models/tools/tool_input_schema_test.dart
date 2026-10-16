@@ -543,14 +543,45 @@ void main() {
                   keyword: bound,
                 },
         });
-        expect(() => build(bounded(1999)), returnsNormally);
+        for (final bound in [0, 1999, 2000]) {
+          expect(() => build(bounded(bound)), returnsNormally);
+        }
         expect(
-          () => build(bounded(2000)),
+          () => build(bounded(2001)),
           unsupported(
-            '$keyword at input.x is 2000; llama.cpp grammars accept at most 1999',
+            '$keyword at input.x is 2001; llama.cpp grammars accept at most 2000',
           ),
         );
       });
+    }
+
+    for (final suffix in ['Length', 'Items']) {
+      for (final minimum in [true, false]) {
+        final keyword = '${minimum ? 'min' : 'max'}$suffix';
+        test('$keyword 2000 still validates tool input values', () {
+          final schema = build(
+            object({
+              'x': suffix == 'Length'
+                  ? {'type': 'string', keyword: 2000}
+                  : {
+                      'type': 'array',
+                      'items': {'type': 'string'},
+                      keyword: 2000,
+                    },
+            }),
+          ).toJsonSchema();
+          for (final count in [1999, 2000, 2001]) {
+            final value = suffix == 'Length'
+                ? 'a' * count
+                : List.filled(count, 'a');
+            expect(
+              validateToolInputValue({'x': value}, schema).valid,
+              minimum ? count >= 2000 : count <= 2000,
+              reason: '$keyword with $count values',
+            );
+          }
+        });
+      }
     }
 
     test('deep values validate without exhausting the stack', () {

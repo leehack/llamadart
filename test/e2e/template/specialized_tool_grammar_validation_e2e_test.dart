@@ -1353,6 +1353,65 @@ void main() {
     }
   });
 
+  test('tool schema bounds of 2000 load and enforce every bound', () {
+    for (final item in [null, ...boundedArrayItemSchemas]) {
+      final suffix = item == null ? 'Length' : 'Items';
+      String value(int count) => item == null
+          ? jsonEncode('a' * count)
+          : jsonEncode(List.filled(count, boundedArrayItemValue(item)));
+      for (final bounds in <Map<String, int>>[
+        {'min$suffix': 2000},
+        {'max$suffix': 2000},
+        for (final minimum in [0, 1, 1999, 2000])
+          {'min$suffix': minimum, 'max$suffix': 2000},
+      ]) {
+        final minimum = bounds['min$suffix'] ?? 0;
+        final maximum = bounds['max$suffix'];
+        final schema = <String, dynamic>{
+          'type': 'object',
+          'properties': {
+            'x': {
+              'type': item == null ? 'string' : 'array',
+              'items': ?item,
+              ...bounds,
+            },
+          },
+          'required': ['x'],
+          'additionalProperties': false,
+        };
+        final tool = ToolDefinition.fromJsonSchema(
+          name: 'spec',
+          description: 'Spec',
+          schema: schema,
+        );
+        final grammars = [
+          ..._openObjectGrammars(schema),
+          (
+            MistralHandler().buildGrammar([tool])!,
+            (String args) =>
+                '[TOOL_CALLS][{"name":"spec","arguments":$args,"id":"123456789"}]',
+          ),
+        ];
+        for (final (grammar, output) in grammars) {
+          _expectGrammar(
+            validator,
+            grammar,
+            valid: [
+              output('{"x":${value(2000)}}'),
+              if (minimum < 2000) output('{"x":${value(minimum)}}'),
+              if (maximum == null) output('{"x":${value(2001)}}'),
+            ],
+            invalid: [
+              if (minimum > 0) output('{"x":${value(minimum - 1)}}'),
+              if (maximum != null) output('{"x":${value(2001)}}'),
+              output('{}'),
+            ],
+          );
+        }
+      }
+    }
+  });
+
   test('Hermes schema calls accept newlines inside the tool_call tags', () {
     final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});
     _expectGrammar(

@@ -1,3 +1,8 @@
+## Unreleased
+
+- Tool input schemas now accept string length and array item bounds of 2000,
+  matching the shipped llama.cpp runtime ([#1116](https://github.com/leehack/llamadart/issues/1116)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build

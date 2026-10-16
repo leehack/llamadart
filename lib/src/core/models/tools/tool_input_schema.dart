@@ -49,10 +49,10 @@ const _maxEnumValues = 1024;
 const _maxPropertyNameLength = 128;
 const _maxGrammarLength = 256 * 1024;
 
-/// llama.cpp's grammar parser rejects a repetition count of
-/// `MAX_REPETITION_THRESHOLD` (2000) or more, and silently drops an upper bound
-/// above it.
-const _maxRepetition = 1999;
+/// The shipped llama.cpp grammar parser accepts repetition counts up to
+/// `MAX_REPETITION_THRESHOLD` (2000). Reject larger bounds rather than letting
+/// the parser silently drop an upper bound.
+const _maxRepetition = 2000;
 
 final class _SchemaBudget {
   int nodes = 0;
