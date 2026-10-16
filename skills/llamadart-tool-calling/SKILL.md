@@ -95,6 +95,11 @@ description: >-
   `v0.18.0` hands it each message's `content` as a list of
   `{"type": "text", "text": ...}` parts, so read both the string and the
   list shape.
+- Gemma 2/3/3n and legacy Mistral templates retry a failed tool-result render
+  with consecutive results as one user turn. A user message immediately after
+  those results is appended with a newline on that retry. Stored history and
+  successful first renders stay unchanged; unrelated consecutive user turns
+  still follow the template's validation.
 - A recursive chat template (for example Command R+ or
   Hermes-2-Pro-Llama-3-8B `tool_use` with a null-typed parameter) fails with
   `LlamaInferenceException` naming the selected template on the Dart VM and
