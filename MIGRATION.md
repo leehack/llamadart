@@ -2,6 +2,30 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.13.0` -> `0.13.1`: typed failures and negative `gpuLayers`
+
+These changes alter what callers see:
+
+- `responseFormat` schemas, raw or typed, that the grammar converter cannot
+  represent throw `LlamaUnsupportedException`, and cyclic or other non-JSON
+  schemas throw `LlamaArgumentException`, instead of `StateError`,
+  `TypeError` or a stack overflow. A combined tool or schema grammar that
+  llama.cpp would refuse fails before generation with
+  `LlamaUnsupportedException`. Schemas that worked before are unchanged.
+- LiteRT-LM, native and Web: a generation started right after a cancel waits
+  for the cancelled run instead of failing. Overlapping a running generation
+  that was not cancelled, or a second waiting one, throws
+  `LlamaStateException` instead of `LlamaInferenceException` wrapping a
+  `StateError`.
+- On Web, WebGPU and LiteRT-LM, `cancelGeneration()` ends the stream
+  normally instead of surfacing `LlamaInferenceException` or an `AbortError`.
+- A negative `ModelParams.gpuLayers` means all layers on every runtime, like
+  `ModelParams.maxGpuLayers`. LiteRT-LM under `ComputeDevice.auto` now
+  selects its GPU backend instead of the CPU; pass `gpuLayers: 0` or
+  `ComputeDevice.cpu` to keep the CPU. On native llama.cpp,
+  `getResolvedGpuLayers()` reports the resolved count instead of the
+  negative value.
+
 ## `0.12.x` -> `0.13.0`: companion versions and LiteRT-LM cache cap
 
 Apple companions now share the core `MAJOR.MINOR` and constrain `llamadart`
