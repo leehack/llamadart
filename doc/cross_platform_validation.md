@@ -1683,8 +1683,9 @@ also omit `C12.grammar` (`litert_grammar_unsupported`: LiteRT-LM rejects every
 grammar). C07.tools version 3 also binds the hello fixture its recovery uses.
 On Web, a required trial rejected with the documented
 `LlamaUnsupportedException` for a lazy required-tool grammar counts as that
-trial's result; elsewhere the rejection stays ERROR. Catalog 1 to 4 reports keep their inventories, C07.tools version 2
-and fixtures; a catalog 5 case in them fails the report.
+trial's result; elsewhere the rejection stays ERROR. Catalog 1 to 4 reports
+keep their inventories, C07.tools version 2 and fixtures; a catalog 5 case in
+them fails the report.
 
 The `chat-gguf-*` and `gemma4-gguf-*` profiles select `focused` with `tools`.
 Their C07 fixtures are reference-qualified against unmodified upstream

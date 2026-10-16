@@ -1650,6 +1650,59 @@ void main() {
       expect(second.text, 'second;');
     });
 
+    test('a subscription cancel of the cancelled run does not end the '
+        'generation queued behind it', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      final firstCancelled = first.subscription.cancel();
+      await _settle();
+      expect(second.isDone, isFalse);
+
+      firstRun.finish();
+      await firstCancelled;
+      final secondRun = await fake.started(1);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('ending a queued run keeps the slot while the cancelled run is still '
+        'streaming', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      backend.cancelGeneration();
+      await second.done;
+
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(fake.runs, hasLength(1));
+
+      firstRun.finish();
+      await first.done;
+      final thirdRun = await fake.started(1);
+      thirdRun.finish();
+      await third.done;
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+    });
+
     test(
       'cancelGeneration ends a queued generation without running it',
       () async {
@@ -2177,6 +2230,7 @@ final class _CollectedGeneration {
   Object? error;
 
   String get text => utf8.decode(_bytes);
+  bool get isDone => _done.isCompleted;
   Future<void> get firstChunk =>
       _firstChunk.future.timeout(const Duration(seconds: 2));
   Future<void> get done => _done.future.timeout(const Duration(seconds: 2));

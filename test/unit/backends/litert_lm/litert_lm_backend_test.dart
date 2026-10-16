@@ -1851,6 +1851,66 @@ void main() {
       });
     }
 
+    test('a generation the worker fails frees the slot', () async {
+      service.failPrompt = 'boom';
+      final first = _CollectedGeneration(backend.generate(1, 'boom', params));
+      await first.done;
+      expect(first.error, isA<StateError>());
+
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final secondRun = await service.started(0);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('a cancelled run that ends with a worker error starts the '
+        'generation queued behind it', () async {
+      service.failAfterFinish = true;
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await service.started(0);
+      await first.firstChunk;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      firstRun.finish();
+      await first.done;
+      expect(first.error, isA<StateError>());
+
+      final secondRun = await service.started(1);
+      service.failAfterFinish = false;
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('a token after a subscription cancel is dropped', () async {
+      service.tokenAfterFinish = true;
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await service.started(0);
+      await first.firstChunk;
+
+      await first.subscription.cancel();
+      firstRun.finish();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final secondRun = await service.started(1);
+      service.tokenAfterFinish = false;
+      secondRun.finish();
+      await second.done;
+      expect(first.text, 'first;');
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
     test('overlapping a generation that was not cancelled throws '
         'LlamaStateException', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
@@ -1914,6 +1974,28 @@ void main() {
     expect(first.error, isA<LlamaStateException>());
     expect(second.error, isA<LlamaStateException>());
     expect(second.text, isEmpty);
+    await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
+  });
+
+  test('a generation after a worker exit during a cancelled run reports the '
+      'unsettled worker', () async {
+    final backend = LiteRtLmBackend(workerEntryPoint: _exitOnCancelWorker);
+    const params = GenerationParams(streamBatchTokenThreshold: 1);
+    final first = _CollectedGeneration(backend.generate(1, 'first', params));
+    await first.firstChunk;
+
+    backend.cancelGeneration();
+    await first.done;
+    final second = _CollectedGeneration(backend.generate(1, 'second', params));
+    await second.done;
+    expect(
+      second.error,
+      isA<LlamaStateException>().having(
+        (error) => error.message,
+        'message',
+        contains('native cleanup was confirmed'),
+      ),
+    );
     await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
   });
 
@@ -2321,6 +2403,15 @@ class _CancellableRunService extends LiteRtLmService {
   );
   int cancelCount = 0;
 
+  /// A prompt whose run fails before it starts.
+  String? failPrompt;
+
+  /// Whether a finished run fails instead of ending normally.
+  bool failAfterFinish = false;
+
+  /// Whether a finished run streams one more token before it ends.
+  bool tokenAfterFinish = false;
+
   Future<_ServiceRun> started(int index) =>
       _started[index].future.timeout(const Duration(seconds: 2));
 
@@ -2331,11 +2422,14 @@ class _CancellableRunService extends LiteRtLmService {
   }
 
   Stream<List<int>> _run(String prompt) async* {
+    if (prompt == failPrompt) throw StateError('native failure');
     final run = _ServiceRun(prompt);
     runs.add(run);
     _started[runs.length - 1].complete(run);
     yield utf8.encode('$prompt;');
     await run._stopped.future;
+    if (tokenAfterFinish) yield utf8.encode('late;');
+    if (failAfterFinish) throw StateError('native failure after finish');
   }
 
   @override
