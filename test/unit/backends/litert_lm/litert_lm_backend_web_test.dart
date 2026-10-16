@@ -1915,6 +1915,25 @@ void main() {
       expect(fake.conversationsDeleted, 1);
     });
 
+    test('pausing the stream pauses the run', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      first.subscription.pause();
+      firstRun.finish(tail: 'more;');
+      await _settle();
+      expect(first.text, 'first;');
+      expect(fake.conversationsDeleted, 0, reason: 'the paused run waits');
+
+      first.subscription.resume();
+      await first.done;
+      expect(first.error, isNull);
+      expect(first.text, 'first;more;');
+      expect(fake.conversationsDeleted, 1);
+    });
+
     test('dispose ends a queued generation without running it', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
       final firstRun = await fake.started(0);
