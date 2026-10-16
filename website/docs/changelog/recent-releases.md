@@ -7,6 +7,13 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Report recursive chat-template failures, including Command R+ and
+  Hermes-2-Pro-Llama-3-8B null-typed tool parameters, as
+  `LlamaInferenceException` instead of `StackOverflowError` on VM and JavaScript
+  ([#1112](https://github.com/leehack/llamadart/issues/1112)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build
