@@ -328,6 +328,118 @@ void main() {
     );
   });
 
+  test('reports the first error when the user-turn retry throws an Error', () {
+    const template = '''
+{%- for m in messages -%}
+{%- if m.role == 'tool' -%}{{ raise_exception('no tool role') }}{%- endif -%}
+{%- if m.role == 'user' and 'tool_response' in m.content -%}{{ 1 // 0 }}{%- endif -%}
+{{ m.role }}: {{ m.content }}
+{% endfor -%}''';
+    expect(TemplateCaps.detect(template).supportsToolResponses, isFalse);
+
+    expect(
+      () => ChatTemplateEngine.render(
+        templateSource: template,
+        messages: _oneResult,
+        metadata: const {},
+      ),
+      throwsA(
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          contains('no tool role'),
+        ),
+      ),
+    );
+  });
+
+  group('gemma-3-4b-it.jinja retries every form of tool result', () {
+    const path = 'test/fixtures/templates/gemma-3-4b-it.jinja';
+    final call = _calls([_call('call00001', 'Paris')]);
+    for (final (name, message) in [
+      (
+        'a text tool message',
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.tool,
+          text: 'raw 21C',
+        ),
+      ),
+      (
+        'a legacy tool message',
+        // ignore: deprecated_member_use_from_same_package
+        const LlamaChatMessage(role: 'tool', content: 'raw 21C'),
+      ),
+      (
+        'a tool result in a user message',
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [_result('call00001', 'raw 21C')],
+        ),
+      ),
+    ]) {
+      for (final tools in [false, true]) {
+        test('$name ${tools ? 'with' : 'without'} tools', () {
+          final prompt = _render(path, [
+            _user,
+            call,
+            message,
+          ], tools: tools).prompt;
+
+          expect(
+            prompt,
+            contains('<start_of_turn>user\n{\n  "tool_response": {\n'),
+          );
+          expect(prompt, contains('"content": "raw 21C"'));
+        });
+      }
+    }
+
+    test('with an image in the request', () {
+      final prompt = _render(path, [
+        const LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            LlamaImageContent(url: 'http://example.com/a.png'),
+            LlamaTextContent('Where is this? What is the weather there?'),
+          ],
+        ),
+        call,
+        _results([_result('call00001', 'sunny')]),
+      ]).prompt;
+
+      expect(prompt, contains('<__media__>'));
+      expect(prompt, contains('"tool_response": {'));
+      expect(prompt, contains('"content": "sunny"'));
+    });
+
+    test('but not a render-context error on the generic route', () {
+      expect(
+        () => _render(path, [
+          _user,
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaToolCallContent(
+                id: 'call00001',
+                name: 'get_weather',
+                arguments: {},
+                rawJson: '[1,2]',
+              ),
+            ],
+          ),
+          _results([_result('call00001', '21C')]),
+        ]),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            startsWith('Failed to build render context'),
+          ),
+        ),
+      );
+    });
+  });
+
   test('keeps the error of a template that renders the tool role', () {
     const template = '''
 {%- for message in messages -%}

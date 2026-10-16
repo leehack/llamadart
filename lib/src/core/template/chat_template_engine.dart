@@ -397,7 +397,7 @@ class ChatTemplateEngine {
   /// retried once with tool results as user turns, for a template that
   /// rejects the `tool` role (see [renderWithToolResultsAsUserTurns]). A
   /// request the template renders as given is never changed. When the retry
-  /// fails too, the first failure is reported.
+  /// fails in any way, the first failure is reported.
   static LlamaChatTemplateResult _renderTemplate(
     String templateName,
     LlamaChatTemplateResult Function() render, {
@@ -411,7 +411,7 @@ class ChatTemplateEngine {
       if (retryWithToolResultsAsUser) {
         try {
           return renderWithToolResultsAsUserTurns(render);
-        } on Exception {
+        } catch (_) {
           // Report the template's error for the request as given.
         }
       }

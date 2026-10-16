@@ -326,30 +326,6 @@ An ordinary answer uses `{"response":"Hello!"}`. The parser returns the
 answer or tool call through the same API as a model-specific format. Your
 application still decides whether to invoke the tool.
 
-Gemma 2/3/3n and older Mistral templates reject the `tool` role. When such a
-template fails to render a request with tool results, and accepts a tool
-result as a user message, llamadart renders the request again with each run
-of consecutive results as one user turn, such as:
-
-```json
-{
-  "tool_response": {
-    "tool": "get_weather",
-    "content": "{\"temperature_c\":21}",
-    "tool_call_id": "call_1"
-  }
-}
-```
-
-The earlier tool calls appear as JSON in the model turn, with or without
-tools on the follow-up request. This restores the tool-result polyfill of
-llama.cpp's former minja engine (for example `b6000`); the tested `b10549`
-fails the same request with the template's role-alternation error. A request
-that the template renders as given, and any template that renders the `tool`
-role itself, is unchanged. A user message directly after tool results still
-fails on these templates, as two user turns in a row
-([#1118](https://github.com/leehack/llamadart/issues/1118)).
-
 This fallback is an intentional extension to the tested llama.cpp versions
 (`b10549` and `v0.5.0`, commit `7fe450e19`). For the tested ChatML Hermes-3,
 SmolLM2 and SmolVLM templates, those versions render without tool definitions
@@ -376,6 +352,32 @@ these templates. Backend restrictions still apply: in particular, this
 fallback does not add grammar enforcement to LiteRT-LM. See
 [Chat templates and output parsing](./chat-template-and-parsing) for runtime
 routing and [model families](../getting-started/model-families) for formats.
+
+### Tool results on templates without a tool role
+
+Gemma 2/3/3n and older Mistral templates reject the `tool` role. When such a
+template fails to render a request with tool results, and accepts a tool
+result as a user message, llamadart renders the request again with each run
+of consecutive results as one user turn, such as:
+
+```json
+{
+  "tool_response": {
+    "tool": "get_weather",
+    "content": "{\"temperature_c\":21}",
+    "tool_call_id": "call_1"
+  }
+}
+```
+
+The earlier tool calls appear as JSON in the model turn, with or without
+tools on the follow-up request. This restores the tool-result polyfill of
+llama.cpp's former minja engine (for example `b6000`); the tested `b10549`
+fails the same request with the template's role-alternation error. A request
+that the template renders as given, and any template that renders the `tool`
+role itself, is unchanged. A user message directly after tool results still
+fails on these templates, as two user turns in a row
+([#1118](https://github.com/leehack/llamadart/issues/1118)).
 
 ## Tool choice semantics
 
