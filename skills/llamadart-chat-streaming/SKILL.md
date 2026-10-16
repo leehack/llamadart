@@ -50,8 +50,13 @@ description: >-
   recognizes renamed Qwen 3 bundles only from a Qwen 3 model-type declaration
   (field 6), or the complete canonical Qwen 3 template in field 7 or
   `ModelParams.chatTemplate`. Legacy litert-community Qwen3-0.6B bundles have
-  neither metadata field: keep `Qwen3` in the filename or use the complete
-  `tool/litert_lm_templates/qwen3.jinja` override. Otherwise disabled thinking
+  neither metadata field: keep `Qwen3` in the filename or use the
+  `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` override. Import it
+  from `package:llamadart/llamadart.dart`; get the string from this accessor
+  when constructing parameters, rather than copying or persisting Jinja across
+  upgrades. Web `@litert-lm/core@0.18.0` has no template setter and rejects
+  this canonical override with `LlamaUnsupportedException` at load; use native
+  LiteRT-LM for this contract. Otherwise disabled thinking
   can still return empty content after renaming. Generic thinking markers are
   insufficient. Other families keep native bundle templates and adapters;
   overrides still drive Dart-side metadata and parsing. Media routing is unchanged.

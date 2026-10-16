@@ -294,7 +294,11 @@ class ModelParams {
   /// bundles need a Qwen3 model-type declaration or the complete canonical
   /// Qwen3 template in bundle metadata or this override. Legacy bundles with
   /// only generic ChatML metadata cannot be identified after renaming: keep
-  /// Qwen3 in the filename or supply the canonical Qwen3 template here.
+  /// Qwen3 in the filename or set this to `liteRtLmQwen3ChatTemplate`, the
+  /// public accessor for the installed canonical template. Do not copy its
+  /// bytes across package upgrades. Web `@litert-lm/core@0.18.0` cannot set a
+  /// conversation template and rejects this Qwen3 override at model load with
+  /// [LlamaUnsupportedException]; use native LiteRT-LM for this contract.
   /// Other families keep their native bundle template and content adapter.
   /// A native override receives `enable_thinking` and must implement it.
   ///

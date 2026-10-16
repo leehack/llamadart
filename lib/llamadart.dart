@@ -72,6 +72,7 @@ export 'src/core/decision/decision_question.dart';
 export 'src/core/decision/decision_result.dart';
 
 // Template APIs
+export 'src/backends/litert_lm/litert_lm_templates.dart';
 export 'src/core/template/chat_format.dart' show ChatFormat;
 export 'src/core/template/chat_parse_result.dart' show ChatParseResult;
 export 'src/core/template/chat_template_engine.dart' show ChatTemplateEngine;

@@ -368,6 +368,14 @@ regardless of GitHub metadata. Nightly cores use canonical decimal spelling
 zeros. The default pin above changes only after the matching artifacts,
 bindings, runtime behavior, and docs have been validated together.
 
+Renamed legacy Qwen3 `.litertlm` bundles can opt into native thinking control
+with `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` and
+`enableThinking: false`. The public accessor follows the installed template
+version, so callers do not copy Jinja files. Native runtimes need the
+conversation-template setter. Web `@litert-lm/core@0.18.0` cannot apply this
+override and throws `LlamaUnsupportedException` at load. See the
+[template guide](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing).
+
 ### Alongside Flutter Edge AI
 
 `flutter_edge_ai_litertlm` ships its own LiteRT-LM libraries, and

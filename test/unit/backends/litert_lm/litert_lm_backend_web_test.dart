@@ -30,6 +30,47 @@ void main() {
   setUp(_clearGlobals);
   tearDown(_clearGlobals);
 
+  for (final decoration in ['', '  \n', 'suffix']) {
+    test(
+      'rejects canonical Qwen3 override before Web runtime creation: $decoration',
+      () async {
+        var creates = 0;
+        _installFakeEngine(
+          chunks: <JSAny?>[_messageChunk('hidden thinking')],
+          onCreate: (_) => creates++,
+        );
+        final backend = LiteRtLmBackend();
+        try {
+          await expectLater(
+            backend.modelLoadFromUrlAs(
+              'https://example.com/download?id=42',
+              ModelParams(
+                chatTemplate: decoration == 'suffix'
+                    ? '${api.liteRtLmQwen3ChatTemplate}\n{# customization #}'
+                    : '$decoration${api.liteRtLmQwen3ChatTemplate}',
+              ),
+              ModelFormat.liteRtLm,
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('Qwen3'),
+                  contains('@litert-lm/core@0.18.0'),
+                  contains('native'),
+                ),
+              ),
+            ),
+          );
+          expect(creates, 0);
+        } finally {
+          await backend.dispose();
+        }
+      },
+    );
+  }
+
   test('rejects automatic tool loops before Web generation while '
       'manual completion remains usable', () async {
     var prompts = 0;

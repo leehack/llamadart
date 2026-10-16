@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
+  native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
+
 ## 0.14.0
 
 - Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple
