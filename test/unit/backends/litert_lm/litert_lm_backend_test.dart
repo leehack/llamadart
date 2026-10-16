@@ -1561,8 +1561,11 @@ void main() {
     });
 
     tearDown(() async {
+      // Dispose first: it ends any queued generation before the held runs
+      // finish, so a test that failed with one queued cannot start it here.
+      final disposed = backend.dispose();
       service.finishAll();
-      await backend.dispose();
+      await disposed;
     });
 
     test('waits for a run stopped by cancelGeneration, then starts', () async {
@@ -1851,6 +1854,79 @@ void main() {
       });
     }
 
+    test(
+      'a queued generation that started and finished leaves the queue',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await service.started(0);
+        await first.firstChunk;
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        firstRun.finish();
+        final secondRun = await service.started(1);
+        await second.firstChunk;
+
+        // Queueing behind the now-running second generation must see an empty
+        // queue; a stale entry would reject this third one.
+        backend.cancelGeneration();
+        final third = _CollectedGeneration(
+          backend.generate(1, 'third', params),
+        );
+        await _settle();
+        expect(third.error, isNull);
+
+        secondRun.finish();
+        await second.done;
+        final thirdRun = await service.started(2);
+        thirdRun.finish();
+        await third.done;
+        expect(third.error, isNull);
+        expect(third.text, 'third;');
+        expect(service.runs.map((run) => run.prompt), [
+          'first',
+          'second',
+          'third',
+        ]);
+      },
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
+
+    for (final teardown in ['modelFree', 'contextFree', 'modelLoad']) {
+      test('a generation started during $teardown waits for the run it '
+          'cancels', () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await service.started(0);
+        await first.firstChunk;
+
+        final settled = switch (teardown) {
+          'modelFree' => backend.modelFree(1),
+          'contextFree' => backend.contextFree(1),
+          _ => backend.modelLoad(modelFile.path, const ModelParams()),
+        }.then<void>((_) {}, onError: (Object _) {});
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        expect(second.error, isNull);
+
+        firstRun.finish();
+        await settled;
+        final secondRun = await service.started(1);
+        secondRun.finish();
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, 'second;');
+      });
+    }
+
     test('a generation the worker fails frees the slot', () async {
       service.failPrompt = 'boom';
       final first = _CollectedGeneration(backend.generate(1, 'boom', params));
@@ -1906,7 +1982,11 @@ void main() {
       service.tokenAfterFinish = false;
       secondRun.finish();
       await second.done;
-      expect(first.text, 'first;');
+      expect(
+        service.lateTokens,
+        1,
+        reason: 'the late token reached the worker',
+      );
       expect(second.error, isNull);
       expect(second.text, 'second;');
     });
@@ -2412,6 +2492,9 @@ class _CancellableRunService extends LiteRtLmService {
   /// Whether a finished run streams one more token before it ends.
   bool tokenAfterFinish = false;
 
+  /// How many tokens finished runs streamed after [_ServiceRun.finish].
+  int lateTokens = 0;
+
   Future<_ServiceRun> started(int index) =>
       _started[index].future.timeout(const Duration(seconds: 2));
 
@@ -2428,7 +2511,10 @@ class _CancellableRunService extends LiteRtLmService {
     _started[runs.length - 1].complete(run);
     yield utf8.encode('$prompt;');
     await run._stopped.future;
-    if (tokenAfterFinish) yield utf8.encode('late;');
+    if (tokenAfterFinish) {
+      lateTokens += 1;
+      yield utf8.encode('late;');
+    }
     if (failAfterFinish) throw StateError('native failure after finish');
   }
 

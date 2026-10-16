@@ -1769,6 +1769,29 @@ void main() {
       },
     );
 
+    test('a queued run ended by cancelGeneration never creates a '
+        'conversation', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      final created = fake.conversationsCreated;
+      fake.failNextConversation = Future<void>.value();
+      backend.cancelGeneration();
+      await second.done;
+      await _settle();
+      expect(second.error, isNull);
+      expect(second.text, isEmpty);
+      expect(fake.conversationsCreated, created);
+      fake.failNextConversation = null;
+    });
+
     test('dispose ends a queued generation without running it', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
       final firstRun = await fake.started(0);
@@ -2267,6 +2290,9 @@ final class _QueueFakeEngine {
 
   /// When set, the next `createConversation` waits for it, then rejects.
   Future<void>? failNextConversation;
+
+  /// How many times `createConversation` was called.
+  int conversationsCreated = 0;
   final List<Completer<_QueueFakeRun>> _started = List.generate(
     8,
     (_) => Completer<_QueueFakeRun>(),
@@ -2282,6 +2308,7 @@ final class _QueueFakeEngine {
   }
 
   Future<JSObject> _createConversation() async {
+    conversationsCreated += 1;
     final gate = failNextConversation;
     failNextConversation = null;
     if (gate != null) {
