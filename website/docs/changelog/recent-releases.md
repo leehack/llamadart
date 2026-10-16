@@ -12,23 +12,36 @@ For canonical full release notes, use:
 - Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple
   companion packages.
 - Qualify native EmbeddingGemma-2 text embeddings with 768-dimensional output.
-- Report recursive chat-template failures as `LlamaInferenceException` instead
-  of `StackOverflowError` ([#1112](https://github.com/leehack/llamadart/issues/1112)).
-- Accept tool schema string and array bounds of 2000
-  ([#1116](https://github.com/leehack/llamadart/issues/1116)).
-- Keep unfinished Ministral reasoning out of reply text on stop or cancellation
-  ([#886](https://github.com/leehack/llamadart/issues/886)).
-- Suppress unfinished Hermes tool-call markup on cancellation and preserve
-  completed calls ([#887](https://github.com/leehack/llamadart/issues/887)).
-- Honor `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles
-  identified by a canonical template override or metadata
-  ([#901](https://github.com/leehack/llamadart/issues/901)).
-
 - Aligned default WebGPU bridge assets to `v0.1.63`, embedding llama.cpp
   `v0.7.0` and qualified against native `v0.7.0`, preserving Web/native
   `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` parity. Web LiteRT-LM
   remains `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
   `65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`.
+
+## 0.13.2
+
+- Report recursive chat-template failures as `LlamaInferenceException`
+  instead of `StackOverflowError` on VM and JavaScript
+  ([#1112](https://github.com/leehack/llamadart/issues/1112)).
+- Accept tool input schema string length and array item bounds of 2000,
+  matching the shipped llama.cpp runtime
+  ([#1116](https://github.com/leehack/llamadart/issues/1116)).
+- Keep unfinished Ministral-format reasoning out of reply text when generation
+  stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
+- Cancelling inside a Hermes tool call keeps only preceding answer text;
+  legacy tools preserve completed calls before an unfinished call with
+  `finishReason: tool_calls`
+  ([#887](https://github.com/leehack/llamadart/issues/887)).
+- Honor `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles
+  with a canonical Qwen 3 `chatTemplate` override or identifying metadata
+  ([#901](https://github.com/leehack/llamadart/issues/901)).
+
+- Aligned default WebGPU bridge assets to `v0.1.59`, unchanged from 0.13.1:
+  they embed llama.cpp `v0.6.0`, are qualified against native `v0.6.0`, and
+  keep Web/native llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`
+  parity with native pin `v0.6.0-3`; Web LiteRT-LM is
+  `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.13.1
 
