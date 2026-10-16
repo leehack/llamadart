@@ -348,7 +348,14 @@ hooks:
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. A runtime older than `v0.5.0-1` has no exit teardown:
+override is active. Core `0.14.x` requires the v0.7.0 ABI, including its changed
+context-parameter and performance-data layouts. Native v0.6.0 and older
+bundles are incompatible even when they export the same symbol names. Stay on
+core `0.13.x` to use its v0.6.0 runtime and companions.
+
+The following thresholds describe historical wrapper features; they do not
+make an older ABI compatible with this core. A runtime older than `v0.5.0-1`
+has no exit teardown:
 llamadart then creates models and contexts with the upstream llama.cpp
 functions and logs a warning at the first model load, and the exits that
 teardown covers abort on Apple Metal as they did before
@@ -398,9 +405,9 @@ Adding only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
-an earlier build of the same llama.cpp release that the core lists as
-ABI-identical, such as `0.0.22` (`v0.6.0-2`), builds with a warning to upgrade
-the companion. The tag,
+an earlier build is accepted only when the core explicitly lists it as
+ABI-compatible. Core `0.14.0` lists no earlier companion pins: use companion
+`0.14.0` with native `v0.7.0`; v0.6.0 companions are rejected. The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. On macOS the hook hands LiteRT-LM to the companion

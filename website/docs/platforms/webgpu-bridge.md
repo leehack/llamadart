@@ -303,23 +303,23 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.59`, with local vendored assets
-identified as `v0.1.59-local-v0.6.0`.
+The example currently pins bridge assets to `v0.1.63`, with local vendored assets
+identified as `v0.1.63-local-v0.7.0`.
 
-- The pinned `v0.1.59` bridge assets embed llama.cpp `v0.6.0`, matching the native runtime
-  (`v0.6.0-3`, both built from upstream `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
-  even though the bridge asset tag `v0.1.59` differs from the native runtime tag
-  `v0.6.0-3`. Pinned artifact provenance: release `406130836`, tag commit
-  `189dde2798cb65a5ebe12d40068623e1873a6cd9`, bridge source
-  `c1f64536b9a4ea410066b711928c7cba03691fb0`, manifest SHA-256
-  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`. The
-  bridge assets were qualified against native `v0.6.0`; `v0.6.0-3` rebuilds it
-  from the same upstream commit.
+- The pinned `v0.1.63` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
+  (`v0.7.0`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+  even though the bridge asset tag `v0.1.63` differs from the native runtime tag
+  `v0.7.0`. Pinned artifact provenance: release `415205376`, tag commit
+  `c1665e3c9a38b78c553806f590f7948b36c8d148`, bridge source
+  `57d9971817897115c6312a712ccb21c9a25671f9`, manifest SHA-256
+  `65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`. The
+  bridge assets were qualified against the same native release. Extraction and
+  state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.59 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.63 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -327,7 +327,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.59';
+  window.__llamadartBridgeAssetsTag = 'v0.1.63';
 </script>
 ```
 

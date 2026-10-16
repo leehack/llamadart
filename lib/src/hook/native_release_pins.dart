@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.6.0-3';
+const llamaCppTag = 'v0.7.0';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,7 +16,7 @@ const llamaCppTag = 'v0.6.0-3';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.0.23';
+const llamaCppAppleCompanionVersion = '0.14.0';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
@@ -29,12 +29,7 @@ const llamaCppAppleCompanionVersion = '0.0.23';
 /// to the ones the Dart bindings expect. The build accepts such a companion
 /// with a warning. The native pin sync clears this map whenever it moves
 /// [llamaCppTag], because each entry is verified against one pin.
-const llamaCppCompatibleAppleCompanionTags = <String, String>{
-  'v0.6.0-2':
-      'the MinimumOSVersion, LSMinimumSystemVersion, and '
-      'CFBundleSupportedPlatforms framework Info.plist keys that App Store '
-      'validation checks',
-};
+const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
 /// archive, keyed by bundle.
@@ -43,27 +38,27 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      '434e4f8b394fd80e96e094ef8e2720f7b6f38ee7a6bd1a036f9d7bbdbb898d0f',
+      'a272fb8e5ea692fe4b93f2368c4c1a774f37320a1038b6145cae4e6186064fdd',
   'android-x64':
-      'e1e57532a0f0154c5b6a3f034de80f00f0eeb2354854b0e3e3e6f7e225a7d46a',
+      '4be5ee439bc26402a288d5e08796c8d42604b4fa8880a3395b7f6d24f46026d1',
   'ios-arm64':
-      '37a4e69cf6e1af5a56a9559dfd0bedeb2b5275af691bc7b6680690b16c6fa7d8',
+      '6824bb95723d9a88e5edeb9ddf4ea48b8e7df4d0873824c6759683e56eed885d',
   'ios-arm64-sim':
-      'cbb9d481d1fc515d15670150fe44b8611166e886f2f9c46ba421f4fe6bf387bf',
+      '4af2962e1705f3a812d0b3599eac18e6b62955c2c36b24ce2b8b7d17899ab54c',
   'ios-x86_64-sim':
-      '74349811b95106e24ae929c9132c67b88d936de39d543cfe1f4a9f41eeba9a3a',
+      'c9c2c130d1f469011d07aa377b582ee3f841e1ba7c6d8504480a7d4f4a3ab4af',
   'linux-arm64':
-      '03154c5db784ce6e85a58c69b480c1925cc96cf35deddcdbfb69b0a9ea63cd68',
+      '1e5bcdb180aa464e71746187baab5233b1b399f99aee1216c9292c1a03c061b9',
   'linux-x64':
-      'ad8dc7272d44f8a58182b1de30764265de0e93313a914f470a681e418a0f98d0',
+      'f56a68ec18875420bf751d7900cdecddea426f82666f428a3259d1d05c0a0b40',
   'macos-arm64':
-      'fbbe53ce1c63fda3e75f5573b013451396b085de8984eb071ee52614a5437629',
+      'a555b551a7fe1424f75119f30d824561dab4cb5f87b0b751f590a3b5913dbb3c',
   'macos-x86_64':
-      'a9964d3559c53613e9e38fa446c8292605e1b6de12b345e77f6e39a96272077a',
+      '5ea274cd68747e7ca0798515a0ae02a1c752b63d5b32fc49b13c545558c8dac2',
   'windows-arm64':
-      'b08d94691573b3c48286096ffc47d752abdaef01077b633bcc331c8e8c736b45',
+      'fe6119e827c8dc319ed2089718f9c8c02aa80f61dbd95eab433f48afc2cc3f2d',
   'windows-x64':
-      '61a245ea08e3738dc9c621571fafc894fc9c2ccb7dfa52e090b150a430ff845c',
+      '6f658286925f37e71a0a6f50fb034bd0c52ff44f0661b58f6bdfb011a35e4a18',
 };
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.

@@ -12,6 +12,7 @@ import 'package:test/test.dart';
 const _rerankerModelPathKey = 'LLAMADART_RERANKER_MODEL_PATH';
 const _encoderModelPathKey = 'LLAMADART_MODERNBERT_MODEL_PATH';
 const _pooledEncoderModelPathKey = 'LLAMADART_POOLED_MODERNBERT_MODEL_PATH';
+const _embeddingGemma2ModelPathKey = 'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH';
 const _backendKey = 'LLAMADART_EMBEDDING_BACKEND';
 const _wideMicroBatch = ModelParams(
   contextSize: 1024,
@@ -20,6 +21,46 @@ const _wideMicroBatch = ModelParams(
 );
 
 void main() {
+  group('EmbeddingGemma-2', () {
+    test('projected text outputs survive sequential and batch reuse', () async {
+      final engine = await _load(
+        _embeddingGemma2ModelPathKey,
+        const ModelParams(
+          contextSize: 1024,
+          batchSize: 1024,
+          microBatchSize: 1024,
+          maxParallelSequences: 2,
+        ),
+      );
+      if (engine == null) return;
+      addTearDown(engine.dispose);
+      const inputs = [
+        'task: search result | text: Paris is the capital of France.',
+        'task: search result | text: A cat sleeps beside the window.',
+      ];
+      final sequential = [
+        for (final input in inputs) await engine.embed(input),
+      ];
+      final batched = await engine.embedBatch(inputs);
+      expect(batched, hasLength(inputs.length));
+      for (var i = 0; i < inputs.length; i++) {
+        // This model projects 512 hidden values to 768 output components.
+        expect(sequential[i], hasLength(768));
+        expect(batched[i], hasLength(768));
+        expect(batched[i].every((value) => value.isFinite), isTrue);
+        expect(_norm(batched[i]), closeTo(1.0, 1e-4));
+        // Metal's batch GEMMs accumulate differently from single-sequence GEMMs.
+        // Match the existing encoder parity budget for normalized components.
+        expect(_maxAbsDiff(batched[i], sequential[i]), lessThan(1e-3));
+      }
+      expect(_maxAbsDiff(sequential[0], sequential[1]), greaterThan(1e-3));
+      expect(
+        _maxAbsDiff(await engine.embed(inputs.first), sequential.first),
+        lessThan(1e-3),
+      );
+    });
+  });
+
   group('rank-pooled reranker', () {
     for (final parallel in [1, 2]) {
       test('embed and embedBatch reject it with $parallel sequences', () async {

@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.59`.
+Default pinned tag in the example is `v0.1.63`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.59 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.63 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,28 +81,23 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.59';
+  window.__llamadartBridgeAssetsTag = 'v0.1.63';
 </script>
 ```
 
-That release embeds llama.cpp `v0.6.0`, matching the `hook/build.dart` native pin
-(`v0.6.0-3`, both built from upstream llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
-even though the bridge asset tag `v0.1.59` differs from the native runtime tag
-`v0.6.0-3`. Provenance for this immutable consumer artifact: release `406130836`,
-tag commit `189dde2798cb65a5ebe12d40068623e1873a6cd9`, bridge source
-`c1f64536b9a4ea410066b711928c7cba03691fb0`, and manifest SHA-256
-`f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`. The bridge
-assets were qualified against native `v0.6.0`; `v0.6.0-3` rebuilds it from the
-same upstream commit. Their bridge JavaScript, type declarations and worker
-are byte-identical to `v0.1.54`; the WebAssembly core changed, for llama.cpp
-`v0.6.0` and for the bridge's own C++ on the batch and speculative-decoding
-paths that adapts to it. They add the decision API
-(apiVersion 1), next-token scoring (`scoreNextToken`), presence penalty, Min-P,
-thinking budgets, runtime LoRA adapters and speculative decoding, keep the
-Qwen3-ASR typed speech contract from `v0.1.30`, and
-provision an explicit 1 MiB Wasm stack for wasm32 and memory64, which keeps
-graph-parameter growth from overflowing Emscripten's 64 KiB default during
-memory64 Qwen3-ASR context construction in direct and worker modes.
+That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
+(`v0.7.0`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+even though the bridge asset tag `v0.1.63` differs from the native runtime tag
+`v0.7.0`. Provenance for this immutable consumer artifact: release `415205376`,
+tag commit `c1665e3c9a38b78c553806f590f7948b36c8d148`, bridge source
+`57d9971817897115c6312a712ccb21c9a25671f9`, and manifest SHA-256
+`65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`. The bridge
+assets were qualified against the same native release. Their JavaScript, type
+declarations and worker remain byte-identical to `v0.1.59`; the WebAssembly
+cores update llama.cpp and fix graph reservation when embedding extraction is
+toggled on an unpooled context. State and extraction qualification covers
+wasm32 and memory64 through direct and worker runtimes. Existing decision,
+scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
 
 Published release qualification covers CPU/WASM state persistence, multimodal
 input, ASR and TTS. It does not establish hardware WebGPU acceleration,

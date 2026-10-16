@@ -117,9 +117,9 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. Pair companion `0.13.0` with core `0.13.1` and `0.13.0`, `0.0.3` with
-  core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2` with core `0.11.1` and
-  `0.11.0`.
+  the entry above. Pair companion `0.14.0` with core `0.14.0`, `0.13.0` with core
+  `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2`
+  with core `0.11.1` and `0.11.0`.
   Without it, `all` leaves the image runtime out of a Flutter iOS/macOS app
   with a build warning. A list naming `stable_diffusion` bundles it through
   the hook instead, and App Store Connect rejects that iOS framework's
@@ -198,14 +198,16 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.1
+  llamadart: ^0.14.0
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Pair companion `0.13.0` with core `0.13.1` and `0.13.0`, and `0.0.23` with core `0.12.2`
-for llama.cpp `v0.6.0-3`, and keep `0.0.22` with core `0.12.1` and `0.12.0` for `v0.6.0-2`.
+Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
+Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
+for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
+for `v0.6.0-2`.
 Keep companion `0.0.21` with core `0.11.1` and `0.11.0` for llama.cpp v0.5.0
 bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
 core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
@@ -218,14 +220,14 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.1
-  llamadart_llama_cpp_flutter: ^0.13.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.13.0 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.13.0 # Apple image generation, opt-in
+  llamadart: ^0.14.0
+  llamadart_llama_cpp_flutter: ^0.14.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.14.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.14.0 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.13.0` with core `0.13.1` and
-`0.13.0`, and
+Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.0`,
+`0.13.0` with core `0.13.x`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
 `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
 older cores, including `0.9.x`,
@@ -344,9 +346,9 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.6.0-3` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.0` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.59` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.63` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve

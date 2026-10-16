@@ -45,3 +45,19 @@ tool/testing/run_template_parity_suites.sh
 - Cross-file regressions and diagnostics belong in `test/integration/`.
 - Mark platform-specific files with `@TestOn('vm')` or `@TestOn('browser')`.
 - Use `@Tags(['local-only'])` for tests that should not run in default/CI flows.
+
+## EmbeddingGemma-2 native qualification
+
+Set `LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH` to the official
+`embeddinggemma-2-BF16.gguf` and run:
+
+```bash
+LLAMADART_EMBEDDING_BACKEND=cpu dart test \
+  test/e2e/backends/embedding_models_e2e_test.dart --run-skipped -p vm \
+  --name EmbeddingGemma-2
+```
+
+This local-only check verifies 768-dimensional projected text outputs,
+normalization, distinct inputs, batch parity and reuse. Set the backend to
+`metal` to qualify that path separately. It does not exercise image or audio
+embedding inputs; those still require the owning native C smoke.

@@ -1,3 +1,7 @@
+## 0.14.0
+
+* Pair with core `0.14.x`; Apple SwiftPM pins `leehack/stable-diffusion-native@v0.2.0-3`.
+
 ## 0.13.0
 
 * Versions now share the core `MAJOR.MINOR`; this release pairs with core
