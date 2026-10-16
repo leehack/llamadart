@@ -403,8 +403,10 @@ the same libraries. Details and the pub workspace rules:
 | Tune performance | [Performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning) |
 
 Raw `responseFormat` and `LlamaStructuredOutput` reject unsupported or shadowed
-schema assertions with a schema path before generation, including numeric bounds,
-formats and length/item bounds above 2000. Nonempty annotation-only untyped schemas
+schema assertions with a schema path before generation. Integer bounds,
+UUID/date/time formats, supported `allOf` merges and fixed tuples are supported;
+number bounds, other formats and length/item bounds above 2000 are rejected.
+Annotations and unknown vocabulary remain accepted. Nonempty annotation-only untyped schemas
 accept any JSON value. See [0.14 migration](MIGRATION.md) for the breaking changes.
 
 ## Examples

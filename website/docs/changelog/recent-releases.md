@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- **Behavior change:** Reject unsupported or shadowed JSON response-schema constraints before generation; accept annotation-only schemas and bound tool-call argument nesting.
+- **Behavior change:** Validate response-schema assertions, support upstream formats, integer bounds and `allOf`, preserve tuples and metadata, and bound tool-call nesting.
 
 ## 0.14.0
 

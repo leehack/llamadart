@@ -11,10 +11,6 @@ void main() {
   final rejected = <String, Map<String, dynamic>>{
     for (final keyword in [
       'format',
-      'minimum',
-      'maximum',
-      'exclusiveMinimum',
-      'exclusiveMaximum',
       'multipleOf',
       'uniqueItems',
       'contains',
@@ -38,15 +34,8 @@ void main() {
     ])
       keyword: {'type': 'integer', keyword: 1},
     'bare array bounds': {'type': 'array', 'maxItems': 3},
-    for (final format in ['uuid', 'date', 'time', 'date-time', 'int32'])
+    for (final format in ['email', 'int32'])
       'format $format': {'type': 'string', 'format': format},
-    for (final bound in [
-      'minimum',
-      'maximum',
-      'exclusiveMinimum',
-      'exclusiveMaximum',
-    ])
-      'integer $bound': {'type': 'integer', bound: 3},
     'pattern': {'type': 'string', 'pattern': r'^\w+$'},
     'unanchored pattern': {'type': 'string', 'pattern': 'abc'},
     'maxLength': {'type': 'string', 'maxLength': 3000},

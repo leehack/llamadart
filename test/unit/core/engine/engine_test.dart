@@ -4055,7 +4055,7 @@ void main() {
       );
       final cases = <String, (Map<String, dynamic>, Matcher)>{
         'unsupported numeric bound': (
-          {'type': 'integer', 'minimum': 1},
+          {'type': 'number', 'minimum': 1},
           unsupported.having(
             (error) => error.message,
             'path',
@@ -4063,7 +4063,7 @@ void main() {
           ),
         ),
         'unsupported format': (
-          {'type': 'string', 'format': 'uuid'},
+          {'type': 'string', 'format': 'email'},
           unsupported.having(
             (error) => error.message,
             'path',

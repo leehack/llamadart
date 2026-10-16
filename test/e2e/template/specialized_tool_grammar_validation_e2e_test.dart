@@ -30,6 +30,8 @@ import 'package:test/test.dart';
 
 import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/llama_cpp_grammar_load.dart';
+import '../../support/pydantic_audit_schemas.dart';
+import '../../support/upstream_integer_bound_grammars.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 import '../../support/raw_tool_schema_fixture.dart';
@@ -46,6 +48,213 @@ void main() {
     );
     expect(File(validator).existsSync(), isTrue);
   });
+
+  test(
+    'audit lossy upstream integer suffixes are rejected before generation',
+    () {
+      // v0.7.0 drops zero padding when recursing into a one-sided suffix.
+      _expectGrammar(
+        validator,
+        JsonSchemaConverter.convert({'type': 'integer', 'minimum': 100}),
+        valid: ['10', '100'],
+        invalid: ['9'],
+      );
+      for (final schema in <Map<String, dynamic>>[
+        {'type': 'integer', 'minimum': 100},
+        {'type': 'integer', 'minimum': 101},
+        {'type': 'integer', 'minimum': 1205},
+        {'type': 'integer', 'maximum': -100},
+        {'type': 'integer', 'maximum': -201},
+      ]) {
+        expect(
+          () => responseFormatGrammar(schema),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'path',
+              contains(r'$'),
+            ),
+          ),
+        );
+      }
+    },
+  );
+
+  test('audit integer grammar expressions match pinned upstream bytes', () {
+    final fixtures =
+        jsonDecode(upstreamIntegerBoundGrammars) as Map<String, dynamic>;
+    for (final entry in fixtures.entries) {
+      final row = entry.value as Map<String, dynamic>;
+      final grammar = responseFormatGrammar(
+        row['schema'] as Map<String, dynamic>,
+      );
+      expect(
+        grammar.split('\n').first,
+        'root ::= ${row['root']} space',
+        reason: entry.key,
+      );
+    }
+  });
+
+  test(
+    'audit formats and integer bounds match compiled upstream constraints',
+    () {
+      for (final (format, valid, invalid) in [
+        ('uuid', '"12345678-1234-ABCD-abcd-123456789abc"', '"bad"'),
+        ('date', '"2026-10-16"', '"2026-13-16"'),
+        ('time', '"23:59:59.123+02:30"', '"24:00:00Z"'),
+        ('date-time', '"2026-10-16T00:00:00Z"', '"2026-10-16 00:00:00Z"'),
+      ]) {
+        _expectGrammar(
+          validator,
+          responseFormatGrammar({'type': 'string', 'format': format}),
+          valid: [valid],
+          invalid: [invalid, '3'],
+        );
+      }
+      for (final (min, max) in <(int?, int?)>[
+        (-150, -101),
+        (-99, -1),
+        (-12, 12),
+        (0, 0),
+        (8, 16),
+        (20, 350),
+        (123, 567),
+        (101, 599),
+        (0, 99),
+        (0, 100),
+        (50, 50),
+        (null, -12),
+        (null, 0),
+        (null, 123),
+        (-12, null),
+        (0, null),
+        (1, null),
+        (5, null),
+        (12, null),
+        (99, null),
+        (123, null),
+        (250, null),
+        (999999999999999, null),
+        (1111111111111111, null),
+        (null, -1111111111111111),
+        (9007199254740990, 9007199254740991),
+      ]) {
+        final schema = <String, dynamic>{
+          'type': 'integer',
+          'minimum': ?min,
+          'maximum': ?max,
+        };
+        _expectGrammar(
+          validator,
+          responseFormatGrammar(schema),
+          valid: [
+            if (min != null) '$min',
+            if (max != null) '$max',
+            if ((min ?? -1) <= 0 && (max ?? 1) >= 0) '0',
+          ],
+          invalid: [
+            if (min != null) '${min - 1}',
+            if (max != null) '${max + 1}',
+            '1.2',
+            '"3"',
+          ],
+        );
+      }
+      for (final (keyword, bound, valid, invalid)
+          in <(String, num, String, String)>[
+            ('minimum', 1.2, '2', '1'),
+            ('maximum', -1.2, '-2', '-1'),
+            ('exclusiveMinimum', -1.2, '-1', '-2'),
+            ('exclusiveMaximum', 1.2, '1', '2'),
+            ('exclusiveMinimum', 1, '2', '1'),
+            ('exclusiveMaximum', -1, '-2', '-1'),
+          ]) {
+        _expectGrammar(
+          validator,
+          responseFormatGrammar({'type': 'integer', keyword: bound}),
+          valid: [valid],
+          invalid: [invalid],
+        );
+      }
+    },
+  );
+
+  test(
+    'audit tuples, discriminators and allOf compile on the production path',
+    () {
+      for (final key in ['items', 'prefixItems']) {
+        _expectGrammar(
+          validator,
+          responseFormatGrammar({
+            'type': 'array',
+            key: [
+              {'type': 'integer'},
+              {'type': 'string'},
+            ],
+            'minItems': 2,
+            'maxItems': 2,
+          }),
+          valid: ['[1,"s"]'],
+          invalid: ['[]', '[1]', '[1,"s",2]', '["s","s"]'],
+        );
+        _expectGrammar(
+          validator,
+          responseFormatGrammar({'type': 'array', key: []}),
+          valid: ['[]'],
+          invalid: ['[1]'],
+        );
+      }
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({
+          'allOf': [
+            {
+              'enum': ['a', 'b'],
+            },
+            {
+              'enum': ['b', 'c'],
+            },
+          ],
+        }),
+        valid: ['"b"'],
+        invalid: ['"a"', '"c"', '{}'],
+      );
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({
+          'allOf': [
+            {
+              'properties': {
+                's': {'type': 'string'},
+              },
+              'required': ['s'],
+            },
+            {
+              'properties': {
+                'n': {'type': 'integer'},
+              },
+              'required': ['n'],
+            },
+          ],
+        }),
+        valid: ['{"s":"a","n":1}'],
+        invalid: ['{"s":1,"n":1}', '{"s":"a"}', '{"s":"a","n":1,"extra":true}'],
+      );
+      final corpus = jsonDecode(pydanticAuditSchemas) as Map<String, dynamic>;
+      _expectGrammar(
+        validator,
+        responseFormatGrammar(
+          corpus['pydantic_discriminator'] as Map<String, dynamic>,
+        ),
+        valid: ['{"pet":{"pet_type":"cat","meows":1}}'],
+        invalid: [
+          '{"pet":{"pet_type":"bird","meows":1}}',
+          '{"pet":{"pet_type":"cat","meows":"s"}}',
+        ],
+      );
+    },
+  );
 
   test(
     'strict response schemas compile annotation-only values and patterns',

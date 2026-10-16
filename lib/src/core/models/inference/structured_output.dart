@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../exceptions.dart';
 import '../../grammar/response_schema_validation.dart';
+import '../../grammar/json_schema_converter.dart';
 import '../../template/response_format.dart';
 import '../chat/completion_chunk.dart';
 
@@ -66,9 +67,10 @@ class LlamaStructuredOutput<T> {
   /// [schema] must be representable by the current JSON-schema-to-GBNF subset:
   /// primitives, objects with properties/required/additionalProperties, arrays
   /// with `items` or fixed `prefixItems`, enum/const, local `$ref`, `anyOf`,
-  /// `oneOf`, compiled patterns, string length, and array item-count bounds. Unsupported
+  /// `oneOf`, additive object/enum `allOf`, integer bounds, UUID/date/time formats,
+  /// compiled patterns, string length, and array item-count bounds. Unsupported
   /// constraint keywords throw [LlamaUnsupportedException] before generation.
-  /// Annotation metadata such as `title` and `description` is preserved but not
+  /// Annotations and unknown vocabulary are preserved but not
   /// enforced by constrained decoding.
   ///
   /// [decoder] receives the validated JSON object.
@@ -207,8 +209,10 @@ Map<String, dynamic> _schemaResponseFormat(
 }
 
 Map<String, dynamic> _validateStructuredSchema(Map<String, dynamic> schema) {
-  responseFormatGrammar(schema);
-  return _copyJsonMap(schema, 'schema');
+  validateResponseSchemaJson(schema);
+  final normalized = _copyJsonMap(schema, 'schema');
+  responseFormatGrammar(normalized, schemaName: 'LlamaStructuredOutput.schema');
+  return normalized;
 }
 
 void _validateJsonSchemaRootObject(Map<String, dynamic> schema) {
@@ -296,18 +300,7 @@ Map<String, dynamic>? _resolveLocalSchemaRef(
   Map<String, dynamic> rootSchema,
   String ref,
 ) {
-  if (!ref.startsWith('#/')) {
-    return null;
-  }
-  Object? target = rootSchema;
-  for (final rawSegment in ref.substring(2).split('/')) {
-    final segment = rawSegment.replaceAll('~1', '/').replaceAll('~0', '~');
-    if (target is Map && target.containsKey(segment)) {
-      target = target[segment];
-    } else {
-      return null;
-    }
-  }
+  final target = JsonSchemaConverter.resolvePointer(rootSchema, ref);
   return target is Map ? responseSchemaMap(target, ref) : null;
 }
 
@@ -461,7 +454,7 @@ class _JsonSchemaOutputValidator {
       return;
     }
 
-    if (schema.containsKey('pattern')) {
+    if (schema.containsKey('pattern') || schema.containsKey('format')) {
       _validateType(value, 'string', schema, path);
       return;
     }
@@ -535,6 +528,7 @@ class _JsonSchemaOutputValidator {
         if (!_isJsonInteger(value)) {
           throw _JsonSchemaValidationFailure('$path must be an integer.');
         }
+        _validateIntegerBounds(value as num, schema, path);
         return;
       case 'number':
         if (value is! num) {
@@ -638,7 +632,9 @@ class _JsonSchemaOutputValidator {
       );
     }
 
-    final prefixItems = schema['prefixItems'];
+    final prefixItems = schema['items'] is List
+        ? schema['items']
+        : schema['prefixItems'];
     if (prefixItems is List) {
       if (value.length != prefixItems.length) {
         throw _JsonSchemaValidationFailure(
@@ -664,6 +660,19 @@ class _JsonSchemaOutputValidator {
     }
   }
 
+  void _validateIntegerBounds(
+    num value,
+    Map<String, dynamic> schema,
+    String path,
+  ) {
+    final (min, max) = JsonSchemaConverter.integerBounds(schema);
+    if ((min != null && value < min) || (max != null && value > max)) {
+      throw _JsonSchemaValidationFailure(
+        '$path is outside the integer bounds.',
+      );
+    }
+  }
+
   void _validateString(
     Object? value,
     Map<String, dynamic> schema,
@@ -671,6 +680,10 @@ class _JsonSchemaOutputValidator {
   ) {
     if (value is! String) {
       throw _JsonSchemaValidationFailure('$path must be a string.');
+    }
+    final format = schema['format'];
+    if (format is String && !JsonSchemaConverter.matchesFormat(format, value)) {
+      throw _JsonSchemaValidationFailure('$path must match format $format.');
     }
     final minLength = schema['minLength'];
     if (minLength is int && value.length < minLength) {
@@ -692,17 +705,7 @@ class _JsonSchemaOutputValidator {
         '$path schema uses unsupported ref "$ref".',
       );
     }
-    Object? target = rootSchema;
-    for (final rawSegment in ref.substring(2).split('/')) {
-      final segment = rawSegment.replaceAll('~1', '/').replaceAll('~0', '~');
-      if (target is Map && target.containsKey(segment)) {
-        target = target[segment];
-      } else {
-        throw _JsonSchemaValidationFailure(
-          '$path schema ref "$ref" could not be resolved.',
-        );
-      }
-    }
+    final target = JsonSchemaConverter.resolvePointer(rootSchema, ref);
     return _schemaMap(target, '$path.$ref');
   }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../exceptions.dart';
 import '../grammar/json_schema_converter.dart';
 import '../grammar/json_value_depth.dart';
@@ -98,10 +100,15 @@ Map<String, dynamic> _jsonSchemaSchema(Object? jsonSchema) {
 /// cycle or another value that is not JSON, and [LlamaUnsupportedException]
 /// otherwise, such as for an unresolvable `$ref`, an unsupported constraint, or a
 /// schema whose JSON nesting exceeds 128 levels.
-String responseFormatGrammar(Map<String, dynamic> schema) {
+String responseFormatGrammar(
+  Map<String, dynamic> schema, {
+  String schemaName = 'responseFormat',
+}) {
   try {
     validateResponseSchema(schema);
-    return JsonSchemaConverter.convert(schema);
+    return JsonSchemaConverter.convert(
+      jsonDecode(jsonEncode(schema)) as Map<String, dynamic>,
+    );
   } on LlamaException {
     rethrow;
   } catch (error) {
@@ -114,7 +121,7 @@ String responseFormatGrammar(Map<String, dynamic> schema) {
     // Reference chains can still exhaust converter recursion after the
     // document nesting check. Keep converter failures in the typed hierarchy.
     throw LlamaUnsupportedException(
-      'Unsupported responseFormat JSON schema at \$: $error',
+      'Unsupported $schemaName JSON schema at \$: $error',
     );
   }
 }

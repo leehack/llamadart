@@ -2,8 +2,8 @@ import '../exceptions.dart';
 import 'json_schema_converter.dart';
 import 'json_value_depth.dart';
 
-/// Checks the response-schema subset before recursive conversion or copying.
-void validateResponseSchema(Map<String, dynamic> schema) {
+/// Checks JSON safety before recursive schema copying.
+void validateResponseSchemaJson(Map<String, dynamic> schema) {
   final depth = jsonValueDepth(schema);
   if (depth == null) {
     throw LlamaArgumentException(
@@ -13,8 +13,13 @@ void validateResponseSchema(Map<String, dynamic> schema) {
   if (depth > 128) {
     _unsupported(r'$', 'JSON nesting must not exceed 128 levels');
   }
+}
+
+/// Checks assertions enforced by the response-schema converter.
+void validateResponseSchema(Map<String, dynamic> schema) {
+  validateResponseSchemaJson(schema);
   _validateSupportedSchemaSubset(schema, r'$');
-  _validateReferences(schema, schema, r'$');
+  _validateReferences(schema, schema, r'$', _schemaPositions(schema));
 }
 
 const _supportedSchemaTypes = <String>{
@@ -27,54 +32,60 @@ const _supportedSchemaTypes = <String>{
   'null',
 };
 
-const _supportedSchemaKeywords = <String>{
-  r'$comment',
-  r'$defs',
-  r'$id',
-  r'$ref',
-  r'$schema',
-  'additionalProperties',
-  'anyOf',
-  'const',
-  'default',
-  'definitions',
-  'deprecated',
-  'description',
-  'enum',
-  'examples',
-  'items',
-  'maxItems',
-  'maxLength',
-  'minItems',
-  'minLength',
-  'oneOf',
-  'pattern',
-  'prefixItems',
-  'properties',
-  'readOnly',
-  'required',
-  'title',
-  'type',
-  'writeOnly',
+// Unknown vocabulary and annotations do not assert constraints. Keep the
+// assertion inventory explicit so extensions remain compatible with upstream.
+const _unsupportedAssertionKeywords = <String>{
+  'multipleOf',
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+  'minProperties',
+  'maxProperties',
+  'patternProperties',
+  'propertyNames',
+  'dependentRequired',
+  'dependentSchemas',
+  'dependencies',
+  'not',
+  'if',
+  'then',
+  'else',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+  'additionalItems',
+  r'$dynamicRef',
+  r'$recursiveRef',
 };
-
-const _annotationSchemaKeywords = <String>{
-  r'$comment',
-  r'$id',
-  r'$schema',
-  'default',
-  'deprecated',
-  'description',
-  'examples',
-  'readOnly',
-  'title',
-  'writeOnly',
+const _assertionKeywords = <String>{
+  ..._unsupportedAssertionKeywords,
+  r'$ref',
+  'type',
+  'properties',
+  'required',
+  'additionalProperties',
+  'items',
+  'prefixItems',
+  'minItems',
+  'maxItems',
+  'minLength',
+  'maxLength',
+  'pattern',
+  'format',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'enum',
+  'const',
+  'allOf',
+  'anyOf',
+  'oneOf',
 };
 
 void _validateSupportedSchemaSubset(Map<String, dynamic> schema, String path) {
   for (final keyword in schema.keys) {
-    if (!_supportedSchemaKeywords.contains(keyword) &&
-        !keyword.startsWith('x-')) {
+    if (_unsupportedAssertionKeywords.contains(keyword)) {
       throw LlamaUnsupportedException(
         'Unsupported structured JSON schema: keyword "$path.$keyword" is not '
         'supported by the current JSON-schema-to-GBNF subset.',
@@ -158,8 +169,7 @@ void _validateRefSchemaShape(Map<String, dynamic> schema, String path) {
         keyword != r'$ref' &&
         keyword != 'definitions' &&
         keyword != r'$defs' &&
-        !_annotationSchemaKeywords.contains(keyword) &&
-        !keyword.startsWith('x-'),
+        !_isMetadata(keyword),
   );
   if (siblingKeywords.isNotEmpty) {
     throw LlamaUnsupportedException(
@@ -207,9 +217,11 @@ void _validateKeywordContexts(
   final hasStringKeywords =
       schema.containsKey('pattern') ||
       schema.containsKey('minLength') ||
-      schema.containsKey('maxLength');
+      schema.containsKey('maxLength') ||
+      schema.containsKey('format');
   final stringContext =
-      schemaTypes?.contains('string') ?? schema.containsKey('pattern');
+      schemaTypes?.contains('string') ??
+      (schema.containsKey('pattern') || schema.containsKey('format'));
   if (hasStringKeywords && !stringContext) {
     throw LlamaUnsupportedException(
       'Unsupported structured JSON schema: string length keyword at $path '
@@ -252,6 +264,7 @@ void _validateKeywordValues(Map<String, dynamic> schema, String path) {
   _validateNonNegativeIntKeyword(schema, 'maxLength', path);
   _validateBounds(schema, 'minItems', 'maxItems', path);
   _validateBounds(schema, 'minLength', 'maxLength', path);
+  _validateNumericBounds(schema, path);
 }
 
 void _validateNonNegativeIntKeyword(
@@ -310,7 +323,9 @@ void _validateNestedSchemas(Map<String, dynamic> schema, String path) {
   }
 
   final items = schema['items'];
-  if (items != null) {
+  if (items is List) {
+    _validateSchemaList(items, '$path.items', allowEmpty: true);
+  } else if (items != null) {
     _validateSupportedSchemaSubset(
       responseSchemaMap(items, '$path.items'),
       '$path.items',
@@ -319,7 +334,7 @@ void _validateNestedSchemas(Map<String, dynamic> schema, String path) {
 
   final prefixItems = schema['prefixItems'];
   if (prefixItems != null) {
-    _validateSchemaList(prefixItems, '$path.prefixItems');
+    _validateSchemaList(prefixItems, '$path.prefixItems', allowEmpty: true);
   }
 
   for (final keyword in const ['oneOf', 'anyOf', 'allOf']) {
@@ -346,8 +361,12 @@ void _validateNestedSchemas(Map<String, dynamic> schema, String path) {
   }
 }
 
-void _validateSchemaList(Object? value, String path) {
-  if (value is! List || value.isEmpty) {
+void _validateSchemaList(
+  Object? value,
+  String path, {
+  bool allowEmpty = false,
+}) {
+  if (value is! List || (!allowEmpty && value.isEmpty)) {
     throw LlamaUnsupportedException(
       'Unsupported structured JSON schema: $path must be a non-empty list of '
       'schemas.',
@@ -382,11 +401,7 @@ Map<String, dynamic> responseSchemaMap(Object? value, String path) {
   return result;
 }
 
-bool _isMetadata(String key) =>
-    _annotationSchemaKeywords.contains(key) ||
-    key == r'$defs' ||
-    key == 'definitions' ||
-    key.startsWith('x-');
+bool _isMetadata(String key) => !_assertionKeywords.contains(key);
 
 Never _unsupported(String path, String reason) =>
     throw LlamaUnsupportedException(
@@ -416,7 +431,7 @@ void _validateDispatch(
             (type) => switch (type) {
               'null' => value == null,
               'boolean' => value is bool,
-              'integer' => value is int,
+              'integer' => value is num && value.isFinite && value % 1 == 0,
               'number' => value is num,
               'string' => value is String,
               'object' => value is Map,
@@ -440,10 +455,30 @@ void _validateDispatch(
       }
     }
   }
-  if (schema.containsKey('prefixItems')) {
-    for (final key in ['items', 'minItems', 'maxItems']) {
+  final tuple = schema['items'] is List
+      ? schema['items']
+      : schema['prefixItems'];
+  if (schema.containsKey('prefixItems') && schema.containsKey('items')) {
+    _unsupported('$path.items', 'cannot be combined with prefixItems');
+  }
+  if (tuple is List) {
+    final min = schema['minItems'];
+    final max = schema['maxItems'];
+    if (min is num && min > tuple.length) {
+      _unsupported('$path.minItems', 'exceeds the fixed tuple length');
+    }
+    if (max is num && max < tuple.length) {
+      _unsupported('$path.maxItems', 'is below the fixed tuple length');
+    }
+  }
+  final format = schema['format'];
+  if (schema.containsKey('format')) {
+    if (!{'uuid', 'date', 'time', 'date-time'}.contains(format)) {
+      _unsupported('$path.format', 'is not uuid, date, time or date-time');
+    }
+    for (final key in ['pattern', 'minLength', 'maxLength']) {
       if (schema.containsKey(key)) {
-        _unsupported('$path.$key', 'cannot be combined with fixed prefixItems');
+        _unsupported('$path.$key', 'cannot be combined with format');
       }
     }
   }
@@ -467,37 +502,40 @@ void _validateReferences(
   Map<String, dynamic> schema,
   Map<String, dynamic> root,
   String path,
+  Set<String> positions,
 ) {
   final ref = schema[r'$ref'];
   if (ref is String) {
-    Object? target = root;
-    for (final segment in ref.substring(2).split('/')) {
-      final key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
-      target = target is Map ? target[key] : null;
-    }
-    if (target is! Map<String, dynamic>) {
-      _unsupported('$path.\$ref', 'must resolve to a local schema object');
+    if (!positions.contains(ref)) {
+      _unsupported('$path.\$ref', 'must resolve to a local schema position');
     }
   }
+  _validateAllOf(schema, root, path);
   for (final key in ['properties', r'$defs', 'definitions']) {
     final children = schema[key];
-    if (children is Map<String, dynamic>) {
+    if (children is Map) {
       for (final entry in children.entries) {
         _validateReferences(
           responseSchemaMap(entry.value, '$path.$key.${entry.key}'),
           root,
           '$path.$key.${entry.key}',
+          positions,
         );
       }
     }
   }
   for (final key in ['items', 'additionalProperties']) {
     final child = schema[key];
-    if (child is Map<String, dynamic>) {
-      _validateReferences(child, root, '$path.$key');
+    if (child is Map) {
+      _validateReferences(
+        responseSchemaMap(child, '$path.$key'),
+        root,
+        '$path.$key',
+        positions,
+      );
     }
   }
-  for (final key in ['prefixItems', 'anyOf', 'oneOf']) {
+  for (final key in ['items', 'prefixItems', 'anyOf', 'oneOf', 'allOf']) {
     final children = schema[key];
     if (children is List) {
       for (var i = 0; i < children.length; i++) {
@@ -505,8 +543,163 @@ void _validateReferences(
           responseSchemaMap(children[i], '$path.$key[$i]'),
           root,
           '$path.$key[$i]',
+          positions,
         );
       }
     }
+  }
+}
+
+Set<String> _schemaPositions(Map<String, dynamic> root) {
+  final result = <String>{};
+  void walk(Map schema, String pointer) {
+    result.add(pointer);
+    for (final key in ['properties', r'$defs', 'definitions']) {
+      final children = schema[key];
+      if (children is Map) {
+        for (final entry in children.entries) {
+          final escaped = (entry.key as String)
+              .replaceAll('~', '~0')
+              .replaceAll('/', '~1');
+          walk(entry.value as Map, '$pointer/$key/$escaped');
+        }
+      }
+    }
+    for (final key in ['items', 'additionalProperties']) {
+      final child = schema[key];
+      if (child is Map) walk(child, '$pointer/$key');
+    }
+    for (final key in ['items', 'prefixItems', 'anyOf', 'oneOf', 'allOf']) {
+      final children = schema[key];
+      if (children is List) {
+        for (var i = 0; i < children.length; i++) {
+          walk(children[i] as Map, '$pointer/$key/$i');
+        }
+      }
+    }
+  }
+
+  walk(root, '#');
+  return result;
+}
+
+void _validateNumericBounds(Map<String, dynamic> schema, String path) {
+  const keys = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'];
+  if (!keys.any(schema.containsKey)) return;
+  final types = responseSchemaTypes(schema['type'], path);
+  if (types == null || types.length != 1 || !types.contains('integer')) {
+    _unsupported(
+      '$path.${keys.firstWhere(schema.containsKey)}',
+      'numeric bounds require type "integer"',
+    );
+  }
+  for (final key in keys) {
+    if (!schema.containsKey(key)) continue;
+    final value = schema[key];
+    if (value is! num || value.abs() > 9007199254740991) {
+      _unsupported(
+        '$path.$key',
+        'must be a number within the exact VM/Web integer range',
+      );
+    }
+  }
+  final (min, max) = JsonSchemaConverter.integerBounds(schema);
+  if (min != null && max != null && min > max) {
+    _unsupported(path, 'integer bounds have no supported integer interval');
+  }
+  if (!JsonSchemaConverter.supportsIntegerBounds(schema)) {
+    _unsupported(
+      path,
+      'one-sided integer bounds are not enforced by the upstream suffix builder',
+    );
+  }
+  if (schema.containsKey('minimum') &&
+      schema.containsKey('exclusiveMinimum') &&
+      min! <= (schema['exclusiveMinimum'] as num)) {
+    _unsupported('$path.exclusiveMinimum', 'is shadowed by minimum');
+  }
+  if (schema.containsKey('maximum') &&
+      schema.containsKey('exclusiveMaximum') &&
+      max! >= (schema['exclusiveMaximum'] as num)) {
+    _unsupported('$path.exclusiveMaximum', 'is shadowed by maximum');
+  }
+}
+
+void _validateAllOf(
+  Map<String, dynamic> schema,
+  Map<String, dynamic> root,
+  String path,
+) {
+  final components = schema['allOf'];
+  if (components is! List) return;
+  for (final key in schema.keys) {
+    if (key != 'allOf' && !_isMetadata(key) && key != 'type') {
+      _unsupported('$path.$key', 'is shadowed by allOf');
+    }
+  }
+  String? kind;
+  final names = <String>{};
+  Set<String>? intersection;
+  for (var i = 0; i < components.length; i++) {
+    var component = responseSchemaMap(components[i], '$path.allOf[$i]');
+    final visited = <String>{};
+    while (component[r'$ref'] is String) {
+      final ref = component[r'$ref'] as String;
+      if (!visited.add(ref)) {
+        _unsupported('$path.allOf[$i]', 'has a cyclic component reference');
+      }
+      final target = JsonSchemaConverter.resolvePointer(root, ref);
+      component = responseSchemaMap(target, '$path.allOf[$i].\$ref');
+    }
+    final componentKind = component.containsKey('enum') ? 'enum' : 'object';
+    kind ??= componentKind;
+    if (kind != componentKind) {
+      _unsupported('$path.allOf[$i]', 'mixes enum and object components');
+    }
+    if (componentKind == 'enum') {
+      if (schema['type'] != null &&
+          (schema['type'] != 'string' ||
+              !(component['enum'] as List).every((value) => value is String))) {
+        _unsupported('$path.type', 'conflicts with an enum allOf');
+      }
+      final values = (component['enum'] as List)
+          .map(JsonSchemaConverter.literalKey)
+          .toSet();
+      intersection = intersection == null
+          ? values
+          : intersection.intersection(values);
+      continue;
+    }
+    final properties =
+        component['properties'] ??
+        (component['type'] == 'object' ? <String, dynamic>{} : null);
+    if ((schema['type'] != null && schema['type'] != 'object') ||
+        properties is! Map ||
+        (component['type'] != null && component['type'] != 'object')) {
+      _unsupported(
+        '$path.allOf[$i]',
+        'requires object properties or an enum intersection',
+      );
+    }
+    if (component.containsKey('additionalProperties') &&
+        component['additionalProperties'] != true &&
+        !(component['additionalProperties'] == false &&
+            components.length == 1)) {
+      _unsupported(
+        '$path.allOf[$i].additionalProperties',
+        'is not enforced by the allOf property merge',
+      );
+    }
+    for (final name in properties.keys.cast<String>()) {
+      if (!names.add(name)) {
+        _unsupported(
+          '$path.allOf[$i].properties.$name',
+          'duplicates a merged property',
+        );
+      }
+    }
+  }
+  if (intersection != null && intersection.isEmpty) {
+    _unsupported('$path.allOf', 'has an empty enum intersection');
   }
 }

@@ -14,23 +14,58 @@ ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
 
-Raw `responseFormat` schemas and `LlamaStructuredOutput` now use the same
-validation. Previously ignored assertions (including `format`, integer/number
-bounds such as Pydantic `ge=`, `multipleOf`, uniqueness and conditional/object
-constraints), unsupported patterns, shadowed constraint siblings and repetition
-bounds above 2000 throw a path-bearing `LlamaUnsupportedException` before
-generation. `allOf` is rejected because its former property merge did not enforce
-the intersection. Put complete alternatives inside `anyOf` instead of adding
-sibling constraints. Numeric bounds and formats are rejected even where upstream
-llama.cpp supports them; this Dart converter does not implement them.
+Raw `responseFormat` schemas and `LlamaStructuredOutput` now share validation.
+Unsupported assertions throw a path-bearing `LlamaUnsupportedException` before
+generation. The remaining unsupported assertions are:
+
+- `multipleOf`, `uniqueItems`, `contains`, `minContains`, `maxContains`,
+  `minProperties`, `maxProperties`, `patternProperties`, `propertyNames`,
+  `dependentRequired`, `dependentSchemas`, `dependencies`, `not`, `if`, `then`,
+  `else`, `unevaluatedItems`, `unevaluatedProperties`, `additionalItems`,
+  `$dynamicRef` and `$recursiveRef`.
+- Numeric bounds on anything except explicit `type: integer`, unsupported
+  formats (anything except `uuid`, `date`, `time`, `date-time`), patterns outside
+  the compiled subset, and length/item bounds above 2000.
+- Assertions shadowed by `$ref`, `anyOf`/`oneOf`, or `const`/`enum` (compatible
+  literal `type` is allowed); pattern or format combined with length bounds;
+  pattern combined with format; and `prefixItems` combined with `items`.
+- `allOf` outside additive object-property merges and nonempty enum
+  intersections: primitive intersections, nested/union components, repeated
+  property names, constrained additional properties (except a single closed object) and shadowed
+  siblings.
+  Components may use local references; an explicit outer `type` must be
+  `object` for property merges or `string` for string enum intersections.
+- Unresolved/external references, references into annotation/extension payloads,
+  undeclared `required` properties, malformed schemas, conflicting bounds and
+  constraints in the wrong type context. Integer endpoints must fit the exact
+  VM/Web range (absolute value at most 9007199254740991); a weaker inclusive
+  bound cannot shadow a stronger exclusive bound. One-sided positive minima
+  and negative maxima containing a nonfinal zero digit are rejected because
+  upstream loses suffix padding (for example, `minimum: 100` admits `10`).
+  At 16 digits, only absolute endpoints matching `111111111111111[0-9]` are supported;
+  others emit inverted repetition bounds. Two-sided bounds are unaffected.
+
+Integer `minimum`, `maximum`, `exclusiveMinimum` and `exclusiveMaximum`
+(including Pydantic `ge=`), the four formats above and supported
+`allOf` forms now compile with llama.cpp v0.7.0 semantics. Format validation is
+lexical: dates use month/day ranges, and times require a timezone with optional
+three-digit fractional seconds. Fixed tuples accept both `prefixItems` and
+draft-07 `items: [...]`, with compatible bounds (`minItems` no greater than the
+tuple length, `maxItems` no smaller). Their grammar still requires every tuple
+item. Typed final parsing checks the same tuples, formats and integer bounds.
+Object `allOf` merges make every merged property required in the grammar, as
+upstream does; they emit a closed object, matching upstream.
 
 Schemas must contain JSON values, nested at most 128 container levels, including
-annotations. Non-JSON values throw `LlamaArgumentException`. Annotations and
-`x-*` extension metadata remain accepted. A nonempty annotation-only untyped
-schema accepts any JSON value, including in imported tool properties; `{}` keeps
-its existing object grammar. Use `jsonValueSchema` for an unconstrained response
-root. Imported tools keep their narrower subset and object root, and `required`
-still names declared properties only (see
+annotations. Non-JSON values throw `LlamaArgumentException`. Annotations such as
+`discriminator`, `contentMediaType`, `contentEncoding`, `example`, `examples`,
+`$anchor`, `$id`, `$schema`, `$comment`, `deprecated`, `readOnly`, `writeOnly`,
+`title`, `description`, `default`, and unknown vocabulary (including `x-*`)
+remain accepted and ignored as constraints, just as upstream ignores them.
+Only schema-bearing positions are traversed for assertions and references.
+Nonempty annotation-only untyped schemas accept any JSON value, including in
+imported tool properties; `{}` keeps its existing object grammar. Imported tools
+keep their narrower subset and object root (see
 [tool input schemas](doc/tool_input_schemas.md)).
 
 Decoded tool-call arguments nested beyond 128 containers now fail with

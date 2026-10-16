@@ -74,8 +74,16 @@ description: >-
   `json_schema` may also hold `name`, `description` and `strict`, or
   `{'type': 'text'}`; a `null`-valued key counts as absent, and any other type
   or key throws. Raw and typed schemas share strict validation: unsupported
-  assertions (including numeric bounds and formats), shadowed siblings and
-  length/item bounds above 2000 throw with a schema path. Nonempty annotation-only
+  assertions (number bounds, formats other than uuid/date/time/date-time,
+  multipleOf, uniqueness/contains, property/dependency constraints, conditionals,
+  unevaluated keywords, additionalItems and dynamic/recursive references),
+  shadowed siblings and length/item bounds above 2000 throw with a schema path.
+  Integer bounds, compatible fixed tuples (`items: [...]` or `prefixItems`),
+  additive allOf object merges and enum intersections are supported. AllOf
+  primitive/nested/union components, duplicate properties and constrained
+  additional properties are rejected. Annotations and unknown vocabulary are
+  ignored as constraints; refs must target schema positions. See MIGRATION.md
+  for combination, integer-range and upstream suffix limits. Nonempty annotation-only
   untyped schemas accept any value; `{}` keeps its object grammar. JSON nesting,
   including annotation payloads, is limited to 128 containers. A `ChatSession` turn that throws this way, or fails or has
   its subscription cancelled before any reply content, removes its user

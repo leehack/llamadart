@@ -44,8 +44,33 @@ const _primitiveRules = <String, _BuiltinRule>{
   'null': _BuiltinRule('"null" space', []),
 };
 
+// llama.cpp v0.7.0 STRING_FORMAT_RULES. Calendar validity is deliberately
+// limited to the same lexical ranges as the upstream grammar.
+const _formatRules = <String, _BuiltinRule>{
+  'uuid': _BuiltinRule(
+    r'"\"" [0-9a-fA-F]{8} "-" [0-9a-fA-F]{4} "-" [0-9a-fA-F]{4} "-" [0-9a-fA-F]{4} "-" [0-9a-fA-F]{12} "\"" space',
+  ),
+  'date': _BuiltinRule(
+    '[0-9]{4} "-" ( "0" [1-9] | "1" [0-2] ) "-" ( "0" [1-9] | [1-2] [0-9] | "3" [0-1] )',
+  ),
+  'time': _BuiltinRule(
+    '([01] [0-9] | "2" [0-3]) ":" [0-5] [0-9] ":" [0-5] [0-9] ( "." [0-9]{3} )? ( "Z" | ( "+" | "-" ) ( [01] [0-9] | "2" [0-3] ) ":" [0-5] [0-9] )',
+  ),
+  'date-time': _BuiltinRule('date "T" time', ['date', 'time']),
+  'date-string': _BuiltinRule(r'"\"" date "\"" space', ['date']),
+  'time-string': _BuiltinRule(r'"\"" time "\"" space', ['time']),
+  'date-time-string': _BuiltinRule(r'"\"" date-time "\"" space', ['date-time']),
+};
+const _datePattern = r'[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[1-2][0-9]|3[0-1])';
+const _timePattern =
+    r'(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{3})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])';
+
 /// Reserved rule names that need a suffix to avoid collision.
-final _reservedNames = <String>{'root', ..._primitiveRules.keys};
+final _reservedNames = <String>{
+  'root',
+  ..._primitiveRules.keys,
+  ..._formatRules.keys,
+};
 
 /// Largest alternative count or repetition bound kept in an inline group.
 ///
@@ -82,6 +107,73 @@ class JsonSchemaConverter {
   static bool supportsPattern(String pattern) =>
       _PatternGrammarBuilder((name, rule) => name, 'pattern').build(pattern) !=
       null;
+
+  /// Integer endpoints with v0.7.0 rounding and inclusive-key precedence.
+  static (int?, int?) integerBounds(Map<String, dynamic> schema) {
+    final minimum = schema['minimum'] as num?;
+    final maximum = schema['maximum'] as num?;
+    final exclusiveMinimum = schema['exclusiveMinimum'] as num?;
+    final exclusiveMaximum = schema['exclusiveMaximum'] as num?;
+    return (
+      minimum?.ceil() ??
+          (exclusiveMinimum == null ? null : exclusiveMinimum.floor() + 1),
+      maximum?.floor() ??
+          (exclusiveMaximum == null ? null : exclusiveMaximum.ceil() - 1),
+    );
+  }
+
+  /// Whether v0.7.0's one-sided suffix builder enforces these endpoints.
+  static bool supportsIntegerBounds(Map<String, dynamic> schema) {
+    final (min, max) = integerBounds(schema);
+    final lower = max == null && min != null && min > 0
+        ? min
+        : min == null && max != null && max < 0
+        ? -max
+        : null;
+    if (lower == null) return true;
+    final digits = lower.toString();
+    // Recursive integer suffixes lose leading zeros. At the 16-digit limit,
+    // larger prefix digits also emit inverted repetition bounds.
+    if (digits.substring(0, digits.length - 1).contains('0')) return false;
+    return digits.length < 16 || RegExp(r'^1{15}[0-9]$').hasMatch(digits);
+  }
+
+  /// Canonical literal identity used by upstream allOf enum intersection.
+  static String literalKey(Object? value) => jsonEncode(value);
+
+  /// Checks the same lexical format subset as the generated grammar.
+  static bool matchesFormat(String format, String value) {
+    final pattern = switch (format) {
+      'uuid' =>
+        r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+      'date' => _datePattern,
+      'time' => _timePattern,
+      'date-time' => '${_datePattern}T$_timePattern',
+      _ => throw StateError('Unsupported format $format'),
+    };
+    return RegExp(pattern).matchAsPrefix(value)?.end == value.length;
+  }
+
+  /// Resolves a local JSON pointer through object keys and array indexes.
+  static Object? resolvePointer(Map<String, dynamic> root, String ref) {
+    if (!ref.startsWith('#/')) return null;
+    Object? target = root;
+    for (final raw in ref.substring(2).split('/')) {
+      final segment = raw.replaceAll('~1', '/').replaceAll('~0', '~');
+      final index = int.tryParse(segment);
+      if (target is Map) {
+        target = target[segment];
+      } else if (target is List &&
+          index != null &&
+          index >= 0 &&
+          index < target.length) {
+        target = target[index];
+      } else {
+        return null;
+      }
+    }
+    return target;
+  }
 
   /// Access accumulated rules (for multi-tool grammar assembly).
   Map<String, String> get rules => _rules;
@@ -136,7 +228,7 @@ class JsonSchemaConverter {
   String _addPrimitive(String name, _BuiltinRule rule) {
     final n = _addRule(name, rule.content);
     for (final dep in rule.deps) {
-      final depRule = _primitiveRules[dep];
+      final depRule = _primitiveRules[dep] ?? _formatRules[dep];
       if (depRule == null) throw StateError('Rule $dep not known');
       if (!_rules.containsKey(dep)) {
         _addPrimitive(dep, depRule);
@@ -171,15 +263,9 @@ class JsonSchemaConverter {
       final ref = node[r'$ref'] as String?;
       if (ref != null && !_refs.containsKey(ref) && ref.startsWith('#/')) {
         // Local ref
-        dynamic target = rootSchema;
-        final selectors = ref.substring(2).split('/');
-        for (final segment in selectors) {
-          final sel = segment.replaceAll('~1', '/').replaceAll('~0', '~');
-          if (target is Map<String, dynamic> && target.containsKey(sel)) {
-            target = target[sel];
-          } else {
-            throw StateError('Error resolving ref $ref: $sel not found');
-          }
+        final target = resolvePointer(rootSchema as Map<String, dynamic>, ref);
+        if (target == null) {
+          throw StateError('Error resolving ref $ref: target not found');
         }
         _refs[ref] = target;
         // Resolve refs nested inside the target as well.
@@ -326,22 +412,40 @@ class JsonSchemaConverter {
         schema.containsKey('allOf')) {
       final required = <String>{};
       final properties = <MapEntry<String, dynamic>>[];
-
-      for (final component in schema['allOf'] as List) {
-        var compSchema = component as Map<String, dynamic>;
-        final compRef = compSchema[r'$ref'] as String?;
-        if (compRef != null) {
-          compSchema = _refs[compRef] as Map<String, dynamic>? ?? compSchema;
+      final enumCounts = <String, int>{};
+      final components = schema['allOf'] as List;
+      void addComponent(Map<String, dynamic> component, bool isRequired) {
+        final seen = <String>{};
+        while (component[r'$ref'] is String) {
+          final ref = component[r'$ref'] as String;
+          if (!seen.add(ref)) throw StateError('Cyclic allOf component $ref');
+          component = _refs[ref] as Map<String, dynamic>;
         }
-
-        if (compSchema.containsKey('properties')) {
-          final props = compSchema['properties'] as Map<String, dynamic>;
+        if (component['properties'] is Map<String, dynamic>) {
+          final props = component['properties'] as Map<String, dynamic>;
           properties.addAll(props.entries);
-          // In allOf, all properties from each component are required
-          required.addAll(props.keys);
+          if (isRequired) required.addAll(props.keys);
+        } else if (component['enum'] is List) {
+          for (final literal
+              in (component['enum'] as List)
+                  .map((value) => _formatLiteral(literalKey(value)))
+                  .toSet()) {
+            enumCounts.update(literal, (count) => count + 1, ifAbsent: () => 1);
+          }
         }
       }
 
+      for (final component in components.cast<Map<String, dynamic>>()) {
+        addComponent(component, true);
+      }
+      final intersection =
+          enumCounts.keys
+              .where((key) => enumCounts[key] == components.length)
+              .toList()
+            ..sort();
+      if (intersection.isNotEmpty) {
+        return _addRule(ruleName, '(${intersection.join(' | ')}) space');
+      }
       return _addRule(
         ruleName,
         _buildObjectRule(properties, required, name, null),
@@ -384,6 +488,27 @@ class JsonSchemaConverter {
       final patternRule = _visitPattern(schema['pattern'] as String, ruleName);
       if (patternRule != null) return patternRule;
       schemaType = 'string';
+    }
+
+    final format = schema['format'];
+    if ((schemaType == null || schemaType == 'string') &&
+        format is String &&
+        {'uuid', 'date', 'time', 'date-time'}.contains(format)) {
+      final primitive = format == 'uuid' ? 'uuid' : '$format-string';
+      return _addRule(
+        ruleName,
+        _addPrimitive(primitive, _formatRules[primitive]!),
+      );
+    }
+    if (schemaType == 'integer' &&
+        [
+          'minimum',
+          'maximum',
+          'exclusiveMinimum',
+          'exclusiveMaximum',
+        ].any(schema.containsKey)) {
+      final (min, max) = integerBounds(schema);
+      return _addRule(ruleName, '(${_buildMinMaxInt(min, max)}) space');
     }
 
     // string with minLength/maxLength
@@ -1028,4 +1153,107 @@ String _buildRepetition(
   final result =
       '$itemRule ${_buildRepetition('($separatorRule $itemRule)', minItems > 0 ? minItems - 1 : 0, maxItems != null ? maxItems - 1 : null)}';
   return minItems == 0 ? '($result)?' : result;
+}
+
+/// Port of v0.7.0 build_min_max_int; null endpoints are unbounded.
+String _buildMinMaxInt(
+  int? min,
+  int? max, [
+  int decimals = 16,
+  bool top = true,
+]) {
+  String digits(int low, int high) => low == high && low == 1
+      ? '[0-9]'
+      : '[0-9]{${low == high ? low : '$low,$high'}}';
+  String range(String from, String to) =>
+      from == to ? '[$from]' : '[$from-$to]';
+  String uniform(String from, String to) {
+    var i = 0;
+    while (i < from.length && i < to.length && from[i] == to[i]) {
+      i++;
+    }
+    final prefix = i > 0 ? '"${from.substring(0, i)}"' : '';
+    if (i >= from.length || i >= to.length) return prefix;
+    final len = from.length - i - 1;
+    String body;
+    if (len == 0) {
+      body = '[${from[i]}-${to[i]}]';
+    } else {
+      final fromSub = from.substring(i + 1);
+      final toSub = to.substring(i + 1);
+      final zeros = '0' * len;
+      final nines = '9' * len;
+      final fromDigit = int.parse(from[i]);
+      final toDigit = int.parse(to[i]);
+      final parts = <String>[];
+      var reached = false;
+      if (fromSub == zeros) {
+        parts.add('${range(from[i], '${toDigit - 1}')} ${digits(len, len)}');
+      } else {
+        parts.add('[${from[i]}] (${uniform(fromSub, nines)})');
+        if (fromDigit < toDigit - 1) {
+          reached = toSub == nines;
+          parts.add(
+            '${range('${fromDigit + 1}', reached ? to[i] : '${toDigit - 1}')} ${digits(len, len)}',
+          );
+        }
+      }
+      if (!reached) parts.add('[${to[i]}] ${uniform(zeros, toSub)}');
+      body = '(${parts.join(' | ')})';
+    }
+    return '$prefix${prefix.isEmpty ? '' : ' '}$body';
+  }
+
+  final less = decimals > 1 ? decimals - 1 : 1;
+  if (min != null && max != null) {
+    if (min < 0 && max < 0) {
+      return '"-" (${_buildMinMaxInt(-max, -min, decimals)})';
+    }
+    var prefix = '';
+    if (min < 0) {
+      prefix = '"-" (${_buildMinMaxInt(0, -min, decimals)}) | ';
+      min = 0;
+    }
+    var from = '$min';
+    final to = '$max';
+    final parts = <String>[];
+    for (var count = from.length; count < to.length; count++) {
+      parts.add(uniform(from, '9' * count));
+      from = '1${'0' * count}';
+    }
+    parts.add(uniform(from, to));
+    return '$prefix${parts.join(' | ')}';
+  }
+  if (min != null) {
+    if (min < 0) {
+      return '"-" (${_buildMinMaxInt(null, -min, decimals, false)}) | [0] | [1-9] ${digits(0, decimals - 1)}';
+    }
+    if (min == 0) {
+      return top ? '[0] | [1-9] ${digits(0, less)}' : digits(1, decimals);
+    }
+    if (min <= 9) {
+      final start = top ? 1 : 0;
+      final prefix = min > start
+          ? '${range('$start', '${min - 1}')} ${digits(1, less)} | '
+          : '';
+      return '$prefix${range('$min', '9')} ${digits(0, less)}';
+    }
+    final text = '$min';
+    final len = text.length;
+    final first = int.parse(text[0]);
+    final prefix = first > 1
+        ? '${range(top ? '1' : '0', '${first - 1}')} ${digits(len, less)} | '
+        : '';
+    final suffix = first < 9
+        ? ' | ${range('${first + 1}', '9')} ${digits(len - 1, less)}'
+        : '';
+    return '$prefix[$first] (${_buildMinMaxInt(int.parse(text.substring(1)), null, less, false)})$suffix';
+  }
+  if (max != null) {
+    if (max >= 0) {
+      return '${top ? '"-" [1-9] ${digits(0, less)} | ' : ''}${_buildMinMaxInt(0, max, decimals)}';
+    }
+    return '"-" (${_buildMinMaxInt(-max, null, decimals, false)})';
+  }
+  throw StateError('At least one integer endpoint is required');
 }
