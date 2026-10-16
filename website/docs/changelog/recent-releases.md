@@ -9,8 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Keep unfinished Ministral 3 reasoning out of reply text when generation stops
-  or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
+- Keep unfinished reasoning from Ministral-format templates out of reply text
+  when generation stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
 
 ## 0.13.1
 

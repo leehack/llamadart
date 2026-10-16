@@ -29,8 +29,10 @@ description: >-
   error. `ChatSession` cancellation before any reply content instead throws
   `LlamaStateException` and rolls back the turn, including structured JSON.
   Track cancels in the code that issues them.
-- Ministral 3 replies stopped inside `[THINK]` keep the unfinished thought in
-  `thinking`; it is not answer text, including after cancellation or a token limit.
+- Ministral-format replies stopped inside a leading `[THINK]` block without
+  `[TOOL_CALLS]` keep the unfinished thought in `thinking`, including after
+  cancellation or a token limit. A normal end under `ToolChoice.required` still
+  throws `LlamaInferenceException` when the required call is missing.
 - To wait for the whole reply, use `await stream.text()`, or
   `await stream.collect()` for a `LlamaCompletion` with `text`, `thinking`,
   assembled `toolCalls`, `finishReason`, `usage` and an assistant `message`.

@@ -167,13 +167,20 @@ void main() {
             ending == 'limit' ? BackendGenerationLimit.maxTokens : null,
           ));
           if (ending == 'cancel') backend.onEnded = engine.cancelGeneration;
-          final chunks = await session
-              .create(
-                const [LlamaTextContent('Weather?')],
-                tools: choice == null ? null : tools,
-                toolChoice: choice ?? ToolChoice.auto,
-              )
-              .toList();
+          final stream = session.create(
+            const [LlamaTextContent('Weather?')],
+            tools: choice == null ? null : tools,
+            toolChoice: choice ?? ToolChoice.auto,
+          );
+          if (choice == ToolChoice.required && ending == 'stop') {
+            await expectLater(
+              stream.toList(),
+              throwsA(isA<LlamaInferenceException>()),
+            );
+            expect(executed, isEmpty);
+            return;
+          }
+          final chunks = await stream.toList();
           expect(chunks.map((chunk) => chunk.text).join(), isEmpty);
           expect(
             chunks.map((chunk) => chunk.thinking).join(),

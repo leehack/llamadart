@@ -37,22 +37,56 @@ void main() {
       );
 
       for (final suffix in ['', '[/TH']) {
-        test(
-          '${choice.name} keeps an unfinished thought $suffix out of text',
-          () {
-            final parsed = ChatTemplateEngine.parse(
-              rendered.format,
-              '[THINK]Check the city.$suffix',
-              parser: rendered.parser,
+        test('${choice.name} preserves terminal thought policy $suffix', () {
+          if (choice == ToolChoice.required) {
+            expect(
+              () => ChatTemplateEngine.parse(
+                rendered.format,
+                '[THINK]Check the city.$suffix',
+                parser: rendered.parser,
+              ),
+              throwsA(isA<LlamaInferenceException>()),
             );
-            expect(parsed.reasoningContent, 'Check the city.');
-            expect(parsed.content, isEmpty);
-            expect(parsed.toolCalls, isEmpty);
-          },
-        );
+            return;
+          }
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]Check the city.$suffix',
+            parser: rendered.parser,
+          );
+          expect(parsed.reasoningContent, 'Check the city.');
+          expect(parsed.content, isEmpty);
+          expect(parsed.toolCalls, isEmpty);
+        });
+      }
+
+      if (choice != ToolChoice.none) {
+        test('${choice.name} preserves a call after an unclosed thought', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            parser: rendered.parser,
+          );
+          expect(parsed.content, '[THINK]a');
+          expect(parsed.reasoningContent, isNull);
+          final call = parsed.toolCalls.single;
+          expect(call.function?.name, 'weather');
+          expect(call.function?.arguments, '{"city":"x"}');
+        });
       }
 
       if (choice != ToolChoice.required) {
+        test('${choice.name} keeps a leading-space thought as content', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            ' [THINK]a',
+            parser: rendered.parser,
+          );
+          expect(parsed.content, ' [THINK]a');
+          expect(parsed.reasoningContent, isNull);
+          expect(parsed.toolCalls, isEmpty);
+        });
+
         test('${choice.name} preserves a completed thought and answer', () {
           final parsed = ChatTemplateEngine.parse(
             rendered.format,
@@ -66,6 +100,7 @@ void main() {
       } else {
         for (final output in [
           'Answer [THINK]literally.',
+          '[THINK]a[/THINK]',
           '[THINK]Check.[/THINK][TOOL_CALLS]weather[ARGS]{',
         ]) {
           test('required still rejects malformed completed output $output', () {

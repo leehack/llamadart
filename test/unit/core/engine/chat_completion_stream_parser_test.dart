@@ -550,6 +550,58 @@ void main() {
       ]);
     });
 
+    for (final (name, format, forced, content, thinking) in [
+      ('gpt-oss', ChatFormat.gptOss, false, '<think>a</thi', 'a</thi'),
+      ('GLM-4.7-Flash', ChatFormat.glm45, true, '', '<think>a</thi'),
+      ('MiniMax-M2', ChatFormat.minimaxM2, true, '', '<think>a</thi'),
+    ]) {
+      for (final tokens in [
+        ['<think>a</thi'],
+        ['<think>', 'a', '</thi'],
+        '<think>a</thi'.split(''),
+      ]) {
+        test(
+          '$name preserves its partial closing tag at EOF: $tokens',
+          () async {
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable(tokens),
+              templateResult: LlamaChatTemplateResult(
+                prompt: 'prompt',
+                format: format.index,
+                thinkingForcedOpen: forced,
+              ),
+              parseToolCallsEnabled: false,
+              enableThinking: true,
+              modelName: name,
+              completionId: 'other-reasoning-format',
+            ).toList();
+
+            expect(
+              chunks
+                  .map((chunk) => chunk.choices.single.delta.content ?? '')
+                  .join(),
+              content,
+            );
+            expect(
+              chunks
+                  .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                  .join(),
+              thinking,
+            );
+            expect(chunks.last.choices.single.finishReason, 'stop');
+            expect(
+              chunks.expand(
+                (chunk) =>
+                    chunk.choices.single.delta.toolCalls ??
+                    const <LlamaCompletionChunkToolCall>[],
+              ),
+              isEmpty,
+            );
+          },
+        );
+      }
+    }
+
     group('a Ministral PEG reply cut short', () {
       LlamaChatTemplateResult ministral(ToolChoice toolChoice) =>
           MinistralHandler().render(
@@ -597,8 +649,41 @@ void main() {
       const partialCall = '[TOOL_CALLS]weather[ARGS]{"city":"Par';
       const completeCall = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
 
+      for (final suffix in ['[', '[/TH']) {
+        test(
+          'none preserves EOF markup after a tool marker: $suffix',
+          () async {
+            final output =
+                '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}$suffix';
+            final chunks = await parse(ToolChoice.none, [output]);
+            expect(joined(chunks, (delta) => delta.content), output);
+            expect(
+              joined(chunks, (delta) => delta.thinking),
+              'a[TOOL_CALLS]weather[ARGS]{"city":"x"}$suffix',
+            );
+            expect(calls(chunks), isEmpty);
+            expect(chunks.last.choices.single.finishReason, 'stop');
+          },
+        );
+      }
+
       for (final toolChoice in [ToolChoice.required, ToolChoice.auto]) {
         group('with ${toolChoice.name}', () {
+          test('preserves a natural call after an unclosed thought', () async {
+            final chunks = await parse(toolChoice, const [
+              '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            ]);
+            expect(chunks.last.choices.single.finishReason, 'tool_calls');
+            expect(joined(chunks, (delta) => delta.content), isEmpty);
+            expect(
+              joined(chunks, (delta) => delta.thinking),
+              'a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            );
+            final call = calls(chunks).single;
+            expect(call.function?.name, 'weather');
+            expect(call.function?.arguments, '{"city":"x"}');
+          });
+
           for (final (name, atLimit, cancelled, finishReason) in const [
             ('at a limit', true, false, 'length'),
             ('by a cancel', false, true, 'stop'),
@@ -683,6 +768,8 @@ void main() {
         ('no output', <String>[]),
         ('text without a call', ['It is sunny.']),
         ('a partial call', [partialCall]),
+        ('an unclosed thought', ['[THINK]a']),
+        ('a closed thought', ['[THINK]a[/THINK]']),
       ]) {
         test('throws a typed exception for a required reply that ended '
             'normally with $name', () async {

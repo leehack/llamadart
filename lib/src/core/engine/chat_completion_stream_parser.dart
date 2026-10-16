@@ -338,9 +338,10 @@ class ChatCompletionStreamParser {
       undecidedPrefix = '';
     }
 
-    // The PEG parser withholds a partial closing tag from an open thought.
-    // Raw no-tool streams must not flush that tag into reasoning at EOF.
+    // Match PEG partial-close withholding for marker-free Ministral thoughts.
+    // Tool-marked replies retain their existing EOF bytes.
     if (templateResult.format == ChatFormat.ministral.index &&
+        !buffer.toString().contains('[TOOL_CALLS]') &&
         isThinking &&
         endTag.startsWith(pendingBuffer)) {
       pendingBuffer = '';
