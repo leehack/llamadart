@@ -14,6 +14,11 @@ Linux and web. Full docs: https://llamadart.leehack.com
 
 ## Guidelines
 
+- In custom backends and fakes, declare URL-load callbacks as
+  `void Function(double progress)? onProgress` (0.14+), including format-routing
+  loads. Forward progress fractions unchanged; return values do not control or
+  cancel loading. Native FFI `bool` callbacks keep their separate contract.
+
 - Create one engine per loaded model with
   `LlamaEngine.load(LlamaModel(source))`, or with `LlamaEngine(LlamaBackend())`
   and `setModel` when the engine must exist before the load, and always
@@ -83,6 +88,12 @@ Linux and web. Full docs: https://llamadart.leehack.com
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,
   `LlamaStateException`, `LlamaUnsupportedException`, ...) rather than
   `Exception`.
+- If a fresh Flutter 3.47.1 macOS SwiftPM build reports generated macOS 12.0
+  beside a companion requiring 14.0, use the
+  [consumer bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap):
+  `flutter pub get`, raise only the generated package floor, then build with
+  `--no-pub`. Repeat after regeneration; preserve Runner's 14.0+ target and
+  companion manifests, native URLs and checksums.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
   - Windows machines that run the app need the latest Microsoft Visual C++

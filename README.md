@@ -40,6 +40,9 @@ preference falls back to CPU with a warning. See the
   loops require reliable runtime termination reporting and reject the pinned
   LiteRT-LM native and Web runtimes; use manually managed completion there
   ([tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)).
+- Gemma 2/3/3n and legacy Mistral tool-result retries fold an immediately
+  following user message into the result turn; successfully rendered histories
+  stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
@@ -84,6 +87,12 @@ models before creating a context. Embedding inputs that need one-pass attention
 or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.
 See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning)
 and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
+Cancelling a queued native llama.cpp generation before dispatch makes
+`getPerformanceContext()` return `null` until another generation is dispatched.
+
+Custom backend load callbacks use `void Function(double progress)?` in 0.14.
+Progress notifications do not return a control value; update implementations
+and fakes as described in [MIGRATION.md](MIGRATION.md).
 
 Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
 preserve runtime `length` termination: tool loops return `truncated` and roll
@@ -212,6 +221,11 @@ Keep companion `0.0.21` with core `0.11.1` and `0.11.0` for llama.cpp v0.5.0
 bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
 core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
 `0.0.17`.
+
+A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
+companions' 14.0 requirement needs the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap).
+Keep Runner at 14.0+; the procedure preserves companion artifact verification.
 
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
 symbol lookup. Incompatible companions or unverified local `Artifacts`
@@ -367,6 +381,14 @@ regardless of GitHub metadata. Nightly cores use canonical decimal spelling
 (`b0` or a nonzero first digit), and rebuild counters start at 1 without leading
 zeros. The default pin above changes only after the matching artifacts,
 bindings, runtime behavior, and docs have been validated together.
+
+Renamed legacy Qwen3 `.litertlm` bundles can opt into native thinking control
+with `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` and
+`enableThinking: false`. The public accessor follows the installed template
+version, so callers do not copy Jinja files. Native runtimes need the
+conversation-template setter. Web `@litert-lm/core@0.18.0` cannot apply this
+override and throws `LlamaUnsupportedException` at load. See the
+[template guide](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing).
 
 ### Alongside Flutter Edge AI
 

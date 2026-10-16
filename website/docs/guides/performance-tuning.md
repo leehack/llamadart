@@ -344,3 +344,8 @@ print('$backendName total=${vram.total} free=${vram.free}');
 Benchmark and parity scripts for a repository checkout, and measured
 llama.cpp and LiteRT-LM results, are in
 [Backend benchmarks](./backend-benchmarks#reproducing).
+
+On native llama.cpp, cancelling a queued generation before it starts makes
+`getPerformanceContext()` return `null` for that context until another
+generation is dispatched. Previous request counters are unavailable for the
+cancelled request.

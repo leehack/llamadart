@@ -21,6 +21,13 @@ Apps need only the first. Import `backend.dart` next to it to implement a
 custom backend or a test fake (`implements LlamaBackend, BackendTextToSpeech`),
 or to drive LiteRT-LM directly.
 
+Custom backends and test fakes declare URL-load progress as
+`void Function(double progress)? onProgress` in 0.14. Forward the callback's
+fractions without using its return value: it is a notification, not a load
+cancellation signal. Apply the same signature to format-routing loads and
+callback fields. See the
+[migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md).
+
 ## High-Level API
 
 Use this by default. It handles model lifecycle, template routing, streaming, and

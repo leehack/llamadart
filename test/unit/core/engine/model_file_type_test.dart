@@ -98,7 +98,7 @@ class _BasicBackend implements LlamaBackend {
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     throw UnsupportedError('URL loading is not supported by the test backend.');
   }

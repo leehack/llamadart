@@ -137,6 +137,30 @@ void main() {
     }
   });
 
+  group('follow-up matches pinned upstream merged rendering', () {
+    final reference =
+        jsonDecode(
+              File(
+                'test/fixtures/tool_result_follow_up_render_upstream.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    for (final render
+        in (reference['renders'] as List).cast<Map<String, dynamic>>()) {
+      final path = render['template'] as String;
+      test(_name(path), () {
+        final prompt = _render(path, [
+          ..._oneResult,
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'And Rome? Keep the units in Celsius.',
+          ),
+        ], tools: false).prompt;
+        expect(prompt, render['prompt']);
+      });
+    }
+  });
+
   for (final path in _rejectingTemplates) {
     group(_name(path), () {
       test('reports that it rejects the tool role', () {
@@ -201,6 +225,48 @@ void main() {
         expect(together, separate);
         expect(separate, contains('$_firstResponse\n$_secondResponse'));
       });
+
+      for (final tools in [false, true]) {
+        test('merges a user directly after tool results (tools=$tools)', () {
+          const followUp = 'And Rome? Keep the units in Celsius.';
+          final history = [
+            ..._oneResult,
+            const LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: followUp,
+            ),
+          ];
+          for (final choice in ToolChoice.values) {
+            for (final thinking in [false, true]) {
+              final original = _render(
+                path,
+                _oneResult,
+                tools: tools,
+                toolChoice: choice,
+                enableThinking: thinking,
+              ).prompt;
+              final prompt = _render(
+                path,
+                history,
+                tools: tools,
+                toolChoice: choice,
+                enableThinking: thinking,
+              ).prompt;
+              // Only the retry's result turn gains the following user text.
+              final resultEnd =
+                  original.indexOf('\n}', original.indexOf('"tool_response"')) +
+                  2;
+              expect(resultEnd, greaterThan(1));
+              expect(
+                prompt,
+                original.replaceRange(resultEnd, resultEnd, '\n$followUp'),
+              );
+              expect(history.last.content, followUp);
+              expect(history[2].role, LlamaChatRole.tool);
+            }
+          }
+        });
+      }
 
       test('renders the turns after a tool round', () {
         final prompt = _render(path, [
@@ -314,6 +380,10 @@ void main() {
           const LlamaChatMessage.fromText(
             role: LlamaChatRole.user,
             text: 'And Rome?',
+          ),
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Another consecutive user turn still fails.',
           ),
         ],
         metadata: const {},

@@ -1639,7 +1639,7 @@ class _FormatRoutingSpeechBackend extends _SpeechBackend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) => throw UnimplementedError();
 }
 

@@ -388,9 +388,15 @@ tools on the follow-up request. This restores the tool-result polyfill of
 llama.cpp's former minja engine (for example `b6000`); the tested `b10549`
 fails the same request with the template's role-alternation error. A request
 that the template renders as given, and any template that renders the `tool`
-role itself, is unchanged. A user message directly after tool results still
-fails on these templates, as two user turns in a row
-([#1118](https://github.com/leehack/llamadart/issues/1118)).
+role itself, is unchanged. On the retry, a user message immediately after the
+results is appended to their user turn with a newline, so the template still
+receives alternating roles. For example, `user → assistant(tool call) →
+tool(result) → user("And Rome?")` becomes `user → assistant →
+user(result JSON + "\nAnd Rome?")`. Only the render input changes; the app's
+history stays intact. This follow-up case also fails in pinned upstream
+`b10549` ([#1118](https://github.com/leehack/llamadart/issues/1118)).
+A later assistant turn still separates tool rounds, and unrelated consecutive
+user messages retain the template's usual validation.
 
 ## Tool choice semantics
 

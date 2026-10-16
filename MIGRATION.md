@@ -2,9 +2,42 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI and strict schemas
+## Unreleased: user messages after tool results
+
+Gemma 2/3/3n and legacy Mistral templates now accept a user message immediately
+following tool results. If rendering fails because the template rejects the
+`tool` role, the retry appends that user message to the converted result turn
+with a newline. Previously this history threw `LlamaInferenceException` for
+consecutive user turns. Stored history and requests that render successfully
+on the first attempt are unchanged. This extends llama.cpp's former tool-result
+polyfill; upstream `b10549` rejects the original history.
+
+## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI, Qwen3 overrides and load callbacks
+
+Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
+loads and the legacy `LlamaEngine` URL-loading methods now declare
+`void Function(double progress)?` instead of `Function(double progress)?`.
+Existing `Function(double progress)?` overrides still compile; prefer the
+explicit `void` signature in custom backends and test fakes. Notifications
+deliver the same fractions; the return value is ignored and cannot cancel a
+load. Native llama.cpp's raw FFI
+`bool` progress callback is unchanged.
+
+```dart
+Future<int> modelLoadFromUrl(
+  String url,
+  ModelParams params, {
+  void Function(double progress)? onProgress,
+}) async {
+  // Delegate loading to your runtime, forwarding its progress notifications.
+  return runtime.load(url, onProgress: onProgress);
+}
+```
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
+If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap);
+keep Runner and the companion requirements at macOS 14.0 or newer.
 The llama.cpp companion now pins native `v0.7.0`; LiteRT-LM and image companions
 are reissued for the new core minor with their native pins unchanged.
 
@@ -13,6 +46,21 @@ layouts as well as its exported symbols. v0.6.0 and older native bundles are
 ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
+
+Cancelling a queued native llama.cpp generation before dispatch now makes
+`getPerformanceContext()` return `null` until another generation is dispatched.
+Handle unavailable diagnostics instead of reusing earlier request counters.
+
+For renamed legacy Qwen3 LiteRT-LM text bundles, replace copied Jinja with
+`ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` to keep native
+`enableThinking: false` routing stable across upgrades. The accessor always
+returns this package version's canonical template. Web
+`@litert-lm/core@0.18.0` cannot install a conversation template: loading this
+canonical override now throws `LlamaUnsupportedException` instead of appearing
+to honor it. Use native LiteRT-LM for this contract. Other Web template overrides
+and loads without an override retain their existing behavior.
+
+### Response schemas and tool-call nesting
 
 Raw `responseFormat` schemas and `LlamaStructuredOutput` now share validation.
 Unsupported assertions throw a path-bearing `LlamaUnsupportedException` before
