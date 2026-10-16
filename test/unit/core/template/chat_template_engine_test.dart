@@ -19,6 +19,120 @@ void main() {
 
   final messages = [const LlamaChatMessage(role: 'user', content: 'hello')];
 
+  group('Ministral terminal reasoning', () {
+    const template = '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT][TOOL_CALLS][ARGS]';
+    final tool = ToolDefinition(
+      name: 'weather',
+      description: 'Weather',
+      parameters: [],
+    );
+
+    for (final choice in ToolChoice.values) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: messages,
+        metadata: const {},
+        tools: [tool],
+        toolChoice: choice,
+      );
+
+      for (final suffix in ['', '[/TH']) {
+        test('${choice.name} preserves terminal thought policy $suffix', () {
+          if (choice == ToolChoice.required) {
+            expect(
+              () => ChatTemplateEngine.parse(
+                rendered.format,
+                '[THINK]Check the city.$suffix',
+                parser: rendered.parser,
+              ),
+              throwsA(isA<LlamaInferenceException>()),
+            );
+            return;
+          }
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]Check the city.$suffix',
+            parser: rendered.parser,
+          );
+          expect(parsed.reasoningContent, 'Check the city.');
+          expect(parsed.content, isEmpty);
+          expect(parsed.toolCalls, isEmpty);
+        });
+      }
+
+      if (choice != ToolChoice.none) {
+        test('${choice.name} preserves a call after an unclosed thought', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            parser: rendered.parser,
+          );
+          expect(parsed.content, '[THINK]a');
+          expect(parsed.reasoningContent, isNull);
+          final call = parsed.toolCalls.single;
+          expect(call.function?.name, 'weather');
+          expect(call.function?.arguments, '{"city":"x"}');
+        });
+      }
+
+      if (choice != ToolChoice.required) {
+        test('${choice.name} keeps a leading-space thought as content', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            ' [THINK]a',
+            parser: rendered.parser,
+          );
+          expect(parsed.content, ' [THINK]a');
+          expect(parsed.reasoningContent, isNull);
+          expect(parsed.toolCalls, isEmpty);
+        });
+
+        test('${choice.name} preserves a completed thought and answer', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]Check.[/THINK]Answer [THINK]literally. \n',
+            parser: rendered.parser,
+          );
+          expect(parsed.reasoningContent, 'Check.');
+          expect(parsed.content, 'Answer [THINK]literally. \n');
+          expect(parsed.toolCalls, isEmpty);
+        });
+      } else {
+        for (final output in [
+          'Answer [THINK]literally.',
+          '[THINK]a[/THINK]',
+          '[THINK]Check.[/THINK][TOOL_CALLS]weather[ARGS]{',
+        ]) {
+          test('required still rejects malformed completed output $output', () {
+            expect(
+              () => ChatTemplateEngine.parse(
+                rendered.format,
+                output,
+                parser: rendered.parser,
+              ),
+              throwsA(isA<LlamaInferenceException>()),
+            );
+          });
+        }
+      }
+    }
+
+    test('other PEG formats retain their terminal parsing policy', () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: messages,
+        metadata: const {},
+      );
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.pegNative.index,
+        '[THINK]Check.',
+        parser: rendered.parser,
+      );
+      expect(parsed.content, '[THINK]Check.');
+      expect(parsed.reasoningContent, isNull);
+    });
+  });
+
   group('ChatTemplateEngine template routing', () {
     test('supports per-call custom template override', () {
       final result = ChatTemplateEngine.render(
@@ -611,6 +725,101 @@ void main() {
               'ParserException',
             ),
           ),
+        );
+      });
+
+      const recursiveTemplate =
+          '{% macro recurse() %}{{ recurse() }}{% endmacro %}'
+          '{% if messages[0].content == "overflow" %}{{ recurse() }}'
+          '{% else %}{{ messages[0].content }}{% endif %}';
+
+      // Stack overflow cannot be caught on dart2wasm.
+      test('wraps render stack overflow and preserves its original stack', () {
+        try {
+          ChatTemplateEngine.render(
+            templateSource: recursiveTemplate,
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'overflow',
+              ),
+            ],
+            metadata: const {},
+          );
+          fail('The recursive template must fail to render');
+        } on LlamaInferenceException catch (error, stackTrace) {
+          expect(error.message, contains('templateSource failed to render'));
+          expect(error.message, contains('Stack Overflow'));
+          expect(stackTrace.toString(), contains('MacroStatement'));
+        }
+      }, testOn: '!dart2wasm');
+
+      // Stack overflow cannot be caught on dart2wasm.
+      test('does not retry a tool-role stack overflow as a user turn', () {
+        const template =
+            '{% macro recurse() %}{{ recurse() }}{% endmacro %}'
+            '{% for message in messages %}'
+            '{% if message.role == "tool" %}{{ recurse() }}'
+            '{% else %}{{ message.content }}{% endif %}'
+            '{% endfor %}';
+
+        // A user-turn retry would succeed and hide the original overflow.
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: template,
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'ok'),
+            ],
+            metadata: const {},
+          ).prompt,
+          'ok',
+        );
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: template,
+            messages: const [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: 'call1',
+                    name: 'inspect',
+                    result: 'ok',
+                  ),
+                ],
+              ),
+            ],
+            metadata: const {},
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('templateSource'), contains('Stack Overflow')),
+            ),
+          ),
+        );
+      }, testOn: '!dart2wasm');
+
+      test('keeps successful recursive-template renders unchanged', () {
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: recursiveTemplate,
+            messages: messages,
+            metadata: const {},
+          ).prompt,
+          'hello',
+        );
+      });
+
+      test('leaves unrelated render errors unchanged', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: '{{ 1 // 0 }}',
+            messages: messages,
+            metadata: const {},
+          ),
+          throwsA(isA<UnsupportedError>()),
         );
       });
 

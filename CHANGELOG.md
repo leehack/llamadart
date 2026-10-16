@@ -1,5 +1,21 @@
 ## Unreleased
 
+- Report recursive chat-template failures, including Command R+ and
+  Hermes-2-Pro-Llama-3-8B null-typed tool parameters, as
+  `LlamaInferenceException` instead of `StackOverflowError` on VM and JavaScript
+  ([#1112](https://github.com/leehack/llamadart/issues/1112)).
+- Tool input schemas now accept string length and array item bounds of 2000,
+  matching the shipped llama.cpp runtime ([#1116](https://github.com/leehack/llamadart/issues/1116)).
+- Keep unfinished reasoning from Ministral-format templates out of reply text
+  when generation stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
+- Cancelling a tool call in Hermes-detected templates (Hermes 2 Pro/3,
+  Qwen2.5, Qwen3 and QwQ) now keeps only preceding answer text without
+  unfinished `<tool_call>` markup. With no preceding output, `ChatSession.create`
+  reports “Generation was cancelled before any output.” and rolls back the turn;
+  with legacy tools, cancelling after a completed call and an unfinished second
+  call returns `finishReason: tool_calls` with the completed call (not executed)
+  instead of `stop` with raw markup
+  ([#887](https://github.com/leehack/llamadart/issues/887)).
 - Honor `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles
   with a canonical Qwen 3 `chatTemplate` override or identifying metadata
   ([#901](https://github.com/leehack/llamadart/issues/901)).

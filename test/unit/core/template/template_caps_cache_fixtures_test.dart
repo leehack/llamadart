@@ -33,7 +33,12 @@ List<File> _fixtureTemplates() {
 const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
       '11111101',
+  // Command R+ and Hermes are pinned from Dart detection, without a server probe.
+  'test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja':
+      '11111001',
   'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja': '10101000',
+  'test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja':
+      '11111001',
   'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja': '11111011',
   'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja':
       '11011011',

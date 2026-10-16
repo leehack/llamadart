@@ -55,7 +55,13 @@ description: >-
   `chunk.toolCalls`; use them by hand to stream replies or to run tools
   outside the loop.
 - Tool calls arrive complete, with JSON-encoded `arguments`, in the final
-  chunk; its `chunk.finishReason` is `LlamaFinishReason.toolCalls`. Collect
+  chunk; its `chunk.finishReason` is `LlamaFinishReason.toolCalls`. With
+  Hermes-detected templates (Hermes 2 Pro/3, Qwen2.5, Qwen3 and QwQ),
+  cancelling inside an unfinished `<tool_call>` keeps preceding answer text
+  without raw envelope markup. If no output preceded it, `ChatSession.create`
+  throws `LlamaStateException` ("Generation was cancelled before any output.")
+  and rolls back the turn. Natural EOS, caller stops and token limits retain
+  their existing parsing behavior. Collect
   the whole stream with `collect()` (or use `engine.complete` /
   `session.send`): `LlamaCompletion.toolCalls` holds `LlamaToolCallContent`
   entries with decoded `arguments` (empty when they are not a JSON object;
@@ -89,6 +95,12 @@ description: >-
   `v0.18.0` hands it each message's `content` as a list of
   `{"type": "text", "text": ...}` parts, so read both the string and the
   list shape.
+- A recursive chat template (for example Command R+ or
+  Hermes-2-Pro-Llama-3-8B `tool_use` with a null-typed parameter) fails with
+  `LlamaInferenceException` naming the selected template on the Dart VM and
+  JavaScript. On dart2wasm, stack overflow cannot be caught and may trap or
+  hang. Replace the broken template or use a compatible tool schema;
+  rendering does not repair upstream templates.
 - Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
   LiteRT-LM `v0.18.0` and Web `@litert-lm/core@0.18.0` with
   `LlamaUnsupportedException` before generation or history mutation: those
@@ -118,7 +130,7 @@ Other formats and runtimes without an active tool grammar are rejected.
 WebGPU cannot use lazy auto grammars; use a supported non-lazy required-tool
 format. LiteRT-LM is unsupported. Final parsed calls and direct invocation
 are validated. Schemas past the guide's size limits (for example 32 nesting
-levels, 64 `anyOf` alternatives, or length/item bounds above 1999) throw
+levels, 64 `anyOf` alternatives, or length/item bounds above 2000) throw
 `LlamaUnsupportedException`. See the guide's "Import a JSON Schema" section
 for an example.
 

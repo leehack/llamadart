@@ -117,6 +117,132 @@ void main() {
       expect(jsonDecode(calls.single.function!.arguments!), {'city': 'Paris'});
     });
 
+    group('cancelled Qwen tool envelopes', () {
+      const complete =
+          '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+          '</tool_call>';
+      for (final prefix in ['', 'Checking. ']) {
+        for (final earlierCall in ['', complete]) {
+          test(
+            'keeps answer and complete calls before cancel '
+            '(text=${prefix.isNotEmpty}, call=${earlierCall.isNotEmpty})',
+            () async {
+              for (final tail in [
+                '<tool_call>',
+                '<tool_call>{"na',
+                '<tool_call>{"name":"weather","arguments":{"city":"Seo',
+                '<tool_call>{"name":"weather","arguments":{"city":"Seoul"}}',
+              ]) {
+                var cancelled = false;
+                Stream<String> tokens() async* {
+                  for (final character in '$prefix$earlierCall$tail'.split(
+                    '',
+                  )) {
+                    yield character;
+                  }
+                  cancelled = true;
+                }
+
+                final chunks = await ChatCompletionStreamParser.parse(
+                  tokenStream: tokens(),
+                  templateResult: LlamaChatTemplateResult(
+                    prompt: 'prompt',
+                    format: ChatFormat.hermes.index,
+                  ),
+                  parseToolCallsEnabled: true,
+                  enableThinking: false,
+                  modelName: 'Qwen3',
+                  completionId: 'cancel-tool',
+                  cancelled: () => cancelled,
+                ).toList();
+                expect(
+                  chunks
+                      .map((c) => c.choices.single.delta.content ?? '')
+                      .join(),
+                  prefix.trimRight(),
+                  reason: tail,
+                );
+                final calls = chunks
+                    .expand(
+                      (c) =>
+                          c.choices.single.delta.toolCalls ??
+                          const <LlamaCompletionChunkToolCall>[],
+                    )
+                    .toList();
+                expect(calls, hasLength(earlierCall.isEmpty ? 0 : 1));
+                if (calls.isNotEmpty) {
+                  expect(calls.single.function?.arguments, '{"city":"Paris"}');
+                }
+                expect(
+                  chunks.last.choices.single.finishReason,
+                  earlierCall.isEmpty ? 'stop' : 'tool_calls',
+                );
+              }
+            },
+          );
+        }
+      }
+    });
+
+    for (final ending in ['natural', 'cancelled', 'length']) {
+      for (final forcedOpen in [false, true]) {
+        for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+          test('Hermes $ending with ${choice.name} after thinking '
+              '(forcedOpen=$forcedOpen)', () async {
+            const tail =
+                '<tool_call>\n{"name":"weather","arguments":{"city":"Par';
+            final prefix = forcedOpen
+                ? 'Plan.</think>'
+                : '<think>Plan.</think>';
+            final rendered = ChatTemplateEngine.render(
+              templateSource:
+                  '{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+              messages: const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+              ],
+              metadata: const {},
+              tools: [_weatherTool],
+              toolChoice: choice,
+            );
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable(
+                '$prefix Checking. $tail'.split(''),
+              ),
+              templateResult: LlamaChatTemplateResult(
+                prompt: rendered.prompt,
+                format: rendered.format,
+                parser: rendered.parser,
+                thinkingForcedOpen: forcedOpen,
+              ),
+              parseToolCallsEnabled: true,
+              enableThinking: true,
+              modelName: 'Hermes',
+              completionId: 'ending-reason',
+              tools: [_weatherTool],
+              cancelled: () => ending == 'cancelled',
+              stoppedAtLimit: () => ending == 'length',
+            ).toList();
+            expect(
+              chunks.map((c) => c.choices.single.delta.content ?? '').join(),
+              ending == 'cancelled' ? 'Checking.' : 'Checking. $tail',
+            );
+            expect(
+              chunks.map((c) => c.choices.single.delta.thinking ?? '').join(),
+              'Plan.',
+            );
+            expect(
+              chunks.expand((c) => c.choices.single.delta.toolCalls ?? []),
+              isEmpty,
+            );
+            expect(
+              chunks.last.choices.single.finishReason,
+              ending == 'length' ? 'length' : 'stop',
+            );
+          });
+        }
+      }
+    }
+
     test('fills call_<index> for parsed calls without an id', () async {
       const output =
           '[TOOL_CALLS][{"name":"weather","arguments":{"city":"Paris"}},'
@@ -550,6 +676,58 @@ void main() {
       ]);
     });
 
+    for (final (name, format, forced, content, thinking) in [
+      ('gpt-oss', ChatFormat.gptOss, false, '<think>a</thi', 'a</thi'),
+      ('GLM-4.7-Flash', ChatFormat.glm45, true, '', '<think>a</thi'),
+      ('MiniMax-M2', ChatFormat.minimaxM2, true, '', '<think>a</thi'),
+    ]) {
+      for (final tokens in [
+        ['<think>a</thi'],
+        ['<think>', 'a', '</thi'],
+        '<think>a</thi'.split(''),
+      ]) {
+        test(
+          '$name preserves its partial closing tag at EOF: $tokens',
+          () async {
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable(tokens),
+              templateResult: LlamaChatTemplateResult(
+                prompt: 'prompt',
+                format: format.index,
+                thinkingForcedOpen: forced,
+              ),
+              parseToolCallsEnabled: false,
+              enableThinking: true,
+              modelName: name,
+              completionId: 'other-reasoning-format',
+            ).toList();
+
+            expect(
+              chunks
+                  .map((chunk) => chunk.choices.single.delta.content ?? '')
+                  .join(),
+              content,
+            );
+            expect(
+              chunks
+                  .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                  .join(),
+              thinking,
+            );
+            expect(chunks.last.choices.single.finishReason, 'stop');
+            expect(
+              chunks.expand(
+                (chunk) =>
+                    chunk.choices.single.delta.toolCalls ??
+                    const <LlamaCompletionChunkToolCall>[],
+              ),
+              isEmpty,
+            );
+          },
+        );
+      }
+    }
+
     group('a Ministral PEG reply cut short', () {
       LlamaChatTemplateResult ministral(ToolChoice toolChoice) =>
           MinistralHandler().render(
@@ -597,8 +775,41 @@ void main() {
       const partialCall = '[TOOL_CALLS]weather[ARGS]{"city":"Par';
       const completeCall = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
 
+      for (final suffix in ['[', '[/TH']) {
+        test(
+          'none preserves EOF markup after a tool marker: $suffix',
+          () async {
+            final output =
+                '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}$suffix';
+            final chunks = await parse(ToolChoice.none, [output]);
+            expect(joined(chunks, (delta) => delta.content), output);
+            expect(
+              joined(chunks, (delta) => delta.thinking),
+              'a[TOOL_CALLS]weather[ARGS]{"city":"x"}$suffix',
+            );
+            expect(calls(chunks), isEmpty);
+            expect(chunks.last.choices.single.finishReason, 'stop');
+          },
+        );
+      }
+
       for (final toolChoice in [ToolChoice.required, ToolChoice.auto]) {
         group('with ${toolChoice.name}', () {
+          test('preserves a natural call after an unclosed thought', () async {
+            final chunks = await parse(toolChoice, const [
+              '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            ]);
+            expect(chunks.last.choices.single.finishReason, 'tool_calls');
+            expect(joined(chunks, (delta) => delta.content), isEmpty);
+            expect(
+              joined(chunks, (delta) => delta.thinking),
+              'a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            );
+            final call = calls(chunks).single;
+            expect(call.function?.name, 'weather');
+            expect(call.function?.arguments, '{"city":"x"}');
+          });
+
           for (final (name, atLimit, cancelled, finishReason) in const [
             ('at a limit', true, false, 'length'),
             ('by a cancel', false, true, 'stop'),
@@ -646,6 +857,26 @@ void main() {
         });
       }
 
+      for (final toolChoice in ToolChoice.values) {
+        for (final cancelled in [false, true]) {
+          test('${toolChoice.name} streams an unfinished thought '
+              'without markup (cancelled=$cancelled)', () async {
+            final chunks = await parse(
+              toolChoice,
+              const ['[TH', 'INK]Check', ' the city.', '[/TH'],
+              atLimit: !cancelled,
+              cancelled: cancelled,
+            );
+            expect(joined(chunks, (delta) => delta.content), isEmpty);
+            expect(
+              joined(chunks, (delta) => delta.thinking),
+              'Check the city.',
+            );
+            expect(calls(chunks), isEmpty);
+          });
+        }
+      }
+
       test('ends a required reply cut short in its thought without a '
           'call', () async {
         final chunks = await parse(ToolChoice.required, const [
@@ -663,6 +894,8 @@ void main() {
         ('no output', <String>[]),
         ('text without a call', ['It is sunny.']),
         ('a partial call', [partialCall]),
+        ('an unclosed thought', ['[THINK]a']),
+        ('a closed thought', ['[THINK]a[/THINK]']),
       ]) {
         test('throws a typed exception for a required reply that ended '
             'normally with $name', () async {

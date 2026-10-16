@@ -126,10 +126,12 @@ class ChatTemplateEngine {
   /// [responseFormat] takes the shapes documented on `LlamaEngine.create`;
   /// any other shape throws `LlamaUnsupportedException`.
   ///
-  /// A template that fails to render, by raising or through invalid syntax,
-  /// throws `LlamaInferenceException` with the template's message. The
-  /// message names the template: [customTemplate], the `tool_use` variant in
-  /// [metadata], or [templateSource].
+  /// A template that fails to render, by raising, through invalid syntax or
+  /// by overflowing the stack on the Dart VM or JavaScript, throws
+  /// `LlamaInferenceException` with the template's message. The message names
+  /// [customTemplate], the `tool_use` variant in [metadata], or [templateSource].
+  /// On dart2wasm, stack overflow cannot be caught and may trap or hang
+  /// instead of throwing this exception.
   ///
   /// [mediaMarker] is written where each image, audio or video part was.
   /// Pass one that message text cannot hold to tell the parts from a
@@ -389,15 +391,16 @@ class ChatTemplateEngine {
   /// Runs a handler [render], turning an [Exception] that is not already a
   /// [LlamaException] (a template's own `raise_exception`, a failure the
   /// Jinja runtime throws as an `Exception`, invalid template syntax) into a
-  /// [LlamaInferenceException] that names the template by [templateName]. An
-  /// [Error] the renderer throws, such as an integer division by zero or a
-  /// stack overflow, is left as it is.
+  /// [LlamaInferenceException] that names the template by [templateName].
+  /// A [StackOverflowError] from a recursive template is also wrapped;
+  /// other [Error]s are left as they are.
   ///
-  /// With [retryWithToolResultsAsUser], a render that fails that way is
-  /// retried once with tool results as user turns, for a template that
-  /// rejects the `tool` role (see [renderWithToolResultsAsUserTurns]). A
-  /// request the template renders as given is never changed. When the retry
-  /// fails in any way, the first failure is reported.
+  /// With [retryWithToolResultsAsUser], a render that throws an [Exception]
+  /// other than [LlamaException] is retried once with tool results as user
+  /// turns if the template rejects the `tool` role
+  /// (see [renderWithToolResultsAsUserTurns]). A request the template renders
+  /// as given is never changed. When the retry fails in any way, the first
+  /// failure is reported.
   static LlamaChatTemplateResult _renderTemplate(
     String templateName,
     LlamaChatTemplateResult Function() render, {
@@ -407,6 +410,13 @@ class ChatTemplateEngine {
       return render();
     } on LlamaException {
       rethrow;
+    } on StackOverflowError catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        LlamaInferenceException(
+          'The chat template from $templateName failed to render: $error',
+        ),
+        stackTrace,
+      );
     } on Exception catch (error, stackTrace) {
       if (retryWithToolResultsAsUser) {
         try {
@@ -556,12 +566,19 @@ class ChatTemplateEngine {
   /// Content that ends [output] keeps the whitespace after it, as llama.cpp
   /// does, unless [isPartial] is true: more output may follow a partial one.
   ///
+  /// On [cancelled], Hermes withholds unfinished tool envelopes. Other endings
+  /// retain the format's normal final-output behavior.
+  ///
+  /// A leading unterminated Ministral `[THINK]` block without `[TOOL_CALLS]`
+  /// remains reasoning at EOF if the final parser accepts a reply without calls.
+  ///
   /// Output that a PEG [parser] cannot parse throws
   /// [LlamaInferenceException].
   static ChatParseResult parse(
     int formatIndex,
     String output, {
     bool isPartial = false,
+    bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     String? parser,
@@ -571,6 +588,7 @@ class ChatTemplateEngine {
       formatIndex,
       output,
       isPartial: isPartial,
+      cancelled: cancelled,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
       parser: parser,
@@ -602,6 +620,7 @@ class ChatTemplateEngine {
     int formatIndex,
     String output, {
     required bool isPartial,
+    required bool cancelled,
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
     String? parser,
@@ -614,12 +633,37 @@ class ChatTemplateEngine {
     final pegFormat = pegParseFormat(format, parser);
     final ChatParseResult result;
     if (pegFormat != null) {
-      result = PegChatParser.parse(
+      final strictResult = PegChatParser.parse(
         parser: parser ?? '',
         format: pegFormat,
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
+      );
+      // Preserve strict required-tool failures and tool-call fallback parsing.
+      // Only a terminal thought without a tool marker needs upstream leniency.
+      result =
+          !isPartial &&
+              format == ChatFormat.ministral &&
+              output.startsWith('[THINK]') &&
+              !output.contains('[/THINK]') &&
+              !output.contains('[TOOL_CALLS]')
+          ? PegChatParser.parse(
+              parser: parser ?? '',
+              format: pegFormat,
+              output: output,
+              isPartial: true,
+              parseToolCalls: parseToolCalls,
+            )
+          : strictResult;
+    } else if (handler is HermesHandler) {
+      result = handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        cancelled: cancelled,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
       );
     } else if (handler is ToolSchemaAwareChatTemplateHandler) {
       result = (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(

@@ -5852,6 +5852,112 @@ void main() {
     });
   });
 
+  group('Qwen tool cancellation history', () {
+    for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+      test(
+        'cancel inside a tool with no answer rolls back (${choice.name})',
+        () async {
+          final backend = _OutputUntilCancelBackend(
+            const ['<tool_call>{"name":"weather","arguments":{"city":"Par'],
+            const {
+              'tokenizer.chat_template':
+                  '<|im_start|>{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+            },
+          );
+          final engine = LlamaEngine(backend);
+          addTearDown(engine.dispose);
+          await engine.loadModel('Qwen3.gguf');
+          final session = ChatSession(engine, maxContextTokens: 0);
+          final done = session
+              .create(
+                const [LlamaTextContent('Weather?')],
+                tools: [
+                  ToolDefinition(
+                    name: 'weather',
+                    description: 'Get weather',
+                    parameters: [ToolParam.string('city')],
+                  ),
+                ],
+                toolChoice: choice,
+                enableThinking: false,
+              )
+              .collect();
+          final assertion = expectLater(
+            done,
+            throwsA(
+              isA<LlamaStateException>().having(
+                (e) => e.message,
+                'message',
+                'Generation was cancelled before any output.',
+              ),
+            ),
+          );
+          await backend.started.future;
+          await pumpEventQueue();
+          engine.cancelGeneration();
+          await assertion;
+          expect(session.history, isEmpty);
+        },
+      );
+    }
+    for (final schema in [false, true]) {
+      test(
+        'keeps only the answer before a partial call (schema=$schema)',
+        () async {
+          final backend = _OutputUntilCancelBackend(
+            const ['Checking. ', '<tool_call>{"name":"weather","argu'],
+            const {
+              'tokenizer.chat_template':
+                  '<|im_start|>{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+            },
+          );
+          final engine = LlamaEngine(backend);
+          addTearDown(engine.dispose);
+          await engine.loadModel('Qwen3.gguf');
+          final session = ChatSession(engine, maxContextTokens: 0);
+          final tool = schema
+              ? ToolDefinition.fromJsonSchema(
+                  name: 'weather',
+                  description: 'Get weather',
+                  schema: {
+                    'type': 'object',
+                    'properties': {
+                      'city': {'type': 'string'},
+                    },
+                  },
+                )
+              : ToolDefinition(
+                  name: 'weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('city')],
+                );
+          final done = session
+              .create(
+                const [LlamaTextContent('Weather?')],
+                tools: [tool],
+                enableThinking: false,
+              )
+              .collect();
+          await backend.started.future;
+          await pumpEventQueue();
+          engine.cancelGeneration();
+          final reply = await done;
+          expect(reply.text, 'Checking.');
+          expect(reply.toolCalls, isEmpty);
+          expect(reply.finishReason, LlamaFinishReason.stop);
+          expect(session.history.map((m) => m.content), [
+            'Weather?',
+            'Checking.',
+          ]);
+          expect(
+            session.history.last.parts.whereType<LlamaToolCallContent>(),
+            isEmpty,
+          );
+        },
+      );
+    }
+  });
+
   group('LlamaEngine Ministral replies cut short', () {
     const ministralTemplate =
         '{#- [SYSTEM_PROMPT] [TOOL_CALLS] [ARGS] -#}'
