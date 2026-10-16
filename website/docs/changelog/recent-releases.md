@@ -7,6 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Free multimodal input buffers when native media initialization fails.
+
 ## 0.14.0
 
 - Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple

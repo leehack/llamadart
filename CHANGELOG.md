@@ -1,3 +1,7 @@
+## Unreleased
+
+- Free multimodal input buffers when native media initialization fails.
+
 ## 0.14.0
 
 - Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple
