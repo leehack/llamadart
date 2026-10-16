@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Hide stale performance counters after cancelling a queued native generation.
+
 - Free multimodal input buffers when native media initialization fails.
 
 ## 0.14.0

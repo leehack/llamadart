@@ -14,6 +14,10 @@ ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
 
+Cancelling a queued native llama.cpp generation before dispatch now makes
+`getPerformanceContext()` return `null` until another generation is dispatched.
+Handle unavailable diagnostics instead of reusing earlier request counters.
+
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 
 These fixes change previously broken paths; working requests are unchanged.
