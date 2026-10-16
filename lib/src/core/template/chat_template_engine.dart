@@ -566,6 +566,9 @@ class ChatTemplateEngine {
   /// Content that ends [output] keeps the whitespace after it, as llama.cpp
   /// does, unless [isPartial] is true: more output may follow a partial one.
   ///
+  /// On [cancelled], Hermes withholds unfinished tool envelopes. Other endings
+  /// retain the format's normal final-output behavior.
+  ///
   /// A leading unterminated Ministral `[THINK]` block without `[TOOL_CALLS]`
   /// remains reasoning at EOF if the final parser accepts a reply without calls.
   ///
@@ -575,6 +578,7 @@ class ChatTemplateEngine {
     int formatIndex,
     String output, {
     bool isPartial = false,
+    bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     String? parser,
@@ -584,6 +588,7 @@ class ChatTemplateEngine {
       formatIndex,
       output,
       isPartial: isPartial,
+      cancelled: cancelled,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
       parser: parser,
@@ -615,6 +620,7 @@ class ChatTemplateEngine {
     int formatIndex,
     String output, {
     required bool isPartial,
+    required bool cancelled,
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
     String? parser,
@@ -650,6 +656,15 @@ class ChatTemplateEngine {
               parseToolCalls: parseToolCalls,
             )
           : strictResult;
+    } else if (handler is HermesHandler) {
+      result = handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        cancelled: cancelled,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
     } else if (handler is ToolSchemaAwareChatTemplateHandler) {
       result = (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
         output,

@@ -117,6 +117,132 @@ void main() {
       expect(jsonDecode(calls.single.function!.arguments!), {'city': 'Paris'});
     });
 
+    group('cancelled Qwen tool envelopes', () {
+      const complete =
+          '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+          '</tool_call>';
+      for (final prefix in ['', 'Checking. ']) {
+        for (final earlierCall in ['', complete]) {
+          test(
+            'keeps answer and complete calls before cancel '
+            '(text=${prefix.isNotEmpty}, call=${earlierCall.isNotEmpty})',
+            () async {
+              for (final tail in [
+                '<tool_call>',
+                '<tool_call>{"na',
+                '<tool_call>{"name":"weather","arguments":{"city":"Seo',
+                '<tool_call>{"name":"weather","arguments":{"city":"Seoul"}}',
+              ]) {
+                var cancelled = false;
+                Stream<String> tokens() async* {
+                  for (final character in '$prefix$earlierCall$tail'.split(
+                    '',
+                  )) {
+                    yield character;
+                  }
+                  cancelled = true;
+                }
+
+                final chunks = await ChatCompletionStreamParser.parse(
+                  tokenStream: tokens(),
+                  templateResult: LlamaChatTemplateResult(
+                    prompt: 'prompt',
+                    format: ChatFormat.hermes.index,
+                  ),
+                  parseToolCallsEnabled: true,
+                  enableThinking: false,
+                  modelName: 'Qwen3',
+                  completionId: 'cancel-tool',
+                  cancelled: () => cancelled,
+                ).toList();
+                expect(
+                  chunks
+                      .map((c) => c.choices.single.delta.content ?? '')
+                      .join(),
+                  prefix.trimRight(),
+                  reason: tail,
+                );
+                final calls = chunks
+                    .expand(
+                      (c) =>
+                          c.choices.single.delta.toolCalls ??
+                          const <LlamaCompletionChunkToolCall>[],
+                    )
+                    .toList();
+                expect(calls, hasLength(earlierCall.isEmpty ? 0 : 1));
+                if (calls.isNotEmpty) {
+                  expect(calls.single.function?.arguments, '{"city":"Paris"}');
+                }
+                expect(
+                  chunks.last.choices.single.finishReason,
+                  earlierCall.isEmpty ? 'stop' : 'tool_calls',
+                );
+              }
+            },
+          );
+        }
+      }
+    });
+
+    for (final ending in ['natural', 'cancelled', 'length']) {
+      for (final forcedOpen in [false, true]) {
+        for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+          test('Hermes $ending with ${choice.name} after thinking '
+              '(forcedOpen=$forcedOpen)', () async {
+            const tail =
+                '<tool_call>\n{"name":"weather","arguments":{"city":"Par';
+            final prefix = forcedOpen
+                ? 'Plan.</think>'
+                : '<think>Plan.</think>';
+            final rendered = ChatTemplateEngine.render(
+              templateSource:
+                  '{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+              messages: const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+              ],
+              metadata: const {},
+              tools: [_weatherTool],
+              toolChoice: choice,
+            );
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable(
+                '$prefix Checking. $tail'.split(''),
+              ),
+              templateResult: LlamaChatTemplateResult(
+                prompt: rendered.prompt,
+                format: rendered.format,
+                parser: rendered.parser,
+                thinkingForcedOpen: forcedOpen,
+              ),
+              parseToolCallsEnabled: true,
+              enableThinking: true,
+              modelName: 'Hermes',
+              completionId: 'ending-reason',
+              tools: [_weatherTool],
+              cancelled: () => ending == 'cancelled',
+              stoppedAtLimit: () => ending == 'length',
+            ).toList();
+            expect(
+              chunks.map((c) => c.choices.single.delta.content ?? '').join(),
+              ending == 'cancelled' ? 'Checking.' : 'Checking. $tail',
+            );
+            expect(
+              chunks.map((c) => c.choices.single.delta.thinking ?? '').join(),
+              'Plan.',
+            );
+            expect(
+              chunks.expand((c) => c.choices.single.delta.toolCalls ?? []),
+              isEmpty,
+            );
+            expect(
+              chunks.last.choices.single.finishReason,
+              ending == 'length' ? 'length' : 'stop',
+            );
+          });
+        }
+      }
+    }
+
     test('fills call_<index> for parsed calls without an id', () async {
       const output =
           '[TOOL_CALLS][{"name":"weather","arguments":{"city":"Paris"}},'

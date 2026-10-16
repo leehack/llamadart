@@ -17,6 +17,14 @@ For canonical full release notes, use:
   matching the shipped llama.cpp runtime ([#1116](https://github.com/leehack/llamadart/issues/1116)).
 - Keep unfinished reasoning from Ministral-format templates out of reply text
   when generation stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
+- Cancelling a tool call in Hermes-detected templates (Hermes 2 Pro/3,
+  Qwen2.5, Qwen3 and QwQ) now keeps only preceding answer text without
+  unfinished `<tool_call>` markup. With no preceding output, `ChatSession.create`
+  reports “Generation was cancelled before any output.” and rolls back the turn;
+  with legacy tools, cancelling after a completed call and an unfinished second
+  call returns `finishReason: tool_calls` with the completed call (not executed)
+  instead of `stop` with raw markup
+  ([#887](https://github.com/leehack/llamadart/issues/887)).
 
 ## 0.13.1
 
