@@ -13,6 +13,18 @@ import 'package:test/test.dart';
 const _pinsPath = 'lib/src/hook/native_release_pins.dart';
 
 void main() {
+  test(
+    'LiteRT source patch provenance is optional and strictly validated',
+    () async {
+      final result = await Process.run('python3', [
+        '-m',
+        'unittest',
+        'tool.native.test_sync_native_release_pins.LiteRtSourcePatchesTest',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+  );
+
   test('sync CLI preserves generated macOS GPU completeness checks', () async {
     final result = await Process.run('python3', [
       '-m',
