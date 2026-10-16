@@ -8,6 +8,8 @@ For canonical full release notes, use:
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
 ## Unreleased
+
+- Cover strict schema validation of interrupted Hermes tool calls on cancellation.
 - Make template parity checks build their upstream test binaries before use.
 
 ## 0.14.0
