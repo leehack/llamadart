@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Render user follow-ups after tool results on Gemma 2/3/3n and legacy Mistral templates.
 - Cover strict schema validation of interrupted Hermes tool calls on cancellation.
 - Make template parity checks build their upstream test binaries before use.
 

@@ -40,6 +40,9 @@ preference falls back to CPU with a warning. See the
   loops require reliable runtime termination reporting and reject the pinned
   LiteRT-LM native and Web runtimes; use manually managed completion there
   ([tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)).
+- Gemma 2/3/3n and legacy Mistral tool-result retries fold an immediately
+  following user message into the result turn; successfully rendered histories
+  stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.

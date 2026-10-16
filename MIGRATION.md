@@ -2,6 +2,16 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: user messages after tool results
+
+Gemma 2/3/3n and legacy Mistral templates now accept a user message immediately
+following tool results. If rendering fails because the template rejects the
+`tool` role, the retry appends that user message to the converted result turn
+with a newline. Previously this history threw `LlamaInferenceException` for
+consecutive user turns. Stored history and requests that render successfully
+on the first attempt are unchanged. This extends llama.cpp's former tool-result
+polyfill; upstream `b10549` rejects the original history.
+
 ## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.

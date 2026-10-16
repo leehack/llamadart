@@ -97,8 +97,9 @@ class TemplateRenderContext {
   /// `supports_object_arguments`; other arguments stay strings.
   ///
   /// With [toolResultsAsUser], for a template that rejects the `tool` role,
-  /// each run of consecutive `tool` messages becomes one `user` message, as
-  /// [toolResultsAsUserTurns] describes. When one is converted and
+  /// each run of consecutive `tool` messages and an immediately following
+  /// user message become one `user` message, as [toolResultsAsUserTurns]
+  /// describes. When one is converted and
   /// [toolCallsAsContent] is set, tool calls the serialization left in place
   /// move into `content` in the generic schema, as llama.cpp's minja
   /// `polyfill_tool_calls` did for templates that cannot render them:
@@ -185,7 +186,8 @@ class TemplateRenderContext {
   /// "tool_call_id": id}}` with two-space indentation and absent fields
   /// left out. Results in one run are joined with a newline, so templates
   /// that require alternating user and assistant turns accept several
-  /// results.
+  /// results. An immediately following user message is appended with a
+  /// newline to that result turn, preserving role alternation on the retry.
   static List<Map<String, dynamic>> toolResultsAsUserTurns(
     List<Map<String, dynamic>> messages,
   ) {
@@ -199,8 +201,16 @@ class TemplateRenderContext {
 
     for (final message in messages) {
       if (message['role'] != 'tool') {
-        flush();
-        turns.add(message);
+        if (message['role'] == 'user' && results.isNotEmpty) {
+          turns.add({
+            ...message,
+            'content': '${results.join('\n')}\n${message['content']}',
+          });
+          results.clear();
+        } else {
+          flush();
+          turns.add(message);
+        }
         continue;
       }
       final name = message['name'];

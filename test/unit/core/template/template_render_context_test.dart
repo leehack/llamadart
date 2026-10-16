@@ -779,6 +779,92 @@ void main() {
       );
     });
 
+    test('joins only the user immediately after a run of results', () {
+      final before = {'role': 'user', 'content': 'Before'};
+      final following = {'role': 'user', 'content': 'Next', 'name': 'reader'};
+      final after = {'role': 'user', 'content': 'Separate'};
+      final assistant = {'role': 'assistant', 'content': 'Answer'};
+      final messages = [
+        before,
+        {'role': 'tool', 'content': 'one'},
+        {'role': 'tool', 'content': 'two'},
+        following,
+        after,
+        assistant,
+        {'role': 'tool', 'content': 'three'},
+        assistant,
+      ];
+      final snapshot = jsonEncode(messages);
+      final turns = TemplateRenderContext.toolResultsAsUserTurns(messages);
+      expect(turns.map((turn) => turn['role']), [
+        'user',
+        'user',
+        'user',
+        'assistant',
+        'user',
+        'assistant',
+      ]);
+      expect(turns[0], same(before));
+      expect(turns[1], {
+        ...following,
+        'content':
+            '{\n  "tool_response": {\n    "content": "one"\n  }\n}'
+            '\n{\n  "tool_response": {\n    "content": "two"\n  }\n}\nNext',
+      });
+      expect(turns[2], same(after));
+      expect(turns[3], same(assistant));
+      expect(turns[4]['content'], isNot(contains('Next')));
+      expect(jsonEncode(messages), snapshot);
+    });
+
+    for (final typedContent in [false, true]) {
+      test('keeps result JSON and following user media in order '
+          '(typedContent=$typedContent)', () {
+        final following = LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Inspect 👋 '),
+            LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+            const LlamaTextContent(' after results.'),
+          ],
+        );
+        final messages = [
+          user,
+          call,
+          result('call00001', {
+            'value': [false, null],
+          }),
+          following,
+        ];
+        final snapshot = jsonEncode(messages.map((m) => m.toJson()).toList());
+        final turns = TemplateRenderContext.messagesForTemplate(
+          messages,
+          toolResultsAsUser: true,
+          toolCallsAsContent: true,
+          multimodal: true,
+          mediaMarker: '<media>',
+          typedContentOnly: typedContent,
+        );
+        const expected =
+            '{\n  "tool_response": {\n'
+            '    "tool": "get_weather",\n'
+            r'    "content": "{\"value\":[false,null]}",'
+            '\n    "tool_call_id": "call00001"\n  }\n}'
+            '\nInspect 👋 <media> after results.';
+        expect(turns, hasLength(3));
+        expect(turns.last['role'], 'user');
+        expect(
+          turns.last['content'],
+          typedContent
+              ? [
+                  {'type': 'text', 'text': expected},
+                ]
+              : expected,
+        );
+        expect(jsonEncode(messages.map((m) => m.toJson()).toList()), snapshot);
+      });
+    }
+
     test('keeps tool messages without toolResultsAsUser', () {
       final rendered = TemplateRenderContext.messagesForTemplate([
         user,
