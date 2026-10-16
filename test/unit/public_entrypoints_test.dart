@@ -27,6 +27,7 @@ const _engineHooks = <String>{
 /// removing an app-facing name is a public API change; update this list on
 /// purpose.
 const _appNames = <String>{
+  'liteRtLmQwen3ChatTemplate',
   'BackendPerfContextData',
   'BackendTextToSpeechModel',
   'ChatFormat',
@@ -237,6 +238,13 @@ const _appNames = <String>{
 };
 
 void main() {
+  test('exports a stable LiteRT-LM Qwen3 template accessor', () async {
+    expect(
+      _exportedNames(await _load(_appUri)),
+      contains('liteRtLmQwen3ChatTemplate'),
+    );
+  });
+
   late LibraryMirror backendLibrary;
   late Set<String> app;
   late Set<String> backend;

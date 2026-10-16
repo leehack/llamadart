@@ -2,7 +2,7 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.13.x` -> `0.14.0`: native ABI and load callbacks
+## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI, Qwen3 overrides and load callbacks
 
 Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
 loads and the legacy `LlamaEngine` URL-loading methods now declare
@@ -25,6 +25,9 @@ Future<int> modelLoadFromUrl(
 ```
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
+If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap);
+keep Runner and the companion requirements at macOS 14.0 or newer.
 The llama.cpp companion now pins native `v0.7.0`; LiteRT-LM and image companions
 are reissued for the new core minor with their native pins unchanged.
 
@@ -37,6 +40,15 @@ old companion pins before emitting native assets.
 Cancelling a queued native llama.cpp generation before dispatch now makes
 `getPerformanceContext()` return `null` until another generation is dispatched.
 Handle unavailable diagnostics instead of reusing earlier request counters.
+
+For renamed legacy Qwen3 LiteRT-LM text bundles, replace copied Jinja with
+`ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` to keep native
+`enableThinking: false` routing stable across upgrades. The accessor always
+returns this package version's canonical template. Web
+`@litert-lm/core@0.18.0` cannot install a conversation template: loading this
+canonical override now throws `LlamaUnsupportedException` instead of appearing
+to honor it. Use native LiteRT-LM for this contract. Other Web template overrides
+and loads without an override retain their existing behavior.
 
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 

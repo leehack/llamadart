@@ -97,8 +97,18 @@ template in field 7 or `ModelParams.chatTemplate`. Generic ChatML and thinking
 markers do not distinguish Qwen 3 from other families. Legacy litert-community
 Qwen3-0.6B bundles lack fields 6 and 7: after renaming, disabled thinking can
 still produce empty content. Keep `Qwen3` in the filename, or set
-`ModelParams.chatTemplate` to the complete canonical template from
-`tool/litert_lm_templates/qwen3.jinja`. Other families keep their native bundle
+`ModelParams.chatTemplate` to `liteRtLmQwen3ChatTemplate`, exported by
+`package:llamadart/llamadart.dart`. Obtain it when constructing the parameters;
+it follows the installed template across upgrades, so copied Jinja is unnecessary.
+Native text conversations honor `enableThinking: false`; older runtimes without
+the template setter throw `LlamaUnsupportedException`.
+
+Web `@litert-lm/core@0.18.0` has no conversation-template setter and rejects this
+canonical Qwen3 override at model load with `LlamaUnsupportedException`.
+Use native LiteRT-LM for this contract. Generic Web overrides and loads without
+an override retain their existing behavior.
+
+Other families keep their native bundle
 template and content-shape adapter; an override still drives Dart-side metadata
 and parsing. The maintained registry coverage, smoke commands, and contribution
 notes live in
