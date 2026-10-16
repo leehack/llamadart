@@ -14,6 +14,20 @@ import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 
 void main() {
+  setUpAll(() async {
+    const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
+    final script = File(scriptPath);
+    expect(script.existsSync(), isTrue, reason: 'Missing $scriptPath');
+
+    final result = await Process.run(script.path, const <String>[]);
+    final output = '${result.stdout}\n${result.stderr}';
+    expect(
+      result.exitCode,
+      equals(0),
+      reason: 'llama.cpp chat tests failed:\n$output',
+    );
+  });
+
   test(
     'LiteRT Qwen normalized history matches pinned upstream rendering',
     () async {
@@ -74,20 +88,6 @@ void main() {
       }
     },
   );
-
-  test('runs upstream llama.cpp chat test selection', () async {
-    const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
-    final script = File(scriptPath);
-    expect(script.existsSync(), isTrue, reason: 'Missing $scriptPath');
-
-    final result = await Process.run(script.path, const <String>[]);
-    final output = '${result.stdout}\n${result.stderr}';
-    expect(
-      result.exitCode,
-      equals(0),
-      reason: 'llama.cpp chat tests failed:\n$output',
-    );
-  });
 
   test('runs upstream llama.cpp full chat test suite', () async {
     const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
@@ -254,6 +254,59 @@ void main() {
       }
     },
   );
+
+  final followUpReference =
+      jsonDecode(
+            File(
+              'test/fixtures/tool_result_follow_up_render_upstream.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  for (final render
+      in (followUpReference['renders'] as List).cast<Map<String, dynamic>>()) {
+    final path = render['template'] as String;
+    test('tool-result follow-up upstream oracle: $path', () async {
+      final build =
+          Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ??
+          '${Directory.current.path}/.dart_tool/llama_cpp_chat_tests';
+      final binary = File('$build/bin/test-chat-template');
+      final temp = Directory.systemTemp.createTempSync(
+        'tool-follow-up-parity-',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      for (final merged in [false, true]) {
+        final input = File('${temp.path}/input.json')
+          ..writeAsStringSync(
+            jsonEncode({
+              ...followUpReference['template_globals'] as Map<String, dynamic>,
+              'messages':
+                  followUpReference[merged
+                      ? 'merged_messages'
+                      : 'original_messages'],
+            }),
+          );
+        final output = File('${temp.path}/prompt.txt');
+        final result = await Process.run(binary.path, [
+          '--no-common',
+          '--json',
+          input.path,
+          '--output',
+          output.path,
+          File(path).absolute.path,
+        ]);
+        if (merged) {
+          expect(result.exitCode, 0, reason: '${result.stderr}');
+          expect(output.readAsStringSync(), render['prompt']);
+        } else {
+          expect(result.exitCode, isNot(0));
+          expect(
+            '${result.stderr}',
+            contains('Conversation roles must alternate'),
+          );
+        }
+      }
+    });
+  }
 }
 
 String _canonicalToolDeclarations(String prompt) => prompt.replaceFirstMapped(
