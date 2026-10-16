@@ -389,10 +389,13 @@ once, even before the first token.
 
 On native llama.cpp, a cancel during text prompt evaluation takes effect at the
 next prompt micro-batch (`ModelParams.microBatchSize` tokens), or at the next
-batch (`ModelParams.batchSize` tokens) with speculative decoding. A generation
-started while a cancelled one is still stopping waits for it to stop, then
-runs. Starting one while another is running and not cancelled throws
-`LlamaStateException`.
+batch (`ModelParams.batchSize` tokens) with speculative decoding.
+
+On native llama.cpp and on LiteRT-LM, native and Web, a generation started
+while a cancelled one is still stopping waits for it to stop, then runs.
+`cancelGeneration()` or disposing the engine ends a waiting generation without
+running it. Starting one while another is running and not cancelled, or while
+one is already waiting, throws `LlamaStateException`.
 
 ## Tokenization helpers
 

@@ -43,6 +43,11 @@
   again with each run of results as one user turn and the earlier calls as
   JSON in the model turn
   ([#885](https://github.com/leehack/llamadart/issues/885)).
+- Start a LiteRT-LM generation requested right after a cancel, on native and
+  Web, once the cancelled run stops, instead of failing with a wrapped
+  `StateError` (`generation is already in progress`). An overlap with a
+  running generation that was not cancelled now throws `LlamaStateException`
+  ([#656](https://github.com/leehack/llamadart/issues/656)).
 
 ## 0.13.0
 
