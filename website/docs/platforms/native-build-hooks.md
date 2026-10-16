@@ -419,8 +419,8 @@ sandboxed, copied or distributed app cannot read that cache and needs the
 A companion with the maintained manifest pinning an earlier build of the same
 LiteRT-LM release, such as `0.0.15` (`v0.18.0`), still embeds the complete
 macOS runtime, which the app loads from its bundle, so the build only warns to
-upgrade the companion to `0.14.0` with core `0.14.x` (`v0.18.0-2`). Earlier
-companions `0.0.16` and `0.13.0` (`v0.18.0-1`) also warn. A maintained manifest
+upgrade the companion to `0.14.0` with core `0.14.x` (`v0.18.0-2`). Companion
+`0.0.16` (`v0.18.0-1`) also warns. A maintained manifest
 pinning any other LiteRT-LM release or a later build of the same release
 warns to upgrade the core and companion together.
 Without a companion, and for non-Flutter or non-Apple builds, the hook

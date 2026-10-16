@@ -241,8 +241,8 @@ runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
 Pair LiteRT-LM companion `0.14.0` with core `0.14.x` for native `v0.18.0-2`,
-which removes duplicated words at untimed ASR window boundaries with the
-default overlap. Recognition errors can remain.
+which reduces duplicated words at untimed ASR window boundaries with the
+default overlap. Other boundary and recognition errors can remain.
 
 The LiteRT-LM companion manifest links the complete iOS and macOS SwiftPM
 runtime, including the macOS WebGPU accelerator, so a sandboxed or distributed

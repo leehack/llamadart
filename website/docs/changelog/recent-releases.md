@@ -9,8 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Update the LiteRT-LM native runtime to v0.18.0-2, which removes duplicated
-  words at untimed ASR window boundaries with the default overlap.
+- Update the LiteRT-LM native runtime to v0.18.0-2, which reduces duplicated
+  words at untimed ASR window boundaries with the default overlap; other boundary
+  and recognition errors can remain.
 - Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
   native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
 - Document a fresh macOS SwiftPM bootstrap for generated deployment-target

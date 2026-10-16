@@ -9,9 +9,9 @@ If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
 [Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap);
 keep Runner and the companion requirements at macOS 14.0 or newer.
 The llama.cpp companion now pins native `v0.7.0` and the LiteRT-LM companion
-pins `v0.18.0-2`; the image companion keeps its native pin. LiteRT-LM removes
+pins `v0.18.0-2`; the image companion keeps its native pin. LiteRT-LM reduces
 duplicated words at untimed ASR window boundaries with the default overlap;
-recognition errors can remain.
+other boundary and recognition errors can remain.
 
 Native overrides must match the new v0.7.0 context-parameter and performance-data
 layouts as well as its exported symbols. v0.6.0 and older native bundles are
