@@ -202,7 +202,7 @@ class WebAutoBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double p1)? onProgress,
+    void Function(double p1)? onProgress,
   }) async {
     final delegate = await _delegateFor(_runtimeForSource(url));
     return delegate.modelLoadFromUrl(url, params, onProgress: onProgress);
@@ -230,7 +230,7 @@ class WebAutoBackend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     final delegate = await _delegateFor(format.runtime);
     if (delegate is BackendModelFormatRouting) {

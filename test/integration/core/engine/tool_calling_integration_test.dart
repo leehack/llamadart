@@ -25,7 +25,7 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     _isReady = true;
     return 1;

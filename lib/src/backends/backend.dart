@@ -30,10 +30,13 @@ abstract class LlamaBackend {
   Future<int> modelLoad(String path, ModelParams params);
 
   /// Initializes the model from a remote [url].
+  ///
+  /// [onProgress] receives load fractions as notifications. Its return value
+  /// is ignored; it cannot cancel loading.
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   });
 
   /// Releases the allocated [modelHandle].
@@ -365,7 +368,7 @@ abstract class BackendModelFormatRouting {
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   });
 }
 

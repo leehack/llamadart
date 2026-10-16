@@ -126,7 +126,7 @@ class LiteRtLmBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     throw UnsupportedError('LiteRtLmBackend requires a local .litertlm path.');
   }

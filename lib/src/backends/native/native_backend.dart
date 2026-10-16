@@ -145,7 +145,7 @@ class NativeAutoBackend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     return modelLoadFromUrl(url, params, onProgress: onProgress);
   }
@@ -154,7 +154,7 @@ class NativeAutoBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     throw UnsupportedError(
       'NativeAutoBackend uses llamadart download/cache before modelLoad.',

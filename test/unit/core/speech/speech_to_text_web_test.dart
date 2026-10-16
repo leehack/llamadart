@@ -455,7 +455,7 @@ class _WebSpeechBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     modelUrl = url;
     onProgress?.call(0.5);

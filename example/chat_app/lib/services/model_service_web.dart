@@ -99,7 +99,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     required DownloadableModel model,
     required String modelsDir,
     required CancelToken cancelToken,
-    required Function(double progress) onProgress,
+    required void Function(double progress) onProgress,
     Function(ModelDownloadProgress progress)? onProgressDetail,
     required Function(String filename) onSuccess,
     required Function(dynamic error) onError,
@@ -439,7 +439,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     required int stageCount,
     required ModelDownloadProgressTracker aggregate,
     required void Function(int downloadedBytes, int? totalBytes) updateStage,
-    required Function(double progress) onProgress,
+    required void Function(double progress) onProgress,
     Function(ModelDownloadProgress progress)? onProgressDetail,
   }) async {
     var stageDownloadedBytes = 0;

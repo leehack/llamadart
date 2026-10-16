@@ -5831,55 +5831,72 @@ class LlamaCppService {
     llama_context_params modelParams,
     Pointer<Int8> cancelToken, {
     required String? chatMediaMarker,
+    Allocator allocator = calloc,
   }) {
     _calls.failures.ensureUsable(mmCtx, 'This multimodal projector');
     int initialTokens = 0;
     // Zeroed, so the cleanup of a part that failed skips the slots after it.
-    final bitmaps = calloc<Pointer<mtmd_bitmap>>(mediaParts.length);
-    final chunks = _mtmdInputChunksInit();
+    final bitmaps = allocator<Pointer<mtmd_bitmap>>(mediaParts.length);
+    Pointer<mtmd_input_chunks> chunks = nullptr;
     Pointer<mtmd_input_text> inputText = nullptr;
     Pointer<Utf8> promptPtr = nullptr;
 
     try {
+      chunks = _mtmdInputChunksInit();
       for (int i = 0; i < mediaParts.length; i++) {
         final p = mediaParts[i];
         if (p is LlamaImageContent) {
           if (p.path != null) {
-            final pathPtr = p.path!.toNativeUtf8();
-            bitmaps[i] = _mtmdHelperBitmapInitFromFile(mmCtx, pathPtr.cast());
-            malloc.free(pathPtr);
+            final pathPtr = p.path!.toNativeUtf8(allocator: allocator);
+            try {
+              bitmaps[i] = _mtmdHelperBitmapInitFromFile(mmCtx, pathPtr.cast());
+            } finally {
+              allocator.free(pathPtr);
+            }
           } else if (p.bytes != null) {
-            final dataPtr = malloc<Uint8>(p.bytes!.length);
-            dataPtr.asTypedList(p.bytes!.length).setAll(0, p.bytes!);
-            bitmaps[i] = _mtmdHelperBitmapInitFromBuf(
-              mmCtx,
-              dataPtr.cast(),
-              p.bytes!.length,
-            );
-            malloc.free(dataPtr);
+            final dataPtr = allocator<Uint8>(p.bytes!.length);
+            try {
+              dataPtr.asTypedList(p.bytes!.length).setAll(0, p.bytes!);
+              bitmaps[i] = _mtmdHelperBitmapInitFromBuf(
+                mmCtx,
+                dataPtr.cast(),
+                p.bytes!.length,
+              );
+            } finally {
+              allocator.free(dataPtr);
+            }
           }
         } else if (p is LlamaAudioContent) {
           if (p.path != null) {
-            final pathPtr = p.path!.toNativeUtf8();
-            bitmaps[i] = _mtmdHelperBitmapInitFromFile(mmCtx, pathPtr.cast());
-            malloc.free(pathPtr);
+            final pathPtr = p.path!.toNativeUtf8(allocator: allocator);
+            try {
+              bitmaps[i] = _mtmdHelperBitmapInitFromFile(mmCtx, pathPtr.cast());
+            } finally {
+              allocator.free(pathPtr);
+            }
           } else if (p.bytes != null) {
-            final dataPtr = malloc<Uint8>(p.bytes!.length);
-            dataPtr.asTypedList(p.bytes!.length).setAll(0, p.bytes!);
-            bitmaps[i] = _mtmdHelperBitmapInitFromBuf(
-              mmCtx,
-              dataPtr.cast(),
-              p.bytes!.length,
-            );
-            malloc.free(dataPtr);
+            final dataPtr = allocator<Uint8>(p.bytes!.length);
+            try {
+              dataPtr.asTypedList(p.bytes!.length).setAll(0, p.bytes!);
+              bitmaps[i] = _mtmdHelperBitmapInitFromBuf(
+                mmCtx,
+                dataPtr.cast(),
+                p.bytes!.length,
+              );
+            } finally {
+              allocator.free(dataPtr);
+            }
           } else if (p.samples != null) {
-            final dataPtr = malloc<Float>(p.samples!.length);
-            dataPtr.asTypedList(p.samples!.length).setAll(0, p.samples!);
-            bitmaps[i] = _mtmdBitmapInitFromAudio(
-              p.samples!.length,
-              dataPtr.cast(),
-            );
-            malloc.free(dataPtr);
+            final dataPtr = allocator<Float>(p.samples!.length);
+            try {
+              dataPtr.asTypedList(p.samples!.length).setAll(0, p.samples!);
+              bitmaps[i] = _mtmdBitmapInitFromAudio(
+                p.samples!.length,
+                dataPtr.cast(),
+              );
+            } finally {
+              allocator.free(dataPtr);
+            }
           }
         }
 
@@ -5894,13 +5911,13 @@ class LlamaCppService {
         }
       }
 
-      inputText = malloc<mtmd_input_text>();
+      inputText = allocator<mtmd_input_text>();
       final normalizedPrompt = _normalizeMtmdPromptMarkers(
         prompt,
         mediaParts.length,
         chatMediaMarker: chatMediaMarker,
       );
-      promptPtr = normalizedPrompt.toNativeUtf8();
+      promptPtr = normalizedPrompt.toNativeUtf8(allocator: allocator);
       inputText.ref.text = promptPtr.cast();
       inputText.ref.text_len = utf8.encode(normalizedPrompt).length;
 
@@ -5921,7 +5938,7 @@ class LlamaCppService {
       );
 
       if (res == 0) {
-        final newPast = malloc<llama_pos>();
+        final newPast = allocator<llama_pos>();
         try {
           final unguardedChunkEvalApi = _mtmdPrimarySymbolsUnavailable
               ? _resolveMtmdFallbackApi()?.chunkEval
@@ -5983,7 +6000,7 @@ class LlamaCppService {
             );
           }
         } finally {
-          malloc.free(newPast);
+          allocator.free(newPast);
         }
       } else {
         throw _missingEncoderFor(mmCtx, mediaParts) ??
@@ -5992,13 +6009,13 @@ class LlamaCppService {
     } finally {
       // Free in finally so a tokenize/eval failure above does not leak the
       // prompt buffer or the input-text struct.
-      if (promptPtr != nullptr) malloc.free(promptPtr);
-      if (inputText != nullptr) malloc.free(inputText);
+      if (promptPtr != nullptr) allocator.free(promptPtr);
+      if (inputText != nullptr) allocator.free(inputText);
       for (int i = 0; i < mediaParts.length; i++) {
         if (bitmaps[i] != nullptr) _mtmdBitmapFree(bitmaps[i]);
       }
-      calloc.free(bitmaps);
-      _mtmdInputChunksFree(chunks);
+      allocator.free(bitmaps);
+      if (chunks != nullptr) _mtmdInputChunksFree(chunks);
     }
     ctx.cachedPromptTokens = null;
     return initialTokens;

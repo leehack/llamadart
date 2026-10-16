@@ -140,7 +140,7 @@ class LiteRtLmBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     _validateLiteRtLmSource(url);
     return _load(url, params, onProgress: onProgress);
@@ -158,7 +158,7 @@ class LiteRtLmBackend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     if (format != ModelFormat.liteRtLm) {
       throw LlamaUnsupportedException(
@@ -172,7 +172,7 @@ class LiteRtLmBackend
   Future<int> _load(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     _validateModelParams(params);
     final backend = _resolveBackendName(params);
