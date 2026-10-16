@@ -2,6 +2,28 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
+
+These fixes change previously broken paths; working requests are unchanged.
+Apple companions remain at `0.13.0`, with the same native and Web runtimes.
+
+- Recursive chat-template failures now throw `LlamaInferenceException`
+  instead of `StackOverflowError` on VM and JavaScript.
+- Cancelling inside a Hermes tool call keeps only preceding answer text,
+  discarding unfinished tool markup. With no preceding output,
+  `ChatSession.create` reports “Generation was cancelled before any output.”
+  and rolls back the turn. With legacy tools, a completed call before an
+  unfinished second call returns `finishReason: tool_calls` with the completed
+  call, without executing it, instead of `stop` with raw markup.
+- Unfinished Ministral-format reasoning stays out of reply text when
+  generation stops or is cancelled.
+- Renamed native LiteRT-LM Qwen 3 bundles honor `enableThinking: false` only
+  with a canonical Qwen 3 `chatTemplate` override or identifying metadata.
+  A renamed file alone does not identify the template family.
+- Tool input schemas accept `minLength`, `maxLength`, `minItems` and
+  `maxItems` up to 2000, inclusive; 2001 and above still throw
+  `LlamaUnsupportedException`. Tool input values still obey the declared bounds.
+
 ## `0.13.0` -> `0.13.1`: typed failures and negative `gpuLayers`
 
 These changes alter what callers see:

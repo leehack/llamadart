@@ -1,24 +1,27 @@
-## Unreleased
+## 0.13.2
 
-- Report recursive chat-template failures, including Command R+ and
-  Hermes-2-Pro-Llama-3-8B null-typed tool parameters, as
-  `LlamaInferenceException` instead of `StackOverflowError` on VM and JavaScript
+- Report recursive chat-template failures as `LlamaInferenceException`
+  instead of `StackOverflowError` on VM and JavaScript
   ([#1112](https://github.com/leehack/llamadart/issues/1112)).
-- Tool input schemas now accept string length and array item bounds of 2000,
-  matching the shipped llama.cpp runtime ([#1116](https://github.com/leehack/llamadart/issues/1116)).
-- Keep unfinished reasoning from Ministral-format templates out of reply text
-  when generation stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
-- Cancelling a tool call in Hermes-detected templates (Hermes 2 Pro/3,
-  Qwen2.5, Qwen3 and QwQ) now keeps only preceding answer text without
-  unfinished `<tool_call>` markup. With no preceding output, `ChatSession.create`
-  reports “Generation was cancelled before any output.” and rolls back the turn;
-  with legacy tools, cancelling after a completed call and an unfinished second
-  call returns `finishReason: tool_calls` with the completed call (not executed)
-  instead of `stop` with raw markup
+- Accept tool input schema string length and array item bounds of 2000,
+  matching the shipped llama.cpp runtime
+  ([#1116](https://github.com/leehack/llamadart/issues/1116)).
+- Keep unfinished Ministral-format reasoning out of reply text when generation
+  stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
+- Cancelling inside a Hermes tool call keeps only preceding answer text;
+  legacy tools preserve completed calls before an unfinished call with
+  `finishReason: tool_calls`
   ([#887](https://github.com/leehack/llamadart/issues/887)).
 - Honor `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles
   with a canonical Qwen 3 `chatTemplate` override or identifying metadata
   ([#901](https://github.com/leehack/llamadart/issues/901)).
+
+* Aligned the default WebGPU bridge assets to `v0.1.59`, unchanged from 0.13.1:
+  they embed llama.cpp `v0.6.0`, are qualified against native `v0.6.0`, and
+  keep Web/native llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`
+  parity with native pin `v0.6.0-3`; Web LiteRT-LM is
+  `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.13.1
 
