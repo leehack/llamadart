@@ -197,6 +197,22 @@ void main() {
       });
     }
 
+    test('partial cancel drops an unclosed schema-valid second call', () {
+      const output =
+          'Checking. $complete<tool_call>\n'
+          '{"name":"weather","arguments":{"city":"Rome"}}';
+      final partial = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        output,
+        tools: [schemaTool],
+        cancelled: true,
+        isPartial: true,
+      );
+      expect(partial.content, 'Checking.');
+      expect(partial.toolCalls, hasLength(1));
+      expect(partial.toolCalls.single.function?.arguments, '{"city":"Paris"}');
+    });
+
     test('cancelled double-brace calls retain legacy recovery', () {
       const output =
           '<tool_call>\n{{"name":"weather","arguments":{"city":"Paris"}}}';
