@@ -152,9 +152,7 @@ class TemplateRenderContext {
 
     if (toolResultsAsUser &&
         renderedMessages.any((message) => message['role'] == 'tool')) {
-      if (hasToolCalls &&
-          toolCallsAsContent &&
-          !toolCallSerialization.moveToolCallsToContent) {
+      if (hasToolCalls && toolCallsAsContent) {
         _decodeObjectArguments(renderedMessages);
         useGenericSchema(renderedMessages);
         moveToolCallsToContent(
