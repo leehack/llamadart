@@ -15,6 +15,13 @@ const _vendoredTemplates = <String>[
   'test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja',
 ];
 
+/// Templates that reject the `tool` role, so tool results reach them as user
+/// turns.
+const _toolRoleRejectingTemplates = <String>[
+  'test/fixtures/templates/gemma-3-4b-it.jinja',
+  'test/fixtures/templates/Mistral-7B-Instruct-v0_2.jinja',
+];
+
 /// Strict templates from the full llama.cpp set; see
 /// `test/fixtures/llama_cpp_templates/README.md`.
 const _upstreamTemplates = <String>[
@@ -55,7 +62,8 @@ void main() {
       : 'Requires llama.cpp template fixtures (run '
             'tool/testing/prepare_llama_cpp_source.sh).';
   final templates = <(String, String?)>[
-    for (final path in _vendoredTemplates) (path, null),
+    for (final path in [..._vendoredTemplates, ..._toolRoleRejectingTemplates])
+      (path, null),
     for (final name in _upstreamTemplates)
       ('${upstreamDir.path}/$name', upstreamSkip),
   ];
@@ -83,6 +91,25 @@ void main() {
       }
 
       final weather = _tool('weather', (_) async => 'sunny');
+
+      test('the manual flow after the app adds the results', () async {
+        engine.replies
+          ..add(scriptedCalls([('call00001', 'weather', '{}')]))
+          ..add(scriptedAnswer('Sunny.'));
+        final reply = await session
+            .create(const [LlamaTextContent('Weather?')], tools: [weather])
+            .collect();
+        for (final call in reply.toolCalls) {
+          session.addMessage(
+            _result(call, await weather.invoke(call.arguments)),
+          );
+        }
+        final answer = await session
+            .create(const [], tools: [weather])
+            .collect();
+        expect(answer.text, 'Sunny.');
+        await expectNextTurnRenders();
+      });
 
       test('completed', () async {
         engine.replies

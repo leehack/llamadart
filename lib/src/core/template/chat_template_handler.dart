@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dinja/dinja.dart';
 
 import '../exceptions.dart';
@@ -50,7 +52,10 @@ abstract class ChatTemplateHandler {
   /// reads them as objects, and string content becomes a text part when it
   /// reads content only as parts, as llama.cpp does. A handler that builds
   /// typed parts itself passes `typedContent: false` to keep string content.
-  /// With [multimodal], each media part becomes [mediaMarker] in the message
+  /// Inside [renderWithToolResultsAsUserTurns], tool results become user
+  /// turns, with tool calls in `content` when [TemplateCaps] finds the
+  /// template cannot render them. With
+  /// [multimodal], each media part becomes [mediaMarker] in the message
   /// text.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
@@ -62,6 +67,8 @@ abstract class ChatTemplateHandler {
     final caps = templateSource == null
         ? null
         : TemplateCaps.detect(templateSource);
+    final polyfill =
+        caps != null && Zone.current[_toolResultsAsUserTurns] == true;
     try {
       return TemplateRenderContext.messagesForTemplate(
         messages,
@@ -74,6 +81,8 @@ abstract class ChatTemplateHandler {
             caps != null &&
             caps.supportsTypedContent &&
             !caps.supportsStringContent,
+        toolResultsAsUser: polyfill,
+        toolCallsAsContent: polyfill && !caps.supportsToolCalls,
       );
     } catch (e, stackTrace) {
       if (toolCallSerialization.isEmpty) rethrow;
@@ -235,6 +244,17 @@ abstract class ChatTemplateHandler {
     return DateTime.now();
   }
 }
+
+final Object _toolResultsAsUserTurns = Object();
+
+/// Runs [render] so that [ChatTemplateHandler.templateMessages] sends tool
+/// results as user turns to a template that rejects the `tool` role.
+///
+/// `ChatTemplateEngine` uses it only to retry a failed render for a template
+/// whose [TemplateCaps.supportsToolResponses] is `false`, so a request the
+/// template renders as given is never changed.
+T renderWithToolResultsAsUserTurns<T>(T Function() render) =>
+    runZoned(render, zoneValues: {_toolResultsAsUserTurns: true});
 
 /// Optional handler contract for output formats whose argument decoding depends
 /// on the tool JSON schemas supplied for the completion request.

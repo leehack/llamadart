@@ -27,6 +27,8 @@ class JinjaAnalyzer {
   /// part, and `supportsTypedContent` is cleared when it rejects both.
   /// `ChatTemplateEngine` gives no template a media part; the probe only
   /// selects the handler method that renders a request carrying media.
+  /// Nor is the tool-response probe behind
+  /// [TemplateCaps.supportsToolResponses].
   ///
   /// A probe render that throws is one of llama.cpp's outcomes, not a
   /// failure: it is logged at debug level and read as llama.cpp reads it.
@@ -173,6 +175,25 @@ class JinjaAnalyzer {
       supportsParallelToolCalls = false;
     }
 
+    // Not one of llama.cpp's current probes: it restores the minja-era
+    // `supports_tool_responses` check, so a template that rejects the tool
+    // role gets tool results as user turns. A template that also rejects the
+    // user-role equivalent keeps its own error.
+    final responseArguments = supportsObjectArguments
+        ? {'arg': 'value'}
+        : '{"arg": "value"}';
+    final supportsToolResponses =
+        _render(
+          probe,
+          'tool-responses',
+          _Probe.toolResponse(role: 'tool', arguments: responseArguments),
+        ).success ||
+        !_render(
+          probe,
+          'tool-responses-as-user',
+          _Probe.toolResponse(role: 'user', arguments: responseArguments),
+        ).success;
+
     return TemplateCaps(
       supportsSystemRole: supportsSystemRole,
       supportsToolCalls: supportsToolCalls,
@@ -182,6 +203,7 @@ class JinjaAnalyzer {
       supportsTypedContent: supportsTypedContent,
       supportsThinking: supportsThinking,
       supportsObjectArguments: supportsObjectArguments,
+      supportsToolResponses: supportsToolResponses,
     );
   }
 
@@ -307,18 +329,7 @@ class _Probe {
     return _Probe(
       val(<Map<String, Object?>>[
             {'role': 'user', 'content': 'User message'},
-            {
-              'role': 'assistant',
-              'content': '',
-              'tool_calls': [
-                for (var i = 1; i <= calls; i++)
-                  {
-                    'id': 'call0000$i',
-                    'type': 'function',
-                    'function': {'name': 'tool1', 'arguments': arguments},
-                  },
-              ],
-            },
+            _toolCallMessage(calls: calls, arguments: arguments),
             {
               'role': 'tool',
               'content': 'Tool response',
@@ -331,6 +342,49 @@ class _Probe {
             {'role': 'user', 'content': 'User message'},
           ])
           as JinjaList,
+      _tools(),
+    );
+  }
+
+  /// A conversation ending in the result of one call to `tool1`, sent under
+  /// [role].
+  factory _Probe.toolResponse({
+    required String role,
+    required Object arguments,
+  }) {
+    return _Probe(
+      val(<Map<String, Object?>>[
+            {'role': 'user', 'content': 'User message'},
+            _toolCallMessage(calls: 1, arguments: arguments),
+            {
+              'role': role,
+              'content': 'Tool response',
+              'tool_call_id': 'call00001',
+              'name': 'tool1',
+            },
+          ])
+          as JinjaList,
+      _tools(),
+    );
+  }
+
+  static Map<String, Object?> _toolCallMessage({
+    required int calls,
+    required Object arguments,
+  }) => {
+    'role': 'assistant',
+    'content': '',
+    'tool_calls': [
+      for (var i = 1; i <= calls; i++)
+        {
+          'id': 'call0000$i',
+          'type': 'function',
+          'function': {'name': 'tool1', 'arguments': arguments},
+        },
+    ],
+  };
+
+  static JinjaList _tools() =>
       val(<Map<String, Object?>>[
             {
               'name': 'tool',
@@ -348,9 +402,7 @@ class _Probe {
               },
             },
           ])
-          as JinjaList,
-    );
-  }
+          as JinjaList;
 
   final JinjaList messages;
   final JinjaList tools;
