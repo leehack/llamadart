@@ -338,6 +338,14 @@ class ChatCompletionStreamParser {
       undecidedPrefix = '';
     }
 
+    // The PEG parser withholds a partial closing tag from an open thought.
+    // Raw no-tool streams must not flush that tag into reasoning at EOF.
+    if (templateResult.format == ChatFormat.ministral.index &&
+        isThinking &&
+        endTag.startsWith(pendingBuffer)) {
+      pendingBuffer = '';
+    }
+
     pendingBuffer = isThinking
         ? reasoningGate.finish(pendingBuffer)
         : contentGate.add(pendingBuffer);

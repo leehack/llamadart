@@ -646,6 +646,26 @@ void main() {
         });
       }
 
+      for (final toolChoice in ToolChoice.values) {
+        for (final cancelled in [false, true]) {
+          test('${toolChoice.name} streams an unfinished thought '
+              'without markup (cancelled=$cancelled)', () async {
+            final chunks = await parse(
+              toolChoice,
+              const ['[TH', 'INK]Check', ' the city.', '[/TH'],
+              atLimit: !cancelled,
+              cancelled: cancelled,
+            );
+            expect(joined(chunks, (delta) => delta.content), isEmpty);
+            expect(
+              joined(chunks, (delta) => delta.thinking),
+              'Check the city.',
+            );
+            expect(calls(chunks), isEmpty);
+          });
+        }
+      }
+
       test('ends a required reply cut short in its thought without a '
           'call', () async {
         final chunks = await parse(ToolChoice.required, const [

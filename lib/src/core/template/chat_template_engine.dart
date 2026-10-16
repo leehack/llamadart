@@ -556,6 +556,9 @@ class ChatTemplateEngine {
   /// Content that ends [output] keeps the whitespace after it, as llama.cpp
   /// does, unless [isPartial] is true: more output may follow a partial one.
   ///
+  /// An unterminated Ministral `[THINK]` block remains reasoning at EOF,
+  /// including when generation stops or is cancelled before `[/THINK]`.
+  ///
   /// Output that a PEG [parser] cannot parse throws
   /// [LlamaInferenceException].
   static ChatParseResult parse(
@@ -618,7 +621,13 @@ class ChatTemplateEngine {
         parser: parser ?? '',
         format: pegFormat,
         output: output,
-        isPartial: isPartial,
+        // Upstream's lenient PEG parse retains an open thought at EOF.
+        // Keep strict final parsing for completed replies and other formats.
+        isPartial:
+            isPartial ||
+            (format == ChatFormat.ministral &&
+                output.startsWith('[THINK]') &&
+                !output.contains('[/THINK]')),
         parseToolCalls: parseToolCalls,
       );
     } else if (handler is ToolSchemaAwareChatTemplateHandler) {

@@ -140,6 +140,76 @@ void main() {
 
   tearDown(() async => engine.dispose());
 
+  for (final choice in [null, ...ToolChoice.values]) {
+    test('hidden unfinished Ministral thought: $choice', () async {
+      backend.replies.add((
+        '[THINK]Check the city.[/TH',
+        BackendGenerationLimit.maxTokens,
+      ));
+      final reply = await session
+          .create(
+            const [LlamaTextContent('Weather?')],
+            tools: choice == null ? null : tools,
+            toolChoice: choice ?? ToolChoice.auto,
+            enableThinking: false,
+          )
+          .collect();
+      expect(reply.text, isEmpty);
+      expect(reply.thinking, isEmpty);
+      expect(reply.toolCalls, isEmpty);
+      expect(reply.finishReason, LlamaFinishReason.length);
+    });
+    for (final ending in ['stop', 'limit', 'cancel']) {
+      for (final suffix in ['', '[/TH']) {
+        test('unfinished Ministral thought: $choice $ending $suffix', () async {
+          backend.replies.add((
+            '[THINK]Check the city.$suffix',
+            ending == 'limit' ? BackendGenerationLimit.maxTokens : null,
+          ));
+          if (ending == 'cancel') backend.onEnded = engine.cancelGeneration;
+          final chunks = await session
+              .create(
+                const [LlamaTextContent('Weather?')],
+                tools: choice == null ? null : tools,
+                toolChoice: choice ?? ToolChoice.auto,
+              )
+              .toList();
+          expect(chunks.map((chunk) => chunk.text).join(), isEmpty);
+          expect(
+            chunks.map((chunk) => chunk.thinking).join(),
+            'Check the city.',
+          );
+          final reply = await Stream.fromIterable(chunks).collect();
+          expect(reply.text, isEmpty);
+          expect(reply.thinking, 'Check the city.');
+          expect(reply.toolCalls, isEmpty);
+          expect(
+            reply.finishReason,
+            ending == 'limit'
+                ? LlamaFinishReason.length
+                : LlamaFinishReason.stop,
+          );
+          expect(session.history.last.content, isEmpty);
+          expect(
+            session.history.last.toJson()['reasoning_content'],
+            'Check the city.',
+          );
+
+          backend.onEnded = null;
+          backend.replies.add(('[THINK]Done.[/THINK]Sunny.', null));
+          final next = await session.send('And now?');
+          expect(next.text, 'Sunny.');
+          expect(next.thinking, 'Done.');
+          expect(
+            backend.prompts.last,
+            contains('[THINK]Check the city.[/THINK]'),
+          );
+          expect(backend.prompts.last, isNot(contains('[THINK][THINK]')));
+        });
+      }
+    }
+  }
+
   for (final choice in ToolChoice.values) {
     for (final limit in <BackendGenerationLimit?>[
       null,

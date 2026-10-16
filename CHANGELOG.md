@@ -1,3 +1,8 @@
+## Unreleased
+
+- Keep unfinished Ministral 3 reasoning out of reply text when generation stops
+  or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build
