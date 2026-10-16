@@ -1526,6 +1526,28 @@ void main() {
       expect(second.text, 'second;');
     });
 
+    test('a subscription cancel drops a later createConversation failure '
+        'and frees the slot', () async {
+      final gate = Completer<void>();
+      fake.failNextConversation = gate.future;
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      await _settle();
+
+      final firstCancelled = first.subscription.cancel();
+      gate.complete();
+      await firstCancelled;
+      expect(first.error, isNull);
+
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final secondRun = await fake.started(0);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
     test('a cancel before the first token ends the stream without sending '
         'the prompt', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
@@ -1712,6 +1734,29 @@ void main() {
       await second.done;
       expect(second.error, isNull);
       expect(second.text, isEmpty);
+      expect(fake.runs, hasLength(1));
+    });
+
+    test('contextFree ends a queued generation without running it', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+
+      await backend.contextFree(1);
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, isEmpty);
+
+      firstRun.finish();
+      await first.done;
+      await _settle();
       expect(fake.runs, hasLength(1));
     });
 
@@ -2165,6 +2210,9 @@ final class _QueueFakeEngine {
   /// does with its cancelled status.
   final bool rejectOnCancel;
   final List<_QueueFakeRun> runs = <_QueueFakeRun>[];
+
+  /// When set, the next `createConversation` waits for it, then rejects.
+  Future<void>? failNextConversation;
   final List<Completer<_QueueFakeRun>> _started = List.generate(
     8,
     (_) => Completer<_QueueFakeRun>(),
@@ -2177,6 +2225,16 @@ final class _QueueFakeEngine {
     for (final run in runs) {
       run.finish();
     }
+  }
+
+  Future<JSObject> _createConversation() async {
+    final gate = failNextConversation;
+    failNextConversation = null;
+    if (gate != null) {
+      await gate;
+      throw StateError('createConversation failed');
+    }
+    return _conversation();
   }
 
   JSObject _conversation() {
@@ -2263,9 +2321,7 @@ _QueueFakeEngine _installQueueFakeEngine({bool rejectOnCancel = false}) {
       final engine = JSObject();
       engine.setProperty(
         'createConversation'.toJS,
-        ((JSObject config) => Future<JSObject>.value(
-          fake._conversation(),
-        ).toJS).toJS,
+        ((JSObject config) => fake._createConversation().toJS).toJS,
       );
       engine.setProperty(
         'delete'.toJS,

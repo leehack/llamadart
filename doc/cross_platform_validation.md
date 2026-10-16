@@ -1673,14 +1673,17 @@ timings; a missed precondition is NOT_RUN, never PASS.
 | `C12.grammar` | Raw request with GBNF `root ::= "unterminated` | Native: `LlamaInferenceException` `llama.cpp failed to initialize the requested grammar sampler.`; Web: `LlamaInferenceException` whose details contain `(invalid grammar)`; then a request completes | GGUF quick core |
 | `C07.tools.auto_text` | `ToolChoice.auto` with `get_weather` on the hello prompt ([#654](https://github.com/leehack/llamadart/issues/654)) | Text finish matching the hello regex, no tool call | `tools` selection |
 
-Only native llama.cpp defines restart and overlap, so GGUF Web records both as
-NOT_RUN. LiteRT profiles omit them (`litert_restart_contract_undefined`,
-[#656](https://github.com/leehack/llamadart/issues/656)) and `C12.grammar`
-(`litert_grammar_unsupported`: LiteRT-LM rejects every grammar). C07.tools
-version 3 also binds the hello fixture its recovery uses. On Web, a required
-trial rejected with the documented `LlamaUnsupportedException` for a lazy
-required-tool grammar counts as that trial's result; elsewhere the rejection
-stays ERROR. Catalog 1 to 4 reports keep their inventories, C07.tools version 2
+Of the GGUF runtimes, only native llama.cpp defines restart and overlap, so
+GGUF Web records both as NOT_RUN. LiteRT-LM defines both on native and Web
+since [#656](https://github.com/leehack/llamadart/issues/656), but LiteRT
+profiles still omit them (`litert_restart_contract_undefined`) until their
+cases are enabled and qualified
+([#1115](https://github.com/leehack/llamadart/issues/1115)). LiteRT profiles
+also omit `C12.grammar` (`litert_grammar_unsupported`: LiteRT-LM rejects every
+grammar). C07.tools version 3 also binds the hello fixture its recovery uses.
+On Web, a required trial rejected with the documented
+`LlamaUnsupportedException` for a lazy required-tool grammar counts as that
+trial's result; elsewhere the rejection stays ERROR. Catalog 1 to 4 reports keep their inventories, C07.tools version 2
 and fixtures; a catalog 5 case in them fails the report.
 
 The `chat-gguf-*` and `gemma4-gguf-*` profiles select `focused` with `tools`.

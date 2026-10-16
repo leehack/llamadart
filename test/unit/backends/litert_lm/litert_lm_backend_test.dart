@@ -1822,6 +1822,35 @@ void main() {
       expect(service.runs, hasLength(1));
     });
 
+    for (final teardown in ['modelFree', 'contextFree', 'modelLoad']) {
+      test('$teardown ends a queued generation without running it', () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await service.started(0);
+        await first.firstChunk;
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        final settled = switch (teardown) {
+          'modelFree' => backend.modelFree(1),
+          'contextFree' => backend.contextFree(1),
+          _ => backend.modelLoad(modelFile.path, const ModelParams()),
+        }.then<void>((_) {}, onError: (Object _) {});
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, isEmpty);
+
+        firstRun.finish();
+        await settled;
+        await _settle();
+        expect(service.runs.map((run) => run.prompt), ['first']);
+      });
+    }
+
     test('overlapping a generation that was not cancelled throws '
         'LlamaStateException', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
@@ -1870,6 +1899,60 @@ void main() {
       expect(second.text, 'second;');
       expect(service.runs.map((run) => run.prompt), ['first', 'second']);
     });
+  });
+
+  test('a worker exit ends a generation queued behind a cancel', () async {
+    final backend = LiteRtLmBackend(workerEntryPoint: _exitOnCancelWorker);
+    const params = GenerationParams(streamBatchTokenThreshold: 1);
+    final first = _CollectedGeneration(backend.generate(1, 'first', params));
+    await first.firstChunk;
+
+    backend.cancelGeneration();
+    final second = _CollectedGeneration(backend.generate(1, 'second', params));
+    await first.done;
+    await second.done;
+    expect(first.error, isA<LlamaStateException>());
+    expect(second.error, isA<LlamaStateException>());
+    expect(second.text, isEmpty);
+    await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
+  });
+
+  test('a worker startup timeout releases the generation slot', () async {
+    final backend = LiteRtLmBackend(workerEntryPoint: _silentWorker);
+    const params = GenerationParams();
+    final first = _CollectedGeneration(backend.generate(1, 'first', params));
+    await first.doneWithin(const Duration(seconds: 10));
+    expect(first.error, isA<TimeoutException>());
+
+    // The retry makes its own startup attempt instead of waiting behind the
+    // failed one.
+    final second = _CollectedGeneration(backend.generate(1, 'second', params));
+    await second.doneWithin(const Duration(seconds: 10));
+    expect(second.error, isA<TimeoutException>());
+    await backend.dispose();
+  }, timeout: const Timeout(Duration(seconds: 40)));
+
+  test('a worker exit during startup releases the generation slot', () async {
+    final backend = LiteRtLmBackend(workerEntryPoint: _exitBeforeHandshake);
+    const params = GenerationParams();
+    final first = _CollectedGeneration(backend.generate(1, 'first', params));
+    await first.done;
+    expect(first.error, isA<LlamaStateException>());
+
+    final second = _CollectedGeneration(backend.generate(1, 'second', params));
+    await second.done;
+    expect(
+      second.error,
+      isA<LlamaStateException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('native cleanup was confirmed'),
+          isNot(contains('already in progress')),
+        ),
+      ),
+    );
+    await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
   });
 
   test('LlamaEngine starts a generation requested right after '
@@ -2112,6 +2195,10 @@ class _FakeLiteRtLmWorker {
 
 void _exitBeforeHandshake(SendPort port) => Isolate.exit();
 
+void _silentWorker(SendPort port) {
+  ReceivePort();
+}
+
 void _loggingWorkerEntry(SendPort port) {
   runLiteRtLmWorkerForTesting(port, _LoggingLiteRtLmService());
 }
@@ -2207,7 +2294,9 @@ final class _CollectedGeneration {
   bool get isDone => _done.isCompleted;
   Future<void> get firstChunk =>
       _firstChunk.future.timeout(const Duration(seconds: 2));
-  Future<void> get done => _done.future.timeout(const Duration(seconds: 2));
+  Future<void> get done => doneWithin(const Duration(seconds: 2));
+
+  Future<void> doneWithin(Duration limit) => _done.future.timeout(limit);
 }
 
 final class _ServiceRun {
@@ -2274,4 +2363,17 @@ class _CancellableRunService extends LiteRtLmService {
   void cancelGeneration() {
     cancelCount += 1;
   }
+
+  @override
+  Future<int> loadModel(
+    String path,
+    api.ModelParams params, {
+    String? backendOverride,
+  }) async => 1;
+
+  @override
+  void freeModel(int modelHandle) {}
+
+  @override
+  void freeContext(int contextHandle) {}
 }
