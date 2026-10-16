@@ -1,3 +1,8 @@
+## Unreleased
+
+- Document a fresh macOS SwiftPM bootstrap for generated deployment-target
+  mismatches with Apple companions.
+
 ## 0.14.0
 
 - Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple

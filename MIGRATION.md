@@ -5,6 +5,9 @@ This document covers the major breaking upgrade paths.
 ## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
+If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap);
+keep Runner and the companion requirements at macOS 14.0 or newer.
 The llama.cpp companion now pins native `v0.7.0`; LiteRT-LM and image companions
 are reissued for the new core minor with their native pins unchanged.
 

@@ -2,6 +2,14 @@
 
 A Flutter chat application demonstrating real-world usage of llamadart with UI.
 
+## Fresh macOS builds
+
+Runner already targets macOS 14.0. If a first SwiftPM build instead reports a
+generated 12.0 floor, run the
+[consumer bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+from this directory, including the `--no-pub` build. Repeat the sequence after
+cleaning or regenerating Flutter's ephemeral files.
+
 ## Features
 
 The Linux Runner explicitly shuts down its Flutter engines before process exit.
