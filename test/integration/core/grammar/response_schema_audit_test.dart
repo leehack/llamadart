@@ -213,7 +213,7 @@ void main() {
   test('allOf ref into non-schema enum reports the reference path', () {
     for (final type in [null, 'string']) {
       final schema = <String, dynamic>{
-        if (type != null) 'type': type,
+        'type': ?type,
         'allOf': [
           {r'$ref': '#/annotation'},
         ],
