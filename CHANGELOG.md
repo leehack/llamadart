@@ -1,3 +1,9 @@
+## Unreleased
+
+- Report recursive chat-template failures, including Command R+ null-typed
+  tool parameters, as `LlamaInferenceException` instead of `StackOverflowError`
+  ([#1112](https://github.com/leehack/llamadart/issues/1112)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build

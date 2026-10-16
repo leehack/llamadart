@@ -614,6 +614,53 @@ void main() {
         );
       });
 
+      const recursiveTemplate =
+          '{% macro recurse() %}{{ recurse() }}{% endmacro %}'
+          '{% if messages[0].content == "overflow" %}{{ recurse() }}'
+          '{% else %}{{ messages[0].content }}{% endif %}';
+
+      test('wraps render stack overflow and preserves its original stack', () {
+        try {
+          ChatTemplateEngine.render(
+            templateSource: recursiveTemplate,
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'overflow',
+              ),
+            ],
+            metadata: const {},
+          );
+          fail('The recursive template must fail to render');
+        } on LlamaInferenceException catch (error, stackTrace) {
+          expect(error.message, contains('templateSource failed to render'));
+          expect(error.message, contains('Stack Overflow'));
+          expect(stackTrace.toString(), contains('MacroStatement'));
+        }
+      });
+
+      test('keeps successful recursive-template renders unchanged', () {
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: recursiveTemplate,
+            messages: messages,
+            metadata: const {},
+          ).prompt,
+          'hello',
+        );
+      });
+
+      test('leaves unrelated render errors unchanged', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: '{{ 1 // 0 }}',
+            messages: messages,
+            metadata: const {},
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+      });
+
       test('renders the conversation it accepts', () {
         final result = ChatTemplateEngine.render(
           templateSource: mustAlternate,

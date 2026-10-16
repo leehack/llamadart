@@ -33,6 +33,9 @@ List<File> _fixtureTemplates() {
 const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
       '11111101',
+  // Command R+ is pinned from Dart detection, without a llama-server probe.
+  'test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja':
+      '11111001',
   'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja': '10101000',
   'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja': '11111011',
   'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja':

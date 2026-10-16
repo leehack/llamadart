@@ -126,10 +126,10 @@ class ChatTemplateEngine {
   /// [responseFormat] takes the shapes documented on `LlamaEngine.create`;
   /// any other shape throws `LlamaUnsupportedException`.
   ///
-  /// A template that fails to render, by raising or through invalid syntax,
-  /// throws `LlamaInferenceException` with the template's message. The
-  /// message names the template: [customTemplate], the `tool_use` variant in
-  /// [metadata], or [templateSource].
+  /// A template that fails to render, by raising, through invalid syntax or
+  /// by overflowing the stack, throws `LlamaInferenceException` with the
+  /// template's message. The message names [customTemplate], the `tool_use`
+  /// variant in [metadata], or [templateSource].
   ///
   /// [mediaMarker] is written where each image, audio or video part was.
   /// Pass one that message text cannot hold to tell the parts from a
@@ -389,15 +389,16 @@ class ChatTemplateEngine {
   /// Runs a handler [render], turning an [Exception] that is not already a
   /// [LlamaException] (a template's own `raise_exception`, a failure the
   /// Jinja runtime throws as an `Exception`, invalid template syntax) into a
-  /// [LlamaInferenceException] that names the template by [templateName]. An
-  /// [Error] the renderer throws, such as an integer division by zero or a
-  /// stack overflow, is left as it is.
+  /// [LlamaInferenceException] that names the template by [templateName].
+  /// A [StackOverflowError] from a recursive template is also wrapped;
+  /// other [Error]s are left as they are.
   ///
-  /// With [retryWithToolResultsAsUser], a render that fails that way is
-  /// retried once with tool results as user turns, for a template that
-  /// rejects the `tool` role (see [renderWithToolResultsAsUserTurns]). A
-  /// request the template renders as given is never changed. When the retry
-  /// fails in any way, the first failure is reported.
+  /// With [retryWithToolResultsAsUser], a render that throws an [Exception]
+  /// other than [LlamaException] is retried once with tool results as user
+  /// turns if the template rejects the `tool` role
+  /// (see [renderWithToolResultsAsUserTurns]). A request the template renders
+  /// as given is never changed. When the retry fails in any way, the first
+  /// failure is reported.
   static LlamaChatTemplateResult _renderTemplate(
     String templateName,
     LlamaChatTemplateResult Function() render, {
@@ -407,6 +408,13 @@ class ChatTemplateEngine {
       return render();
     } on LlamaException {
       rethrow;
+    } on StackOverflowError catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        LlamaInferenceException(
+          'The chat template from $templateName failed to render: $error',
+        ),
+        stackTrace,
+      );
     } on Exception catch (error, stackTrace) {
       if (retryWithToolResultsAsUser) {
         try {
