@@ -1,8 +1,8 @@
 ## Unreleased
 
-- **Breaking:** Load progress callbacks now use `void Function(double progress)?`.
+- Load progress callbacks now declare `void Function(double progress)?`; existing overrides still compile.
 
-- Hide stale performance counters after cancelling a queued native generation.
+- Hide stale performance counters after cancelling a queued llama.cpp generation.
 
 - Free multimodal input buffers when native media initialization fails.
 

@@ -7,9 +7,10 @@ This document covers the major breaking upgrade paths.
 Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
 loads and the legacy `LlamaEngine` URL-loading methods now declare
 `void Function(double progress)?` instead of `Function(double progress)?`.
-Update custom backend implementations, test fakes and callback fields to the
-explicit `void` signature. Notifications deliver the same fractions; the
-return value is ignored and cannot cancel a load. Native llama.cpp's raw FFI
+Existing `Function(double progress)?` overrides still compile; prefer the
+explicit `void` signature in custom backends and test fakes. Notifications
+deliver the same fractions; the return value is ignored and cannot cancel a
+load. Native llama.cpp's raw FFI
 `bool` progress callback is unchanged.
 
 ```dart
