@@ -105,7 +105,14 @@ void main() {
     },
   );
 
-  test('audit integer grammar expressions match pinned upstream bytes', () {
+  test('audit integer grammar expressions preserve scoped upstream parity', () {
+    // Keep upstream fixtures intact: these two expose the leading-zero defect
+    // corrected for negative maxima, so their intentional divergence is explicit.
+    const correctedRoot = r'("-" ([1] [0-9]{1,15} | [2-9] [0-9]{0,15}))';
+    const correctedRoots = {
+      'maximum-1.2': correctedRoot,
+      'exclusiveMaximum-1': correctedRoot,
+    };
     final fixtures =
         jsonDecode(upstreamIntegerBoundGrammars) as Map<String, dynamic>;
     for (final entry in fixtures.entries) {
@@ -115,7 +122,7 @@ void main() {
       );
       expect(
         grammar.split('\n').first,
-        'root ::= ${row['root']} space',
+        'root ::= ${correctedRoots[entry.key] ?? row['root']} space',
         reason: entry.key,
       );
     }
