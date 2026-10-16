@@ -290,9 +290,13 @@ class ModelParams {
   /// cannot use the native Conversation API. Native `LlamaEngine.create`
   /// sends eligible chats, including images and audio, through that API,
   /// where the template shapes the prompt only for text-only requests to
-  /// Qwen3 or unnamed bundles. Unnamed Qwen3 bundles are identified from
-  /// their embedded model type or thinking-aware ChatML template. The
-  /// override receives `enable_thinking` and must implement that switch.
+  /// filename-matched or positively identified Qwen3 bundles. Unnamed Qwen3
+  /// bundles need a Qwen3 model-type declaration or the complete canonical
+  /// Qwen3 template in bundle metadata or this override. Legacy bundles with
+  /// only generic ChatML metadata cannot be identified after renaming: keep
+  /// Qwen3 in the filename or supply the canonical Qwen3 template here.
+  /// Other families keep their native bundle template and content adapter.
+  /// A native override receives `enable_thinking` and must implement it.
   ///
   /// A per-call `customTemplate` takes precedence on every runtime.
   final String? chatTemplate;

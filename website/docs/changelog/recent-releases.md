@@ -9,8 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Fix `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles,
-  including those using a `chatTemplate` override
+- Honor `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles
+  with a canonical Qwen 3 `chatTemplate` override or identifying metadata
   ([#901](https://github.com/leehack/llamadart/issues/901)).
 
 ## 0.13.1

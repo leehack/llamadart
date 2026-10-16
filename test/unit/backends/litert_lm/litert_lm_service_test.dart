@@ -773,15 +773,228 @@ void main() {
             enableThinking: false,
           )
           .toList();
-      await client.generateStarted.future;
+      await Future.any([client.generateStarted.future, pending]);
       client.generated.add('Hello');
       await client.generated.close();
       expect(await pending, [utf8.encode('Hello')]);
       return client.lastPromptTemplate;
     }
 
+    for (final name in [
+      'Phi-4-mini',
+      'Llama-3.2-1B',
+      'DeepSeek-R1-Distill-Qwen',
+      'renamed-gemma-3n',
+      'download', // Renamed Gemma 3n with no family hint in the filename.
+      'Qwen2.5-0.5B',
+    ]) {
+      for (final override in [null, '{{ messages[0].content }}', '']) {
+        for (final hasSetter in [false, true]) {
+          test(
+            'main native routing $name override=$override setter=$hasSetter',
+            () async {
+              final file = File('${tempDir.path}/$name.litertlm');
+              await file.writeAsBytes(_thinkingBundle(modelType: 1));
+              final client = _FakeLiteRtLmRuntimeClient()
+                ..rendersMessages = true
+                ..onRenderMessage = (_) => liteRtLmContentShapeProbeText;
+              // A runtime without the optional setter still supports these chats.
+              if (!hasSetter) {
+                client.onCreateConversation = () {
+                  if (client.lastPromptTemplate != null) {
+                    throw LlamaUnsupportedException('no template setter');
+                  }
+                };
+              }
+              final service = LiteRtLmService(clientFactory: () => client);
+              final params = ModelParams(
+                liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                chatTemplate: override,
+              );
+              try {
+                final model = await service.loadModel(file.path, params);
+                expect(
+                  await generate(
+                    service,
+                    client,
+                    service.createContext(model, params),
+                  ),
+                  isNull,
+                );
+                expect(client.renderMessageCount, 1);
+                expect(client.conversations, [
+                  (template: null, seeded: false),
+                  (template: null, seeded: true),
+                ]);
+                if (override != null) {
+                  expect(
+                    service.getMetadata(model)['tokenizer.chat_template'],
+                    override,
+                  );
+                }
+              } finally {
+                service.dispose();
+              }
+            },
+          );
+        }
+      }
+    }
+
+    for (final fixture in [
+      'test/fixtures/templates/Qwen3_5-0_8B.jinja',
+      'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja',
+    ]) {
+      test('does not replace the embedded family template $fixture', () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(
+            modelType: 1,
+            template: File(fixture).readAsStringSync(),
+          ),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            service.getMetadata(model),
+            isNot(contains('tokenizer.chat_template')),
+          );
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            isNull,
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test(
+      'a detected bundle uses the explicit override before its template',
+      () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(modelType: 5, template: qwen3.template),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const custom = '{{ enable_thinking }} custom';
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            custom,
+          );
+          expect(service.getMetadata(model)['tokenizer.chat_template'], custom);
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+
+    test(
+      'canonical override identifies a bundle despite a different embedded template',
+      () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(modelType: 1, template: '{{ messages }}'),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final custom = '  \n${qwen3.template}';
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            custom,
+          );
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+
+    test('generic override keeps the bundle content adapter', () async {
+      const embedded = '{{ messages[0].content }}';
+      final adapted = liteRtLmTextContentAdapter(embedded);
+      final client = _FakeLiteRtLmRuntimeClient()
+        ..rendersMessages = true
+        ..onRenderMessage = (template) =>
+            renderLiteRtLmContent(template ?? embedded, [
+              {'type': 'text', 'text': liteRtLmContentShapeProbeText},
+            ]);
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        readBundleChatTemplate: (_) => embedded,
+      );
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        chatTemplate: 'user override',
+      );
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        expect(
+          await generate(service, client, service.createContext(model, params)),
+          adapted,
+        );
+        expect(client.renderMessageCount, 2);
+        expect(
+          service.getMetadata(model)['tokenizer.chat_template'],
+          'user override',
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('detected Qwen3 reports a missing native template setter', () async {
+      await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
+      final client = _FakeLiteRtLmRuntimeClient();
+      client.onCreateConversation = () {
+        if (client.lastPromptTemplate != null) {
+          throw LlamaUnsupportedException('no template setter');
+        }
+      };
+      final service = LiteRtLmService(clientFactory: () => client);
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+      );
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        await expectLater(
+          generate(service, client, service.createContext(model, params)),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
     for (final custom in ["{{ enable_thinking }}", '']) {
       test('explicit override is forwarded verbatim: "$custom"', () async {
+        await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
         final client = _FakeLiteRtLmRuntimeClient();
         final service = LiteRtLmService(clientFactory: () => client);
         final params = ModelParams(

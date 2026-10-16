@@ -143,6 +143,29 @@ void main() {
       });
     }
 
+    for (final badType in [
+      [0x2a, 0x7f],
+      [0x80],
+      [0x2f],
+    ]) {
+      test('retains template with malformed model type $badType', () {
+        const template = '{{ messages[0].content }}';
+        final path = write(
+          _bundle([
+            (
+              type: _llmMetadata,
+              data: Uint8List.fromList([
+                ..._metadata(template),
+                ..._protoField(6, badType),
+              ]),
+            ),
+          ]),
+        );
+        expect(readLiteRtLmBundleChatTemplate(path), template);
+        expect(readLiteRtLmBundleMetadata(path)?.isQwen3, isNot(true));
+      });
+    }
+
     test('malformed model type is not classified', () {
       final path = write(
         _bundle([

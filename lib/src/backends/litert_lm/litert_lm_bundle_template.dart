@@ -85,7 +85,8 @@ String? readLiteRtLmBundleChatTemplate(String path) =>
 /// Returns null under the same bounds and format constraints as
 /// [readLiteRtLmBundleChatTemplate]. The model type is field 6 of
 /// `LlmMetadata`, whose `LlmModelType` oneof uses field 5 for Qwen3 in
-/// LiteRT-LM v0.18.0 (`runtime/proto/llm_model_type.proto`).
+/// LiteRT-LM v0.18.0 (`runtime/proto/llm_model_type.proto`). A malformed
+/// optional model type is ignored when the template is still readable.
 ({String? chatTemplate, bool isQwen3})? readLiteRtLmBundleMetadata(
   String path,
 ) {
@@ -132,10 +133,17 @@ String? readLiteRtLmBundleChatTemplate(String path) =>
       };
       final template = fields[_jinjaPromptTemplateField];
       final modelType = fields[6];
+      var isQwen3 = false;
+      try {
+        isQwen3 =
+            modelType != null && _protoFields(modelType).lastOrNull?.$1 == 5;
+      } on FormatException {
+        // An invalid optional family declaration must not hide a usable template.
+        if (template == null) return null;
+      }
       return (
         chatTemplate: template == null ? null : utf8.decode(template),
-        isQwen3:
-            modelType != null && _protoFields(modelType).lastOrNull?.$1 == 5,
+        isQwen3: isQwen3,
       );
     }
     return null;

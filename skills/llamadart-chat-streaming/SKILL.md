@@ -43,11 +43,14 @@ description: >-
   it.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
   `engine.create` when reasoning output is not wanted. Native LiteRT-LM
-  recognizes renamed Qwen 3 bundles from model-type metadata or a
-  thinking-aware ChatML template. For unnamed text bundles,
-  `ModelParams.chatTemplate` is also passed to the native conversation with
-  `enable_thinking`; the supplied template must implement that switch.
-  Existing filename matches and media conversations keep their native routing.
+  recognizes renamed Qwen 3 bundles only from a Qwen 3 model-type declaration
+  (field 6), or the complete canonical Qwen 3 template in field 7 or
+  `ModelParams.chatTemplate`. Legacy litert-community Qwen3-0.6B bundles have
+  neither metadata field: keep `Qwen3` in the filename or use the complete
+  `tool/litert_lm_templates/qwen3.jinja` override. Otherwise disabled thinking
+  can still return empty content after renaming. Generic thinking markers are
+  insufficient. Other families keep native bundle templates and adapters;
+  overrides still drive Dart-side metadata and parsing. Media routing is unchanged.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),
