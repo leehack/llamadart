@@ -56,8 +56,12 @@ description: >-
   outside the loop.
 - Tool calls arrive complete, with JSON-encoded `arguments`, in the final
   chunk; its `chunk.finishReason` is `LlamaFinishReason.toolCalls`. With
-  Qwen3/Hermes tool parsing, cancelling inside an unfinished `<tool_call>` keeps
-  preceding answer text without raw envelope markup. Collect
+  Hermes-detected templates (Hermes 2 Pro/3, Qwen2.5, Qwen3 and QwQ),
+  cancelling inside an unfinished `<tool_call>` keeps preceding answer text
+  without raw envelope markup. If no output preceded it, `ChatSession.create`
+  throws `LlamaStateException` ("Generation was cancelled before any output.")
+  and rolls back the turn. Natural EOS, caller stops and token limits retain
+  their existing parsing behavior. Collect
   the whole stream with `collect()` (or use `engine.complete` /
   `session.send`): `LlamaCompletion.toolCalls` holds `LlamaToolCallContent`
   entries with decoded `arguments` (empty when they are not a JSON object;

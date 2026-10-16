@@ -5853,6 +5853,53 @@ void main() {
   });
 
   group('Qwen tool cancellation history', () {
+    for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+      test(
+        'cancel inside a tool with no answer rolls back (${choice.name})',
+        () async {
+          final backend = _OutputUntilCancelBackend(
+            const ['<tool_call>{"name":"weather","arguments":{"city":"Par'],
+            const {
+              'tokenizer.chat_template':
+                  '<|im_start|>{{ messages | tojson }}{{ tools | tojson }}<tool_call>',
+            },
+          );
+          final engine = LlamaEngine(backend);
+          addTearDown(engine.dispose);
+          await engine.loadModel('Qwen3.gguf');
+          final session = ChatSession(engine, maxContextTokens: 0);
+          final done = session
+              .create(
+                const [LlamaTextContent('Weather?')],
+                tools: [
+                  ToolDefinition(
+                    name: 'weather',
+                    description: 'Get weather',
+                    parameters: [ToolParam.string('city')],
+                  ),
+                ],
+                toolChoice: choice,
+                enableThinking: false,
+              )
+              .collect();
+          final assertion = expectLater(
+            done,
+            throwsA(
+              isA<LlamaStateException>().having(
+                (e) => e.message,
+                'message',
+                'Generation was cancelled before any output.',
+              ),
+            ),
+          );
+          await backend.started.future;
+          await pumpEventQueue();
+          engine.cancelGeneration();
+          await assertion;
+          expect(session.history, isEmpty);
+        },
+      );
+    }
     for (final schema in [false, true]) {
       test(
         'keeps only the answer before a partial call (schema=$schema)',

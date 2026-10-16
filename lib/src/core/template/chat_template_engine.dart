@@ -556,12 +556,16 @@ class ChatTemplateEngine {
   /// Content that ends [output] keeps the whitespace after it, as llama.cpp
   /// does, unless [isPartial] is true: more output may follow a partial one.
   ///
+  /// On [cancelled], Hermes withholds unfinished tool envelopes. Other endings
+  /// retain the format's normal final-output behavior.
+  ///
   /// Output that a PEG [parser] cannot parse throws
   /// [LlamaInferenceException].
   static ChatParseResult parse(
     int formatIndex,
     String output, {
     bool isPartial = false,
+    bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     String? parser,
@@ -571,6 +575,7 @@ class ChatTemplateEngine {
       formatIndex,
       output,
       isPartial: isPartial,
+      cancelled: cancelled,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
       parser: parser,
@@ -602,6 +607,7 @@ class ChatTemplateEngine {
     int formatIndex,
     String output, {
     required bool isPartial,
+    required bool cancelled,
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
     String? parser,
@@ -620,6 +626,15 @@ class ChatTemplateEngine {
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
+      );
+    } else if (handler is HermesHandler) {
+      result = handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        cancelled: cancelled,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
       );
     } else if (handler is ToolSchemaAwareChatTemplateHandler) {
       result = (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(

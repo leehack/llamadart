@@ -169,7 +169,7 @@ void main() {
       }
     });
 
-    test('keeps only the answer before a tool call the stop cuts', () async {
+    test('is the text of a tool call the stop cuts', () async {
       const call = [
         'Let me check. ',
         '<tool_call>',
@@ -188,7 +188,13 @@ void main() {
         expect(_content(whole), 'Let me check.');
         expect(whole.last.choices.single.finishReason, 'tool_calls');
 
-        for (final stop in const ['Paris', '"arguments"']) {
+        for (final (stop, expected) in const [
+          (
+            'Paris',
+            'Let me check. <tool_call>\n{"name": "weather", "arguments": {"city": "',
+          ),
+          ('"arguments"', 'Let me check. <tool_call>\n{"name": "weather", '),
+        ]) {
           final cut = await _chat(
             ChatFormat.hermes,
             _stoppedChunks(call, [stop], batch: batch),
@@ -199,10 +205,7 @@ void main() {
             isEmpty,
           );
           expect(cut.last.choices.single.finishReason, 'stop');
-          expect(_content(cut), 'Let me check.');
-
-          final raw = _stoppedChunks(call, [stop], batch: batch);
-          expect(_content(await _chat(ChatFormat.hermes, raw)), raw.join());
+          expect(_content(cut), expected);
         }
       }
     });

@@ -360,11 +360,13 @@ class ChatCompletionStreamParser {
 
     final fullOutput = buffer.toString();
     final endedAtLimit = stoppedAtLimit?.call() == true;
+    final wasCancelled = cancelled?.call() == true;
     ChatParseResult parseOutput({required bool isPartial}) =>
         ChatTemplateEngine.parse(
           templateResult.format,
           fullOutput,
           isPartial: isPartial,
+          cancelled: wasCancelled,
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           parser: templateResult.parser,
@@ -375,7 +377,7 @@ class ChatCompletionStreamParser {
     try {
       parsed = parseOutput(isPartial: false);
     } on LlamaInferenceException {
-      if (!endedAtLimit && cancelled?.call() != true) rethrow;
+      if (!endedAtLimit && !wasCancelled) rethrow;
       parsed = parseOutput(isPartial: true);
       parsedAsPartial = true;
     }

@@ -1,7 +1,9 @@
 ## Unreleased
 
-- Cancelling a Qwen3 tool call now keeps only the preceding answer text,
-  without leaking unfinished `<tool_call>` markup
+- Cancelling a tool call in Hermes-detected templates (Hermes 2 Pro/3,
+  Qwen2.5, Qwen3 and QwQ) now keeps only preceding answer text without
+  unfinished `<tool_call>` markup. With no preceding output, `ChatSession.create`
+  reports “Generation was cancelled before any output.” and rolls back the turn
   ([#887](https://github.com/leehack/llamadart/issues/887)).
 
 ## 0.13.1

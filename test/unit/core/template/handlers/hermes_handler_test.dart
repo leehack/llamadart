@@ -35,6 +35,7 @@ void main() {
             final parsed = handler.parse(
               'Checking. ${call.substring(0, end)}',
               isPartial: partial,
+              cancelled: true,
             );
             expect(parsed.content, 'Checking.', reason: 'cut at $end');
             expect(parsed.toolCalls, isEmpty, reason: 'cut at $end');
@@ -47,6 +48,7 @@ void main() {
           final parsed = handler.parse(
             'Checking. $complete$tail',
             isPartial: partial,
+            cancelled: true,
           );
           expect(parsed.content, 'Checking.', reason: tail);
           expect(parsed.toolCalls, hasLength(1), reason: tail);
@@ -65,6 +67,7 @@ void main() {
         final parsed = handler.parse(
           'Before. $call After.',
           isPartial: partial,
+          cancelled: true,
         );
         expect(parsed.content, 'Before. After.');
         expect(
@@ -85,10 +88,26 @@ void main() {
             'Checking. <tool_call>{"name":"echo",'
             '"arguments":{"text":"$suffix';
         for (final partial in [false, true]) {
-          final parsed = handler.parse(output, isPartial: partial);
+          final parsed = handler.parse(
+            output,
+            isPartial: partial,
+            cancelled: true,
+          );
           expect(parsed.content, 'Checking.', reason: output);
           expect(parsed.toolCalls, isEmpty, reason: output);
         }
+      }
+    });
+
+    test('natural EOS retains raw unfinished and malformed output', () {
+      for (final output in [
+        'Let me check. <tool_call>\n{...}\n',
+        '<tool_call>\n{"name":"weather","arguments":{"city":"Paris"}}',
+        '<tool_call>\n{"name": "weather", "arguments": {"city": "Pa}}\n</tool_call>',
+        'For tool calls, write <tool_call>{"name": "x"} as shown.',
+      ]) {
+        expect(handler.parse(output).content, output.trim(), reason: output);
+        expect(handler.parse(output).toolCalls, isEmpty, reason: output);
       }
     });
 
@@ -123,6 +142,7 @@ void main() {
         final parsed = handler.parse(
           'Checking. $payload',
           isPartial: partial,
+          cancelled: true,
           parseToolCalls: false,
         );
         expect(parsed.content, 'Checking. $payload');
@@ -133,12 +153,14 @@ void main() {
     test('keeps closed malformed envelopes and unrelated text', () {
       for (final text in [
         '<tool_call>{"arguments":{}}</tool_call>',
+        '<tool_call>\n{"name": "weather", "arguments": {"city": "Pa}}\n</tool_call>',
         'Use <tool_calling> for an example.',
         'Use <tool_call> to start a call.',
         '{"text":"<tool_call>"}',
         'Here is {"name":"weather",',
       ]) {
         expect(handler.parse(text).content, text);
+        expect(handler.parse(text, cancelled: true).content, text);
       }
     });
   });

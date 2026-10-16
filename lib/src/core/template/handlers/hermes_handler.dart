@@ -75,9 +75,10 @@ class HermesHandler extends ChatTemplateHandler
 
   static final RegExp _regexSpace = RegExp(r'\s');
 
-  // Consume JSON strings, including truncated ones, before looking for a tag.
+  // A raw newline cannot occur inside a JSON string. Let a closing tag after
+  // one remain visible when malformed JSON leaves a quote unterminated.
   static final RegExp _toolCallCloseOrString = RegExp(
-    r'"(?:\\.|[^"\\])*(?:"|\\?$)|</tool_call>',
+    r'"(?:\\.|[^"\\\r\n])*(?:"|\\?$)|</tool_call>',
     dotAll: true,
   );
 
@@ -207,15 +208,18 @@ class HermesHandler extends ChatTemplateHandler
     );
   }
 
+  /// On [cancelled], withholds unfinished tool envelopes from answer text.
   @override
   ChatParseResult parse(
     String output, {
     bool isPartial = false,
+    bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) => _parse(
     output,
     isPartial: isPartial,
+    cancelled: cancelled,
     parseToolCalls: parseToolCalls,
     thinkingForcedOpen: thinkingForcedOpen,
   );
@@ -228,11 +232,13 @@ class HermesHandler extends ChatTemplateHandler
     String output, {
     List<ToolDefinition>? tools,
     bool isPartial = false,
+    bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) => _parse(
     output,
     isPartial: isPartial,
+    cancelled: cancelled,
     parseToolCalls: parseToolCalls,
     thinkingForcedOpen: thinkingForcedOpen,
     declaredNames: tools != null && tools.any(toolUsesJsonSchema)
@@ -243,6 +249,7 @@ class HermesHandler extends ChatTemplateHandler
   ChatParseResult _parse(
     String output, {
     required bool isPartial,
+    required bool cancelled,
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
     Set<String>? declaredNames,
@@ -283,7 +290,8 @@ class HermesHandler extends ChatTemplateHandler
         final pendingPayload = pendingStart < 0
             ? ''
             : text.substring(pendingStart + '<tool_call>'.length).trimLeft();
-        if ((isPartial || declaredNames == null) &&
+        if (cancelled &&
+            (isPartial || declaredNames == null) &&
             pendingStart >= 0 &&
             (pendingPayload.isEmpty || pendingPayload.startsWith('{')) &&
             !text.contains('</tool_call>', pendingStart)) {
@@ -319,10 +327,11 @@ class HermesHandler extends ChatTemplateHandler
           jsonStart++;
         }
         final jsonRange = _extractJsonObjectRange(text, jsonStart);
-        // An interrupted envelope is control output, even at EOF. Search
+        // On cancellation, an unfinished envelope is control output. Search
         // after a complete JSON value so quoted closing tags cannot close it.
         // Keep the legacy recovery of double-brace payloads.
-        if ((isPartial || declaredNames == null) &&
+        if (cancelled &&
+            (isPartial || declaredNames == null) &&
             openTag == '<tool_call>' &&
             !hasOuterBrace &&
             !_toolCallCloseOrString
