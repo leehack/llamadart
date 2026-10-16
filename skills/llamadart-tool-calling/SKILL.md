@@ -124,7 +124,7 @@ Other formats and runtimes without an active tool grammar are rejected.
 WebGPU cannot use lazy auto grammars; use a supported non-lazy required-tool
 format. LiteRT-LM is unsupported. Final parsed calls and direct invocation
 are validated. Schemas past the guide's size limits (for example 32 nesting
-levels, 64 `anyOf` alternatives, or length/item bounds above 1999) throw
+levels, 64 `anyOf` alternatives, or length/item bounds above 2000) throw
 `LlamaUnsupportedException`. See the guide's "Import a JSON Schema" section
 for an example.
 

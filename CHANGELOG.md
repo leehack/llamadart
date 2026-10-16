@@ -4,6 +4,8 @@
   Hermes-2-Pro-Llama-3-8B null-typed tool parameters, as
   `LlamaInferenceException` instead of `StackOverflowError` on VM and JavaScript
   ([#1112](https://github.com/leehack/llamadart/issues/1112)).
+- Tool input schemas now accept string length and array item bounds of 2000,
+  matching the shipped llama.cpp runtime ([#1116](https://github.com/leehack/llamadart/issues/1116)).
 
 ## 0.13.1
 
