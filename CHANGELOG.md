@@ -2,6 +2,8 @@
 
 - Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
   native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
+- Document a fresh macOS SwiftPM bootstrap for generated deployment-target
+  mismatches with Apple companions.
 
 ## 0.14.0
 
