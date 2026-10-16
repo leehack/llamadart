@@ -19,9 +19,11 @@ same request.
 - `test/fixtures/templates/gemma-3-4b-it.jinja`: Gemma 3.
 - `test/fixtures/templates/Mistral-7B-Instruct-v0_2.jinja`: the
   `mistralai/Mistral-7B-Instruct-v0.2 (NOTE: Old pre-v1 without a system
-  prompt)` template from llama.cpp `tests/test-chat-template.cpp`, which
-  raises the error reported for `Mistral-7B-Instruct-v0.3-Q4_K_M.gguf` in
-  [#885](https://github.com/leehack/llamadart/issues/885).
+  prompt)` template from llama.cpp `tests/test-chat-template.cpp`. It is
+  byte-identical to the template embedded in
+  `Mistral-7B-Instruct-v0.3-Q4_K_M.gguf` (SHA256
+  `1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6`), the
+  model reported in [#885](https://github.com/leehack/llamadart/issues/885).
 - `test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja`: Gemma 2,
   from llama.cpp `models/templates`.
 

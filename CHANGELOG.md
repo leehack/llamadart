@@ -28,9 +28,10 @@
   of the CPU, and the Web applies its GPU safety caps and CPU fallback
   ([#920](https://github.com/leehack/llamadart/issues/920)).
 - Send tool results back on Gemma 2/3/3n and legacy Mistral templates, which
-  failed with `Conversation roles must alternate user/assistant/...`: a
-  template that rejects the `tool` role now gets each run of results as one
-  user turn, and the earlier calls as JSON in the model turn
+  failed with `Conversation roles must alternate user/assistant/...`: when a
+  template that rejects the `tool` role fails such a request, it is rendered
+  again with each run of results as one user turn and the earlier calls as
+  JSON in the model turn
   ([#885](https://github.com/leehack/llamadart/issues/885)).
 
 ## 0.13.0
