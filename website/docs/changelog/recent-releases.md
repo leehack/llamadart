@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Update the LiteRT-LM native runtime to v0.18.0-2, which reduces duplicated
+  words at untimed ASR window boundaries with the default overlap; other boundary
+  and recognition errors can remain.
 - Load progress callbacks now declare `void Function(double progress)?`; existing overrides still compile.
 
 - Hide stale performance counters after cancelling a queued llama.cpp generation.

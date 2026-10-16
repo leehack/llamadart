@@ -243,7 +243,7 @@ first generation, tokenization or detokenization after each context create,
 and again when speculative decoding, vision, audio or image-count settings
 change.
 
-With the pinned `v0.18.0` on the macOS GPU backend, the program cache of
+Measured with `v0.18.0` on the macOS GPU backend, the program cache of
 Qwen3 0.6B (4 MB) and Gemma 4 E2B (11 MB) no longer grows after the first
 engine create, where `v0.17.0-8` doubled Qwen3 0.6B's on the second. The
 Qwen3.5 0.8B VL int8 bundle still appends about 270 MB per create, as it did
