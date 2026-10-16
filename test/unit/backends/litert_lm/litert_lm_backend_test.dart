@@ -1157,6 +1157,40 @@ void main() {
     }
   });
 
+  test(
+    'modelFree after a subscription cancel sends no second worker cancel',
+    () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        holdGeneration: true,
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+      try {
+        final subscription = backend
+            .generate(1, 'first', const GenerationParams())
+            .listen((_) {});
+        await worker.generateReceived.future;
+
+        await subscription.cancel();
+        await _settle();
+        final freed = backend.modelFree(1);
+        await _settle();
+        expect(
+          worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+          hasLength(1),
+        );
+        worker.releaseGeneration();
+        await freed;
+      } finally {
+        worker.releaseGeneration();
+        await backend.dispose();
+        worker.close();
+      }
+    },
+  );
+
   test('rejects concurrent generation before touching worker', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],
@@ -1629,6 +1663,41 @@ void main() {
       await disposed;
     });
 
+    // A stale queue entry would make the finished second generation start
+    // again from every finish, a microtask loop that starves the isolate, so
+    // this checks the queue while the second generation is still running.
+    test('an admitted queued generation leaves the queue', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await service.started(0);
+      await first.firstChunk;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      firstRun.finish();
+      final secondRun = await service.started(1);
+      await second.firstChunk;
+
+      await second.subscription.cancel();
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(third.error, isNull);
+
+      secondRun.finish();
+      final thirdRun = await service.started(2);
+      thirdRun.finish();
+      await third.done;
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+      expect(service.runs.map((run) => run.prompt), [
+        'first',
+        'second',
+        'third',
+      ]);
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
     test('waits for a run stopped by cancelGeneration, then starts', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
       final firstRun = await service.started(0);
@@ -1915,49 +1984,6 @@ void main() {
       });
     }
 
-    test(
-      'a queued generation that started and finished leaves the queue',
-      () async {
-        final first = _CollectedGeneration(
-          backend.generate(1, 'first', params),
-        );
-        final firstRun = await service.started(0);
-        await first.firstChunk;
-
-        backend.cancelGeneration();
-        final second = _CollectedGeneration(
-          backend.generate(1, 'second', params),
-        );
-        await _settle();
-        firstRun.finish();
-        final secondRun = await service.started(1);
-        await second.firstChunk;
-
-        // Queueing behind the now-running second generation must see an empty
-        // queue; a stale entry would reject this third one.
-        backend.cancelGeneration();
-        final third = _CollectedGeneration(
-          backend.generate(1, 'third', params),
-        );
-        await _settle();
-        expect(third.error, isNull);
-
-        secondRun.finish();
-        await second.done;
-        final thirdRun = await service.started(2);
-        thirdRun.finish();
-        await third.done;
-        expect(third.error, isNull);
-        expect(third.text, 'third;');
-        expect(service.runs.map((run) => run.prompt), [
-          'first',
-          'second',
-          'third',
-        ]);
-      },
-      timeout: const Timeout(Duration(seconds: 10)),
-    );
-
     for (final teardown in ['modelFree', 'contextFree', 'modelLoad']) {
       test('a generation started during $teardown waits for the run it '
           'cancels', () async {
@@ -2016,6 +2042,32 @@ void main() {
         expect(service.runs, hasLength(1));
       },
     );
+
+    test('a generation requested right after cancelGeneration ends the '
+        'queued one takes its place', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await service.started(0);
+      await first.firstChunk;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      backend.cancelGeneration();
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(third.error, isNull);
+
+      firstRun.finish();
+      final thirdRun = await service.started(1);
+      thirdRun.finish();
+      await third.done;
+      expect(second.text, isEmpty);
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+      expect(service.runs.map((run) => run.prompt), ['first', 'third']);
+    });
 
     test('a generation the worker fails frees the slot', () async {
       service.failPrompt = 'boom';
