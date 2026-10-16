@@ -213,6 +213,11 @@ bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
 core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
 `0.0.17`.
 
+A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
+companions' 14.0 requirement needs the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap).
+Keep Runner at 14.0+; the procedure preserves companion artifact verification.
+
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
 symbol lookup. Incompatible companions or unverified local `Artifacts`
 overrides fail the build; resolve the matching companion and rerun
