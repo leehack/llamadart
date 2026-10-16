@@ -256,7 +256,7 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-Core `0.13.0` pairs with companions `llamadart_llama_cpp_flutter`,
+Core `0.13.1` and `0.13.0` pair with companions `llamadart_llama_cpp_flutter`,
 `llamadart_litert_lm_flutter` and `llamadart_stable_diffusion_flutter`
 `0.13.0`, whose SwiftPM pins are `v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`,
 respectively. Repository manifests alone do not prove pub.dev publication.

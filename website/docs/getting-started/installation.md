@@ -20,7 +20,7 @@ description: Add llamadart to a Dart or Flutter app, set up Apple and web target
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.0
+  llamadart: ^0.13.1
 ```
 
 Then resolve packages:
@@ -51,7 +51,7 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.0
+  llamadart: ^0.13.1
   llamadart_llama_cpp_flutter: ^0.13.0 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.13.0 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.13.0 # Apple image generation, opt-in
@@ -81,14 +81,14 @@ dependency_overrides:
     git: https://github.com/leehack/llamadart.git
 ```
 
-Pair companion `0.13.0` with core `0.13.0` and `0.0.23` with core `0.12.2`;
+Pair companion `0.13.0` with core `0.13.1` and `0.13.0`, and `0.0.23` with core `0.12.2`;
 keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
 names the companion release of your core's minor to depend on, such as
 `^0.13.0` with core `0.13.0`. That check also accepts, with a
 build warning, a companion whose pin is an earlier build of the same llama.cpp
-release: companion `0.0.22` (`v0.6.0-2`) still builds with core `0.12.2` and `0.13.0`,
+release: companion `0.0.22` (`v0.6.0-2`) still builds with core `0.12.2`, `0.13.0` and `0.13.1`,
 but its frameworks lack the minimum OS version keys that App Store validation
 checks, so move to the companion paired with your core before you ship. On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
@@ -109,7 +109,8 @@ universal `flutter build macos` prints
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
 
-Pair `llamadart_stable_diffusion_flutter` `0.13.0` with core `0.13.0`, and
+Pair `llamadart_stable_diffusion_flutter` `0.13.0` with core `0.13.1` and
+`0.13.0`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core
 `0.10.0`; older cores, including `0.9.x`, ignore it. Adding it opts iOS and
 macOS builds into the image generation runtime (about 37 MB per Apple

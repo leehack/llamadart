@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build
   hook keeps the release's `SHA256SUMS` beside the cached archive and verifies
@@ -40,12 +40,12 @@ For canonical full release notes, use:
   such as an untyped property, a non-local `$ref` or one nested too deeply for
   the stack, as `LlamaUnsupportedException`, and cyclic or other non-JSON
   schemas as `LlamaArgumentException`, instead of `StateError` or a stack
-  overflow ([#584](https://github.com/leehack/llamadart/issues/584),
-  [#1093](https://github.com/leehack/llamadart/issues/1093)).
-- Reject a combined tool or schema grammar that llama.cpp would refuse to
-  load, such as about 2000 Hermes schema tools, with
+  overflow. A combined tool or schema grammar that llama.cpp would refuse to
+  load, such as about 2000 Hermes schema tools, is rejected with
   `LlamaUnsupportedException` before generation instead of a sampler
-  initialization failure ([#1093](https://github.com/leehack/llamadart/issues/1093)).
+  initialization failure
+  ([#584](https://github.com/leehack/llamadart/issues/584),
+  [#1093](https://github.com/leehack/llamadart/issues/1093)).
 - Send tool results back on Gemma 2/3/3n and legacy Mistral templates, which
   failed with `Conversation roles must alternate user/assistant/...`: when a
   template that rejects the `tool` role fails such a request, it is rendered
@@ -57,6 +57,13 @@ For canonical full release notes, use:
   `StateError` (`generation is already in progress`). An overlap with a
   running generation that was not cancelled now throws `LlamaStateException`
   ([#656](https://github.com/leehack/llamadart/issues/656)).
+
+- Aligned default WebGPU bridge assets to `v0.1.59`, unchanged from 0.13.0:
+  they embed llama.cpp `v0.6.0`, are qualified against native `v0.6.0`, and
+  keep Web/native llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`
+  parity; Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset
+  manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.13.0
 

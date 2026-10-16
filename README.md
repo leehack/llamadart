@@ -117,7 +117,7 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. Pair companion `0.13.0` with core `0.13.0`, `0.0.3` with
+  the entry above. Pair companion `0.13.0` with core `0.13.1` and `0.13.0`, `0.0.3` with
   core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2` with core `0.11.1` and
   `0.11.0`.
   Without it, `all` leaves the image runtime out of a Flutter iOS/macOS app
@@ -198,13 +198,13 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.0
+  llamadart: ^0.13.1
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Pair companion `0.13.0` with core `0.13.0` and `0.0.23` with core `0.12.2`
+Pair companion `0.13.0` with core `0.13.1` and `0.13.0`, and `0.0.23` with core `0.12.2`
 for llama.cpp `v0.6.0-3`, and keep `0.0.22` with core `0.12.1` and `0.12.0` for `v0.6.0-2`.
 Keep companion `0.0.21` with core `0.11.1` and `0.11.0` for llama.cpp v0.5.0
 bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
@@ -218,13 +218,14 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.0
+  llamadart: ^0.13.1
   llamadart_llama_cpp_flutter: ^0.13.0 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.13.0 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.13.0 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.13.0` with core `0.13.0`, and
+Pair `llamadart_stable_diffusion_flutter` `0.13.0` with core `0.13.1` and
+`0.13.0`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
 `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
 older cores, including `0.9.x`,
