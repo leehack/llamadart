@@ -58,6 +58,8 @@ description: >-
     `LlamaUnsupportedException` where the runtime is unavailable, including
     Web. Presets: `parakeetTdt0_6bV3`, `parakeetCtc0_6b`, `moonshineTiny`,
     `whisperTiny`, `qwen3Asr0_6b`; the files must match the preset.
+    Native `v0.18.0-2` reduces duplicated words at untimed window boundaries
+    with the default overlap; other boundary and recognition errors can remain.
   - Qwen3-TTS: `Qwen3TtsAdapter` with the Qwen3-TTS GGUF and its
     audio-generation mmproj. Native llama.cpp, or WebGPU with bridge assets
     `v0.1.33+`. LiteRT-LM (native and Web) has no TTS. Synthesis is

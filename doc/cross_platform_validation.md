@@ -952,9 +952,9 @@ LiteRT GPU on Android has load-time evidence only. Given a bound device log,
 the reporter verifies placement as
 `gpu_delegate_initialized_per_load_execution_unobserved` when the journal's
 environment is Android and states `web: false`, its LiteRT-LM tag is
-source-qualified (`0.18.0`), every expected load case passes exactly once
-reporting a GPU backend, and the log holds N GPU delegate initializations for
-the N expected load cases. Each of them has:
+source-qualified (`0.18.0`, `0.18.0-1` or `0.18.0-2`), every expected load
+case passes exactly once reporting a GPU backend, and the log holds N GPU
+delegate initializations for the N expected load cases. Each of them has:
 
 - one `Selected adapter` record, identical across loads, naming a recognized
   hardware vendor with `backend=Vulkan` and an `Integrated GPU` or
