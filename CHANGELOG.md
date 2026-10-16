@@ -6,6 +6,8 @@
   ([#1112](https://github.com/leehack/llamadart/issues/1112)).
 - Tool input schemas now accept string length and array item bounds of 2000,
   matching the shipped llama.cpp runtime ([#1116](https://github.com/leehack/llamadart/issues/1116)).
+- Keep unfinished reasoning from Ministral-format templates out of reply text
+  when generation stops or is cancelled ([#886](https://github.com/leehack/llamadart/issues/886)).
 
 ## 0.13.1
 

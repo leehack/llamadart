@@ -566,6 +566,9 @@ class ChatTemplateEngine {
   /// Content that ends [output] keeps the whitespace after it, as llama.cpp
   /// does, unless [isPartial] is true: more output may follow a partial one.
   ///
+  /// A leading unterminated Ministral `[THINK]` block without `[TOOL_CALLS]`
+  /// remains reasoning at EOF if the final parser accepts a reply without calls.
+  ///
   /// Output that a PEG [parser] cannot parse throws
   /// [LlamaInferenceException].
   static ChatParseResult parse(
@@ -624,13 +627,29 @@ class ChatTemplateEngine {
     final pegFormat = pegParseFormat(format, parser);
     final ChatParseResult result;
     if (pegFormat != null) {
-      result = PegChatParser.parse(
+      final strictResult = PegChatParser.parse(
         parser: parser ?? '',
         format: pegFormat,
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
       );
+      // Preserve strict required-tool failures and tool-call fallback parsing.
+      // Only a terminal thought without a tool marker needs upstream leniency.
+      result =
+          !isPartial &&
+              format == ChatFormat.ministral &&
+              output.startsWith('[THINK]') &&
+              !output.contains('[/THINK]') &&
+              !output.contains('[TOOL_CALLS]')
+          ? PegChatParser.parse(
+              parser: parser ?? '',
+              format: pegFormat,
+              output: output,
+              isPartial: true,
+              parseToolCalls: parseToolCalls,
+            )
+          : strictResult;
     } else if (handler is ToolSchemaAwareChatTemplateHandler) {
       result = (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
         output,

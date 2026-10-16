@@ -19,6 +19,120 @@ void main() {
 
   final messages = [const LlamaChatMessage(role: 'user', content: 'hello')];
 
+  group('Ministral terminal reasoning', () {
+    const template = '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT][TOOL_CALLS][ARGS]';
+    final tool = ToolDefinition(
+      name: 'weather',
+      description: 'Weather',
+      parameters: [],
+    );
+
+    for (final choice in ToolChoice.values) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: messages,
+        metadata: const {},
+        tools: [tool],
+        toolChoice: choice,
+      );
+
+      for (final suffix in ['', '[/TH']) {
+        test('${choice.name} preserves terminal thought policy $suffix', () {
+          if (choice == ToolChoice.required) {
+            expect(
+              () => ChatTemplateEngine.parse(
+                rendered.format,
+                '[THINK]Check the city.$suffix',
+                parser: rendered.parser,
+              ),
+              throwsA(isA<LlamaInferenceException>()),
+            );
+            return;
+          }
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]Check the city.$suffix',
+            parser: rendered.parser,
+          );
+          expect(parsed.reasoningContent, 'Check the city.');
+          expect(parsed.content, isEmpty);
+          expect(parsed.toolCalls, isEmpty);
+        });
+      }
+
+      if (choice != ToolChoice.none) {
+        test('${choice.name} preserves a call after an unclosed thought', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]a[TOOL_CALLS]weather[ARGS]{"city":"x"}',
+            parser: rendered.parser,
+          );
+          expect(parsed.content, '[THINK]a');
+          expect(parsed.reasoningContent, isNull);
+          final call = parsed.toolCalls.single;
+          expect(call.function?.name, 'weather');
+          expect(call.function?.arguments, '{"city":"x"}');
+        });
+      }
+
+      if (choice != ToolChoice.required) {
+        test('${choice.name} keeps a leading-space thought as content', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            ' [THINK]a',
+            parser: rendered.parser,
+          );
+          expect(parsed.content, ' [THINK]a');
+          expect(parsed.reasoningContent, isNull);
+          expect(parsed.toolCalls, isEmpty);
+        });
+
+        test('${choice.name} preserves a completed thought and answer', () {
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            '[THINK]Check.[/THINK]Answer [THINK]literally. \n',
+            parser: rendered.parser,
+          );
+          expect(parsed.reasoningContent, 'Check.');
+          expect(parsed.content, 'Answer [THINK]literally. \n');
+          expect(parsed.toolCalls, isEmpty);
+        });
+      } else {
+        for (final output in [
+          'Answer [THINK]literally.',
+          '[THINK]a[/THINK]',
+          '[THINK]Check.[/THINK][TOOL_CALLS]weather[ARGS]{',
+        ]) {
+          test('required still rejects malformed completed output $output', () {
+            expect(
+              () => ChatTemplateEngine.parse(
+                rendered.format,
+                output,
+                parser: rendered.parser,
+              ),
+              throwsA(isA<LlamaInferenceException>()),
+            );
+          });
+        }
+      }
+    }
+
+    test('other PEG formats retain their terminal parsing policy', () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: messages,
+        metadata: const {},
+      );
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.pegNative.index,
+        '[THINK]Check.',
+        parser: rendered.parser,
+      );
+      expect(parsed.content, '[THINK]Check.');
+      expect(parsed.reasoningContent, isNull);
+    });
+  });
+
   group('ChatTemplateEngine template routing', () {
     test('supports per-call custom template override', () {
       final result = ChatTemplateEngine.render(
