@@ -387,3 +387,23 @@ To contribute new examples:
 ## License
 
 These examples are part of the llamadart project and follow the same license.
+
+For a renamed legacy Qwen3 text bundle on native LiteRT-LM, select the current
+canonical template through the public API:
+
+```dart
+await engine.loadModel(
+  'models/download',
+  modelParams: ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate),
+  format: ModelFormat.liteRtLm,
+);
+final reply = await engine.complete(
+  [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello')],
+  enableThinking: false,
+);
+```
+
+Obtain the template from the accessor after every package upgrade. Web
+`@litert-lm/core@0.18.0` cannot apply this override and throws
+`LlamaUnsupportedException` at load; this example requires native LiteRT-LM
+with the conversation-template setter.

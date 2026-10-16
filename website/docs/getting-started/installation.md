@@ -162,6 +162,56 @@ An Intel Mac then refuses to open the app. Debug builds already target only
 the build Mac's architecture. For a one-off build,
 `FLUTTER_MACOS_ARM64_ONLY=true flutter build macos` has the same effect.
 
+### Fresh macOS SwiftPM bootstrap
+
+If a fresh build reports that a companion requires macOS 14.0 but
+`FlutterGeneratedPluginSwiftPackage` supports 12.0, use this bootstrap with
+Flutter 3.47.1 ([#1139](https://github.com/leehack/llamadart/issues/1139)).
+Keep Runner's deployment target at **14.0 or newer** for every configuration.
+The companions' 14.0 requirement reflects the shipped binaries.
+
+Flutter generates the plugin package at 12.0, then queries Xcode project
+information and build settings before raising that package's floor to Runner's
+target. Those queries resolve Swift packages too. If resolution rejects the
+12.0 package, Flutter cannot reach its deployment-target update. Runner settings
+and a CocoaPods Podfile do not set the generated Swift package's platform.
+Changing the companions' metadata to 12.0 would misrepresent their requirements.
+
+Run the following from the **consumer app directory** (the chat example uses
+`example/chat_app`). It requires Python 3 and changes only the ignored generated
+package, preserving all companion manifests, URLs and checksums:
+
+```bash
+(
+set -e
+flutter pub get
+python3 - <<'PY'
+from pathlib import Path
+
+manifest = Path("macos/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/Package.swift")
+contents = manifest.read_text()
+old = '.macOS("12.0")'
+if contents.count(old) != 1:
+    raise SystemExit("Expected one generated macOS 12.0 floor; inspect the manifest and Flutter version.")
+manifest.write_text(contents.replace(old, '.macOS("14.0")', 1))
+PY
+flutter build macos --debug --no-pub
+)
+```
+
+Use `--no-pub` for this build: ordinary Flutter commands can regenerate the
+12.0 manifest before building. Run the **whole sequence** again after
+`flutter clean`, deleting `macos/Flutter/ephemeral`, changing dependencies or
+running `flutter pub get`; do not commit generated files. The guard stops on
+an unexpected SDK manifest instead of silently claiming to repair it. This is
+a consumer bootstrap, not a Flutter SDK fix.
+
+A fresh ordinary `flutter build macos --debug` succeeds on our Xcode 27.1 host
+with Flutter 3.47.1. The original first-build failure was reported with Xcode
+27; the bootstrap is for affected toolchains and direct Xcode builds before
+Flutter has updated the generated floor. iOS still requires Runner's 16.4 floor;
+no iOS manifest workaround is needed for the verified fresh simulator build.
+
 ### Flutter macOS LiteRT-LM build phase
 
 A Flutter macOS app gets the LiteRT-LM runtime in its bundle only from a

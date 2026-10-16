@@ -216,6 +216,11 @@ bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
 core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
 `0.0.17`.
 
+A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
+companions' 14.0 requirement needs the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap).
+Keep Runner at 14.0+; the procedure preserves companion artifact verification.
+
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
 symbol lookup. Incompatible companions or unverified local `Artifacts`
 overrides fail the build; resolve the matching companion and rerun
@@ -370,6 +375,14 @@ regardless of GitHub metadata. Nightly cores use canonical decimal spelling
 (`b0` or a nonzero first digit), and rebuild counters start at 1 without leading
 zeros. The default pin above changes only after the matching artifacts,
 bindings, runtime behavior, and docs have been validated together.
+
+Renamed legacy Qwen3 `.litertlm` bundles can opt into native thinking control
+with `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` and
+`enableThinking: false`. The public accessor follows the installed template
+version, so callers do not copy Jinja files. Native runtimes need the
+conversation-template setter. Web `@litert-lm/core@0.18.0` cannot apply this
+override and throws `LlamaUnsupportedException` at load. See the
+[template guide](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing).
 
 ### Alongside Flutter Edge AI
 

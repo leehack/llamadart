@@ -22,8 +22,8 @@ Qwen 3 template in `jinja_prompt_template` (field 7). A canonical Qwen 3
 `ModelParams.chatTemplate` override also opts in; arbitrary ChatML/thinking
 markers do not identify a family. Unreadable or unrecognized metadata retains
 the existing fallback; `ModelParams.chatTemplate` takes precedence over the
-bundle template. Web retains filename-based registry selection. Runtime content-shape adapters
-preserve the same rendered prompt for equivalent text inputs.
+bundle template. Web uses a single-turn passthrough by default; it cannot
+install a conversation template. Runtime content-shape adapters preserve the same rendered prompt for equivalent text inputs.
 
 Native LiteRT-LM text chat does not always render the full prompt in Dart. When
 `LlamaEngine.create(...)` can represent a request as structured text-only
@@ -52,8 +52,9 @@ compatibility adapter does not add grammar-constrained decoding.
 
 A `ModelParams.chatTemplate` set on a filename-matched or positively identified
 Qwen 3 text bundle replaces the native conversation template. For a renamed
-bundle without identifying metadata, use the complete canonical template from
-`tool/litert_lm_templates/qwen3.jinja` as the override. Other families retain
+bundle without identifying metadata, use
+`ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)`. This public accessor
+tracks the installed canonical template across package upgrades. Other families retain
 the bundle template, content-shape probe and adapter; their overrides continue
 to affect Dart-side metadata and parsing only.
 It receives `enable_thinking` from the request and the same part arrays.
@@ -145,15 +146,30 @@ and a token limit. Neither a Qwen 3 declaration nor a Jinja template is present.
 Those fields cannot distinguish Qwen 3 from other ChatML families reliably.
 Renaming it to `qwen.litertlm` or `download` therefore still leaves
 `enableThinking: false` ineffective: reasoning can exhaust the output budget
-while the public content is empty. Issue [#901](https://github.com/leehack/llamadart/issues/901)
-remains open for this case.
+while the public content is empty. Automatic content detection is intentionally
+unavailable for these legacy bundles.
 
 Keep `Qwen3` in the filename (for example `Qwen3-0.6B.litertlm`), or set
-`ModelParams.chatTemplate` to the complete canonical Qwen 3 template from
-`tool/litert_lm_templates/qwen3.jinja`. Merely adding thinking markers to an
+`ModelParams.chatTemplate` to `liteRtLmQwen3ChatTemplate` (exported by
+`package:llamadart/llamadart.dart`). Do not persist or copy its string across
+package upgrades: obtain it from the accessor when constructing `ModelParams`.
+Merely adding thinking markers to an
 arbitrary override does not opt into native Qwen 3 routing. No weights need
 changing. `test/e2e/backends/litert_lm_renamed_qwen3_e2e_test.dart` validates
 these paths using read-only symlinks to a local legacy bundle.
+
+### Web limitation
+
+`@litert-lm/core@0.18.0` wraps the supplied string as a user message and exposes
+no conversation-template setter. Rendering Qwen3 ChatML in Dart therefore nests
+it inside the bundle's wrapper and cannot enforce the disabled-thinking prefix.
+Web model loads with the complete current canonical Qwen3 override (including
+leading whitespace or appended customizations) throw `LlamaUnsupportedException`
+before runtime creation. Use native LiteRT-LM for this explicit contract.
+Generic Web overrides and canonical-named loads without an override keep their
+existing behavior; no thinking-control guarantee is added to those paths.
+See [#901](https://github.com/leehack/llamadart/issues/901) and
+[#1137](https://github.com/leehack/llamadart/issues/1137).
 
 ## Resolution order
 

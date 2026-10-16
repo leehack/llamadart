@@ -3,6 +3,10 @@
 - Render user follow-ups after tool results on Gemma 2/3/3n and legacy Mistral templates.
 - Cover strict schema validation of interrupted Hermes tool calls on cancellation.
 - Make template parity checks build their upstream test binaries before use.
+- Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
+  native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
+- Document a fresh macOS SwiftPM bootstrap for generated deployment-target
+  mismatches with Apple companions.
 
 ## 0.14.0
 

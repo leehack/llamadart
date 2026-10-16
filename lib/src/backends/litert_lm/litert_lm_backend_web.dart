@@ -26,6 +26,7 @@ import '../../core/url_redaction.dart';
 import '../backend.dart';
 import '../web/webgpu_adapter_probe.dart';
 import 'litert_lm_sampler_params.dart';
+import 'litert_lm_templates.dart';
 
 /// Web LiteRT-LM backend for `.litertlm` models.
 ///
@@ -1210,6 +1211,18 @@ class LiteRtLmBackend
   }
 
   void _validateModelParams(ModelParams params) {
+    if (params.chatTemplate?.trimLeft().startsWith(
+          liteRtLmQwen3ChatTemplate.trim(),
+        ) ??
+        false) {
+      throw LlamaUnsupportedException(
+        'Qwen3 chatTemplate overrides require a conversation-template setter, '
+        'which LiteRT-LM Web @litert-lm/core@0.18.0 does not expose. '
+        'Use native LiteRT-LM with liteRtLmQwen3ChatTemplate to control '
+        'enableThinking on renamed Qwen3 text bundles.',
+      );
+    }
+
     params.validate();
     final unsupported = <String>[];
     if (params.contextSize <= 0) {
