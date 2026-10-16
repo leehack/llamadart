@@ -1,17 +1,148 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_parse_result.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('cancelled Qwen tool envelopes', () {
+    const complete =
+        '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+        '</tool_call>';
+    const payload =
+        '<tool_call>{"name":"weather","arguments":{"city":"Seoul"}}';
+    final handler = HermesHandler();
+
+    for (final partial in [false, true]) {
+      test('drops every unfinished envelope (partial=$partial)', () {
+        // llama.cpp b10549's Qwen3-4B parser keeps only preceding content
+        // at these cut points with its `<tool_call>\n` delimiter. Hermes
+        // also accepts the same wire form without the newline.
+        for (final call in [
+          complete,
+          complete.replaceFirst('<tool_call>', '<tool_call>\n'),
+        ]) {
+          for (var end = '<tool_call>'.length; end < call.length; end++) {
+            final parsed = handler.parse(
+              'Checking. ${call.substring(0, end)}',
+              isPartial: partial,
+            );
+            expect(parsed.content, 'Checking.', reason: 'cut at $end');
+            expect(parsed.toolCalls, isEmpty, reason: 'cut at $end');
+          }
+        }
+      });
+
+      test('keeps earlier complete calls (partial=$partial)', () {
+        for (final tail in ['<tool_call>', '<tool_call>{"na', payload]) {
+          final parsed = handler.parse(
+            'Checking. $complete$tail',
+            isPartial: partial,
+          );
+          expect(parsed.content, 'Checking.', reason: tail);
+          expect(parsed.toolCalls, hasLength(1), reason: tail);
+          expect(parsed.toolCalls.single.function?.name, 'weather');
+          expect(
+            parsed.toolCalls.single.function?.arguments,
+            '{"city":"Paris"}',
+          );
+        }
+      });
+
+      test('keeps complete output and quoted markers (partial=$partial)', () {
+        const call =
+            '<tool_call>{"name":"echo","arguments":{"text":"<tool_call>"}}'
+            '</tool_call>';
+        final parsed = handler.parse(
+          'Before. $call After.',
+          isPartial: partial,
+        );
+        expect(parsed.content, 'Before. After.');
+        expect(
+          parsed.toolCalls.single.function?.arguments,
+          '{"text":"<tool_call>"}',
+        );
+      });
+    }
+
+    test('a quoted closing tag cannot complete an interrupted call', () {
+      for (final suffix in [
+        '</tool_call>"}}',
+        '</tool_call>',
+        '</tool_call>\\',
+        r'\"</tool_call>',
+      ]) {
+        final output =
+            'Checking. <tool_call>{"name":"echo",'
+            '"arguments":{"text":"$suffix';
+        for (final partial in [false, true]) {
+          final parsed = handler.parse(output, isPartial: partial);
+          expect(parsed.content, 'Checking.', reason: output);
+          expect(parsed.toolCalls, isEmpty, reason: output);
+        }
+      }
+    });
+
+    test('schema-backed final parsing stays strict for interrupted calls', () {
+      final tool = ToolDefinition.fromJsonSchema(
+        name: 'weather',
+        description: 'Get weather',
+        schema: {'type': 'object', 'properties': <String, dynamic>{}},
+      );
+      for (final tail in ['<tool_call>', '<tool_call>{"name":"weather",']) {
+        expect(
+          () => ChatTemplateEngine.parse(
+            ChatFormat.hermes.index,
+            'Checking. $tail',
+            tools: [tool],
+          ),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        final partial = ChatTemplateEngine.parse(
+          ChatFormat.hermes.index,
+          'Checking. $tail',
+          tools: [tool],
+          isPartial: true,
+        );
+        expect(partial.content, 'Checking.');
+        expect(partial.toolCalls, isEmpty);
+      }
+    });
+
+    test('keeps literal content when tool parsing is disabled', () {
+      for (final partial in [false, true]) {
+        final parsed = handler.parse(
+          'Checking. $payload',
+          isPartial: partial,
+          parseToolCalls: false,
+        );
+        expect(parsed.content, 'Checking. $payload');
+        expect(parsed.toolCalls, isEmpty);
+      }
+    });
+
+    test('keeps closed malformed envelopes and unrelated text', () {
+      for (final text in [
+        '<tool_call>{"arguments":{}}</tool_call>',
+        'Use <tool_calling> for an example.',
+        'Use <tool_call> to start a call.',
+        '{"text":"<tool_call>"}',
+        'Here is {"name":"weather",',
+      ]) {
+        expect(handler.parse(text).content, text);
+      }
+    });
+  });
+
   test('HermesHandler renders valid grammar and parses tool calls', () {
     final handler = HermesHandler();
     final tools = [

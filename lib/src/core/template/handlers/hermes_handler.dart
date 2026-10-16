@@ -75,6 +75,12 @@ class HermesHandler extends ChatTemplateHandler
 
   static final RegExp _regexSpace = RegExp(r'\s');
 
+  // Consume JSON strings, including truncated ones, before looking for a tag.
+  static final RegExp _toolCallCloseOrString = RegExp(
+    r'"(?:\\.|[^"\\])*(?:"|\\?$)|</tool_call>',
+    dotAll: true,
+  );
+
   /// Whether final text contains a tool-call envelope opening, excluding
   /// prefixes held back only while tokens are still arriving.
   ///
@@ -269,9 +275,21 @@ class HermesHandler extends ChatTemplateHandler
     var cursor = 0;
     var parseFailed = false;
 
+    // Schema-backed final parses retain malformed output for engine validation.
     while (true) {
       final match = _firstMatchFrom(text, cursor);
       if (match == null) {
+        final pendingStart = text.indexOf('<tool_call>', cursor);
+        final pendingPayload = pendingStart < 0
+            ? ''
+            : text.substring(pendingStart + '<tool_call>'.length).trimLeft();
+        if ((isPartial || declaredNames == null) &&
+            pendingStart >= 0 &&
+            (pendingPayload.isEmpty || pendingPayload.startsWith('{')) &&
+            !text.contains('</tool_call>', pendingStart)) {
+          content.write(text.substring(cursor, pendingStart));
+          cursor = text.length;
+        }
         break;
       }
       if (match.start > cursor) {
@@ -301,6 +319,18 @@ class HermesHandler extends ChatTemplateHandler
           jsonStart++;
         }
         final jsonRange = _extractJsonObjectRange(text, jsonStart);
+        // An interrupted envelope is control output, even at EOF. Search
+        // after a complete JSON value so quoted closing tags cannot close it.
+        // Keep the legacy recovery of double-brace payloads.
+        if ((isPartial || declaredNames == null) &&
+            openTag == '<tool_call>' &&
+            !hasOuterBrace &&
+            !_toolCallCloseOrString
+                .allMatches(text, jsonRange?.end ?? jsonStart)
+                .any((match) => match[0] == '</tool_call>')) {
+          cursor = text.length;
+          break;
+        }
         final toolCall = jsonRange == null
             ? null
             : _toNamedToolCall(jsonRange.value, toolCalls.length);

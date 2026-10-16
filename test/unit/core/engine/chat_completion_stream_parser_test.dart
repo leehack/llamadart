@@ -117,6 +117,73 @@ void main() {
       expect(jsonDecode(calls.single.function!.arguments!), {'city': 'Paris'});
     });
 
+    group('cancelled Qwen tool envelopes', () {
+      const complete =
+          '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+          '</tool_call>';
+      for (final prefix in ['', 'Checking. ']) {
+        for (final earlierCall in ['', complete]) {
+          test(
+            'keeps answer and complete calls before cancel '
+            '(text=${prefix.isNotEmpty}, call=${earlierCall.isNotEmpty})',
+            () async {
+              for (final tail in [
+                '<tool_call>',
+                '<tool_call>{"na',
+                '<tool_call>{"name":"weather","arguments":{"city":"Seo',
+                '<tool_call>{"name":"weather","arguments":{"city":"Seoul"}}',
+              ]) {
+                var cancelled = false;
+                Stream<String> tokens() async* {
+                  for (final character in '$prefix$earlierCall$tail'.split(
+                    '',
+                  )) {
+                    yield character;
+                  }
+                  cancelled = true;
+                }
+
+                final chunks = await ChatCompletionStreamParser.parse(
+                  tokenStream: tokens(),
+                  templateResult: LlamaChatTemplateResult(
+                    prompt: 'prompt',
+                    format: ChatFormat.hermes.index,
+                  ),
+                  parseToolCallsEnabled: true,
+                  enableThinking: false,
+                  modelName: 'Qwen3',
+                  completionId: 'cancel-tool',
+                  cancelled: () => cancelled,
+                ).toList();
+                expect(
+                  chunks
+                      .map((c) => c.choices.single.delta.content ?? '')
+                      .join(),
+                  prefix.trimRight(),
+                  reason: tail,
+                );
+                final calls = chunks
+                    .expand(
+                      (c) =>
+                          c.choices.single.delta.toolCalls ??
+                          const <LlamaCompletionChunkToolCall>[],
+                    )
+                    .toList();
+                expect(calls, hasLength(earlierCall.isEmpty ? 0 : 1));
+                if (calls.isNotEmpty) {
+                  expect(calls.single.function?.arguments, '{"city":"Paris"}');
+                }
+                expect(
+                  chunks.last.choices.single.finishReason,
+                  earlierCall.isEmpty ? 'stop' : 'tool_calls',
+                );
+              }
+            },
+          );
+        }
+      }
+    });
+
     test('fills call_<index> for parsed calls without an id', () async {
       const output =
           '[TOOL_CALLS][{"name":"weather","arguments":{"city":"Paris"}},'

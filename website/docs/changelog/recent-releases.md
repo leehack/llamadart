@@ -7,6 +7,12 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Cancelling a Qwen3 tool call now keeps only the preceding answer text,
+  without leaking unfinished `<tool_call>` markup
+  ([#887](https://github.com/leehack/llamadart/issues/887)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build

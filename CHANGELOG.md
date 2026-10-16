@@ -1,3 +1,9 @@
+## Unreleased
+
+- Cancelling a Qwen3 tool call now keeps only the preceding answer text,
+  without leaking unfinished `<tool_call>` markup
+  ([#887](https://github.com/leehack/llamadart/issues/887)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build
