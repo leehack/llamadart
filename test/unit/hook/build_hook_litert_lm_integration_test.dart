@@ -1512,10 +1512,11 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         expect(emitted, isFalse);
       });
 
-      test('Apple $target links a compatible v0.6.0-2 companion the app '
-          'member declares, with a warning', () async {
-        final stderrLines = await _capturingStderr(
-          () async => testCodeBuildHook(
+      test('Apple $target rejects the previous upstream companion declared '
+          'by an app member before emitting assets', () async {
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -1524,22 +1525,11 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
               members: const {'app': app},
               llamaCppTag: 'v0.6.0-2',
             ),
-            check: (_, output) {
-              final asset = output.assets.encodedAssets.single.asCodeAsset;
-              expect(asset.id, 'package:llamadart/llamadart');
-              expect(asset.linkMode, inProcess);
-            },
+            check: (_, _) => emitted = true,
           ),
+          incompatibleLlamaCpp,
         );
-        expect(
-          stderrLines,
-          contains(
-            startsWith(
-              'warning: llamadart: Resolved $llamaCppCompanion 0.13.0 pins '
-              'leehack/llamadart-native@v0.6.0-2, an earlier build',
-            ),
-          ),
-        );
+        expect(emitted, isFalse);
       });
     }
 

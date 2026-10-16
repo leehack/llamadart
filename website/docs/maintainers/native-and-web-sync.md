@@ -262,8 +262,12 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-Core `0.13.2`, `0.13.1` and `0.13.0` pair with companions
-`llamadart_llama_cpp_flutter`,
+Core `0.14.0` adoption preparation pairs all three Apple companions at `0.14.0`,
+with SwiftPM pins `v0.7.0`, `v0.18.0-1` and `v0.2.0-3`, respectively. This
+metadata does not publish packages; matching published Web assets and consumer
+qualification remain adoption gates.
+
+Core `0.13.2`, `0.13.1` and `0.13.0` pair with companions `llamadart_llama_cpp_flutter`,
 `llamadart_litert_lm_flutter` and `llamadart_stable_diffusion_flutter`
 `0.13.0`, whose SwiftPM pins are `v0.6.0-3`, `v0.18.0-1` and `v0.2.0-3`,
 respectively. Repository manifests alone do not prove pub.dev publication.

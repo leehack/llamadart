@@ -366,13 +366,13 @@ List<String> findCurrentReleaseNotesDrift(
 }
 
 /// The llama.cpp upstream release tag embedded in the pinned bridge assets.
-const String bridgeLlamaCppTag = 'v0.6.0';
+const String bridgeLlamaCppTag = 'v0.7.0';
 
 /// The exact upstream llama.cpp commit embedded in the pinned bridge assets.
-const String bridgeLlamaCppCommit = 'd81235049384534c167caea52b85a694f6103d14';
+const String bridgeLlamaCppCommit = '620d2225cc436ab0b001e3200e590e3b286ef9ab';
 
 /// The exact bridge source commit used to build the pinned bridge assets.
-const String bridgeSourceCommit = 'c1f64536b9a4ea410066b711928c7cba03691fb0';
+const String bridgeSourceCommit = '57d9971817897115c6312a712ccb21c9a25671f9';
 
 /// Canonical repository identities recorded in the approved manifest.
 const String bridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
@@ -381,22 +381,22 @@ const String bridgeUpstreamRepository = 'ggml-org/llama.cpp';
 const String bridgeNativeRepository = 'leehack/llamadart-native';
 
 /// The native release tag the pinned bridge assets were qualified against.
-const String bridgeNativeReleaseTag = 'v0.6.0';
+const String bridgeNativeReleaseTag = 'v0.7.0';
 
 /// The native pin approved beside the pinned bridge assets: either
 /// [bridgeNativeReleaseTag] or a native wrapper rebuild of it from the same
 /// upstream llama.cpp commit.
-const String bridgeApprovedNativePin = 'v0.6.0-3';
+const String bridgeApprovedNativePin = 'v0.7.0';
 
 /// The asset repository release that published the pinned bridge assets.
-const String bridgeAssetsReleaseId = '406130836';
+const String bridgeAssetsReleaseId = '415205376';
 
 /// The asset repository commit the pinned bridge asset tag points at.
-const String bridgeAssetsTagCommit = '189dde2798cb65a5ebe12d40068623e1873a6cd9';
+const String bridgeAssetsTagCommit = 'c1665e3c9a38b78c553806f590f7948b36c8d148';
 
 /// SHA-256 hash of the exact approved published manifest.json.
 const String bridgeManifestSha256 =
-    'f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb';
+    '65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9';
 
 /// Where the native runtime's llama.cpp build is pinned.
 const String nativeLlamaCppTagPath = 'lib/src/hook/native_release_pins.dart';

@@ -531,6 +531,45 @@ void main() {
       expect(params.n_ubatch, ModelParams.defaultMicroBatchSize);
     });
 
+    test('v0.7.0 context defaults preserve fields around the expert cache', () {
+      // Qualified 64-bit C headers: the expert cache and graph counters grow
+      // both structs passed by value across the FFI boundary.
+      expect(ffi.sizeOf<llama_context_params>(), 168);
+      expect(ffi.sizeOf<llama_perf_context_data>(), 56);
+      final params = llama_context_default_params();
+
+      expect(params.type_k, ggml_type.GGML_TYPE_F16);
+      expect(params.type_v, ggml_type.GGML_TYPE_F16);
+      expect(params.moe_cache_size, 0);
+      expect(params.abort_callback, ffi.nullptr);
+      expect(params.abort_callback_data, ffi.nullptr);
+      expect(params.embeddings, isFalse);
+      expect(params.offload_kqv, isTrue);
+    });
+
+    test('v0.7.0 scheduler callbacks are declared and exported', () {
+      final source = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+      const symbols = [
+        'ggml_backend_sched_set_copy_callback',
+        'ggml_backend_sched_set_realloc_callback',
+      ];
+      for (final symbol in symbols) {
+        expect(
+          _declaresExternalFunction(source, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+      final primary = _llamadartPrimaryLibraryFileOrNull();
+      expect(primary, isNotNull);
+      final library = Platform.isWindows
+          ? File('${primary!.parent.path}/ggml-base.dll')
+          : primary!;
+      _expectDynamicLibraryExports(library, symbols);
+    });
+
     test('pinned runtime exposes the signed automatic load mode', () {
       expect(
         llama_model_default_params().load_mode,

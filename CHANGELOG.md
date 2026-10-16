@@ -1,3 +1,15 @@
+## 0.14.0
+
+- Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple
+  companion packages.
+- Qualify native EmbeddingGemma-2 text embeddings with 768-dimensional output.
+
+* Aligned the default WebGPU bridge assets to `v0.1.63`, embedding llama.cpp
+  `v0.7.0` and qualified against native `v0.7.0`, preserving Web/native
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` parity. Web LiteRT-LM
+  remains `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`.
+
 ## 0.13.2
 
 - Report recursive chat-template failures as `LlamaInferenceException`

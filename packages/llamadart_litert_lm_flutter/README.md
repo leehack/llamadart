@@ -31,16 +31,15 @@ also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
 
 ```yaml
 dependencies:
-  llamadart: ^0.13.2
-  llamadart_litert_lm_flutter: ^0.13.0
+  llamadart: ^0.14.0
+  llamadart_litert_lm_flutter: ^0.14.0
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.0-1`.
-Pair companion `0.13.0` with core `0.13.2`, `0.13.1` and `0.13.0`, and `0.0.16`
-with core `0.12.2`;
+Pair companion `0.14.0` with core `0.14.0`, `0.13.0` with core `0.13.x`, and `0.0.16` with core `0.12.2`;
 companion `0.0.15` retains
 `v0.18.0` for core `0.12.1`, `0.0.14` pairs with core `0.12.0`, and `0.0.13`
 retains `v0.17.0-8` for core `0.11.1` and `0.11.0`.

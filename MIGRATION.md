@@ -2,6 +2,18 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
+
+Upgrade the core and every Apple companion the app uses to `0.14.x` together.
+The llama.cpp companion now pins native `v0.7.0`; LiteRT-LM and image companions
+are reissued for the new core minor with their native pins unchanged.
+
+Native overrides must match the new v0.7.0 context-parameter and performance-data
+layouts as well as its exported symbols. v0.6.0 and older native bundles are
+ABI-incompatible with these regenerated bindings. Remove an old native override
+or keep the app on the matching core `0.13.x` and companions. Apple builds reject
+old companion pins before emitting native assets.
+
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 
 These fixes change previously broken paths; working requests are unchanged.

@@ -932,6 +932,19 @@ external void ggml_backend_sched_reset(ggml_backend_sched_t sched);
 @ffi.Native<
   ffi.Void Function(
     ggml_backend_sched_t,
+    ggml_backend_sched_copy_callback,
+    ffi.Pointer<ffi.Void>,
+  )
+>()
+external void ggml_backend_sched_set_copy_callback(
+  ggml_backend_sched_t sched,
+  ggml_backend_sched_copy_callback callback,
+  ffi.Pointer<ffi.Void> user_data,
+);
+
+@ffi.Native<
+  ffi.Void Function(
+    ggml_backend_sched_t,
     ggml_backend_sched_eval_callback,
     ffi.Pointer<ffi.Void>,
   )
@@ -939,6 +952,19 @@ external void ggml_backend_sched_reset(ggml_backend_sched_t sched);
 external void ggml_backend_sched_set_eval_callback(
   ggml_backend_sched_t sched,
   ggml_backend_sched_eval_callback callback,
+  ffi.Pointer<ffi.Void> user_data,
+);
+
+@ffi.Native<
+  ffi.Void Function(
+    ggml_backend_sched_t,
+    ggml_backend_sched_realloc_callback,
+    ffi.Pointer<ffi.Void>,
+  )
+>()
+external void ggml_backend_sched_set_realloc_callback(
+  ggml_backend_sched_t sched,
+  ggml_backend_sched_realloc_callback callback,
   ffi.Pointer<ffi.Void> user_data,
 );
 
@@ -9918,6 +9944,24 @@ typedef ggml_backend_reg_t = ffi.Pointer<ggml_backend_reg>;
 
 final class ggml_backend_sched extends ffi.Opaque {}
 
+typedef ggml_backend_sched_copy_callback =
+    ffi.Pointer<ffi.NativeFunction<ggml_backend_sched_copy_callbackFunction>>;
+typedef ggml_backend_sched_copy_callbackFunction =
+    ffi.Bool Function(
+      ggml_backend_t backend,
+      ffi.Pointer<ggml_tensor> src,
+      ffi.Pointer<ggml_tensor> dst,
+      ffi.Pointer<ggml_cgraph> graph,
+      ffi.Pointer<ffi.Void> user_data,
+    );
+typedef Dartggml_backend_sched_copy_callbackFunction =
+    bool Function(
+      ggml_backend_t backend,
+      ffi.Pointer<ggml_tensor> src,
+      ffi.Pointer<ggml_tensor> dst,
+      ffi.Pointer<ggml_cgraph> graph,
+      ffi.Pointer<ffi.Void> user_data,
+    );
 typedef ggml_backend_sched_eval_callback =
     ffi.Pointer<ffi.NativeFunction<ggml_backend_sched_eval_callbackFunction>>;
 typedef ggml_backend_sched_eval_callbackFunction =
@@ -9930,6 +9974,26 @@ typedef Dartggml_backend_sched_eval_callbackFunction =
     bool Function(
       ffi.Pointer<ggml_tensor> t,
       bool ask,
+      ffi.Pointer<ffi.Void> user_data,
+    );
+typedef ggml_backend_sched_realloc_callback =
+    ffi.Pointer<
+      ffi.NativeFunction<ggml_backend_sched_realloc_callbackFunction>
+    >;
+typedef ggml_backend_sched_realloc_callbackFunction =
+    ffi.Void Function(
+      ggml_backend_sched_t sched,
+      ffi.Pointer<ggml_cgraph> graph,
+      ffi.Bool backend_ids_changed,
+      ffi.Bool graph_size_changed,
+      ffi.Pointer<ffi.Void> user_data,
+    );
+typedef Dartggml_backend_sched_realloc_callbackFunction =
+    void Function(
+      ggml_backend_sched_t sched,
+      ffi.Pointer<ggml_cgraph> graph,
+      bool backend_ids_changed,
+      bool graph_size_changed,
       ffi.Pointer<ffi.Void> user_data,
     );
 typedef ggml_backend_sched_t = ffi.Pointer<ggml_backend_sched>;
@@ -11158,6 +11222,9 @@ final class llama_context_params extends ffi.Struct {
   ggml_type get type_v => ggml_type.fromValue(type_vAsInt);
   set type_v(ggml_type value) => type_vAsInt = value.value;
 
+  @ffi.Size()
+  external int moe_cache_size;
+
   external ggml_abort_callback abort_callback;
 
   external ffi.Pointer<ffi.Void> abort_callback_data;
@@ -11215,6 +11282,7 @@ final class llama_context_params extends ffi.Struct {
     required ffi.Pointer<ffi.Void> cb_eval_user_data,
     required ggml_type type_k,
     required ggml_type type_v,
+    required int moe_cache_size,
     required ggml_abort_callback abort_callback,
     required ffi.Pointer<ffi.Void> abort_callback_data,
     required bool embeddings,
@@ -11253,6 +11321,7 @@ final class llama_context_params extends ffi.Struct {
     ..ref.cb_eval_user_data = cb_eval_user_data
     ..ref.type_k = type_k
     ..ref.type_v = type_v
+    ..ref.moe_cache_size = moe_cache_size
     ..ref.abort_callback = abort_callback
     ..ref.abort_callback_data = abort_callback_data
     ..ref.embeddings = embeddings
@@ -12272,6 +12341,12 @@ final class llama_perf_context_data extends ffi.Struct {
   @ffi.Int32()
   external int n_reused;
 
+  @ffi.Int32()
+  external int n_reallocs_same;
+
+  @ffi.Int32()
+  external int n_reallocs_diff;
+
   static ffi.Pointer<llama_perf_context_data> $allocate(
     ffi.Allocator $allocator, {
     required double t_start_ms,
@@ -12281,6 +12356,8 @@ final class llama_perf_context_data extends ffi.Struct {
     required int n_p_eval,
     required int n_eval,
     required int n_reused,
+    required int n_reallocs_same,
+    required int n_reallocs_diff,
   }) => $allocator<llama_perf_context_data>()
     ..ref.t_start_ms = t_start_ms
     ..ref.t_load_ms = t_load_ms
@@ -12288,7 +12365,9 @@ final class llama_perf_context_data extends ffi.Struct {
     ..ref.t_eval_ms = t_eval_ms
     ..ref.n_p_eval = n_p_eval
     ..ref.n_eval = n_eval
-    ..ref.n_reused = n_reused;
+    ..ref.n_reused = n_reused
+    ..ref.n_reallocs_same = n_reallocs_same
+    ..ref.n_reallocs_diff = n_reallocs_diff;
 }
 
 final class llama_perf_sampler_data extends ffi.Struct {
@@ -12806,7 +12885,8 @@ enum llama_vocab_type {
   LLAMA_VOCAB_TYPE_UGM(4),
   LLAMA_VOCAB_TYPE_RWKV(5),
   LLAMA_VOCAB_TYPE_PLAMO2(6),
-  LLAMA_VOCAB_TYPE_TEST(7);
+  LLAMA_VOCAB_TYPE_TEST(7),
+  LLAMA_VOCAB_TYPE_PLAMO3(8);
 
   final int value;
   const llama_vocab_type(this.value);
@@ -12820,6 +12900,7 @@ enum llama_vocab_type {
     5 => LLAMA_VOCAB_TYPE_RWKV,
     6 => LLAMA_VOCAB_TYPE_PLAMO2,
     7 => LLAMA_VOCAB_TYPE_TEST,
+    8 => LLAMA_VOCAB_TYPE_PLAMO3,
     _ => throw ArgumentError('Unknown value for llama_vocab_type: $value'),
   };
 }

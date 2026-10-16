@@ -3238,6 +3238,19 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(self.SOURCE_ROOT / relative, target)
         self.pins = self.repo_root / "lib/src/hook/native_release_pins.dart"
+        # Exercise retention and clearing even when the live pin has no
+        # compatible earlier companion releases.
+        fixture_pins, replacements = re.subn(
+            r"const llamaCppCompatibleAppleCompanionTags = <String, String>\{.*?\};",
+            "const llamaCppCompatibleAppleCompanionTags = <String, String>{\n"
+            "  'v0.6.0-2': 'fixture compatibility limitation',\n"
+            "};",
+            self.pins.read_text(encoding="utf-8"),
+            count=1,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(replacements, 1)
+        self.pins.write_text(fixture_pins, encoding="utf-8")
         self.release_dir = self.root / "releases"
         self.release_dir.mkdir()
 

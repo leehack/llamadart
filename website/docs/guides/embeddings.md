@@ -65,7 +65,7 @@ Future<void> main() async {
   Causal models with a KV cache retain chunked LAST or unpooled embedding
   support. Batched one-pass inputs are grouped only within the micro-batch
   capacity, and every input is validated before any group is decoded.
-- Native causal-attention detection follows the pinned llama.cpp `v0.6.0`
+- Native causal-attention detection follows the pinned llama.cpp `v0.7.0`
   contract: the runtime's diffusion-model probe and EmbeddingGemma's forced
   non-causal attention take precedence over metadata. Other loaded models
   use their boolean `<architecture>.attention.causal` value, defaulting to
@@ -79,6 +79,28 @@ Future<void> main() async {
   an unsupported/runtime error. Update bridge assets to a newer tag.
 - `LlamaEngine.embedBatch(...)` uses true backend batching when available and
   otherwise falls back to repeated `embed(...)` calls.
+
+## EmbeddingGemma-2 on native
+
+Native v0.7.0 loads the official EmbeddingGemma-2 BF16 GGUF through the existing
+`embed` and `embedBatch` APIs. Its projected text output has 768 components;
+its 512-wide hidden representation is not the returned vector size. The
+local model-backed test covers normalization, distinct inputs, sequential/batch
+parity and reuse on macOS CPU and Metal. Image/audio embedding inputs still
+require a public API tracked in
+[#1072](https://github.com/leehack/llamadart/issues/1072).
+
+For document embeddings, pass the model's task prefix as part of the text:
+
+```dart
+final vector = await engine.embed(
+  'task: search result | text: Paris is the capital of France.',
+);
+```
+
+Like other non-causal encoders, every input must fit in one micro-batch. Raise
+`microBatchSize` and `batchSize` together for longer inputs. The runtime does
+not automatically prepend task instructions.
 
 ## Retrieval-style flow (query + candidate ranking)
 
