@@ -1,6 +1,12 @@
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/template/response_format.dart';
 import 'package:test/test.dart';
+
+Map<String, dynamic> format(Object? schema) => {
+  'type': 'json_schema',
+  'json_schema': {'schema': schema},
+};
 
 void main() {
   const schema = {
@@ -139,5 +145,143 @@ void main() {
         );
       });
     }
+  });
+
+  group('responseFormatGrammar', () {
+    Map<String, dynamic> nestedItems(int levels) {
+      Map<String, dynamic> schema = {'type': 'integer'};
+      for (var i = 0; i < levels; i++) {
+        schema = {'type': 'array', 'items': schema};
+      }
+      return schema;
+    }
+
+    test('keeps the converter grammar for every schema it converts', () {
+      final cyclicAnnotation = <String, dynamic>{};
+      cyclicAnnotation['self'] = cyclicAnnotation;
+      for (final schema in <Map<String, dynamic>>[
+        {'type': 'integer', 'minimum': 1, 'maximum': 10},
+        {'type': 'number', 'multipleOf': 0.5},
+        {'type': 'string', 'format': 'uuid'},
+        {'type': 'string', 'pattern': r'^\w+$'},
+        {'type': 'string', 'pattern': r'^[a-zA-Z0-9]{9}$'},
+        {'type': 'string', 'maxLength': 3000},
+        {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'uniqueItems': true,
+        },
+        {
+          'type': 'object',
+          'x-vendor': {'minimum': 1},
+          'nullable': true,
+          'properties': {
+            'n': {'type': 'integer', 'exclusiveMinimum': 3},
+          },
+        },
+        {'type': 'string', 'description': DateTime(2026)},
+        {'type': 'string', 'x-self': cyclicAnnotation},
+        nestedItems(600),
+      ]) {
+        expect(responseFormatSchema(format(schema)), same(schema));
+        expect(
+          responseFormatGrammar(schema),
+          JsonSchemaConverter.convert(schema),
+        );
+      }
+    });
+
+    test('reports converter failures as LlamaUnsupportedException', () {
+      Object deepList = 1;
+      for (var i = 0; i < 200000; i++) {
+        deepList = [deepList];
+      }
+      for (final (schema, message) in <(Map<String, dynamic>, String)>[
+        (
+          {
+            'type': 'object',
+            'properties': {
+              'x': {'description': 'x'},
+            },
+          },
+          'Unrecognized schema: {"description":"x"}',
+        ),
+        ({r'$ref': 'https://example.com/s.json'}, r'Cannot resolve $ref'),
+        ({r'$ref': '#/missing'}, 'Error resolving ref'),
+        ({'type': 'date'}, 'Unrecognized schema'),
+        ({'type': 'object', 'properties': 'x'}, 'String'),
+        ({'const': deepList}, ''),
+        (nestedItems(100000), ''),
+      ]) {
+        expect(
+          () => responseFormatGrammar(schema),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                startsWith('Unsupported responseFormat JSON schema: '),
+                contains(message),
+              ),
+            ),
+          ),
+        );
+      }
+    });
+
+    test('reports non-JSON values that stop conversion', () {
+      final cyclic = <String, dynamic>{'type': 'object'};
+      cyclic['properties'] = {'self': cyclic};
+      for (final schema in <Map<String, dynamic>>[
+        {'const': double.nan},
+        {
+          'enum': [DateTime(2026)],
+        },
+        {
+          'const': {1: 'x'},
+        },
+        cyclic,
+      ]) {
+        expect(
+          () => responseFormatGrammar(schema),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              contains('must contain only JSON values'),
+            ),
+          ),
+        );
+      }
+    });
+
+    test('reports a stack overflow from a long reference chain', () {
+      const links = 20000;
+      final schema = <String, dynamic>{
+        r'$defs': {
+          for (var i = 0; i < links; i++)
+            'n$i': i == links - 1
+                ? {'type': 'integer'}
+                : {
+                    'type': 'object',
+                    'properties': {
+                      'next': {r'$ref': '#/\$defs/n${i + 1}'},
+                    },
+                  },
+        },
+        r'$ref': r'#/$defs/n0',
+      };
+      expect(responseFormatSchema(format(schema)), same(schema));
+      expect(
+        () => responseFormatGrammar(schema),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            startsWith('Unsupported responseFormat JSON schema: '),
+          ),
+        ),
+      );
+    });
   });
 }

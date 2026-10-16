@@ -420,7 +420,7 @@ class ChatTemplateEngine {
       return LlamaChatTemplateResult(
         prompt: result.prompt,
         format: result.format,
-        grammar: grammar.ToolGrammarGenerator.generateForSchema(responseSchema),
+        grammar: responseFormatGrammar(responseSchema),
         grammarLazy: result.grammarLazy,
         additionalStops: result.additionalStops,
         preservedTokens: result.preservedTokens,

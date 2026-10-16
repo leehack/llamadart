@@ -12,13 +12,15 @@ String _nestedGroups(int depth) => '^${'(' * depth}a${')' * depth}\$';
 
 void main() {
   group('llama.cpp grammar loading', () {
-    // Boundaries checked against b10549 test-gbnf-validator.
+    // Boundaries checked against the test-gbnf-validator of the shipped
+    // runtime (upstream v0.6.0), built by
+    // tool/testing/build_llama_cpp_runtime_gbnf_validator.sh.
     test('the repetition emulator matches llama.cpp at the limit', () {
       for (final (grammar, loads) in [
-        ('root ::= ("a" "b"{0,1998})?', true),
-        ('root ::= ("a" "b"{0,1999})?', false),
-        ('root ::= ("a" b){0,999}\nb ::= "b"', true),
-        ('root ::= ("a" b){0,1000}\nb ::= "b"', false),
+        ('root ::= ("a" "b"{0,1999})?', true),
+        ('root ::= ("a" "b"{0,2000})?', false),
+        ('root ::= ("a" b){0,1000}\nb ::= "b"', true),
+        ('root ::= ("a" b){0,1001}\nb ::= "b"', false),
       ]) {
         expect(
           llamaCppRepetitionRejection(grammar) == null,
