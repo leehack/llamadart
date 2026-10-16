@@ -46,6 +46,10 @@ A Flutter UI application showing:
 - On-device image generation screen (SDXS, SD-Turbo)
 - Material Design UI
 
+LiteRT-LM live speech uses the model preset's overlap default: 0.6 for
+Moonshine Tiny to avoid duplicated window boundaries, and 0.4 for other
+presets. Set `LiteRtLmAsrAdapter.overlapRatio` explicitly to tune it.
+
 **Best for:** Real-world Flutter integration
 
 **Run:**

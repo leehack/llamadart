@@ -51,11 +51,11 @@ void main() {
         );
         await project.create(recursive: true);
 
-        Future<ProcessResult> run() => Process.run(
+        Future<ProcessResult> run({String? projectDir}) => Process.run(
           'bash',
           ['-c', script],
           environment: {
-            'PROJECT_DIR': project.path,
+            'PROJECT_DIR': projectDir ?? project.path,
             'TARGET_BUILD_DIR': path.join(root.path, 'Build'),
             'WRAPPER_NAME': 'My App.app',
           },
@@ -88,7 +88,8 @@ void main() {
         expect(unresolved.stderr, contains('llamadart is not resolved'));
 
         await config.delete();
-        final missing = await run();
+        // TMPDIR may be inside a checkout with its own ancestor package config.
+        final missing = await run(projectDir: '/');
         expect(missing.exitCode, 1);
         expect(missing.stderr, contains('run flutter pub get'));
       }, skip: Platform.isMacOS ? false : 'requires macOS plutil');

@@ -187,6 +187,9 @@ class LiteRtLmAsrAdapter extends SpeechToTextAdapter {
   final Duration maxBufferedAudio;
 
   /// Fraction of each inference window kept to reconcile the transcript.
+  ///
+  /// Defaults to 0.6 for Moonshine Tiny to avoid duplicated boundary text,
+  /// and 0.4 for other presets. An explicit value overrides this default.
   final double overlapRatio;
 
   /// Path of the LiteRT-LM runtime library, an advanced local-validation
@@ -199,9 +202,11 @@ class LiteRtLmAsrAdapter extends SpeechToTextAdapter {
     this.preset, {
     this.numberOfThreads = 4,
     this.maxBufferedAudio = const Duration(seconds: 30),
-    this.overlapRatio = 0.4,
+    double? overlapRatio,
     this.libraryPath,
-  });
+  }) : overlapRatio =
+           overlapRatio ??
+           (preset == LiteRtLmAsrModelPreset.moonshineTiny ? 0.6 : 0.4);
 
   @override
   String get name => 'LiteRT-LM ASR';

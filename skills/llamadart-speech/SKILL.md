@@ -120,6 +120,9 @@ description: >-
   Await `transcribe()` and then `task.result`; startup can fail before a task
   is returned.
   Inspect the diagnostics and correct missing runtime/model assets before retrying.
+- Moonshine Tiny defaults to `overlapRatio: 0.6` to avoid duplicated text at
+  window boundaries; other LiteRT-LM ASR presets default to 0.4. Explicit
+  overlap settings are preserved. A single-window input is unaffected.
 - LiteRT-LM streaming: `await recognizer.startStream()`, then `await` every
   `session.addPcm(chunk)` so native backpressure throttles the producer.
   Call `await session.finish()` to flush the last window, then

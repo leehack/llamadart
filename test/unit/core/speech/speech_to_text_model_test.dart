@@ -49,8 +49,23 @@ void main() {
     expect(adapter.name, 'LiteRT-LM ASR');
     expect(adapter.numberOfThreads, config.numberOfThreads);
     expect(adapter.maxBufferedAudio, config.maxBufferedAudio);
+    expect(adapter.overlapRatio, 0.6);
     expect(adapter.overlapRatio, config.overlapRatio);
     expect(adapter.libraryPath, isNull);
+  });
+
+  test('ASR adapter keeps other presets and explicit overlap values', () {
+    for (final preset in LiteRtLmAsrModelPreset.values) {
+      if (preset != LiteRtLmAsrModelPreset.moonshineTiny) {
+        expect(LiteRtLmAsrAdapter(preset).overlapRatio, 0.4);
+      }
+      for (final overlap in [0.0, 0.2, 0.4, 0.6, 0.9]) {
+        expect(
+          LiteRtLmAsrAdapter(preset, overlapRatio: overlap).overlapRatio,
+          overlap,
+        );
+      }
+    }
   });
 
   test('SpeechToTextModel keeps its files and adapter', () {

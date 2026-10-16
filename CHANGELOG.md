@@ -1,3 +1,9 @@
+## Unreleased
+
+- Fix duplicated LiteRT-LM Moonshine Tiny transcript boundaries by using a
+  0.6 default window overlap; explicit overlap settings remain supported
+  ([#673](https://github.com/leehack/llamadart/issues/673)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build

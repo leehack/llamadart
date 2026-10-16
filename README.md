@@ -55,7 +55,8 @@ preference falls back to CPU with a warning. See the
   validated WebGPU bridge assets, your own `SpeechToTextPromptAdapter` for
   other audio chat models, plus worker-isolated, CPU-only native LiteRT-LM
   streaming ASR (`LiteRtLmAsrAdapter`) with bounded 16 kHz PCM input and
-  partial transcripts.
+  partial transcripts. Moonshine Tiny uses 0.6 window overlap by default
+  to avoid duplicated boundary text; other presets retain 0.4.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp and WebGPU
   bridge assets through `TextToSpeechEngine.load` or `attach`
   (`Qwen3TtsAdapter`), returning complete PCM with WAV encoding.

@@ -14,7 +14,7 @@ void main() {
     expect(LiteRtLmAsrBackend.values, [LiteRtLmAsrBackend.cpu]);
     expect(config.numberOfThreads, 4);
     expect(config.maxBufferedAudio, const Duration(seconds: 30));
-    expect(config.overlapRatio, 0.4);
+    expect(config.overlapRatio, 0.6);
   });
 
   test('LiteRT-LM ASR source config names its files as the runtime paths', () {
@@ -29,8 +29,48 @@ void main() {
     expect(config.modelPath, '/models/moonshine.tflite');
     expect(config.tokenizerPath, 'https://example.com/tokenizer.json');
     expect(config.numberOfThreads, 2);
-    expect(config.overlapRatio, 0.4);
+    expect(config.overlapRatio, 0.6);
   });
+
+  for (final preset in LiteRtLmAsrModelPreset.values) {
+    test('$preset preserves explicit overlaps in both config constructors', () {
+      for (final overlap in [0.0, 0.2, 0.4, 0.6, 0.9]) {
+        final legacy = LiteRtLmAsrRuntimeConfig(
+          modelPath: 'model.tflite',
+          tokenizerPath: 'tokenizer.json',
+          modelPreset: preset,
+          overlapRatio: overlap,
+        );
+        final source = LiteRtLmAsrRuntimeConfig.source(
+          model: ModelSource.path('model.tflite'),
+          tokenizer: ModelSource.path('tokenizer.json'),
+          modelPreset: preset,
+          overlapRatio: overlap,
+        );
+        expect(legacy.overlapRatio, overlap);
+        expect(source.overlapRatio, overlap);
+      }
+    });
+    if (preset != LiteRtLmAsrModelPreset.moonshineTiny) {
+      test(
+        '$preset keeps its existing default in both config constructors',
+        () {
+          final legacy = LiteRtLmAsrRuntimeConfig(
+            modelPath: 'model.tflite',
+            tokenizerPath: 'tokenizer.json',
+            modelPreset: preset,
+          );
+          final source = LiteRtLmAsrRuntimeConfig.source(
+            model: ModelSource.path('model.tflite'),
+            tokenizer: ModelSource.path('tokenizer.json'),
+            modelPreset: preset,
+          );
+          expect(legacy.overlapRatio, 0.4);
+          expect(source.overlapRatio, 0.4);
+        },
+      );
+    }
+  }
 
   test('LiteRT-LM ASR flow-control results stay explicit', () {
     const push = LiteRtLmAsrPushResult(acceptedSamples: 1600, wouldBlock: true);

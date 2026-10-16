@@ -253,6 +253,12 @@ adapter carries the runtime settings (`backend`, `numberOfThreads`,
 so `params:` and `backend:` must be null. A `LiteRtLmAsrAdapter` model takes
 no projector, and a prompt adapter model no tokenizer.
 
+Moonshine Tiny defaults to `overlapRatio: 0.6` (three seconds of its
+five-second window). The previous 0.4 overlap could duplicate boundary text
+when a window began mid-word. Other presets retain 0.4. Explicit values,
+including `0.0` to disable overlap, are passed through unchanged. Inputs that
+fit in one window use the same audio and produce the same transcript.
+
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
 `finish` flushes a partial final window.

@@ -66,6 +66,9 @@ class LiteRtLmAsrRuntimeConfig {
   final Duration maxBufferedAudio;
 
   /// Fraction of each inference window retained for transcript reconciliation.
+  ///
+  /// Defaults to 0.6 for Moonshine Tiny to avoid duplicated boundary text,
+  /// and 0.4 for other presets. An explicit value overrides this default.
   final double overlapRatio;
 
   /// Creates a LiteRT-LM ASR runtime configuration from local file paths.
@@ -81,8 +84,11 @@ class LiteRtLmAsrRuntimeConfig {
     this.backend = LiteRtLmAsrBackend.cpu,
     this.numberOfThreads = 4,
     this.maxBufferedAudio = const Duration(seconds: 30),
-    this.overlapRatio = 0.4,
-  }) : _modelPath = modelPath,
+    double? overlapRatio,
+  }) : overlapRatio =
+           overlapRatio ??
+           (modelPreset == LiteRtLmAsrModelPreset.moonshineTiny ? 0.6 : 0.4),
+       _modelPath = modelPath,
        _tokenizerPath = tokenizerPath,
        model = null,
        tokenizer = null;
@@ -96,8 +102,11 @@ class LiteRtLmAsrRuntimeConfig {
     this.backend = LiteRtLmAsrBackend.cpu,
     this.numberOfThreads = 4,
     this.maxBufferedAudio = const Duration(seconds: 30),
-    this.overlapRatio = 0.4,
-  }) : _modelPath = null,
+    double? overlapRatio,
+  }) : overlapRatio =
+           overlapRatio ??
+           (modelPreset == LiteRtLmAsrModelPreset.moonshineTiny ? 0.6 : 0.4),
+       _modelPath = null,
        _tokenizerPath = null;
 
   /// The model file that the runtime opens: the path given to the deprecated

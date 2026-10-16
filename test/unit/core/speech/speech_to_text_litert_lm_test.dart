@@ -123,6 +123,14 @@ void main() {
     await engine.dispose();
   });
 
+  test('forwards the Moonshine default overlap to the runtime', () async {
+    final engine = await load();
+    addTearDown(engine.dispose);
+    final session = await engine.startStream();
+    await session.cancel();
+    expect(driver.lastConfig!.overlapRatio, 0.6);
+  });
+
   test('downloads a remote model with the load options and gives a local '
       'tokenizer only the cancel token', () async {
     final source = ModelSource.parse('hf://owner/asr/moonshine.tflite');
