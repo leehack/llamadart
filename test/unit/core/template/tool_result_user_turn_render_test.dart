@@ -440,6 +440,29 @@ void main() {
     });
   });
 
+  test('keeps tool calls a template renders itself on the retry', () {
+    const template = '''
+{%- for m in messages -%}
+{%- if m.role == 'tool' and loop.last -%}{{ raise_exception('answer the result first') }}{%- endif -%}
+{{ m.role }}: {{ m.content }}
+{%- for call in m.tool_calls or [] %} CALL {{ call.function.name }}{% endfor %}
+{% endfor -%}
+{%- for tool in tools or [] %}{{ tool.function.name }}{% endfor -%}''';
+    final caps = TemplateCaps.detect(template);
+    expect(caps.supportsToolCalls, isTrue);
+    expect(caps.supportsToolResponses, isFalse);
+
+    final prompt = ChatTemplateEngine.render(
+      templateSource: template,
+      messages: _oneResult,
+      metadata: const {},
+    ).prompt;
+
+    expect(prompt, contains('assistant:  CALL get_weather'));
+    expect(prompt, isNot(contains('"tool_calls"')));
+    expect(prompt, contains('"tool_response": {'));
+  });
+
   test('keeps the error of a template that renders the tool role', () {
     const template = '''
 {%- for message in messages -%}
