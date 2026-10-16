@@ -1096,6 +1096,67 @@ void main() {
     }
   });
 
+  test('a completed generation sends the worker no cancel, then or on a '
+      'later modelFree', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationChunks: [utf8.encode('Hi')],
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      final output = await backend
+          .generate(1, 'first', const GenerationParams())
+          .expand((bytes) => bytes)
+          .toList();
+      expect(utf8.decode(output), 'Hi');
+      await _settle();
+      expect(
+        worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+        isEmpty,
+      );
+
+      await backend.modelFree(1);
+      expect(
+        worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+        isEmpty,
+      );
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('a subscription cancel after cancelGeneration sends no second worker '
+      'cancel', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      holdGeneration: true,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      final subscription = backend
+          .generate(1, 'first', const GenerationParams())
+          .listen((_) {});
+      await worker.generateReceived.future;
+
+      backend.cancelGeneration();
+      await subscription.cancel();
+      await _settle();
+      expect(
+        worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+        hasLength(1),
+      );
+    } finally {
+      worker.releaseGeneration();
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test('rejects concurrent generation before touching worker', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],
@@ -1926,6 +1987,35 @@ void main() {
         expect(second.text, 'second;');
       });
     }
+
+    test(
+      'a generation requested during dispose reports the disposed backend',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await service.started(0);
+        await first.firstChunk;
+
+        final disposed = backend.dispose();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        firstRun.finish();
+        await disposed;
+        await second.done;
+        expect(
+          second.error,
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed'),
+          ),
+        );
+        expect(service.runs, hasLength(1));
+      },
+    );
 
     test('a generation the worker fails frees the slot', () async {
       service.failPrompt = 'boom';

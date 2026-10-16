@@ -1792,6 +1792,61 @@ void main() {
       fake.failNextConversation = null;
     });
 
+    test(
+      'a generation started from the previous one\'s onDone starts',
+      () async {
+        final firstEnded = Completer<_CollectedGeneration>();
+        backend
+            .generate(1, 'first', params)
+            .listen(
+              (_) {},
+              onDone: () => firstEnded.complete(
+                _CollectedGeneration(backend.generate(1, 'second', params)),
+              ),
+            );
+        (await fake.started(0)).finish();
+        final second = await firstEnded.future.timeout(
+          const Duration(seconds: 2),
+        );
+        final secondRun = await fake.started(1);
+        secondRun.finish();
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, 'second;');
+      },
+    );
+
+    test(
+      'a queued run that ends before admission does not hold the slot',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await fake.started(0);
+        await first.firstChunk;
+        await firstRun.holding;
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', const GenerationParams(maxTokens: 0)),
+        );
+        await second.done;
+        expect(second.error, isNull);
+
+        firstRun.finish();
+        await first.done;
+        await _settle();
+        final third = _CollectedGeneration(
+          backend.generate(1, 'third', params),
+        );
+        final thirdRun = await fake.started(1);
+        thirdRun.finish();
+        await third.done;
+        expect(third.error, isNull);
+        expect(third.text, 'third;');
+      },
+    );
+
     test('dispose ends a queued generation without running it', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
       final firstRun = await fake.started(0);
