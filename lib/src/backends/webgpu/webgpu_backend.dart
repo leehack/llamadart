@@ -1104,7 +1104,7 @@ class WebGpuLlamaBackend
   _prepareUrlLoad(
     String url,
     ModelParams params,
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   ) {
     params.validate();
     if (params.device == ComputeDevice.npu) {
@@ -1197,7 +1197,7 @@ class WebGpuLlamaBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     url = webGpuDocumentUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);

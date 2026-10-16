@@ -14,6 +14,11 @@ Linux and web. Full docs: https://llamadart.leehack.com
 
 ## Guidelines
 
+- In custom backends and fakes, declare URL-load callbacks as
+  `void Function(double progress)? onProgress` (0.14+), including format-routing
+  loads. Forward progress fractions unchanged; return values do not control or
+  cancel loading. Native FFI `bool` callbacks keep their separate contract.
+
 - Create one engine per loaded model with
   `LlamaEngine.load(LlamaModel(source))`, or with `LlamaEngine(LlamaBackend())`
   and `setModel` when the engine must exist before the load, and always

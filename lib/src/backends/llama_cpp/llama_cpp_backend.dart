@@ -452,7 +452,7 @@ class NativeLlamaBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     throw LlamaUnsupportedException(
       'The native llama.cpp backend cannot load a model from a URL: '

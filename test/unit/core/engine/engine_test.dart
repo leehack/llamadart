@@ -105,7 +105,7 @@ class MockLlamaBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     modelLoadFromUrlCalls += 1;
     lastModelUrl = url;
@@ -6546,7 +6546,7 @@ class _SourceEchoBackend extends MockLlamaBackend {
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     if (fail) throw _notFound(url);
     return super.modelLoadFromUrl(url, params, onProgress: onProgress);

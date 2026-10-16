@@ -87,6 +87,10 @@ and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
 Cancelling a queued native llama.cpp generation before dispatch makes
 `getPerformanceContext()` return `null` until another generation is dispatched.
 
+Custom backend load callbacks use `void Function(double progress)?` in 0.14.
+Progress notifications do not return a control value; update implementations
+and fakes as described in [MIGRATION.md](MIGRATION.md).
+
 Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
 preserve runtime `length` termination: tool loops return `truncated` and roll
 back the turn. Typed speech recognition reports a runtime truncation error;

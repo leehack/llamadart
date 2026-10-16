@@ -12,7 +12,9 @@
 ///
 /// Apps that only load models and generate need just
 /// `package:llamadart/llamadart.dart`. This library follows the package's
-/// semantic versioning.
+/// semantic versioning. Load progress callbacks use
+/// `void Function(double progress)?`: notifications return no control value
+/// and do not cancel loading.
 ///
 /// ```dart
 /// import 'package:llamadart/backend.dart';

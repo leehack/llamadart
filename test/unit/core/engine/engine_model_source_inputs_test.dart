@@ -1509,7 +1509,7 @@ class _FormatRoutingBackend extends _RecordingBackend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     runtime = format.runtime;
     return super.modelLoadFromUrl(url, params, onProgress: onProgress);

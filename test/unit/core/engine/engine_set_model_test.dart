@@ -1651,7 +1651,7 @@ class _Backend extends MockLlamaBackend {
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     events.add('modelLoadFromUrl $url');
     final loadError = modelLoadError;
@@ -1720,7 +1720,7 @@ class _RoutingBackend extends _Backend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     events.add('modelLoadFromUrlAs ${format.name} $url');
     runtime = format.runtime;

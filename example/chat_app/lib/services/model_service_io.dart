@@ -174,7 +174,7 @@ class ModelServiceIO implements ModelService {
     required DownloadableModel model,
     required String modelsDir,
     required CancelToken cancelToken,
-    required Function(double progress) onProgress,
+    required void Function(double progress) onProgress,
     Function(ModelDownloadProgress progress)? onProgressDetail,
     required Function(String filename) onSuccess,
     required Function(dynamic error) onError,
@@ -1650,7 +1650,7 @@ class _ProgressDispatcher {
   static const Duration _minimumEmitInterval = Duration(milliseconds: 140);
   static const double _minimumProgressDelta = 0.005;
 
-  final Function(double progress) onProgress;
+  final void Function(double progress) onProgress;
   final Function(ModelDownloadProgress progress)? onProgressDetail;
 
   DateTime? _lastEmitAt;

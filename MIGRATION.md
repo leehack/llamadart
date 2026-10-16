@@ -2,7 +2,26 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
+## `0.13.x` -> `0.14.0`: native ABI and load callbacks
+
+Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
+loads and the legacy `LlamaEngine` URL-loading methods now declare
+`void Function(double progress)?` instead of `Function(double progress)?`.
+Update custom backend implementations, test fakes and callback fields to the
+explicit `void` signature. Notifications deliver the same fractions; the
+return value is ignored and cannot cancel a load. Native llama.cpp's raw FFI
+`bool` progress callback is unchanged.
+
+```dart
+Future<int> modelLoadFromUrl(
+  String url,
+  ModelParams params, {
+  void Function(double progress)? onProgress,
+}) async {
+  // Delegate loading to your runtime, forwarding its progress notifications.
+  return runtime.load(url, onProgress: onProgress);
+}
+```
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
 The llama.cpp companion now pins native `v0.7.0`; LiteRT-LM and image companions

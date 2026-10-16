@@ -288,7 +288,7 @@ class _FakeModelService implements ModelService {
     required DownloadableModel model,
     required String modelsDir,
     required CancelToken cancelToken,
-    required Function(double progress) onProgress,
+    required void Function(double progress) onProgress,
     Function(ModelDownloadProgress progress)? onProgressDetail,
     required Function(String filename) onSuccess,
     required Function(dynamic error) onError,

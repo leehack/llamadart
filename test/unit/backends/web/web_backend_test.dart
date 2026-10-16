@@ -668,7 +668,7 @@ class _FormatRecordingBackend extends _RecordingBackend
     String url,
     ModelParams params,
     ModelFormat format, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) => modelLoadAs(url, params, format);
 
   @override
@@ -698,7 +698,7 @@ class _NoStateBackend implements LlamaBackend {
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async => 1;
 
   @override
@@ -782,7 +782,7 @@ class _RecordingBackend implements LlamaBackend {
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     loadedUrls.add(url);
     return 1;
