@@ -13,7 +13,7 @@ final ToolDefinition searchTool = ToolDefinition.fromJsonSchema(
   schema: {
     'type': 'object',
     'properties': {
-      'query': {'type': 'string', 'minLength': 1},
+      'query': {'type': 'string', 'minLength': 1, 'maxLength': 2000},
       'collections': {
         'type': 'array',
         'items': {'type': 'string'},
@@ -59,13 +59,14 @@ limit, when a schema exceeds one:
 | `anyOf` alternatives | 64 |
 | `enum` values | 1024 |
 | Property name length | 128 characters |
-| `minLength`, `maxLength`, `minItems`, `maxItems` | 1999 |
+| `minLength`, `maxLength`, `minItems`, `maxItems` | 2000 (inclusive) |
 | Generated grammar per tool | 262,144 characters |
 
 The bound limit is llama.cpp's grammar repetition limit
 (`MAX_REPETITION_THRESHOLD`, 2000): the grammar parser of the llama.cpp release
 the native runtime ships (upstream `v0.6.0`) rejects a repetition count above
-2000 and silently drops a larger upper bound.
+2000 and silently drops a larger upper bound. The schema factory rejects bounds
+above 2000 so those constraints cannot be lost.
 
 The grammar for all tools in a request is checked again before generation on
 grammar-capable backends. It throws `LlamaUnsupportedException` when llama.cpp

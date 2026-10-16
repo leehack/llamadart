@@ -338,6 +338,15 @@ class ChatCompletionStreamParser {
       undecidedPrefix = '';
     }
 
+    // Match PEG partial-close withholding for marker-free Ministral thoughts.
+    // Tool-marked replies retain their existing EOF bytes.
+    if (templateResult.format == ChatFormat.ministral.index &&
+        !buffer.toString().contains('[TOOL_CALLS]') &&
+        isThinking &&
+        endTag.startsWith(pendingBuffer)) {
+      pendingBuffer = '';
+    }
+
     pendingBuffer = isThinking
         ? reasoningGate.finish(pendingBuffer)
         : contentGate.add(pendingBuffer);

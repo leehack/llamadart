@@ -693,6 +693,121 @@ void main() {
     return format_result, analyze_result, run_result
 
 
+class LiteRtSourcePatchesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.manifest, self.release = _schema2_fixture_payloads()
+        # tools/asr_overlap_patch.py source_patch_manifest('v0.18.0') in the owner.
+        self.record = {
+            "id": "asr-untimed-overlap",
+            "path": "native/bridge/asr_untimed_overlap.patch",
+            "sha256": "665fe85a8a4e7f9abde048b3038ede1b4385aaac016aa90438210352b865e589",
+            "source": "omni/asr/timestamp_text_merger.cc",
+            "preimageSha256Lf": "6458bdfb32cbb32250c5be8843d303a9759da96f5675eae2d23a5f01f41dc826",
+            "postimageSha256Lf": "c320a49202fcaed40ef2619e977b3a44303e7aa9aa04012c94a6ca07c016caee",
+            "scope": "source-built runtimes only; excludes official upstream prebuilts",
+        }
+
+    def _validate(self) -> dict:
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(
+                Path(temp), self.manifest, self.release
+            )
+            return validate_litert_lm_release_manifest(
+                self.release,
+                repo="leehack/litert-lm-native",
+                tag=self.manifest["release"]["tag"],
+                release_json_dir=temp,
+                required_bundles=[
+                    f"{item['platform']}-{item['arch']}"
+                    for item in self.manifest["platforms"]
+                ],
+            )
+
+    def test_absent_source_patches_preserves_owner_manifest(self) -> None:
+        validated = self._validate()
+        self.assertEqual(validated, self.manifest)
+        self.assertNotIn("sourcePatches", validated["upstream"])
+
+    def test_valid_source_patches(self) -> None:
+        self.manifest["upstream"]["sourcePatches"] = [self.record]
+        self.assertEqual(
+            self._validate()["upstream"]["sourcePatches"], [self.record]
+        )
+        second = dict(self.record, id="another-patch", sha256="a" * 64)
+        self.manifest["upstream"]["sourcePatches"].append(second)
+        self.assertEqual(
+            self._validate()["upstream"]["sourcePatches"], [self.record, second]
+        )
+
+    def test_unknown_upstream_key_is_still_rejected(self) -> None:
+        self.manifest["upstream"]["sourcePatches"] = [self.record]
+        self.manifest["upstream"]["unexpected"] = []
+        with self.assertRaisesRegex(ReleaseError, r"unexpected=\['unexpected'\]"):
+            self._validate()
+
+    def test_source_patches_requires_non_empty_list(self) -> None:
+        for value in (None, {}, "patch", 1, True, []):
+            with self.subTest(value=value):
+                self.manifest["upstream"]["sourcePatches"] = value
+                with self.assertRaisesRegex(
+                    ReleaseError, "sourcePatches must be a non-empty list"
+                ):
+                    self._validate()
+
+    def test_source_patch_requires_object(self) -> None:
+        for value in (None, [], "patch", 1, True):
+            with self.subTest(value=value):
+                self.manifest["upstream"]["sourcePatches"] = [self.record, value]
+                with self.assertRaisesRegex(
+                    ReleaseError, r"sourcePatches\[1\] must be an object"
+                ):
+                    self._validate()
+
+    def test_source_patch_requires_exact_keys(self) -> None:
+        for key in self.record:
+            with self.subTest(missing=key):
+                malformed = dict(self.record)
+                del malformed[key]
+                self.manifest["upstream"]["sourcePatches"] = [malformed]
+                with self.assertRaisesRegex(
+                    ReleaseError, rf"sourcePatches\[0\].*missing=\['{key}'\]"
+                ):
+                    self._validate()
+        self.manifest["upstream"]["sourcePatches"] = [
+            dict(self.record, unexpected="value")
+        ]
+        with self.assertRaisesRegex(
+            ReleaseError, r"sourcePatches\[0\].*unexpected=\['unexpected'\]"
+        ):
+            self._validate()
+
+    def test_source_patch_fields_require_non_empty_strings(self) -> None:
+        for key in self.record:
+            for value in (None, [], {}, 1, True, ""):
+                with self.subTest(field=key, value=value):
+                    self.manifest["upstream"]["sourcePatches"] = [
+                        dict(self.record, **{key: value})
+                    ]
+                    with self.assertRaisesRegex(
+                        ReleaseError,
+                        rf"sourcePatches\[0\] {key} must be a non-empty string",
+                    ):
+                        self._validate()
+
+    def test_source_patch_hashes_require_lowercase_sha256(self) -> None:
+        for key in ("sha256", "preimageSha256Lf", "postimageSha256Lf"):
+            for value in ("z" * 64, "A" * 64, "a" * 63, "a" * 65, "a" * 64 + "\n"):
+                with self.subTest(field=key, value=value):
+                    self.manifest["upstream"]["sourcePatches"] = [
+                        self.record, dict(self.record, **{key: value})
+                    ]
+                    with self.assertRaisesRegex(
+                        ReleaseError,
+                        rf"sourcePatches\[1\] {key} must be an exact SHA-256 digest",
+                    ):
+                        self._validate()
+
+
 class SyncNativeReleasePinsTest(unittest.TestCase):
     def test_exact_keys_rejects_non_object_json(self) -> None:
         with self.assertRaisesRegex(ReleaseError, "must be an object"):
