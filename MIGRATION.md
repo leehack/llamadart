@@ -2,7 +2,7 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
+## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI and Qwen3 overrides
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
 If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
@@ -16,6 +16,15 @@ layouts as well as its exported symbols. v0.6.0 and older native bundles are
 ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
+
+For renamed legacy Qwen3 LiteRT-LM text bundles, replace copied Jinja with
+`ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` to keep native
+`enableThinking: false` routing stable across upgrades. The accessor always
+returns this package version's canonical template. Web
+`@litert-lm/core@0.18.0` cannot install a conversation template: loading this
+canonical override now throws `LlamaUnsupportedException` instead of appearing
+to honor it. Use native LiteRT-LM for this contract. Other Web template overrides
+and loads without an override retain their existing behavior.
 
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 

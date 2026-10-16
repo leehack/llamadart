@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dinja/dinja.dart';
+import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
@@ -778,6 +779,85 @@ void main() {
       await client.generated.close();
       expect(await pending, [utf8.encode('Hello')]);
       return client.lastPromptTemplate;
+    }
+
+    for (final name in ['download', 'qwen.litertlm', 'Qwen3-0.6B.litertlm']) {
+      for (final setter in [false, true]) {
+        test('public Qwen3 override $name setter=$setter', () async {
+          final file = File('${tempDir.path}/$name');
+          // Legacy bundles have no model-type or Jinja metadata (fields 6/7).
+          final legacy = Uint8List.fromList([
+            ..._thinkingBundle(modelType: 5).take(136),
+            0x28, 0x80, 0x20, // max_num_tokens = 4096 (field 5 only).
+          ]);
+          ByteData.sublistView(
+            legacy,
+          ).setUint64(108, legacy.length, Endian.little);
+          await file.writeAsBytes(legacy);
+          expect(readLiteRtLmBundleMetadata(file.path)?.isQwen3, isFalse);
+          expect(readLiteRtLmBundleMetadata(file.path)?.chatTemplate, isNull);
+          final client = _FakeLiteRtLmRuntimeClient();
+          if (!setter) {
+            client.onCreateConversation = () {
+              if (client.lastPromptTemplate != null) {
+                throw LlamaUnsupportedException('no template setter');
+              }
+            };
+          }
+          final service = LiteRtLmService(clientFactory: () => client);
+          final params = ModelParams(
+            device: ComputeDevice.cpu,
+            chatTemplate: api.liteRtLmQwen3ChatTemplate,
+          );
+          try {
+            final model = await service.loadModel(file.path, params);
+            final context = service.createContext(model, params);
+            if (!setter) {
+              await expectLater(
+                service
+                    .generateChat(
+                      context,
+                      const [
+                        LlamaChatMessage.fromText(
+                          role: LlamaChatRole.user,
+                          text: 'Hello',
+                        ),
+                      ],
+                      const GenerationParams(maxTokens: 64),
+                      enableThinking: false,
+                    )
+                    .toList(),
+                throwsA(isA<LlamaUnsupportedException>()),
+              );
+              return;
+            }
+            expect(
+              await generate(service, client, context),
+              api.liteRtLmQwen3ChatTemplate,
+            );
+            expect(client.lastExtraContext?['enable_thinking'], isFalse);
+            final rendered = Template(client.lastPromptTemplate!).render({
+              'messages': [
+                {
+                  'role': 'user',
+                  'content': [
+                    {'type': 'text', 'text': 'Hello'},
+                  ],
+                },
+              ],
+              'add_generation_prompt': true,
+              ...client.lastExtraContext!,
+            });
+            expect(rendered, endsWith('<think>\n\n</think>\n\n'));
+            expect(
+              service.getMetadata(model)['tokenizer.chat_template'],
+              api.liteRtLmQwen3ChatTemplate,
+            );
+          } finally {
+            service.dispose();
+          }
+        });
+      }
     }
 
     for (final name in [
