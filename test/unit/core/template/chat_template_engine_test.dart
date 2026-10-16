@@ -619,6 +619,7 @@ void main() {
           '{% if messages[0].content == "overflow" %}{{ recurse() }}'
           '{% else %}{{ messages[0].content }}{% endif %}';
 
+      // Stack overflow cannot be caught on dart2wasm.
       test('wraps render stack overflow and preserves its original stack', () {
         try {
           ChatTemplateEngine.render(
@@ -637,7 +638,54 @@ void main() {
           expect(error.message, contains('Stack Overflow'));
           expect(stackTrace.toString(), contains('MacroStatement'));
         }
-      });
+      }, testOn: '!dart2wasm');
+
+      // Stack overflow cannot be caught on dart2wasm.
+      test('does not retry a tool-role stack overflow as a user turn', () {
+        const template =
+            '{% macro recurse() %}{{ recurse() }}{% endmacro %}'
+            '{% for message in messages %}'
+            '{% if message.role == "tool" %}{{ recurse() }}'
+            '{% else %}{{ message.content }}{% endif %}'
+            '{% endfor %}';
+
+        // A user-turn retry would succeed and hide the original overflow.
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: template,
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'ok'),
+            ],
+            metadata: const {},
+          ).prompt,
+          'ok',
+        );
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: template,
+            messages: const [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: 'call1',
+                    name: 'inspect',
+                    result: 'ok',
+                  ),
+                ],
+              ),
+            ],
+            metadata: const {},
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('templateSource'), contains('Stack Overflow')),
+            ),
+          ),
+        );
+      }, testOn: '!dart2wasm');
 
       test('keeps successful recursive-template renders unchanged', () {
         expect(

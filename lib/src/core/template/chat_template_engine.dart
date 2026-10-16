@@ -127,9 +127,11 @@ class ChatTemplateEngine {
   /// any other shape throws `LlamaUnsupportedException`.
   ///
   /// A template that fails to render, by raising, through invalid syntax or
-  /// by overflowing the stack, throws `LlamaInferenceException` with the
-  /// template's message. The message names [customTemplate], the `tool_use`
-  /// variant in [metadata], or [templateSource].
+  /// by overflowing the stack on the Dart VM or JavaScript, throws
+  /// `LlamaInferenceException` with the template's message. The message names
+  /// [customTemplate], the `tool_use` variant in [metadata], or [templateSource].
+  /// On dart2wasm, stack overflow cannot be caught and may trap or hang
+  /// instead of throwing this exception.
   ///
   /// [mediaMarker] is written where each image, audio or video part was.
   /// Pass one that message text cannot hold to tell the parts from a

@@ -4,7 +4,7 @@ Copied verbatim from `models/templates` in [ggml-org/llama.cpp](https://github.c
 at the ref pinned in `tool/testing/llama_cpp_templates.ref`. Only the templates
 that `test/unit/core/template/handlers/firefunction_v2_handler_test.dart`,
 `test/unit/core/template/handlers/gemma4_handler_test.dart`,
-`test/unit/core/template/template_message_json_parity_test.dart` and
+`test/unit/core/template/template_message_json_parity_test.dart`,
 `test/unit/core/template/tool_result_user_turn_render_test.dart` and
 `test/unit/core/template/command_r_render_failure_test.dart` read live
 here, so those unit tests run on a clean checkout with no network.

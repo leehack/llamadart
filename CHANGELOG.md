@@ -1,7 +1,8 @@
 ## Unreleased
 
-- Report recursive chat-template failures, including Command R+ null-typed
-  tool parameters, as `LlamaInferenceException` instead of `StackOverflowError`
+- Report recursive chat-template failures, including Command R+ and
+  Hermes-2-Pro-Llama-3-8B null-typed tool parameters, as
+  `LlamaInferenceException` instead of `StackOverflowError` on VM and JavaScript
   ([#1112](https://github.com/leehack/llamadart/issues/1112)).
 
 ## 0.13.1
