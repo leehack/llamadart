@@ -1,6 +1,7 @@
 @TestOn('browser')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -1423,6 +1424,645 @@ void main() {
     },
   );
 
+  group('a generation started after a cancel', () {
+    const params = GenerationParams(maxTokens: 16);
+    late _QueueFakeEngine fake;
+    late LiteRtLmBackend backend;
+
+    Future<void> load({bool rejectOnCancel = false}) async {
+      fake = _installQueueFakeEngine(rejectOnCancel: rejectOnCancel);
+      backend = LiteRtLmBackend();
+      const modelParams = ModelParams();
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        modelParams,
+      );
+      await backend.contextCreate(1, modelParams);
+    }
+
+    setUp(load);
+
+    tearDown(() async {
+      fake.finishAll();
+      await backend.dispose();
+    });
+
+    test('waits for a run stopped by cancelGeneration, then starts', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      expect(firstRun.cancelCalls, 1);
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      expect(fake.runs, hasLength(1));
+      expect(second.error, isNull);
+
+      firstRun.finish();
+      await first.done;
+      expect(first.error, isNull);
+      expect(first.text, 'first;');
+
+      final secondRun = await fake.started(1);
+      expect(secondRun.prompt, 'second');
+      await second.firstChunk;
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test(
+      'waits for a run stopped by a subscription cancel, then starts',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await fake.started(0);
+        await first.firstChunk;
+        await firstRun.holding;
+
+        final firstCancelled = first.subscription.cancel();
+        expect(firstRun.cancelCalls, 1);
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        expect(fake.runs, hasLength(1));
+        expect(second.error, isNull);
+
+        firstRun.finish();
+        await firstCancelled;
+        final secondRun = await fake.started(1);
+        secondRun.finish();
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, 'second;');
+      },
+    );
+
+    test('a subscription cancel whose runtime rejects the pending read '
+        'neither surfaces that error nor blocks the next generation', () async {
+      await backend.dispose();
+      await load(rejectOnCancel: true);
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      await first.subscription.cancel();
+      expect(firstRun.cancelCalls, 1);
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final secondRun = await fake.started(1);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('a subscription cancel drops a later createConversation failure '
+        'and frees the slot', () async {
+      final gate = Completer<void>();
+      fake.failNextConversation = gate.future;
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      await _settle();
+
+      final firstCancelled = first.subscription.cancel();
+      gate.complete();
+      await firstCancelled;
+      expect(first.error, isNull);
+
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final secondRun = await fake.started(0);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('a cancel before the first token ends the stream without sending '
+        'the prompt', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      backend.cancelGeneration();
+      await first.done;
+      expect(first.error, isNull);
+      expect(first.text, isEmpty);
+      expect(fake.runs, isEmpty);
+
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final secondRun = await fake.started(0);
+      expect(secondRun.prompt, 'second');
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test(
+      'a cancel after completion does not affect the next generation',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        (await fake.started(0)).finish();
+        await first.done;
+        expect(first.text, 'first;');
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        final secondRun = await fake.started(1);
+        await second.firstChunk;
+        secondRun.finish();
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, 'second;');
+        expect(secondRun.cancelCalls, 0);
+      },
+    );
+
+    test('repeated cancels queue the next generation once', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend
+        ..cancelGeneration()
+        ..cancelGeneration();
+      final firstCancelled = first.subscription.cancel();
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      expect(fake.runs, hasLength(1));
+
+      firstRun.finish();
+      await firstCancelled;
+      final secondRun = await fake.started(1);
+      await second.firstChunk;
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+      expect(fake.runs, hasLength(2));
+    });
+
+    test('a stop sequence in the cancelled run does not end the generation '
+        'queued behind it', () async {
+      final first = _CollectedGeneration(
+        backend.generate(
+          1,
+          'first',
+          const GenerationParams(maxTokens: 16, stopSequences: ['#']),
+        ),
+      );
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+
+      // A one-character stop sequence holds no text back, so the tail's
+      // match reaches onStop before the cancelled run's loop breaks.
+      firstRun.finish(tail: '#');
+      await first.done;
+      final secondRun = await fake.started(1);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('a subscription cancel of the cancelled run does not end the '
+        'generation queued behind it', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      final firstCancelled = first.subscription.cancel();
+      await _settle();
+      expect(second.isDone, isFalse);
+
+      firstRun.finish();
+      await firstCancelled;
+      final secondRun = await fake.started(1);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+    });
+
+    test('ending a queued run keeps the slot while the cancelled run is still '
+        'streaming', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      backend.cancelGeneration();
+      await second.done;
+
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(fake.runs, hasLength(1));
+
+      firstRun.finish();
+      await first.done;
+      final thirdRun = await fake.started(1);
+      thirdRun.finish();
+      await third.done;
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+    });
+
+    test(
+      'cancelGeneration ends a queued generation without running it',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await fake.started(0);
+        await first.firstChunk;
+        await firstRun.holding;
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        backend.cancelGeneration();
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, isEmpty);
+
+        firstRun.finish();
+        await first.done;
+        final third = _CollectedGeneration(
+          backend.generate(1, 'third', params),
+        );
+        final thirdRun = await fake.started(1);
+        thirdRun.finish();
+        await third.done;
+        expect(third.error, isNull);
+        expect(third.text, 'third;');
+        expect(fake.runs.map((run) => run.prompt), ['first', 'third']);
+      },
+    );
+
+    test(
+      'a subscription cancel of a queued generation leaves the queue',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await fake.started(0);
+        await first.firstChunk;
+        await firstRun.holding;
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', params),
+        );
+        await _settle();
+        await second.subscription.cancel();
+        final third = _CollectedGeneration(
+          backend.generate(1, 'third', params),
+        );
+        await _settle();
+        expect(third.error, isNull);
+
+        firstRun.finish();
+        final thirdRun = await fake.started(1);
+        thirdRun.finish();
+        await third.done;
+        expect(third.error, isNull);
+        expect(third.text, 'third;');
+        expect(fake.runs.map((run) => run.prompt), ['first', 'third']);
+      },
+    );
+
+    test('a queued run ended by cancelGeneration never creates a '
+        'conversation', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      final created = fake.conversationsCreated;
+      fake.failNextConversation = Future<void>.value();
+      backend.cancelGeneration();
+      await second.done;
+      await _settle();
+      expect(second.error, isNull);
+      expect(second.text, isEmpty);
+      expect(fake.conversationsCreated, created);
+      fake.failNextConversation = null;
+    });
+
+    test(
+      'a generation started from the previous one\'s onDone starts',
+      () async {
+        final firstEnded = Completer<_CollectedGeneration>();
+        backend
+            .generate(1, 'first', params)
+            .listen(
+              (_) {},
+              onDone: () => firstEnded.complete(
+                _CollectedGeneration(backend.generate(1, 'second', params)),
+              ),
+            );
+        (await fake.started(0)).finish();
+        final second = await firstEnded.future.timeout(
+          const Duration(seconds: 2),
+        );
+        final secondRun = await fake.started(1);
+        secondRun.finish();
+        await second.done;
+        expect(second.error, isNull);
+        expect(second.text, 'second;');
+      },
+    );
+
+    test(
+      'a queued run that ends before admission does not hold the slot',
+      () async {
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', params),
+        );
+        final firstRun = await fake.started(0);
+        await first.firstChunk;
+        await firstRun.holding;
+
+        backend.cancelGeneration();
+        final second = _CollectedGeneration(
+          backend.generate(1, 'second', const GenerationParams(maxTokens: 0)),
+        );
+        await second.done;
+        expect(second.error, isNull);
+
+        firstRun.finish();
+        await first.done;
+        await _settle();
+        final third = _CollectedGeneration(
+          backend.generate(1, 'third', params),
+        );
+        final thirdRun = await fake.started(1);
+        thirdRun.finish();
+        await third.done;
+        expect(third.error, isNull);
+        expect(third.text, 'third;');
+      },
+    );
+
+    test('a generation requested right after cancelGeneration ends the '
+        'queued one takes its place', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      backend.cancelGeneration();
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(third.error, isNull);
+
+      firstRun.finish();
+      final thirdRun = await fake.started(1);
+      thirdRun.finish();
+      await third.done;
+      expect(second.text, isEmpty);
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+    });
+
+    test('an admitted queued run leaves the queue', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+      firstRun.finish();
+      final secondRun = await fake.started(1);
+      await second.firstChunk;
+      await secondRun.holding;
+
+      backend.cancelGeneration();
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await _settle();
+      expect(third.error, isNull);
+
+      secondRun.finish();
+      final thirdRun = await fake.started(2);
+      thirdRun.finish();
+      await third.done;
+      expect(third.error, isNull);
+      expect(third.text, 'third;');
+    });
+
+    test('a subscription cancel completes after its run releases the '
+        'conversation', () async {
+      await backend.dispose();
+      await load(rejectOnCancel: true);
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      await first.subscription.cancel();
+      expect(fake.conversationsDeleted, 1);
+    });
+
+    test('pausing the stream pauses the run', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      first.subscription.pause();
+      firstRun.finish(tail: 'more;');
+      await _settle();
+      expect(first.text, 'first;');
+      expect(fake.conversationsDeleted, 0, reason: 'the paused run waits');
+
+      first.subscription.resume();
+      await first.done;
+      expect(first.error, isNull);
+      expect(first.text, 'first;more;');
+      expect(fake.conversationsDeleted, 1);
+    });
+
+    test('dispose ends a queued generation without running it', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+
+      await backend.dispose();
+      firstRun.finish();
+      await first.done;
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, isEmpty);
+      expect(fake.runs, hasLength(1));
+    });
+
+    test('contextFree ends a queued generation without running it', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await _settle();
+
+      await backend.contextFree(1);
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, isEmpty);
+
+      firstRun.finish();
+      await first.done;
+      await _settle();
+      expect(fake.runs, hasLength(1));
+    });
+
+    test('overlapping a generation that was not cancelled throws '
+        'LlamaStateException', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      await second.done;
+      expect(
+        second.error,
+        isA<LlamaStateException>().having(
+          (error) => error.message,
+          'message',
+          contains('already in progress'),
+        ),
+      );
+
+      firstRun.finish();
+      await first.done;
+      expect(first.error, isNull);
+      expect(first.text, 'first;');
+      expect(fake.runs, hasLength(1));
+    });
+
+    test('a second generation queued behind a cancel throws '
+        'LlamaStateException', () async {
+      final first = _CollectedGeneration(backend.generate(1, 'first', params));
+      final firstRun = await fake.started(0);
+      await first.firstChunk;
+      await firstRun.holding;
+
+      backend.cancelGeneration();
+      final second = _CollectedGeneration(
+        backend.generate(1, 'second', params),
+      );
+      final third = _CollectedGeneration(backend.generate(1, 'third', params));
+      await third.done;
+      expect(third.error, isA<LlamaStateException>());
+
+      firstRun.finish();
+      final secondRun = await fake.started(1);
+      secondRun.finish();
+      await second.done;
+      expect(second.error, isNull);
+      expect(second.text, 'second;');
+      expect(fake.runs.map((run) => run.prompt), ['first', 'second']);
+    });
+  });
+
+  test('LlamaEngine starts a Web generation requested right after '
+      'cancelGeneration', () async {
+    final fake = _installQueueFakeEngine();
+    final engine = LlamaEngine(LiteRtLmBackend());
+    try {
+      await engine.loadModel('https://example.com/model.litertlm');
+      final firstDone = Completer<void>();
+      final first = engine
+          .generate('first')
+          .listen(
+            (_) {},
+            onError: firstDone.completeError,
+            onDone: firstDone.complete,
+          );
+      final firstRun = await fake.started(0);
+      await firstRun.holding;
+
+      engine.cancelGeneration();
+      final second = engine.generate('second').join();
+      await _settle();
+      expect(fake.runs, hasLength(1));
+
+      firstRun.finish();
+      await firstDone.future;
+      await first.cancel();
+      (await fake.started(1)).finish();
+      expect(await second, 'second;');
+    } finally {
+      fake.finishAll();
+      await engine.dispose();
+    }
+  });
+
   group('ModelParams.device', () {
     const url = 'https://example.com/gemma-4-E2B-it-web.litertlm';
     late List<int> createdBackends;
@@ -1731,4 +2371,194 @@ final class _ResultObserver extends LlamaOperationObserver {
 
   @override
   void onEnd(api.LlamaOperationResult result) => results.add(result);
+}
+
+Future<void> _settle() =>
+    Future<void>.delayed(const Duration(milliseconds: 20));
+
+final class _CollectedGeneration {
+  _CollectedGeneration(Stream<List<int>> stream) {
+    subscription = stream.listen(
+      (bytes) {
+        _bytes.addAll(bytes);
+        if (!_firstChunk.isCompleted) _firstChunk.complete();
+      },
+      onError: (Object error) => this.error = error,
+      onDone: _done.complete,
+    );
+  }
+
+  late final StreamSubscription<List<int>> subscription;
+  final List<int> _bytes = <int>[];
+  final Completer<void> _firstChunk = Completer<void>();
+  final Completer<void> _done = Completer<void>();
+  Object? error;
+
+  String get text => utf8.decode(_bytes);
+  bool get isDone => _done.isCompleted;
+  Future<void> get firstChunk =>
+      _firstChunk.future.timeout(const Duration(seconds: 2));
+  Future<void> get done => _done.future.timeout(const Duration(seconds: 2));
+}
+
+/// One `sendMessageStreaming` run: it streams `'$prompt;'`, then holds its
+/// next read until [finish], like a runtime that takes time to stop after a
+/// cancel.
+final class _QueueFakeRun {
+  _QueueFakeRun(this.prompt);
+
+  final String prompt;
+  final Completer<String?> _tail = Completer<String?>();
+  final Completer<void> _holding = Completer<void>();
+  int cancelCalls = 0;
+
+  /// Completes once the reader waits on the read that [finish] ends.
+  Future<void> get holding =>
+      _holding.future.timeout(const Duration(seconds: 2));
+
+  /// Ends the run, first emitting [tail] when given.
+  void finish({String? tail}) {
+    if (!_tail.isCompleted) _tail.complete(tail);
+  }
+}
+
+final class _QueueFakeEngine {
+  _QueueFakeEngine({required this.rejectOnCancel});
+
+  /// Whether `cancel()` rejects the held read, as `@litert-lm/core` 0.18.0
+  /// does with its cancelled status.
+  final bool rejectOnCancel;
+  final List<_QueueFakeRun> runs = <_QueueFakeRun>[];
+
+  /// When set, the next `createConversation` waits for it, then rejects.
+  Future<void>? failNextConversation;
+
+  /// How many times `createConversation` was called.
+  int conversationsCreated = 0;
+
+  /// How many conversations were deleted.
+  int conversationsDeleted = 0;
+  final List<Completer<_QueueFakeRun>> _started = List.generate(
+    8,
+    (_) => Completer<_QueueFakeRun>(),
+  );
+
+  Future<_QueueFakeRun> started(int index) =>
+      _started[index].future.timeout(const Duration(seconds: 2));
+
+  void finishAll() {
+    for (final run in runs) {
+      run.finish();
+    }
+  }
+
+  Future<JSObject> _createConversation() async {
+    conversationsCreated += 1;
+    final gate = failNextConversation;
+    failNextConversation = null;
+    if (gate != null) {
+      await gate;
+      throw StateError('createConversation failed');
+    }
+    return _conversation();
+  }
+
+  JSObject _conversation() {
+    _QueueFakeRun? run;
+    final conversation = JSObject();
+    conversation.setProperty(
+      'sendMessageStreaming'.toJS,
+      ((String prompt) {
+        final current = run = _QueueFakeRun(prompt);
+        runs.add(current);
+        _started[runs.length - 1].complete(current);
+        return _streamOf(current);
+      }).toJS,
+    );
+    conversation.setProperty(
+      'cancel'.toJS,
+      (() {
+        final current = run;
+        if (current == null) return;
+        current.cancelCalls += 1;
+        if (rejectOnCancel && !current._tail.isCompleted) {
+          current._tail.completeError(StateError('Task cancelled'));
+        }
+      }).toJS,
+    );
+    conversation.setProperty(
+      'delete'.toJS,
+      (() {
+        conversationsDeleted += 1;
+        return Future<JSAny?>.value(null).toJS;
+      }).toJS,
+    );
+    return conversation;
+  }
+
+  JSObject _streamOf(_QueueFakeRun run) {
+    final stream = JSObject();
+    stream.setProperty(
+      'getReader'.toJS,
+      (() {
+        var reads = 0;
+        var tailSent = false;
+        final reader = JSObject();
+        JSObject result({String? text}) {
+          final result = JSObject();
+          result.setProperty('done'.toJS, (text == null).toJS);
+          if (text != null) {
+            result.setProperty('value'.toJS, _messageChunk(text));
+          }
+          return result;
+        }
+
+        reader.setProperty(
+          'read'.toJS,
+          (() {
+            if (reads++ == 0) {
+              return Future<JSObject>.value(
+                result(text: '${run.prompt};'),
+              ).toJS;
+            }
+            if (!run._holding.isCompleted) run._holding.complete();
+            return run._tail.future.then((tail) {
+              if (tail == null || tailSent) return result();
+              tailSent = true;
+              return result(text: tail);
+            }).toJS;
+          }).toJS,
+        );
+        reader.setProperty(
+          'cancel'.toJS,
+          (() => Future<JSAny?>.value(null).toJS).toJS,
+        );
+        reader.setProperty('releaseLock'.toJS, (() {}).toJS);
+        return reader;
+      }).toJS,
+    );
+    return stream;
+  }
+}
+
+_QueueFakeEngine _installQueueFakeEngine({bool rejectOnCancel = false}) {
+  final fake = _QueueFakeEngine(rejectOnCancel: rejectOnCancel);
+  final engineClass = JSObject();
+  engineClass.setProperty(
+    'create'.toJS,
+    ((JSObject settings) {
+      final engine = JSObject();
+      engine.setProperty(
+        'createConversation'.toJS,
+        ((JSObject config) => fake._createConversation().toJS).toJS,
+      );
+      engine.setProperty(
+        'delete'.toJS,
+        (() => Future<JSAny?>.value(null).toJS).toJS,
+      );
+      return Future<JSObject>.value(engine).toJS;
+    }).toJS,
+  );
+  globalContext.setProperty('LiteRtLmEngine'.toJS, engineClass);
+  return fake;
 }

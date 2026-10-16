@@ -67,6 +67,8 @@ class LiteRtLmBackend
 
   _LiteRtLmWebEngine? _engine;
   _LiteRtLmWebConversation? _activeConversation;
+  _LiteRtLmWebRun? _activeRun;
+  _LiteRtLmWebRun? _queuedRun;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _isReady = false;
   bool _hasContext = false;
@@ -245,6 +247,7 @@ class LiteRtLmBackend
     _requireContextHandle(contextHandle);
     _hasContext = false;
     _contextHandle = null;
+    _closeQueuedRun();
     final conversation = _activeConversation;
     _activeConversation = null;
     if (conversation != null) {
@@ -264,7 +267,68 @@ class LiteRtLmBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
-  }) async* {
+  }) {
+    final run = _LiteRtLmWebRun();
+    late final StreamController<List<int>> controller;
+    StreamSubscription<List<int>>? subscription;
+    controller = StreamController<List<int>>(
+      onListen: () {
+        if (_activeRun == null) {
+          _startRun(run);
+        } else if (_cancelRequested && _queuedRun == null) {
+          _queuedRun = run;
+        } else {
+          controller
+            ..addError(
+              LlamaStateException(
+                'LiteRT-LM web generation is already in progress. Cancel it '
+                'or wait for its stream to end before starting another.',
+              ),
+            )
+            ..close();
+          return;
+        }
+        subscription = _generateRun(run, contextHandle, prompt, params, parts)
+            .listen(
+              controller.add,
+              onError: controller.addError,
+              onDone: () {
+                _finishRun(run);
+                unawaited(controller.close());
+              },
+            );
+      },
+      onPause: () => subscription?.pause(),
+      onResume: () => subscription?.resume(),
+      onCancel: () {
+        if (identical(_queuedRun, run)) {
+          _closeQueuedRun();
+        } else if (identical(_activeRun, run)) {
+          // Cancels only this run, so a generation queued behind it still
+          // starts once it ends.
+          _cancelActiveRun();
+        }
+        // Nobody listens any more, so an error the cancelled run ends with
+        // has no caller to reach.
+        return subscription
+            ?.cancel()
+            .catchError((Object _) {})
+            .whenComplete(() => _finishRun(run));
+      },
+    );
+    return controller.stream;
+  }
+
+  /// Runs one generation for [generate].
+  ///
+  /// A queued [run] waits until the cancelled run ahead of it ends.
+  Stream<List<int>> _generateRun(
+    _LiteRtLmWebRun run,
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    List<LlamaContentPart>? parts,
+  ) async* {
     final engine = _requireContextHandle(contextHandle);
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
       throw UnsupportedError(
@@ -281,11 +345,10 @@ class LiteRtLmBackend
     if (params.maxTokens <= 0) {
       return;
     }
-    if (_activeConversation != null) {
-      throw StateError('LiteRT-LM web generation is already in progress.');
+    if (!identical(_activeRun, run) && !await run.admission.future) {
+      return;
     }
 
-    _cancelRequested = false;
     final conversation = await engine
         .createConversation(_createConversationConfig(params))
         .toDart;
@@ -295,13 +358,16 @@ class LiteRtLmBackend
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     try {
+      if (_cancelRequested) {
+        return;
+      }
       final stream = _withScopedConsoleGuardedStream(
         _streamConversation(conversation, prompt),
       );
       await for (final chunk in _applyStopSequences(
         stream,
         stopSequences,
-        onStop: cancelGeneration,
+        onStop: _cancelActiveRun,
       )) {
         if (_cancelRequested) {
           break;
@@ -316,14 +382,49 @@ class LiteRtLmBackend
     }
   }
 
-  @override
-  void cancelGeneration() {
+  void _startRun(_LiteRtLmWebRun run) {
+    _activeRun = run;
+    _cancelRequested = false;
+  }
+
+  /// Ends [run] and starts the generation queued behind it.
+  void _finishRun(_LiteRtLmWebRun run) {
+    if (identical(_queuedRun, run)) {
+      _queuedRun = null;
+    }
+    if (!identical(_activeRun, run)) {
+      return;
+    }
+    _activeRun = null;
+    final queued = _queuedRun;
+    if (queued == null) {
+      return;
+    }
+    _queuedRun = null;
+    _startRun(queued);
+    queued.admission.complete(true);
+  }
+
+  /// Ends the generation waiting for a cancelled run without starting it.
+  void _closeQueuedRun() {
+    final queued = _queuedRun;
+    _queuedRun = null;
+    queued?.admission.complete(false);
+  }
+
+  void _cancelActiveRun() {
     _cancelRequested = true;
     try {
       _activeConversation?.cancel();
     } catch (_) {
       // Preserve the caller-visible generation error, if any.
     }
+  }
+
+  @override
+  void cancelGeneration() {
+    _cancelActiveRun();
+    _closeQueuedRun();
   }
 
   @override
@@ -905,6 +1006,7 @@ class LiteRtLmBackend
   }
 
   Future<void> _disposeEngine() async {
+    _closeQueuedRun();
     final conversation = _activeConversation;
     _activeConversation = null;
     if (conversation != null) {
@@ -1400,6 +1502,13 @@ class LiteRtLmBackend
       'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
     );
   }
+}
+
+/// One [LiteRtLmBackend.generate] call.
+final class _LiteRtLmWebRun {
+  /// Completes with true when a queued run may start, or false when it ends
+  /// without starting.
+  final Completer<bool> admission = Completer<bool>();
 }
 
 @JS()
