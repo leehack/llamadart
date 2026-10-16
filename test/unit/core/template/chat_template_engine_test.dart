@@ -614,6 +614,101 @@ void main() {
         );
       });
 
+      const recursiveTemplate =
+          '{% macro recurse() %}{{ recurse() }}{% endmacro %}'
+          '{% if messages[0].content == "overflow" %}{{ recurse() }}'
+          '{% else %}{{ messages[0].content }}{% endif %}';
+
+      // Stack overflow cannot be caught on dart2wasm.
+      test('wraps render stack overflow and preserves its original stack', () {
+        try {
+          ChatTemplateEngine.render(
+            templateSource: recursiveTemplate,
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'overflow',
+              ),
+            ],
+            metadata: const {},
+          );
+          fail('The recursive template must fail to render');
+        } on LlamaInferenceException catch (error, stackTrace) {
+          expect(error.message, contains('templateSource failed to render'));
+          expect(error.message, contains('Stack Overflow'));
+          expect(stackTrace.toString(), contains('MacroStatement'));
+        }
+      }, testOn: '!dart2wasm');
+
+      // Stack overflow cannot be caught on dart2wasm.
+      test('does not retry a tool-role stack overflow as a user turn', () {
+        const template =
+            '{% macro recurse() %}{{ recurse() }}{% endmacro %}'
+            '{% for message in messages %}'
+            '{% if message.role == "tool" %}{{ recurse() }}'
+            '{% else %}{{ message.content }}{% endif %}'
+            '{% endfor %}';
+
+        // A user-turn retry would succeed and hide the original overflow.
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: template,
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'ok'),
+            ],
+            metadata: const {},
+          ).prompt,
+          'ok',
+        );
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: template,
+            messages: const [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: 'call1',
+                    name: 'inspect',
+                    result: 'ok',
+                  ),
+                ],
+              ),
+            ],
+            metadata: const {},
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('templateSource'), contains('Stack Overflow')),
+            ),
+          ),
+        );
+      }, testOn: '!dart2wasm');
+
+      test('keeps successful recursive-template renders unchanged', () {
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: recursiveTemplate,
+            messages: messages,
+            metadata: const {},
+          ).prompt,
+          'hello',
+        );
+      });
+
+      test('leaves unrelated render errors unchanged', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: '{{ 1 // 0 }}',
+            messages: messages,
+            metadata: const {},
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+      });
+
       test('renders the conversation it accepts', () {
         final result = ChatTemplateEngine.render(
           templateSource: mustAlternate,

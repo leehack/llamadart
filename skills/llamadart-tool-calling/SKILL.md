@@ -89,6 +89,12 @@ description: >-
   `v0.18.0` hands it each message's `content` as a list of
   `{"type": "text", "text": ...}` parts, so read both the string and the
   list shape.
+- A recursive chat template (for example Command R+ or
+  Hermes-2-Pro-Llama-3-8B `tool_use` with a null-typed parameter) fails with
+  `LlamaInferenceException` naming the selected template on the Dart VM and
+  JavaScript. On dart2wasm, stack overflow cannot be caught and may trap or
+  hang. Replace the broken template or use a compatible tool schema;
+  rendering does not repair upstream templates.
 - Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
   LiteRT-LM `v0.18.0` and Web `@litert-lm/core@0.18.0` with
   `LlamaUnsupportedException` before generation or history mutation: those
