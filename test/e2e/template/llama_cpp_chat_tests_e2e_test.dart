@@ -14,6 +14,20 @@ import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 
 void main() {
+  setUpAll(() async {
+    const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
+    final script = File(scriptPath);
+    expect(script.existsSync(), isTrue, reason: 'Missing $scriptPath');
+
+    final result = await Process.run(script.path, const <String>[]);
+    final output = '${result.stdout}\n${result.stderr}';
+    expect(
+      result.exitCode,
+      equals(0),
+      reason: 'llama.cpp chat tests failed:\n$output',
+    );
+  });
+
   test(
     'LiteRT Qwen normalized history matches pinned upstream rendering',
     () async {
@@ -74,20 +88,6 @@ void main() {
       }
     },
   );
-
-  test('runs upstream llama.cpp chat test selection', () async {
-    const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
-    final script = File(scriptPath);
-    expect(script.existsSync(), isTrue, reason: 'Missing $scriptPath');
-
-    final result = await Process.run(script.path, const <String>[]);
-    final output = '${result.stdout}\n${result.stderr}';
-    expect(
-      result.exitCode,
-      equals(0),
-      reason: 'llama.cpp chat tests failed:\n$output',
-    );
-  });
 
   test('runs upstream llama.cpp full chat test suite', () async {
     const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
