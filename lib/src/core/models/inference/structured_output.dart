@@ -67,7 +67,8 @@ class LlamaStructuredOutput<T> {
   /// [schema] must be representable by the current JSON-schema-to-GBNF subset:
   /// primitives, objects with properties/required/additionalProperties, arrays
   /// with `items` or fixed `prefixItems`, enum/const, local `$ref`, `anyOf`,
-  /// `oneOf`, additive object/enum `allOf`, integer bounds, UUID/date/time formats,
+  /// `oneOf`, additive object/enum `allOf`, integer bounds, `uuid`/`uuid1`–`uuid5`,
+  /// date/time formats,
   /// compiled patterns, string length, and array item-count bounds. Unsupported
   /// constraint keywords throw [LlamaUnsupportedException] before generation.
   /// Annotations and unknown vocabulary are preserved but not

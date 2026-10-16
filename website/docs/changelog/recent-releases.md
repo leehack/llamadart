@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- **Behavior change:** Validate response-schema assertions, support upstream formats, integer bounds and `allOf`, preserve tuples and metadata, and bound tool-call nesting.
+- **Behavior change:** Validate response-schema assertions, support UUID aliases, valid bounded integers and `allOf`, preserve tuples and unused definitions, and bound tool-call nesting.
 
 ## 0.14.0
 

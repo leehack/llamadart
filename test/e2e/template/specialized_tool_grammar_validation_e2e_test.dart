@@ -49,6 +49,31 @@ void main() {
     expect(File(validator).existsSync(), isTrue);
   });
 
+  test('negative maximum grammars reject leading-zero JSON integers', () {
+    for (final bounds in <Map<String, dynamic>>[
+      {'exclusiveMaximum': 0},
+      {'maximum': -1},
+      {'maximum': -5},
+      {'maximum': -25},
+    ]) {
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({'type': 'integer', ...bounds}),
+        valid: ['-25', '-100', '-1234'],
+        invalid: ['-00', '-01', '-012', '-025', '-00100', '0', '1'],
+      );
+    }
+  });
+
+  test('bare bounded arrays compile with unrestricted JSON items', () {
+    _expectGrammar(
+      validator,
+      responseFormatGrammar({'type': 'array', 'minItems': 1, 'maxItems': 2}),
+      valid: ['[1]', '["s",null]', '[{}]', '[[true]]'],
+      invalid: ['[]', '[1,2,3]'],
+    );
+  });
+
   test(
     'audit lossy upstream integer suffixes are rejected before generation',
     () {

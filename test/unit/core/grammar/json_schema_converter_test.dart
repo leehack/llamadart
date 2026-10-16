@@ -11,6 +11,71 @@ const _maxGroupDepth = 32;
 String _nestedGroups(int depth) => '^${'(' * depth}a${')' * depth}\$';
 
 void main() {
+  for (final bounds in <Map<String, dynamic>>[
+    {'exclusiveMaximum': 0},
+    {'maximum': -1},
+    {'maximum': -5},
+    {'maximum': -25},
+  ]) {
+    test('negative maximum rejects leading zero integers: $bounds', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'integer',
+        ...bounds,
+      });
+      final accepts = _ruleRegExp(grammar, 'root');
+      for (final value in ['-00', '-01', '-012', '-025', '-00100']) {
+        expect(accepts.hasMatch(value), isFalse, reason: value);
+      }
+      for (final value in ['-25', '-100', '-1234']) {
+        expect(accepts.hasMatch(value), isTrue, reason: value);
+      }
+    });
+  }
+
+  test('UUID grammar accepts uppercase hex on the non-e2e path', () {
+    final grammar = JsonSchemaConverter.convert({
+      'type': 'string',
+      'format': 'uuid',
+    });
+    final accepts = _ruleRegExp(grammar, 'root');
+    expect(accepts.hasMatch('"ABCDEFAB-ABCD-ABCD-ABCD-ABCDEFABCDEF"'), isTrue);
+    expect(accepts.hasMatch('"GBCDEFAB-ABCD-ABCD-ABCD-ABCDEFABCDEF"'), isFalse);
+  });
+
+  test('time grammar requires exactly three fractional digits', () {
+    for (final format in ['time', 'date-time']) {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'string',
+        'format': format,
+      });
+      final accepts = _ruleRegExp(grammar, 'root');
+      final prefix = format == 'time' ? '' : '2026-10-16T';
+      for (final fraction in ['', '.123']) {
+        expect(accepts.hasMatch('"${prefix}12:34:56${fraction}Z"'), isTrue);
+      }
+      for (final fraction in ['.1', '.12', '.1234']) {
+        expect(accepts.hasMatch('"${prefix}12:34:56${fraction}Z"'), isFalse);
+      }
+    }
+  });
+
+  test('allOf enum intersection has upstream literal sort order', () {
+    final grammar = JsonSchemaConverter.convert({
+      'allOf': [
+        {
+          'enum': ['z', 'a', 'm'],
+        },
+        {
+          'enum': ['m', 'z', 'a'],
+        },
+      ],
+    });
+    expect(
+      grammar.split('\n').first,
+      r'root ::= ("\"a\"" | "\"m\"" | "\"z\"") space',
+    );
+  });
+
   group('llama.cpp grammar loading', () {
     // Boundaries checked against the test-gbnf-validator of the shipped
     // runtime (upstream v0.6.0), built by

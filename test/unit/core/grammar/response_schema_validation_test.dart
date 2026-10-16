@@ -32,8 +32,7 @@ void main() {
       r'$dynamicRef',
       r'$recursiveRef',
     ])
-      keyword: {'type': 'integer', keyword: 1},
-    'bare array bounds': {'type': 'array', 'maxItems': 3},
+      keyword: {'type': 'integer', keyword: keyword == 'multipleOf' ? 2 : 1},
     for (final format in ['email', 'int32'])
       'format $format': {'type': 'string', 'format': format},
     'pattern': {'type': 'string', 'pattern': r'^\w+$'},
@@ -134,6 +133,7 @@ void main() {
       ],
     },
     'reference in definitions': {
+      r'$ref': '#/properties/value/definitions/s',
       'definitions': {
         's': {r'$ref': '#/missing'},
       },

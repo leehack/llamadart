@@ -56,7 +56,7 @@ legacy tool-parameter parser also does not preserve a complete imported schema;
 do not assume Pydantic assertions such as `Field(ge=0)` are enforced here.
 For strict schemas in an integration, forward `responseFormat` to `engine.create`
 or use `LlamaStructuredOutput`, and preserve tool inputs with
-`ToolDefinition.fromJsonSchema`. Core response schemas support integer bounds, UUID/date/time formats, fixed
+`ToolDefinition.fromJsonSchema`. Core response schemas support integer bounds, `uuid`/`uuid1`–`uuid5` and date/time formats, fixed
 tuples and supported `allOf` merges. Number bounds, other formats and other
 unsupported assertions throw `LlamaUnsupportedException` with the schema path
 before generation; remove an assertion only when the

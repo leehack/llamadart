@@ -144,7 +144,7 @@ class JsonSchemaConverter {
   /// Checks the same lexical format subset as the generated grammar.
   static bool matchesFormat(String format, String value) {
     final pattern = switch (format) {
-      'uuid' =>
+      'uuid' || 'uuid1' || 'uuid2' || 'uuid3' || 'uuid4' || 'uuid5' =>
         r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
       'date' => _datePattern,
       'time' => _timePattern,
@@ -276,8 +276,6 @@ class JsonSchemaConverter {
       for (final key in [
         'properties',
         'patternProperties',
-        r'$defs',
-        'definitions',
         'dependentSchemas',
       ]) {
         final schemas = node[key];
@@ -454,7 +452,10 @@ class JsonSchemaConverter {
 
     // array with items
     if ((schemaType == null || schemaType == 'array') &&
-        (schema.containsKey('items') || schema.containsKey('prefixItems'))) {
+        (schema.containsKey('items') ||
+            schema.containsKey('prefixItems') ||
+            schema.containsKey('minItems') ||
+            schema.containsKey('maxItems'))) {
       final items = schema['items'] ?? schema['prefixItems'];
       if (items is List) {
         // Tuple
@@ -470,10 +471,10 @@ class JsonSchemaConverter {
             .join(' "," space ');
         return _addRule(ruleName, '"[" space $tupleRules "]" space');
       } else {
-        final itemRuleName = visit(
-          items as Map<String, dynamic>,
-          '${name.isNotEmpty ? '$name-' : ''}item',
-        );
+        final itemName = '${name.isNotEmpty ? '$name-' : ''}item';
+        final itemRuleName = items == null
+            ? _addPrimitive(itemName, _primitiveRules['value']!)
+            : visit(items as Map<String, dynamic>, itemName);
         final minItems = (schema['minItems'] as int?) ?? 0;
         final maxItems = schema['maxItems'] as int?;
         return _addRule(
@@ -493,8 +494,18 @@ class JsonSchemaConverter {
     final format = schema['format'];
     if ((schemaType == null || schemaType == 'string') &&
         format is String &&
-        {'uuid', 'date', 'time', 'date-time'}.contains(format)) {
-      final primitive = format == 'uuid' ? 'uuid' : '$format-string';
+        {
+          'uuid',
+          'uuid1',
+          'uuid2',
+          'uuid3',
+          'uuid4',
+          'uuid5',
+          'date',
+          'time',
+          'date-time',
+        }.contains(format)) {
+      final primitive = format.startsWith('uuid') ? 'uuid' : '$format-string';
       return _addRule(
         ruleName,
         _addPrimitive(primitive, _formatRules[primitive]!),
@@ -1253,7 +1264,9 @@ String _buildMinMaxInt(
     if (max >= 0) {
       return '${top ? '"-" [1-9] ${digits(0, less)} | ' : ''}${_buildMinMaxInt(0, max, decimals)}';
     }
-    return '"-" (${_buildMinMaxInt(-max, null, decimals, false)})';
+    // Diverge from v0.7.0 only here: the first digit after a minus sign is
+    // still a leading digit. Upstream's suffix mode admits invalid -00/-01.
+    return '"-" (${_buildMinMaxInt(-max, null, decimals)})';
   }
   throw StateError('At least one integer endpoint is required');
 }

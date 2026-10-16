@@ -15,6 +15,222 @@ LlamaStructuredOutput<Object?> typed(Map<String, dynamic> schema) =>
     );
 
 void main() {
+  for (final format in ['uuid1', 'uuid2', 'uuid3', 'uuid4', 'uuid5']) {
+    test('UUID alias $format follows upstream on raw and typed paths', () {
+      for (final hasType in [false, true]) {
+        final schema = <String, dynamic>{
+          if (hasType) 'type': 'string',
+          'format': format,
+        };
+        expect(
+          responseFormatGrammar(schema),
+          responseFormatGrammar({'type': 'string', 'format': 'uuid'}),
+        );
+        final output = typed(schema);
+        const valid = 'ABCDEFAB-ABCD-ABCD-ABCD-ABCDEFABCDEF';
+        expect(output.parse(jsonEncode(valid)), valid);
+        for (final invalid in [
+          '"bad"',
+          '"GBCDEFAB-ABCD-ABCD-ABCD-ABCDEFABCDEF"',
+          '3',
+        ]) {
+          expect(
+            () => output.parse(invalid),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+        }
+      }
+    });
+  }
+
+  for (final (schema, value) in <(Map<String, dynamic>, String)>[
+    ({'type': 'array', 'uniqueItems': false}, '[1,1]'),
+    ({'type': 'object', 'minProperties': 0}, '{}'),
+    ({'type': 'integer', 'multipleOf': 1}, '3'),
+    ({'const': 3, 'type': 'number'}, '3'),
+  ]) {
+    test(
+      'trivial assertions and integer number literals remain accepted: $schema',
+      () {
+        expect(responseFormatGrammar(schema), isNotEmpty);
+        expect(typed(schema).parse(value), jsonDecode(value));
+      },
+    );
+  }
+
+  test('trivial assertion siblings do not shadow supported dispatch', () {
+    for (final base in <Map<String, dynamic>>[
+      {'const': 's'},
+      {
+        'enum': ['s'],
+      },
+      {
+        'anyOf': [
+          {'const': 's'},
+        ],
+      },
+      {
+        'allOf': [
+          {
+            'enum': ['s'],
+          },
+        ],
+      },
+      {
+        r'$ref': r'#/$defs/S',
+        r'$defs': {
+          'S': {'const': 's'},
+        },
+      },
+    ]) {
+      final schema = {...base, 'uniqueItems': false, 'minProperties': 0};
+      expect(responseFormatGrammar(schema), responseFormatGrammar(base));
+      expect(typed(schema).parse('"s"'), 's');
+    }
+    for (final schema in <Map<String, dynamic>>[
+      {'type': 'integer', 'multipleOf': 2},
+      {'type': 'number', 'multipleOf': 1},
+      {'multipleOf': 1},
+      {'type': 'array', 'uniqueItems': true},
+      {'type': 'object', 'minProperties': 1},
+    ]) {
+      expect(
+        () => responseFormatGrammar(schema),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(() => typed(schema), throwsA(isA<LlamaUnsupportedException>()));
+    }
+  });
+
+  test('bare minimum array bounds require an item', () {
+    final schema = <String, dynamic>{'type': 'array', 'minItems': 1};
+    expect(
+      responseFormatGrammar(schema),
+      contains('root-item ("," space root-item)*'),
+    );
+    expect(typed(schema).parse('[null]'), [null]);
+    expect(
+      () => typed(schema).parse('[]'),
+      throwsA(isA<LlamaInferenceException>()),
+    );
+  });
+
+  test('bare maximum array bounds allow empty arrays', () {
+    final schema = <String, dynamic>{'type': 'array', 'maxItems': 1};
+    expect(responseFormatGrammar(schema), contains('root-item'));
+    expect(typed(schema).parse('[]'), isEmpty);
+    expect(
+      () => typed(schema).parse('[1,2]'),
+      throwsA(isA<LlamaInferenceException>()),
+    );
+  });
+
+  test('array bounds without items constrain arbitrary JSON values', () {
+    final schema = <String, dynamic>{
+      'type': 'array',
+      'minItems': 1,
+      'maxItems': 2,
+    };
+    expect(
+      responseFormatGrammar(schema),
+      contains(
+        'root-item ::= object | array | string | number | boolean | null',
+      ),
+    );
+    final output = typed(schema);
+    for (final value in ['[1]', '["s",null]', '[{}]', '[[true]]']) {
+      expect(output.parse(value), jsonDecode(value));
+    }
+    for (final value in ['[]', '[1,2,3]']) {
+      expect(
+        () => output.parse(value),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    }
+  });
+
+  for (final key in [r'$defs', 'definitions']) {
+    test('unused $key assertions and references are ignored', () {
+      final schema = <String, dynamic>{
+        'type': 'string',
+        key: {
+          'unused': {
+            'not': {'type': 'integer'},
+          },
+          'missing': {r'$ref': '#/missing'},
+          'malformed': {'enum': 1},
+          'notSchema': 1,
+        },
+      };
+      expect(
+        responseFormatGrammar(schema),
+        responseFormatGrammar({'type': 'string'}),
+      );
+      expect(typed(schema).parse('"s"'), 's');
+      final referenced = <String, dynamic>{
+        r'$ref': '#/$key/unused',
+        key: schema[key],
+      };
+      final error = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'path',
+          contains(r'$.$ref.not'),
+        ),
+      );
+      expect(() => responseFormatGrammar(referenced), error);
+      expect(() => typed(referenced), error);
+    });
+  }
+
+  test(
+    'referenced recursive definitions validate once and parse finite values',
+    () {
+      final schema = <String, dynamic>{
+        r'$ref': r'#/$defs/Node',
+        r'$defs': {
+          'Node': {
+            'type': 'object',
+            'properties': {
+              'children': {
+                'type': 'array',
+                'items': {r'$ref': r'#/$defs/Node'},
+              },
+            },
+            'required': ['children'],
+          },
+        },
+      };
+      expect(responseFormatGrammar(schema), contains('ref-defs-Node'));
+      expect(typed(schema).parse('{"children":[{"children":[]}]}'), {
+        'children': [
+          {'children': <Object?>[]},
+        ],
+      });
+    },
+  );
+
+  test('allOf ref into non-schema enum reports the reference path', () {
+    for (final type in [null, 'string']) {
+      final schema = <String, dynamic>{
+        if (type != null) 'type': type,
+        'allOf': [
+          {r'$ref': '#/annotation'},
+        ],
+        'annotation': {'enum': 1},
+      };
+      final error = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'path',
+          contains(r'$.allOf[0].$ref'),
+        ),
+      );
+      expect(() => responseFormatGrammar(schema), error);
+      expect(() => typed(schema), error);
+    }
+  });
+
   test('audit Pydantic 2.13.4: real tuple and discriminator emissions', () {
     final corpus = jsonDecode(pydanticAuditSchemas) as Map<String, dynamic>;
     for (final schema in corpus.values.cast<Map<String, dynamic>>()) {

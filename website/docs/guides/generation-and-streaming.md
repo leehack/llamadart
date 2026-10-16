@@ -318,8 +318,11 @@ The unsupported keywords are `multipleOf`, `uniqueItems`, `contains`,
 `patternProperties`, `propertyNames`, `dependentRequired`, `dependentSchemas`,
 `dependencies`, `not`, `if`, `then`, `else`, `unevaluatedItems`,
 `unevaluatedProperties`, `additionalItems`, `$dynamicRef` and `$recursiveRef`.
-Numeric bounds require explicit `type: integer`; supported formats are `uuid`,
-`date`, `time`, and `date-time`. Other formats fail explicitly.
+The trivial assertions `uniqueItems: false`, `minProperties: 0` and integer
+`multipleOf: 1` are accepted. Numeric bounds require explicit `type: integer`;
+supported formats are `uuid`, `uuid1`–`uuid5`, `date`, `time`, and `date-time`.
+UUID aliases enforce the same lexical shape as `uuid`, including uppercase hex,
+without checking the version nibble. Other formats fail explicitly.
 
 Validation also rejects assertion siblings shadowed by `$ref`, `anyOf`/`oneOf`,
 or `const`/`enum` (except compatible literal `type`); pattern or format plus
@@ -334,7 +337,9 @@ weaker inclusive bound shadow a stronger exclusive bound. One-sided positive
 minima and negative maxima containing a nonfinal zero digit are rejected because
 upstream loses suffix padding (`minimum: 100` admits `10`). At 16 digits, only
 absolute endpoints matching `111111111111111[0-9]` are supported; others emit inverted
-repetition bounds. Two-sided bounds are unaffected.
+repetition bounds. Two-sided bounds are unaffected. One-sided negative maxima,
+including Pydantic `NegativeInt`, reject leading-zero JSON integers; this corrects
+an upstream v0.7.0 grammar defect.
 
 `allOf` supports additive object-property merges and nonempty enum intersections,
 including local references. Object merges make all merged properties required
@@ -361,12 +366,14 @@ Supported schema features match the built-in JSON-schema-to-GBNF subset:
 primitive types, objects with `properties`, `required`, and
 `additionalProperties`, arrays with `items` or fixed tuples,
 `enum`/`const`, local `$ref`, `anyOf`, `oneOf`, supported `allOf`, compiled
-`pattern`, integer bounds, the four string formats above, `minLength`,
-`maxLength`, `minItems`, and `maxItems`. Unsupported schemas fail before
+`pattern`, integer bounds, the string formats above, `minLength`,
+`maxLength`, `minItems`, and `maxItems`. Arrays with bounds but no `items`
+accept any JSON element. Unsupported schemas fail before
 generation. Annotations (`discriminator`, content metadata, `example`/`examples`, `$anchor`,
 `$id`, `$schema`, `$comment`, `deprecated`, `readOnly`, `writeOnly`, `title`,
 `description`, `default`) and unknown vocabulary, including `x-*` extensions,
-are preserved and ignored as constraints. Only schema positions are traversed.
+are preserved and ignored as constraints. Only schema positions are traversed;
+unused `$defs`/`definitions` entries are ignored and validated only when referenced.
 Formats use the upstream lexical rules, including month/day ranges and a
 required timezone with optional three-digit fractional seconds; they do not
 check calendar validity. Nonempty untyped

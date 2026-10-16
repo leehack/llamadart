@@ -22,9 +22,10 @@ generation. The remaining unsupported assertions are:
   `minProperties`, `maxProperties`, `patternProperties`, `propertyNames`,
   `dependentRequired`, `dependentSchemas`, `dependencies`, `not`, `if`, `then`,
   `else`, `unevaluatedItems`, `unevaluatedProperties`, `additionalItems`,
-  `$dynamicRef` and `$recursiveRef`.
+  `$dynamicRef` and `$recursiveRef`, except the trivial assertions
+  `uniqueItems: false`, `minProperties: 0` and integer `multipleOf: 1`.
 - Numeric bounds on anything except explicit `type: integer`, unsupported
-  formats (anything except `uuid`, `date`, `time`, `date-time`), patterns outside
+  formats (anything except `uuid`, `uuid1`–`uuid5`, `date`, `time`, `date-time`), patterns outside
   the compiled subset, and length/item bounds above 2000.
 - Assertions shadowed by `$ref`, `anyOf`/`oneOf`, or `const`/`enum` (compatible
   literal `type` is allowed); pattern or format combined with length bounds;
@@ -46,10 +47,14 @@ generation. The remaining unsupported assertions are:
   others emit inverted repetition bounds. Two-sided bounds are unaffected.
 
 Integer `minimum`, `maximum`, `exclusiveMinimum` and `exclusiveMaximum`
-(including Pydantic `ge=`), the four formats above and supported
+(including Pydantic `ge=` and `NegativeInt`), the formats above and supported
 `allOf` forms now compile with llama.cpp v0.7.0 semantics. Format validation is
 lexical: dates use month/day ranges, and times require a timezone with optional
-three-digit fractional seconds. Fixed tuples accept both `prefixItems` and
+three-digit fractional seconds. `uuid1`–`uuid5` use the same lexical UUID rule
+as `uuid`, including uppercase hex; they do not constrain the version nibble.
+One-sided negative maxima reject leading-zero JSON integers, correcting an
+upstream v0.7.0 grammar defect. Arrays with item bounds do not require `items`;
+their unconstrained elements may be any JSON value. Fixed tuples accept both `prefixItems` and
 draft-07 `items: [...]`, with compatible bounds (`minItems` no greater than the
 tuple length, `maxItems` no smaller). Their grammar still requires every tuple
 item. Typed final parsing checks the same tuples, formats and integer bounds.
@@ -63,6 +68,8 @@ annotations. Non-JSON values throw `LlamaArgumentException`. Annotations such as
 `title`, `description`, `default`, and unknown vocabulary (including `x-*`)
 remain accepted and ignored as constraints, just as upstream ignores them.
 Only schema-bearing positions are traversed for assertions and references.
+Unused `$defs`/`definitions` entries are ignored; referenced entries must pass
+the same validation as inline schemas.
 Nonempty annotation-only untyped schemas accept any JSON value, including in
 imported tool properties; `{}` keeps its existing object grammar. Imported tools
 keep their narrower subset and object root (see
