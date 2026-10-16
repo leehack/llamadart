@@ -137,6 +137,76 @@ void main() {
       }
     });
 
+    test('cancelled double-brace calls retain legacy recovery', () {
+      const output =
+          '<tool_call>\n{{"name":"weather","arguments":{"city":"Paris"}}}';
+      for (final cancelled in [false, true]) {
+        final parsed = handler.parse(output, cancelled: cancelled);
+        expect(parsed.content, '<tool_call>\n{}');
+        expect(parsed.toolCalls, hasLength(1));
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+        expect(parsed.toolCalls.single.function?.arguments, '{"city":"Paris"}');
+      }
+
+      final singleBrace = handler.parse(
+        '<tool_call>\n{"name":"weather","arguments":{"city":"Paris"}}',
+        cancelled: true,
+      );
+      expect(singleBrace.content, isEmpty);
+      expect(singleBrace.toolCalls, isEmpty);
+    });
+
+    test(
+      'cancelled schema final rejects a pending tail after a complete call',
+      () {
+        final schemaTool = ToolDefinition.fromJsonSchema(
+          name: 'weather',
+          description: 'Get weather',
+          schema: {'type': 'object', 'properties': <String, dynamic>{}},
+        );
+        final legacyTool = ToolDefinition(
+          name: 'weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city')],
+          handler: _noop,
+        );
+        for (final tail in ['<tool_call>', '<tool_call>{"na']) {
+          final output = 'Checking. $complete$tail';
+          for (final cancelled in [false, true]) {
+            expect(
+              () => ChatTemplateEngine.parse(
+                ChatFormat.hermes.index,
+                output,
+                tools: [schemaTool],
+                cancelled: cancelled,
+              ),
+              throwsA(isA<LlamaInferenceException>()),
+              reason: 'cancelled=$cancelled, tail=$tail',
+            );
+          }
+          for (final (tool, partial) in [
+            (schemaTool, true),
+            (legacyTool, false),
+          ]) {
+            final parsed = ChatTemplateEngine.parse(
+              ChatFormat.hermes.index,
+              output,
+              tools: [tool],
+              isPartial: partial,
+              cancelled: true,
+            );
+            expect(parsed.content, 'Checking.');
+            expect(parsed.toolCalls, hasLength(1));
+            expect(parsed.toolCalls.single.function?.name, 'weather');
+            expect(
+              parsed.toolCalls.single.function?.arguments,
+              '{"city":"Paris"}',
+            );
+          }
+        }
+      },
+    );
+
     test('keeps literal content when tool parsing is disabled', () {
       for (final partial in [false, true]) {
         final parsed = handler.parse(
