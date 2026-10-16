@@ -16,6 +16,9 @@
   call returns `finishReason: tool_calls` with the completed call (not executed)
   instead of `stop` with raw markup
   ([#887](https://github.com/leehack/llamadart/issues/887)).
+- Honor `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles
+  with a canonical Qwen 3 `chatTemplate` override or identifying metadata
+  ([#901](https://github.com/leehack/llamadart/issues/901)).
 
 ## 0.13.1
 

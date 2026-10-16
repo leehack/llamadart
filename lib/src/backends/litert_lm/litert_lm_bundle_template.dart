@@ -77,7 +77,19 @@ const String _textContentAdapterPrelude =
 /// or declares no template.
 ///
 /// The native runtime exposes no accessor for it.
-String? readLiteRtLmBundleChatTemplate(String path) {
+String? readLiteRtLmBundleChatTemplate(String path) =>
+    readLiteRtLmBundleMetadata(path)?.chatTemplate;
+
+/// The embedded template and Qwen3 model-type declaration at [path].
+///
+/// Returns null under the same bounds and format constraints as
+/// [readLiteRtLmBundleChatTemplate]. The model type is field 6 of
+/// `LlmMetadata`, whose `LlmModelType` oneof uses field 5 for Qwen3 in
+/// LiteRT-LM v0.18.0 (`runtime/proto/llm_model_type.proto`). A malformed
+/// optional model type is ignored when the template is still readable.
+({String? chatTemplate, bool isQwen3})? readLiteRtLmBundleMetadata(
+  String path,
+) {
   RandomAccessFile? file;
   try {
     file = File(path).openSync();
@@ -113,7 +125,26 @@ String? readLiteRtLmBundleChatTemplate(String path) {
       if (length <= 0 || length > _maxMetadataBytes) {
         return null;
       }
-      return _jinjaPromptTemplate(_read(file, beginOffset, length));
+      final fields = {
+        for (final (field, value) in _protoFields(
+          _read(file, beginOffset, length),
+        ))
+          field: value,
+      };
+      final template = fields[_jinjaPromptTemplateField];
+      final modelType = fields[6];
+      var isQwen3 = false;
+      try {
+        isQwen3 =
+            modelType != null && _protoFields(modelType).lastOrNull?.$1 == 5;
+      } on FormatException {
+        // An invalid optional family declaration must not hide a usable template.
+        if (template == null) return null;
+      }
+      return (
+        chatTemplate: template == null ? null : utf8.decode(template),
+        isQwen3: isQwen3,
+      );
     }
     return null;
   } on FileSystemException {
@@ -134,8 +165,7 @@ Uint8List _read(RandomAccessFile file, int offset, int length) {
   return bytes;
 }
 
-String? _jinjaPromptTemplate(Uint8List metadata) {
-  String? template;
+Iterable<(int, Uint8List)> _protoFields(Uint8List metadata) sync* {
   var offset = 0;
 
   int varint() {
@@ -172,16 +202,13 @@ String? _jinjaPromptTemplate(Uint8List metadata) {
         final length = varint();
         final start = offset;
         skip(length);
-        if (field == _jinjaPromptTemplateField) {
-          template = utf8.decode(metadata.sublist(start, offset));
-        }
+        yield (field, Uint8List.sublistView(metadata, start, offset));
       case 5:
         skip(4);
       default:
         throw const FormatException('Malformed LiteRT-LM metadata.');
     }
   }
-  return template;
 }
 
 /// Bounds-checked reads of the FlatBuffers encoding of a bundle header.

@@ -15,9 +15,14 @@ template is read straight from the GGUF.
 exposes **no way to read it back**, and a bundle that embeds none gets one the
 runtime builds. So the backend has to supply
 `tokenizer.chat_template` itself for metadata, template inspection, Dart-side
-parsing, web generation, and fallback prompt rendering. It does this by
-detecting the model family from the bundle filename and mapping it to a
-template derived from the one llama.cpp ships. Runtime content-shape adapters
+parsing, web generation, and fallback prompt rendering. The native backend
+matches the bundle filename first, then recognizes unnamed Qwen 3 bundles
+from `LlmMetadata.llm_model_type.qwen3` (field 6) or the complete canonical
+Qwen 3 template in `jinja_prompt_template` (field 7). A canonical Qwen 3
+`ModelParams.chatTemplate` override also opts in; arbitrary ChatML/thinking
+markers do not identify a family. Unreadable or unrecognized metadata retains
+the existing fallback; `ModelParams.chatTemplate` takes precedence over the
+bundle template. Web retains filename-based registry selection. Runtime content-shape adapters
 preserve the same rendered prompt for equivalent text inputs.
 
 Native LiteRT-LM text chat does not always render the full prompt in Dart. When
@@ -45,8 +50,16 @@ and audio parts, unknown parts, text parts without string text, and tool
 responses without a response field fail during template rendering. This
 compatibility adapter does not add grammar-constrained decoding.
 
-A `ModelParams.chatTemplate` set on a Qwen 3 text bundle replaces that
-override in the native conversation, so it receives the same part arrays. A
+A `ModelParams.chatTemplate` set on a filename-matched or positively identified
+Qwen 3 text bundle replaces the native conversation template. For a renamed
+bundle without identifying metadata, use the complete canonical template from
+`tool/litert_lm_templates/qwen3.jinja` as the override. Other families retain
+the bundle template, content-shape probe and adapter; their overrides continue
+to affect Dart-side metadata and parsing only.
+It receives `enable_thinking` from the request and the same part arrays.
+The supplied template must implement the thinking switch itself; llamadart
+does not rewrite it. Existing filename matches, including Qwen 3.5, and
+image/audio conversations keep their existing native routing. A
 template that reads `message.content` as a string no longer works there: with
 Qwen3 0.6B on `v0.18.0`, string concatenation (`'...' + message['content']`)
 fails the generation with `LlamaInferenceException`
@@ -124,12 +137,31 @@ adds the system role itself, so passing a full message object would nest it.
 > Note: the native runtime adds the model's start token itself, so the bundled
 > templates have their leading `bos_token` stripped to avoid a doubled BOS.
 
+## Legacy Qwen 3 bundles without identifying metadata
+
+The on-disk litert-community Qwen3-0.6B bundle has only `LlmMetadata` fields
+1–5: start/stop tokens, generic ChatML prompt templates, sampling parameters
+and a token limit. Neither a Qwen 3 declaration nor a Jinja template is present.
+Those fields cannot distinguish Qwen 3 from other ChatML families reliably.
+Renaming it to `qwen.litertlm` or `download` therefore still leaves
+`enableThinking: false` ineffective: reasoning can exhaust the output budget
+while the public content is empty. Issue [#901](https://github.com/leehack/llamadart/issues/901)
+remains open for this case.
+
+Keep `Qwen3` in the filename (for example `Qwen3-0.6B.litertlm`), or set
+`ModelParams.chatTemplate` to the complete canonical Qwen 3 template from
+`tool/litert_lm_templates/qwen3.jinja`. Merely adding thinking markers to an
+arbitrary override does not opt into native Qwen 3 routing. No weights need
+changing. `test/e2e/backends/litert_lm_renamed_qwen3_e2e_test.dart` validates
+these paths using read-only symlinks to a local legacy bundle.
+
 ## Resolution order
 
 `LiteRtLmService.getMetadata()` resolves the template in this order (later wins):
 
 1. **Built-in registry** — if the bundle filename matches a known family
-   (`kLiteRtLmChatTemplates`), its template is used.
+   (`kLiteRtLmChatTemplates`), its template is used. Without a filename match,
+   the Qwen 3 declaration or canonical-template match above selects Qwen 3.
 2. **`ModelParams.chatTemplate` override** — if set, it always wins. This is the
    reliable path for any model, including families not in the registry.
 

@@ -423,10 +423,16 @@ class LiteRtLmService {
     final modelName = File(
       _modelPath!,
     ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
-    final isQwen3TextModel = RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName);
-    final builtinTemplate = _resolveBuiltinTemplate(modelName);
+    final filenameTemplate = _resolveBuiltinTemplate(modelName);
+    final unnamedTemplate = filenameTemplate == null
+        ? _resolveUnnamedQwen3Template()
+        : null;
+    final useTextTemplate =
+        RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName) ||
+        unnamedTemplate != null;
+    final builtinTemplate = filenameTemplate ?? unnamedTemplate;
     final promptTemplate =
-        maxNumImages == null && !enableAudio && isQwen3TextModel
+        maxNumImages == null && !enableAudio && useTextTemplate
         ? _modelParams?.chatTemplate ?? builtinTemplate?.template
         : null;
     void createConversation(String? template, {bool seeded = true}) =>
@@ -733,7 +739,7 @@ class LiteRtLmService {
     }
   }
 
-  /// Returns the metadata known from the LiteRT-LM bundle path.
+  /// Returns metadata from the bundle name, declarations and template override.
   Map<String, String> getMetadata(int modelHandle) {
     _checkModelHandle(modelHandle);
     final modelPath = _modelPath;
@@ -752,7 +758,7 @@ class LiteRtLmService {
     }
     final builtinTemplate = modelName == null
         ? null
-        : _resolveBuiltinTemplate(modelName);
+        : _resolveBuiltinTemplate(modelName) ?? _resolveUnnamedQwen3Template();
     if (builtinTemplate != null) {
       metadata['tokenizer.chat_template'] = builtinTemplate.template;
       metadata['tokenizer.ggml.bos_token'] = builtinTemplate.bosToken;
@@ -776,6 +782,22 @@ class LiteRtLmService {
       if (template.matches(normalized)) {
         return template;
       }
+    }
+    return null;
+  }
+
+  // Generic ChatML and thinking markers are shared by several Qwen families.
+  // Only a family declaration or the complete canonical template opts in.
+  LiteRtLmChatTemplate? _resolveUnnamedQwen3Template() {
+    final metadata = readLiteRtLmBundleMetadata(_modelPath!);
+    final qwen3 = kLiteRtLmChatTemplates.singleWhere(
+      (item) => item.id == 'qwen3',
+    );
+    final template = _modelParams?.chatTemplate ?? metadata?.chatTemplate;
+    if (metadata?.isQwen3 == true ||
+        (template != null &&
+            template.trimLeft().startsWith(qwen3.template.trim()))) {
+      return qwen3;
     }
     return null;
   }

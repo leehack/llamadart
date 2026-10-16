@@ -7,8 +7,10 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dinja/dinja.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -746,6 +748,473 @@ void main() {
         service.dispose();
       }
     });
+  });
+
+  group('renamed Qwen3 thinking', () {
+    final qwen3 = kLiteRtLmChatTemplates.singleWhere(
+      (item) => item.id == 'qwen3',
+    );
+    Future<String?> generate(
+      LiteRtLmService service,
+      _FakeLiteRtLmRuntimeClient client,
+      int context, {
+      LlamaContentPart? media,
+    }) async {
+      final pending = service
+          .generateChat(
+            context,
+            [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [const LlamaTextContent('Hello'), ?media],
+              ),
+            ],
+            const GenerationParams(maxTokens: 64),
+            enableThinking: false,
+          )
+          .toList();
+      await Future.any([client.generateStarted.future, pending]);
+      client.generated.add('Hello');
+      await client.generated.close();
+      expect(await pending, [utf8.encode('Hello')]);
+      return client.lastPromptTemplate;
+    }
+
+    for (final name in [
+      'Phi-4-mini',
+      'Llama-3.2-1B',
+      'DeepSeek-R1-Distill-Qwen',
+      'renamed-gemma-3n',
+      'download', // Renamed Gemma 3n with no family hint in the filename.
+      'Qwen2.5-0.5B',
+    ]) {
+      for (final override in [null, '{{ messages[0].content }}', '']) {
+        for (final hasSetter in [false, true]) {
+          test(
+            'main native routing $name override=$override setter=$hasSetter',
+            () async {
+              final file = File('${tempDir.path}/$name.litertlm');
+              await file.writeAsBytes(_thinkingBundle(modelType: 1));
+              final client = _FakeLiteRtLmRuntimeClient()
+                ..rendersMessages = true
+                ..onRenderMessage = (_) => liteRtLmContentShapeProbeText;
+              // A runtime without the optional setter still supports these chats.
+              if (!hasSetter) {
+                client.onCreateConversation = () {
+                  if (client.lastPromptTemplate != null) {
+                    throw LlamaUnsupportedException('no template setter');
+                  }
+                };
+              }
+              final service = LiteRtLmService(clientFactory: () => client);
+              final params = ModelParams(
+                liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                chatTemplate: override,
+              );
+              try {
+                final model = await service.loadModel(file.path, params);
+                expect(
+                  await generate(
+                    service,
+                    client,
+                    service.createContext(model, params),
+                  ),
+                  isNull,
+                );
+                expect(client.renderMessageCount, 1);
+                expect(client.conversations, [
+                  (template: null, seeded: false),
+                  (template: null, seeded: true),
+                ]);
+                if (override != null) {
+                  expect(
+                    service.getMetadata(model)['tokenizer.chat_template'],
+                    override,
+                  );
+                }
+              } finally {
+                service.dispose();
+              }
+            },
+          );
+        }
+      }
+    }
+
+    for (final fixture in [
+      'test/fixtures/templates/Qwen3_5-0_8B.jinja',
+      'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja',
+    ]) {
+      test('does not replace the embedded family template $fixture', () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(
+            modelType: 1,
+            template: File(fixture).readAsStringSync(),
+          ),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            service.getMetadata(model),
+            isNot(contains('tokenizer.chat_template')),
+          );
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            isNull,
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test(
+      'a detected bundle uses the explicit override before its template',
+      () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(modelType: 5, template: qwen3.template),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const custom = '{{ enable_thinking }} custom';
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            custom,
+          );
+          expect(service.getMetadata(model)['tokenizer.chat_template'], custom);
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+
+    test(
+      'canonical override identifies a bundle despite a different embedded template',
+      () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(modelType: 1, template: '{{ messages }}'),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final custom = '  \n${qwen3.template}';
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            custom,
+          );
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+
+    test('generic override keeps the bundle content adapter', () async {
+      const embedded = '{{ messages[0].content }}';
+      final adapted = liteRtLmTextContentAdapter(embedded);
+      final client = _FakeLiteRtLmRuntimeClient()
+        ..rendersMessages = true
+        ..onRenderMessage = (template) =>
+            renderLiteRtLmContent(template ?? embedded, [
+              {'type': 'text', 'text': liteRtLmContentShapeProbeText},
+            ]);
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        readBundleChatTemplate: (_) => embedded,
+      );
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        chatTemplate: 'user override',
+      );
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        expect(
+          await generate(service, client, service.createContext(model, params)),
+          adapted,
+        );
+        expect(client.renderMessageCount, 2);
+        expect(
+          service.getMetadata(model)['tokenizer.chat_template'],
+          'user override',
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('detected Qwen3 reports a missing native template setter', () async {
+      await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
+      final client = _FakeLiteRtLmRuntimeClient();
+      client.onCreateConversation = () {
+        if (client.lastPromptTemplate != null) {
+          throw LlamaUnsupportedException('no template setter');
+        }
+      };
+      final service = LiteRtLmService(clientFactory: () => client);
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+      );
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        await expectLater(
+          generate(service, client, service.createContext(model, params)),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final custom in ["{{ enable_thinking }}", '']) {
+      test('explicit override is forwarded verbatim: "$custom"', () async {
+        await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            custom,
+          );
+          expect(client.lastExtraContext?['enable_thinking'], isFalse);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    for (final marker in [
+      '<|im_start|>',
+      '<|im_end|>',
+      '<think>',
+      '</think>',
+      'enable_thinking',
+    ]) {
+      test('does not infer Qwen3 without $marker', () async {
+        await modelFile.writeAsBytes(
+          _thinkingBundle(
+            modelType: 1,
+            template: qwen3.template.replaceAll(marker, ''),
+          ),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            service.getMetadata(model),
+            isNot(contains('tokenizer.chat_template')),
+          );
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            isNull,
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    for (final name in ['Qwen3.5-0.8B', 'gemma-4-E2B']) {
+      test('preserves the established $name native processor', () async {
+        final file = File('${tempDir.path}/$name.litertlm');
+        await file.writeAsBytes(
+          _thinkingBundle(modelType: 5, template: qwen3.template),
+        );
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: qwen3.template,
+        );
+        try {
+          final model = await service.loadModel(file.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+            ),
+            isNull,
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    for (final media in [
+      LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+      LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
+    ]) {
+      test('keeps the native ${media.runtimeType} processor', () async {
+        await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        final params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: qwen3.template,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(
+            await generate(
+              service,
+              client,
+              service.createContext(model, params),
+              media: media,
+            ),
+            isNull,
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('forgets bundle family on reload and free', () async {
+      await modelFile.writeAsBytes(_thinkingBundle(modelType: 5));
+      final service = LiteRtLmService();
+      const params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+      );
+      try {
+        var model = await service.loadModel(modelFile.path, params);
+        expect(
+          service.getMetadata(model)['tokenizer.chat_template'],
+          qwen3.template,
+        );
+        await modelFile.writeAsBytes(_thinkingBundle(modelType: 1));
+        model = await service.loadModel(modelFile.path, params);
+        expect(
+          service.getMetadata(model),
+          isNot(contains('tokenizer.chat_template')),
+        );
+        service.freeModel(model);
+        model = await service.loadModel(modelFile.path, params);
+        expect(
+          service.getMetadata(model),
+          isNot(contains('tokenizer.chat_template')),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final source in ['model type', 'bundle template', 'override']) {
+      for (final basename in ['qwen.litertlm', 'download']) {
+        for (final thinking in [false, true]) {
+          test('$source $basename honours enableThinking=$thinking', () async {
+            final file = File('${tempDir.path}/$basename');
+            // LlmMetadata.llm_model_type.qwen3 (6 -> 5), no model weights.
+            await file.writeAsBytes(
+              _thinkingBundle(
+                modelType: source == 'model type' ? 5 : 1,
+                template: source == 'bundle template' ? qwen3.template : null,
+              ),
+            );
+            final client = _FakeLiteRtLmRuntimeClient();
+            final service = LiteRtLmService(clientFactory: () => client);
+            final custom = '${qwen3.template}\ncustom';
+            final params = ModelParams(
+              liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+              chatTemplate: source == 'override' ? custom : null,
+            );
+            try {
+              final model = await service.loadModel(file.path, params);
+              final context = service.createContext(model, params);
+              final pending = service
+                  .generateChat(
+                    context,
+                    const [
+                      LlamaChatMessage.fromText(
+                        role: LlamaChatRole.user,
+                        text: 'Hello',
+                      ),
+                    ],
+                    const GenerationParams(maxTokens: 64),
+                    enableThinking: thinking,
+                  )
+                  .toList();
+              await client.generateStarted.future;
+              client.generated.add('Hello');
+              await client.generated.close();
+              expect(await pending, [utf8.encode('Hello')]);
+              expect(
+                client.lastPromptTemplate,
+                source == 'override' ? custom : qwen3.template,
+              );
+              expect(
+                service.getMetadata(model)['tokenizer.chat_template'],
+                client.lastPromptTemplate,
+              );
+              expect(
+                service.getMetadata(model)['tokenizer.ggml.eos_token'],
+                '<|im_end|>',
+              );
+              final rendered = Template(client.lastPromptTemplate!).render({
+                'messages': [
+                  {
+                    'role': 'user',
+                    'content': [
+                      {'type': 'text', 'text': 'Hello'},
+                    ],
+                  },
+                ],
+                'add_generation_prompt': true,
+                ...client.lastExtraContext!,
+              });
+              expect(rendered, contains('<|im_start|>user\nHello<|im_end|>'));
+              expect(rendered.contains('<think>\n\n</think>'), !thinking);
+            } finally {
+              service.dispose();
+            }
+          });
+        }
+      }
+    }
   });
 
   for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
@@ -6027,4 +6496,63 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
       throw StateError('Fake LiteRT-LM client has been disposed.');
     }
   }
+}
+
+// FlatBuffers section header plus LlmMetadata protobuf, following LiteRT-LM
+// v0.18.0 schema/core/litertlm_header_schema.fbs and runtime/proto/llm_metadata.proto.
+Uint8List _thinkingBundle({required int modelType, String? template}) {
+  List<int> varint(int value) {
+    final bytes = <int>[];
+    while (value >= 128) {
+      bytes.add((value & 127) | 128);
+      value >>= 7;
+    }
+    return bytes..add(value);
+  }
+
+  final text = template == null ? null : utf8.encode(template);
+  final metadata = [
+    0x32,
+    2,
+    (modelType << 3) | 2,
+    0,
+    if (text != null) ...[0x3a, ...varint(text.length), ...text],
+  ];
+  final bytes = Uint8List(136 + metadata.length);
+  bytes.setAll(0, ascii.encode('LITERTLM'));
+  final data = ByteData.sublistView(bytes);
+  data.setUint64(24, 116, Endian.little);
+  const header = 32;
+  for (final (offset, value) in [
+    (0, 12),
+    (12, 8),
+    (20, 12),
+    (32, 8),
+    (36, 4),
+    (40, 1),
+    (44, 16),
+    (60, 12),
+  ]) {
+    data.setUint32(header + offset, value, Endian.little);
+  }
+  for (final (offset, value) in [
+    (4, 8),
+    (6, 12),
+    (10, 8),
+    (24, 6),
+    (26, 8),
+    (28, 4),
+    (48, 12),
+    (50, 24),
+    (54, 8),
+    (56, 16),
+    (58, 4),
+  ]) {
+    data.setUint16(header + offset, value, Endian.little);
+  }
+  data.setUint8(header + 64, 5);
+  data.setUint64(header + 68, 136, Endian.little);
+  data.setUint64(header + 76, bytes.length, Endian.little);
+  bytes.setAll(136, metadata);
+  return bytes;
 }

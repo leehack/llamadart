@@ -91,13 +91,22 @@ The Dart template registry is still used for template metadata, streamed output
 parsing, `engine.chatTemplate(...)`, web LiteRT-LM, and fallback prompt
 rendering when a request cannot use the native conversation path.
 
-Use `ModelParams.chatTemplate` when loading a `.litertlm` bundle whose family is
-not in the registry or whose filename has been changed. The maintained registry
-coverage, smoke commands, and contribution notes live in
+Native LiteRT-LM recognizes renamed Qwen 3 bundles only with a Qwen 3
+model-type declaration (metadata field 6), or the complete canonical Qwen 3
+template in field 7 or `ModelParams.chatTemplate`. Generic ChatML and thinking
+markers do not distinguish Qwen 3 from other families. Legacy litert-community
+Qwen3-0.6B bundles lack fields 6 and 7: after renaming, disabled thinking can
+still produce empty content. Keep `Qwen3` in the filename, or set
+`ModelParams.chatTemplate` to the complete canonical template from
+`tool/litert_lm_templates/qwen3.jinja`. Other families keep their native bundle
+template and content-shape adapter; an override still drives Dart-side metadata
+and parsing. The maintained registry coverage, smoke commands, and contribution
+notes live in
 [`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md).
 
-On a Qwen 3 text bundle the native conversation renders a
-`ModelParams.chatTemplate` itself, and from LiteRT-LM `v0.18.0` it passes each
+On a filename-matched or positively identified Qwen 3 text bundle the native
+conversation renders a `ModelParams.chatTemplate` itself, and from LiteRT-LM
+`v0.18.0` it passes each
 message's `content` to the template as a list of parts,
 `[{"type": "text", "text": ...}]`, where `v0.17.0-8` passed the string. A
 template that concatenates `message['content']` as a string fails the
