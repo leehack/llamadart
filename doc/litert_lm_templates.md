@@ -15,9 +15,14 @@ template is read straight from the GGUF.
 exposes **no way to read it back**, and a bundle that embeds none gets one the
 runtime builds. So the backend has to supply
 `tokenizer.chat_template` itself for metadata, template inspection, Dart-side
-parsing, web generation, and fallback prompt rendering. It does this by
-detecting the model family from the bundle filename and mapping it to a
-template derived from the one llama.cpp ships. Runtime content-shape adapters
+parsing, web generation, and fallback prompt rendering. The native backend
+matches the bundle filename first, then identifies unnamed Qwen 3 bundles
+from `LlmMetadata.llm_model_type.qwen3` or a thinking-aware ChatML template.
+The template must contain both ChatML turn markers, both `<think>` tags and
+`enable_thinking`. Unreadable or unrecognized metadata retains the existing
+fallback; `ModelParams.chatTemplate` takes precedence. The selected registry
+template is derived from the one llama.cpp ships. Web retains filename-based
+registry selection. Runtime content-shape adapters
 preserve the same rendered prompt for equivalent text inputs.
 
 Native LiteRT-LM text chat does not always render the full prompt in Dart. When
@@ -45,8 +50,12 @@ and audio parts, unknown parts, text parts without string text, and tool
 responses without a response field fail during template rendering. This
 compatibility adapter does not add grammar-constrained decoding.
 
-A `ModelParams.chatTemplate` set on a Qwen 3 text bundle replaces that
-override in the native conversation, so it receives the same part arrays. A
+A `ModelParams.chatTemplate` set on a Qwen 3 or unnamed text bundle replaces
+the native conversation template, even when the filename lacks `qwen3`.
+It receives `enable_thinking` from the request and the same part arrays.
+The supplied template must implement the thinking switch itself; llamadart
+does not rewrite it. Existing filename matches, including Qwen 3.5, and
+image/audio conversations keep their existing native routing. A
 template that reads `message.content` as a string no longer works there: with
 Qwen3 0.6B on `v0.18.0`, string concatenation (`'...' + message['content']`)
 fails the generation with `LlamaInferenceException`

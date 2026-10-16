@@ -91,12 +91,16 @@ The Dart template registry is still used for template metadata, streamed output
 parsing, `engine.chatTemplate(...)`, web LiteRT-LM, and fallback prompt
 rendering when a request cannot use the native conversation path.
 
-Use `ModelParams.chatTemplate` when loading a `.litertlm` bundle whose family is
-not in the registry or whose filename has been changed. The maintained registry
-coverage, smoke commands, and contribution notes live in
+Native LiteRT-LM identifies unnamed Qwen 3 bundles from their bundle model-type
+metadata or thinking-aware ChatML template, so `enableThinking: false` also
+works after renaming the file. Existing filename matches keep their routing.
+Use `ModelParams.chatTemplate` when loading an unrecognized bundle; for unnamed
+text bundles the native conversation uses the override and passes
+`enable_thinking` to it. The template must implement that switch. The maintained
+registry coverage, smoke commands, and contribution notes live in
 [`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md).
 
-On a Qwen 3 text bundle the native conversation renders a
+On a Qwen 3 or unnamed text bundle the native conversation renders a
 `ModelParams.chatTemplate` itself, and from LiteRT-LM `v0.18.0` it passes each
 message's `content` to the template as a list of parts,
 `[{"type": "text", "text": ...}]`, where `v0.17.0-8` passed the string. A

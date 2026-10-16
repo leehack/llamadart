@@ -1,3 +1,9 @@
+## Unreleased
+
+- Fix `enableThinking: false` for renamed native LiteRT-LM Qwen 3 bundles,
+  including those using a `chatTemplate` override
+  ([#901](https://github.com/leehack/llamadart/issues/901)).
+
 ## 0.13.1
 
 - With `llamadart_native_tag` or `llamadart_native_repository` set, the build

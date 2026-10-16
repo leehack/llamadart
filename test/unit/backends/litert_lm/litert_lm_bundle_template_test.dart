@@ -114,6 +114,45 @@ void main() {
     return file.path;
   }
 
+  group('Qwen3 bundle metadata', () {
+    // LlmMetadata.llm_model_type is field 6; its Qwen3 oneof is field 5.
+    // https://github.com/google-ai-edge/LiteRT-LM/blob/v0.18.0/runtime/proto/llm_model_type.proto
+    for (final (name, modelType, expected) in <(String, List<int>?, bool)>[
+      ('absent', null, false),
+      ('empty', [], false),
+      ('Qwen3', [0x2a, 0], true),
+      ('generic', [0x0a, 0], false),
+      ('Qwen2.5', [0x3a, 0], false),
+      ('future family', [0x72, 0], false),
+      ('Qwen3 replaced by generic', [0x2a, 0, 0x0a, 0], false),
+      ('generic replaced by Qwen3', [0x0a, 0, 0x2a, 0], true),
+      ('nested Qwen3 field in generic config', [0x0a, 2, 0x2a, 0], false),
+    ]) {
+      test(name, () {
+        const template = '{{ messages }}';
+        final metadata = Uint8List.fromList([
+          ..._metadata(template),
+          if (modelType != null) ..._protoField(6, modelType),
+        ]);
+        final path = write(_bundle([(type: _llmMetadata, data: metadata)]));
+        expect(readLiteRtLmBundleMetadata(path), (
+          chatTemplate: template,
+          isQwen3: expected,
+        ));
+        expect(readLiteRtLmBundleChatTemplate(path), template);
+      });
+    }
+
+    test('malformed model type is not classified', () {
+      final path = write(
+        _bundle([
+          (type: _llmMetadata, data: _protoField(6, [0x2a, 0x7f])),
+        ]),
+      );
+      expect(readLiteRtLmBundleMetadata(path), isNull);
+    });
+  });
+
   group('readLiteRtLmBundleChatTemplate', () {
     test('reads the template of the LlmMetadata section', () {
       const template = '{{ messages[0].content }} 안녕';

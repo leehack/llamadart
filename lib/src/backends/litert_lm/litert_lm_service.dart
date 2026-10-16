@@ -108,6 +108,7 @@ class LiteRtLmService {
   LiteRtLmRuntimeMetrics? _lastMetrics;
   ({bool vision, bool audio, bool speculativeDecoding})? _bundleCapabilities;
   bool _bundleCapabilitiesRead = false;
+  ({String? chatTemplate, bool isQwen3})? _bundleMetadata;
   bool _bundleTemplateProbed = false;
   String? _bundleTemplateAdapter;
   bool _bundleTemplateMisreadsContent = false;
@@ -155,6 +156,7 @@ class LiteRtLmService {
     _disposeClient();
     _modelLink?.dispose();
     _modelPath = path;
+    _bundleMetadata = readLiteRtLmBundleMetadata(path);
     _modelLink = modelLink;
     _modelParams = params;
     _activeBackend = resolvedBackend;
@@ -181,6 +183,7 @@ class LiteRtLmService {
     _modelLink?.dispose();
     _modelLink = null;
     _modelPath = null;
+    _bundleMetadata = null;
     _modelParams = null;
     _activeBackend = null;
     _activeSpeculativeDecoding = null;
@@ -423,10 +426,17 @@ class LiteRtLmService {
     final modelName = File(
       _modelPath!,
     ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
-    final isQwen3TextModel = RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName);
-    final builtinTemplate = _resolveBuiltinTemplate(modelName);
+    final filenameTemplate = _resolveBuiltinTemplate(modelName);
+    final unnamedTemplate = filenameTemplate == null
+        ? _resolveUnnamedQwen3Template()
+        : null;
+    final useTextTemplate =
+        RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName) ||
+        unnamedTemplate != null ||
+        (filenameTemplate == null && _modelParams?.chatTemplate != null);
+    final builtinTemplate = filenameTemplate ?? unnamedTemplate;
     final promptTemplate =
-        maxNumImages == null && !enableAudio && isQwen3TextModel
+        maxNumImages == null && !enableAudio && useTextTemplate
         ? _modelParams?.chatTemplate ?? builtinTemplate?.template
         : null;
     void createConversation(String? template, {bool seeded = true}) =>
@@ -733,7 +743,7 @@ class LiteRtLmService {
     }
   }
 
-  /// Returns the metadata known from the LiteRT-LM bundle path.
+  /// Returns metadata from the bundle name, declarations and template override.
   Map<String, String> getMetadata(int modelHandle) {
     _checkModelHandle(modelHandle);
     final modelPath = _modelPath;
@@ -752,7 +762,7 @@ class LiteRtLmService {
     }
     final builtinTemplate = modelName == null
         ? null
-        : _resolveBuiltinTemplate(modelName);
+        : _resolveBuiltinTemplate(modelName) ?? _resolveUnnamedQwen3Template();
     if (builtinTemplate != null) {
       metadata['tokenizer.chat_template'] = builtinTemplate.template;
       metadata['tokenizer.ggml.bos_token'] = builtinTemplate.bosToken;
@@ -776,6 +786,24 @@ class LiteRtLmService {
       if (template.matches(normalized)) {
         return template;
       }
+    }
+    return null;
+  }
+
+  // Keep established filename matches, including Qwen3.5's native processor.
+  // Unnamed bundles can instead declare Qwen3 or carry its thinking template.
+  LiteRtLmChatTemplate? _resolveUnnamedQwen3Template() {
+    final template =
+        _modelParams?.chatTemplate ?? _bundleMetadata?.chatTemplate;
+    final isThinkingChatMl =
+        template != null &&
+        template.contains('<|im_start|>') &&
+        template.contains('<|im_end|>') &&
+        template.contains('<think>') &&
+        template.contains('</think>') &&
+        template.contains('enable_thinking');
+    if (_bundleMetadata?.isQwen3 == true || isThinkingChatMl) {
+      return kLiteRtLmChatTemplates.singleWhere((item) => item.id == 'qwen3');
     }
     return null;
   }
@@ -894,6 +922,7 @@ class LiteRtLmService {
     _modelLink?.dispose();
     _modelLink = null;
     _modelPath = null;
+    _bundleMetadata = null;
     _modelParams = null;
     _activeBackend = null;
     _workingAudioBackend = null;

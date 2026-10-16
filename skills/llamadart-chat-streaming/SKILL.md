@@ -42,7 +42,12 @@ description: >-
   backend. Keep a `StreamSubscription` in UI code so a Stop button can cancel
   it.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
-  `engine.create` when reasoning output is not wanted.
+  `engine.create` when reasoning output is not wanted. Native LiteRT-LM
+  recognizes renamed Qwen 3 bundles from model-type metadata or a
+  thinking-aware ChatML template. For unnamed text bundles,
+  `ModelParams.chatTemplate` is also passed to the native conversation with
+  `enable_thinking`; the supplied template must implement that switch.
+  Existing filename matches and media conversations keep their native routing.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),
