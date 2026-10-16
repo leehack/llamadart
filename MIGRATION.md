@@ -12,7 +12,6 @@ consecutive user turns. Stored history and requests that render successfully
 on the first attempt are unchanged. This extends llama.cpp's former tool-result
 polyfill; upstream `b10549` rejects the original history.
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI
 ## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI and Qwen3 overrides
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
