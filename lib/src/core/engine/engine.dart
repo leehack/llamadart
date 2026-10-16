@@ -895,7 +895,7 @@ class LlamaEngine {
   Future<void> loadModelFromUrl(
     String url, {
     ModelParams modelParams = const ModelParams(),
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     return _loadModelFromUrlAs(url, modelParams, onProgress, null);
   }
@@ -903,7 +903,7 @@ class LlamaEngine {
   Future<void> _loadModelFromUrlAs(
     String url,
     ModelParams modelParams,
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
     ModelFormat? format,
   ) {
     return _observeModelLoad(
@@ -1066,7 +1066,7 @@ class LlamaEngine {
   Future<void> _loadModelFromUrl(
     String url, {
     ModelParams modelParams = const ModelParams(),
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
     ModelFormat? format,
   }) async {
     _ensureNotReady();
@@ -1132,7 +1132,7 @@ class LlamaEngine {
     ModelParams modelParams,
     ModelFormat? format, {
     required bool fromUrl,
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) {
     final candidate = backend;
     if (format != null) {

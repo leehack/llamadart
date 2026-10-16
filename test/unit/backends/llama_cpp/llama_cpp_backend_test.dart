@@ -518,6 +518,43 @@ void main() {
         expect(generateRequests(), hasLength(2));
       });
 
+      for (final cancelSubscription in [false, true]) {
+        test(
+          'unsent cancellation clears only its context perf (subscription: $cancelSubscription)',
+          () async {
+            await flagBackend
+                .generate(1, 'ok', const GenerationParams())
+                .toList();
+            expect((await flagBackend.getPerformanceContext(1))!.evalTokens, 7);
+            final first = await startPending();
+            flagBackend.cancelGeneration();
+            final subscription = flagBackend
+                .generate(1, 'ok', const GenerationParams())
+                .listen((_) {});
+            if (cancelSubscription) {
+              await subscription.cancel();
+            } else {
+              flagBackend.cancelGeneration();
+            }
+            expect(await flagBackend.getPerformanceContext(1), isNull);
+            expect((await flagBackend.getPerformanceContext(2))!.evalTokens, 7);
+            first.sendPort.send(DoneResponse());
+            await Future<void>.delayed(Duration.zero);
+            expect(
+              await flagBackend.getPerformanceContext(1),
+              isNull,
+              reason:
+                  'Completion of the earlier request cannot revive stale counters.',
+            );
+            expect(generateRequests(), hasLength(2));
+            await flagBackend
+                .generate(1, 'ok', const GenerationParams())
+                .toList();
+            expect((await flagBackend.getPerformanceContext(1))!.evalTokens, 7);
+          },
+        );
+      }
+
       test('cancelGeneration ends a queued generation unsent', () async {
         final first = await startPending();
         flagBackend.cancelGeneration();

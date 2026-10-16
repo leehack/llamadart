@@ -64,6 +64,7 @@ class NativeLlamaBackend
   void Function(Object error)? _activeGenerationFailure;
   void Function()? _activeFreeToken;
   _QueuedGeneration? _queuedGeneration;
+  final Set<int> _stalePerformanceContexts = <int>{};
   bool _textToSpeechActive = false;
   bool _textToSpeechCancelRequested = false;
   bool _textToSpeechRequestSent = false;
@@ -451,7 +452,7 @@ class NativeLlamaBackend
   Future<int> modelLoadFromUrl(
     String url,
     ModelParams params, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
   }) async {
     throw LlamaUnsupportedException(
       'The native llama.cpp backend cannot load a model from a URL: '
@@ -500,6 +501,7 @@ class NativeLlamaBackend
     _dispatchRequest(rp, ContextFreeRequest(contextHandle, rp.sendPort));
     final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'context free');
+    _stalePerformanceContexts.remove(contextHandle);
   }
 
   @override
@@ -580,6 +582,7 @@ class NativeLlamaBackend
 
     late final _QueuedGeneration queued;
     void close() {
+      _stalePerformanceContexts.add(contextHandle);
       if (_queuedGeneration == queued) {
         _queuedGeneration = null;
       }
@@ -695,6 +698,7 @@ class NativeLlamaBackend
           chatMediaMarker: chatMediaMarker,
         ),
       );
+      _stalePerformanceContexts.remove(contextHandle);
     } catch (error, stackTrace) {
       // The worker never received the request, such as for a parameter that
       // cannot cross an isolate, so this generation fails alone and the
@@ -1004,6 +1008,8 @@ class NativeLlamaBackend
     final rp = _openResponsePort();
     _dispatchRequest(rp, PerformanceContextRequest(contextHandle, rp.sendPort));
     final res = await _receiveResponse(rp);
+    // An unsent cancellation never resets the worker's previous counters.
+    if (_stalePerformanceContexts.contains(contextHandle)) return null;
     if (res is PerformanceContextResponse) {
       return BackendPerfContextData(
         loadMs: res.loadMs,

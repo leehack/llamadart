@@ -87,6 +87,12 @@ models before creating a context. Embedding inputs that need one-pass attention
 or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.
 See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning)
 and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
+Cancelling a queued native llama.cpp generation before dispatch makes
+`getPerformanceContext()` return `null` until another generation is dispatched.
+
+Custom backend load callbacks use `void Function(double progress)?` in 0.14.
+Progress notifications do not return a control value; update implementations
+and fakes as described in [MIGRATION.md](MIGRATION.md).
 
 Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
 preserve runtime `length` termination: tool loops return `truncated` and roll

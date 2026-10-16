@@ -12,7 +12,27 @@ consecutive user turns. Stored history and requests that render successfully
 on the first attempt are unchanged. This extends llama.cpp's former tool-result
 polyfill; upstream `b10549` rejects the original history.
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI and Qwen3 overrides
+## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI, Qwen3 overrides and load callbacks
+
+Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
+loads and the legacy `LlamaEngine` URL-loading methods now declare
+`void Function(double progress)?` instead of `Function(double progress)?`.
+Existing `Function(double progress)?` overrides still compile; prefer the
+explicit `void` signature in custom backends and test fakes. Notifications
+deliver the same fractions; the return value is ignored and cannot cancel a
+load. Native llama.cpp's raw FFI
+`bool` progress callback is unchanged.
+
+```dart
+Future<int> modelLoadFromUrl(
+  String url,
+  ModelParams params, {
+  void Function(double progress)? onProgress,
+}) async {
+  // Delegate loading to your runtime, forwarding its progress notifications.
+  return runtime.load(url, onProgress: onProgress);
+}
+```
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
 If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
@@ -26,6 +46,10 @@ layouts as well as its exported symbols. v0.6.0 and older native bundles are
 ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
+
+Cancelling a queued native llama.cpp generation before dispatch now makes
+`getPerformanceContext()` return `null` until another generation is dispatched.
+Handle unavailable diagnostics instead of reusing earlier request counters.
 
 For renamed legacy Qwen3 LiteRT-LM text bundles, replace copied Jinja with
 `ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` to keep native

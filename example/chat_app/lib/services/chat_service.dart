@@ -33,7 +33,7 @@ class ChatService {
   /// still be allocated when the app exits.
   Future<void> init(
     ChatSettings settings, {
-    Function(double progress)? onProgress,
+    void Function(double progress)? onProgress,
     bool eagerLoadMultimodalProjector = true,
     bool eagerWarmUpLiteRtLmRuntime = true,
   }) async {
