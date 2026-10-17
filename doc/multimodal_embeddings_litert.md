@@ -54,7 +54,7 @@ MTP/rollback settings and Web memory hints are rejected with
 The [upstream input constructor](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/engine.cc#L119-L145)
 copies encoded image bytes; it does not validate their contents. PNG/JPEG headers
 and container structure alone cannot establish that compressed pixel data decodes.
-The core `image: ^4.0.0` dependency retains full decoding in a helper isolate to
+The core `image: ^4.4.0` dependency (the oldest release compatible with `archive ^4.0.7`) retains full decoding in a helper isolate to
 honor whole-batch validation before inference, without fetching or executing a
 native processor on the caller isolate.
 
