@@ -351,6 +351,12 @@ void runLlamaWorkerForTesting(
             activeTextToSpeech = synthesisFuture;
             await synthesisFuture;
 
+          case GenerationCapabilitiesRequest():
+            final capabilities = service.generationCapabilities(
+              message.modelHandle,
+            );
+            message.sendPort.send(GenerationCapabilitiesResponse(capabilities));
+
           case DecisionCapabilitiesRequest():
             final capabilities = service.decisionCapabilities(
               message.modelHandle,

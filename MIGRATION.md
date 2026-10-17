@@ -18,6 +18,16 @@ context, draft-model and decision-head execution settings are unchanged.
 No parameter migration is needed. Explicit `gpu` / `npu`
 validation is unchanged.
 
+## Unreleased: native generation capabilities
+
+Native llama.cpp now probes the loaded model/runtime for thinking-budget
+support; check `supportsThinkingBudget` instead of assuming it is available.
+Before load or after unload, its generation capability snapshot is empty.
+The `mtp` strategy stays advertised for external draft models; in-file MTP
+requires a target model with an MTP head and `ModelParams.loadMtp: true`.
+Missing external draft models now throw `LlamaArgumentException` at generation
+start, preserving the diagnostic instead of wrapping it in an inference error.
+
 ## Unreleased: embedding content API
 
 The new `embedContent` / `embedContentBatch` APIs return one vector per input;

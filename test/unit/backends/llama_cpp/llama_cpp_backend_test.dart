@@ -1367,23 +1367,128 @@ void main() {
     expect(NativeLlamaBackend().runtime, LlamaRuntime.llamaCpp);
   });
 
-  test('reports every optional sampling control as applied', () async {
-    final backend = NativeLlamaBackend();
+  test(
+    'generation capabilities are empty before load without starting a worker',
+    () async {
+      final backend = NativeLlamaBackend();
+      addTearDown(backend.dispose);
+      final capabilities = await backend.generationCapabilities();
+      expect(capabilities.penalty, isFalse);
+      expect(capabilities.presencePenalty, isFalse);
+      expect(capabilities.minP, isFalse);
+      expect(capabilities.streamBatching, isFalse);
+      expect(capabilities.thinkingBudget, isFalse);
+      expect(capabilities.speculativeDecodingStrategies, isEmpty);
+      expect(backend.isReady, isFalse);
+    },
+  );
 
-    final capabilities = await backend.generationCapabilities();
-
-    expect(capabilities.penalty, isTrue);
-    expect(capabilities.presencePenalty, isTrue);
-    expect(capabilities.minP, isTrue);
-    expect(capabilities.streamBatching, isTrue);
-    expect(capabilities.thinkingBudget, isTrue);
-    expect(
-      capabilities.speculativeDecodingStrategies,
-      SpeculativeDecodingStrategy.values.toSet(),
+  for (final supportsBudget in [false, true]) {
+    test(
+      'loaded generation capabilities use the worker budget=$supportsBudget snapshot',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _generationCapabilitiesWorkerEntry,
+        );
+        addTearDown(backend.dispose);
+        await backend.modelLoad(
+          supportsBudget ? '2' : '1',
+          const ModelParams(),
+        );
+        final caps = await backend.generationCapabilities();
+        expect(caps.thinkingBudget, supportsBudget);
+        expect(caps.penalty, isTrue);
+      },
     );
-    expect(backend.isReady, isFalse);
+  }
+
+  test(
+    'generation capabilities follow worker results and the active model lifecycle',
+    () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _generationCapabilitiesWorkerEntry,
+      );
+      addTearDown(backend.dispose);
+      expect((await backend.generationCapabilities()).thinkingBudget, isFalse);
+      await expectLater(
+        backend.modelLoad('error', const ModelParams()),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect((await backend.generationCapabilities()).penalty, isFalse);
+      final first = await backend.modelLoad('1', const ModelParams());
+      expect((await backend.generationCapabilities()).thinkingBudget, isFalse);
+      expect((await backend.generationCapabilities()).penalty, isTrue);
+      await backend.modelFree(99);
+      expect((await backend.generationCapabilities()).penalty, isTrue);
+      await expectLater(
+        backend.modelFree(-1),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect((await backend.generationCapabilities()).penalty, isTrue);
+      final second = await backend.modelLoad('2', const ModelParams());
+      expect((await backend.generationCapabilities()).thinkingBudget, isTrue);
+      await backend.modelFree(first);
+      expect((await backend.generationCapabilities()).thinkingBudget, isTrue);
+      await backend.modelFree(second);
+      expect((await backend.generationCapabilities()).penalty, isFalse);
+      await backend.modelLoad('2', const ModelParams());
+      await backend.dispose();
+      expect((await backend.generationCapabilities()).thinkingBudget, isFalse);
+      expect(
+        (await backend.generationCapabilities()).speculativeDecodingStrategies,
+        isEmpty,
+      );
+    },
+  );
+
+  test('disposal clears a model load that replies during shutdown', () async {
+    final port = ReceivePort();
+    final backend = NativeLlamaBackend(initialSendPort: port.sendPort);
+    final loadReceived = Completer<void>();
+    ModelLoadRequest? loadRequest;
+    port.listen((message) {
+      if (message is ModelLoadRequest) {
+        loadRequest = message;
+        loadReceived.complete();
+      } else if (message is DisposeRequest) {
+        loadRequest!.sendPort.send(HandleResponse(1));
+        message.sendPort.send(DoneResponse());
+      }
+    });
+    addTearDown(() async {
+      await backend.dispose();
+      port.close();
+    });
+    final load = backend.modelLoad('model', const ModelParams());
+    await loadReceived.future;
     await backend.dispose();
+    await load;
+    expect((await backend.generationCapabilities()).penalty, isFalse);
   });
+
+  test(
+    'generation capability probe rejects an unexpected worker response',
+    () async {
+      final port = ReceivePort();
+      final backend = NativeLlamaBackend(initialSendPort: port.sendPort);
+      port.listen((message) {
+        if (message is ModelLoadRequest) {
+          message.sendPort.send(HandleResponse(1));
+        } else if (message is WorkerRequest) {
+          message.sendPort.send(DoneResponse());
+        }
+      });
+      addTearDown(() async {
+        await backend.dispose();
+        port.close();
+      });
+      await backend.modelLoad('model', const ModelParams());
+      await expectLater(
+        backend.generationCapabilities(),
+        throwsA(isA<LlamaStateException>()),
+      );
+    },
+  );
 
   test('modelFree and contextFree are no-op without worker port', () async {
     final backend = NativeLlamaBackend();
@@ -2577,4 +2682,30 @@ class _PortCancelToken extends ModelDownloadCancelToken {
   _PortCancelToken(this.port);
 
   final RawReceivePort port;
+}
+
+void _generationCapabilitiesWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(initialSendPort, _GenerationCapabilitiesService());
+}
+
+class _GenerationCapabilitiesService extends _LoggingLlamaCppService {
+  @override
+  int loadModel(String modelPath, ModelParams modelParams) {
+    if (modelPath == 'error') throw LlamaModelException('load failed');
+    return int.parse(modelPath);
+  }
+
+  @override
+  void freeModel(int modelHandle) {
+    if (modelHandle < 0) throw LlamaModelException('free failed');
+  }
+
+  @override
+  BackendGenerationCapabilities generationCapabilities(int modelHandle) =>
+      BackendGenerationCapabilities(
+        penalty: true,
+        presencePenalty: true,
+        minP: true,
+        thinkingBudget: modelHandle == 2,
+      );
 }

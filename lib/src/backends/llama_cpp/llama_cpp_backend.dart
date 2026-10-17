@@ -74,6 +74,7 @@ class NativeLlamaBackend
   final Expando<LlamaGenerationUsage> _generationUsages =
       Expando<LlamaGenerationUsage>();
 
+  int? _activeModelHandle;
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
@@ -192,6 +193,7 @@ class NativeLlamaBackend
     _isolate = null;
     _sendPort = null;
     _isReady = false;
+    _activeModelHandle = null;
     final failure = _workerFailure = LlamaStateException(
       'The llama.cpp worker exited unexpectedly. Its model and context '
       'handles are no longer usable. Dispose this backend and create a '
@@ -449,7 +451,10 @@ class NativeLlamaBackend
     final rp = _openResponsePort();
     _dispatchRequest(rp, ModelLoadRequest(path, params, rp.sendPort));
     final res = await _receiveResponse(rp);
-    if (res is HandleResponse) return res.handle;
+    if (res is HandleResponse) {
+      _activeModelHandle = res.handle;
+      return res.handle;
+    }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during model load");
   }
@@ -475,6 +480,7 @@ class NativeLlamaBackend
     _dispatchRequest(rp, ModelFreeRequest(modelHandle, rp.sendPort));
     final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'model free');
+    if (_activeModelHandle == modelHandle) _activeModelHandle = null;
   }
 
   @override
@@ -1077,6 +1083,7 @@ class NativeLlamaBackend
     // so this dispose must not free it.
     final textToSpeechCancelFlag = _textToSpeechCancelFlag;
     _lifecycleEpoch += 1;
+    _activeModelHandle = null;
     _isReady = false;
     final startup = _isolateStart;
     if (startup != null) {
@@ -1139,6 +1146,7 @@ class NativeLlamaBackend
     _activeGenerationCleanup = null;
     _activeGenerationFailure = null;
     _activeFreeToken = null;
+    _activeModelHandle = null;
     _isReady = false;
   }
 
@@ -1319,25 +1327,26 @@ class NativeLlamaBackend
 
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
-    return const BackendGenerationCapabilities(
-      penalty: true,
-      presencePenalty: true,
-      minP: true,
-      thinkingBudget: true,
-      streamBatching: true,
-      speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
-        SpeculativeDecodingStrategy.backendDefault,
-        SpeculativeDecodingStrategy.mtp,
-        SpeculativeDecodingStrategy.ngramSimple,
-        SpeculativeDecodingStrategy.draftSimple,
-        SpeculativeDecodingStrategy.draftEagle3,
-        SpeculativeDecodingStrategy.draftDflash,
-        SpeculativeDecodingStrategy.ngramMapK,
-        SpeculativeDecodingStrategy.ngramMapK4v,
-        SpeculativeDecodingStrategy.ngramMod,
-        SpeculativeDecodingStrategy.ngramCache,
-        SpeculativeDecodingStrategy.draftDspark,
-      },
+    _throwIfWorkerFailed();
+    final modelHandle = _activeModelHandle;
+    if (modelHandle == null) {
+      return const BackendGenerationCapabilities(
+        presencePenalty: false,
+        minP: false,
+        thinkingBudget: false,
+      );
+    }
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      GenerationCapabilitiesRequest(modelHandle, rp.sendPort),
+    );
+    final response = await _receiveResponse(rp);
+    if (response is GenerationCapabilitiesResponse) {
+      return response.capabilities;
+    }
+    throw LlamaStateException(
+      'Unknown response during generation capability probe',
     );
   }
 
