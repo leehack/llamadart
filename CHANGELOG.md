@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Preserve LiteRT-LM Web runtime failures that race generation cancellation.
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
 - Probe native thinking-budget support and report missing speculative draft
