@@ -45,7 +45,9 @@ argument checks that fail before dispatch leave them unchanged. LiteRT-LM still 
 on generation. Requests finishing after reload no longer affect the new context's
 counter availability, even if its handle is reused. No API migration is needed;
 continue handling unavailable diagnostics. Rejections during active text-to-speech
-preserve that synthesis request's counters.
+preserve that synthesis request's counters. After an early cancellation, pending
+or failed embedding, scoring and speech calls preserve unavailable diagnostics
+until a call succeeds. Web backends still return `null` after every request.
 
 ## Unreleased: template error labels
 

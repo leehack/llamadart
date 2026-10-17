@@ -360,6 +360,9 @@ counters. Token counters retain llama.cpp's native minimum of one
 for `evalTokens` and `promptEvalTokens`, even with no work in that category.
 Embedding and scoring report `0` ms timings because llama.cpp contexts
 disable native perf timing by default. LiteRT-LM still restores diagnostics on
-generation, and Web behavior is unchanged.
+generation. After an early cancellation, pending or failed embedding, scoring
+and speech calls keep diagnostics unavailable; successful calls restore
+availability according to the backend's counter semantics. Web backends always
+return `null` diagnostics.
 Requests finishing after unload do not change a reloaded context's counter
 availability, including when the native handle is reused.
