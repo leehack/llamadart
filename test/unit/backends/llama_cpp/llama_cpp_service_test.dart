@@ -2124,6 +2124,30 @@ void main() {
         tempDir.deleteSync(recursive: true);
       });
 
+      test('single-device CPU placement reports a CPU decision head', () {
+        final encoderPath = path.join(tempDir.path, 'encoder.gguf');
+        final headPath = path.join(tempDir.path, 'head.safetensors');
+        final configPath = path.join(tempDir.path, 'config.json');
+        writeSyntheticModernBertGguf(encoderPath, decisionTokens: true);
+        SyntheticDecisionHead(d: 16, layers: 1, seed: 1).write(headPath);
+        File(configPath).writeAsStringSync('{"max_len": 64, "head_layers": 1}');
+        final model = service.loadModel(
+          encoderPath,
+          const ModelParams(splitMode: ModelSplitMode.none, mainGpu: -1),
+        );
+        // Preserve the GPU load metadata even on a host without GPU devices.
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        )[model] = 'Metal';
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        )[model] = 99;
+        final head = service.loadDecisionHead(model, headPath, configPath);
+        expect(head.deviceName, 'CPU');
+      });
+
       DecisionHeadRuntime tinyRuntime() {
         final headPath = path.join(
           tempDir.path,
@@ -2619,6 +2643,35 @@ void main() {
         isFalse,
       );
     });
+
+    for (final splitMode in ModelSplitMode.values) {
+      for (final mainGpu in [-2, -1, 0, 1, 99]) {
+        test('decision head placement: $splitMode / $mainGpu', () {
+          final cpu = splitMode == ModelSplitMode.none && mainGpu < 0;
+          expect(
+            LlamaCppService.decisionHeadRunsOnCpu(
+              modelBackendName: 'Metal',
+              resolvedGpuLayers: 99,
+              params: ModelParams(splitMode: splitMode, mainGpu: mainGpu),
+            ),
+            cpu,
+          );
+          expect(
+            LlamaCppService.decisionHeadDeviceIndex(
+              modelBackendName: 'Metal',
+              deviceBackends: [
+                GpuBackend.vulkan,
+                GpuBackend.metal,
+                GpuBackend.metal,
+              ],
+              mainGpu: mainGpu,
+              splitMode: splitMode,
+            ),
+            cpu ? null : (mainGpu == 1 ? 2 : 1),
+          );
+        });
+      }
+    }
 
     test('decisionHeadDeviceIndex picks a device of the model backend', () {
       int? index(

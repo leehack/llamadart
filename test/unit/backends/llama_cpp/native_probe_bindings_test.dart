@@ -87,7 +87,7 @@ void main() {
   }
 
   test(
-    'model diagnostics and decision-head selection use fake devices',
+    'model diagnostics and decision-head CPU placement use fake devices',
     () async {
       await run(Platform.resolvedExecutable, [kernel, 'placement']);
     },

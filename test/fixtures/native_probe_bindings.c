@@ -8,13 +8,13 @@
 #endif
 
 // No model is allocated: these addresses are identity tokens for Dart's
-// liveness checks, and the sampler constructor is looked up but never called.
+// liveness checks. The cold probe resolves the sampler API from the hook-built
+// wrapper library, not this fixture, without constructing a sampler.
 EXPORT void * llama_model_get_vocab(void * model) {
     return (void *) (uintptr_t) 0x2000;
 }
 EXPORT void llama_model_free(void * model) {}
 EXPORT void llama_free(void * context) {}
-EXPORT void * llama_dart_sampler_init_reasoning_budget(void) { return 0; }
 
 // Registry order deliberately differs from each backend's device ordinal.
 EXPORT size_t ggml_backend_dev_count(void) { return 4; }

@@ -50,10 +50,12 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   when it would run on the CPU); `npu` is unsupported. `threads` sets the encoder and head CPU threads.
 - Read `await decisions.capabilities` for `isSupported`, `backendName` and
   `runtime`; show `unsupportedReason` when it is false.
-- Read `decisions.info.deviceName` for head placement. With GPU layers enabled, native
-  heads select the first matching GPU of the load's backend for a negative
-  `mainGpu`, even when
-  `splitMode: ModelSplitMode.none` makes the model's diagnostics report CPU.
+- Read `decisions.info.deviceName` for head placement. Native heads run on CPU
+  with a CPU backend, disabled GPU layers, or `splitMode: ModelSplitMode.none`
+  and a negative `mainGpu` (selecting no GPU); `deviceName` reports `CPU`.
+  Otherwise `mainGpu` selects among GPUs of the load's backend, with the first
+  matching device used for an out-of-range index or a negative index in other
+  split modes, and CPU used if none matches.
 - Runtimes: native llama.cpp is experimental (validated on macOS Metal and
   CPU); WebGPU needs bridge assets `v0.1.47+` (the default pin includes them);
   LiteRT-LM, native or Web, is unsupported and `load`/`attach` throw

@@ -1,4 +1,5 @@
 @TestOn('vm')
+@Timeout(Duration(minutes: 2))
 library;
 
 import 'dart:io';
