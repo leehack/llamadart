@@ -31,7 +31,9 @@ A request the native worker rejects leaves diagnostics unavailable;
 argument checks that fail before dispatch leave them unchanged. LiteRT-LM still recovers counters
 on generation. Requests finishing after reload no longer affect the new context's
 counter availability, even if its handle is reused. No API migration is needed;
-continue handling unavailable diagnostics.
+continue handling unavailable diagnostics. After an early cancellation, pending
+or failed embedding, scoring and speech calls preserve unavailable diagnostics
+until a call succeeds. Web backends still return `null` after every request.
 
 ## Unreleased: template error labels
 
