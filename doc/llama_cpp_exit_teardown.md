@@ -166,7 +166,7 @@ facts by what both sides report, the Vulkan device name
 with no such entry, or with several that disagree on Vulkan 1.2, has unknown
 facts.
 
-- llama.cpp `v0.6.0` needs Vulkan 1.2 (`ggml_vk_instance_init` refuses an
+- llama.cpp `v0.7.0` needs Vulkan 1.2 (`ggml_vk_instance_init` refuses an
   older loader; for an older driver ggml-vulkan reads
   `VkPhysicalDeviceVulkan12Features` the driver never filled in and calls
   Vulkan 1.2 functions it lacks, once it initializes the device). A device
@@ -186,7 +186,7 @@ facts.
   not covered.
 - An Android Vulkan context keeps the 8-token text-prompt decode cap unless
   the facts list exactly the registered devices and each has a subgroup size
-  ggml-vulkan tiles correctly (8, or 32 and above). llama.cpp `v0.6.0` gives
+  ggml-vulkan tiles correctly (8, or 32 and above). llama.cpp `v0.7.0` gives
   a warp of the small matmul tile 8 rows only at a subgroup size of exactly 8
   (`s_warptile_wm`), which is wrong at 16 and at every size below 8
   (https://github.com/ggml-org/llama.cpp/issues/28637).
