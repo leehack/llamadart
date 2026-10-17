@@ -94,11 +94,19 @@ at generation start when it is missing.
 
 For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
-`await engine.embeddingCapabilities` after loading. LiteRT-LM supports text,
+`await engine.embeddingCapabilities` after loading. Native llama.cpp supports
+image/audio embeddings with EmbeddingGemma-2 and its projector on native
+v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
+Web llama.cpp retains text embeddings. LiteRT-LM supports text,
 image and audio embeddings (qualified on macOS arm64 CPU only) with
 `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all Web paths throw
-`LlamaUnsupportedException`. llama.cpp retains text embeddings and rejects
-this LiteRT-LM-only flag. Adjacent text parts concatenate verbatim.
+`LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
+llama.cpp text-only content follows `embed`, including causal unpooled models.
+Unsupported native media diagnostics name the required v0.7.0-1 ABI. Windows
+requires the complete native DLL bundle; missing media symbols leave text
+embeddings available. Windows media model execution is not yet locally
+qualified.
+Adjacent text parts concatenate verbatim.
 See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
 LiteRT-LM queues concurrent embedding requests, validates media off the caller

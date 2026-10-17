@@ -26,6 +26,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
@@ -42,6 +43,8 @@ import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 import 'mtmd_chunk_eval.dart';
 import 'native_barrier_api.dart';
 import 'vulkan_device_probe.dart';
+
+part 'multimodal_embedding.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 final int _nativeStatusException =
@@ -654,8 +657,8 @@ class LlamaCppService {
   /// backend policy, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the calls that allocate and free
-  /// token batches, the read of the Vulkan device facts, and the registered
-  /// ggml devices a load selects from.
+  /// token batches and prepared embedding resources, the read of the Vulkan
+  /// device facts, and the registered ggml devices a load selects from.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -668,6 +671,9 @@ class LlamaCppService {
     LlamaCppObjectCalls? objectCalls,
     llama_batch Function(int tokens, int embd, int sequences)? batchInit,
     void Function(llama_batch batch)? batchFree,
+    void Function(Pointer<mtmd_input_chunks>)? embeddingChunksFree,
+    void Function(Pointer<mtmd_bitmap>)? embeddingBitmapFree,
+    void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
@@ -680,6 +686,9 @@ class LlamaCppService {
        _objectCallsOverride = objectCalls,
        _batchInit = batchInit ?? llama_batch_init,
        _batchFree = batchFree ?? llama_batch_free,
+       _embeddingChunksFree = embeddingChunksFree,
+       _embeddingBitmapFree = embeddingBitmapFree,
+       _embeddingBatchFree = embeddingBatchFree ?? llama_batch_ext_free,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices;
 
@@ -693,6 +702,9 @@ class LlamaCppService {
   final LlamaCppObjectCalls? _objectCallsOverride;
   final llama_batch Function(int tokens, int embd, int sequences) _batchInit;
   final void Function(llama_batch batch) _batchFree;
+  final void Function(Pointer<mtmd_input_chunks>)? _embeddingChunksFree;
+  final void Function(Pointer<mtmd_bitmap>)? _embeddingBitmapFree;
+  final void Function(Pointer<llama_batch_ext>) _embeddingBatchFree;
   final VulkanDeviceProbe Function()? _vulkanDeviceProbeOverride;
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
@@ -1943,7 +1955,13 @@ class LlamaCppService {
   }
 
   LlamaCppObjectCalls _resolveObjectCalls() {
-    final calls = LlamaCppObjectCalls.resolve(isWindows: Platform.isWindows);
+    final calls = LlamaCppObjectCalls.resolve(
+      isWindows: Platform.isWindows,
+      mixedBatchResolver: () => LlamaCppMixedBatchApi.tryResolve(
+        isWindows: Platform.isWindows,
+        mtmdSymbol: _mixedMtmdSymbol,
+      ),
+    );
     if (calls.exit == null) {
       LlamaLogger.instance.warning(
         'The loaded llama.cpp runtime does not export the exit-teardown '
@@ -5610,12 +5628,15 @@ class LlamaCppService {
     return vectors.map((vector) => vector!).toList(growable: false);
   }
 
+  bool _embeddingAddsSpecial(Pointer<llama_vocab> vocab, String text) =>
+      !_promptStartsWithBosToken(vocab, text);
+
   List<int> _tokenizeEmbeddingText(
     Pointer<llama_vocab> vocab,
     String text,
     int maxTokens,
   ) {
-    final shouldAddSpecial = !_promptStartsWithBosToken(vocab, text);
+    final shouldAddSpecial = _embeddingAddsSpecial(vocab, text);
     final (textPtr, textLength) = _toNativeUtf8WithLength(text);
 
     final int requiredTokenCount;
@@ -8616,6 +8637,12 @@ class LlamaCppService {
   static bool debugMtmdFallbackHasChunkEvalForTesting(DynamicLibrary library) =>
       _MtmdApi.tryLoad(library)?.chunkEval != null;
 
+  Pointer<NativeType> _mixedMtmdSymbol(String name) {
+    final library = _resolveMtmdFallbackApi()?.library;
+    if (library == null) throw ArgumentError('mtmd library unavailable');
+    return library.lookup<NativeType>(name);
+  }
+
   _MtmdApi? _resolveMtmdFallbackApi() {
     if (_mtmdFallbackLookupAttempted) {
       return _mtmdFallbackApi;
@@ -10508,6 +10535,7 @@ class _SpeculativeApi {
 }
 
 class _MtmdApi {
+  final DynamicLibrary? library;
   final _MtmdDefaultMarkerDart defaultMarker;
   final _MtmdContextParamsDefaultDart contextParamsDefault;
   final _MtmdInitFromFileDart initFromFile;
@@ -10530,6 +10558,7 @@ class _MtmdApi {
   final _MtmdLogSetDart? helperLogSet;
 
   const _MtmdApi({
+    this.library,
     required this.defaultMarker,
     required this.contextParamsDefault,
     required this.initFromFile,
@@ -10579,6 +10608,7 @@ class _MtmdApi {
       } catch (_) {}
 
       return _MtmdApi(
+        library: library,
         defaultMarker: library
             .lookupFunction<_MtmdDefaultMarkerNative, _MtmdDefaultMarkerDart>(
               'mtmd_default_marker',

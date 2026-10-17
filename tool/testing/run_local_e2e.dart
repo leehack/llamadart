@@ -909,6 +909,32 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'native-multimodal-embeddings',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify EmbeddingGemma-2 mixed image/audio/text vectors against the pinned native reference (environment supplies local weights and reference JSON).',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '--tags',
+            'local-only',
+            'test/e2e/backends/multimodal_embedding_native_e2e_test.dart',
+          ],
+          description:
+              'Native CPU/Metal multimodal embedding qualification; no downloads',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'native-embedding-benchmark',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1934,6 +1960,23 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name == 'native-multimodal-embeddings') {
+    for (final name in const [
+      'LLAMADART_EMBEDDING_MODELS_DIR',
+      'LLAMADART_EMBEDDING_REFERENCE_CPU',
+      'LLAMADART_EMBEDDING_REFERENCE_METAL',
+    ]) {
+      if ((environment ?? Platform.environment)[name]?.trim().isNotEmpty !=
+          true) {
+        return LocalE2eResult(
+          64,
+          stderr:
+              '$name is required for native-multimodal-embeddings; see doc/multimodal_embeddings_native.md.\n',
+        );
+      }
+    }
   }
 
   if ((scenario.name == 'chat-app-flutter-active-shutdown' ||

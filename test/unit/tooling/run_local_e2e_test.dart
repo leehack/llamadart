@@ -10,6 +10,37 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  test(
+    'native multimodal embedding qualification requires local weights and references',
+    () async {
+      const environment = {
+        'LLAMADART_EMBEDDING_MODELS_DIR': '/local/models',
+        'LLAMADART_EMBEDDING_REFERENCE_CPU': '/local/cpu.json',
+        'LLAMADART_EMBEDDING_REFERENCE_METAL': '/local/metal.json',
+      };
+      for (final missing in environment.keys) {
+        final result = await runLocalE2e(
+          ['--scenario', 'native-multimodal-embeddings', '--dry-run'],
+          projectRoot: '/repo',
+          environment: {...environment}..remove(missing),
+        );
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains(missing));
+      }
+      final result = await runLocalE2e(
+        ['--scenario', 'native-multimodal-embeddings', '--dry-run'],
+        projectRoot: '/repo',
+        environment: environment,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('multimodal_embedding_native_e2e_test.dart'),
+      );
+      expect(result.stdout, contains('--tags local-only'));
+    },
+  );
+
   group('run_local_e2e', () {
     test('documents shared runner options and defaults', () async {
       final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');

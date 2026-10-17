@@ -837,3 +837,14 @@ sampling. It awaits repeated disposal and worker exit, returns naturally from
 Each state runs three times per platform. This qualifies cooperative natural
 VM termination; fatal errors with pending startup or forced termination that
 skips disposal remain outside this evidence.
+
+## Native multimodal embeddings
+
+The `native-multimodal-embeddings` local-only row qualifies EmbeddingGemma-2
+BF16 with the matching vision/audio projector on macOS CPU and Metal. It
+compares six ordered vectors with a pinned upstream-only C reference, checks
+raw/normalized output, adjacent-text parity, ordering, expanded capacity,
+cancellation and reuse. It never downloads weights. Set the environment and
+follow [the native embedding procedure](multimodal_embeddings_native.md), then
+run `run_local_e2e.dart --scenario native-multimodal-embeddings --dry-run`
+before the real scenario.

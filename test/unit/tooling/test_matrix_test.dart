@@ -9,6 +9,22 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test(
+    'native multimodal embedding row selects the local reference scenario',
+    () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'native-multimodal-embeddings',
+      );
+      expect(row.mode, 'local-only');
+      expect(
+        row.command,
+        'dart run tool/testing/run_local_e2e.dart --scenario native-multimodal-embeddings',
+      );
+      expect(row.covers, contains('cancellation'));
+      expect(row.useWhen, contains('No downloads'));
+    },
+  );
+
   group('test_matrix', () {
     test('has unique row ids', () {
       final ids = testMatrixRows.map((row) => row.id).toList();

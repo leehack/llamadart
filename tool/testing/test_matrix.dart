@@ -330,6 +330,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Generation latency, streaming, batching, prompt reuse, or performance changes.',
   ),
   TestMatrixRow(
+    id: 'native-multimodal-embeddings',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'EmbeddingGemma-2 text/image/audio/interleaved vectors versus pinned upstream, raw/normalized outputs, adjacent-text parity, batch order, capacity, cancellation and reuse on CPU/Metal',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario native-multimodal-embeddings',
+    useWhen:
+        'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
+  ),
+  TestMatrixRow(
     id: 'native-embedding-benchmark',
     tier: 'targeted',
     mode: 'local-only',

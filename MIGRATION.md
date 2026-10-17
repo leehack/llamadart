@@ -75,6 +75,20 @@ a backend count mismatch throws `LlamaInferenceException`. Adjacent text parts
 form one verbatim-concatenated segment on every backend, including mixed inputs.
 The modality enum may grow; include a default case in switches.
 
+Native llama.cpp content embeddings now use the loaded EmbeddingGemma-2
+projector for images and audio (v0.7.0-1). Without a projector the probe
+reports text only. Oversized expanded media inputs throw
+`LlamaInferenceException` before encoding; M-RoPE projectors, URLs and
+ambiguous media sources throw `LlamaUnsupportedException`. Each media part
+needs exactly one encoded bytes/local-file source, or mono 16 kHz audio PCM.
+Text-only content follows `embed`, including causal unpooled models; media
+requirements do not restrict text. Older native overrides can retain text
+with media disabled; unsupported media errors name the v0.7.0-1 ABI.
+No task prefix is inserted. Await a cancelled embedding before reusing it.
+Windows resolves media functions across the complete native DLL bundle; missing
+media symbols disable media without restricting text. Model-backed Windows
+qualification remains pending.
+
 `ModelParams.liteRtLmEmbeddingEngine` defaults to false for conversation loading.
 Set true and `device: ComputeDevice.cpu` for native LiteRT-LM embeddings. This intentionally
 replaces the previous adapter rejection; generation/tokenizer APIs are unavailable

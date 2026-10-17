@@ -4,6 +4,7 @@ import '../../core/exceptions.dart';
 import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
 import 'native_barrier_api.dart';
+import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 
 const _llamadartAsset = 'package:llamadart/llamadart';
 const _wrapperAsset = 'package:llamadart/llamadart_wrapper';
@@ -174,6 +175,12 @@ final class ExitTeardownApi {
     required this.mtmdHelperDecodeImageChunk,
     required this.schedGraphCompute,
   });
+
+  /// Optional v0.7.0-1 mixed-batch wrappers. Older runtimes retain text support.
+  static LlamaCppMixedBatchApi? resolveMixedBatch({
+    Pointer<NativeType> Function(String)? symbol,
+    bool isWindows = false,
+  }) => LlamaCppMixedBatchApi.tryResolve(symbol: symbol, isWindows: isWindows);
 
   /// The oldest `llamadart-native` release to use these functions with.
   ///
@@ -461,6 +468,163 @@ final class ExitTeardownApi {
 /// typed error of its operation instead of returning its failure value, and
 /// [failures] remembers the objects that call left free-only.
 final class LlamaCppObjectCalls {
+  /// Mixed-batch support is independent of the legacy all-or-nothing exit API.
+  late final LlamaCppMixedBatchApi? mixedBatch = _mixedBatchResolver != null
+      ? _mixedBatchResolver()
+      : exit == null
+      ? null
+      : ExitTeardownApi.resolveMixedBatch(isWindows: failures.isWindows);
+
+  final LlamaCppMixedBatchApi? Function()? _mixedBatchResolver;
+
+  final int Function(Pointer<llama_model>) _modelInputWidth;
+
+  /// Reads model shape and pooling support without mutating inference state.
+  ({
+    bool encoder,
+    bool decoder,
+    int inputWidth,
+    int outputWidth,
+    Pointer<llama_vocab> vocab,
+  })
+  embeddingModelInfo(Pointer<llama_model> model) {
+    failures.ensureUsable(model, 'This embedding model');
+    return (
+      encoder: llama_model_has_encoder(model),
+      decoder: llama_model_has_decoder(model),
+      inputWidth: _optionalEmbeddingInputWidth(model),
+      outputWidth: llama_model_n_embd_out(model) > 0
+          ? llama_model_n_embd_out(model)
+          : llama_model_n_embd(model),
+      vocab: llama_model_get_vocab(model),
+    );
+  }
+
+  int _optionalEmbeddingInputWidth(Pointer<llama_model> model) {
+    try {
+      return _modelInputWidth(model);
+    } on ArgumentError {
+      return 0;
+    }
+  }
+
+  /// Actual allocated limits, rather than the requested model parameters.
+  ({
+    llama_pooling_type pooling,
+    int capacity,
+    int sequenceCapacity,
+    int sequences,
+  })
+  embeddingContextInfo(Pointer<llama_context> context) {
+    failures.ensureUsable(context, 'This embedding context');
+    final limits = [
+      llama_n_ctx(context),
+      llama_n_ctx_seq(context),
+      llama_n_batch(context),
+      llama_n_ubatch(context),
+    ];
+    return (
+      pooling: llama_pooling_type$1(context),
+      capacity: limits.reduce((a, b) => a < b ? a : b),
+      sequenceCapacity: llama_n_ctx_seq(context),
+      sequences: llama_n_seq_max(context),
+    );
+  }
+
+  /// The adapter passes a single position for each mixed embedding row.
+  bool embeddingProjectorUsesMrope(Pointer<mtmd_context> projector) =>
+      mixedBatch!.projectorUsesMrope(projector);
+
+  /// Runtime sample rate used to validate portable PCM.
+  int embeddingAudioSampleRate(Pointer<mtmd_context> projector) =>
+      mixedBatch!.audioSampleRate(projector);
+
+  /// Enables pooled embedding output for a complete mixed pass.
+  void setEmbeddingOutput(Pointer<llama_context> context, bool enabled) {
+    try {
+      failures.ensureUsable(context, 'This embedding context');
+    } on LlamaStateException {
+      // Caught native exceptions leave the context free-only, including cleanup.
+      if (!enabled) return;
+      rethrow;
+    }
+    mixedBatch!.setOutput(context, enabled);
+  }
+
+  /// Pooled output; callers copy it before the next context operation.
+  Pointer<Float> embeddingSequenceOutput(Pointer<llama_context> context) =>
+      llama_get_embeddings_seq(context, 0);
+
+  /// Projector output; the next media encode overwrites it.
+  Pointer<Float> embeddingMediaOutput(Pointer<mtmd_context> projector) =>
+      mixedBatch!.mediaOutput(projector);
+
+  /// Encodes one media chunk under the native exit and exception barriers.
+  void encodeEmbeddingChunk(
+    Pointer<mtmd_context> projector,
+    Pointer<mtmd_input_chunk> chunk,
+  ) {
+    final api = exit;
+    if (api == null) {
+      throw LlamaUnsupportedException(
+        'Native media embeddings require guarded mtmd encoding (v0.7.0-1).',
+      );
+    }
+    final status = api.mtmdEncodeChunk(projector, chunk);
+    if (status != 0) {
+      failures.throwIfCaught(
+        'mtmd_encode_chunk',
+        LlamaInferenceException.new,
+        freeOnly: [projector],
+      );
+      throw LlamaInferenceException('Media embedding encoding failed');
+    }
+  }
+
+  /// Allocates an extended batch while protecting its context.
+  Pointer<llama_batch_ext> createEmbeddingBatch(
+    Pointer<llama_context> context,
+  ) {
+    final batch = mixedBatch!.init(context);
+    if (batch == nullptr) {
+      failures.throwIfCaught(
+        'llama_batch_ext_init',
+        LlamaInferenceException.new,
+        freeOnly: [context],
+      );
+      throw LlamaInferenceException('Mixed embedding batch allocation failed');
+    }
+    return batch;
+  }
+
+  /// One guarded, synchronized DECODE of a complete noncausal input.
+  void processEmbeddingBatch(
+    Pointer<llama_context> context,
+    Pointer<llama_batch_ext> batch,
+  ) {
+    final status = mixedBatch!.process(
+      context,
+      llama_dart_process_type.LLAMA_DART_PROCESS_TYPE_DECODE.value,
+      batch,
+    );
+    if (status != 0) {
+      failures.throwIfCaught(
+        'llama_process',
+        LlamaInferenceException.new,
+        freeOnly: [context],
+      );
+      if (status ==
+          llama_dart_process_status
+              .LLAMA_DART_PROCESS_STATUS_UNSUPPORTED
+              .value) {
+        throw LlamaUnsupportedException(
+          'Native mixed embedding DECODE requires v0.7.0-1.',
+        );
+      }
+      throw LlamaInferenceException('Mixed embedding forward pass failed');
+    }
+  }
+
   LlamaCppObjectCalls._({
     required this.exit,
     required this.failures,
@@ -485,7 +649,10 @@ final class LlamaCppObjectCalls {
     required this.stateSeqGetDataExt,
     required this.stateSeqSetDataExt,
     required this.adapterLoraInit,
-  });
+    LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
+    int Function(Pointer<llama_model>)? modelInputWidth,
+  }) : _mixedBatchResolver = mixedBatchResolver,
+       _modelInputWidth = modelInputWidth ?? llama_model_n_embd_inp;
 
   /// The tracked and guarded functions of [exit].
   ///
@@ -497,11 +664,15 @@ final class LlamaCppObjectCalls {
     ExitTeardownApi exit, {
     NativeBarrierApi? barrier,
     bool isWindows = false,
+    LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
+    int Function(Pointer<llama_model>)? modelInputWidth,
   }) {
     final failures = NativeCallFailures(barrier, isWindows: isWindows);
     return LlamaCppObjectCalls._(
       exit: exit,
       failures: failures,
+      mixedBatchResolver: mixedBatchResolver,
+      modelInputWidth: modelInputWidth,
       loadModel: (path, params) {
         final model = exit.modelLoadFromFile(path, params);
         if (model == nullptr) {
@@ -814,6 +985,7 @@ final class LlamaCppObjectCalls {
   static LlamaCppObjectCalls resolve({
     required bool isWindows,
     Pointer<NativeType> Function(String name)? symbol,
+    LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
   }) {
     final exit = ExitTeardownApi.tryResolve(
       isWindows: isWindows,
@@ -827,6 +999,7 @@ final class LlamaCppObjectCalls {
         symbol: symbol,
       ),
       isWindows: isWindows,
+      mixedBatchResolver: mixedBatchResolver,
     );
   }
 
@@ -1363,4 +1536,468 @@ external int _wrapperMtmdDecodeImageChunk(
 external int _wrapperSchedGraphCompute(
   ggml_backend_sched_t sched,
   Pointer<ggml_cgraph> graph,
+);
+
+typedef _MixedInitNative =
+    Pointer<llama_batch_ext> Function(Pointer<llama_context>);
+typedef _MixedProcessNative =
+    Int32 Function(Pointer<llama_context>, Int32, Pointer<llama_batch_ext>);
+
+/// Optional guarded mixed-batch ABI, resolved without weakening the old ABI probe.
+final class LlamaCppMixedBatchApi {
+  /// Creates resolved functions (also usable by recording tests).
+  const LlamaCppMixedBatchApi({
+    required this.init,
+    required this.process,
+    this.setOutput = llama_set_embeddings,
+    this.setOutputRow = llama_batch_ext_set_output_embd,
+    this.addToken = llama_batch_ext_add_token,
+    this.addEmbedding = llama_batch_ext_add_embd,
+    this.setPosition = llama_batch_ext_set_pos,
+    this.free = llama_batch_ext_free,
+    this.projectorUsesMrope = mtmd_decode_use_mrope,
+    this.audioSampleRate = mtmd_get_audio_sample_rate,
+    this.mediaOutput = mtmd_get_output_embd,
+    this.tokenCount = mtmd_helper_get_n_tokens,
+    this.chunksSize = mtmd_input_chunks_size,
+    this.chunksGet = mtmd_input_chunks_get,
+    this.chunkType = raw_bindings.mtmd_input_chunk_get_type_raw,
+    this.chunkTokenCount = mtmd_input_chunk_get_n_tokens,
+    this.chunkTokens = mtmd_input_chunk_get_tokens_text,
+    this.bitmapIsAudio = mtmd_bitmap_is_audio,
+  });
+
+  /// `llama_set_embeddings`.
+  final void Function(Pointer<llama_context>, bool) setOutput;
+
+  /// `llama_batch_ext_set_output_embd`.
+  final bool Function(Pointer<llama_batch_ext>, int, bool) setOutputRow;
+
+  /// `llama_batch_ext_add_token`.
+  final int Function(Pointer<llama_batch_ext>, int, int) addToken;
+
+  /// `llama_batch_ext_add_embd`.
+  final int Function(Pointer<llama_batch_ext>, int, llama_embd) addEmbedding;
+
+  /// `llama_batch_ext_set_pos`.
+  final bool Function(Pointer<llama_batch_ext>, int, Pointer<llama_pos>)
+  setPosition;
+
+  /// `llama_batch_ext_free`.
+  final void Function(Pointer<llama_batch_ext>) free;
+
+  /// `mtmd_decode_use_mrope`.
+  final bool Function(Pointer<mtmd_context>) projectorUsesMrope;
+
+  /// `mtmd_get_audio_sample_rate`.
+  final int Function(Pointer<mtmd_context>) audioSampleRate;
+
+  /// `mtmd_get_output_embd`.
+  final Pointer<Float> Function(Pointer<mtmd_context>) mediaOutput;
+
+  /// `mtmd_helper_get_n_tokens`.
+  final int Function(Pointer<mtmd_input_chunks>) tokenCount;
+
+  /// `mtmd_input_chunks_size`.
+  final int Function(Pointer<mtmd_input_chunks>) chunksSize;
+
+  /// `mtmd_input_chunks_get`.
+  final Pointer<mtmd_input_chunk> Function(Pointer<mtmd_input_chunks>, int)
+  chunksGet;
+
+  /// `mtmd_input_chunk_get_type`.
+  final int Function(Pointer<mtmd_input_chunk>) chunkType;
+
+  /// `mtmd_input_chunk_get_n_tokens`.
+  final int Function(Pointer<mtmd_input_chunk>) chunkTokenCount;
+
+  /// `mtmd_input_chunk_get_tokens_text`.
+  final Pointer<llama_token> Function(Pointer<mtmd_input_chunk>, Pointer<Size>)
+  chunkTokens;
+
+  /// `mtmd_bitmap_is_audio`.
+  final bool Function(Pointer<mtmd_bitmap>) bitmapIsAudio;
+
+  /// Guarded extended-batch allocation.
+  final Pointer<llama_batch_ext> Function(Pointer<llama_context>) init;
+
+  /// Guarded and synchronized mixed processing.
+  final int Function(Pointer<llama_context>, int, Pointer<llama_batch_ext>)
+  process;
+
+  /// Resolves both wrappers and all upstream mixed/mtmd accessors used with them.
+  ///
+  /// On Windows, [mtmdSymbol] reuses the service's resolved mtmd library;
+  /// standalone probes use the hook's mtmd asset. Calls retain the probed
+  /// addresses so split-library resolution also applies during execution.
+  static LlamaCppMixedBatchApi? tryResolve({
+    Pointer<NativeType> Function(String)? symbol,
+    bool isWindows = false,
+    Pointer<NativeType> Function(String)? mtmdSymbol,
+  }) {
+    try {
+      final resolve =
+          symbol ??
+          (name) =>
+              _mixedSymbol(name, isWindows: isWindows, mtmdSymbol: mtmdSymbol);
+      final init = resolve('llama_dart_batch_ext_init')
+          .cast<NativeFunction<_MixedInitNative>>()
+          .asFunction<
+            Pointer<llama_batch_ext> Function(Pointer<llama_context>)
+          >();
+      final process = resolve('llama_dart_process')
+          .cast<NativeFunction<_MixedProcessNative>>()
+          .asFunction<
+            int Function(Pointer<llama_context>, int, Pointer<llama_batch_ext>)
+          >();
+      return LlamaCppMixedBatchApi(
+        init: init,
+        process: process,
+        setOutput: resolve('llama_set_embeddings')
+            .cast<NativeFunction<Void Function(Pointer<llama_context>, Bool)>>()
+            .asFunction<void Function(Pointer<llama_context>, bool)>(),
+        setOutputRow: resolve('llama_batch_ext_set_output_embd')
+            .cast<
+              NativeFunction<
+                Bool Function(Pointer<llama_batch_ext>, Int32, Bool)
+              >
+            >()
+            .asFunction<bool Function(Pointer<llama_batch_ext>, int, bool)>(),
+        addToken: resolve('llama_batch_ext_add_token')
+            .cast<
+              NativeFunction<
+                Int32 Function(Pointer<llama_batch_ext>, Int32, Int32)
+              >
+            >()
+            .asFunction<int Function(Pointer<llama_batch_ext>, int, int)>(),
+        addEmbedding: resolve('llama_batch_ext_add_embd')
+            .cast<
+              NativeFunction<
+                Int32 Function(Pointer<llama_batch_ext>, Int32, llama_embd)
+              >
+            >()
+            .asFunction<
+              int Function(Pointer<llama_batch_ext>, int, llama_embd)
+            >(),
+        setPosition: resolve('llama_batch_ext_set_pos')
+            .cast<
+              NativeFunction<
+                Bool Function(
+                  Pointer<llama_batch_ext>,
+                  Int32,
+                  Pointer<llama_pos>,
+                )
+              >
+            >()
+            .asFunction<
+              bool Function(Pointer<llama_batch_ext>, int, Pointer<llama_pos>)
+            >(),
+        free: resolve('llama_batch_ext_free')
+            .cast<NativeFunction<Void Function(Pointer<llama_batch_ext>)>>()
+            .asFunction<void Function(Pointer<llama_batch_ext>)>(),
+        projectorUsesMrope: resolve('mtmd_decode_use_mrope')
+            .cast<NativeFunction<Bool Function(Pointer<mtmd_context>)>>()
+            .asFunction<bool Function(Pointer<mtmd_context>)>(),
+        audioSampleRate: resolve('mtmd_get_audio_sample_rate')
+            .cast<NativeFunction<Int Function(Pointer<mtmd_context>)>>()
+            .asFunction<int Function(Pointer<mtmd_context>)>(),
+        mediaOutput: resolve('mtmd_get_output_embd')
+            .cast<
+              NativeFunction<Pointer<Float> Function(Pointer<mtmd_context>)>
+            >()
+            .asFunction<Pointer<Float> Function(Pointer<mtmd_context>)>(),
+        tokenCount: resolve('mtmd_helper_get_n_tokens')
+            .cast<NativeFunction<Size Function(Pointer<mtmd_input_chunks>)>>()
+            .asFunction<int Function(Pointer<mtmd_input_chunks>)>(),
+        chunksSize: resolve('mtmd_input_chunks_size')
+            .cast<NativeFunction<Size Function(Pointer<mtmd_input_chunks>)>>()
+            .asFunction<int Function(Pointer<mtmd_input_chunks>)>(),
+        chunksGet: resolve('mtmd_input_chunks_get')
+            .cast<
+              NativeFunction<
+                Pointer<mtmd_input_chunk> Function(
+                  Pointer<mtmd_input_chunks>,
+                  Size,
+                )
+              >
+            >()
+            .asFunction<
+              Pointer<mtmd_input_chunk> Function(
+                Pointer<mtmd_input_chunks>,
+                int,
+              )
+            >(),
+        chunkType: resolve('mtmd_input_chunk_get_type')
+            .cast<
+              NativeFunction<UnsignedInt Function(Pointer<mtmd_input_chunk>)>
+            >()
+            .asFunction<int Function(Pointer<mtmd_input_chunk>)>(),
+        chunkTokenCount: resolve('mtmd_input_chunk_get_n_tokens')
+            .cast<NativeFunction<Size Function(Pointer<mtmd_input_chunk>)>>()
+            .asFunction<int Function(Pointer<mtmd_input_chunk>)>(),
+        chunkTokens: resolve('mtmd_input_chunk_get_tokens_text')
+            .cast<
+              NativeFunction<
+                Pointer<llama_token> Function(
+                  Pointer<mtmd_input_chunk>,
+                  Pointer<Size>,
+                )
+              >
+            >()
+            .asFunction<
+              Pointer<llama_token> Function(
+                Pointer<mtmd_input_chunk>,
+                Pointer<Size>,
+              )
+            >(),
+        bitmapIsAudio: resolve('mtmd_bitmap_is_audio')
+            .cast<NativeFunction<Bool Function(Pointer<mtmd_bitmap>)>>()
+            .asFunction<bool Function(Pointer<mtmd_bitmap>)>(),
+      );
+    } on ArgumentError {
+      return null;
+    }
+  }
+}
+
+Pointer<NativeType> _mixedSymbol(
+  String name, {
+  required bool isWindows,
+  Pointer<NativeType> Function(String)? mtmdSymbol,
+  Pointer<NativeType> Function(String library, String name)? lookup,
+}) {
+  final library = !isWindows || name.startsWith('llama_dart_')
+      ? 'llamadart.dll'
+      : name.startsWith('mtmd_')
+      ? 'mtmd.dll'
+      : 'llama.dll';
+  if (lookup != null) return lookup(library, name);
+  if (library == 'mtmd.dll') {
+    return (mtmdSymbol ?? _windowsMixedSymbol)(name);
+  }
+  return switch (name) {
+    'llama_dart_batch_ext_init' =>
+      isWindows
+          ? Native.addressOf<NativeFunction<_MixedInitNative>>(
+              _wrapperMixedInit,
+            )
+          : Native.addressOf<NativeFunction<_MixedInitNative>>(
+              llama_dart_batch_ext_init,
+            ),
+    'llama_dart_process' =>
+      isWindows
+          ? Native.addressOf<NativeFunction<_MixedProcessNative>>(
+              _wrapperMixedProcess,
+            )
+          : Native.addressOf<NativeFunction<_MixedProcessNative>>(
+              llama_dart_process,
+            ),
+    'llama_set_embeddings' =>
+      Native.addressOf<
+        NativeFunction<Void Function(Pointer<llama_context>, Bool)>
+      >(llama_set_embeddings),
+    'llama_batch_ext_set_output_embd' =>
+      Native.addressOf<
+        NativeFunction<Bool Function(Pointer<llama_batch_ext>, Int32, Bool)>
+      >(llama_batch_ext_set_output_embd),
+    'llama_batch_ext_add_token' =>
+      Native.addressOf<
+        NativeFunction<Int32 Function(Pointer<llama_batch_ext>, Int32, Int32)>
+      >(llama_batch_ext_add_token),
+    'llama_batch_ext_add_embd' =>
+      Native.addressOf<
+        NativeFunction<
+          Int32 Function(Pointer<llama_batch_ext>, Int32, llama_embd)
+        >
+      >(llama_batch_ext_add_embd),
+    'llama_batch_ext_set_pos' =>
+      Native.addressOf<
+        NativeFunction<
+          Bool Function(Pointer<llama_batch_ext>, Int32, Pointer<llama_pos>)
+        >
+      >(llama_batch_ext_set_pos),
+    'llama_batch_ext_free' =>
+      Native.addressOf<NativeFunction<Void Function(Pointer<llama_batch_ext>)>>(
+        llama_batch_ext_free,
+      ),
+    'mtmd_decode_use_mrope' =>
+      Native.addressOf<NativeFunction<Bool Function(Pointer<mtmd_context>)>>(
+        mtmd_decode_use_mrope,
+      ),
+    'mtmd_get_audio_sample_rate' =>
+      Native.addressOf<NativeFunction<Int Function(Pointer<mtmd_context>)>>(
+        mtmd_get_audio_sample_rate,
+      ),
+    'mtmd_get_output_embd' =>
+      Native.addressOf<
+        NativeFunction<Pointer<Float> Function(Pointer<mtmd_context>)>
+      >(mtmd_get_output_embd),
+    'mtmd_helper_get_n_tokens' =>
+      Native.addressOf<
+        NativeFunction<Size Function(Pointer<mtmd_input_chunks>)>
+      >(mtmd_helper_get_n_tokens),
+    'mtmd_input_chunks_size' =>
+      Native.addressOf<
+        NativeFunction<Size Function(Pointer<mtmd_input_chunks>)>
+      >(mtmd_input_chunks_size),
+    'mtmd_input_chunks_get' =>
+      Native.addressOf<
+        NativeFunction<
+          Pointer<mtmd_input_chunk> Function(Pointer<mtmd_input_chunks>, Size)
+        >
+      >(mtmd_input_chunks_get),
+    'mtmd_input_chunk_get_type' =>
+      Native.addressOf<
+        NativeFunction<UnsignedInt Function(Pointer<mtmd_input_chunk>)>
+      >(raw_bindings.mtmd_input_chunk_get_type_raw),
+    'mtmd_input_chunk_get_n_tokens' =>
+      Native.addressOf<
+        NativeFunction<Size Function(Pointer<mtmd_input_chunk>)>
+      >(mtmd_input_chunk_get_n_tokens),
+    'mtmd_input_chunk_get_tokens_text' =>
+      Native.addressOf<
+        NativeFunction<
+          Pointer<llama_token> Function(
+            Pointer<mtmd_input_chunk>,
+            Pointer<Size>,
+          )
+        >
+      >(mtmd_input_chunk_get_tokens_text),
+    'mtmd_bitmap_is_audio' =>
+      Native.addressOf<NativeFunction<Bool Function(Pointer<mtmd_bitmap>)>>(
+        mtmd_bitmap_is_audio,
+      ),
+    _ => throw ArgumentError('Unknown mixed embedding symbol'),
+  };
+}
+
+Pointer<NativeType> _windowsMixedSymbol(String name) => switch (name) {
+  'mtmd_decode_use_mrope' =>
+    Native.addressOf<NativeFunction<Bool Function(Pointer<mtmd_context>)>>(
+      _windowsMixedProjectorUsesMrope,
+    ),
+  'mtmd_get_audio_sample_rate' =>
+    Native.addressOf<NativeFunction<Int Function(Pointer<mtmd_context>)>>(
+      _windowsMixedAudioSampleRate,
+    ),
+  'mtmd_get_output_embd' =>
+    Native.addressOf<
+      NativeFunction<Pointer<Float> Function(Pointer<mtmd_context>)>
+    >(_windowsMixedMediaOutput),
+  'mtmd_helper_get_n_tokens' =>
+    Native.addressOf<NativeFunction<Size Function(Pointer<mtmd_input_chunks>)>>(
+      _windowsMixedTokenCount,
+    ),
+  'mtmd_input_chunks_size' =>
+    Native.addressOf<NativeFunction<Size Function(Pointer<mtmd_input_chunks>)>>(
+      _windowsMixedChunksSize,
+    ),
+  'mtmd_input_chunks_get' =>
+    Native.addressOf<
+      NativeFunction<
+        Pointer<mtmd_input_chunk> Function(Pointer<mtmd_input_chunks>, Size)
+      >
+    >(_windowsMixedChunksGet),
+  'mtmd_input_chunk_get_type' =>
+    Native.addressOf<
+      NativeFunction<UnsignedInt Function(Pointer<mtmd_input_chunk>)>
+    >(_windowsMixedChunkType),
+  'mtmd_input_chunk_get_n_tokens' =>
+    Native.addressOf<NativeFunction<Size Function(Pointer<mtmd_input_chunk>)>>(
+      _windowsMixedChunkTokenCount,
+    ),
+  'mtmd_input_chunk_get_tokens_text' =>
+    Native.addressOf<
+      NativeFunction<
+        Pointer<llama_token> Function(Pointer<mtmd_input_chunk>, Pointer<Size>)
+      >
+    >(_windowsMixedChunkTokens),
+  'mtmd_bitmap_is_audio' =>
+    Native.addressOf<NativeFunction<Bool Function(Pointer<mtmd_bitmap>)>>(
+      _windowsMixedBitmapIsAudio,
+    ),
+  _ => throw ArgumentError('Unknown Windows mtmd embedding symbol'),
+};
+
+@Native<Bool Function(Pointer<mtmd_context>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_decode_use_mrope',
+)
+external bool _windowsMixedProjectorUsesMrope(Pointer<mtmd_context> arg0);
+
+@Native<Int Function(Pointer<mtmd_context>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_get_audio_sample_rate',
+)
+external int _windowsMixedAudioSampleRate(Pointer<mtmd_context> arg0);
+
+@Native<Pointer<Float> Function(Pointer<mtmd_context>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_get_output_embd',
+)
+external Pointer<Float> _windowsMixedMediaOutput(Pointer<mtmd_context> arg0);
+
+@Native<Size Function(Pointer<mtmd_input_chunks>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_helper_get_n_tokens',
+)
+external int _windowsMixedTokenCount(Pointer<mtmd_input_chunks> arg0);
+
+@Native<Size Function(Pointer<mtmd_input_chunks>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_input_chunks_size',
+)
+external int _windowsMixedChunksSize(Pointer<mtmd_input_chunks> arg0);
+
+@Native<Pointer<mtmd_input_chunk> Function(Pointer<mtmd_input_chunks>, Size)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_input_chunks_get',
+)
+external Pointer<mtmd_input_chunk> _windowsMixedChunksGet(
+  Pointer<mtmd_input_chunks> arg0,
+  int arg1,
+);
+
+@Native<UnsignedInt Function(Pointer<mtmd_input_chunk>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_input_chunk_get_type',
+)
+external int _windowsMixedChunkType(Pointer<mtmd_input_chunk> arg0);
+
+@Native<Size Function(Pointer<mtmd_input_chunk>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_input_chunk_get_n_tokens',
+)
+external int _windowsMixedChunkTokenCount(Pointer<mtmd_input_chunk> arg0);
+
+@Native<
+  Pointer<llama_token> Function(Pointer<mtmd_input_chunk>, Pointer<Size>)
+>(assetId: 'package:llamadart/mtmd', symbol: 'mtmd_input_chunk_get_tokens_text')
+external Pointer<llama_token> _windowsMixedChunkTokens(
+  Pointer<mtmd_input_chunk> arg0,
+  Pointer<Size> arg1,
+);
+
+@Native<Bool Function(Pointer<mtmd_bitmap>)>(
+  assetId: 'package:llamadart/mtmd',
+  symbol: 'mtmd_bitmap_is_audio',
+)
+external bool _windowsMixedBitmapIsAudio(Pointer<mtmd_bitmap> arg0);
+
+@Native<_MixedInitNative>(
+  assetId: _wrapperAsset,
+  symbol: 'llama_dart_batch_ext_init',
+)
+external Pointer<llama_batch_ext> _wrapperMixedInit(
+  Pointer<llama_context> context,
+);
+
+@Native<_MixedProcessNative>(
+  assetId: _wrapperAsset,
+  symbol: 'llama_dart_process',
+)
+external int _wrapperMixedProcess(
+  Pointer<llama_context> context,
+  int type,
+  Pointer<llama_batch_ext> batch,
 );

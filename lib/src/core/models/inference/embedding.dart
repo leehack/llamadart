@@ -32,11 +32,17 @@ final class LlamaEmbeddingCapabilities {
   /// Whether audio can be embedded, including alongside text and images.
   final bool audio;
 
+  /// Actionable runtime requirements when image or audio support is unavailable.
+  ///
+  /// Used only for a rejected media modality; text support is independent.
+  final String? mediaUnsupportedReason;
+
   /// Creates a capability report. Unknown capabilities default to unavailable.
   const LlamaEmbeddingCapabilities({
     this.text = false,
     this.image = false,
     this.audio = false,
+    this.mediaUnsupportedReason,
   });
 
   /// Whether [modality] is available.

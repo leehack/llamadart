@@ -17,6 +17,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import 'worker.dart';
@@ -36,6 +37,7 @@ class NativeLlamaBackend
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendBatchEmbeddings,
+        BackendMultimodalEmbeddings,
         BackendNextTokenScoring,
         BackendStatePersistence,
         BackendTextToSpeech,
@@ -46,6 +48,7 @@ class NativeLlamaBackend
         BackendGenerationUsageReporting,
         BackendChatPromptGeneration,
         BackendDartLogLevel {
+  final Set<_NativeCancelFlag> _embeddingCancelFlags = {};
   Isolate? _isolate;
   SendPort? _sendPort;
   RawReceivePort? _workerLogPort;
@@ -392,6 +395,9 @@ class NativeLlamaBackend
   @override
   void cancelGeneration() {
     _activeCancelToken?.raise();
+    for (final flag in _embeddingCancelFlags) {
+      flag.raise();
+    }
     _queuedGeneration?.close();
   }
 
@@ -802,6 +808,60 @@ class NativeLlamaBackend
     if (res is EmbedResponse) return res.embedding;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Embedding failed');
+  }
+
+  @override
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  ) async {
+    if (!_isReady || _sendPort == null) {
+      return const LlamaEmbeddingCapabilities();
+    }
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      EmbeddingCapabilitiesRequest(contextHandle, rp.sendPort),
+    );
+    final response = await _receiveResponse(rp);
+    if (response is EmbeddingCapabilitiesResponse) return response.capabilities;
+    if (response is ErrorResponse) throw _workerError(response);
+    throw LlamaInferenceException('Embedding capability probe failed');
+  }
+
+  @override
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) async {
+    if (inputs.isEmpty) return const [];
+    // Snapshot before awaiting worker startup; callers retain their buffers.
+    final flag = _NativeCancelFlag(_cancelFlagAllocator);
+    final rp = _openResponsePort();
+    try {
+      final request = EmbedContentBatchRequest(
+        contextHandle,
+        inputs,
+        normalize,
+        flag.address,
+        rp.sendPort,
+      );
+      _embeddingCancelFlags.add(flag);
+      await _ensureIsolate();
+      _dispatchRequest(rp, request);
+      final response = await _receiveResponse(rp);
+      if (response is EmbedBatchResponse) return response.embeddings;
+      if (response is ErrorResponse) throw _workerError(response);
+      throw LlamaInferenceException('Content embedding failed');
+    } finally {
+      // A failed RPC caused by worker exit settles only after onExit.
+      if (_workerFailure != null) {
+        await Future.wait(_workerExits.values.toList());
+      }
+      _closeResponsePort(rp);
+      _embeddingCancelFlags.remove(flag);
+      flag.free();
+    }
   }
 
   @override
