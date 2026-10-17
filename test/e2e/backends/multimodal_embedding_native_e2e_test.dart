@@ -345,12 +345,14 @@ void main() {
     () {
       final exit = ExitTeardownApi.tryResolve(isWindows: false)!;
       var encodes = 0, processes = 0;
+      var outputRows = 0, expandedRows = 0;
       var mrope = false, tokenizeFails = false;
       var sampleRate = 16000;
       var outputEnabled = false;
       final guarded = _recordEmbeddingExit(
         exit,
         onEncode: () => encodes++,
+        onTokenize: (rows) => expandedRows += rows,
         tokenizeFails: () => tokenizeFails,
       );
       final mixed = LlamaCppMixedBatchApi.tryResolve()!;
@@ -366,6 +368,7 @@ void main() {
           projectorUsesMrope: (_) => mrope,
           audioSampleRate: (_) => sampleRate,
           setOutputRow: (batch, row, enabled) {
+            outputRows++;
             expect(enabled, isTrue);
             return mixed.setOutputRow(batch, row, enabled);
           },
@@ -429,12 +432,15 @@ void main() {
       );
       tokenizeFails = false;
       expect([encodes, processes], [0, 0]);
+      expandedRows = 0;
       expect(
         service.embedContentBatch(context, [inputs[1]]).single,
         hasLength(768),
       );
       expect([encodes, processes], [1, 1]);
       expect(outputEnabled, isFalse);
+      expect(expandedRows, greaterThan(0));
+      expect(outputRows, expandedRows);
     },
     skip: root == null || !Platform.isMacOS
         ? 'Requires local BF16 weights and macOS Metal.'
@@ -446,6 +452,7 @@ ExitTeardownApi _recordEmbeddingExit(
   ExitTeardownApi real, {
   required void Function() onEncode,
   required bool Function() tokenizeFails,
+  required void Function(int) onTokenize,
 }) => ExitTeardownApi(
   track: real.track,
   untrack: real.untrack,
@@ -472,7 +479,11 @@ ExitTeardownApi _recordEmbeddingExit(
     onEncode();
     return real.mtmdEncodeChunk(context, chunk);
   },
-  mtmdTokenize: (context, chunks, text, bitmaps, count) => tokenizeFails()
-      ? 2
-      : real.mtmdTokenize(context, chunks, text, bitmaps, count),
+  mtmdTokenize: (context, chunks, text, bitmaps, count) {
+    final status = tokenizeFails()
+        ? 2
+        : real.mtmdTokenize(context, chunks, text, bitmaps, count);
+    if (status == 0) onTokenize(mtmd_helper_get_n_tokens(chunks));
+    return status;
+  },
 );
