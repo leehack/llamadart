@@ -1,108 +1,137 @@
-# LiteRT-LM embedding qualification blockers (015-C)
+# LiteRT-LM multimodal embeddings
 
 Tracking: https://github.com/leehack/llamadart/issues/1072.
 Contract: [Multimodal embeddings](multimodal_embeddings.md).
 
-**015-C is blocked on the pinned runtimes. No embedding implementation or
-capability is enabled by this report.** The temporary integration prototype
-was removed after qualification found the blockers below. The existing native
-and Web adapters continue to reject `liteRtLmEmbeddingEngine: true`.
+## Shipped boundary
 
-## Required owner changes
+`ModelParams(liteRtLmEmbeddingEngine: true, device: ComputeDevice.cpu)` selects
+LiteRT-LM's separate native embedding engine. The default false preserves
+conversation loading. Both string and content embedding APIs use this engine;
+generation and tokenizer APIs reject embedding mode. GGUF loaders still reject
+the LiteRT-LM-only flag. A context cannot change its model's selected engine.
 
-| Boundary | Evidence | Required action |
-| --- | --- | --- |
-| Whole-batch capacity preflight | Upstream `EmbeddingEngineImpl::ComputeEmbeddingBatch` loops over inputs, calls `ProcessAndCombineContents`, then `ComputeEmbeddingInternal` for each input before examining the next. The C and Web APIs expose compute methods but no embedding preflight/token-count operation. | Publish native and Web APIs that validate the entire expanded batch before the first embedding inference, or obtain an explicitly coordinated shared-contract change. The 015-C lane must not weaken the contract itself. |
-| Native macOS GPU | The supplied bundle crashed during `weight_loader::LiteRtWeightLoader::PrepareAccessForBuffer` with `BUS_ADRALN` (exit 138), both through Dart and through an upstream-only Python/ctypes C API reference. | Repair and publish the owner runtime, then qualify the affected artifact. Leave GPU embeddings unavailable meanwhile. |
-| Web CPU | `@litert-lm/core@0.18.0` failed while creating the text embedding executor: `Failed to get external weight for buffer id 2147483863 (tensor 1451)`. An upstream-only JS reference reproduced this with and without media processors; no vectors were produced. | Qualify a compatible bundle/package combination before enabling any Web embedding modality. No alternate weights or package versions were downloaded for this investigation. |
+The capability probe checks the actual bundle's text-encoder/embedder and
+vision/audio encoder/adapter sections, the complete optional v0.18 embedding C
+ABI, and successful processor creation. Unknown or unloaded contexts return
+all-false without runtime I/O. Native CPU is qualified; native GPU/NPU and all
+Web embeddings remain unsupported. Synthetic media establishes wiring, not
+retrieval quality. Other devices and embedding families were not qualified.
 
-Pinned source evidence:
+Inputs preserve order and merge adjacent text verbatim. Accepted media are
+PNG/JPEG bytes, mono 16 kHz Float32 PCM samples, and mono 16 kHz PCM16/Float32 WAV
+bytes. Paths, image URLs, video, multiple sources, malformed media and other
+codecs are rejected before inference. All media in the batch is decoded during
+Dart preflight. The native worker owns copied inputs and copies complete pooled
+vectors before freeing responses. It serializes embedding work with generation,
+settles cancellation before reuse/disposal, and never exposes partial output.
 
-- [Batch execution order, upstream b2f686e2, lines 1639–1676](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L1639).
-- [Native embedding C API](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h)
-  and [C batch dispatch](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.cc#L448).
-- [Pinned Web embedding API](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/dist/embedding_engine.d.ts),
-  [settings](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/dist/embedding_engine_settings.d.ts),
-  and [implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/dist/embedding_engine.js).
+The amended contract still requires whole-batch modalities, part shapes and
+media-source/decoding validation before inference. llama.cpp additionally
+validates actual expanded capacities before any decode. LiteRT-LM has no
+expanded-token count API: it selects `kError` rather than truncation or chunk
+averaging, and a runtime overflow fails the whole call with
+`LlamaInferenceException` and no vectors. Earlier batch items may waste compute.
+The E2E includes a valid input followed by an overflowing input and verifies
+that no partial result is returned and the engine remains reusable.
 
-Both APIs expose overflow-error options. Selecting error prevents silent
-truncation/chunk averaging; it does **not** turn the sequential batch loop into
-whole-batch preflight. Implementing that missing operation in Dart would require
-reproducing the runtime's tokenizer, special-token insertion and expanded media
-processing. Neither approximate text lengths nor a prior inference is a valid
-substitute.
+## Exact qualification
 
-Runtime changes belong to `litert-lm-native` and the official Web package;
-see [runtime ownership](../website/docs/maintainers/runtime-ownership.md) and
-[native/Web sync](../website/docs/maintainers/native-and-web-sync.md). Task 015-C
-explicitly forbids new package versions, pushes and changes to A's shared
-contracts. Those constraints prevent completing the required batch path here.
+Model: `litert-community/embeddinggemma-2-740m.litertlm`, supplied revision
+`24d962e9`. SHA-256:
+`e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`.
+Native: hook-prepared `v0.18.0-2`, upstream LiteRT-LM
+`b2f686e2ed4718fb84ec398a61dd59ca0f0aff27`, macOS arm64 CPU, both processors
+on CPU, max input length 1024. No model download or pin change is involved.
+All six normalized native CPU vectors have width 768 and match the standalone
+upstream C API reference with cosine 1.0 and relative L2 0.0. Tests also cover
+raw/normalized direction, media sensitivity, reverse batch order, string/content
+and adjacent-text parity, overflow, cancellation/reuse and engine separation.
 
-## Prototype results (not shipped support)
+Web: Chrome 155.0.8059.40, headless with `--enable-unsafe-webgpu --use-angle=metal`
+and the test runner's GPU-disable flags removed. `navigator.gpu.requestAdapter()`
+returned an adapter with vendor `apple`, architecture `metal-3` before engine
+creation. Pinned `@litert-lm/core@0.18.0` created the embedding engine, including
+CPU vision/audio processors, using **`Backend.GPU=4`**, not conversation's
+`GPU_ARTISAN=2`. Raw/normalized direction, media sensitivity, reverse batch and
+adjacent-text checks passed in the prototype, but the required native parity
+gate failed for every input. That integration was removed; the durable local-only
+Web qualification test calls the upstream package directly.
 
-The read-only model was
-`embeddinggemma-2-740m.litertlm` from `litert-community`, revision `24d962e9`.
-SHA-256:
-`e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`. The native library came from
-the hook-prepared `v0.18.0-2` artifact, not the sibling checkout's older `bin/`
-copy, which lacks embedding-engine exports.
+| Input | WebGPU vs native CPU cosine | Relative L2 |
+| --- | ---: | ---: |
+| `hello world` | 0.9981586925 | 6.06845% |
+| Black PNG | 0.9983765510 | 5.69816% |
+| Checkerboard PNG | 0.9984849584 | 5.50462% |
+| One-second 16 kHz silence | 0.9980172148 | 6.29728% |
+| One-second 440 Hz tone | 0.9980797340 | 6.19720% |
+| Interleaved text/image/audio | 0.9977802770 | 6.66291% |
 
-macOS arm64 CPU initialized the embedding engine with CPU vision and audio
-processors and `max_input_length = 1024`. The actual bundle header contains
-text-encoder/embedder sections, vision encoder/adapter sections and audio
-encoder/adapter sections. Adjacent text was merged verbatim before constructing
-runtime inputs. The prototype used generated bindings from the pinned header,
-explicit overflow-error options, owned isolate inputs and copied output vectors.
+The gate is cosine **>= 0.9998** and relative L2 **< 2% per input**. Web stays
+unsupported. These observations do not establish the cause of the numerical gap.
 
-| Normalized input | Output width | Cosine against upstream-only C reference | Relative L2 |
-| --- | ---: | ---: | ---: |
-| `hello world` | 768 | 1.0 | 0.0 |
-| Black PNG | 768 | 1.0 | 0.0 |
-| Checkerboard PNG | 768 | 1.0 | 0.0 |
-| One-second silence, mono 16 kHz | 768 | 1.0 | 0.0 |
-| One-second 440 Hz tone, mono 16 kHz | 768 | 1.0 | 0.0 |
-| Interleaved text, image and audio | 768 | 1.0 | 0.0 |
+## Unsupported paths and upstream gaps
 
-The prototype also passed raw/normalized direction checks, image/audio
-sensitivity, reverse batch order, string/content equivalence,
-`expectAdjacentTextEmbeddingEquivalence` with and without media, oversized-input
-errors, cancellation followed by reuse, and conversation/embedding mode
-separation. Synthetic media establishes wiring, not retrieval quality. The
-successful sequential batch experiment does not satisfy whole-batch preflight.
-Black/checkerboard cosine was `0.7958784944`; silence/tone cosine was
-`0.9424695655`, confirming that both media inputs affected the vectors.
+- **Native GPU:** fail before native engine creation. Pinned `v0.18.0-2` has a
+  WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
+  as well as the prototype. The upstream repair is after v0.18.0 in
+  [LiteRT dd3db31236](https://github.com/google-ai-edge/LiteRT/commit/dd3db31236).
+  A newer released owner runtime and requalification are required; no unsafe
+  accelerator call or silent CPU fallback is made. NPU embeddings are unqualified.
+- **Web CPU host weights:** fail before I/O. The pinned source streams text-encoder
+  weights only for WebGPU ([upstream lines 794–818](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L794-L818)).
+  The upstream-only CPU creation error is `Failed to get external weight for
+  buffer id 2147483863 (tensor 1451)`.
+- **WebGPU:** fail before I/O because the table above misses the parity gate.
+  No modality is advertised, including text, despite successful vector production.
+- **Token-count API:** the [C API](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h)
+  and pinned Web API expose compute but no embedding token-count preflight.
+  A future API could avoid wasted work in
+  [the sequential upstream batch loop](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L1639-L1676).
 
-Web CPU initialization failed before producing any vector, so native/Web
-cosine and relative L2 are **unavailable**, not zero. A WebGPU attempt with
-package:test's GPU-disable flags removed also failed initialization. Native GPU
-first reported no adapters inside the filesystem sandbox; its unrestricted
-attempt and the upstream-only reference then crashed. No GPU embedding modality
-was qualified.
+These follow-ups remain under the embedding tracker above. Runtime releases
+belong to their [owners](../website/docs/maintainers/runtime-ownership.md);
+consumption follows [native/Web sync](../website/docs/maintainers/native-and-web-sync.md).
+Task-prefix/Matryoshka policy remains separate under
+https://github.com/leehack/llamadart/issues/1126.
 
-## Reproduction and handoff
+## Local-only reproduction
 
-Use Flutter/Dart `3.47.1` from `.flutter-version`, a dedicated `TMPDIR` outside
-the checkout and `useSuiteSystemTemp()` in every model-loading Dart suite.
-Keep the supplied weights read-only. Serve local Web weights with HTTP Range
-and CORS on a free loopback port other than 8080; this investigation used 5197.
-Do not use unrelated weights as multimodal qualification evidence.
+Use `.flutter-version` and a dedicated `TMPDIR` outside the checkout; every
+native model-loading suite calls `useSuiteSystemTemp()`. Keep weights read-only.
+The matrix row is `litert-lm-multimodal-embedding`.
 
-Before resuming 015-C:
+```bash
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-multimodal-embedding --model-path /path/model.litertlm --backend cpu --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-multimodal-embedding --model-path /path/model.litertlm --backend cpu
+```
 
-1. Resolve whole-batch preflight at its owning boundary and publish compatible
-   artifacts, or coordinate an explicit shared-contract decision with A.
-2. Repair or qualify the external-weight failures on the exact GPU/Web artifact
-   and model combination. Keep each unqualified modality disabled.
-3. Restore or reimplement the prototype in C's owned files; regenerate bindings
-   instead of editing generated output.
-4. Repeat native CPU/GPU and Chrome qualification, the upstream reference and
-   cross-runtime vector comparison, then mutation checks for every added guard.
-5. Wire the retained local-only tests into `run_local_e2e.dart`, `test_matrix.dart`
-   and this document. Update C's README, guide, support-matrix, migration, skill
-   and Unreleased entries only when the implemented behavior is ready to retain.
+To retain native vectors and exact synthetic input bytes for a C reference:
 
-The prototype patch, its uncommitted regression tests, reference programs,
-JSON vectors and command logs were preserved in the task's dedicated temporary
-directory for review. They are not part of the repository or merge evidence.
-No shared contract, runtime source, existing fixture, pin or package version
-was changed. No PR was opened, pushed or marked ready.
+```bash
+LITERT_LM_EMBEDDING_MODEL=/path/model.litertlm LITERT_LM_EMBEDDING_OUTPUT="$TMPDIR/qualification" dart test -p vm --run-skipped test/e2e/backends/multimodal_embedding_litert_e2e_test.dart
+```
+
+Compare the exported inputs against the upstream C API directly (macOS arm64):
+
+```bash
+python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.0-2/macos/arm64 --output "$TMPDIR/qualification"
+```
+
+Serve the existing weights with Range and CORS on a free port other than 8080:
+
+```bash
+python3 test/e2e/backends/multimodal_embedding_litert_server.py --model-path /path/model.litertlm --output "$TMPDIR/qualification" --port 5197
+```
+
+In another terminal use a task-local `CHROME_EXECUTABLE` wrapper which removes
+`--disable-gpu` and `--disable-software-rasterizer` and adds
+`--enable-unsafe-webgpu --use-angle=metal`. Then:
+
+```bash
+dart test -p chrome --run-skipped test/e2e/backends/multimodal_embedding_litert_web_e2e_test.dart
+```
+
+This diagnostic is expected to fail the parity gate on the pinned package and
+must stay local-only. It persists every vector before asserting thresholds.

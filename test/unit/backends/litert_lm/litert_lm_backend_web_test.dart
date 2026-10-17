@@ -27,27 +27,37 @@ import 'package:web/web.dart';
 import '../../../support/fake_navigator_gpu.dart';
 
 void main() {
-  test(
-    'embedding-only load fails before starting the conversation runtime',
-    () async {
-      final backend = LiteRtLmBackend();
-      addTearDown(backend.dispose);
-      await expectLater(
-        backend.modelLoad(
-          'fake.litertlm',
-          const ModelParams(liteRtLmEmbeddingEngine: true),
-        ),
-        throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'engine condition',
-            contains('separate embedding engine'),
+  for (final device in [ComputeDevice.cpu, ComputeDevice.gpu]) {
+    test(
+      'embedding engine rejects unqualified Web ${device.name} before I/O',
+      () async {
+        var creates = 0;
+        _installFakeEngine(chunks: [], onCreate: (_) => creates++);
+        final backend = LiteRtLmBackend(readyTimeout: Duration.zero);
+        addTearDown(backend.dispose);
+        await expectLater(
+          backend.modelLoad(
+            'private.litertlm',
+            ModelParams(liteRtLmEmbeddingEngine: true, device: device),
           ),
-        ),
-      );
-      expect(backend.isReady, isFalse);
-    },
-  );
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'condition',
+              contains(
+                device == ComputeDevice.cpu
+                    ? 'Failed to get external weight'
+                    : 'parity',
+              ),
+            ),
+          ),
+        );
+        expect(creates, 0);
+        expect(backend.isReady, isFalse);
+        expect(backend.supportsEmbeddings, isFalse);
+      },
+    );
+  }
 
   setUp(_clearGlobals);
   tearDown(_clearGlobals);

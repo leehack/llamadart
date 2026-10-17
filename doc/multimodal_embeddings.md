@@ -23,16 +23,20 @@ the probe and content calls to the selected delegate. An implementation must
 probe model support, required projector/processors and runtime symbols/features;
 vision/audio generation support alone is insufficient. Legacy backends keep
 their old text support test, including model-specific rejection at execution,
-and always report image/audio false. LiteRT-LM currently reports all false.
+and always report image/audio false. LiteRT-LM probes its embedding engine and bundle processors.
 The presence of the SPI never enables a modality by itself. Its probes for
-unknown or unloaded contexts return all-false without I/O. No packaged
-backend in this lane executes media embeddings.
+unknown or unloaded contexts return all-false without I/O. Native CPU LiteRT-LM executes media embeddings with qualified bundle processors;
+Web remains unsupported after qualification.
 
 Every requested modality is checked across the entire batch before dispatch.
 Empty batches and modality-preflight failures leave inference counters
 unchanged; compute bookkeeping starts only after preflight succeeds.
-Runtime implementations must additionally validate media formats, combinations,
-expanded token counts and batch capacity before starting inference. A capability
+Runtime implementations additionally validate part shapes, media sources/decoding
+and combinations across the whole batch before inference. Expanded-token limits
+must be checked before inference wherever the runtime exposes counts (llama.cpp
+does). Without a token-count API, LiteRT-LM may detect overflow during the batch,
+but must fail the whole call with a typed `LlamaInferenceException` and no vectors.
+Earlier inputs may therefore waste compute; partial results and truncation are forbidden. A capability
 means the modality is available, not that every codec or source is accepted.
 Use one media source per part. Existing path/bytes/URL/sample fields are
 preserved; adapters must explicitly reject unsupported sources, never drop them
@@ -60,10 +64,9 @@ For LiteRT-LM, `ModelParams(liteRtLmEmbeddingEngine: true)` explicitly selects t
 separate embedding engine. The default false continues conversation loading.
 The LiteRT-LM-only flag selects an engine for `.litertlm`; llama.cpp GGUF
 loaders reject true with `LlamaUnsupportedException` and keep their existing
-per-call embedding mode when false. Current native/Web LiteRT-LM adapters
-reject true before creating a conversation engine. C replaces that rejection in its own
-files with embedding-engine creation and a model/runtime capability probe;
-it must never fall back to conversation loading for an embedding request.
+per-call embedding mode when false. Native CPU LiteRT-LM adapters
+create an embedding engine and probe model/runtime capabilities;
+they must never fall back to conversation loading for an embedding request.
 An embedding engine must reject generation explicitly. C must route both
 legacy string embedding methods and the content SPI to that engine; no changes
 to the shared API are needed. Vision/audio processors come from the bundle;
@@ -71,10 +74,10 @@ there is no GGUF mmproj for LiteRT-LM.
 
 ## Dart to backend to runtime
 
-| Path | Mapping for implementing lane | Availability after A |
+| Path | Mapping for implementing lane | Availability |
 | --- | --- | --- |
 | B: llama.cpp native | Content SPI -> worker request with context/projector -> mtmd text/media tokenization and media encoding -> one mixed `llama_batch_ext_*` -> `llama_process` DECODE -> pooled sequence vector | Text through existing API; image/audio unsupported |
-| C: LiteRT-LM native | Explicit embedding-only load -> separate `litert_lm_embedding_engine_*` engine/settings; ordered `LiteRtLmInputData*[]` -> compute embedding / batch -> owned response vectors | All embeddings unsupported |
+| C: LiteRT-LM native | Explicit embedding-only load -> separate `litert_lm_embedding_engine_*` engine/settings; ordered `LiteRtLmInputData*[]` -> compute embedding / batch -> owned response vectors | Native CPU text/image/audio, qualified bundle processors |
 | C: LiteRT-LM Web | Explicit embedding-only load -> `EmbeddingEngine.create` with qualified vision/audio settings; ordered ContentPart/Blob inputs -> `computeEmbedding` / `computeEmbeddingBatch` | All embeddings unsupported |
 | D/E: llama.cpp Web | Existing bridge model/projector -> direct or worker embed(parts) -> the same mixed mtmd/extended-batch path as B -> pooled sequence vectors | Existing bridge strings only; image/audio unsupported |
 
@@ -134,8 +137,8 @@ capacity, including projector-expanded media tokens, before any decode. Native
 limits are not just `ModelParams` requests; use actual allocated capacities.
 `getTokenCount(text)` does not count media. Do not silently chunk/truncate or
 average separately embedded parts. LiteRT-LM must select overflow-error behavior
-instead of the native API's chunk-and-average/truncate alternatives and must
-validate limits in its Web API too. If overflow-error semantics cannot be
+instead of the native API's chunk-and-average/truncate alternatives on native and Web. Its pinned APIs expose no token-count operation, so overflow
+may be detected during the batch under the all-or-nothing rule above. If overflow-error semantics cannot be
 ensured on a path, report that combination unsupported.
 
 One input yields its model's full pooled output width, which can differ from

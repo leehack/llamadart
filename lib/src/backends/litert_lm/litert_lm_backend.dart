@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
@@ -15,6 +16,7 @@ import '../../core/models/tools/tool_definition.dart';
 import '../../core/template/handlers/translate_gemma_handler.dart';
 import '../backend.dart';
 import 'litert_lm_platform.dart';
+import 'litert_lm_embedding.dart';
 import 'worker.dart';
 
 /// Native LiteRT-LM backend for `.litertlm` models.
@@ -34,6 +36,8 @@ class LiteRtLmBackend
         BackendGenerationCapabilitiesSupport,
         BackendGenerationLimitSupport,
         BackendEmbeddingsSupport,
+        BackendBatchEmbeddings,
+        BackendMultimodalEmbeddings,
         BackendStatePersistenceSupport,
         BackendNativeChatGeneration,
         BackendDartLogLevel {
@@ -52,6 +56,8 @@ class LiteRtLmBackend
   final void Function(SendPort) _workerEntryPoint;
 
   bool _isReady = false;
+  bool _embeddingEngine = false;
+  int? _embeddingContext;
   bool _disposed = false;
   bool _nativeSettlementUnverified = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -92,7 +98,7 @@ class LiteRtLmBackend
   bool get defersEngineCreation => true;
 
   @override
-  bool get supportsEmbeddings => false;
+  bool get supportsEmbeddings => _embeddingEngine;
 
   @override
   bool get supportsStatePersistence => false;
@@ -104,13 +110,62 @@ class LiteRtLmBackend
   bool get supportsNativeChatGeneration => true;
 
   @override
-  Future<int> modelLoad(String path, ModelParams params) async {
-    if (params.liteRtLmEmbeddingEngine) {
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  ) async {
+    if (!_embeddingEngine || contextHandle != _embeddingContext) {
+      return const LlamaEmbeddingCapabilities();
+    }
+    final response = await _sendRequest(
+      (port) => LiteRtLmEmbeddingCapabilitiesRequest(contextHandle, port),
+    );
+    return _expect<LiteRtLmEmbeddingCapabilitiesResponse>(
+      response,
+      'embedding capabilities',
+    ).capabilities;
+  }
+
+  @override
+  Future<List<double>> embed(
+    int contextHandle,
+    String text, {
+    bool normalize = true,
+  }) async =>
+      (await embedBatch(contextHandle, [text], normalize: normalize)).single;
+
+  @override
+  Future<List<List<double>>> embedBatch(
+    int contextHandle,
+    List<String> texts, {
+    bool normalize = true,
+  }) => embedContentBatch(contextHandle, [
+    for (final text in texts) LlamaEmbeddingInput([LlamaTextContent(text)]),
+  ], normalize: normalize);
+
+  @override
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) async {
+    if (inputs.isEmpty) {
+      return [];
+    }
+    if (!_embeddingEngine) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM embedding-only model loading is unavailable in this Dart '
-        'adapter; the separate embedding engine integration is required.',
+        'LiteRT-LM embeddings require liteRtLmEmbeddingEngine: true; a conversation engine is loaded.',
       );
     }
+    final prepared = inputs.map(prepareLiteRtLmEmbedding).toList();
+    final response = await _sendRequest(
+      (port) => LiteRtLmEmbedRequest(contextHandle, prepared, normalize, port),
+      timeout: const Duration(minutes: 10),
+    );
+    return _expect<LiteRtLmEmbedResponse>(response, 'embedding').vectors;
+  }
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async {
     await _cancelActiveGeneration();
     final response = await _sendRequest(
       (sendPort) => LiteRtLmModelLoadRequest(
@@ -125,6 +180,8 @@ class LiteRtLmBackend
       'model load',
     ).handle;
     _isReady = true;
+    _embeddingEngine = params.liteRtLmEmbeddingEngine;
+    _embeddingContext = null;
     return handle;
   }
 
@@ -139,9 +196,13 @@ class LiteRtLmBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
-    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
+    if (_nativeSettlementUnverified) {
+      throw _unsettledWorkerError();
+    }
     await _cancelActiveGeneration();
-    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
+    if (_nativeSettlementUnverified) {
+      throw _unsettledWorkerError();
+    }
     if (_sendPort == null) {
       _isReady = false;
       return;
@@ -157,6 +218,8 @@ class LiteRtLmBackend
       throw _unsettledWorkerError();
     }
     _isReady = false;
+    _embeddingEngine = false;
+    _embeddingContext = null;
   }
 
   @override
@@ -164,14 +227,23 @@ class LiteRtLmBackend
     final response = await _sendRequest(
       (sendPort) => LiteRtLmContextCreateRequest(modelHandle, params, sendPort),
     );
-    return _expect<LiteRtLmHandleResponse>(response, 'context creation').handle;
+    final handle = _expect<LiteRtLmHandleResponse>(
+      response,
+      'context creation',
+    ).handle;
+    _embeddingContext = handle;
+    return handle;
   }
 
   @override
   Future<void> contextFree(int contextHandle) async {
-    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
+    if (_nativeSettlementUnverified) {
+      throw _unsettledWorkerError();
+    }
     await _cancelActiveGeneration();
-    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
+    if (_nativeSettlementUnverified) {
+      throw _unsettledWorkerError();
+    }
     if (_sendPort == null) {
       return;
     }
@@ -180,6 +252,7 @@ class LiteRtLmBackend
         (sendPort) => LiteRtLmContextFreeRequest(contextHandle, sendPort),
         timeout: const Duration(seconds: 5),
       );
+      _embeddingContext = null;
     } on TimeoutException {
       _nativeSettlementUnverified = true;
       _killWorker();
@@ -271,7 +344,9 @@ class LiteRtLmBackend
       }
       closed = true;
       if (!controller.isClosed) {
-        if (error != null) controller.addError(error);
+        if (error != null) {
+          controller.addError(error);
+        }
         unawaited(controller.close());
       }
       if (_activeGenerationCleanup == close) {
@@ -287,7 +362,9 @@ class LiteRtLmBackend
       _activeGenerationCleanup = close;
       port.listen((message) {
         if (message is LiteRtLmTokenResponse) {
-          if (!closed) controller.add(message.bytes);
+          if (!closed) {
+            controller.add(message.bytes);
+          }
         } else if (message is LiteRtLmDoneResponse) {
           close();
           _finishGeneration(current);
@@ -618,7 +695,9 @@ class LiteRtLmBackend
     }
     _killWorker();
     _isReady = false;
-    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
+    if (_nativeSettlementUnverified) {
+      throw _unsettledWorkerError();
+    }
   }
 
   @override
@@ -712,7 +791,9 @@ class LiteRtLmBackend
   }
 
   Future<void> _ensureIsolate() async {
-    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
+    if (_nativeSettlementUnverified) {
+      throw _unsettledWorkerError();
+    }
     if (_disposed) {
       throw StateError('LiteRT-LM backend has been disposed.');
     }
@@ -764,7 +845,9 @@ class LiteRtLmBackend
     logPort.keepIsolateAlive = false;
     _workerLogPort = logPort;
     lifecyclePort.listen((_) {
-      if (_disposed || generation != _workerGeneration) return;
+      if (_disposed || generation != _workerGeneration) {
+        return;
+      }
       _nativeSettlementUnverified = true;
       if (!completer.isCompleted) {
         completer.completeError(_unsettledWorkerError());
@@ -854,7 +937,9 @@ class LiteRtLmBackend
     final completion = Completer<Object?>();
     _pendingRequests[responsePort] = completion;
     responsePort.listen((response) {
-      if (!completion.isCompleted) completion.complete(response);
+      if (!completion.isCompleted) {
+        completion.complete(response);
+      }
     });
     try {
       sendPort.send(buildRequest(responsePort.sendPort));
@@ -872,7 +957,9 @@ class LiteRtLmBackend
   }
 
   void _killWorker() {
-    if (_pendingRequests.isNotEmpty) _nativeSettlementUnverified = true;
+    if (_pendingRequests.isNotEmpty) {
+      _nativeSettlementUnverified = true;
+    }
     final generationError = _nativeSettlementUnverified
         ? _unsettledWorkerError()
         : null;
@@ -892,6 +979,8 @@ class LiteRtLmBackend
       }
     }
     _pendingRequests.clear();
+    _embeddingEngine = false;
+    _embeddingContext = null;
     _workerGeneration += 1;
     _workerLifecyclePort?.close();
     _workerLifecyclePort = null;

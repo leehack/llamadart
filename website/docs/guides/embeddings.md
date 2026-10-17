@@ -60,9 +60,8 @@ Future<List<double>> embedContentExample(LlamaEngine engine) async {
 
 After loading a model and any projector, `await engine.embeddingCapabilities`
 reports `text`, `image` and `audio`. Packaged llama.cpp backends currently
-report text only (with existing model restrictions); LiteRT-LM reports none.
-**Image/audio content embedding calls currently throw
-`LlamaUnsupportedException` on all packaged backends.** Chat vision/audio
+report text only (with existing model restrictions). LiteRT-LM embedding engines
+probe text/image/audio processors on native CPU. Chat vision/audio
 support does not imply embedding support. Custom backends may implement the
 optional `BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart`
 and positively probe each loaded model/runtime modality.
@@ -79,14 +78,43 @@ or media payloads; old string calls retain their existing text observations.
 
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
 `loadMultimodalProjector` loading path. `ModelParams(liteRtLmEmbeddingEngine: true)`
-reserves an explicit LiteRT-LM embedding-engine load; current native/Web
-LiteRT-LM adapters reject it with `LlamaUnsupportedException` before starting
-a conversation engine. This flag is LiteRT-LM-only: llama.cpp GGUF loaders
-reject true; the default false preserves existing loading. This
-lane adds no runtime implementation or model qualification. Follow
+selects the separate LiteRT-LM embedding engine. Use `ComputeDevice.cpu` on
+native. Native GPU and all Web paths throw `LlamaUnsupportedException`. This flag
+is LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
+existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
+than inferring modality support from its name. Follow
 [the multimodal tracker](https://github.com/leehack/llamadart/issues/1072);
 [task-prefix and Matryoshka helpers](https://github.com/leehack/llamadart/issues/1126)
 remain separate.
+
+### LiteRT-LM embedding engine
+
+```dart
+Future<List<double>> embedLiteRtImage(LlamaEngine engine, Uint8List png) async {
+  await engine.setModel(
+    LlamaModel(ModelSource.path('embeddinggemma-2-740m.litertlm')),
+    params: const ModelParams(
+      liteRtLmEmbeddingEngine: true,
+      device: ComputeDevice.cpu,
+      contextSize: 1024,
+    ),
+  );
+  return engine.embedContent(LlamaEmbeddingInput([LlamaImageContent(bytes: png)]));
+}
+```
+
+Web embeddings remain unsupported: Web CPU cannot load external text-encoder
+weights, and pinned WebGPU vectors missed the native CPU parity gate. Media inputs accept encoded PNG/JPEG bytes,
+mono 16 kHz PCM16/Float32 WAV bytes, or mono 16 kHz Float32 samples. Paths,
+image URLs, video and multiple sources per part are unsupported. All parts are
+decoded before inference.
+No task prefix is inserted. Embedding mode rejects generation and tokenizer APIs.
+
+LiteRT-LM selects overflow-error behavior. It has no expanded-token count API,
+so overflow may be discovered after earlier batch items consumed compute; the
+whole call throws `LlamaInferenceException` and returns no vectors. It never
+truncates or returns partial results. llama.cpp still validates actual expanded
+context/batch/micro-batch capacity before inference.
 
 ## Backend support and compatibility
 

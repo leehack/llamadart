@@ -9,11 +9,16 @@ import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
 import '../../core/exceptions.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
+import 'litert_lm_embedding.dart';
+import 'litert_lm_embedding_bindings.dart' as emb;
 import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
+
+part 'litert_lm_embedding_native.dart';
 
 const _litertLmReleaseTag = 'v0.18.0-2';
 const _litertLmVersion = '0.18.0-2';

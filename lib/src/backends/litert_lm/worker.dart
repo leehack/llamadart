@@ -97,7 +97,8 @@ void runLiteRtLmWorkerForTesting(
     }
 
     if (message is LiteRtLmGenerateRequest ||
-        message is LiteRtLmGenerateChatRequest) {
+        message is LiteRtLmGenerateChatRequest ||
+        message is LiteRtLmEmbedRequest) {
       if (generationInFlight) {
         message.sendPort.send(
           LiteRtLmErrorResponse(
@@ -122,6 +123,31 @@ void runLiteRtLmWorkerForTesting(
           return;
         }
         switch (message) {
+          case LiteRtLmEmbeddingCapabilitiesRequest():
+            message.sendPort.send(
+              LiteRtLmEmbeddingCapabilitiesResponse(
+                await service.embeddingCapabilities(message.contextHandle),
+              ),
+            );
+          case LiteRtLmEmbedRequest():
+            if (generationCancelRequested) {
+              message.sendPort.send(
+                LiteRtLmErrorResponse(
+                  'LiteRT-LM embedding cancelled before dispatch.',
+                  kind: 'llamaInference',
+                ),
+              );
+              return;
+            }
+            message.sendPort.send(
+              LiteRtLmEmbedResponse(
+                await service.embed(
+                  message.contextHandle,
+                  message.inputs,
+                  normalize: message.normalize,
+                ),
+              ),
+            );
           case LiteRtLmModelLoadRequest():
             final handle = await service.loadModel(
               message.modelPath,
@@ -339,7 +365,8 @@ void runLiteRtLmWorkerForTesting(
         message.sendPort.send(LiteRtLmErrorResponse.from(error));
       } finally {
         if (message is LiteRtLmGenerateRequest ||
-            message is LiteRtLmGenerateChatRequest) {
+            message is LiteRtLmGenerateChatRequest ||
+            message is LiteRtLmEmbedRequest) {
           generationCancelRequested = false;
           generationInFlight = false;
         }

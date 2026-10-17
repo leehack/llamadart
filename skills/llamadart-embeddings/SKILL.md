@@ -19,14 +19,15 @@ description: >-
 - `LlamaEmbeddingInput` and `embedContent` / `embedContentBatch` accept ordered
   text/image/audio content parts. Probe `await engine.embeddingCapabilities`
   after loading: packaged llama.cpp backends currently report text only and
-  LiteRT-LM reports none. Every packaged backend rejects image/audio embeddings
-  with `LlamaUnsupportedException`; do not advertise runtime media support.
+  LiteRT-LM embedding engines probe text/image/audio on native CPU. llama.cpp
+  media embeddings remain unsupported in this lane.
   Adjacent text parts form one verbatim-concatenated text segment on every
   backend, including within mixed inputs. Add no separators or task prefixes.
   The modality enum may gain values; include a default in switches.
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
 - `ModelParams(liteRtLmEmbeddingEngine: true)` is the explicit LiteRT-LM
-  embedding-engine loading contract, currently rejected before conversation loading. Keep the
+  embedding-engine selector. Select `ComputeDevice.cpu` on native. Native GPU
+  and all Web paths throw typed unsupported errors. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use
   their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example
@@ -37,10 +38,14 @@ description: >-
 - Native v0.7.0 supports EmbeddingGemma-2 text embeddings with 768-dimensional output.
 - Give the embedding model and the chat model separate `LlamaEngine`s. An
   engine holds one model, and switching models per query reloads weights.
-- Embeddings are llama.cpp-only. LiteRT-LM (`.litertlm`) engines, native or
-  web, throw `LlamaUnsupportedException`. After loading, check
-  `(await engine.capabilities).supportsEmbeddings` (false on LiteRT-LM) before
-  offering the feature. It reports the backend only, so still treat
+- LiteRT-LM requires an embedding bundle and the explicit selector above;
+  conversation mode has no embeddings. Probe `await engine.embeddingCapabilities`
+  before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
+  mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
+  Preflight checks modalities, sources and media decoding across the whole batch.
+  Without a token-count API, LiteRT-LM may detect overflow during computation;
+  the whole call fails with `LlamaInferenceException` and no vectors. Earlier
+  items can waste compute; never truncate or return partial results. Still treat
   `LlamaUnsupportedException` from `embed` as a configuration error, not
   something to retry or swallow.
 - Rank-pooled reranker GGUFs (such as Qwen3-Reranker) produce classifier

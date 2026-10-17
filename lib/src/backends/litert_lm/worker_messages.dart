@@ -8,6 +8,8 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../worker_log_message.dart';
+import 'litert_lm_embedding.dart';
+import '../../core/models/inference/embedding.dart';
 
 export '../worker_log_message.dart';
 
@@ -600,4 +602,51 @@ String _stripErrorPrefix(String message, String prefix) {
     return message.substring(prefix.length);
   }
   return message;
+}
+
+/// Request for processor-backed embedding capabilities.
+class LiteRtLmEmbeddingCapabilitiesRequest extends LiteRtLmWorkerRequest {
+  /// Context to probe.
+  final int contextHandle;
+
+  /// Creates a capability request.
+  LiteRtLmEmbeddingCapabilitiesRequest(this.contextHandle, super.sendPort);
+}
+
+/// Request containing owned embedding input bytes.
+class LiteRtLmEmbedRequest extends LiteRtLmWorkerRequest {
+  /// Loaded context.
+  final int contextHandle;
+
+  /// Ordered, copied inputs.
+  final List<List<LiteRtLmEmbeddingPart>> inputs;
+
+  /// Whether to L2-normalize the output.
+  final bool normalize;
+
+  /// Creates an embedding request.
+  LiteRtLmEmbedRequest(
+    this.contextHandle,
+    this.inputs,
+    this.normalize,
+    super.sendPort,
+  );
+}
+
+/// Processor-backed embedding capabilities.
+class LiteRtLmEmbeddingCapabilitiesResponse {
+  /// Qualified modalities.
+  final LlamaEmbeddingCapabilities capabilities;
+
+  /// Creates a capability response.
+  LiteRtLmEmbeddingCapabilitiesResponse(this.capabilities);
+}
+
+/// Copied embedding vectors in request order.
+class LiteRtLmEmbedResponse {
+  /// Owned vectors.
+  final List<List<double>> vectors;
+
+  /// Creates an embedding response.
+  LiteRtLmEmbedResponse(this.vectors);
 }

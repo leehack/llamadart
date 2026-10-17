@@ -768,6 +768,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'LiteRT-LM backend, hook companion libraries, or runtime pins.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-multimodal-embedding',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'LiteRT-LM embedding-only load, text/image/audio/interleaved, normalization, batch order, limits and cancellation',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-multimodal-embedding --model-path <model.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM embeddings or embedding-engine loading. Chrome/reference procedure: doc/multimodal_embeddings_litert.md.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-lifecycle',
     tier: 'targeted',
     mode: 'local-only',

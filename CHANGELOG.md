@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Document why LiteRT-LM multimodal embeddings remain unavailable.
+- Add native CPU LiteRT-LM text, image and audio embeddings with explicit engine selection and whole-call overflow errors.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
 

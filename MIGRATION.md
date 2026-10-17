@@ -9,9 +9,13 @@ a backend count mismatch throws `LlamaInferenceException`. Adjacent text parts
 form one verbatim-concatenated segment on every backend, including mixed inputs.
 The modality enum may grow; include a default case in switches.
 
-`ModelParams.liteRtLmEmbeddingEngine` defaults to false. Current LiteRT-LM adapters reject true until their
-separate embedding engine is integrated; llama.cpp GGUF loaders reject true
-with `LlamaUnsupportedException`. Existing string embedding calls are unchanged.
+`ModelParams.liteRtLmEmbeddingEngine` defaults to false for conversation loading.
+Set true and `device: ComputeDevice.cpu` for native LiteRT-LM embeddings. This intentionally
+replaces the previous adapter rejection; generation/tokenizer APIs are unavailable
+in embedding mode. Native GPU and all Web paths fail with `LlamaUnsupportedException`.
+GGUF loaders still reject true. LiteRT-LM overflow fails the whole call with
+`LlamaInferenceException` and no vectors, possibly after earlier items consumed
+compute; it never truncates. llama.cpp retains pre-inference capacity validation.
 
 <a id="013x---0140-llamacpp-v070-abi-qwen3-overrides-and-load-callbacks"></a>
 

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../../core/exceptions.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
@@ -24,6 +25,7 @@ import '../backend.dart';
 import '../native/model_format_probe.dart';
 import 'litert_lm_bundle_template.dart';
 import 'litert_lm_cache.dart';
+import 'litert_lm_embedding.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
 import 'litert_lm_model_link.dart';
@@ -91,6 +93,7 @@ class LiteRtLmService {
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
+  LiteRtLmEmbeddingSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -146,6 +149,9 @@ class LiteRtLmService {
       params,
       backendOverride: backendOverride,
     );
+    if (params.liteRtLmEmbeddingEngine) {
+      ensureLiteRtLmNativeEmbeddingBackend(resolvedBackend);
+    }
     final modelLink = await LiteRtLmModelLink.create(
       path,
       parent: _linkParentDirectory,
@@ -203,6 +209,12 @@ class LiteRtLmService {
     _checkModelHandle(modelHandle);
     _validateModelParams(params);
     _validateContextBackendParams(params);
+    if (params.liteRtLmEmbeddingEngine !=
+        _modelParams!.liteRtLmEmbeddingEngine) {
+      throw LlamaUnsupportedException(
+        'A LiteRT-LM context cannot change the embedding engine selected at model load; reload the model to switch engines.',
+      );
+    }
     _disposeContextRuntimeState();
     _modelParams = params;
     _contextHandle = _nextContextHandle++;
@@ -222,6 +234,89 @@ class LiteRtLmService {
   int getContextSize(int contextHandle) {
     _checkContextHandle(contextHandle);
     return _modelParams?.contextSize ?? 0;
+  }
+
+  void _requireConversationEngine() {
+    if (_modelParams?.liteRtLmEmbeddingEngine ?? false) {
+      throw LlamaUnsupportedException(
+        'Conversation and tokenizer APIs are unavailable on a LiteRT-LM embedding engine; load with liteRtLmEmbeddingEngine: false for conversation.',
+      );
+    }
+  }
+
+  Future<LiteRtLmEmbeddingSession> _ensureEmbedding() async {
+    if (!(_modelParams?.liteRtLmEmbeddingEngine ?? false)) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM embeddings require loading with liteRtLmEmbeddingEngine: true; the active model is a conversation engine.',
+      );
+    }
+    final existing = _embedding;
+    if (existing != null) {
+      return existing;
+    }
+    final params = _modelParams!;
+    final cache = _effectiveCacheDir(params) ?? liteRtLmNoCacheDirectory;
+    final client = _clientFactory();
+    final lease = _leaseCacheDirectory(cache, _modelPath!);
+    try {
+      final session = await client.createEmbeddingSession(
+        modelPath: _modelLink?.path ?? _modelPath!,
+        backend: _activeBackend!,
+        cacheDir: cache,
+        maxInputLength: params.contextSize,
+        numberOfThreads: params.numberOfThreads,
+      );
+      _client = client;
+      _cacheLease = lease;
+      return _embedding = session;
+    } catch (_) {
+      lease?.release();
+      client.dispose();
+      rethrow;
+    }
+  }
+
+  /// Probes a loaded embedding context; unknown contexts do no I/O.
+  Future<LlamaEmbeddingCapabilities> embeddingCapabilities(
+    int contextHandle,
+  ) async {
+    if (!_contextCreated ||
+        contextHandle != _contextHandle ||
+        !(_modelParams?.liteRtLmEmbeddingEngine ?? false)) {
+      return const LlamaEmbeddingCapabilities();
+    }
+    return (await _ensureEmbedding()).capabilities;
+  }
+
+  /// Computes a preflighted batch on the worker, retaining the engine until settled.
+  Future<List<List<double>>> embed(
+    int contextHandle,
+    List<List<LiteRtLmEmbeddingPart>> inputs, {
+    required bool normalize,
+  }) async {
+    _checkContextHandle(contextHandle);
+    if (inputs.isEmpty) {
+      return [];
+    }
+    _cancelRequested = false;
+    final session = await _ensureEmbedding();
+    for (final input in inputs) {
+      for (final part in input) {
+        if (part.type == 1 && !session.capabilities.image ||
+            part.type == 3 && !session.capabilities.audio) {
+          throw LlamaUnsupportedException(
+            'LiteRT-LM embedding bundle has no qualified processor for the requested modality.',
+          );
+        }
+      }
+    }
+    final result = await session.compute(inputs, normalize: normalize);
+    if (_cancelRequested) {
+      throw LlamaInferenceException(
+        'LiteRT-LM embedding cancelled after native work settled.',
+      );
+    }
+    return result;
   }
 
   /// Generates UTF-8 token byte chunks for [prompt].
@@ -244,6 +339,7 @@ class LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     _checkContextHandle(contextHandle);
+    _requireConversationEngine();
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
       throw UnsupportedError(_liteRtLmVideoUnsupportedMessage);
     }
@@ -360,6 +456,7 @@ class LiteRtLmService {
     DateTime? templateNow,
   }) async* {
     _checkContextHandle(contextHandle);
+    _requireConversationEngine();
     if (messages.isEmpty) {
       throw ArgumentError('LiteRT-LM native chat generation needs a message.');
     }
@@ -899,6 +996,7 @@ class LiteRtLmService {
     bool addAssistant = true,
   }) {
     _checkModelHandle(modelHandle);
+    _requireConversationEngine();
     final metadata = getMetadata(modelHandle);
     final result = ChatTemplateEngine.render(
       templateSource: metadata['tokenizer.chat_template'],
@@ -954,6 +1052,7 @@ class LiteRtLmService {
     bool? enableVision,
     bool? enableAudio,
   }) async {
+    _requireConversationEngine();
     final modelPath = _modelPath;
     final modelParams = _modelParams;
     if (modelPath == null || modelParams == null) {
@@ -1133,7 +1232,9 @@ class LiteRtLmService {
         stackTrace,
       );
     } finally {
-      if (!created) cacheLease?.release();
+      if (!created) {
+        cacheLease?.release();
+      }
     }
     _client = client;
     _cacheLease = cacheLease;
@@ -1849,7 +1950,9 @@ class LiteRtLmService {
 
   String? _effectiveCacheDir(ModelParams params) {
     final configured = params.liteRtLmCacheDir;
-    if (configured == liteRtLmNoCacheDirectory) return configured;
+    if (configured == liteRtLmNoCacheDirectory) {
+      return configured;
+    }
     if (configured == null && !_useTempCacheDir) {
       return null;
     }
@@ -1863,6 +1966,8 @@ class LiteRtLmService {
   }
 
   void _disposeClient() {
+    _embedding?.dispose();
+    _embedding = null;
     try {
       _client?.dispose();
       _client = null;
@@ -1875,7 +1980,9 @@ class LiteRtLmService {
   /// Marks the caches of [modelPath] in [cacheDir] as in use until the client
   /// is disposed, so other engines pruning that directory keep them.
   LiteRtLmCacheLease? _leaseCacheDirectory(String? cacheDir, String modelPath) {
-    if (cacheDir == null || cacheDir == liteRtLmNoCacheDirectory) return null;
+    if (cacheDir == null || cacheDir == liteRtLmNoCacheDirectory) {
+      return null;
+    }
     try {
       return LiteRtLmCacheLease.acquire(cacheDir, p.basename(modelPath));
     } on FileSystemException catch (error) {
