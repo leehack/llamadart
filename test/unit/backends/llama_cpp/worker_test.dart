@@ -739,6 +739,70 @@ void main() {
     });
 
     test(
+      'releases TTS handle waits when sending a synthesis reply throws',
+      () async {
+        final errors = <Object>[];
+        final service = _BlockingTtsHandleService();
+        final worker = await runZoned(
+          () => _startWorkerInCurrentIsolate(
+            service,
+            disposeActiveGenerateTimeout: const Duration(milliseconds: 30),
+          ),
+          zoneSpecification: ZoneSpecification(
+            handleUncaughtError: (self, parent, zone, error, stack) =>
+                errors.add(error),
+          ),
+        );
+        final pending = <_PendingResponse>[];
+        try {
+          worker.sendPort.send(
+            TextToSpeechSynthesizeRequest(
+              2,
+              3,
+              const BackendTextToSpeechRequest(text: 'hello'),
+              0,
+              _ThrowingSendPort(),
+            ),
+          );
+          await service.synthesisStarted.future;
+          for (final build in <WorkerRequest Function(SendPort)>[
+            (port) => ModelFreeRequest(1, port),
+            (port) => ContextFreeRequest(2, port),
+            (port) => MultimodalContextFreeRequest(3, port),
+          ]) {
+            final response = _PendingResponse();
+            pending.add(response);
+            worker.sendPort.send(build(response.sendPort));
+          }
+          for (final response in pending) {
+            await response.expectNoResponse();
+          }
+          expect(service.frees, isEmpty);
+          service.releaseSynthesis();
+          for (final response in pending) {
+            expect(
+              await response.nextResponse.timeout(const Duration(seconds: 1)),
+              isA<DoneResponse>(),
+            );
+          }
+          expect(
+            service.frees,
+            unorderedEquals(['model', 'context', 'projector']),
+          );
+          await pumpEventQueue();
+          expect(errors, isNotEmpty);
+          expect(errors, everyElement(isA<StateError>()));
+        } finally {
+          service.releaseSynthesis();
+          for (final response in pending) {
+            response.close();
+          }
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
+    test(
       'waits for original TTS after a second synthesis is rejected',
       () async {
         final service = _BlockingTtsHandleService();
@@ -1607,4 +1671,9 @@ class _SequentialTextToSpeechService extends _BlockingTextToSpeechService {
 
   @override
   void dispose() => disposeCalls++;
+}
+
+class _ThrowingSendPort implements SendPort {
+  @override
+  void send(Object? message) => throw StateError('Injected reply send failure');
 }
