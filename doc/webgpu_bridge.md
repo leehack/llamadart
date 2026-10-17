@@ -139,8 +139,11 @@ physical playback, intelligibility or speaker-reference fidelity.
 Assets v0.1.64+ expose `getEmbeddingCapabilities()` with `apiVersion: 1` and
 boolean `text`, `image`, `audio` flags. The Dart backend probes each request,
 including after projector changes and worker restoration; generation's media
-flags do not enable embeddings. Unknown/missing/failed probes preserve legacy
-string embeddings and disable media with a v0.1.64+ requirement diagnostic.
+flags do not enable embeddings. Unknown/missing APIs preserve legacy string embeddings and disable media with
+a v0.1.64+ requirement diagnostic. Runtime probe failures, cancellation and
+disposal remain typed inference errors. Present APIs explain missing loaded
+model/projector modalities. The bridge's pooled `text` flag does not gate the
+legacy last-token string route, including text-only content on pooling NONE.
 The default pinned assets include this API.
 
 `embedContentBatch` sends strings for text-only inputs and ordered parts arrays
@@ -153,7 +156,8 @@ included. Cancellation forwards to `cancel()` and disposal awaits `dispose()`;
 the bridge owns settling queued/active operations before freeing its runtime.
 Await cancelled embedding futures before reuse.
 
-Web media vectors remain numerically unqualified against native; see
+Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
+hardware WebGPU was not exercised. Repeated media batches require memory64. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
 
 ### Completion termination
@@ -433,7 +437,9 @@ Runtime-side validators such as next-token candidate checks can pass through
 The shared message allowlist preserves classification across that transport;
 it does not infer argument provenance from a JS error name alone.
 
-The classifier is separate from operation fallbacks so later pinned assets can
-add stable error-code mappings; `EmbeddingError` codes from
-[bridge PR #160](https://github.com/leehack/llama-web-bridge/pull/160) are not
-assumed available.
+The classifier is separate from operation fallbacks. Media embeddings map the
+pinned API's stable `EmbeddingError.code` values to argument, unsupported and
+inference exceptions, preserving known codes (including `EMBEDDING_INPUT_TOO_LARGE`
+and `EMBEDDING_FAILED`) and the `aborted` runtime label without copying diagnostic
+payloads. Unknown codes are omitted. Reserved mixed-input media markers are
+rejected as unsupported before dispatch, matching native.

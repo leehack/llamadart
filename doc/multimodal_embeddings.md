@@ -86,7 +86,7 @@ there is no GGUF mmproj for LiteRT-LM.
 | B: llama.cpp native | Content SPI -> worker request with context/projector -> mtmd text/media tokenization and media encoding -> one mixed `llama_batch_ext_*` -> `llama_process` DECODE -> pooled sequence vector | Text through existing API; image/audio unsupported |
 | C: LiteRT-LM native | Explicit embedding-only load -> separate `litert_lm_embedding_engine_*` engine/settings; ordered `LiteRtLmInputData*[]` -> compute embedding / batch -> owned response vectors | Native CPU text/image/audio, qualified bundle processors |
 | C: LiteRT-LM Web | Explicit embedding-only load -> `EmbeddingEngine.create` with qualified vision/audio settings; ordered ContentPart/Blob inputs -> `computeEmbedding` / `computeEmbeddingBatch` | All embeddings unsupported |
-| D/E: llama.cpp Web | Existing bridge model/projector -> direct or worker embed(parts) -> the same mixed mtmd/extended-batch path as B -> pooled sequence vectors | Strings on existing assets; image/audio with assets v0.1.64+ and API-version-1 probe (numerically unqualified) |
+| D/E: llama.cpp Web | Existing bridge model/projector -> direct or worker embed(parts) -> the same mixed mtmd/extended-batch path as B -> pooled sequence vectors | Strings on existing assets; image/audio with assets v0.1.64+ and API-version-1 probe (qualified Chrome CPU wasm memory64) |
 
 Native llama.cpp reference:
 https://github.com/leehack/llamadart-native/blob/main/tools/embedding_smoke.cpp
@@ -96,11 +96,12 @@ The issue's qualification comment pins llama.cpp to
 Native LiteRT-LM reference:
 https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h.
 Web LiteRT-LM contract must be qualified against `@litert-lm/core@0.18.0`.
-The default bridge pin supports text embeddings. The Dart adapter also
-supports the v0.1.64+ media contract, gated on the runtime's explicit API-version-1
-embedding probe. Numerical Web/native qualification is pending; see
-[Web embedding qualification](multimodal_embeddings_web.md). This lane does not
-change the assets pin.
+The default bridge pin supports text and the API-version-1 media
+contract. Image/audio support requires a positive modality probe on the loaded
+model/projector; text retains the legacy string route even when the bridge's
+pooled-text flag is false. Chrome CPU wasm memory64 vectors were qualified
+against native CPU/Metal; see [Web embedding qualification](multimodal_embeddings_web.md).
+Repeated media batches require memory64; hardware WebGPU remains unqualified.
 
 ## Bridge JS contract (D/E, assets v0.1.64+)
 
@@ -124,8 +125,9 @@ embedBatch(inputs: EmbedInput[], options?: EmbedOptions): Promise<number[][]>;
 A parts array describes one vector, not a batch. Reject empty parts arrays;
 `embedBatch([])` returns `[]`. Strings retain the old route and defaults.
 No `parts.toString()`, JSON text, chat template or separate per-media vectors.
-Dart text maps to `type: 'text'`; image bytes/dimensions and audio bytes/samples
-map directly. Local filesystem paths are unavailable in browsers and must
+Dart text maps to `type: 'text'`; encoded image bytes and audio bytes/samples
+map directly. Image width/height metadata is omitted so encoded bytes are never
+inferred as raw RGB. Reserved `<__media__>` in mixed text is unsupported, matching native. Local filesystem paths are unavailable in browsers and must
 produce an unsupported error unless resolved to bytes before the backend call.
 URL fields are reserved for runtime-qualified, securely fetched inputs; their
 presence does not promise URL support. PCM follows the 16 kHz mono convention.

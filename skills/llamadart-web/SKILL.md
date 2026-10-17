@@ -86,8 +86,11 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   - Media embeddings need assets `v0.1.64+`, an API-version-1 embedding
     capability probe and a compatible embedding model/projector. Use encoded
     image/audio bytes or mono 16 kHz Float32 audio PCM; paths and image URLs
-    throw `LlamaUnsupportedException`. Numerical Web/native media parity is
-    unqualified; the default pinned assets include the media API.
+    throw `LlamaUnsupportedException`. EmbeddingGemma-2 is qualified on Chrome
+    CPU wasm memory64 against native CPU/Metal; repeated media batches require
+    memory64. Hardware WebGPU is unqualified; default assets include
+    the API. Text content preserves legacy unpooled support. Image bytes are
+    encoded; embedding calls ignore width/height.
   - Other floors: text embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
@@ -27,9 +28,11 @@ void main() {
       LlamaEmbeddingInput(parts);
   LlamaEmbeddingInput image() => input([
     LlamaImageContent(
-      bytes: Uint8List.fromList([1, 2, 3]),
-      width: 1,
-      height: 1,
+      bytes: base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAADCAIAAAA2iEnWAAAAEElEQVR4nGP4z8AARAwoFABE0AX7pM/egAAAAABJRU5ErkJggg==',
+      ),
+      width: 2,
+      height: 3,
     ),
   ]);
   Future<List<List<double>>> run(List<LlamaEmbeddingInput> inputs) =>
@@ -85,6 +88,7 @@ void main() {
       expect(result.text, isTrue);
       expect(result.image, isTrue);
       expect(result.audio, isTrue);
+      expect(result.mediaUnsupportedReason, isNull);
       expect(probes, 1);
       caps.setProperty('image'.toJS, false.toJS);
       expect((await backend.probeEmbeddingCapabilities(1)).image, isFalse);
@@ -147,7 +151,7 @@ void main() {
   }
 
   test(
-    'mixed batch preserves order, buffers, dimensions and normalization',
+    'mixed batch preserves order, encoded buffers and normalization',
     () async {
       final samples = Float32List.fromList([0, 0.25]);
       final result = await run([
@@ -169,10 +173,14 @@ void main() {
       final mapped = batches.single.dartify()! as List;
       final parts = mapped.first as List;
       expect(parts[0], {'type': 'text', 'text': ' a\n雪'});
-      expect((parts[1] as Map)['bytes'], [1, 2, 3]);
+      expect(
+        (parts[1] as Map)['bytes'],
+        (image().parts.single as LlamaImageContent).bytes,
+      );
       expect((parts[1] as Map)['type'], 'image');
-      expect((parts[1] as Map)['width'], 1);
-      expect((parts[1] as Map)['height'], 1);
+      // Encoded bytes must never be inferred as raw RGB from dimensions.
+      expect((parts[1] as Map).containsKey('width'), isFalse);
+      expect((parts[1] as Map).containsKey('height'), isFalse);
       expect((parts[2] as Map)['samples'], [0, 0.25]);
       expect((parts[2] as Map)['type'], 'audio');
       expect((parts[3] as Map)['bytes'], [4, 5]);
@@ -180,6 +188,20 @@ void main() {
       expect(parts[4], {'type': 'text', 'text': ' z '});
       expect(mapped[1], 'text');
       expect(samples, [0, 0.25]);
+    },
+  );
+
+  test(
+    'encoded bytes are not inferred as raw RGB on a dimension-length collision',
+    () async {
+      final bytes = Uint8List.fromList(List.generate(18, (i) => i));
+      await run([
+        input([LlamaImageContent(bytes: bytes, width: 2, height: 3)]),
+      ]);
+      final part = (batches.single.dartify()! as List).single as List;
+      expect((part.single as Map)['bytes'], bytes);
+      expect((part.single as Map).containsKey('width'), isFalse);
+      expect((part.single as Map).containsKey('height'), isFalse);
     },
   );
 
@@ -396,11 +418,10 @@ void main() {
     expect(batches, isEmpty);
   });
 
-  for (final kind in ['text', 'image', 'audio']) {
+  for (final kind in ['image', 'audio']) {
     test('whole batch rejects disabled $kind before compute', () async {
       caps.setProperty(kind.toJS, false.toJS);
       final rejected = switch (kind) {
-        'text' => input([const LlamaTextContent('secret')]),
         'image' => image(),
         _ => input([
           LlamaAudioContent(samples: Float32List.fromList([0])),
@@ -413,6 +434,189 @@ void main() {
       expect(batches, isEmpty);
     });
   }
+
+  test('unpooled text content keeps legacy string and batch routes', () async {
+    caps.setProperty('text'.toJS, false.toJS);
+    caps.setProperty('image'.toJS, false.toJS);
+    caps.setProperty('audio'.toJS, false.toJS);
+    expect((await backend.probeEmbeddingCapabilities(1)).text, isTrue);
+    final text = input([
+      const LlamaTextContent('a'),
+      const LlamaTextContent('b'),
+    ]);
+    expect(
+      await run([text]),
+      await backend.embedBatch(1, ['ab'], normalize: false),
+    );
+    fake.object.delete('embedBatch'.toJS);
+    fake.object.setProperty(
+      'embed'.toJS,
+      ((JSString text, JSObject _) => Future<JSAny?>.value(
+        [text.toDart.length].jsify(),
+      ).toJS).toJS,
+    );
+    expect(
+      (await run([text])).single,
+      await backend.embed(1, 'ab', normalize: false),
+    );
+  });
+
+  test(
+    'unpooled mixed content rejects media before computing any input',
+    () async {
+      caps.setProperty('text'.toJS, false.toJS);
+      caps.setProperty('image'.toJS, false.toJS);
+      caps.setProperty('audio'.toJS, false.toJS);
+      await expectLater(
+        run([
+          input([const LlamaTextContent('text')]),
+          input([const LlamaTextContent('before'), image().parts.single]),
+        ]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.toString(),
+            'modality',
+            contains('image'),
+          ),
+        ),
+      );
+      expect(batches, isEmpty);
+    },
+  );
+
+  for (final modality in ['image', 'audio']) {
+    test('present API explains missing model projector $modality', () async {
+      caps.setProperty(modality.toJS, false.toJS);
+      final reason = (await backend.probeEmbeddingCapabilities(
+        1,
+      )).mediaUnsupportedReason!;
+      expect(reason, contains(modality));
+      expect(reason, contains('model/projector'));
+      expect(reason, isNot(contains('v0.1.64')));
+      await expectLater(
+        backend.embedContentBatch(1, [
+          input([
+            modality == 'image'
+                ? image().parts.single
+                : LlamaAudioContent(samples: Float32List(1)),
+          ]),
+        ]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.toString(),
+            'reason',
+            contains(reason),
+          ),
+        ),
+      );
+    });
+  }
+
+  for (final marker in [
+    [const LlamaTextContent('<__media__>')],
+    [const LlamaTextContent('<__me'), const LlamaTextContent('dia__>')],
+  ]) {
+    test(
+      'reserved mixed media marker matches native unsupported contract ${marker.length}',
+      () async {
+        await expectLater(
+          run([
+            input([...marker, image().parts.single]),
+          ]),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(batches, isEmpty);
+      },
+    );
+  }
+
+  for (final failure in ['AbortError', 'disposed', 'worker-crash']) {
+    test('probe $failure remains payload-free inference failure', () async {
+      final rejection = error('UNKNOWN')
+        ..setProperty('name'.toJS, failure.toJS);
+      fake.object.setProperty(
+        'getEmbeddingCapabilities'.toJS,
+        (() => _reject(rejection)).toJS,
+      );
+      await expectLater(
+        run([image()]),
+        throwsA(
+          isA<LlamaInferenceException>()
+              .having(
+                (e) => e.toString(),
+                'redaction',
+                isNot(contains('secret')),
+              )
+              .having(
+                (e) => e.toString(),
+                'no upgrade advice',
+                isNot(contains('v0.1.64')),
+              ),
+        ),
+      );
+      expect(batches, isEmpty);
+    });
+  }
+
+  for (final (name, value) in <(String, JSAny?)>[
+    ("null", null),
+    ("object", JSObject()),
+    ("number", 1.toJS),
+  ]) {
+    test('non-callable probe $name is an unavailable API', () async {
+      fake.object.setProperty('getEmbeddingCapabilities'.toJS, value);
+      expect(
+        (await backend.probeEmbeddingCapabilities(1)).mediaUnsupportedReason,
+        contains('v0.1.64+'),
+      );
+    });
+  }
+
+  for (final prefix in ['RuntimeError: Aborted(', 'Aborted(']) {
+    test(
+      'wasm abort $prefix retains stable aborted label without diagnostics',
+      () async {
+        final rejection = error('UNKNOWN')
+          ..setProperty(
+            'message'.toJS,
+            '${prefix}undefined) secret /path https://secret'.toJS,
+          );
+        fake.object.setProperty(
+          'embedBatch'.toJS,
+          ((JSArray _, JSObject _) => _reject(rejection)).toJS,
+        );
+        await expectLater(
+          run([image()]),
+          throwsA(
+            isA<LlamaInferenceException>()
+                .having(
+                  (e) => e.toString(),
+                  'stable label',
+                  contains('aborted'),
+                )
+                .having(
+                  (e) => e.toString(),
+                  'redaction',
+                  isNot(contains('secret')),
+                ),
+          ),
+        );
+      },
+    );
+  }
+
+  test('unknown worker probe method retains version fallback', () async {
+    final rejection = JSObject()
+      ..setProperty('message'.toJS, 'bridge[method] is not a function'.toJS);
+    fake.object.setProperty(
+      'getEmbeddingCapabilities'.toJS,
+      (() => _reject(rejection)).toJS,
+    );
+    expect(
+      (await backend.probeEmbeddingCapabilities(1)).mediaUnsupportedReason,
+      contains('v0.1.64+'),
+    );
+  });
 
   for (final part in <LlamaContentPart>[
     const LlamaImageContent(path: '/secret'),
@@ -449,7 +653,9 @@ void main() {
     'EMBEDDING_MODALITY_UNSUPPORTED',
     'EMBEDDING_INPUT_TOO_LARGE',
     'EMBEDDING_FAILED',
+    'aborted',
     'UNKNOWN',
+    'secret/path',
   ]) {
     test('maps $code without bridge diagnostic payloads', () async {
       fake.object.setProperty(
@@ -473,6 +679,13 @@ void main() {
               .having((e) => e.runtimeType, 'type', expected)
               .having(
                 (e) => e.toString(),
+                'stable code',
+                code == 'UNKNOWN' || code == 'secret/path'
+                    ? isNot(contains(code))
+                    : contains(code),
+              )
+              .having(
+                (e) => e.toString(),
                 'redaction',
                 isNot(contains('secret')),
               ),
@@ -482,31 +695,35 @@ void main() {
   }
 
   for (final dispose in [false, true]) {
-    test(
-      '${dispose ? 'dispose' : 'cancel'} during probe prevents dispatch',
-      () async {
-        final gate = Completer<JSObject>();
-        fake.object.setProperty(
-          'getEmbeddingCapabilities'.toJS,
-          (() => gate.future.toJS).toJS,
-        );
-        // Direct SPI call isolates the adapter's own probe race.
-        final pending =
-            (backend as dynamic).embedContentBatch(1, [image()])
-                as Future<List<List<double>>>;
-        final assertion = expectLater(
-          pending,
-          throwsA(isA<LlamaInferenceException>()),
-        );
-        if (dispose) {
-          await backend.dispose();
-        } else {
-          backend.cancelGeneration();
-        }
-        gate.complete(caps);
-        await assertion;
-        expect(batches, isEmpty);
-      },
-    );
+    for (final rejects in [false, true]) {
+      test(
+        '${dispose ? 'dispose' : 'cancel'} during probe prevents dispatch rejects=$rejects',
+        () async {
+          final gate = Completer<JSObject>();
+          fake.object.setProperty(
+            'getEmbeddingCapabilities'.toJS,
+            (() => gate.future.toJS).toJS,
+          );
+          // Direct SPI call isolates the adapter's own probe race.
+          final pending = backend.probeEmbeddingCapabilities(1);
+          final assertion = expectLater(
+            pending,
+            throwsA(isA<LlamaInferenceException>()),
+          );
+          if (dispose) {
+            await backend.dispose();
+          } else {
+            backend.cancelGeneration();
+          }
+          if (rejects) {
+            gate.completeError(StateError('secret probe failure'));
+          } else {
+            gate.complete(caps);
+          }
+          await assertion;
+          expect(batches, isEmpty);
+        },
+      );
+    }
   }
 }

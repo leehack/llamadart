@@ -145,6 +145,10 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     ),
   ),
   BridgeTagPin(
+    'doc/multimodal_embeddings_web.md',
+    RegExp(r'^mmproj and pinned assets `(v\d+\.\d+\.\d+)` on', multiLine: true),
+  ),
+  BridgeTagPin(
     'website/docs/guides/text-to-speech.md',
     RegExp(r'^- The chat example pins `(v\d+\.\d+\.\d+)`,', multiLine: true),
   ),

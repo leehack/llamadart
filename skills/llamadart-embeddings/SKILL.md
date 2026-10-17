@@ -22,13 +22,14 @@ description: >-
   embeddings with its matching projector (qualified macOS CPU/Metal), and
   reports text only without one. Web llama.cpp probes image/audio embeddings
   with bridge assets v0.1.64+ and a compatible model/projector. The default
-  pinned assets include the media API. Web media embeddings are numerically
-  unqualified against native. LiteRT-LM
+  pinned assets include the media API. EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
+  native CPU/Metal; repeated media batches require memory64. Hardware WebGPU
+  is unqualified. Image bytes are encoded; width/height are ignored. LiteRT-LM
   embedding engines probe text/image/audio on native CPU. Native llama.cpp
   expanded inputs must fit one context/batch/micro-batch; no chunking or implicit
   task prefixes. M-RoPE projectors and image URLs are unsupported. Use exactly
   one media source per part: encoded bytes/local file or mono 16 kHz audio PCM.
-  Text-only native content follows `embed`, including causal unpooled models.
+  Text-only native and Web content follows `embed`, including causal unpooled models.
   Missing media symbols leave text available; native media errors name v0.7.0-1.
   Windows needs the complete native DLL bundle. Its media symbol routing is
   covered; Windows model-backed media qualification remains pending.

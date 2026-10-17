@@ -17,9 +17,60 @@ import 'package:web/web.dart' show window;
 
 import '../../support/embedding_contract.dart';
 
-// Local assets/reference only; setup and pending qualification are documented in
+// Local assets/reference only; setup and recorded qualification are documented in
 // doc/multimodal_embeddings_web.md. No default model or network download.
 void main() {
+  test('scenario contract compares vector elements in reverse order', () {
+    _expectOrderedVectors(
+      [
+        [3.0, 4.0],
+        [1.0, 2.0],
+      ],
+      [
+        [3.0, 4.0],
+        [1.0, 2.0],
+      ],
+    );
+    expect(
+      () => _expectOrderedVectors(
+        [
+          [1.0, 2.0],
+        ],
+        [
+          [2.0, 1.0],
+        ],
+      ),
+      throwsA(isA<TestFailure>()),
+    );
+  });
+  test('scenario contract rejects missing or extra vectors', () {
+    for (final actual in <List<List<double>>>[
+      [],
+      [
+        [1.0],
+        [2.0],
+      ],
+    ]) {
+      expect(
+        () => _expectOrderedVectors(actual, [
+          [1.0],
+        ]),
+        throwsA(isA<TestFailure>()),
+      );
+    }
+  });
+  test('scenario contract configures memory64 with the bridge API keys', () {
+    final config = _bridgeConfig(true, (key) => key);
+    expect(
+      config.getProperty<JSString>('coreModuleUrlMem64'.toJS).toDart,
+      'coreMem64',
+    );
+    expect(
+      config.getProperty<JSString>('wasmUrlMem64'.toJS).toDart,
+      'wasmMem64',
+    );
+    expect(config.getProperty<JSBoolean>('preferMemory64'.toJS).toDart, isTrue);
+  });
   final configUrl = Uri.base.resolve(
     '../../../build/webgpu_embeddings_e2e/config.json',
   );
@@ -44,11 +95,7 @@ void main() {
         final constructor = module.getProperty<JSFunction>(
           'LlamaWebGpuBridge'.toJS,
         );
-        final bridgeConfig = JSObject()
-          ..setProperty('disableWorker'.toJS, (!worker).toJS)
-          ..setProperty('workerUrl'.toJS, url('worker').toJS)
-          ..setProperty('coreModuleUrl'.toJS, url('core').toJS)
-          ..setProperty('wasmUrl'.toJS, url('wasm').toJS);
+        final bridgeConfig = _bridgeConfig(worker, url);
         final bridge = constructor.callAsConstructor<LlamaWebGpuBridge>(
           bridgeConfig,
         );
@@ -64,6 +111,14 @@ void main() {
             microBatchSize: 4096,
             gpuLayers: 0,
           ),
+        );
+        final core = (await engine
+            .getMetadata())['llamadart.webgpu.core_variant'];
+        print('${worker ? 'worker' : 'direct'} embedding core: $core');
+        expect(
+          core,
+          'wasm64',
+          reason: 'Repeated media batches require memory64.',
         );
         await engine.loadMultimodalProjector(url('projector'));
         expect(
@@ -112,8 +167,8 @@ void main() {
             bb += expected[i][j] * expected[i][j];
           }
           expect(math.sqrt(aa), closeTo(1, 1e-5));
-          // This is a proposed gate, not measured qualification. Any tolerance
-          // change needs evidence from the exact native/wasm artifact pair.
+          // Qualified CPU wasm/native cosine exceeds 0.99998. Keep a portable
+          // gate; changes require exact-artifact evidence.
           expect(dot / math.sqrt(aa * bb), greaterThanOrEqualTo(0.999));
         }
         expect(
@@ -123,7 +178,7 @@ void main() {
         final reversed = await engine.embedContentBatch(
           inputs.reversed.toList(),
         );
-        expect(reversed, orderedEquals(actual.reversed));
+        _expectOrderedVectors(reversed, actual.reversed.toList());
         final raw = await engine.embedContentBatch(inputs, normalize: false);
         for (var i = 0; i < raw.length; i++) {
           final norm = math.sqrt(raw[i].fold<double>(0, (s, x) => s + x * x));
@@ -138,5 +193,26 @@ void main() {
         );
       },
     );
+  }
+}
+
+JSObject _bridgeConfig(bool worker, String Function(String) url) {
+  return JSObject()
+    ..setProperty('disableWorker'.toJS, (!worker).toJS)
+    ..setProperty('workerUrl'.toJS, url('worker').toJS)
+    ..setProperty('coreModuleUrl'.toJS, url('core').toJS)
+    ..setProperty('wasmUrl'.toJS, url('wasm').toJS)
+    ..setProperty('coreModuleUrlMem64'.toJS, url('coreMem64').toJS)
+    ..setProperty('wasmUrlMem64'.toJS, url('wasmMem64').toJS)
+    ..setProperty('preferMemory64'.toJS, true.toJS);
+}
+
+void _expectOrderedVectors(
+  List<List<double>> actual,
+  List<List<double>> expected,
+) {
+  expect(actual, hasLength(expected.length));
+  for (var i = 0; i < actual.length; i++) {
+    expect(actual[i], orderedEquals(expected[i]));
   }
 }

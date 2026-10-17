@@ -45,9 +45,8 @@ final RegExp _bridgeArgument = RegExp(
 
 /// Classifies request rejections without reclassifying unknown runtime errors.
 ///
-/// The pinned bridge exposes JS RangeError/TypeError, not stable error codes.
-/// Keep this separate from operation-specific fallbacks so later bridge code
-/// mappings (including EmbeddingError) can be added when their assets are pinned.
+/// General request validators expose JS RangeError/TypeError. Media embedding
+/// stable codes are handled separately by the embedding operation fallback.
 LlamaException? webGpuBridgeRequestError(
   Object error, {
   Iterable<String> sourceUrls = const <String>[],

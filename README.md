@@ -98,8 +98,9 @@ For ordered embedding content, use `LlamaEmbeddingInput` with
 image/audio embeddings with EmbeddingGemma-2 and its projector on native
 v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
 Web llama.cpp also accepts image/audio content with bridge assets v0.1.64+
-and an API-version-1 embedding modality probe. Web media vectors remain
-numerically unqualified against native; the default pinned assets include the API.
+and an API-version-1 embedding modality probe. The default pin is qualified with EmbeddingGemma-2 on Chrome CPU wasm
+memory64 against native CPU/Metal; repeated media batches require memory64.
+Hardware WebGPU remains unqualified.
 LiteRT-LM supports text,
 image and audio embeddings (qualified on macOS arm64 CPU only) with
 `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all LiteRT-LM Web paths throw
