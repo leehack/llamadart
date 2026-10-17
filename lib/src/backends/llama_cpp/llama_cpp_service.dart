@@ -9175,9 +9175,12 @@ class LlamaCppService {
   /// The head's config is the [configPath] file when given, else the head's
   /// `laya.config` metadata. The head gets a private encoder context of the
   /// config's `max_len` tokens, whose batch thread count also drives the
-  /// head's CPU work. It runs on a GPU device of the model's backend
-  /// (`mainGpu` picks among several), or on the CPU when the model runs there
-  /// or no such device exists. Throws [LlamaStateException] for an unknown
+  /// head's CPU work. It runs on a GPU device of the load's backend
+  /// (`mainGpu` picks among several; negative or out-of-range picks the first),
+  /// or on CPU with a CPU backend, disabled GPU layers or no matching device.
+  /// Head selection is independent of model placement: single-device mode
+  /// with negative `mainGpu` can put the model on CPU and the head on Metal.
+  /// Throws [LlamaStateException] for an unknown
   /// model, [LlamaUnsupportedException] for a model [decisionCapabilities]
   /// rejects, [LlamaModelException] for a head or config that does not fit
   /// the model, and [LlamaContextException] when the encoder context cannot
