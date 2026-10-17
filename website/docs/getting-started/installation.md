@@ -81,12 +81,12 @@ dependency_overrides:
     git: https://github.com/leehack/llamadart.git
 ```
 
-Pair companion `0.14.0` with core `0.14.0`, `0.13.0` with core `0.13.x`, and `0.0.23` with core `0.12.2`;
+Pair companion `0.14.0` with core `0.14.x`, `0.13.0` with core `0.13.x`, and `0.0.23` with core `0.12.2`;
 keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
 names the companion release of your core's minor to depend on, such as
-`^0.14.0` with core `0.14.0`. Core `0.14.0` requires the matching
+`^0.14.0` with core `0.14.x`. Core `0.14.x` requires the matching
 v0.7.0 companion; older v0.6.0 companions are ABI-incompatible. On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
 including the GPU accelerators. The build uses it only when the resolved
@@ -108,7 +108,7 @@ universal `flutter build macos` prints
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
 
-Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.0`,
+Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core
 `0.10.0`; older cores, including `0.9.x`, ignore it. Adding it opts iOS and

@@ -14,15 +14,16 @@ void main() {
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('release-prep-heading-');
-    for (final path in <String>[
-      'pubspec.yaml',
-      'packages/llamadart_llama_cpp_flutter/pubspec.yaml',
-      'packages/llamadart_litert_lm_flutter/pubspec.yaml',
-      'packages/llamadart_stable_diffusion_flutter/pubspec.yaml',
-    ]) {
-      File('${root.path}/$path')
+    // Companion patches move independently; the heading must follow the core.
+    for (final entry in <String, String>{
+      'pubspec.yaml': '0.14.0',
+      'packages/llamadart_llama_cpp_flutter/pubspec.yaml': '0.14.1',
+      'packages/llamadart_litert_lm_flutter/pubspec.yaml': '0.14.0',
+      'packages/llamadart_stable_diffusion_flutter/pubspec.yaml': '0.14.0',
+    }.entries) {
+      File('${root.path}/${entry.key}')
         ..parent.createSync(recursive: true)
-        ..writeAsStringSync('version: 0.14.0\n');
+        ..writeAsStringSync('version: ${entry.value}\n');
     }
   });
   tearDown(() => root.deleteSync(recursive: true));

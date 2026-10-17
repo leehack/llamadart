@@ -261,6 +261,27 @@ void main() {
       expect(grammar, contains('root ::='));
     });
 
+    test('minItems without items repeats any JSON value', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'array',
+        'minItems': 1,
+      });
+      final rules = grammar.split('\n');
+      expect(
+        rules,
+        contains(
+          'root ::= "[" space root-item ("," space root-item)* "]" space',
+        ),
+      );
+      expect(
+        rules,
+        contains(
+          'root-item ::= object | array | string | number | boolean | null',
+        ),
+      );
+      expect(llamaCppRepetitionRejection(grammar), isNull);
+    });
+
     test('converts oneOf schema', () {
       final grammar = JsonSchemaConverter.convert({
         'oneOf': [
