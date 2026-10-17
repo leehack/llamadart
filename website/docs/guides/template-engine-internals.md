@@ -88,7 +88,8 @@ sequenceDiagram
   throws `LlamaInferenceException` with the template's message. The message
   names the template: the model's `tokenizer.chat_template` or its
   `tool_use` variant, `ModelParams.chatTemplate`, or a per-call
-  `customTemplate`.
+  `customTemplate`. With no template or an empty `tokenizer.chat_template`,
+  it names `the built-in ChatML fallback template`.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 
@@ -109,6 +110,9 @@ sequenceDiagram
 - On completion, final parse produces stable tool-call structures and finish
   reason semantics.
 - PEG-backed parse paths are used when parser payloads are present.
+  Parse failures name `peg-simple`, `peg-native`, or `peg-constructed`.
+  `peg-constructed` is a historical llama.cpp name removed before b10549;
+  llamadart retains it for the Qwen3 Coder XML mapper.
 - A reply that a cancel or a generation limit cut short may not hold what
   the PEG parser requires, such as the tool call of `ToolChoice.required`.
   It is parsed as partial output instead: its content and thinking are kept,

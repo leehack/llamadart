@@ -37,8 +37,8 @@ class ChatTemplateRenderer {
   /// `customTemplate` applies, for render-failure messages.
   ///
   /// A non-empty [modelTemplate] is `ModelParams.chatTemplate`; otherwise
-  /// [metadataTemplate] is the model's `tokenizer.chat_template`, and without
-  /// it the built-in ChatML fallback is used.
+  /// a non-empty [metadataTemplate] is the model's `tokenizer.chat_template`.
+  /// Otherwise the built-in ChatML fallback is used.
   static String templateSourceName({
     String? modelTemplate,
     String? metadataTemplate,
@@ -46,7 +46,7 @@ class ChatTemplateRenderer {
     if (modelTemplate != null && modelTemplate.isNotEmpty) {
       return 'ModelParams.chatTemplate';
     }
-    if (metadataTemplate != null) {
+    if (metadataTemplate != null && metadataTemplate.isNotEmpty) {
       return "the model's tokenizer.chat_template";
     }
     return 'the built-in ChatML fallback template';

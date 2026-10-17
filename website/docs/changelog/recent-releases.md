@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
 
