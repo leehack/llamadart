@@ -131,6 +131,9 @@ embedding batch, next-token scoring or text-to-speech request executes, so
 counters describe only that request (embedding and scoring report `0` ms). A
 request the native worker rejects leaves diagnostics unavailable (argument
 checks that fail before dispatch leave them unchanged); LiteRT-LM retains its generation-only recovery behavior.
+After an early cancellation, pending or failed embedding, scoring and speech
+calls keep diagnostics unavailable until a call succeeds. Web backends return
+`null` even after successful generation.
 Requests from an unloaded model do not invalidate a reloaded model's counters.
 
 Custom backend load callbacks use `void Function(double progress)?` in 0.14.

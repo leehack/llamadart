@@ -13,7 +13,7 @@ For canonical full release notes, use:
 - Update the native llama.cpp runtime to v0.7.0-1.
 - **Behavior change:** Run decision heads on CPU when native llama.cpp single-device placement selects no GPU.
 - Preserve LiteRT-LM Web runtime failures that race generation cancellation.
-- Keep native performance counters accurate across cancellation, validation failures and reloads, including llama.cpp embedding, scoring and speech requests.
+- Keep performance counters accurate across cancellation, validation or dispatch failures and reloads, including llama.cpp embedding, scoring and speech requests.
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
 - Probe native thinking-budget support and report missing speculative draft

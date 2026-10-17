@@ -2150,12 +2150,16 @@ class LlamaEngine {
     }
   }
 
-  /// Records a backend call starting on the context, whose counters then
-  /// describe that call.
-  void _beginContextCall(int contextHandle, int epoch) {
+  /// Tracks context work; generation backends invalidate counters at entry,
+  /// while other calls must succeed before restoring engine diagnostics.
+  void _beginContextCall(
+    int contextHandle,
+    int epoch, {
+    bool restoresPerformance = true,
+  }) {
     final key = (contextHandle, epoch);
     _contextCallsInFlight.update(key, (count) => count + 1, ifAbsent: () => 1);
-    _stalePerformanceContext = null;
+    if (restoresPerformance) _stalePerformanceContext = null;
   }
 
   /// Records the end of a request: one that called [_beginContextCall] when
@@ -2184,9 +2188,11 @@ class LlamaEngine {
   Future<T> _contextCall<T>(Future<T> Function() call) async {
     final requestContext = _contextHandle!;
     final requestEpoch = _modelEpoch;
-    _beginContextCall(requestContext, requestEpoch);
+    _beginContextCall(requestContext, requestEpoch, restoresPerformance: false);
     try {
-      return await call();
+      final result = await call();
+      if (requestEpoch == _modelEpoch) _stalePerformanceContext = null;
+      return result;
     } finally {
       _endContextRequest(requestContext, requestEpoch, reachedBackend: true);
     }
@@ -3389,7 +3395,10 @@ class LlamaEngine {
   /// only that request's work (embedding and scoring report `0` ms). A request the
   /// native worker rejects leaves diagnostics unavailable; argument checks that
   /// fail before dispatch leave them unchanged. Native token counters retain
-  /// llama.cpp's floors.
+  /// llama.cpp's floors. After an early cancellation, pending or failed
+  /// embedding, scoring and speech calls keep diagnostics unavailable; only
+  /// successful calls restore availability according to the backend's semantics.
+  /// Web backends currently return null even after successful generation.
   /// Other backends retain their own counter availability and timing semantics.
   /// A generation that ends before dispatch while another request is running
   /// on the context leaves that request's counters. Requests from an unloaded
