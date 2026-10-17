@@ -90,10 +90,10 @@ class LlamaEngine {
   int? _modelHandle;
   int? _contextHandle;
   // The context whose backend counters still belong to an earlier request,
-  // because the latest request on it ended before reaching the backend while
-  // no backend call was running on it.
+  // because a generation ended before reaching the backend while
+  // no dispatched generation was running on it.
   int? _stalePerformanceContext;
-  final Map<(int, int), int> _contextCallsInFlight = {};
+  final Map<(int, int), int> _generationsInFlight = {};
   int? _mmContextHandle;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
@@ -2150,16 +2150,11 @@ class LlamaEngine {
     }
   }
 
-  /// Tracks context work; generation backends invalidate counters at entry,
-  /// while other calls must succeed before restoring engine diagnostics.
-  void _beginContextCall(
-    int contextHandle,
-    int epoch, {
-    bool restoresPerformance = true,
-  }) {
+  /// Generation dispatch replaces the previous request's counters at entry.
+  void _beginContextCall(int contextHandle, int epoch) {
     final key = (contextHandle, epoch);
-    _contextCallsInFlight.update(key, (count) => count + 1, ifAbsent: () => 1);
-    if (restoresPerformance) _stalePerformanceContext = null;
+    _generationsInFlight.update(key, (count) => count + 1, ifAbsent: () => 1);
+    _stalePerformanceContext = null;
   }
 
   /// Records the end of a request: one that called [_beginContextCall] when
@@ -2171,31 +2166,26 @@ class LlamaEngine {
     required bool reachedBackend,
   }) {
     final key = (contextHandle, epoch);
-    final remaining = (_contextCallsInFlight[key] ?? 0) - 1;
+    final remaining = (_generationsInFlight[key] ?? 0) - 1;
     if (reachedBackend) {
       if (remaining == 0) {
-        _contextCallsInFlight.remove(key);
+        _generationsInFlight.remove(key);
       } else {
-        _contextCallsInFlight[key] = remaining;
+        _generationsInFlight[key] = remaining;
       }
-    } else if (!_contextCallsInFlight.containsKey(key) &&
-        epoch == _modelEpoch) {
+    } else if (!_generationsInFlight.containsKey(key) && epoch == _modelEpoch) {
       _stalePerformanceContext = contextHandle;
     }
   }
 
   /// Runs [call], a backend call on the context, such as embeddings.
   Future<T> _contextCall<T>(Future<T> Function() call) async {
-    final requestContext = _contextHandle!;
     final requestEpoch = _modelEpoch;
-    _beginContextCall(requestContext, requestEpoch, restoresPerformance: false);
-    try {
-      final result = await call();
-      if (requestEpoch == _modelEpoch) _stalePerformanceContext = null;
-      return result;
-    } finally {
-      _endContextRequest(requestContext, requestEpoch, reachedBackend: true);
-    }
+    // Admission alone cannot prove that a non-generation call replaced old
+    // counters: it may still fail before reaching the worker.
+    final result = await call();
+    if (requestEpoch == _modelEpoch) _stalePerformanceContext = null;
+    return result;
   }
 
   /// Returns the [LlamaException] a generation reports for a backend
@@ -3398,13 +3388,14 @@ class LlamaEngine {
   /// rejected because text-to-speech is active preserve the synthesis request's
   /// counters. Native token counters retain llama.cpp's floors. After an early
   /// cancellation, pending or failed embedding, scoring and speech calls keep
-  /// diagnostics unavailable; only successful calls restore availability
-  /// according to the backend's semantics. Web backends currently return null
-  /// even after successful generation.
+  /// diagnostics unavailable, including calls started before cancellation.
+  /// Generation dispatch restores availability immediately; embedding, scoring
+  /// and speech restore it only on success, using the backend's semantics.
+  /// Web backends currently return null even after successful generation.
   /// Other backends retain their own counter availability and timing semantics.
-  /// A generation that ends before dispatch while another request is running
-  /// on the context leaves that request's counters. Requests from an unloaded
-  /// model cannot change a reloaded context's counter availability.
+  /// A generation that ends before dispatch while a dispatched generation is
+  /// running on the context leaves that generation's counters. Requests from an
+  /// unloaded model cannot change a reloaded context's counter availability.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;

@@ -64,7 +64,10 @@ description: >-
   checks that fail before dispatch leave them unchanged. Native token counts retain llama.cpp's
   minimum of one; embedding and scoring report `0` ms timings. LiteRT-LM recovers counters on generation.
   After an early cancellation, pending or failed embedding, scoring and speech
-  calls keep diagnostics unavailable until a call succeeds. Web backends always
+  calls keep diagnostics unavailable, including calls started before cancellation.
+  Generation dispatch restores availability immediately; embedding, scoring and
+  speech restore it only on success, using the backend's counter semantics.
+  Web backends always
   return `null` diagnostics. Reloaded contexts keep their own counter availability. Treat null as
   unavailable diagnostics for the cancelled or unsent request.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to

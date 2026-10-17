@@ -354,10 +354,13 @@ void runLlamaWorkerForTesting(
             }();
             // Rejected overlaps share this wait group so they cannot hide the
             // original task from disposal. Retire it when all handlers finish.
-            await synthesisFuture;
-            if (--pendingTextToSpeech == 0) {
-              activeTextToSpeech = null;
-              idle.complete();
+            try {
+              await synthesisFuture;
+            } finally {
+              if (--pendingTextToSpeech == 0) {
+                activeTextToSpeech = null;
+                idle.complete();
+              }
             }
 
           case GenerationCapabilitiesRequest():
