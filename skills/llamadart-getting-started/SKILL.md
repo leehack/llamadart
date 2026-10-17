@@ -90,7 +90,7 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `Exception`.
 - If a fresh Flutter 3.47.1 macOS SwiftPM build reports generated macOS 12.0
   beside a companion requiring 14.0, use the
-  [consumer bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap):
+  [consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap):
   `flutter pub get`, raise only the generated package floor, then build with
   `--no-pub`. Repeat after regeneration; preserve Runner's 14.0+ target and
   companion manifests, native URLs and checksums.

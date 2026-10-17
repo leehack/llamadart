@@ -91,8 +91,9 @@ Cancelling a queued native llama.cpp generation before dispatch makes
 `getPerformanceContext()` return `null` until another generation is dispatched.
 
 Custom backend load callbacks use `void Function(double progress)?` in 0.14.
-Progress notifications do not return a control value; update implementations
-and fakes as described in [MIGRATION.md](MIGRATION.md).
+Existing `Function(double progress)?` overrides still compile; prefer the
+explicit `void` signature in custom backends and fakes. Progress notifications
+do not return a control value; see [MIGRATION.md](MIGRATION.md).
 
 Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
 preserve runtime `length` termination: tool loops return `truncated` and roll
@@ -126,7 +127,7 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. Pair companion `0.14.0` with core `0.14.0`, `0.13.0` with core
+  the entry above. Pair companion `0.14.0` with core `0.14.x`, `0.13.0` with core
   `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2`
   with core `0.11.1` and `0.11.0`.
   Without it, `all` leaves the image runtime out of a Flutter iOS/macOS app
@@ -224,7 +225,7 @@ core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
 
 A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
 companions' 14.0 requirement needs the
-[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap).
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap).
 Keep Runner at 14.0+; the procedure preserves companion artifact verification.
 
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
@@ -240,7 +241,7 @@ dependencies:
   llamadart_stable_diffusion_flutter: ^0.14.0 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.0`,
+Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
 `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
@@ -414,7 +415,7 @@ the same libraries. Details and the pub workspace rules:
 | Stream text and collect output | [Generation and streaming](https://llamadart.leehack.com/docs/guides/generation-and-streaming) |
 | Generate typed JSON | [Structured output](https://llamadart.leehack.com/docs/guides/generation-and-streaming#structured-json-output) |
 | Use tool calling | [Tool calling](https://llamadart.leehack.com/docs/guides/tool-calling) |
-| Import a tool input schema (length/item bounds up to 2000) | [`ToolDefinition.fromJsonSchema`](https://llamadart.leehack.com/docs/next/guides/tool-calling#import-a-json-schema) |
+| Import a tool input schema (length/item bounds up to 2000) | [`ToolDefinition.fromJsonSchema`](https://llamadart.leehack.com/docs/guides/tool-calling#import-a-json-schema) |
 | Use images, audio, or projectors | [Multimodal](https://llamadart.leehack.com/docs/guides/multimodal) |
 | Transcribe speech on device | [Speech to text](https://llamadart.leehack.com/docs/guides/speech-to-text) |
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |

@@ -1421,7 +1421,7 @@ still required for every actual run.
 
 ### Native video input
 
-The pinned `llamadart-native` `v0.6.0-3` archive exports upstream video helper
+The previously pinned `llamadart-native` `v0.6.0-3` archive exports upstream video helper
 symbols (`mtmd_helper_video_*`), but the release is not qualified for
 end-to-end video input. The companion build does not opt into
 `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe, so the public Dart

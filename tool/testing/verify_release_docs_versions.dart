@@ -744,6 +744,19 @@ void main(List<String> arguments) {
     if (releasePrep) {
       errors.addAll(pending.map((bump) => bump.toString()));
     }
+    if (releasePrep) {
+      final heading = _matchInFile(
+        Directory.current,
+        'CHANGELOG.md',
+        RegExp(r'^(## .*)$', multiLine: true),
+        'first release heading',
+        errors,
+      );
+      final expected = '## ${versions['llamadart']}';
+      if (heading != expected) {
+        errors.add('CHANGELOG.md must start with $expected before publishing.');
+      }
+    }
     final coreVersion = _parseCoreVersion(versions['llamadart']!, errors);
     if (coreVersion != null) {
       errors.addAll(

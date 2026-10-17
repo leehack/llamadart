@@ -182,8 +182,8 @@ output and grammars, sampling controls and speculative decoding. Guides:
   LiteRT-LM cannot create an NPU engine, use `cpu` or `gpu`.
 - Android llama.cpp Vulkan is experimental and device-dependent. `auto` runs
   llama.cpp on the CPU there; Vulkan runs only when the app asks for
-  `ComputeDevice.gpu` or `GpuBackend.vulkan`. Known failures on the pinned
-  runtime: on a Pixel 9 Pro (Mali-G715), a prompt longer than about 32 tokens
+  `ComputeDevice.gpu` or `GpuBackend.vulkan`. Previously observed runtime
+  failures: on a Pixel 9 Pro (Mali-G715), a prompt longer than about 32 tokens
   evaluated in one batch returns wrong text, and a request with a grammar or
   tool call can then abort the process, confirmed so far with one model
   (Qwen3.5-0.8B Q4_0) on that one device
@@ -194,8 +194,9 @@ output and grammars, sampling controls and speculative decoding. Guides:
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
   The first of these is a llama.cpp defect at a Vulkan subgroup size of 16
   ([llama.cpp#28637](https://github.com/ggml-org/llama.cpp/issues/28637)),
-  which llama.cpp `v0.6.0` still has; the same code mis-tiles subgroup sizes
-  below 8, which no device run has confirmed. On Android, llamadart reads the
+  last observed on llama.cpp `v0.6.0` and not re-checked on `v0.7.0`. The
+  affected code also mis-tiles subgroup sizes below 8, which no device run
+  has confirmed. On Android, llamadart reads the
   subgroup size of the Vulkan GPUs when it creates a context: on such a GPU,
   and on any GPU whose subgroup size it cannot read, the context decodes a
   text prompt in micro-batches of at most 8 tokens by default; on other GPUs

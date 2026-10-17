@@ -21,6 +21,7 @@ description: >-
   special `ModelParams` flag is needed: the engine switches the context into
   embedding mode per call. Loading and disposal work as in the
   llamadart-getting-started skill.
+- Native v0.7.0 supports EmbeddingGemma-2 text embeddings with 768-dimensional output.
 - Give the embedding model and the chat model separate `LlamaEngine`s. An
   engine holds one model, and switching models per query reloads weights.
 - Embeddings are llama.cpp-only. LiteRT-LM (`.litertlm`) engines, native or
@@ -46,7 +47,7 @@ description: >-
   together (and `contextSize` past its value). Causal LAST/unpooled models
   with memory retain chunked input support.
 - Native diffusion capability and EmbeddingGemma's forced non-causal mode
-  override attention metadata. Other models follow the pinned `v0.6.0`
+  override attention metadata. Other models follow the pinned `v0.7.0`
   boolean attention metadata, whose absent key defaults to causal. Missing
   architecture, invalid metadata or a missing required runtime probe fails
   with `LlamaUnsupportedException` before decoding; use a compatible runtime.
