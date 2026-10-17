@@ -559,9 +559,19 @@ void main() {
           reason: symbol,
         );
       }
-      final primary = _llamadartPrimaryLibraryFileOrNull();
-      expect(primary, isNotNull);
-      _expectDynamicLibraryExports(primary!, symbols);
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        wrapper,
+        isNotNull,
+        reason: 'Expected the llama.cpp wrapper library.',
+      );
+      // Resolved through the package first: a raw open of the wrapper cannot
+      // find its sibling DLLs on Windows until the runtime is loaded.
+      expect(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
+        isNotNull,
+      );
+      _expectDynamicLibraryExports(wrapper!, symbols);
     });
 
     test('processing wrapper enum wire values match the published header', () {
