@@ -3,7 +3,6 @@
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Probe native thinking-budget support and report missing speculative draft
   models as typed argument errors.
-
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
 
