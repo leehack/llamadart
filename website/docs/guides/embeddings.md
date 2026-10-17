@@ -83,7 +83,11 @@ video frame/timestamp sampling contract has not been defined. No media is
 silently flattened into text. Source/codec support is runtime-specific;
 embedding PCM uses mono 16 kHz Float32 samples. Keep media buffers unchanged
 until the future settles. `normalize` and cancellation through
-`cancelGeneration()` follow the existing embedding semantics. Content-call
+`cancelGeneration()` use the existing `LlamaInferenceException` cancellation
+error. Content calls cancelled during capability checks fail before inference;
+native LiteRT-LM also checks again after worker startup. Await the future before
+reuse; a later call starts independently. Native llama.cpp and Web legacy
+string embedding cancellation contracts are unchanged. Content-call
 observers receive only ordered part kinds/counts, with no text, paths, URLs
 or media payloads; old string calls retain their existing text observations.
 

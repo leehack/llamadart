@@ -65,6 +65,7 @@ class NativeAutoBackend
   final LlamaBackend Function() _liteRtLmFactory;
 
   LlamaBackend? _delegate;
+  int _embeddingCancelEpoch = 0;
   LlamaRuntime? _delegateKind;
   LlamaBackend? _diagnosticDelegate;
   Future<LlamaBackend>? _diagnosticDelegateStart;
@@ -287,6 +288,7 @@ class NativeAutoBackend
 
   @override
   void cancelGeneration() {
+    _embeddingCancelEpoch++;
     _delegate?.cancelGeneration();
   }
 
@@ -670,11 +672,23 @@ class NativeAutoBackend
     int contextHandle,
     List<LlamaEmbeddingInput> inputs, {
     bool normalize = true,
-  }) => _requireDelegate().embedContentWithFallback(
-    contextHandle,
-    inputs,
-    normalize: normalize,
-  );
+  }) {
+    final cancelEpoch = _embeddingCancelEpoch;
+    return _requireDelegate().embedContentWithFallback(
+      contextHandle,
+      inputs,
+      normalize: normalize,
+      onCompute: (compute) {
+        // Delegate cancellation starts only after the router's own probe.
+        if (cancelEpoch != _embeddingCancelEpoch) {
+          throw LlamaInferenceException(
+            'Content embedding cancelled before dispatch.',
+          );
+        }
+        return compute();
+      },
+    );
+  }
 
   @override
   Future<List<double>> embed(

@@ -166,9 +166,7 @@ class LiteRtLmBackend
     }
     final cancellationSerial = _embeddingCancellationSerial;
     // Full decoding must not block the caller isolate, even for large media.
-    final prepared = await Isolate.run(
-      () => inputs.map(prepareLiteRtLmEmbedding).toList(),
-    );
+    final prepared = await _prepareEmbeddings(inputs);
     if (cancellationSerial != _embeddingCancellationSerial) {
       throw LlamaInferenceException(
         'LiteRT-LM embedding cancelled during media preflight.',
@@ -177,6 +175,12 @@ class LiteRtLmBackend
     SendPort? embeddingPort;
     try {
       final response = await _sendRequest((port) {
+        // Worker startup can yield after media preflight's cancellation check.
+        if (cancellationSerial != _embeddingCancellationSerial) {
+          throw LlamaInferenceException(
+            'LiteRT-LM embedding cancelled before dispatch.',
+          );
+        }
         embeddingPort = port;
         return LiteRtLmEmbedRequest(contextHandle, prepared, normalize, port);
       }, timeout: _embeddingTimeout);
@@ -197,6 +201,12 @@ class LiteRtLmBackend
       );
     }
   }
+
+  // Keep the isolate closure out of the dispatch scope, which captures this
+  // backend's unsendable worker ports for cancellation.
+  static Future<List<List<LiteRtLmEmbeddingPart>>> _prepareEmbeddings(
+    List<LlamaEmbeddingInput> inputs,
+  ) => Isolate.run(() => inputs.map(prepareLiteRtLmEmbedding).toList());
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {

@@ -32,6 +32,58 @@ import 'package:test/test.dart';
 
 void main() {
   test(
+    'embedding cancellation during worker startup prevents dispatch',
+    () async {
+      final startup = ReceivePort();
+      final endpoint = ReceivePort();
+      var dispatched = 0;
+      endpoint.listen((message) {
+        if (message is LiteRtLmEmbedRequest) {
+          dispatched++;
+          message.sendPort.send(
+            LiteRtLmEmbedResponse([
+              [1.0],
+            ]),
+          );
+        } else if (message is LiteRtLmWorkerRequest) {
+          message.sendPort.send(LiteRtLmDoneResponse());
+        }
+      });
+      final startupControl = startup.sendPort;
+      final backend = LiteRtLmBackend(
+        workerEntryPoint: _embeddingStartupWorker(startupControl),
+      );
+      final mirror = reflect(backend);
+      final owner = mirror.type.owner as LibraryMirror;
+      // Exercise startup/recovery with a previously selected embedding engine.
+      mirror.setField(MirrorSystem.getSymbol('_embeddingEngine', owner), true);
+      addTearDown(() async {
+        await backend.dispose();
+        endpoint.close();
+        startup.close();
+      });
+      final future = backend.embed(1, 'text');
+      final handshake = await startup.first as SendPort;
+      backend.cancelGeneration();
+      final cancelled = expectLater(
+        future,
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (e) => e.message,
+            'cancellation',
+            contains('cancel'),
+          ),
+        ),
+      );
+      handshake.send(endpoint.sendPort);
+      await cancelled;
+      expect(dispatched, 0);
+      expect(await backend.embed(1, 'text'), [1.0]);
+      expect(dispatched, 1);
+    },
+  );
+
+  test(
     'embedding load reaches the worker with its explicit engine selector',
     () async {
       final worker = _FakeLiteRtLmWorker(
@@ -3121,3 +3173,8 @@ class _CounterRunService extends _CancellableRunService {
     reusedGraphs: 0,
   );
 }
+
+void Function(SendPort) _embeddingStartupWorker(SendPort control) => (initial) {
+  control.send(initial);
+  ReceivePort().listen((_) {});
+};
