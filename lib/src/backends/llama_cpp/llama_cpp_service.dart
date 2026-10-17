@@ -1955,7 +1955,13 @@ class LlamaCppService {
   }
 
   LlamaCppObjectCalls _resolveObjectCalls() {
-    final calls = LlamaCppObjectCalls.resolve(isWindows: Platform.isWindows);
+    final calls = LlamaCppObjectCalls.resolve(
+      isWindows: Platform.isWindows,
+      mixedBatchResolver: () => LlamaCppMixedBatchApi.tryResolve(
+        isWindows: Platform.isWindows,
+        mtmdSymbol: _mixedMtmdSymbol,
+      ),
+    );
     if (calls.exit == null) {
       LlamaLogger.instance.warning(
         'The loaded llama.cpp runtime does not export the exit-teardown '
@@ -8629,6 +8635,12 @@ class LlamaCppService {
   static bool debugMtmdFallbackHasChunkEvalForTesting(DynamicLibrary library) =>
       _MtmdApi.tryLoad(library)?.chunkEval != null;
 
+  Pointer<NativeType> _mixedMtmdSymbol(String name) {
+    final library = _resolveMtmdFallbackApi()?.library;
+    if (library == null) throw ArgumentError('mtmd library unavailable');
+    return library.lookup<NativeType>(name);
+  }
+
   _MtmdApi? _resolveMtmdFallbackApi() {
     if (_mtmdFallbackLookupAttempted) {
       return _mtmdFallbackApi;
@@ -10518,6 +10530,7 @@ class _SpeculativeApi {
 }
 
 class _MtmdApi {
+  final DynamicLibrary? library;
   final _MtmdDefaultMarkerDart defaultMarker;
   final _MtmdContextParamsDefaultDart contextParamsDefault;
   final _MtmdInitFromFileDart initFromFile;
@@ -10540,6 +10553,7 @@ class _MtmdApi {
   final _MtmdLogSetDart? helperLogSet;
 
   const _MtmdApi({
+    this.library,
     required this.defaultMarker,
     required this.contextParamsDefault,
     required this.initFromFile,
@@ -10589,6 +10603,7 @@ class _MtmdApi {
       } catch (_) {}
 
       return _MtmdApi(
+        library: library,
         defaultMarker: library
             .lookupFunction<_MtmdDefaultMarkerNative, _MtmdDefaultMarkerDart>(
               'mtmd_default_marker',

@@ -19,6 +19,7 @@ import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
 import 'package:test/test.dart';
 
 import '../../../support/fake_native_barrier.dart';
+import '../../../support/fake_mtmd.dart';
 import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
@@ -230,6 +231,442 @@ void main() {
       isNotNull,
     );
   });
+
+  test('Windows mixed lookup uses the split DLL export tables', () {
+    final library = reflectClass(LlamaCppMixedBatchApi).owner as LibraryMirror;
+    final lookup = MirrorSystem.getSymbol('_mixedSymbol', library);
+    final seen = <String>[];
+    const exports = {
+      'llamadart.dll': {'llama_dart_batch_ext_init', 'llama_dart_process'},
+      'llama.dll': {
+        'llama_batch_ext_add_token',
+        'llama_batch_ext_add_embd',
+        'llama_batch_ext_set_pos',
+        'llama_batch_ext_set_output_embd',
+        'llama_batch_ext_free',
+        'llama_set_embeddings',
+      },
+      'mtmd.dll': {
+        'mtmd_get_output_embd',
+        'mtmd_decode_use_mrope',
+        'mtmd_get_audio_sample_rate',
+        'mtmd_helper_get_n_tokens',
+        'mtmd_input_chunks_size',
+        'mtmd_input_chunks_get',
+        'mtmd_input_chunk_get_type',
+        'mtmd_input_chunk_get_n_tokens',
+        'mtmd_input_chunk_get_tokens_text',
+        'mtmd_bitmap_is_audio',
+      },
+    };
+    for (final windows in [false, true]) {
+      seen.clear();
+      Pointer<NativeType> route(String name) =>
+          library
+                  .invoke(
+                    lookup,
+                    [name],
+                    {
+                      #isWindows: windows,
+                      #lookup: (String dll, String symbol) {
+                        seen.add('$dll:$symbol');
+                        if (!(windows
+                                ? exports[dll]!
+                                : exports.values.expand((names) => names))
+                            .contains(symbol)) {
+                          throw ArgumentError('missing');
+                        }
+                        return Pointer<NativeType>.fromAddress(1);
+                      },
+                    },
+                  )
+                  .reflectee
+              as Pointer<NativeType>;
+      final api = LlamaCppMixedBatchApi.tryResolve(symbol: route);
+      expect(api, isNotNull, reason: 'Windows: $windows');
+      expect(seen, isNotEmpty);
+      final resolved = List<String>.of(seen);
+      expect(
+        resolved.map((entry) => entry.split(':')[1]),
+        unorderedEquals(exports.values.expand((names) => names)),
+      );
+      for (final missing in resolved.map((entry) => entry.split(':')[1])) {
+        expect(
+          LlamaCppMixedBatchApi.tryResolve(
+            symbol: (name) {
+              if (name == missing) throw ArgumentError('missing');
+              return route(name);
+            },
+          ),
+          isNull,
+          reason: 'Windows: $windows, missing: $missing',
+        );
+      }
+      for (final entry in resolved) {
+        final fields = entry.split(':');
+        final name = fields[1];
+        final expected = !windows
+            ? 'llamadart.dll'
+            : name.startsWith('mtmd_')
+            ? 'mtmd.dll'
+            : name.startsWith('llama_dart_')
+            ? 'llamadart.dll'
+            : 'llama.dll';
+        expect(fields[0], expected, reason: name);
+      }
+    }
+  });
+
+  test('Windows mixed lookup rejects unknown mtmd accessors', () {
+    final library = reflectClass(LlamaCppMixedBatchApi).owner as LibraryMirror;
+    expect(
+      () => library.invoke(
+        MirrorSystem.getSymbol('_windowsMixedSymbol', library),
+        ['missing_mixed_symbol'],
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test(
+    'Windows mtmd mixed lookup uses the service fallback and rejects absence',
+    () {
+      final library = reflectClass(LlamaCppService).owner as LibraryMirror;
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      final mirror = reflect(service);
+      final lookup = MirrorSystem.getSymbol('_mixedMtmdSymbol', library);
+      final attempted = MirrorSystem.getSymbol(
+        '_mtmdFallbackLookupAttempted',
+        library,
+      );
+      mirror.setField(
+        MirrorSystem.getSymbol('_mtmdFallbackApi', library),
+        null,
+      );
+      mirror.setField(attempted, true);
+      expect(
+        () => mirror.invoke(lookup, ['mtmd_get_output_embd']),
+        throwsArgumentError,
+      );
+      mirror.setField(attempted, false);
+      if (!Platform.isWindows) {
+        expect(
+          service.debugUseWrapperMtmdFallbackForTesting(chunkEval: true),
+          isTrue,
+        );
+      }
+      final output =
+          mirror.invoke(lookup, ['mtmd_get_output_embd']).reflectee as Pointer;
+      expect(output.address, isNonZero);
+      expect(
+        () => mirror.invoke(lookup, ['missing_mixed_symbol']),
+        throwsArgumentError,
+      );
+    },
+  );
+
+  test('mixed lookup rejects an mtmd fallback without a library handle', () {
+    final service = LlamaCppService();
+    addTearDown(service.dispose);
+    final fake = FakeMtmd.install(service, tokens: const []);
+    addTearDown(fake.dispose);
+    final library = reflectClass(LlamaCppService).owner as LibraryMirror;
+    expect(
+      () => reflect(service).invoke(
+        MirrorSystem.getSymbol('_mixedMtmdSymbol', library),
+        ['mtmd_get_output_embd'],
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('Windows mtmd resolver is used only for mtmd on Windows', () {
+    final library = reflectClass(LlamaCppMixedBatchApi).owner as LibraryMirror;
+    final lookup = MirrorSystem.getSymbol('_mixedSymbol', library);
+    for (final windows in [false, true]) {
+      final seen = <String>[];
+      for (final name in ['mtmd_get_output_embd', 'mtmd_decode_use_mrope']) {
+        final pointer =
+            library
+                    .invoke(
+                      lookup,
+                      [name],
+                      {
+                        #isWindows: windows,
+                        #mtmdSymbol: (String symbol) {
+                          seen.add(symbol);
+                          return Pointer<NativeType>.fromAddress(42);
+                        },
+                      },
+                    )
+                    .reflectee
+                as Pointer;
+        expect(pointer.address == 42, windows);
+      }
+      expect(seen.length, windows ? 2 : 0);
+    }
+  });
+
+  test(
+    'mixed API calls every probed address without returning to default assets',
+    () {
+      final seen = <String>[];
+      final symbols = <String, Pointer<NativeType>>{};
+      final embd = calloc<llama_embd>();
+      addTearDown(() => calloc.free(embd));
+      final setOutput =
+          NativeCallable<
+            Void Function(Pointer<llama_context>, Bool)
+          >.isolateLocal((Pointer<llama_context> arg0, bool arg1) {
+            seen.add('llama_set_embeddings');
+            expect(arg0.address, 100);
+            expect(arg1, true);
+          });
+      addTearDown(setOutput.close);
+      symbols['llama_set_embeddings'] = setOutput.nativeFunction;
+      final setOutputRow =
+          NativeCallable<
+            Bool Function(Pointer<llama_batch_ext>, Int32, Bool)
+          >.isolateLocal((Pointer<llama_batch_ext> arg0, int arg1, bool arg2) {
+            seen.add('llama_batch_ext_set_output_embd');
+            expect(arg0.address, 100);
+            expect(arg1, 9);
+            expect(arg2, true);
+            return true;
+          }, exceptionalReturn: false);
+      addTearDown(setOutputRow.close);
+      symbols['llama_batch_ext_set_output_embd'] = setOutputRow.nativeFunction;
+      final addToken =
+          NativeCallable<
+            Int32 Function(Pointer<llama_batch_ext>, Int32, Int32)
+          >.isolateLocal((Pointer<llama_batch_ext> arg0, int arg1, int arg2) {
+            seen.add('llama_batch_ext_add_token');
+            expect(arg0.address, 100);
+            expect(arg1, 9);
+            expect(arg2, 9);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(addToken.close);
+      symbols['llama_batch_ext_add_token'] = addToken.nativeFunction;
+      final addEmbedding =
+          NativeCallable<
+            Int32 Function(Pointer<llama_batch_ext>, Int32, llama_embd)
+          >.isolateLocal((
+            Pointer<llama_batch_ext> arg0,
+            int arg1,
+            llama_embd arg2,
+          ) {
+            seen.add('llama_batch_ext_add_embd');
+            expect(arg0.address, 100);
+            expect(arg1, 9);
+            expect(arg2.n_rows, 0);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(addEmbedding.close);
+      symbols['llama_batch_ext_add_embd'] = addEmbedding.nativeFunction;
+      final setPosition =
+          NativeCallable<
+            Bool Function(Pointer<llama_batch_ext>, Int32, Pointer<llama_pos>)
+          >.isolateLocal((
+            Pointer<llama_batch_ext> arg0,
+            int arg1,
+            Pointer<llama_pos> arg2,
+          ) {
+            seen.add('llama_batch_ext_set_pos');
+            expect(arg0.address, 100);
+            expect(arg1, 9);
+            expect(arg2.address, 100);
+            return true;
+          }, exceptionalReturn: false);
+      addTearDown(setPosition.close);
+      symbols['llama_batch_ext_set_pos'] = setPosition.nativeFunction;
+      final free =
+          NativeCallable<Void Function(Pointer<llama_batch_ext>)>.isolateLocal((
+            Pointer<llama_batch_ext> arg0,
+          ) {
+            seen.add('llama_batch_ext_free');
+            expect(arg0.address, 100);
+          });
+      addTearDown(free.close);
+      symbols['llama_batch_ext_free'] = free.nativeFunction;
+      final projectorUsesMrope =
+          NativeCallable<Bool Function(Pointer<mtmd_context>)>.isolateLocal((
+            Pointer<mtmd_context> arg0,
+          ) {
+            seen.add('mtmd_decode_use_mrope');
+            expect(arg0.address, 100);
+            return true;
+          }, exceptionalReturn: false);
+      addTearDown(projectorUsesMrope.close);
+      symbols['mtmd_decode_use_mrope'] = projectorUsesMrope.nativeFunction;
+      final audioSampleRate =
+          NativeCallable<Int Function(Pointer<mtmd_context>)>.isolateLocal((
+            Pointer<mtmd_context> arg0,
+          ) {
+            seen.add('mtmd_get_audio_sample_rate');
+            expect(arg0.address, 100);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(audioSampleRate.close);
+      symbols['mtmd_get_audio_sample_rate'] = audioSampleRate.nativeFunction;
+      final mediaOutput =
+          NativeCallable<
+            Pointer<Float> Function(Pointer<mtmd_context>)
+          >.isolateLocal((Pointer<mtmd_context> arg0) {
+            seen.add('mtmd_get_output_embd');
+            expect(arg0.address, 100);
+            return Pointer<Float>.fromAddress(303);
+          });
+      addTearDown(mediaOutput.close);
+      symbols['mtmd_get_output_embd'] = mediaOutput.nativeFunction;
+      final tokenCount =
+          NativeCallable<
+            Size Function(Pointer<mtmd_input_chunks>)
+          >.isolateLocal((Pointer<mtmd_input_chunks> arg0) {
+            seen.add('mtmd_helper_get_n_tokens');
+            expect(arg0.address, 100);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(tokenCount.close);
+      symbols['mtmd_helper_get_n_tokens'] = tokenCount.nativeFunction;
+      final chunksSize =
+          NativeCallable<
+            Size Function(Pointer<mtmd_input_chunks>)
+          >.isolateLocal((Pointer<mtmd_input_chunks> arg0) {
+            seen.add('mtmd_input_chunks_size');
+            expect(arg0.address, 100);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(chunksSize.close);
+      symbols['mtmd_input_chunks_size'] = chunksSize.nativeFunction;
+      final chunksGet =
+          NativeCallable<
+            Pointer<mtmd_input_chunk> Function(Pointer<mtmd_input_chunks>, Size)
+          >.isolateLocal((Pointer<mtmd_input_chunks> arg0, int arg1) {
+            seen.add('mtmd_input_chunks_get');
+            expect(arg0.address, 100);
+            expect(arg1, 9);
+            return Pointer<mtmd_input_chunk>.fromAddress(303);
+          });
+      addTearDown(chunksGet.close);
+      symbols['mtmd_input_chunks_get'] = chunksGet.nativeFunction;
+      final chunkType =
+          NativeCallable<
+            UnsignedInt Function(Pointer<mtmd_input_chunk>)
+          >.isolateLocal((Pointer<mtmd_input_chunk> arg0) {
+            seen.add('mtmd_input_chunk_get_type');
+            expect(arg0.address, 100);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(chunkType.close);
+      symbols['mtmd_input_chunk_get_type'] = chunkType.nativeFunction;
+      final chunkTokenCount =
+          NativeCallable<Size Function(Pointer<mtmd_input_chunk>)>.isolateLocal(
+            (Pointer<mtmd_input_chunk> arg0) {
+              seen.add('mtmd_input_chunk_get_n_tokens');
+              expect(arg0.address, 100);
+              return 7;
+            },
+            exceptionalReturn: 0,
+          );
+      addTearDown(chunkTokenCount.close);
+      symbols['mtmd_input_chunk_get_n_tokens'] = chunkTokenCount.nativeFunction;
+      final chunkTokens =
+          NativeCallable<
+            Pointer<llama_token> Function(
+              Pointer<mtmd_input_chunk>,
+              Pointer<Size>,
+            )
+          >.isolateLocal((Pointer<mtmd_input_chunk> arg0, Pointer<Size> arg1) {
+            seen.add('mtmd_input_chunk_get_tokens_text');
+            expect(arg0.address, 100);
+            expect(arg1.address, 100);
+            return Pointer<llama_token>.fromAddress(303);
+          });
+      addTearDown(chunkTokens.close);
+      symbols['mtmd_input_chunk_get_tokens_text'] = chunkTokens.nativeFunction;
+      final bitmapIsAudio =
+          NativeCallable<Bool Function(Pointer<mtmd_bitmap>)>.isolateLocal((
+            Pointer<mtmd_bitmap> arg0,
+          ) {
+            seen.add('mtmd_bitmap_is_audio');
+            expect(arg0.address, 100);
+            return true;
+          }, exceptionalReturn: false);
+      addTearDown(bitmapIsAudio.close);
+      symbols['mtmd_bitmap_is_audio'] = bitmapIsAudio.nativeFunction;
+      final init =
+          NativeCallable<
+            Pointer<llama_batch_ext> Function(Pointer<llama_context>)
+          >.isolateLocal((Pointer<llama_context> arg0) {
+            seen.add('llama_dart_batch_ext_init');
+            expect(arg0.address, 100);
+            return Pointer<llama_batch_ext>.fromAddress(303);
+          });
+      addTearDown(init.close);
+      symbols['llama_dart_batch_ext_init'] = init.nativeFunction;
+      final process =
+          NativeCallable<
+            Int32 Function(
+              Pointer<llama_context>,
+              Int32,
+              Pointer<llama_batch_ext>,
+            )
+          >.isolateLocal((
+            Pointer<llama_context> arg0,
+            int arg1,
+            Pointer<llama_batch_ext> arg2,
+          ) {
+            seen.add('llama_dart_process');
+            expect(arg0.address, 100);
+            expect(arg1, 9);
+            expect(arg2.address, 100);
+            return 7;
+          }, exceptionalReturn: 0);
+      addTearDown(process.close);
+      symbols['llama_dart_process'] = process.nativeFunction;
+      final api = LlamaCppMixedBatchApi.tryResolve(
+        symbol: (name) => symbols[name]!,
+      )!;
+      api.setOutput(Pointer.fromAddress(100), true);
+      expect(api.setOutputRow(Pointer.fromAddress(100), 9, true), true);
+      expect(api.addToken(Pointer.fromAddress(100), 9, 9), 7);
+      expect(api.addEmbedding(Pointer.fromAddress(100), 9, embd.ref), 7);
+      expect(
+        api.setPosition(Pointer.fromAddress(100), 9, Pointer.fromAddress(100)),
+        true,
+      );
+      api.free(Pointer.fromAddress(100));
+      expect(api.projectorUsesMrope(Pointer.fromAddress(100)), true);
+      expect(api.audioSampleRate(Pointer.fromAddress(100)), 7);
+      expect(api.mediaOutput(Pointer.fromAddress(100)).address, 303);
+      expect(api.tokenCount(Pointer.fromAddress(100)), 7);
+      expect(api.chunksSize(Pointer.fromAddress(100)), 7);
+      expect(api.chunksGet(Pointer.fromAddress(100), 9).address, 303);
+      expect(api.chunkType(Pointer.fromAddress(100)), 7);
+      expect(api.chunkTokenCount(Pointer.fromAddress(100)), 7);
+      expect(
+        api
+            .chunkTokens(Pointer.fromAddress(100), Pointer.fromAddress(100))
+            .address,
+        303,
+      );
+      expect(api.bitmapIsAudio(Pointer.fromAddress(100)), true);
+      expect(api.init(Pointer.fromAddress(100)).address, 303);
+      expect(
+        api.process(Pointer.fromAddress(100), 9, Pointer.fromAddress(100)),
+        7,
+      );
+      expect(seen, symbols.keys.toList());
+      final calls = LlamaCppObjectCalls.resolve(
+        isWindows: Platform.isWindows,
+        mixedBatchResolver: () => api,
+      );
+      expect(calls.mixedBatch, same(api));
+      expect(calls.embeddingMediaOutput(Pointer.fromAddress(100)).address, 303);
+    },
+  );
 
   test(
     'native text-only model preserves raw and normalized adjacent-text parity',

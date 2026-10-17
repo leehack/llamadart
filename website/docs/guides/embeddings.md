@@ -167,6 +167,11 @@ context/batch/micro-batch capacity before inference.
 
 ## EmbeddingGemma-2 on native
 
+Windows uses the complete native DLL bundle for media embeddings. Missing media
+symbols disable media with a typed unsupported error and leave text embeddings
+available. Windows model-backed media qualification remains pending; current
+local qualification covers macOS CPU/Metal.
+
 Native v0.7.0-1 loads the official EmbeddingGemma-2 BF16 GGUF through the existing
 `embed` and `embedBatch` APIs. Its projected text output has 768 components;
 its 512-wide hidden representation is not the returned vector size. The

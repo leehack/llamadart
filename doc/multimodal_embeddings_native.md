@@ -49,6 +49,15 @@ context state writes after that context becomes free-only.
 
 ## Local qualification
 
+Windows split bundles export guarded allocation/processing from `llamadart.dll`,
+extended-batch functions from `llama.dll`, and projector/chunk accessors from
+`mtmd.dll`. The service reuses its existing mtmd fallback library for the media
+probe and calls. Every used accessor is resolved before media is advertised;
+genuine absence retains typed unsupported behavior without restricting text.
+Windows export routing has host-independent unit coverage and is checked against
+the published v0.7.0-1 windows-arm64 export tables. Windows model execution
+remains unqualified.
+
 No test downloads weights or SDK artifacts. The local-only
 `native-multimodal-embeddings` scenario requires:
 

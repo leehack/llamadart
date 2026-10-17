@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix native image/audio embedding capability detection and execution on Windows split-library bundles.
 - Embed ordered images, audio and text with native llama.cpp embedding models and compatible projectors, preserving text-only embedding compatibility.
 - Update the native llama.cpp runtime to v0.7.0-1.
 - **Behavior change:** Run decision heads on CPU when native llama.cpp single-device placement selects no GPU.

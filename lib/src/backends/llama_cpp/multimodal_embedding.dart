@@ -111,7 +111,7 @@ extension NativeContentEmbeddings on LlamaCppService {
         } else {
           final item = _prepareEmbedding(input, projector!, vocab);
           prepared.add(item);
-          final count = mtmd_helper_get_n_tokens(item.chunks);
+          final count = _calls.mixedBatch!.tokenCount(item.chunks);
           final limits = _calls.embeddingContextInfo(context.pointer);
           final capacity = limits.capacity;
           if (count <= 0 || count > capacity || limits.sequences < 1) {
@@ -280,7 +280,8 @@ extension NativeContentEmbeddings on LlamaCppService {
       );
       throw LlamaInferenceException('Cannot decode embedding media');
     }
-    if (mtmd_bitmap_is_audio(bitmap) != (part is LlamaAudioContent)) {
+    if (_calls.mixedBatch!.bitmapIsAudio(bitmap) !=
+        (part is LlamaAudioContent)) {
       (_embeddingBitmapFree ?? _mtmdBitmapFree)(bitmap);
       throw LlamaUnsupportedException(
         'Embedding media encoding does not match its declared modality.',
@@ -311,17 +312,17 @@ extension NativeContentEmbeddings on LlamaCppService {
         final position = arena<llama_pos>();
         final embd = arena<llama_embd>();
         var row = 0;
-        for (var c = 0; c < mtmd_input_chunks_size(input.chunks); c++) {
+        for (var c = 0; c < _calls.mixedBatch!.chunksSize(input.chunks); c++) {
           checkCancelled();
-          final chunk = mtmd_input_chunks_get(input.chunks, c);
+          final chunk = _calls.mixedBatch!.chunksGet(input.chunks, c);
           final isText =
-              mtmd_input_chunk_get_type(chunk) ==
-              mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT;
-          countPtr.value = mtmd_input_chunk_get_n_tokens(chunk);
+              _calls.mixedBatch!.chunkType(chunk) ==
+              mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT.value;
+          countPtr.value = _calls.mixedBatch!.chunkTokenCount(chunk);
           Pointer<llama_token> tokens = nullptr;
           Pointer<Float> media = nullptr;
           if (isText) {
-            tokens = mtmd_input_chunk_get_tokens_text(chunk, countPtr);
+            tokens = _calls.mixedBatch!.chunkTokens(chunk, countPtr);
           } else {
             _calls.encodeEmbeddingChunk(projector, chunk);
             checkCancelled();
@@ -336,17 +337,17 @@ extension NativeContentEmbeddings on LlamaCppService {
           for (var i = 0; i < countPtr.value; i++, row++) {
             final int index;
             if (isText) {
-              index = llama_batch_ext_add_token(batch, 0, tokens[i]);
+              index = _calls.mixedBatch!.addToken(batch, 0, tokens[i]);
             } else {
               embd.ref
                 ..data = media + i * width
                 ..n_rows = 1
                 ..n_embd = width;
-              index = llama_batch_ext_add_embd(batch, 0, embd.ref);
+              index = _calls.mixedBatch!.addEmbedding(batch, 0, embd.ref);
             }
             position.value = row;
             if (index < 0 ||
-                !llama_batch_ext_set_pos(batch, index, position) ||
+                !_calls.mixedBatch!.setPosition(batch, index, position) ||
                 !_calls.mixedBatch!.setOutputRow(batch, index, true)) {
               throw LlamaInferenceException(
                 'Mixed embedding batch rejected a row',

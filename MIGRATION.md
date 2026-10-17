@@ -75,6 +75,9 @@ Text-only content follows `embed`, including causal unpooled models; media
 requirements do not restrict text. Older native overrides can retain text
 with media disabled; unsupported media errors name the v0.7.0-1 ABI.
 No task prefix is inserted. Await a cancelled embedding before reusing it.
+Windows resolves media functions across the complete native DLL bundle; missing
+media symbols disable media without restricting text. Model-backed Windows
+qualification remains pending.
 
 `ModelParams.liteRtLmEmbeddingEngine` defaults to false for conversation loading.
 Set true and `device: ComputeDevice.cpu` for native LiteRT-LM embeddings. This intentionally
