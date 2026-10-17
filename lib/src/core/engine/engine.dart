@@ -3383,8 +3383,9 @@ class LlamaEngine {
   ///
   /// Returns null after a generation that ended before reaching the backend,
   /// such as one cancelled right after it was listened to, instead of the
-  /// counters of the request before it. Counters return once a generation,
-  /// embedding, next-token scoring or text-to-speech call runs on the context.
+  /// counters of the request before it. Counter availability after subsequent
+  /// backend work depends on the backend: on llama.cpp, only a new generation
+  /// restores counters; embedding, next-token scoring and text-to-speech do not.
   /// A generation that ends that way while another request is running on the
   /// context leaves that request's counters. Requests from an unloaded model
   /// cannot change a reloaded context's counter availability.
