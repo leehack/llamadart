@@ -197,6 +197,7 @@ void runLiteRtLmWorkerForTesting(
           case LiteRtLmGenerateRequest():
             try {
               if (generationCancelRequested) {
+                service.resetPerformanceMetrics();
                 message.sendPort.send(LiteRtLmDoneResponse());
                 return;
               }
@@ -231,6 +232,7 @@ void runLiteRtLmWorkerForTesting(
           case LiteRtLmGenerateChatRequest():
             try {
               if (generationCancelRequested) {
+                service.resetPerformanceMetrics();
                 message.sendPort.send(LiteRtLmDoneResponse());
                 return;
               }

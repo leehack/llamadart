@@ -14,8 +14,10 @@ core/companion minor versions.
 ## Unreleased: native performance counters
 
 Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
-llama.cpp. Failed llama.cpp dispatches also return `null` until the next
-dispatch. Requests finishing after reload no longer affect the new context's
+llama.cpp, including requests already sent to the worker that never run.
+LiteRT-LM validation failures, llama.cpp option-validation failures before
+the counter reset, and failed dispatches also return `null` until another
+generation starts. Requests finishing after reload no longer affect the new context's
 counter availability, even if its handle is reused. No API migration is needed;
 continue handling unavailable diagnostics.
 

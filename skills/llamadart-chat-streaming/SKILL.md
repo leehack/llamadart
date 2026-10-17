@@ -46,8 +46,10 @@ description: >-
   backend. Keep a `StreamSubscription` in UI code so a Stop button can cancel
   it.
 - Native llama.cpp and LiteRT-LM report `getPerformanceContext() == null`
-  after a queued generation is cancelled before dispatch, until a new
-  generation is sent. Failed llama.cpp dispatches also invalidate counters.
+  after a queued generation is cancelled before it runs, including a request
+  already sent to the LiteRT-LM worker. LiteRT-LM validation failures,
+  llama.cpp option-validation failures before its counter reset, and failed
+  dispatches also invalidate counters until another generation starts.
   Reloaded contexts keep their own counter availability. Treat null as
   unavailable diagnostics for the cancelled or unsent request.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to

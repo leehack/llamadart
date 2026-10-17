@@ -5631,6 +5631,92 @@ void main() {
     }
   });
 
+  for (final nativeChat in [false, true]) {
+    for (final failure in [
+      'handle',
+      'media',
+      'params',
+      'setup',
+      'initialize',
+    ]) {
+      test('admitted LiteRT request clears previous metrics '
+          '(chat: $nativeChat, exit: $failure)', () async {
+        final firstClient = _FakeLiteRtLmRuntimeClient();
+        final nextClient = _FakeLiteRtLmRuntimeClient(blockInitialize: true);
+        var clients = 0;
+        final service = LiteRtLmService(
+          clientFactory: () => clients++ == 0 ? firstClient : nextClient,
+        );
+        addTearDown(service.dispose);
+        final model = await service.loadModel(
+          modelFile.path,
+          const ModelParams(),
+        );
+        final context = service.createContext(model, const ModelParams());
+        final first = service
+            .generate(context, 'first', const GenerationParams())
+            .drain<void>();
+        await firstClient.generateStarted.future;
+        await firstClient.generated.close();
+        await first;
+        expect(service.getPerformanceContext(context), isNotNull);
+        if (failure == 'setup') {
+          firstClient.onCreateConversation = service.cancelGeneration;
+        }
+        final params = failure == 'params'
+            ? const GenerationParams(grammar: 'invalid')
+            : GenerationParams(speculativeDecoding: failure == 'initialize');
+        final handle = failure == 'handle' ? -1 : context;
+        final stream = nativeChat
+            ? service.generateChat(
+                handle,
+                failure == 'media'
+                    ? [
+                        LlamaChatMessage.withContent(
+                          role: LlamaChatRole.user,
+                          content: [LlamaVideoContent(bytes: Uint8List(1))],
+                        ),
+                      ]
+                    : [
+                        LlamaChatMessage.fromText(
+                          role: LlamaChatRole.user,
+                          text: 'next',
+                        ),
+                      ],
+                params,
+              )
+            : service.generate(
+                handle,
+                'next',
+                params,
+                parts: failure == 'media'
+                    ? [LlamaImageContent(bytes: Uint8List(1))]
+                    : null,
+              );
+        final done =
+            failure == 'handle' || failure == 'media' || failure == 'params'
+            ? expectLater(
+                stream,
+                emitsError(
+                  failure == 'handle'
+                      ? isA<StateError>()
+                      : isA<UnsupportedError>(),
+                ),
+              )
+            : expectLater(stream, emitsDone);
+        if (failure == 'initialize') {
+          await nextClient.initializeStarted.future;
+          service.cancelGeneration();
+          nextClient.completeInitialize();
+        }
+        await done;
+        expect(service.getPerformanceContext(context), isNull);
+        expect(firstClient.generateCount, 1);
+        expect(nextClient.generateCount, 0);
+      });
+    }
+  }
+
   test('stores LiteRT-LM runtime metrics as performance context', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient()
       ..metrics = const LiteRtLmRuntimeMetrics(
