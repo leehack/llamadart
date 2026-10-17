@@ -603,13 +603,9 @@ final class LlamaCppObjectCalls {
         freeOnly: [context],
       );
       if (status ==
-              llama_dart_process_status
-                  .LLAMA_DART_PROCESS_STATUS_UNSUPPORTED
-                  .value ||
-          status ==
-              llama_dart_process_status
-                  .LLAMA_DART_PROCESS_STATUS_UNSUPPORTED_TYPE
-                  .value) {
+          llama_dart_process_status
+              .LLAMA_DART_PROCESS_STATUS_UNSUPPORTED
+              .value) {
         throw LlamaUnsupportedException(
           'Native mixed embedding DECODE requires v0.7.0-1.',
         );

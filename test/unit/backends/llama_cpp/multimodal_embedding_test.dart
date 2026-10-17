@@ -289,7 +289,7 @@ void main() {
   );
 
   test(
-    'rank classifiers and unpooled causal decoders do not claim text embedding support',
+    'causal unpooled content preserves string acceptance and rank stays unsupported',
     () {
       final dir = Directory.systemTemp.createTempSync(
         'native_embedding_probe_',
@@ -313,7 +313,27 @@ void main() {
         final model = service.loadModel(path, params);
         final context = service.createContext(model, params);
         final caps = service.getEmbeddingCapabilities(context);
-        expect([caps.text, caps.image, caps.audio], [false, false, false]);
+        expect(
+          [caps.text, caps.image, caps.audio],
+          [pooling == 0, false, false],
+        );
+        if (pooling == 0) {
+          for (final normalize in [false, true]) {
+            expect(
+              service.embedContentBatch(context, [
+                LlamaEmbeddingInput([const LlamaTextContent('a b')]),
+              ], normalize: normalize).single,
+              orderedEquals(
+                service.embed(context, 'a b', normalize: normalize),
+              ),
+            );
+          }
+        } else {
+          expect(
+            () => service.embed(context, 'a'),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        }
         service.freeContext(context);
         service.freeModel(model);
       }
@@ -353,13 +373,18 @@ void main() {
       expect(calls.createEmbeddingBatch(context), batch);
       calls.processEmbeddingBatch(context, batch);
       expect(seen, [context, 1, batch]);
-      for (final status in [-1, -4]) {
+      for (final status in [-4]) {
         result = status;
         expect(
           () => calls.processEmbeddingBatch(context, batch),
           throwsA(isA<LlamaUnsupportedException>()),
         );
       }
+      result = -1;
+      expect(
+        () => calls.processEmbeddingBatch(context, batch),
+        throwsA(isA<LlamaInferenceException>()),
+      );
       result = 2;
       expect(
         () => calls.processEmbeddingBatch(context, batch),

@@ -15,9 +15,7 @@ extension NativeContentEmbeddings on LlamaCppService {
     final modelInfo = _calls.embeddingModelInfo(model.pointer);
     final text =
         pooling != llama_pooling_type.LLAMA_POOLING_TYPE_RANK &&
-        !(modelInfo.encoder && modelInfo.decoder) &&
-        (pooling != llama_pooling_type.LLAMA_POOLING_TYPE_NONE ||
-            !_embeddingModelHasCausalAttention(modelHandle));
+        !(modelInfo.encoder && modelInfo.decoder);
     final projector = _mtmdContexts[_modelToMtmd[modelHandle]];
     if (!text ||
         projector == null ||
