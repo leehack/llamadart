@@ -6154,6 +6154,11 @@ external ffi.Pointer<llama_adapter_lora> llama_dart_adapter_lora_init(
   ffi.Pointer<ffi.Char> path_lora,
 );
 
+@ffi.Native<ffi.Pointer<llama_batch_ext> Function(ffi.Pointer<llama_context>)>()
+external ffi.Pointer<llama_batch_ext> llama_dart_batch_ext_init(
+  ffi.Pointer<llama_context> ctx,
+);
+
 @ffi.Native<ffi.Void Function()>()
 external void llama_dart_clear_last_error();
 
@@ -6640,6 +6645,19 @@ external bool llama_dart_ngram_process_batch(
 external ffi.Pointer<llama_dart_ngram> llama_dart_ngram_simple_init(
   int ngram_size,
   int draft_token_max,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_context>,
+    ffi.Int32,
+    ffi.Pointer<llama_batch_ext>,
+  )
+>()
+external int llama_dart_process(
+  ffi.Pointer<llama_context> ctx,
+  int type,
+  ffi.Pointer<llama_batch_ext> batch,
 );
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<llama_sampler>, llama_token)>()
@@ -11374,6 +11392,36 @@ enum llama_dart_exit_stage {
 final class llama_dart_mtp extends ffi.Opaque {}
 
 final class llama_dart_ngram extends ffi.Opaque {}
+
+enum llama_dart_process_status {
+  LLAMA_DART_PROCESS_STATUS_UNSUPPORTED_TYPE(-1),
+  LLAMA_DART_PROCESS_STATUS_UNSUPPORTED(-4);
+
+  final int value;
+  const llama_dart_process_status(this.value);
+
+  static llama_dart_process_status fromValue(int value) => switch (value) {
+    -1 => LLAMA_DART_PROCESS_STATUS_UNSUPPORTED_TYPE,
+    -4 => LLAMA_DART_PROCESS_STATUS_UNSUPPORTED,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_process_status: $value',
+    ),
+  };
+}
+
+enum llama_dart_process_type {
+  LLAMA_DART_PROCESS_TYPE_DECODE(1);
+
+  final int value;
+  const llama_dart_process_type(this.value);
+
+  static llama_dart_process_type fromValue(int value) => switch (value) {
+    1 => LLAMA_DART_PROCESS_TYPE_DECODE,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_process_type: $value',
+    ),
+  };
+}
 
 final class llama_dart_speculative extends ffi.Opaque {}
 

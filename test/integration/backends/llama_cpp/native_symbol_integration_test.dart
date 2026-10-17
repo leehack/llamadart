@@ -547,6 +547,61 @@ void main() {
       expect(params.offload_kqv, isTrue);
     });
 
+    test('v0.7.0-1 processing wrappers are declared and exported', () {
+      final source = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+      const symbols = ['llama_dart_process', 'llama_dart_batch_ext_init'];
+      for (final symbol in symbols) {
+        expect(
+          _declaresExternalFunction(source, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        wrapper,
+        isNotNull,
+        reason: 'Expected the llama.cpp wrapper library.',
+      );
+      // Resolved through the package first: a raw open of the wrapper cannot
+      // find its sibling DLLs on Windows until the runtime is loaded.
+      expect(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
+        isNotNull,
+      );
+      _expectDynamicLibraryExports(wrapper!, symbols);
+    });
+
+    test('processing wrapper enum wire values match the published header', () {
+      expect(llama_dart_process_type.LLAMA_DART_PROCESS_TYPE_DECODE.value, 1);
+      expect(
+        llama_dart_process_type.fromValue(1),
+        llama_dart_process_type.LLAMA_DART_PROCESS_TYPE_DECODE,
+      );
+      expect(() => llama_dart_process_type.fromValue(0), throwsArgumentError);
+      expect(
+        llama_dart_process_status
+            .LLAMA_DART_PROCESS_STATUS_UNSUPPORTED_TYPE
+            .value,
+        -1,
+      );
+      expect(
+        llama_dart_process_status.LLAMA_DART_PROCESS_STATUS_UNSUPPORTED.value,
+        -4,
+      );
+      expect(
+        llama_dart_process_status.fromValue(-1),
+        llama_dart_process_status.LLAMA_DART_PROCESS_STATUS_UNSUPPORTED_TYPE,
+      );
+      expect(
+        llama_dart_process_status.fromValue(-4),
+        llama_dart_process_status.LLAMA_DART_PROCESS_STATUS_UNSUPPORTED,
+      );
+      expect(() => llama_dart_process_status.fromValue(0), throwsArgumentError);
+    });
+
     test('v0.7.0 scheduler callbacks are declared and exported', () {
       final source = File(
         'lib/src/backends/llama_cpp/bindings.dart',
