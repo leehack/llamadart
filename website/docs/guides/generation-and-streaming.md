@@ -311,20 +311,51 @@ value is `null` counts as absent. Any other type or key, such as a misspelled
 `json_shema` or `schma`, throws `LlamaUnsupportedException` before generation
 on every backend.
 
-A raw `json_schema` is converted with the same JSON-schema-to-GBNF subset
-listed below. Keywords outside it, such as `format`, `minimum` or
-`uniqueItems`, are not enforced by the grammar; use `LlamaStructuredOutput`
-to have them rejected, or validate them after generation. A schema the
-converter cannot represent, such as an untyped `{'description': ...}`
-property, a non-local `$ref`, or one nested too deeply for the stack, throws
-`LlamaUnsupportedException` before generation. One holding a cycle or another
-non-JSON value that stops conversion throws `LlamaArgumentException`.
+Raw `json_schema` and typed helpers use the same validation before generation.
+Unsupported assertions throw `LlamaUnsupportedException` with a schema path.
+The unsupported keywords are `multipleOf`, `uniqueItems`, `contains`,
+`minContains`, `maxContains`, `minProperties`, `maxProperties`,
+`patternProperties`, `propertyNames`, `dependentRequired`, `dependentSchemas`,
+`dependencies`, `not`, `if`, `then`, `else`, `unevaluatedItems`,
+`unevaluatedProperties`, `additionalItems`, `$dynamicRef` and `$recursiveRef`.
+The trivial assertions `uniqueItems: false`, `minProperties: 0` and integer
+`multipleOf: 1` are accepted. Numeric bounds require explicit `type: integer`;
+supported formats are `uuid`, `uuid1`–`uuid5`, `date`, `time`, and `date-time`.
+UUID aliases enforce the same lexical shape as `uuid`, including uppercase hex,
+without checking the version nibble. Other formats fail explicitly.
 
-On grammar-capable backends, a tool or schema grammar that llama.cpp would
-refuse to load throws `LlamaUnsupportedException` before generation. A
-repetition upper bound above 2000, such as `maxLength: 3000`, is one llama.cpp
-replaces with an unbounded repetition; generation proceeds and a warning is
-logged.
+Validation also rejects assertion siblings shadowed by `$ref`, `anyOf`/`oneOf`,
+or `const`/`enum` (except compatible literal `type`); pattern or format plus
+length bounds; pattern plus format; and `prefixItems` plus `items`.
+`required` names declared properties only. Length/item bounds must be integers
+from 0 to 2000, inclusive. Both `prefixItems` and draft-07 `items: [...]` generate
+fixed tuples: compatible bounds are accepted (`minItems` ≤ tuple length,
+`maxItems` ≥ tuple length), while the grammar and typed parser require every item.
+Integer bounds round fractional endpoints as in llama.cpp v0.7.0, must fit the
+exact VM/Web range (absolute value at most 9007199254740991), and cannot have a
+weaker inclusive bound shadow a stronger exclusive bound. One-sided positive
+minima and negative maxima containing a nonfinal zero digit are rejected because
+upstream loses suffix padding (`minimum: 100` admits `10`). At 16 digits, only
+absolute endpoints matching `111111111111111[0-9]` are supported; others emit inverted
+repetition bounds. Two-sided bounds are unaffected. One-sided negative maxima,
+including Pydantic `NegativeInt`, reject leading-zero JSON integers; this corrects
+an upstream v0.7.0 grammar defect.
+
+`allOf` supports additive object-property merges and nonempty enum intersections,
+including local references. Object merges make all merged properties required
+in the grammar and emit a closed object, matching upstream. An explicit outer
+`type` must be `object`, or `string` for string enum intersections. Primitive
+intersections, nested/union components, duplicate merged property names,
+constrained additional properties (except a single closed object) and assertion
+siblings are rejected because
+upstream's merge does not enforce them.
+
+Schema JSON nesting is limited to 128 containers, including annotation values.
+Cycles and non-JSON values throw `LlamaArgumentException`; deep or malformed
+schemas, constraints in the wrong context, conflicting bounds and unresolved or
+external references throw `LlamaUnsupportedException`. References must target
+schema positions, never annotation/extension payloads. On grammar-capable
+backends a grammar llama.cpp would refuse to load also fails before generation.
 
 For live rendering, keep the stream returned by
 `engine.create(..., responseFormat: output.responseFormat)` and finalize it with
@@ -333,11 +364,23 @@ because partial stream chunks are often not valid JSON yet.
 
 Supported schema features match the built-in JSON-schema-to-GBNF subset:
 primitive types, objects with `properties`, `required`, and
-`additionalProperties`, arrays with `items` or fixed `prefixItems`,
-`enum`/`const`, local `$ref`, `anyOf`, `oneOf`, `allOf`, `minLength`,
-`maxLength`, `minItems`, and `maxItems`. Unsupported schemas fail before
-generation. Annotation metadata such as `title`, `description`, and `default`
-is preserved but not enforced as a decoding constraint. Backends without
+`additionalProperties`, arrays with `items` or fixed tuples,
+`enum`/`const`, local `$ref`, `anyOf`, `oneOf`, supported `allOf`, compiled
+`pattern`, integer bounds, the string formats above, `minLength`,
+`maxLength`, `minItems`, and `maxItems`. Arrays with bounds but no `items`
+accept any JSON element. Unsupported schemas fail before
+generation. Annotations (`discriminator`, content metadata, `example`/`examples`, `$anchor`,
+`$id`, `$schema`, `$comment`, `deprecated`, `readOnly`, `writeOnly`, `title`,
+`description`, `default`) and unknown vocabulary, including `x-*` extensions,
+are preserved and ignored as constraints. Only schema positions are traversed;
+unused `$defs`/`definitions` entries are ignored and validated only when referenced.
+Formats use the upstream lexical rules, including month/day ranges and a
+required timezone with optional three-digit fractional seconds; they do not
+check calendar validity. Nonempty untyped
+annotation-only schemas accept any JSON value; `{}` retains its object grammar.
+Patterns must be anchored `^...$` sequences of safe literals, positive character
+classes/ranges and groups, with group alternation and repetition counts up to
+1024; unsupported regex constructs are rejected. Backends without
 grammar constraints, including current LiteRT-LM native and web paths, still
 fail early for strict structured output.
 

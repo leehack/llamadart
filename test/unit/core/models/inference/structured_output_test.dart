@@ -147,7 +147,7 @@ void main() {
         schema: {
           'type': 'object',
           'properties': {
-            'age': {'type': 'integer', 'minimum': 0},
+            'age': {'type': 'number', 'minimum': 0},
           },
         },
       ),

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import '../exceptions.dart';
 import '../grammar/json_schema_converter.dart';
 import '../grammar/json_value_depth.dart';
+import '../grammar/response_schema_validation.dart';
 
 const _supportedTypes = "'text', 'json_object' or 'json_schema'";
 const _jsonSchemaKeys = {'schema', 'name', 'description', 'strict'};
@@ -95,27 +98,30 @@ Map<String, dynamic> _jsonSchemaSchema(Object? jsonSchema) {
 ///
 /// When conversion fails, throws [LlamaArgumentException] if [schema] holds a
 /// cycle or another value that is not JSON, and [LlamaUnsupportedException]
-/// otherwise, such as for an unresolvable `$ref`, an untyped property, or a
-/// schema nested too deeply for the stack.
-String responseFormatGrammar(Map<String, dynamic> schema) {
+/// otherwise, such as for an unresolvable `$ref`, an unsupported constraint, or a
+/// schema whose JSON nesting exceeds 128 levels.
+String responseFormatGrammar(
+  Map<String, dynamic> schema, {
+  String schemaName = 'responseFormat',
+}) {
   try {
-    return JsonSchemaConverter.convert(schema);
+    validateResponseSchema(schema);
+    return JsonSchemaConverter.convert(
+      jsonDecode(jsonEncode(schema)) as Map<String, dynamic>,
+    );
   } on LlamaException {
     rethrow;
   } catch (error) {
-    // Checked only after a failure: a non-JSON value in an annotation the
-    // converter never reads still converts, as it always has.
     if (jsonValueDepth(schema) == null) {
       throw LlamaArgumentException(
         'responseFormat.json_schema.schema must contain only JSON values: '
         'string keys, finite numbers and no cycles.',
       );
     }
-    // The converter reports unsupported shapes as StateError or TypeError, and
-    // its recursion overflows on deep schemas. A stack overflow can also
-    // surface as another error, such as a FormatException from RegExp.
+    // Reference chains can still exhaust converter recursion after the
+    // document nesting check. Keep converter failures in the typed hierarchy.
     throw LlamaUnsupportedException(
-      'Unsupported responseFormat JSON schema: $error',
+      'Unsupported $schemaName JSON schema at \$: $error',
     );
   }
 }

@@ -62,6 +62,72 @@ canonical override now throws `LlamaUnsupportedException` instead of appearing
 to honor it. Use native LiteRT-LM for this contract. Other Web template overrides
 and loads without an override retain their existing behavior.
 
+### Response schemas and tool-call nesting
+
+Raw `responseFormat` schemas and `LlamaStructuredOutput` now share validation.
+Unsupported assertions throw a path-bearing `LlamaUnsupportedException` before
+generation. The remaining unsupported assertions are:
+
+- `multipleOf`, `uniqueItems`, `contains`, `minContains`, `maxContains`,
+  `minProperties`, `maxProperties`, `patternProperties`, `propertyNames`,
+  `dependentRequired`, `dependentSchemas`, `dependencies`, `not`, `if`, `then`,
+  `else`, `unevaluatedItems`, `unevaluatedProperties`, `additionalItems`,
+  `$dynamicRef` and `$recursiveRef`, except the trivial assertions
+  `uniqueItems: false`, `minProperties: 0` and integer `multipleOf: 1`.
+- Numeric bounds on anything except explicit `type: integer`, unsupported
+  formats (anything except `uuid`, `uuid1`–`uuid5`, `date`, `time`, `date-time`), patterns outside
+  the compiled subset, and length/item bounds above 2000.
+- Assertions shadowed by `$ref`, `anyOf`/`oneOf`, or `const`/`enum` (compatible
+  literal `type` is allowed); pattern or format combined with length bounds;
+  pattern combined with format; and `prefixItems` combined with `items`.
+- `allOf` outside additive object-property merges and nonempty enum
+  intersections: primitive intersections, nested/union components, repeated
+  property names, constrained additional properties (except a single closed object) and shadowed
+  siblings.
+  Components may use local references; an explicit outer `type` must be
+  `object` for property merges or `string` for string enum intersections.
+- Unresolved/external references, references into annotation/extension payloads,
+  undeclared `required` properties, malformed schemas, conflicting bounds and
+  constraints in the wrong type context. Integer endpoints must fit the exact
+  VM/Web range (absolute value at most 9007199254740991); a weaker inclusive
+  bound cannot shadow a stronger exclusive bound. One-sided positive minima
+  and negative maxima containing a nonfinal zero digit are rejected because
+  upstream loses suffix padding (for example, `minimum: 100` admits `10`).
+  At 16 digits, only absolute endpoints matching `111111111111111[0-9]` are supported;
+  others emit inverted repetition bounds. Two-sided bounds are unaffected.
+
+Integer `minimum`, `maximum`, `exclusiveMinimum` and `exclusiveMaximum`
+(including Pydantic `ge=` and `NegativeInt`), the formats above and supported
+`allOf` forms now compile with llama.cpp v0.7.0 semantics. Format validation is
+lexical: dates use month/day ranges, and times require a timezone with optional
+three-digit fractional seconds. `uuid1`–`uuid5` use the same lexical UUID rule
+as `uuid`, including uppercase hex; they do not constrain the version nibble.
+One-sided negative maxima reject leading-zero JSON integers, correcting an
+upstream v0.7.0 grammar defect. Arrays with item bounds do not require `items`;
+their unconstrained elements may be any JSON value. Fixed tuples accept both `prefixItems` and
+draft-07 `items: [...]`, with compatible bounds (`minItems` no greater than the
+tuple length, `maxItems` no smaller). Their grammar still requires every tuple
+item. Typed final parsing checks the same tuples, formats and integer bounds.
+Object `allOf` merges make every merged property required in the grammar, as
+upstream does; they emit a closed object, matching upstream.
+
+Schemas must contain JSON values, nested at most 128 container levels, including
+annotations. Non-JSON values throw `LlamaArgumentException`. Annotations such as
+`discriminator`, `contentMediaType`, `contentEncoding`, `example`, `examples`,
+`$anchor`, `$id`, `$schema`, `$comment`, `deprecated`, `readOnly`, `writeOnly`,
+`title`, `description`, `default`, and unknown vocabulary (including `x-*`)
+remain accepted and ignored as constraints, just as upstream ignores them.
+Only schema-bearing positions are traversed for assertions and references.
+Unused `$defs`/`definitions` entries are ignored; referenced entries must pass
+the same validation as inline schemas.
+Nonempty annotation-only untyped schemas accept any JSON value, including in
+imported tool properties; `{}` keeps its existing object grammar. Imported tools
+keep their narrower subset and object root (see
+[tool input schemas](doc/tool_input_schemas.md)).
+
+Decoded tool-call arguments nested beyond 128 containers now fail with
+`LlamaInferenceException` on final and partial parsing instead of overflowing.
+
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 
 These fixes change previously broken paths; working requests are unchanged.

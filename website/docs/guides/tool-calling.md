@@ -241,6 +241,12 @@ References (local and remote), patterns, numeric bounds, `oneOf`/`allOf`, tuple
 arrays, container literals and unsupported constraint combinations throw
 `LlamaUnsupportedException`. Malformed schemas throw `LlamaArgumentException`.
 This API supports a bounded subset of JSON Schema.
+Nonempty annotation-only untyped property schemas accept any JSON value;
+annotations and unknown `x-*` metadata are preserved. For empty tool-property schemas, use an explicit `type`; response schemas
+keep their existing `{}` object grammar. Response schemas share the rejection of unsupported constraints
+and bounds above 2000, but support a wider subset (for example local references
+and compiled patterns). Decoded model tool arguments are limited to 128 container
+levels in final and partial parsing; deeper values throw `LlamaInferenceException`.
 
 `toJsonSchema()` and `toJson()` return the validated schema with object
 defaults made explicit: every object schema includes `properties` (empty when

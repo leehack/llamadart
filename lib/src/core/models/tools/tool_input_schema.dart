@@ -87,6 +87,21 @@ const _keywords = {
   r'$schema',
 };
 
+const _annotations = {
+  r'$comment',
+  r'$id',
+  'deprecated',
+  'readOnly',
+  'writeOnly',
+  'description',
+  'title',
+  'default',
+  'examples',
+  r'$schema',
+};
+bool _isAnnotation(String key) =>
+    _annotations.contains(key) || key.startsWith('x-');
+
 void _validate(
   Map<String, dynamic> schema,
   String path,
@@ -104,7 +119,9 @@ void _validate(
     );
   }
   for (final keyword in schema.keys) {
-    if (!_keywords.contains(keyword)) {
+    if (!_keywords.contains(keyword) &&
+        !keyword.startsWith('x-') &&
+        !_annotations.contains(keyword)) {
       throw LlamaUnsupportedException(
         'Tool input schema keyword "$keyword" at $path is not supported. References, numeric bounds, patterns and oneOf/allOf are not enabled by this API.',
       );
@@ -123,14 +140,16 @@ void _validate(
       );
     }
     if (schema.keys.any(
-      (key) => !{
-        'anyOf',
-        'description',
-        'title',
-        'default',
-        'examples',
-        r'$schema',
-      }.contains(key),
+      (key) =>
+          !{
+            'anyOf',
+            'description',
+            'title',
+            'default',
+            'examples',
+            r'$schema',
+          }.contains(key) &&
+          !_isAnnotation(key),
     )) {
       throw LlamaUnsupportedException(
         'anyOf constraint siblings at $path are not supported; put each complete alternative inside anyOf.',
@@ -159,6 +178,7 @@ void _validate(
           types.toSet().length != types.length)) {
     throw LlamaArgumentException('Invalid schema type at $path.');
   }
+  if (schema.isNotEmpty && schema.keys.every(_isAnnotation)) return;
   if (type == null &&
       !schema.containsKey('enum') &&
       !schema.containsKey('const')) {

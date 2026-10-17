@@ -428,6 +428,15 @@ the same libraries. Details and the pub workspace rules:
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |
 | Tune performance | [Performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning) |
 
+Raw `responseFormat` and `LlamaStructuredOutput` reject unsupported or shadowed
+schema assertions with a schema path before generation. Integer bounds,
+`uuid`/`uuid1`–`uuid5`, date/time formats, supported `allOf` merges and fixed tuples are supported;
+number bounds, other formats and length/item bounds above 2000 are rejected.
+Trivial `uniqueItems: false`, `minProperties: 0` and integer `multipleOf: 1`
+assertions are accepted. Array bounds work without `items`, and unused definitions,
+annotations and unknown vocabulary remain accepted. Nonempty annotation-only untyped schemas
+accept any JSON value. See [0.14 migration](MIGRATION.md) for the breaking changes.
+
 ## Examples
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
