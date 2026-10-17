@@ -13,7 +13,7 @@ writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
 The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
 show but plain `flutter build` and `flutter run` output does not.
 
-Pair companion `0.14.0` with core `0.14.0`, `0.13.0` with core `0.13.x`, and `0.0.3` with core `0.12.2`,
+Pair companion `0.14.0` with core `0.14.x`, `0.13.0` with core `0.13.x`, and `0.0.3` with core `0.12.2`,
 `0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`; older cores,
 including `0.9.x`, ignore it.
 
@@ -54,7 +54,7 @@ Source for this package lives in
 
 Keep Runner's deployment target at macOS 14.0 or newer. If SwiftPM reports
 that `FlutterGeneratedPluginSwiftPackage` supports only 12.0, follow the
-[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap)
 before the first build. It updates only the ignored generated manifest and
 builds with `--no-pub`; keep this package's platform requirements, native
 URLs and checksums intact.

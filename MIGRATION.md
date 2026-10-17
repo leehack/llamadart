@@ -2,41 +2,15 @@
 
 This document covers the major breaking upgrade paths.
 
-## Unreleased: user messages after tool results
+<a id="013x---0140-llamacpp-v070-abi-qwen3-overrides-and-load-callbacks"></a>
 
-Gemma 2/3/3n and legacy Mistral templates now accept a user message immediately
-following tool results. If rendering fails because the template rejects the
-`tool` role, the retry appends that user message to the converted result turn
-with a newline. Previously this history threw `LlamaInferenceException` for
-consecutive user turns. Stored history and requests that render successfully
-on the first attempt are unchanged. This extends llama.cpp's former tool-result
-polyfill; upstream `b10549` rejects the original history.
+## `0.13.x` -> `0.14.0`: upgrade guide
 
-## `0.13.x` -> `0.14.0`: llama.cpp v0.7.0 ABI, Qwen3 overrides and load callbacks
-
-Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
-loads and the legacy `LlamaEngine` URL-loading methods now declare
-`void Function(double progress)?` instead of `Function(double progress)?`.
-Existing `Function(double progress)?` overrides still compile; prefer the
-explicit `void` signature in custom backends and test fakes. Notifications
-deliver the same fractions; the return value is ignored and cannot cancel a
-load. Native llama.cpp's raw FFI
-`bool` progress callback is unchanged.
-
-```dart
-Future<int> modelLoadFromUrl(
-  String url,
-  ModelParams params, {
-  void Function(double progress)? onProgress,
-}) async {
-  // Delegate loading to your runtime, forwarding its progress notifications.
-  return runtime.load(url, onProgress: onProgress);
-}
-```
+### Upgrade core and Apple companions together
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
 If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
-[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap);
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap);
 keep Runner and the companion requirements at macOS 14.0 or newer.
 The llama.cpp companion now pins native `v0.7.0` and the LiteRT-LM companion
 pins `v0.18.0-2`; the image companion keeps its native pin. LiteRT-LM reduces
@@ -49,24 +23,14 @@ ABI-incompatible with these regenerated bindings. Remove an old native override
 or keep the app on the matching core `0.13.x` and companions. Apple builds reject
 old companion pins before emitting native assets.
 
-Cancelling a queued native llama.cpp generation before dispatch now makes
-`getPerformanceContext()` return `null` until another generation is dispatched.
-Handle unavailable diagnostics instead of reusing earlier request counters.
+### Breaking behavior change: response schemas and tool-call nesting
 
-For renamed legacy Qwen3 LiteRT-LM text bundles, replace copied Jinja with
-`ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` to keep native
-`enableThinking: false` routing stable across upgrades. The accessor always
-returns this package version's canonical template. Web
-`@litert-lm/core@0.18.0` cannot install a conversation template: loading this
-canonical override now throws `LlamaUnsupportedException` instead of appearing
-to honor it. Use native LiteRT-LM for this contract. Other Web template overrides
-and loads without an override retain their existing behavior.
-
-### Response schemas and tool-call nesting
+<a id="response-schemas-and-tool-call-nesting"></a>
 
 Raw `responseFormat` schemas and `LlamaStructuredOutput` now share validation.
-Unsupported assertions throw a path-bearing `LlamaUnsupportedException` before
-generation. The remaining unsupported assertions are:
+Unsupported or shadowed assertions that were silently unconstrained now throw a
+path-bearing `LlamaUnsupportedException` before generation. The remaining
+unsupported assertions are:
 
 - `multipleOf`, `uniqueItems`, `contains`, `minContains`, `maxContains`,
   `minProperties`, `maxProperties`, `patternProperties`, `propertyNames`,
@@ -127,6 +91,57 @@ keep their narrower subset and object root (see
 
 Decoded tool-call arguments nested beyond 128 containers now fail with
 `LlamaInferenceException` on final and partial parsing instead of overflowing.
+
+### Load progress callbacks
+
+Load progress callbacks in `LlamaBackend.modelLoadFromUrl`, format-routing
+loads and the legacy `LlamaEngine` URL-loading methods now declare
+`void Function(double progress)?` instead of `Function(double progress)?`.
+Existing `Function(double progress)?` overrides still compile; prefer the
+explicit `void` signature in custom backends and test fakes. Notifications
+deliver the same fractions; the return value is ignored and cannot cancel a
+load. Native llama.cpp's raw FFI
+`bool` progress callback is unchanged.
+
+```dart
+Future<int> modelLoadFromUrl(
+  String url,
+  ModelParams params, {
+  void Function(double progress)? onProgress,
+}) async {
+  // Delegate loading to your runtime, forwarding its progress notifications.
+  return runtime.load(url, onProgress: onProgress);
+}
+```
+
+### Qwen3 template overrides
+
+For renamed legacy Qwen3 LiteRT-LM text bundles, replace copied Jinja with
+`ModelParams(chatTemplate: liteRtLmQwen3ChatTemplate)` to keep native
+`enableThinking: false` routing stable across upgrades. The accessor always
+returns this package version's canonical template. Web
+`@litert-lm/core@0.18.0` cannot install a conversation template: loading this
+canonical override now throws `LlamaUnsupportedException` instead of appearing
+to honor it. Use native LiteRT-LM for this contract. Other Web template overrides
+and loads without an override retain their existing behavior.
+
+### Queued cancellation performance counters
+
+Cancelling a queued native llama.cpp generation before dispatch now makes
+`getPerformanceContext()` return `null` until another generation is dispatched.
+Handle unavailable diagnostics instead of reusing earlier request counters.
+
+### User messages after tool results
+
+<a id="unreleased-user-messages-after-tool-results"></a>
+
+Gemma 2/3/3n and legacy Mistral templates now accept a user message immediately
+following tool results. If rendering fails because the template rejects the
+`tool` role, the retry appends that user message to the converted result turn
+with a newline. Previously this history threw `LlamaInferenceException` for
+consecutive user turns. Stored history and requests that render successfully
+on the first attempt are unchanged. This extends llama.cpp's former tool-result
+polyfill; upstream `b10549` rejects the original history.
 
 ## `0.13.1` -> `0.13.2`: template failures, cancellation and schema bounds
 

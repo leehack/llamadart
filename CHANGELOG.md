@@ -1,33 +1,34 @@
-## Unreleased
+## 0.14.0
 
-- **Behavior change:** Validate response-schema assertions, support UUID aliases, valid bounded integers and `allOf`, preserve tuples and unused definitions, and bound tool-call nesting.
+- **ABI break:** Update the native llama.cpp runtime to v0.7.0 with matching
+  bindings and Apple companions; v0.6.0 and older native overrides are
+  incompatible, and old companion pins are rejected. Upgrade core and all
+  companions together.
 - Update the LiteRT-LM native runtime to v0.18.0-2, which reduces duplicated
   words at untimed ASR window boundaries with the default overlap; other boundary
   and recognition errors can remain.
-- Load progress callbacks now declare `void Function(double progress)?`; existing overrides still compile.
-
-- Hide stale performance counters after cancelling a queued llama.cpp generation.
-
-- Free multimodal input buffers when native media initialization fails.
-- Render user follow-ups after tool results on Gemma 2/3/3n and legacy Mistral templates.
-- Cover strict schema validation of interrupted Hermes tool calls on cancellation.
-- Make template parity checks build their upstream test binaries before use.
-- Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
-  native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
-- Document a fresh macOS SwiftPM bootstrap for generated deployment-target
-  mismatches with Apple companions.
-
-## 0.14.0
-
-- Update the native llama.cpp runtime to v0.7.0 with matching bindings and Apple
-  companion packages.
-- Qualify native EmbeddingGemma-2 text embeddings with 768-dimensional output.
-
 * Aligned the default WebGPU bridge assets to `v0.1.63`, embedding llama.cpp
   `v0.7.0` and qualified against native `v0.7.0`, preserving Web/native
   `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` parity. Web LiteRT-LM
   remains `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
   `65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`.
+- **Behavior change:** Raw `responseFormat` schemas with unsupported or shadowed
+  assertions now throw `LlamaUnsupportedException` with a path before generation
+  instead of being silently unconstrained; supported formats, bounds, `allOf`
+  and tuples are now enforced.
+- Bound tool-call argument nesting to report an inference error instead of
+  overflowing the stack.
+- Load progress callbacks now declare `void Function(double progress)?`;
+  existing `Function(double progress)?` overrides still compile; prefer `void`.
+- Hide stale performance counters after cancelling a queued llama.cpp generation.
+- Free multimodal input buffers when native media initialization fails.
+- Render user follow-ups after tool results on Gemma 2/3/3n and legacy Mistral
+  templates.
+- Expose `liteRtLmQwen3ChatTemplate` for stable thinking control on renamed
+  native LiteRT-LM Qwen3 bundles; reject unsupported Web overrides explicitly.
+- Qualify native EmbeddingGemma-2 text embeddings with 768-dimensional output.
+- Document a fresh macOS SwiftPM bootstrap for generated deployment-target
+  mismatches with Apple companions.
 
 ## 0.13.2
 

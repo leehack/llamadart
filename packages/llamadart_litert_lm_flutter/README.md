@@ -39,7 +39,7 @@ This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.0-2`.
-Pair companion `0.14.0` with core `0.14.0`, `0.13.0` with core `0.13.x`, and `0.0.16` with core `0.12.2`;
+Pair companion `0.14.0` with core `0.14.x`, `0.13.0` with core `0.13.x`, and `0.0.16` with core `0.12.2`;
 companion `0.0.15` retains
 `v0.18.0` for core `0.12.1`, `0.0.14` pairs with core `0.12.0`, and `0.0.13`
 retains `v0.17.0-8` for core `0.11.1` and `0.11.0`.
@@ -82,7 +82,7 @@ Source for this package lives in
 
 Keep Runner's deployment target at macOS 14.0 or newer. If SwiftPM reports
 that `FlutterGeneratedPluginSwiftPackage` supports only 12.0, follow the
-[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap)
 before the first build. It updates only the ignored generated manifest and
 builds with `--no-pub`; keep this package's platform requirements, native
 URLs and checksums intact.

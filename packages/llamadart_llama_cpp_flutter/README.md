@@ -44,7 +44,7 @@ Source for this package lives in
 
 Keep Runner's deployment target at macOS 14.0 or newer. If SwiftPM reports
 that `FlutterGeneratedPluginSwiftPackage` supports only 12.0, follow the
-[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/next/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap)
 before the first build. It updates only the ignored generated manifest and
 builds with `--no-pub`; keep this package's platform requirements, native
 URLs and checksums intact.
