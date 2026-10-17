@@ -2118,8 +2118,7 @@ class LlamaCppService {
     _modelBackendNames[handle] = resolvedBackend;
     _modelResolvedGpuLayers[handle] = gpuLayers;
     _modelLoadParams[handle] = modelParams;
-    _activeBackendName = resolvedBackend;
-    _activeResolvedGpuLayers = gpuLayers;
+    _activateModelReport(handle);
     if (vulkan.unsupported case final unsupported?) {
       LlamaLogger.instance.warning(
         vulkan.refused
@@ -2141,13 +2140,27 @@ class LlamaCppService {
     }
     final simulatorWarning = iosSimulatorMetalWarning(
       isIosSimulator: _isIosSimulator,
-      resolvedGpuLayers: gpuLayers,
+      resolvedGpuLayers: _activeResolvedGpuLayers,
     );
     if (simulatorWarning != null) {
       LlamaLogger.instance.warning(simulatorWarning);
     }
 
     return handle;
+  }
+
+  void _activateModelReport(int handle) {
+    final params = _modelLoadParams[handle]!;
+    final noGpu = selectsNoGpuDevice(
+      splitMode: params.splitMode.llamaCppValue,
+      mainGpu: params.mainGpu,
+    );
+    // Execution metadata also drives independent auxiliary GPU selection;
+    // correcting model diagnostics must not change those existing policies.
+    _activeBackendName = noGpu
+        ? _backendDisplayName('cpu')
+        : _modelBackendNames[handle]!;
+    _activeResolvedGpuLayers = noGpu ? 0 : _modelResolvedGpuLayers[handle]!;
   }
 
   /// What a load on [backend] with [gpuLayers] layers does about Vulkan
@@ -4145,8 +4158,7 @@ class LlamaCppService {
       _activeBackendName = _backendDisplayName('cpu');
       _activeResolvedGpuLayers = 0;
     } else {
-      _activeBackendName = _modelBackendNames.values.last;
-      _activeResolvedGpuLayers = _modelResolvedGpuLayers.values.last;
+      _activateModelReport(_modelBackendNames.keys.last);
     }
   }
 

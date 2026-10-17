@@ -3024,6 +3024,40 @@ void main() {
 
       tearDown(() => tempDir.deleteSync(recursive: true));
 
+      test('negative single-device placement changes only reporting', () {
+        final service = LlamaCppService();
+        addTearDown(service.dispose);
+        final handle = service.loadModel(
+          modelPath,
+          const ModelParams(splitMode: ModelSplitMode.none, mainGpu: -1),
+        );
+
+        expect(service.getActiveBackendName(), 'CPU');
+        expect(service.getResolvedGpuLayers(), 0);
+        expect(
+          _readPrivateForTesting<Map>(
+            service,
+            '_modelResolvedGpuLayers',
+          )[handle],
+          ModelParams.maxGpuLayers,
+        );
+      });
+
+      test('freeing a model restores the remaining model placement report', () {
+        final service = LlamaCppService();
+        addTearDown(service.dispose);
+        service.loadModel(
+          modelPath,
+          const ModelParams(splitMode: ModelSplitMode.none, mainGpu: -1),
+        );
+        final other = service.loadModel(modelPath, const ModelParams());
+        expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+
+        service.freeModel(other);
+        expect(service.getActiveBackendName(), 'CPU');
+        expect(service.getResolvedGpuLayers(), 0);
+      });
+
       test('cpu on the CPU with 0 GPU layers, whatever gpuLayers says', () {
         final service = LlamaCppService();
         addTearDown(service.dispose);
