@@ -6,6 +6,8 @@ import 'package:llamadart/src/backends/backend.dart' as backend_spi;
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
+import '../../../support/embedding_contract.dart';
+
 import 'engine_test.dart';
 
 class ContentBackend extends MockLlamaBackend
@@ -19,6 +21,7 @@ class ContentBackend extends MockLlamaBackend
   bool? normalized;
   Object? failure;
   Object? computeFailure;
+  List<List<double>>? outputOverride;
   Completer<void>? probeGate;
   Completer<void>? gate;
   int probes = 0;
@@ -44,9 +47,10 @@ class ContentBackend extends MockLlamaBackend
     normalized = normalize;
     await gate?.future;
     if (failure != null) throw failure!;
-    return [
-      for (final input in inputs) [input.parts.length.toDouble()],
-    ];
+    return outputOverride ??
+        [
+          for (final input in inputs) [input.parts.length.toDouble()],
+        ];
   }
 }
 
@@ -79,7 +83,80 @@ class MisreportedBackend extends MockLlamaBackend
   bool get supportsEmbeddings => true;
 }
 
+class RuntimeContentBackend extends ContentBackend
+    implements backend_spi.BackendRuntimeIdentity {
+  RuntimeContentBackend(this.runtime);
+
+  @override
+  final LlamaRuntime runtime;
+}
+
 void main() {
+  test(
+    'unidentified backend diagnostics use a stable unknown runtime',
+    () async {
+      final engine = LlamaEngine(MockLlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModel('fake.gguf');
+      await expectLater(
+        engine.embedContent(LlamaEmbeddingInput([const LlamaTextContent('x')])),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'runtime',
+            contains('(unknown)'),
+          ),
+        ),
+      );
+    },
+  );
+
+  for (final batched in [false, true]) {
+    test(
+      'adjacent-text contract helper covers legacy batch=$batched',
+      () async {
+        final engine = LlamaEngine(
+          batched ? MockBatchEmbeddingBackend() : MockEmbeddingBackend(),
+        );
+        addTearDown(engine.dispose);
+        await engine.loadModel('fake.gguf');
+        await expectAdjacentTextEmbeddingEquivalence(engine.embedContent);
+      },
+    );
+  }
+
+  for (final requested in [1, 2]) {
+    for (final returned in [0, 1, 3]) {
+      if (requested == returned) continue;
+      test('rejects $returned vectors for $requested content inputs', () async {
+        final backend = ContentBackend()
+          ..outputOverride = List.generate(returned, (_) => [1.0]);
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('fake.gguf');
+        final input = LlamaEmbeddingInput([const LlamaTextContent('private')]);
+        await expectLater(
+          requested == 1
+              ? engine.embedContent(input)
+              : engine.embedContentBatch([input, input]),
+          throwsA(
+            isA<LlamaInferenceException>()
+                .having(
+                  (e) => e.message,
+                  'count',
+                  contains('expected $requested'),
+                )
+                .having(
+                  (e) => e.message,
+                  'redaction',
+                  isNot(contains('private')),
+                ),
+          ),
+        );
+      });
+    }
+  }
+
   final mixed = LlamaEmbeddingInput([
     const LlamaTextContent('private text'),
     LlamaImageContent(bytes: Uint8List.fromList([42]), path: 'secret.png'),

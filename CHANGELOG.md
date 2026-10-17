@@ -1,7 +1,7 @@
 ## Unreleased
 
-- Add typed embedding content inputs and modality probes; packaged backends
-  continue to reject image/audio embeddings until runtime integration ships.
+- Add typed embedding inputs, modality probes and the LiteRT-LM-only
+  `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
 
 ## 0.14.0
 

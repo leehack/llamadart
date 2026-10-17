@@ -110,9 +110,10 @@ class ModelParams {
   /// without embedding-engine integration throws `LlamaUnsupportedException`
   /// for true instead of creating a conversation engine. This mode is never
   /// inferred from a filename.
-  /// GGUF embedding models use the existing per-call mode and do not need it.
+  /// LiteRT-LM-only: llama.cpp GGUF loaders reject true with
+  /// `LlamaUnsupportedException`; GGUF embeddings use the existing per-call mode.
   /// After loading, probe `LlamaEngine.embeddingCapabilities` for modalities.
-  final bool embeddingOnly;
+  final bool liteRtLmEmbeddingEngine;
 
   /// Context size (n_ctx) in tokens.
   final int contextSize;
@@ -476,7 +477,7 @@ class ModelParams {
   /// Creates configuration for the model. Use [validate] to check for
   /// llama.cpp-incompatible combinations before passing to a load call.
   const ModelParams({
-    this.embeddingOnly = false,
+    this.liteRtLmEmbeddingEngine = false,
     this.contextSize = 4096,
     this.device = ComputeDevice.auto,
     this.gpuLayers = maxGpuLayers,
@@ -656,7 +657,7 @@ class ModelParams {
   /// `clear*: true` flag. Without the sentinel, `null` would be
   /// indistinguishable from "argument omitted, keep current value".
   ModelParams copyWith({
-    bool? embeddingOnly,
+    bool? liteRtLmEmbeddingEngine,
     int? contextSize,
     ComputeDevice? device,
     int? gpuLayers,
@@ -707,7 +708,8 @@ class ModelParams {
     bool clearModelBytesHint = false,
   }) {
     return ModelParams(
-      embeddingOnly: embeddingOnly ?? this.embeddingOnly,
+      liteRtLmEmbeddingEngine:
+          liteRtLmEmbeddingEngine ?? this.liteRtLmEmbeddingEngine,
       contextSize: contextSize ?? this.contextSize,
       device: device ?? this.device,
       gpuLayers: gpuLayers ?? this.gpuLayers,

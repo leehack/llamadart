@@ -589,6 +589,22 @@ void main() {
       clearBridgeGlobals();
     });
 
+    test('rejects LiteRT-LM embedding mode before any bridge call', () async {
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(liteRtLmEmbeddingEngine: true),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'runtime',
+            contains('llama.cpp'),
+          ),
+        ),
+      );
+    });
+
     test('reports the llama.cpp runtime', () {
       expect(WebGpuLlamaBackend().runtime, LlamaRuntime.llamaCpp);
     });

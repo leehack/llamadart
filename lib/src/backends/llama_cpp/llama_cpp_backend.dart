@@ -439,6 +439,12 @@ class NativeLlamaBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
+    if (params.liteRtLmEmbeddingEngine) {
+      throw LlamaUnsupportedException(
+        'ModelParams.liteRtLmEmbeddingEngine is LiteRT-LM-only; '
+        'llama.cpp GGUF embeddings use the existing per-call mode.',
+      );
+    }
     await _ensureIsolate();
     final rp = _openResponsePort();
     _dispatchRequest(rp, ModelLoadRequest(path, params, rp.sendPort));

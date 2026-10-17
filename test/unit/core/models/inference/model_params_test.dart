@@ -10,12 +10,17 @@ void main() {
   test(
     'embedding-only loading is explicit and survives model parameter copies',
     () {
-      expect(const ModelParams().embeddingOnly, isFalse);
-      final params = const ModelParams(embeddingOnly: true);
-      expect(params.copyWith(contextSize: 256).embeddingOnly, isTrue);
-      expect(params.copyWith(embeddingOnly: false).embeddingOnly, isFalse);
+      expect(const ModelParams().liteRtLmEmbeddingEngine, isFalse);
+      final params = const ModelParams(liteRtLmEmbeddingEngine: true);
+      expect(params.copyWith(contextSize: 256).liteRtLmEmbeddingEngine, isTrue);
       expect(
-        const ModelParams().copyWith(embeddingOnly: true).embeddingOnly,
+        params.copyWith(liteRtLmEmbeddingEngine: false).liteRtLmEmbeddingEngine,
+        isFalse,
+      );
+      expect(
+        const ModelParams()
+            .copyWith(liteRtLmEmbeddingEngine: true)
+            .liteRtLmEmbeddingEngine,
         isTrue,
       );
     },

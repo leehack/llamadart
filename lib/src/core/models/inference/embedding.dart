@@ -2,6 +2,9 @@ import '../../exceptions.dart';
 import '../chat/content_part.dart';
 
 /// A modality accepted by the embedding input contract.
+///
+/// Later versions may add modalities, such as video. Switches over modalities
+/// need a default case for forward compatibility.
 enum LlamaEmbeddingModality {
   /// Plain text, without automatic task prefixes.
   text,

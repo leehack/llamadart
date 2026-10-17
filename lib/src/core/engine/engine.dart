@@ -2297,8 +2297,9 @@ class LlamaEngine {
   /// Embeds one ordered text/image/audio [input].
   ///
   /// Check [embeddingCapabilities] first. Unsupported modalities throw
-  /// [LlamaUnsupportedException] before inference. Text-only inputs on legacy
-  /// backends concatenate text parts verbatim, without separators or templates.
+  /// [LlamaUnsupportedException] before inference. Adjacent text parts form one
+  /// verbatim-concatenated text segment on every backend, without separators
+  /// or templates, including when interleaved with media.
   /// [normalize] has the same L2 semantics as [embed]. Video is unavailable.
   ///
   /// As with [embed], cancellation is requested through [cancelGeneration];
@@ -2314,7 +2315,8 @@ class LlamaEngine {
   /// All modality probes are checked before any batch inference. Empty batches
   /// return an empty list after checking engine readiness. Empty batches and
   /// modality-preflight failures do not refresh inference counters. Runtimes reject
-  /// oversized inputs rather than silently truncate them. See [embedContent].
+  /// oversized inputs rather than silently truncate them. A backend returning
+  /// the wrong vector count throws [LlamaInferenceException]. See [embedContent].
   Future<List<List<double>>> embedContentBatch(
     List<LlamaEmbeddingInput> inputs, {
     bool normalize = true,
@@ -2339,12 +2341,19 @@ class LlamaEngine {
   }) async {
     _ensureReady();
     try {
-      return await backend.embedContentWithFallback(
+      final vectors = await backend.embedContentWithFallback(
         _contextHandle!,
         inputs,
         normalize: normalize,
         onCompute: _contextCall,
       );
+      if (vectors.length != inputs.length) {
+        throw LlamaInferenceException(
+          'Content embeddings returned ${vectors.length} vectors; '
+          'expected ${inputs.length} (one per input).',
+        );
+      }
+      return vectors;
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Content embeddings', error);
     }

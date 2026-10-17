@@ -42,9 +42,10 @@ Future<void> main() async {
 `embed(String)` and `embedBatch(List<String>)` are unchanged. The additive
 `LlamaEmbeddingInput` accepts a nonempty ordered list of `LlamaTextContent`,
 `LlamaImageContent` and `LlamaAudioContent` parts. Use `embedContent(input)`
-or `embedContentBatch(inputs)` for one vector per input. Multiple text parts
-concatenate verbatim, without a separator or task prefix. An empty batch
-returns no vectors; an empty parts list throws `LlamaArgumentException`.
+or `embedContentBatch(inputs)` for one vector per input. Adjacent text parts
+form one verbatim-concatenated text segment on every backend, including within mixed inputs. LiteRT-LM adapters merge adjacent text
+before building runtime inputs; no separator or task prefix is added. An empty
+batch returns no vectors; an empty parts list throws `LlamaArgumentException`.
 
 ```dart
 Future<List<double>> embedContentExample(LlamaEngine engine) async {
@@ -67,7 +68,8 @@ support does not imply embedding support. Custom backends may implement the
 optional `BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart`
 and positively probe each loaded model/runtime modality.
 
-Video and chat-only parts throw `LlamaUnsupportedException`; a portable
+The modality enum may gain values such as video; include a default case in
+switches. Video and chat-only parts throw `LlamaUnsupportedException`; a portable
 video frame/timestamp sampling contract has not been defined. No media is
 silently flattened into text. Source/codec support is runtime-specific;
 embedding PCM uses mono 16 kHz Float32 samples. Keep media buffers unchanged
@@ -77,10 +79,11 @@ observers receive only ordered part kinds/counts, with no text, paths, URLs
 or media payloads; old string calls retain their existing text observations.
 
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
-`loadMultimodalProjector` loading path. `ModelParams(embeddingOnly: true)`
+`loadMultimodalProjector` loading path. `ModelParams(liteRtLmEmbeddingEngine: true)`
 reserves an explicit LiteRT-LM embedding-engine load; current native/Web
 LiteRT-LM adapters reject it with `LlamaUnsupportedException` before starting
-a conversation engine. The default false preserves existing loading. This
+a conversation engine. This flag is LiteRT-LM-only: llama.cpp GGUF loaders
+reject true; the default false preserves existing loading. This
 lane adds no runtime implementation or model qualification. Follow
 [the multimodal tracker](https://github.com/leehack/llamadart/issues/1072);
 [task-prefix and Matryoshka helpers](https://github.com/leehack/llamadart/issues/1126)

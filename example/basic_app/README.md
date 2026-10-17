@@ -97,7 +97,8 @@ Future<List<double>> embedOrderedText(LlamaEngine engine) async {
 
 Image/audio embeddings remain unsupported on all packaged backends; chat media
 support does not enable them. LiteRT-LM embedding-only loads are also explicitly
-unavailable until its separate embedding engine is integrated.
+unavailable until its separate embedding engine is integrated. The option
+`ModelParams.liteRtLmEmbeddingEngine` is LiteRT-LM-only; GGUF loaders reject true.
 
 By default, embedding CLIs use
 `ggml-org/embeddinggemma-300M-GGUF` (`embeddinggemma-300M-Q8_0.gguf`). Use

@@ -38,7 +38,7 @@ void main() {
       await expectLater(
         backend.modelLoad(
           'fake.litertlm',
-          const ModelParams(embeddingOnly: true),
+          const ModelParams(liteRtLmEmbeddingEngine: true),
         ),
         throwsA(
           isA<LlamaUnsupportedException>().having(

@@ -9,8 +9,10 @@ https://github.com/leehack/llamadart/issues/1126.
 `LlamaEmbeddingInput` holds a nonempty, ordered list of existing
 `LlamaTextContent`, `LlamaImageContent` and `LlamaAudioContent` parts.
 `LlamaEngine.embedContent` returns one vector; `embedContentBatch` returns
-one per input, in input order. Multiple text parts concatenate verbatim on
-legacy text backends. There is no chat template, instruction insertion,
+one per input, in input order. Adjacent text parts form one
+verbatim-concatenated text segment on every backend, including within mixed
+inputs. LiteRT-LM adapters merge adjacent text before building runtime inputs.
+There is no chat template, instruction insertion,
 implicit separator, truncation or frame sampling. `embed(String)` and
 `embedBatch(List<String>)` keep their existing contracts.
 
@@ -21,7 +23,8 @@ probe model support, required projector/processors and runtime symbols/features;
 vision/audio generation support alone is insufficient. Legacy backends keep
 their old text support test, including model-specific rejection at execution,
 and always report image/audio false. LiteRT-LM currently reports all false.
-The presence of the SPI never enables a modality by itself. No packaged
+The presence of the SPI never enables a modality by itself. Its probes for
+unknown or unloaded contexts return all-false without I/O. No packaged
 backend in this lane executes media embeddings.
 
 Every requested modality is checked across the entire batch before dispatch.
@@ -38,8 +41,9 @@ adapters must convert to a runtime's input representation or reject it explicitl
 Buffers must remain unchanged until the future settles; lists are snapshotted,
 media buffers are not copied.
 
-`LlamaVideoContent` and chat-only tool/thinking parts fail in the input
-constructor with `LlamaUnsupportedException`. Video is deliberately excluded:
+The public modality enum may gain values (for example video); callers should
+include a default case in switches. `LlamaVideoContent` and chat-only
+tool/thinking parts fail in the input constructor with `LlamaUnsupportedException`. Video is deliberately excluded:
 there is no portable frame/timestamp/audio-track sampling contract, even where
 a runtime accepts video. Treating it as an image would lose information.
 
@@ -51,11 +55,12 @@ supply its projector through the existing `LlamaModel.projector` source (or
 loading/unloading. No second projector parameter or alternate chat engine is
 introduced. B and D/E must use the context's existing projector handle.
 
-For LiteRT-LM, `ModelParams(embeddingOnly: true)` explicitly selects the
+For LiteRT-LM, `ModelParams(liteRtLmEmbeddingEngine: true)` explicitly selects the
 separate embedding engine. The default false continues conversation loading.
-The flag only selects an engine for `.litertlm`; GGUF keeps its existing
-per-call embedding mode. Current native/Web LiteRT-LM adapters reject true
-before creating a conversation engine. C replaces that rejection in its own
+The LiteRT-LM-only flag selects an engine for `.litertlm`; llama.cpp GGUF
+loaders reject true with `LlamaUnsupportedException` and keep their existing
+per-call embedding mode when false. Current native/Web LiteRT-LM adapters
+reject true before creating a conversation engine. C replaces that rejection in its own
 files with embedding-engine creation and a model/runtime capability probe;
 it must never fall back to conversation loading for an embedding request.
 An embedding engine must reject generation explicitly. C must route both
@@ -80,7 +85,7 @@ The issue's qualification comment pins llama.cpp to
 Native LiteRT-LM reference:
 https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h.
 Web LiteRT-LM contract must be qualified against `@litert-lm/core@0.18.0`.
-The current llama.cpp bridge pin is `v0.1.63`; media embeddings need a future
+The current bridge pin supports text embeddings; media embeddings need a future
 published bridge with an explicit embedding modality probe. Do not infer a
 minimum tag before that artifact exists.
 
@@ -139,9 +144,10 @@ With `normalize: true`, return an L2-normalized vector; false returns the raw
 pooled vector. Preserve model pooling semantics, reject rank-pooled classifiers
 and unsupported encoder-decoder configurations as existing string APIs do.
 Finite/zero-vector behavior must match qualified text runtime behavior.
-A future #1126 postprocessor can truncate the full raw vector before normalizing
-and add task prefixes to explicit text parts; this lane hardcodes neither
-output dimensions nor instructions and does not prefix media-only inputs.
+Task-prefix policy and output controls are deferred to
+https://github.com/leehack/llamadart/issues/1126, including media-only inputs.
+The native reference prefixes media-only documents. This lane applies no task
+prefixes and does not constrain the future policy or output dimensions.
 
 Missing model modality, projector/processor, runtime ABI, bridge feature, media
 source or option combination -> `LlamaUnsupportedException` naming the missing
@@ -178,6 +184,12 @@ qualify direct and worker paths, old bridges, copied/transferred buffers and
 projector unload/reload. Synthetic media establishes wiring, not retrieval
 quality. Record absent weights/hardware explicitly and leave those modalities
 unsupported until qualification is complete.
+
+`test/support/embedding_contract.dart` provides
+`expectAdjacentTextEmbeddingEquivalence` for later lanes: pass the qualified
+engine's `embedContent` method, optionally with media before/after the adjacent
+text, and use deterministic inference. It covers whitespace, empty and Unicode
+text parts against the same verbatim-concatenated segment.
 
 These are the disjoint implementation file sets after A. No lane needs to
 edit `lib/backend.dart`, `lib/llamadart.dart`, `lib/src/backends/backend.dart`,

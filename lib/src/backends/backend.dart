@@ -883,9 +883,10 @@ abstract class BackendEmbeddingsSupport {
 ///
 /// Implementations probe the loaded context explicitly. Merely implementing
 /// this interface does not imply media support.
-abstract interface class BackendMultimodalEmbeddings {
+abstract class BackendMultimodalEmbeddings {
   /// Probes model, projector/processors and runtime support for this context.
   ///
+  /// Unknown or unloaded contexts return all-false without I/O.
   /// Unknown or absent ABI/features must report false, or throw a typed
   /// unsupported exception. Generation's vision/audio flags are not evidence.
   Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
@@ -895,6 +896,9 @@ abstract interface class BackendMultimodalEmbeddings {
   /// Embeds ordered inputs, returning one vector per input in the same order.
   ///
   /// Preserve part order and media; never flatten a mixed request to text.
+  /// Adjacent text parts form one verbatim-concatenated text segment on every
+  /// backend, including within mixed inputs. LiteRT-LM adapters merge adjacent
+  /// text before building runtime inputs; no separators or templates are added.
   /// Validate the entire batch, including expanded media token limits, before
   /// inference. Empty batches return no vectors. With [normalize], L2-normalize
   /// each pooled output. Otherwise return the full raw pooled vector.
@@ -948,9 +952,13 @@ extension BackendEmbeddingDispatch on LlamaBackend {
     for (final input in inputs) {
       for (final kind in input.partKinds) {
         if (!capabilities.supports(kind)) {
+          final runtime = this is BackendRuntimeIdentity
+              ? (this as BackendRuntimeIdentity).runtime
+              : null;
           throw LlamaUnsupportedException(
             '${kind.name} embeddings are unavailable for the loaded model/runtime '
-            '($runtimeType); the embedding capability probe did not enable ${kind.name}.',
+            '(${runtime?.name ?? 'unknown'}); the embedding capability probe '
+            'did not enable ${kind.name}.',
           );
         }
       }
@@ -986,7 +994,7 @@ extension BackendEmbeddingDispatch on LlamaBackend {
         ];
       }
       throw LlamaUnsupportedException(
-        'Text embeddings are unavailable in this backend ($runtimeType).',
+        'Text embeddings are unavailable: the loaded backend has no embedding implementation.',
       );
     }
 

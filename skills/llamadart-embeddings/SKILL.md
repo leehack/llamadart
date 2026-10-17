@@ -21,11 +21,15 @@ description: >-
   after loading: packaged llama.cpp backends currently report text only and
   LiteRT-LM reports none. Every packaged backend rejects image/audio embeddings
   with `LlamaUnsupportedException`; do not advertise runtime media support.
-  Multiple text parts concatenate verbatim. Video and chat-only parts are
-  unsupported. Content observers retain only part kinds/counts.
-- `ModelParams(embeddingOnly: true)` is the explicit LiteRT-LM embedding-engine
-  loading contract, currently rejected before conversation loading. Keep the
-  default false for existing users; GGUF uses its existing per-call mode.
+  Adjacent text parts form one verbatim-concatenated text segment on every
+  backend, including within mixed inputs. LiteRT-LM adapters merge adjacent text
+  before building runtime inputs. Add no separators or task prefixes.
+  The modality enum may gain values; include a default in switches.
+  Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
+- `ModelParams(liteRtLmEmbeddingEngine: true)` is the explicit LiteRT-LM
+  embedding-engine loading contract, currently rejected before conversation loading. Keep the
+  default false for existing users; llama.cpp GGUF loaders reject true and use
+  their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example
   `hf://ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf`). No
   special `ModelParams` flag is needed: the engine switches the context into

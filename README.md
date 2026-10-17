@@ -86,7 +86,10 @@ For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Image/audio embeddings
 currently throw `LlamaUnsupportedException` on every packaged backend;
-llama.cpp text embeddings retain their existing behavior. See the
+llama.cpp text embeddings retain their existing behavior. Adjacent text parts
+concatenate verbatim on every backend. `ModelParams.liteRtLmEmbeddingEngine`
+is LiteRT-LM-only and currently rejected; GGUF loaders also reject true.
+See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
 
 Native llama.cpp rejects nonzero rollback capacity on recurrent or hybrid

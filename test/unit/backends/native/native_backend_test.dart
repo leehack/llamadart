@@ -41,6 +41,57 @@ import '../../core/engine/multimodal_embeddings_test.dart';
 
 void main() {
   test(
+    'unloaded context probes return all-false without creating a runtime',
+    () async {
+      final router = NativeAutoBackend(
+        llamaCppFactory: () =>
+            throw StateError('probe must not create a runtime'),
+        liteRtLmFactory: () =>
+            throw StateError('probe must not create a runtime'),
+      );
+      addTearDown(router.dispose);
+      final capabilities = await router.getEmbeddingCapabilities(-1);
+      expect(capabilities.text, isFalse);
+      expect(capabilities.image, isFalse);
+      expect(capabilities.audio, isFalse);
+    },
+  );
+
+  for (final runtime in LlamaRuntime.values) {
+    test(
+      'embedding diagnostic identifies $runtime through the router',
+      () async {
+        final delegate = RuntimeContentBackend(runtime)
+          ..supported = const LlamaEmbeddingCapabilities(text: true);
+        final router = NativeAutoBackend(llamaCppFactory: () => delegate);
+        final engine = LlamaEngine(router);
+        addTearDown(engine.dispose);
+        await engine.loadModel('fake.gguf');
+        await expectLater(
+          engine.embedContent(
+            LlamaEmbeddingInput([const LlamaImageContent(path: 'secret.png')]),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having((e) => e.message, 'runtime', contains(runtime.name))
+                .having((e) => e.message, 'modality', contains('image'))
+                .having(
+                  (e) => e.message,
+                  'condition',
+                  contains('capability probe'),
+                )
+                .having(
+                  (e) => e.message,
+                  'redaction',
+                  isNot(contains('secret')),
+                ),
+          ),
+        );
+      },
+    );
+  }
+
+  test(
     'all current native backends reject image and audio embeddings before inference',
     () async {
       for (final backend in <LlamaBackend>[

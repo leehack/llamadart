@@ -105,7 +105,7 @@ class LiteRtLmBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
-    if (params.embeddingOnly) {
+    if (params.liteRtLmEmbeddingEngine) {
       throw LlamaUnsupportedException(
         'LiteRT-LM embedding-only model loading is unavailable in this Dart '
         'adapter; the separate embedding engine integration is required.',
