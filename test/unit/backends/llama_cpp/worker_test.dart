@@ -738,6 +738,70 @@ void main() {
       }
     });
 
+    test(
+      'waits for original TTS after a second synthesis is rejected',
+      () async {
+        final service = _BlockingTtsHandleService();
+        final worker = await _startWorkerInCurrentIsolate(service);
+        final synthesisPort = ReceivePort();
+        final synthesisResult = synthesisPort.first;
+        final pending = <_PendingResponse>[];
+        try {
+          worker.sendPort.send(
+            TextToSpeechSynthesizeRequest(
+              2,
+              3,
+              const BackendTextToSpeechRequest(text: 'hello'),
+              0,
+              synthesisPort.sendPort,
+            ),
+          );
+          await service.synthesisStarted.future;
+          final rejected = await _sendRequest(
+            worker.sendPort,
+            (port) => TextToSpeechSynthesizeRequest(
+              2,
+              3,
+              const BackendTextToSpeechRequest(text: 'second'),
+              0,
+              port,
+            ),
+          );
+          expect(rejected, isA<ErrorResponse>());
+          expect((rejected as ErrorResponse).kind, WorkerErrorKind.state);
+          for (final build in <WorkerRequest Function(SendPort)>[
+            (port) => ModelFreeRequest(1, port),
+            (port) => ContextFreeRequest(2, port),
+            (port) => MultimodalContextFreeRequest(3, port),
+          ]) {
+            final response = _PendingResponse();
+            pending.add(response);
+            worker.sendPort.send(build(response.sendPort));
+          }
+          for (final response in pending) {
+            await response.expectNoResponse();
+          }
+          expect(service.frees, isEmpty);
+          service.releaseSynthesis();
+          for (final response in pending) {
+            expect(await response.nextResponse, isA<DoneResponse>());
+          }
+          expect(
+            service.frees,
+            unorderedEquals(['model', 'context', 'projector']),
+          );
+        } finally {
+          service.releaseSynthesis();
+          await synthesisResult;
+          synthesisPort.close();
+          for (final response in pending) {
+            response.close();
+          }
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
     test('waits for active generation before freeing native handles', () async {
       final service = _BlockingLlamaCppService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -1419,4 +1483,35 @@ class _ThrowingLoraService extends LlamaCppService {
 
   @override
   void dispose() {}
+}
+
+class _BlockingTtsHandleService extends _BlockingTextToSpeechService {
+  final List<String> frees = [];
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request,
+    int cancelFlagAddress, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
+    if (synthesisStarted.isCompleted) {
+      throw LlamaStateException('Text-to-speech synthesis is already active.');
+    }
+    return super.synthesizeTextToSpeech(
+      contextHandle,
+      mmContextHandle,
+      request,
+      cancelFlagAddress,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  void freeModel(int modelHandle) => frees.add('model');
+  @override
+  void freeContext(int contextHandle) => frees.add('context');
+  @override
+  void freeMultimodalContext(int mmContextHandle) => frees.add('projector');
 }

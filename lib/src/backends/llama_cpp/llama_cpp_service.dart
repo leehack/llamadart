@@ -2004,6 +2004,14 @@ class LlamaCppService {
     if (model != null) _ensureModelUsable(model);
   }
 
+  void _ensureNoActiveTts(int contextHandle, String operation) {
+    if (_activeTtsContextHandle == contextHandle) {
+      throw LlamaStateException(
+        'Cannot $operation while text-to-speech is active on this context.',
+      );
+    }
+  }
+
   /// Loads a model from the specified [modelPath].
   ///
   /// Returns a handle to the loaded model.
@@ -4891,13 +4899,9 @@ class LlamaCppService {
   }) async* {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
+    _ensureNoActiveTts(contextHandle, 'generate text');
     ctx.performanceAvailable = false;
     _ensureContextUsable(contextHandle, ctx);
-    if (_activeTtsContextHandle == contextHandle) {
-      throw LlamaStateException(
-        'Cannot generate text while text-to-speech is active on this context.',
-      );
-    }
     _generatingContexts.update(
       contextHandle,
       (count) => count + 1,
@@ -5171,13 +5175,9 @@ class LlamaCppService {
   }) {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception('Invalid context handle');
+    _ensureNoActiveTts(contextHandle, 'score tokens');
     ctx.performanceAvailable = false;
     _ensureContextUsable(contextHandle, ctx);
-    if (_activeTtsContextHandle == contextHandle) {
-      throw LlamaStateException(
-        'Cannot score tokens while text-to-speech is active on this context.',
-      );
-    }
     if (_generatingContexts.containsKey(contextHandle)) {
       throw LlamaStateException(
         'Cannot score tokens while generation is active on context '
@@ -5329,6 +5329,7 @@ class LlamaCppService {
 
   /// Generates a single embedding vector for [text].
   List<double> embed(int contextHandle, String text, {bool normalize = true}) {
+    _ensureNoActiveTts(contextHandle, 'embed');
     _contexts[contextHandle]?.performanceAvailable = false;
     return _embed(
       contextHandle,
@@ -5472,6 +5473,7 @@ class LlamaCppService {
       return const <List<double>>[];
     }
 
+    _ensureNoActiveTts(contextHandle, 'embed');
     final ctx = _contexts[contextHandle];
     ctx?.performanceAvailable = false;
     if (ctx == null) {
@@ -7818,6 +7820,7 @@ class LlamaCppService {
     final ctx = _contexts[contextHandle];
     final modelHandle = _contextToModel[contextHandle];
     if (ctx == null || modelHandle == null) return;
+    _ensureNoActiveTts(contextHandle, 'change LoRA adapters');
     _ensureContextUsable(contextHandle, ctx);
 
     final modelAdapters = _loraAdapters[modelHandle];
@@ -9854,8 +9857,15 @@ class LlamaCppService {
     int cancelFlagAddress, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
-    final cancelFlag = Pointer<Int8>.fromAddress(cancelFlagAddress);
     final context = _contexts[contextHandle];
+    if (_activeTtsContextHandle != null) {
+      throw LlamaStateException('Text-to-speech synthesis is already active.');
+    }
+    if (_generatingContexts.containsKey(contextHandle)) {
+      throw LlamaStateException(
+        'Cannot start text-to-speech while generation is active.',
+      );
+    }
     context?.performanceAvailable = false;
     final mtmd = _mtmdContexts[mmContextHandle];
     if (context == null ||
@@ -9867,14 +9877,33 @@ class LlamaCppService {
     }
     _ensureContextUsable(contextHandle, context);
     _calls.failures.ensureUsable(mtmd, 'This multimodal projector');
-    if (_activeTts != nullptr) {
-      throw LlamaStateException('Text-to-speech synthesis is already active.');
-    }
-    if (_generatingContexts.containsKey(contextHandle)) {
-      throw LlamaStateException(
-        'Cannot start text-to-speech while generation is active.',
+    // Speaker-reference loading can yield before a native task exists.
+    _generatingContexts[contextHandle] = 1;
+    _activeTtsContextHandle = contextHandle;
+    try {
+      return await _synthesizeTextToSpeech(
+        contextHandle,
+        context,
+        mtmd,
+        request,
+        cancelFlagAddress,
+        onProgress: onProgress,
       );
+    } finally {
+      _activeTtsContextHandle = null;
+      _generatingContexts.remove(contextHandle);
     }
+  }
+
+  Future<BackendTextToSpeechResult> _synthesizeTextToSpeech(
+    int contextHandle,
+    _LlamaContextWrapper context,
+    Pointer<mtmd_context> mtmd,
+    BackendTextToSpeechRequest request,
+    int cancelFlagAddress, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    final cancelFlag = Pointer<Int8>.fromAddress(cancelFlagAddress);
     // A cancel for this synthesis is only sent after its synthesize request,
     // so anything latched here belongs to a run that already ended.
     _ttsCancelPending = false;
@@ -9923,8 +9952,6 @@ class LlamaCppService {
     var framesGenerated = 0;
     var truncated = false;
 
-    _generatingContexts[contextHandle] = 1;
-    _activeTtsContextHandle = contextHandle;
     llama_set_embeddings(context.pointer, true);
     try {
       // Yields so a cancel already queued for this synthesis can be processed
@@ -10092,8 +10119,6 @@ class LlamaCppService {
       }
       _activeTts = nullptr;
       _ttsCancelPending = false;
-      _activeTtsContextHandle = null;
-      _generatingContexts.remove(contextHandle);
       llama_set_embeddings(context.pointer, false);
       malloc.free(requestPointer);
       malloc.free(initStatus);

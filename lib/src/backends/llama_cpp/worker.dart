@@ -349,7 +349,12 @@ void runLlamaWorkerForTesting(
                 message.sendPort.send(_toErrorResponse(error));
               }
             }();
-            activeTextToSpeech = synthesisFuture;
+            // A rejected overlapping request must not hide the original task
+            // from disposal and handle-free waits.
+            activeTextToSpeech = Future.wait([
+              activeTextToSpeech,
+              synthesisFuture,
+            ]);
             await synthesisFuture;
 
           case GenerationCapabilitiesRequest():
@@ -522,6 +527,7 @@ void runLlamaWorkerForTesting(
 
           case MultimodalContextFreeRequest():
             await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
             service.freeMultimodalContext(message.mmContextHandle);
             message.sendPort.send(DoneResponse());
 
