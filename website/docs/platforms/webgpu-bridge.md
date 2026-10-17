@@ -16,6 +16,10 @@ load the app and still lack an adapter, device features, memory headroom or
 compatible bridge assets for a given model.
 :::
 
+Invalid WebGPU request arguments throw `LlamaArgumentException`; unsupported
+capabilities throw `LlamaUnsupportedException`. Genuine generation, embedding
+and scoring failures throw `LlamaInferenceException`.
+
 ## Requirements
 
 | Browser | Minimum | Notes |

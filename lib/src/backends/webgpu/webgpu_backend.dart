@@ -26,6 +26,7 @@ import '../model_params_loras.dart';
 import '../web/webgpu_adapter_probe.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
+import 'webgpu_errors.dart';
 import 'webgpu_load_retry_policy.dart';
 import 'webgpu_lora.dart';
 import 'webgpu_url.dart';
@@ -1835,6 +1836,15 @@ class WebGpuLlamaBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
+  }) => webGpuValidateArguments(
+    () => _generate(contextHandle, prompt, params, parts: parts),
+  );
+
+  Stream<List<int>> _generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
   }) {
     final capabilities = _completionCapabilities;
     if (params.presencePenalty != 0.0 && !capabilities.presencePenalty) {
@@ -2133,7 +2143,11 @@ class WebGpuLlamaBackend
             failed = true;
             controller.addError(
               speculative == null
-                  ? e
+                  ? webGpuBridgeRequestError(e) ??
+                        LlamaInferenceException(
+                          'WebGPU generation failed.',
+                          webGpuBridgeErrorText(e),
+                        )
                   : webGpuSpeculativeCompletionError(e, speculative.sourceUrls),
               st,
             );
@@ -2559,7 +2573,8 @@ class WebGpuLlamaBackend
     }
   }
 
-  static LlamaInferenceException _embeddingError(Object error) =>
+  static LlamaException _embeddingError(Object error) =>
+      webGpuBridgeRequestError(error) ??
       LlamaInferenceException(
         'The Web runtime could not compute embeddings.',
         webGpuBridgeErrorText(error),
@@ -2577,10 +2592,12 @@ class WebGpuLlamaBackend
     if (!supportsNextTokenScoring) {
       throw UnsupportedError(_nextTokenScoringUnsupportedMessage);
     }
-    for (final token in candidates) {
-      RangeError.checkValueInInterval(token, 0, _maxInt32, 'candidates');
-    }
-    RangeError.checkValueInInterval(topK, 0, _maxInt32, 'topK');
+    webGpuValidateArguments(() {
+      for (final token in candidates) {
+        RangeError.checkValueInInterval(token, 0, _maxInt32, 'candidates');
+      }
+      RangeError.checkValueInInterval(topK, 0, _maxInt32, 'topK');
+    });
     final JSAny? result;
     try {
       result = await _toFuture(
@@ -2594,9 +2611,11 @@ class WebGpuLlamaBackend
         ),
       );
     } catch (error) {
+      final classified = webGpuBridgeRequestError(error);
+      if (classified != null) throw classified;
       final message = _errorMessage(error);
       if (message.contains('is outside the vocabulary')) {
-        throw RangeError(message);
+        throw LlamaArgumentException(message);
       }
       if (message.contains('needs a decoder-only model')) {
         throw LlamaUnsupportedException(message);

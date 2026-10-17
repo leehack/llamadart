@@ -18,6 +18,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 
 ## Guidelines
 
+- Catch `LlamaArgumentException` for WebGPU request argument rejections,
+  `LlamaUnsupportedException` for unavailable capabilities, and
+  `LlamaInferenceException` for runtime inference failures.
+
 - llamadart never injects the bridge. Load it in `web/index.html` before
   `flutter_bootstrap.js` (or your compiled script) and assign
   `window.LlamaWebGpuBridge`. At model load llamadart waits up to 12 seconds

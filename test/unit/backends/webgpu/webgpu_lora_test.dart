@@ -319,17 +319,35 @@ void main() {
       );
     });
 
-    test('reports other rejected changes as context errors', () async {
+    test('rejects scales outside float32 before loading an adapter', () async {
+      for (final scale in [
+        double.infinity,
+        double.negativeInfinity,
+        1e40,
+        -1e40,
+      ]) {
+        await expectLater(
+          adapters.set(fake.bridge, 'adapter.gguf', scale),
+          throwsA(isA<LlamaArgumentException>()),
+        );
+      }
+      expect(fake.loraLoads, isEmpty);
+      await adapters.set(fake.bridge, 'adapter.gguf', -3.4028234663852886e38);
+      await adapters.set(fake.bridge, 'adapter.gguf', 0);
+      await adapters.set(fake.bridge, 'adapter.gguf', 3.4028234663852886e38);
+    });
+
+    test('rejects a non-finite scale as an argument error', () async {
       fake.loraSetError =
           'LoRA adapter scale must be a finite number, got NaN.';
 
       await expectLater(
         adapters.set(fake.bridge, 'adapter.gguf', double.nan),
         throwsA(
-          isA<LlamaContextException>().having(
-            (error) => error.message,
-            'message',
-            'LoRA adapter scale must be a finite number, got NaN.',
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'scale',
           ),
         ),
       );

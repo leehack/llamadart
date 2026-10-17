@@ -2,6 +2,13 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: WebGPU argument errors
+
+Catch `LlamaArgumentException` for invalid WebGPU request arguments, including
+LoRA scales and bridge-reported argument rejections. These previously surfaced
+as raw argument errors, context errors or `LlamaInferenceException`. Runtime
+inference failures and unsupported capabilities retain their existing types.
+
 ## Unreleased: embedding content API
 
 The new `embedContent` / `embedContentBatch` APIs return one vector per input;

@@ -374,3 +374,21 @@ gates against real assets and models; its header lists the setup.
 - `window.__llamadartAllowSafariWebGpu`,
   `window.__llamadartBridgeAdaptiveSafariGpu`: see
   [Safari compatibility](#safari-compatibility).
+
+## Request errors
+
+WebGPU argument validation and bridge `RangeError` / `TypeError` rejections
+surface as `LlamaArgumentException`; capability rejections remain
+`LlamaUnsupportedException`. Genuine generation, embedding and scoring failures
+remain `LlamaInferenceException`.
+
+The pinned bridge has no stable argument error codes. Its
+`serializeWorkerError` sends only `error.message`, and `BridgeWorkerProxy`
+reconstructs an ordinary `Error`, losing the original type. For that path Dart
+recognizes only specific anchored completion-number, speculative integer/limit
+and LoRA-scale validator messages. Unknown messages remain operation failures.
+Direct rejections use their explicit JS error name. The classifier is separate
+from operation fallbacks so a later pinned bridge can add code mappings;
+`EmbeddingError` codes from
+[bridge PR #160](https://github.com/leehack/llama-web-bridge/pull/160) are not
+assumed available.

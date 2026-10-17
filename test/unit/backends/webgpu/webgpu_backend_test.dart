@@ -34,6 +34,12 @@ external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
 @JS('Error')
 external JSObject _jsError(String message);
 
+@JS('RangeError')
+external JSObject _jsRangeError(String message);
+
+@JS('TypeError')
+external JSObject _jsTypeError(String message);
+
 void main() {
   group('WebGpuLlamaBackend Unit', () {
     late JSObject bridge;
@@ -3627,8 +3633,8 @@ void main() {
             'of 32 tokens';
         await expectRejection(
           outOfVocabulary,
-          isA<RangeError>().having(
-            (RangeError error) => error.message,
+          isA<LlamaArgumentException>().having(
+            (LlamaArgumentException error) => error.message,
             'message',
             outOfVocabulary,
           ),
@@ -3641,7 +3647,12 @@ void main() {
         await expectRejection(
           'Next-token scoring failed: llama_decode failed while processing '
           'prompt',
-          isNot(anyOf(isA<RangeError>(), isA<LlamaUnsupportedException>())),
+          isNot(
+            anyOf(
+              isA<LlamaArgumentException>(),
+              isA<LlamaUnsupportedException>(),
+            ),
+          ),
         );
 
         lastScorePrompt = null;
@@ -3657,7 +3668,7 @@ void main() {
               topK: topK,
               reusePromptPrefix: true,
             ),
-            throwsA(isA<RangeError>()),
+            throwsA(isA<LlamaArgumentException>()),
           );
         }
         expect(lastScorePrompt, isNull, reason: 'rejected before the bridge');
@@ -5878,6 +5889,122 @@ void main() {
       return utf8.decode(chunks.expand((chunk) => chunk).toList());
     }
 
+    group('argument rejection regression', () {
+      test('public generation preserves Dart argument validation', () async {
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl('model.gguf');
+        await expectLater(
+          engine
+              .generate(
+                'hello',
+                params: const GenerationParams(
+                  speculativeDecodingConfig:
+                      SpeculativeDecodingConfig.ngramSimple(
+                        ngramSizeN: 0x10000,
+                      ),
+                ),
+              )
+              .toList(),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.name,
+              'name',
+              'ngramSizeN',
+            ),
+          ),
+        );
+        expect(fake().completionCalls, 0);
+      });
+
+      for (final (label, rejection, matcher) in <(String, JSObject, Matcher)>[
+        (
+          'range',
+          _jsRangeError('rejected value'),
+          isA<LlamaArgumentException>(),
+        ),
+        ('type', _jsTypeError('rejected type'), isA<LlamaArgumentException>()),
+        (
+          'worker',
+          _jsError(
+            'CompletionOptions.speculativeDecoding.draftTokenMin (9) must not exceed the draft token maximum (3).',
+          ),
+          isA<LlamaArgumentException>(),
+        ),
+        (
+          'runtime',
+          _jsError('GPU dispatch failed'),
+          isA<LlamaInferenceException>(),
+        ),
+        (
+          'misleading text',
+          _jsError('TypeError: invalid argument during GPU dispatch'),
+          isA<LlamaInferenceException>(),
+        ),
+      ]) {
+        for (final operation in [
+          'generate',
+          'speculative',
+          'embed',
+          'embedBatch',
+          'scoreNextToken',
+        ]) {
+          test('$operation classifies $label bridge rejection', () async {
+            await loadModel();
+            final method = switch (operation) {
+              'generate' || 'speculative' => 'createCompletion',
+              _ => operation,
+            };
+            fake().object.setProperty(
+              method.toJS,
+              ((JSAny? _, JSAny? _) => _rejectPromise(rejection)).toJS,
+            );
+            final Future<Object?> result = switch (operation) {
+              'generate' =>
+                backend.generate(1, 'hello', const GenerationParams()).toList(),
+              'speculative' =>
+                backend
+                    .generate(
+                      1,
+                      'hello',
+                      const GenerationParams(
+                        speculativeDecodingConfig:
+                            SpeculativeDecodingConfig.ngramSimple(),
+                      ),
+                    )
+                    .toList(),
+              'embed' => backend.embed(1, 'hello'),
+              'embedBatch' => backend.embedBatch(1, ['hello']),
+              _ => backend.scoreNextToken(
+                1,
+                'hello',
+                candidates: [1],
+                topK: 0,
+                reusePromptPrefix: false,
+              ),
+            };
+            await expectLater(result, throwsA(matcher));
+          });
+        }
+      }
+
+      test(
+        'LoRA bridge argument rejection stays an argument exception',
+        () async {
+          await loadModel();
+          fake().object.setProperty(
+            'setLoraAdapter'.toJS,
+            ((JSAny? _, JSAny? _) => _rejectPromise(
+              _jsTypeError('LoRA adapter scale must be finite.'),
+            )).toJS,
+          );
+          await expectLater(
+            backend.setLoraAdapter(1, 'adapter.gguf', 1),
+            throwsA(isA<LlamaArgumentException>()),
+          );
+        },
+      );
+    });
+
     const thinkingBudget = ThinkingBudget(
       maxTokens: 8,
       startTag: '<think>',
@@ -6140,8 +6267,8 @@ void main() {
               GenerationParams(thinkingBudget: budget),
             ),
             throwsA(
-              isA<ArgumentError>().having(
-                (error) => '${error.message}',
+              isA<LlamaArgumentException>().having(
+                (error) => error.message,
                 'message',
                 contains('non-empty startTag and endTag'),
               ),
@@ -6160,7 +6287,7 @@ void main() {
               ),
             ),
           ),
-          throwsA(isA<RangeError>()),
+          throwsA(isA<LlamaArgumentException>()),
         );
 
         await backend.multimodalContextCreate(1, 'mmproj.gguf');
@@ -6745,8 +6872,8 @@ void main() {
               SpeculativeDecodingStrategy.draftEagle3,
             ],
           ): throwsA(
-            isA<ArgumentError>().having(
-              (error) => '${error.message}',
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
               'message',
               contains(
                 'draft-eagle3 requires SpeculativeDecodingConfig.draftModel',
@@ -6754,7 +6881,7 @@ void main() {
             ),
           ),
           const SpeculativeDecodingConfig.draftSimple(draftModelPath: ' '):
-              throwsA(isA<ArgumentError>()),
+              throwsA(isA<LlamaArgumentException>()),
           const SpeculativeDecodingConfig.mixed(
             strategies: <SpeculativeDecodingStrategy>[
               SpeculativeDecodingStrategy.ngramSimple,
@@ -6776,7 +6903,7 @@ void main() {
             draftTokenMin: 3,
             draftModelPath: 'draft.gguf',
           ): throwsA(
-            isA<RangeError>().having(
+            isA<LlamaArgumentException>().having(
               (error) => error.name,
               'name',
               'draftTokenMin',
@@ -6786,7 +6913,7 @@ void main() {
             ngramTokenMin: 9,
             ngramTokenMax: 8,
           ): throwsA(
-            isA<RangeError>().having(
+            isA<LlamaArgumentException>().having(
               (error) => error.name,
               'name',
               'ngramTokenMin',
@@ -6795,14 +6922,14 @@ void main() {
           const SpeculativeDecodingConfig.ngramSimple(
             ngramSizeN: 0x10000,
           ): throwsA(
-            isA<RangeError>().having(
+            isA<LlamaArgumentException>().having(
               (error) => error.name,
               'name',
               'ngramSizeN',
             ),
           ),
           const SpeculativeDecodingConfig.ngramCache(ngramCacheStaticPath: ''):
-              throwsA(isA<ArgumentError>()),
+              throwsA(isA<LlamaArgumentException>()),
         };
         for (final MapEntry(key: config, value: matcher) in invalid.entries) {
           expect(
