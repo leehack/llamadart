@@ -384,7 +384,9 @@ void main() {
   test('Windows mtmd resolver is used only for mtmd on Windows', () {
     final library = reflectClass(LlamaCppMixedBatchApi).owner as LibraryMirror;
     final lookup = MirrorSystem.getSymbol('_mixedSymbol', library);
-    for (final windows in [false, true]) {
+    // Non-Windows routing binds mtmd from the default asset, which a Windows
+    // host's split bundle does not export.
+    for (final windows in [if (!Platform.isWindows) false, true]) {
       final seen = <String>[];
       for (final name in ['mtmd_get_output_embd', 'mtmd_decode_use_mrope']) {
         final pointer =
