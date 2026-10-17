@@ -3633,8 +3633,8 @@ void main() {
             'of 32 tokens';
         await expectRejection(
           outOfVocabulary,
-          isA<LlamaArgumentException>().having(
-            (LlamaArgumentException error) => error.message,
+          isA<RangeError>().having(
+            (error) => error.message,
             'message',
             outOfVocabulary,
           ),
@@ -3668,7 +3668,7 @@ void main() {
               topK: topK,
               reusePromptPrefix: true,
             ),
-            throwsA(isA<LlamaArgumentException>()),
+            throwsRangeError,
           );
         }
         expect(lastScorePrompt, isNull, reason: 'rejected before the bridge');
@@ -5889,6 +5889,146 @@ void main() {
       return utf8.decode(chunks.expand((chunk) => chunk).toList());
     }
 
+    group('audit runtime and scoring regression', () {
+      for (final worker in [false, true]) {
+        for (final (label, directError, message)
+            in <(String, JSObject, String)>[
+              ('network', _jsTypeError('Failed to fetch'), 'Failed to fetch'),
+              (
+                'stack',
+                _jsRangeError('Maximum call stack size exceeded'),
+                'Maximum call stack size exceeded',
+              ),
+              (
+                'allocation',
+                _jsRangeError('Array buffer allocation failed'),
+                'Array buffer allocation failed',
+              ),
+              (
+                'null dereference',
+                _jsTypeError(
+                  "Cannot read properties of null (reading 'ccall')",
+                ),
+                "Cannot read properties of null (reading 'ccall')",
+              ),
+            ]) {
+          for (final operation in [
+            'lora',
+            'generate',
+            'speculative',
+            'embed',
+            'embedBatch',
+            'scoreNextToken',
+          ]) {
+            test(
+              '$operation keeps $label failure category (worker=$worker)',
+              () async {
+                await loadModel();
+                final method = switch (operation) {
+                  'lora' => 'loadLoraAdapter',
+                  'generate' || 'speculative' => 'createCompletion',
+                  _ => operation,
+                };
+                fake().object.setProperty(
+                  method.toJS,
+                  ((JSAny? _, JSAny? _) => _rejectPromise(
+                    worker ? _jsError(message) : directError,
+                  )).toJS,
+                );
+                final Future<Object?> result = switch (operation) {
+                  'lora' => backend.setLoraAdapter(1, 'adapter.gguf', 1),
+                  'generate' =>
+                    backend
+                        .generate(1, 'hi', const GenerationParams())
+                        .toList(),
+                  'speculative' =>
+                    backend
+                        .generate(
+                          1,
+                          'hi',
+                          const GenerationParams(
+                            speculativeDecodingConfig:
+                                SpeculativeDecodingConfig.ngramSimple(),
+                          ),
+                        )
+                        .toList(),
+                  'embed' => backend.embed(1, 'hi'),
+                  'embedBatch' => backend.embedBatch(1, ['hi']),
+                  _ => backend.scoreNextToken(
+                    1,
+                    'hi',
+                    candidates: [1],
+                    topK: 0,
+                    reusePromptPrefix: false,
+                  ),
+                };
+                await expectLater(
+                  result,
+                  throwsA(
+                    operation == 'lora'
+                        ? isA<LlamaModelException>()
+                        : isA<LlamaInferenceException>(),
+                  ),
+                );
+              },
+            );
+          }
+        }
+      }
+
+      test('scoring bounds preserve the shared RangeError contract', () async {
+        await loadModel();
+        fake().object.setProperty(
+          'scoreNextToken'.toJS,
+          ((JSAny? _, JSAny? _) => JSObject()).toJS,
+        );
+        for (final (candidates, topK) in <(List<int>, int)>[
+          ([-1], 0),
+          ([0x80000000], 0),
+          ([1], -1),
+          ([1], 0x80000000),
+        ]) {
+          await expectLater(
+            backend.scoreNextToken(
+              1,
+              'hi',
+              candidates: candidates,
+              topK: topK,
+              reusePromptPrefix: false,
+            ),
+            throwsRangeError,
+          );
+        }
+      });
+
+      for (final worker in [false, true]) {
+        test(
+          'scoring vocabulary preserves RangeError (worker=$worker)',
+          () async {
+            await loadModel();
+            const message =
+                'Next-token scoring failed: Token id 99 is outside the vocabulary of 32 tokens';
+            fake().object.setProperty(
+              'scoreNextToken'.toJS,
+              ((JSAny? _, JSAny? _) => _rejectPromise(
+                worker ? _jsError(message) : _jsRangeError(message),
+              )).toJS,
+            );
+            await expectLater(
+              backend.scoreNextToken(
+                1,
+                'hi',
+                candidates: [99],
+                topK: 0,
+                reusePromptPrefix: false,
+              ),
+              throwsRangeError,
+            );
+          },
+        );
+      }
+    });
+
     group('argument rejection regression', () {
       test('public generation preserves Dart argument validation', () async {
         final engine = LlamaEngine(backend);
@@ -5919,10 +6059,16 @@ void main() {
       for (final (label, rejection, matcher) in <(String, JSObject, Matcher)>[
         (
           'range',
-          _jsRangeError('rejected value'),
+          _jsRangeError(
+            'CompletionOptions.minP must be a finite number from 0 to 1; got 2.',
+          ),
           isA<LlamaArgumentException>(),
         ),
-        ('type', _jsTypeError('rejected type'), isA<LlamaArgumentException>()),
+        (
+          'type',
+          _jsTypeError('CompletionOptions.thinkingBudget must be an object.'),
+          isA<LlamaArgumentException>(),
+        ),
         (
           'worker',
           _jsError(
@@ -5994,7 +6140,9 @@ void main() {
           fake().object.setProperty(
             'setLoraAdapter'.toJS,
             ((JSAny? _, JSAny? _) => _rejectPromise(
-              _jsTypeError('LoRA adapter scale must be finite.'),
+              _jsTypeError(
+                'LoRA adapter scale must be a finite number, got NaN.',
+              ),
             )).toJS,
           );
           await expectLater(

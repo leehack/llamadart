@@ -45,7 +45,8 @@ preference falls back to CPU with a warning. See the
   stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
-  WebGPU rejects invalid request arguments with `LlamaArgumentException`.
+  WebGPU rejects invalid request arguments with `LlamaArgumentException`;
+  `scoreNextToken` vocabulary and int32 bounds retain `RangeError`.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing
   and a `ChatSession.sendWithTools` loop that runs tool handlers,

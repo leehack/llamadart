@@ -20,7 +20,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 
 - Catch `LlamaArgumentException` for WebGPU request argument rejections,
   `LlamaUnsupportedException` for unavailable capabilities, and
-  `LlamaInferenceException` for runtime inference failures.
+  `LlamaInferenceException` for runtime inference failures. `scoreNextToken`
+  vocabulary and int32 bounds retain `RangeError`; LoRA fetch failures remain
+  `LlamaModelException`.
 
 - llamadart never injects the bridge. Load it in `web/index.html` before
   `flutter_bootstrap.js` (or your compiled script) and assign

@@ -17,15 +17,30 @@ T webGpuValidateArguments<T>(T Function() call) {
   }
 }
 
-// v0.1.63 serializeWorkerError keeps only message, and BridgeWorkerProxy
-// reconstructs Error without name or code. Match only its validator emissions,
-// never generic words such as "invalid", "argument" or "TypeError".
-final RegExp _workerArgument = RegExp(
+// Only the pinned bridge's TypeError/RangeError validator messages establish
+// argument provenance. Worker transport can erase their names; direct runtime
+// failures can share those names. Keep both paths on the same allowlist.
+// Source emissions and routing: doc/webgpu_bridge.md, "Request errors".
+final RegExp _bridgeArgument = RegExp(
   r'^(?:CompletionOptions\.(?:presencePenalty|minP) must be a finite number|'
-  r'CompletionOptions\.speculativeDecoding\.(?:draftTokenMax|draftTokenMin|'
-  r'ngramSizeN|ngramSizeM|ngramMinHits|ngramMatch|ngramTokenMin|ngramTokenMax) '
-  r'(?:must be an integer from |\([^)]*\) must not exceed )|'
-  r'LoRA adapter scale (?:must be a finite number, got |[^ ]+ is outside the 32-bit float range\.))',
+  r'CompletionOptions\.thinkingBudget(?: must be an object\.|'
+  r'\.(?:startTag|endTag) must be a non-empty string\.|'
+  r'\.forcedMessage must be a string\.|'
+  r'\.maxTokens must be an integer from )|'
+  r'CompletionOptions\.speculativeDecoding(?: must be an object\.|'
+  r'\.strategies (?:must be a non-empty array\.|has an unknown strategy )|'
+  r'\.(?:draftTokenMax|draftTokenMin|ngramSizeN|ngramSizeM|ngramMinHits|'
+  r'ngramMatch|ngramTokenMin|ngramTokenMax) must be an integer from |'
+  r'\.(?:ngramTokenMin|draftTokenMin) \([^)]*\) must not exceed |'
+  r'\.(?:minProbability|draftSplitProbability) must be a number from 0 to 1;|'
+  r'\.(?:ngramCacheStatic|ngramCacheDynamic) (?:is empty\.|'
+  r'must be a URL string, an ArrayBuffer or a typed array\.))|'
+  r'LoRA adapter (?:handle must be a positive integer, got |'
+  r'scale (?:must be a finite number, got |[^ ]+ is outside the 32-bit float range\.)|'
+  r'source must be a URL string, an ArrayBuffer or a typed array\.)|'
+  r'Next-token (?:candidates(?: must be an array or typed array of token ids\.|'
+  r'\[\d+\] is .*; expected a 32-bit integer\.)|'
+  r'scoring prompt must be a string\.|topK is .*; expected a 32-bit integer\.))',
 );
 
 /// Classifies request rejections without reclassifying unknown runtime errors.
@@ -46,9 +61,8 @@ LlamaException? webGpuBridgeRequestError(
     // Dart errors and primitive JS rejections have no JS error name.
   }
   final message = webGpuBridgeErrorText(error, sourceUrls: sourceUrls);
-  if (name == 'RangeError' ||
-      name == 'TypeError' ||
-      (name == 'Error' && _workerArgument.hasMatch(message))) {
+  if ((name == 'RangeError' || name == 'TypeError' || name == 'Error') &&
+      _bridgeArgument.hasMatch(message)) {
     return LlamaArgumentException(message);
   }
   return null;

@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Report WebGPU argument rejections as typed argument errors instead of inference failures.
+- **Behavior change:** Report WebGPU argument rejections as typed argument errors instead of inference failures.
 
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.

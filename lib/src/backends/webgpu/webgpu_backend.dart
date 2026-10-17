@@ -2592,12 +2592,10 @@ class WebGpuLlamaBackend
     if (!supportsNextTokenScoring) {
       throw UnsupportedError(_nextTokenScoringUnsupportedMessage);
     }
-    webGpuValidateArguments(() {
-      for (final token in candidates) {
-        RangeError.checkValueInInterval(token, 0, _maxInt32, 'candidates');
-      }
-      RangeError.checkValueInInterval(topK, 0, _maxInt32, 'topK');
-    });
+    for (final token in candidates) {
+      RangeError.checkValueInInterval(token, 0, _maxInt32, 'candidates');
+    }
+    RangeError.checkValueInInterval(topK, 0, _maxInt32, 'topK');
     final JSAny? result;
     try {
       result = await _toFuture(
@@ -2615,7 +2613,7 @@ class WebGpuLlamaBackend
       if (classified != null) throw classified;
       final message = _errorMessage(error);
       if (message.contains('is outside the vocabulary')) {
-        throw LlamaArgumentException(message);
+        throw RangeError(message);
       }
       if (message.contains('needs a decoder-only model')) {
         throw LlamaUnsupportedException(message);
