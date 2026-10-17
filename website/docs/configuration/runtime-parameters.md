@@ -51,6 +51,14 @@ Important fields:
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
   To select one GPU for the full model, use
   `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
+  On native llama.cpp with `device: ComputeDevice.auto`, a negative index
+  in that mode selects no GPU: `getBackendName()` and `capabilities.backendName`
+  report `CPU`, and `getResolvedGpuLayers()` reports `0`. Context, draft-model
+  and decision-head execution settings are unchanged by this reporting
+  correction. Layer and row split
+  modes do not use a negative `mainGpu` to disable GPUs. Explicit `gpu` and
+  `npu` requests still reject the single-device negative-index combination
+  with `LlamaArgumentException`.
 - `batchSize`: context logical batch size (`n_batch`). On native,
   decoder/generative models use the llama.cpp-aligned `min(n_ctx, 2048)`
   default when this is `0`. Native encoder-only models retain a full-context

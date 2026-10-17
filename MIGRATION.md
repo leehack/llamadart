@@ -2,6 +2,15 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: native llama.cpp placement diagnostics
+
+With `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none` and a
+negative `mainGpu`, backend name and capabilities now report `CPU`, and
+`getResolvedGpuLayers()` returns `0`. The model already ran on the CPU;
+context, draft-model and decision-head execution settings are unchanged.
+No parameter migration is needed. Explicit `gpu` / `npu`
+validation is unchanged.
+
 ## Unreleased: embedding content API
 
 The new `embedContent` / `embedContentBatch` APIs return one vector per input;

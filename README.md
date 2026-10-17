@@ -371,6 +371,9 @@ selection, and WebGPU mem64 hints. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
 
+Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
+and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.
+
 Current default runtime pins:
 
 | Runtime | Pin |
