@@ -24,6 +24,7 @@ import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 import '../llama_logging.dart';
 import '../models/inference/model_params.dart';
+import '../models/inference/embedding.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/inference/next_token_scores.dart';
@@ -582,6 +583,12 @@ class LlamaEngine {
         'ComputeDevice.npu is not available for llama.cpp, which runs GGUF '
         'models: only LiteRT-LM on Android has an NPU backend. Use '
         'ComputeDevice.auto, cpu or gpu.',
+      );
+    }
+    if (params.liteRtLmEmbeddingEngine && format == ModelFormat.gguf) {
+      throw LlamaUnsupportedException(
+        'ModelParams.liteRtLmEmbeddingEngine applies only to LiteRT-LM '
+        'models; llama.cpp GGUF models embed through their own context.',
       );
     }
     if (source.format case final declared?) _checkBackendLoads(declared);
@@ -2277,6 +2284,86 @@ class LlamaEngine {
   // ============================================================
   // EMBEDDINGS
   // ============================================================
+
+  /// Probes embedding modalities after loading a model and any projector.
+  ///
+  /// Backends without [BackendMultimodalEmbeddings] expose their legacy text
+  /// support with image/audio disabled. Implementations of that SPI probe media
+  /// independently of generation's vision/audio capabilities. Legacy text
+  /// support retains its existing model-specific restrictions.
+  Future<LlamaEmbeddingCapabilities> get embeddingCapabilities async {
+    _ensureReady();
+    try {
+      return await backend.probeEmbeddingCapabilities(_contextHandle!);
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('Embedding capabilities', error);
+    }
+  }
+
+  /// Embeds one ordered text/image/audio [input].
+  ///
+  /// Check [embeddingCapabilities] first. Unsupported modalities throw
+  /// [LlamaUnsupportedException] before inference. Adjacent text parts form one
+  /// verbatim-concatenated text segment on every backend, without separators
+  /// or templates, including when interleaved with media.
+  /// [normalize] has the same L2 semantics as [embed]. Video is unavailable.
+  ///
+  /// As with [embed], cancellation is requested through [cancelGeneration];
+  /// completion and cleanup follow the backend's embedding cancellation policy.
+  /// Observer operations record only part kinds/counts, including for text.
+  Future<List<double>> embedContent(
+    LlamaEmbeddingInput input, {
+    bool normalize = true,
+  }) async => (await embedContentBatch([input], normalize: normalize)).single;
+
+  /// Embeds [inputs] in order, producing one vector per input.
+  ///
+  /// All modality probes are checked before any batch inference. Empty batches
+  /// return an empty list after checking engine readiness. Empty batches and
+  /// modality-preflight failures do not refresh inference counters. Runtimes reject
+  /// oversized inputs rather than silently truncate them. A backend returning
+  /// the wrong vector count throws [LlamaInferenceException]. See [embedContent].
+  Future<List<List<double>>> embedContentBatch(
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) {
+    final snapshot = List<LlamaEmbeddingInput>.unmodifiable(inputs);
+    return observeFuture(
+      () => _embedContentBatch(snapshot, normalize: normalize),
+      observers: observers,
+      operation: LlamaEmbeddingsOperation(
+        model: _observedModel,
+        runtime: _observedRuntime,
+        inputs: const [],
+        inputPartKinds: [for (final input in snapshot) input.partKinds],
+        normalize: normalize,
+      ),
+    );
+  }
+
+  Future<List<List<double>>> _embedContentBatch(
+    List<LlamaEmbeddingInput> inputs, {
+    required bool normalize,
+  }) async {
+    _ensureReady();
+    try {
+      final vectors = await backend.embedContentWithFallback(
+        _contextHandle!,
+        inputs,
+        normalize: normalize,
+        onCompute: _contextCall,
+      );
+      if (vectors.length != inputs.length) {
+        throw LlamaInferenceException(
+          'Content embeddings returned ${vectors.length} vectors; '
+          'expected ${inputs.length} (one per input).',
+        );
+      }
+      return vectors;
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('Content embeddings', error);
+    }
+  }
 
   /// Whether the active backend reports [embed] and [embedBatch] support.
   ///

@@ -27,6 +27,28 @@ import 'package:web/web.dart';
 import '../../../support/fake_navigator_gpu.dart';
 
 void main() {
+  test(
+    'embedding-only load fails before starting the conversation runtime',
+    () async {
+      final backend = LiteRtLmBackend();
+      addTearDown(backend.dispose);
+      await expectLater(
+        backend.modelLoad(
+          'fake.litertlm',
+          const ModelParams(liteRtLmEmbeddingEngine: true),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'engine condition',
+            contains('separate embedding engine'),
+          ),
+        ),
+      );
+      expect(backend.isReady, isFalse);
+    },
+  );
+
   setUp(_clearGlobals);
   tearDown(_clearGlobals);
 

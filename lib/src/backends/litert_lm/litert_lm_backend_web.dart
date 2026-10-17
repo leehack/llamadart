@@ -174,6 +174,12 @@ class LiteRtLmBackend
     ModelParams params, {
     void Function(double progress)? onProgress,
   }) async {
+    if (params.liteRtLmEmbeddingEngine) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM embedding-only model loading is unavailable in this Dart '
+        'adapter; the separate embedding engine integration is required.',
+      );
+    }
     _validateModelParams(params);
     final backend = _resolveBackendName(params);
     if (params.device == ComputeDevice.gpu && !await webGpuAdapterAvailable()) {

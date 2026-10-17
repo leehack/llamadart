@@ -81,6 +81,25 @@ dart run bin/llamadart_basic_example.dart \
 
 Generate one or more embedding vectors from text input.
 
+The CLI keeps the string embedding API. Code can also use ordered content:
+
+```dart
+Future<List<double>> embedOrderedText(LlamaEngine engine) async {
+  final capabilities = await engine.embeddingCapabilities;
+  if (!capabilities.text) {
+    throw LlamaUnsupportedException('The loaded runtime cannot embed text.');
+  }
+  return engine.embedContent(
+    LlamaEmbeddingInput([const LlamaTextContent('hello world')]),
+  );
+}
+```
+
+Image/audio embeddings remain unsupported on all packaged backends; chat media
+support does not enable them. LiteRT-LM embedding-only loads are also explicitly
+unavailable until its separate embedding engine is integrated. The option
+`ModelParams.liteRtLmEmbeddingEngine` is LiteRT-LM-only; GGUF loaders reject true.
+
 By default, embedding CLIs use
 `ggml-org/embeddinggemma-300M-GGUF` (`embeddinggemma-300M-Q8_0.gguf`). Use
 `--model` to point to a different embedding GGUF.

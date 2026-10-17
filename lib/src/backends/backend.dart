@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import '../core/decision/decision_question.dart';
 import '../core/engine/engine_observer.dart';
+import '../core/exceptions.dart';
+import '../core/models/inference/embedding.dart';
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/generation_usage.dart';
@@ -877,7 +879,130 @@ abstract class BackendEmbeddingsSupport {
   bool get supportsEmbeddings;
 }
 
-/// Optional backend capability for batching embedding requests.
+/// Optional backend contract for ordered multimodal embeddings.
+///
+/// Implementations probe the loaded context explicitly. Merely implementing
+/// this interface does not imply media support.
+abstract class BackendMultimodalEmbeddings {
+  /// Probes model, projector/processors and runtime support for this context.
+  ///
+  /// Unloaded contexts return all-false without I/O.
+  /// Unknown or absent ABI/features must report false, or throw a typed
+  /// unsupported exception. Generation's vision/audio flags are not evidence.
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  );
+
+  /// Embeds ordered inputs, returning one vector per input in the same order.
+  ///
+  /// Preserve part order and media; never flatten a mixed request to text.
+  /// Adjacent text parts form one verbatim-concatenated text segment on every
+  /// backend, including within mixed inputs. LiteRT-LM adapters must merge
+  /// adjacent text before building runtime inputs; no separators or templates are added.
+  /// Validate the entire batch, including expanded media token limits, before
+  /// inference. Empty batches return no vectors. With [normalize], L2-normalize
+  /// each pooled output. Otherwise return the full raw pooled vector.
+  ///
+  /// Cancellation uses [LlamaBackend.cancelGeneration], as for text embeddings.
+  /// Keep native buffers alive until in-flight work settles, even on cancel.
+  /// Unsupported combinations throw `LlamaUnsupportedException`; input/context
+  /// capacity and execution failures throw `LlamaInferenceException`.
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  });
+}
+
+/// Internal compatibility dispatch shared by the engine and runtime routers.
+///
+/// The public optional SPI is [BackendMultimodalEmbeddings]. Existing text
+/// backends retain their historical support test, with media disabled.
+extension BackendEmbeddingDispatch on LlamaBackend {
+  /// Probes the active context or provides the legacy text-only default.
+  Future<LlamaEmbeddingCapabilities> probeEmbeddingCapabilities(
+    int contextHandle,
+  ) async {
+    final candidate = this;
+    if (candidate is BackendMultimodalEmbeddings) {
+      return (candidate as BackendMultimodalEmbeddings)
+          .getEmbeddingCapabilities(contextHandle);
+    }
+    final text = candidate is BackendEmbeddingsSupport
+        ? (candidate as BackendEmbeddingsSupport).supportsEmbeddings
+        : candidate is BackendEmbeddings;
+    return LlamaEmbeddingCapabilities(text: text);
+  }
+
+  /// Dispatches content without allowing a legacy backend to discard media.
+  ///
+  /// [onCompute] records context work only after preflight succeeds, so empty
+  /// or unsupported requests cannot revive stale performance counters.
+  Future<List<List<double>>> embedContentWithFallback(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+    Future<List<List<double>>> Function(
+      Future<List<List<double>>> Function() compute,
+    )?
+    onCompute,
+  }) async {
+    if (inputs.isEmpty) return const <List<double>>[];
+    final capabilities = await probeEmbeddingCapabilities(contextHandle);
+    for (final input in inputs) {
+      for (final kind in input.partKinds) {
+        if (!capabilities.supports(kind)) {
+          final runtime = this is BackendRuntimeIdentity
+              ? (this as BackendRuntimeIdentity).runtime
+              : null;
+          throw LlamaUnsupportedException(
+            '${kind.name} embeddings are unavailable for the loaded model/runtime '
+            '(${runtime?.name ?? 'unknown'}); the embedding capability probe '
+            'did not enable ${kind.name}.',
+          );
+        }
+      }
+    }
+    Future<List<List<double>>> compute() async {
+      final candidate = this;
+      if (candidate is BackendMultimodalEmbeddings) {
+        return (candidate as BackendMultimodalEmbeddings).embedContentBatch(
+          contextHandle,
+          inputs,
+          normalize: normalize,
+        );
+      }
+      final texts = [
+        for (final input in inputs)
+          input.parts.cast<LlamaTextContent>().map((part) => part.text).join(),
+      ];
+      if (candidate is BackendBatchEmbeddings) {
+        return (candidate as BackendBatchEmbeddings).embedBatch(
+          contextHandle,
+          texts,
+          normalize: normalize,
+        );
+      }
+      if (candidate is BackendEmbeddings) {
+        return [
+          for (final text in texts)
+            await (candidate as BackendEmbeddings).embed(
+              contextHandle,
+              text,
+              normalize: normalize,
+            ),
+        ];
+      }
+      throw LlamaUnsupportedException(
+        'Text embeddings are unavailable: the loaded backend has no embedding implementation.',
+      );
+    }
+
+    return onCompute == null ? compute() : onCompute(compute);
+  }
+}
+
+/// Optional backend capability for batching text embedding requests.
 abstract class BackendBatchEmbeddings extends BackendEmbeddings {
   /// Generates embedding vectors for all [texts] in order.
   ///

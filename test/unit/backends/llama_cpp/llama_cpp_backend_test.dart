@@ -44,6 +44,26 @@ void main() {
       harness.dispose();
     });
 
+    test(
+      'rejects LiteRT-LM embedding mode before any worker request',
+      () async {
+        await expectLater(
+          backend.modelLoad(
+            'ok.gguf',
+            const ModelParams(liteRtLmEmbeddingEngine: true),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'runtime',
+              contains('llama.cpp'),
+            ),
+          ),
+        );
+        expect(harness.received, isEmpty);
+      },
+    );
+
     test('setLogLevel forwards request through worker port', () async {
       await backend.setLogLevel(LlamaLogLevel.info);
 

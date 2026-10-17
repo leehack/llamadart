@@ -32,9 +32,139 @@ import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/models/inference/embedding.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:test/test.dart';
 
+import '../../core/engine/engine_test.dart';
+import '../../core/engine/multimodal_embeddings_test.dart';
+
 void main() {
+  test(
+    'unloaded context probes return all-false without creating a runtime',
+    () async {
+      final router = NativeAutoBackend(
+        llamaCppFactory: () =>
+            throw StateError('probe must not create a runtime'),
+        liteRtLmFactory: () =>
+            throw StateError('probe must not create a runtime'),
+      );
+      addTearDown(router.dispose);
+      final capabilities = await router.getEmbeddingCapabilities(-1);
+      expect(capabilities.text, isFalse);
+      expect(capabilities.image, isFalse);
+      expect(capabilities.audio, isFalse);
+    },
+  );
+
+  for (final runtime in LlamaRuntime.values) {
+    test(
+      'embedding diagnostic identifies $runtime through the router',
+      () async {
+        final delegate = RuntimeContentBackend(runtime)
+          ..supported = const LlamaEmbeddingCapabilities(text: true);
+        final router = NativeAutoBackend(llamaCppFactory: () => delegate);
+        final engine = LlamaEngine(router);
+        addTearDown(engine.dispose);
+        await engine.loadModel('fake.gguf');
+        await expectLater(
+          engine.embedContent(
+            LlamaEmbeddingInput([const LlamaImageContent(path: 'secret.png')]),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having((e) => e.message, 'runtime', contains(runtime.name))
+                .having((e) => e.message, 'modality', contains('image'))
+                .having(
+                  (e) => e.message,
+                  'condition',
+                  contains('capability probe'),
+                )
+                .having(
+                  (e) => e.message,
+                  'redaction',
+                  isNot(contains('secret')),
+                ),
+          ),
+        );
+      },
+    );
+  }
+
+  test(
+    'all current native backends reject image and audio embeddings before inference',
+    () async {
+      for (final backend in <LlamaBackend>[
+        NativeLlamaBackend(),
+        LiteRtLmBackend(),
+        NativeAutoBackend(),
+      ]) {
+        addTearDown(backend.dispose);
+        final capabilities = await backend.probeEmbeddingCapabilities(1);
+        expect(capabilities.image, isFalse);
+        expect(capabilities.audio, isFalse);
+        for (final part in <LlamaContentPart>[
+          const LlamaImageContent(path: 'secret.png'),
+          const LlamaAudioContent(path: 'secret.wav'),
+        ]) {
+          final input = LlamaEmbeddingInput([part]);
+          await expectLater(
+            backend.embedContentWithFallback(1, [input]),
+            throwsA(
+              isA<LlamaUnsupportedException>()
+                  .having(
+                    (error) => error.message,
+                    'modality',
+                    contains(input.partKinds.single.name),
+                  )
+                  .having(
+                    (error) => error.message,
+                    'redaction',
+                    isNot(contains('secret')),
+                  ),
+            ),
+          );
+        }
+      }
+    },
+  );
+
+  test(
+    'router forwards loaded embedding probe and ordered content to its delegate',
+    () async {
+      final delegate = ContentBackend();
+      final router = NativeAutoBackend(llamaCppFactory: () => delegate);
+      final engine = LlamaEngine(router);
+      addTearDown(engine.dispose);
+      expect((await router.getEmbeddingCapabilities(1)).image, isFalse);
+      await engine.loadModel('fake.gguf');
+      expect((await engine.embeddingCapabilities).image, isTrue);
+      final input = LlamaEmbeddingInput([
+        const LlamaImageContent(path: 'image.png'),
+        const LlamaTextContent('caption'),
+      ]);
+      expect(await engine.embedContent(input, normalize: false), [2.0]);
+      expect(delegate.received.single, same(input));
+      expect(delegate.normalized, isFalse);
+    },
+  );
+
+  test(
+    'router uses legacy text fallback and reports media unavailable',
+    () async {
+      final delegate = MockEmbeddingBackend();
+      final router = NativeAutoBackend(llamaCppFactory: () => delegate);
+      final engine = LlamaEngine(router);
+      addTearDown(engine.dispose);
+      await engine.loadModel('fake.gguf');
+      final capabilities = await engine.embeddingCapabilities;
+      expect(capabilities.text, isTrue);
+      expect(capabilities.image, isFalse);
+      final input = LlamaEmbeddingInput([const LlamaTextContent('same')]);
+      expect(await engine.embedContent(input), await engine.embed('same'));
+    },
+  );
+
   for (final action in ['dispose', 'switch']) {
     test(
       'retains failed LiteRT cleanup through router $action and reload',

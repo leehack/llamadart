@@ -1107,6 +1107,12 @@ class WebGpuLlamaBackend
     void Function(double progress)? onProgress,
   ) {
     params.validate();
+    if (params.liteRtLmEmbeddingEngine) {
+      throw LlamaUnsupportedException(
+        'ModelParams.liteRtLmEmbeddingEngine is LiteRT-LM-only; '
+        'llama.cpp GGUF embeddings use the existing per-call mode.',
+      );
+    }
     if (params.device == ComputeDevice.npu) {
       throw LlamaUnsupportedException(
         'ComputeDevice.npu is not available for llama.cpp on the Web, which '

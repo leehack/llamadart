@@ -250,6 +250,20 @@ void main() {
         }
       });
 
+      test('liteRtLmEmbeddingEngine for a GGUF model', () async {
+        await expectRejected(
+          () => engine.setModel(
+            LlamaModel(remoteModel),
+            params: const ModelParams(liteRtLmEmbeddingEngine: true),
+          ),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('liteRtLmEmbeddingEngine applies only to LiteRT-LM'),
+          ),
+        );
+      });
+
       test('a checksum for a model with a projector', () async {
         await expectRejected(
           () => engine.setModel(

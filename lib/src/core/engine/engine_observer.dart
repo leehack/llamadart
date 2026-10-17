@@ -1,6 +1,7 @@
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
+import '../models/inference/embedding.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/inference/model_params.dart';
@@ -148,10 +149,19 @@ final class LlamaTextCompletionOperation extends LlamaOperation {
        super._();
 }
 
-/// An embeddings request: `LlamaEngine.embed` or `embedBatch`.
+/// A text or content embeddings request.
 final class LlamaEmbeddingsOperation extends LlamaOperation {
-  /// The texts to embed, as an unmodifiable copy.
+  /// Legacy text inputs as an unmodifiable copy; empty for content calls.
   final List<String> inputs;
+
+  /// Ordered part kinds per input, without text or media sources/payloads.
+  ///
+  /// For content embedding operations [inputs] is empty. Legacy text embedding
+  /// operations keep their existing [inputs] and report one text part per input.
+  final List<List<LlamaEmbeddingModality>> inputPartKinds;
+
+  /// Number of requested vectors, including for redacted content inputs.
+  int get inputCount => inputPartKinds.length;
 
   /// Whether the vectors are L2-normalized.
   final bool normalize;
@@ -161,8 +171,17 @@ final class LlamaEmbeddingsOperation extends LlamaOperation {
     required super.model,
     required super.runtime,
     required List<String> inputs,
+    List<List<LlamaEmbeddingModality>>? inputPartKinds,
     required this.normalize,
   }) : inputs = List<String>.unmodifiable(inputs),
+       inputPartKinds = List<List<LlamaEmbeddingModality>>.unmodifiable([
+         for (final kinds
+             in inputPartKinds ??
+                 [
+                   for (final _ in inputs) [LlamaEmbeddingModality.text],
+                 ])
+           List<LlamaEmbeddingModality>.unmodifiable(kinds),
+       ]),
        super._();
 }
 

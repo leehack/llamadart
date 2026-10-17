@@ -1,3 +1,8 @@
+## Unreleased
+
+- Add typed embedding inputs, modality probes and the LiteRT-LM-only
+  `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
+
 ## 0.14.0
 
 - **ABI break:** Update the native llama.cpp runtime to v0.7.0 with matching
