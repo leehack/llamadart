@@ -483,6 +483,10 @@ void runLlamaWorkerForTesting(
 
           case PerformanceContextRequest():
             final perf = service.getPerformanceContext(message.contextHandle);
+            if (perf == null) {
+              message.sendPort.send(DoneResponse());
+              return;
+            }
             message.sendPort.send(
               PerformanceContextResponse(
                 loadMs: perf.loadMs,

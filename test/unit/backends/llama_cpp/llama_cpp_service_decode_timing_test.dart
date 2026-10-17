@@ -3,12 +3,16 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
+import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
@@ -77,10 +81,70 @@ void main() {
     }
   }
 
+  for (final (name, params) in [
+    (
+      'thinking',
+      const GenerationParams(
+        thinkingBudget: ThinkingBudget(maxTokens: 2147483648),
+      ),
+    ),
+    (
+      'speculative',
+      const GenerationParams(
+        speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(),
+      ),
+    ),
+    (
+      'mtp',
+      const GenerationParams(
+        speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+      ),
+    ),
+  ]) {
+    test(
+      'validation failure clears previous llama.cpp counters ($name)',
+      () async {
+        await generate('ab');
+        expect(service.getPerformanceContext(context), isNotNull);
+        final cancel = calloc<Int8>();
+        try {
+          await expectLater(
+            service.generate(context, 'ab', params, cancel.address),
+            emitsError(
+              name == 'mtp'
+                  ? isA<LlamaUnsupportedException>()
+                  : name == 'thinking'
+                  ? isA<ArgumentError>()
+                  : isA<LlamaArgumentException>(),
+            ),
+          );
+        } finally {
+          calloc.free(cancel);
+        }
+        expect(service.getPerformanceContext(context), isNull);
+        final handshake = ReceivePort();
+        runLlamaWorkerForTesting(
+          handshake.sendPort,
+          service,
+          exitOnDispose: false,
+        );
+        final backend = NativeLlamaBackend(
+          initialSendPort: await handshake.first as SendPort,
+        );
+        handshake.close();
+        addTearDown(backend.dispose);
+        expect(await backend.getPerformanceContext(context), isNull);
+        await generate('ab');
+        expect(service.getPerformanceContext(context), isNotNull);
+        expect(await backend.getPerformanceContext(context), isNotNull);
+      },
+    );
+  }
+
   test('getPerformanceContext counts the backend work of a decode as '
       'decode time', () async {
     await generate('ab');
-    final perf = service.getPerformanceContext(context);
+    final perf = service.getPerformanceContext(context)!;
 
     expect(perf.evalTokens, greaterThan(0));
     expect(perf.decodeMs, greaterThanOrEqualTo(perf.evalTokens * _backendMs));
@@ -108,7 +172,7 @@ void main() {
       service.createMultimodalContext(model, projectorPath);
 
       await generate('<__media__>', parts: fake.parts);
-      final perf = service.getPerformanceContext(context);
+      final perf = service.getPerformanceContext(context)!;
 
       expect(fake.evaluations, 1);
       expect(perf.promptEvalMs, greaterThanOrEqualTo(_backendMs));

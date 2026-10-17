@@ -93,7 +93,7 @@ class LlamaEngine {
   // because the latest request on it ended before reaching the backend while
   // no backend call was running on it.
   int? _stalePerformanceContext;
-  int _contextCallsInFlight = 0;
+  final Map<(int, int), int> _contextCallsInFlight = {};
   int? _mmContextHandle;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
@@ -2032,6 +2032,8 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
+    final requestContext = _contextHandle!;
+    final requestEpoch = _modelEpoch;
     var reachedBackend = false;
     try {
       await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
@@ -2043,7 +2045,7 @@ class LlamaEngine {
       try {
         final candidate = backend;
         reachedBackend = true;
-        _beginContextCall();
+        _beginContextCall(requestContext, requestEpoch);
         final stream =
             chatMediaMarker != null && candidate is BackendChatPromptGeneration
             ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
@@ -2078,7 +2080,11 @@ class LlamaEngine {
         );
       }
     } finally {
-      _endContextRequest(reachedBackend: reachedBackend);
+      _endContextRequest(
+        requestContext,
+        requestEpoch,
+        reachedBackend: reachedBackend,
+      );
     }
   }
 
@@ -2097,6 +2103,8 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
+    final requestContext = _contextHandle!;
+    final requestEpoch = _modelEpoch;
     var reachedBackend = false;
     try {
       if (request.isCancelled()) return;
@@ -2106,7 +2114,7 @@ class LlamaEngine {
 
       try {
         reachedBackend = true;
-        _beginContextCall();
+        _beginContextCall(requestContext, requestEpoch);
         final stream = nativeBackend.generateChat(
           _contextHandle!,
           messages,
@@ -2134,35 +2142,53 @@ class LlamaEngine {
         );
       }
     } finally {
-      _endContextRequest(reachedBackend: reachedBackend);
+      _endContextRequest(
+        requestContext,
+        requestEpoch,
+        reachedBackend: reachedBackend,
+      );
     }
   }
 
   /// Records a backend call starting on the context, whose counters then
   /// describe that call.
-  void _beginContextCall() {
-    _contextCallsInFlight += 1;
+  void _beginContextCall(int contextHandle, int epoch) {
+    final key = (contextHandle, epoch);
+    _contextCallsInFlight.update(key, (count) => count + 1, ifAbsent: () => 1);
     _stalePerformanceContext = null;
   }
 
   /// Records the end of a request: one that called [_beginContextCall] when
   /// [reachedBackend] is true, otherwise one that ended before reaching the
   /// backend.
-  void _endContextRequest({required bool reachedBackend}) {
+  void _endContextRequest(
+    int contextHandle,
+    int epoch, {
+    required bool reachedBackend,
+  }) {
+    final key = (contextHandle, epoch);
+    final remaining = (_contextCallsInFlight[key] ?? 0) - 1;
     if (reachedBackend) {
-      _contextCallsInFlight -= 1;
-    } else if (_contextCallsInFlight == 0) {
-      _stalePerformanceContext = _contextHandle;
+      if (remaining == 0) {
+        _contextCallsInFlight.remove(key);
+      } else {
+        _contextCallsInFlight[key] = remaining;
+      }
+    } else if (!_contextCallsInFlight.containsKey(key) &&
+        epoch == _modelEpoch) {
+      _stalePerformanceContext = contextHandle;
     }
   }
 
   /// Runs [call], a backend call on the context, such as embeddings.
   Future<T> _contextCall<T>(Future<T> Function() call) async {
-    _beginContextCall();
+    final requestContext = _contextHandle!;
+    final requestEpoch = _modelEpoch;
+    _beginContextCall(requestContext, requestEpoch);
     try {
       return await call();
     } finally {
-      _endContextRequest(reachedBackend: true);
+      _endContextRequest(requestContext, requestEpoch, reachedBackend: true);
     }
   }
 
@@ -3353,14 +3379,15 @@ class LlamaEngine {
     return Future<ModelFileType?>.value(null);
   }
 
-  /// Returns native llama.cpp perf timings for the active context when available.
+  /// Returns backend perf timings for the active context when available.
   ///
   /// Returns null after a generation that ended before reaching the backend,
   /// such as one cancelled right after it was listened to, instead of the
   /// counters of the request before it. Counters return once a generation,
   /// embedding, next-token scoring or text-to-speech call runs on the context.
   /// A generation that ends that way while another request is running on the
-  /// context leaves that request's counters.
+  /// context leaves that request's counters. Requests from an unloaded model
+  /// cannot change a reloaded context's counter availability.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;

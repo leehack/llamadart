@@ -197,6 +197,91 @@ void main() {
       );
     });
 
+    test(
+      'dispatch failure invalidates previous counters until the next dispatch',
+      () async {
+        await backend.generate(1, 'ok', const GenerationParams()).drain<void>();
+        final port = RawReceivePort();
+        addTearDown(port.close);
+        final params = GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig(
+            strategies: const [SpeculativeDecodingStrategy.ngramMod],
+            draftModelDownload: ModelLoadOptions(
+              cancelToken: _PortCancelToken(port),
+            ),
+          ),
+        );
+        await expectLater(
+          backend.generate(1, 'bad', params),
+          emitsInOrder([emitsError(isA<ArgumentError>()), emitsDone]),
+        );
+        expect(await backend.getPerformanceContext(1), isNull);
+        expect((await backend.getPerformanceContext(2))?.evalTokens, 7);
+        await backend.generate(1, 'ok', const GenerationParams()).drain<void>();
+        expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+      },
+    );
+
+    Future<void> staleContext(NativeLlamaBackend target) async {
+      final running = target
+          .generate(1, 'pending', const GenerationParams())
+          .drain<void>();
+      while (harness.received.whereType<GenerateRequest>().isEmpty) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final request = harness.received.whereType<GenerateRequest>().last;
+      target.cancelGeneration();
+      final queued = target
+          .generate(1, 'ok', const GenerationParams())
+          .drain<void>();
+      target.cancelGeneration();
+      await queued;
+      request.sendPort.send(DoneResponse());
+      await running;
+    }
+
+    test(
+      'dispose clears stale marks before a worker reuses its context handle',
+      () async {
+        final target = NativeLlamaBackend(
+          initialSendPort: harness.sendPort,
+          workerEntrypoint: _counterWorkerEntry,
+        );
+        addTearDown(target.dispose);
+        await staleContext(target);
+        expect(await target.getPerformanceContext(1), isNull);
+        await target.dispose();
+        expect((await target.getPerformanceContext(1))?.evalTokens, 7);
+      },
+    );
+
+    test(
+      'a stale perf lookup cannot revive when a later request dispatches',
+      () async {
+        final proxy = ReceivePort();
+        addTearDown(proxy.close);
+        final held = <PerformanceContextRequest>[];
+        proxy.listen((message) {
+          if (message is PerformanceContextRequest) {
+            held.add(message);
+          } else {
+            harness.sendPort.send(message);
+          }
+        });
+        final target = NativeLlamaBackend(initialSendPort: proxy.sendPort);
+        addTearDown(target.dispose);
+        await staleContext(target);
+        final lookup = target.getPerformanceContext(1);
+        await pumpEventQueue();
+        await target.generate(1, 'ok', const GenerationParams()).drain<void>();
+        for (final request in held) {
+          harness.sendPort.send(request);
+        }
+        expect(await lookup, isNull);
+        expect(held, isEmpty, reason: 'stale counters need no worker RPC');
+      },
+    );
+
     test('generate streams bytes and supports error forwarding', () async {
       final chunks = await backend
           .generate(1, 'ok', const GenerationParams())
@@ -2708,4 +2793,32 @@ class _GenerationCapabilitiesService extends _LoggingLlamaCppService {
         minP: true,
         thinkingBudget: modelHandle == 2,
       );
+}
+
+void _counterWorkerEntry(SendPort initialSendPort) {
+  final receive = ReceivePort();
+  initialSendPort.send(receive.sendPort);
+  receive.listen((message) {
+    switch (message) {
+      case WorkerHandshake():
+        message.sendPort.send(DoneResponse());
+      case PerformanceContextRequest():
+        message.sendPort.send(
+          PerformanceContextResponse(
+            loadMs: 1,
+            promptEvalMs: 1,
+            evalMs: 1,
+            sampleMs: 0,
+            promptEvalTokens: 1,
+            evalTokens: 7,
+            sampleCount: 7,
+            reusedGraphs: 0,
+          ),
+        );
+      case DisposeRequest():
+        message.sendPort.send(DoneResponse());
+        receive.close();
+        Isolate.exit();
+    }
+  });
 }

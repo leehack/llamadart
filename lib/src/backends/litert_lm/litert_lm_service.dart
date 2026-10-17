@@ -346,6 +346,7 @@ class LiteRtLmService {
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) async* {
+    resetPerformanceMetrics();
     _checkContextHandle(contextHandle);
     _requireConversationEngine();
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
@@ -358,7 +359,6 @@ class LiteRtLmService {
 
     _cancelRequested = false;
     if (params.maxTokens <= 0) {
-      _lastMetrics = null;
       return;
     }
 
@@ -463,6 +463,7 @@ class LiteRtLmService {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
+    resetPerformanceMetrics();
     _checkContextHandle(contextHandle);
     _requireConversationEngine();
     if (messages.isEmpty) {
@@ -494,7 +495,6 @@ class LiteRtLmService {
 
     _cancelRequested = false;
     if (params.maxTokens <= 0) {
-      _lastMetrics = null;
       return;
     }
 
@@ -930,6 +930,11 @@ class LiteRtLmService {
     final backend =
         _activeBackend ?? liteRtLmDefaultNativeBackendForCurrentPlatform();
     return backend == liteRtLmCpuBackend ? 0 : ModelParams.maxGpuLayers;
+  }
+
+  /// Invalidates metrics when an admitted generation produces no runtime run.
+  void resetPerformanceMetrics() {
+    _lastMetrics = null;
   }
 
   /// Returns the most recent LiteRT-LM performance metrics.
