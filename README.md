@@ -388,7 +388,8 @@ for the full list.
 
 Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
 and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.
-Decision heads select their device separately; see
+Decision heads follow this CPU placement and report `CPU` in
+`DecisionModelInfo.deviceName`; see
 [head placement](website/docs/guides/decision-models.md#current-support-matrix).
 
 Current default runtime pins:
