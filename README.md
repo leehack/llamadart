@@ -187,7 +187,8 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. Pair companion `0.14.0` with core `0.14.x`, `0.13.0` with core
+  the entry above. Pair companion `0.15.0` with core `0.15.x`, `0.14.0` with core
+  `0.14.x`, `0.13.0` with core
   `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2`
   with core `0.11.1` and `0.11.0`.
   Without it, `all` leaves the image runtime out of a Flutter iOS/macOS app
@@ -268,15 +269,13 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.14.0
+  llamadart: ^0.15.0
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-The unreleased llama.cpp companion source pins `v0.7.0-1`; release
-preparation will assign matching core/companion minor versions.
-
+Pair companion `0.15.0` with core `0.15.x` for llama.cpp `v0.7.0-1`.
 Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
 Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
 for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
@@ -298,13 +297,13 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.14.0
-  llamadart_llama_cpp_flutter: ^0.14.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.14.0 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.14.0 # Apple image generation, opt-in
+  llamadart: ^0.15.0
+  llamadart_llama_cpp_flutter: ^0.15.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.15.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.15.0 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.x`,
+Pair `llamadart_stable_diffusion_flutter` `0.15.0` with core `0.15.x`, `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
 `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
@@ -313,7 +312,8 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Pair LiteRT-LM companion `0.14.0` with core `0.14.x` for native `v0.18.0-2`,
+Pair LiteRT-LM companion `0.15.0` with core `0.15.x` (or `0.14.0` with core `0.14.x`)
+for native `v0.18.0-2`,
 which reduces duplicated words at untimed ASR window boundaries with the
 default overlap. Other boundary and recognition errors can remain.
 

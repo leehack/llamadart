@@ -2,9 +2,15 @@
 
 This document covers the major breaking upgrade paths.
 
-## Unreleased: content embedding cancellation
+## `0.14.x` -> `0.15.0`: upgrade guide
 
-`cancelGeneration()` now cancels `embedContent` / `embedContentBatch` even
+Upgrade core and every Apple companion used by the app to `0.15.x` together.
+Companions now constrain core to `'>=0.15.0 <0.16.0'`. The llama.cpp companion
+pins `v0.7.0-1`; LiteRT-LM and stable_diffusion keep `v0.18.0-2` and `v0.2.0-3`.
+
+### Content embedding cancellation
+
+`cancelGeneration()` cancels `embedContent` / `embedContentBatch` even
 during capability checks on native and Web backends. Handle the existing
 `LlamaInferenceException` cancellation error and await the embedding future
 before reuse. Calls started after cancellation remain usable. Native LiteRT-LM
@@ -12,7 +18,7 @@ also checks cancellation after worker startup, including its string embedding
 methods, which share the content implementation. Native llama.cpp and Web
 legacy `embed` / `embedBatch` cancellation contracts are unchanged.
 
-## Unreleased: native text-to-speech context exclusivity
+### Native text-to-speech context exclusivity
 
 Native llama.cpp rejects embeddings (including content and batch embeddings),
 next-token scoring, text generation, state save/load and LoRA changes on a
@@ -25,16 +31,14 @@ Text-to-speech also rejects a start while generation is active on its context,
 and a second synthesis on the same native worker, including during setup.
 This fixes unsafe overlap; method signatures and platform support are unchanged.
 
-## Unreleased: native wrapper rebuild
+### Native wrapper rebuild
 
 The native-assets hook and Apple companion source now pin `v0.7.0-1`, a
 wrapper rebuild of upstream llama.cpp `v0.7.0`. Existing inference behavior
-and the app API are unchanged. Apple apps need the companion release that
-ships this pin; the published `0.14.0` companion still pins `v0.7.0` and is
-rejected by the updated hook. Release preparation will assign the matching
-core/companion minor versions.
+and the app API are unchanged. Apple apps need companion `0.15.0`; the
+`0.14.0` companion pins `v0.7.0` and is rejected by the updated hook.
 
-## Unreleased: LiteRT-LM Web cancellation errors
+### LiteRT-LM Web cancellation errors
 
 Keep handling `LlamaInferenceException` after `cancelGeneration()`: a runtime
 failure racing cancellation now surfaces instead of ending normally. Only the
@@ -42,7 +46,7 @@ pinned runtime's exact `Task cancelled` error after a cancel request ends
 normally. The same error without a cancel request remains a failure. No API
 migration is needed.
 
-## Unreleased: native performance counters
+### Native performance counters
 
 Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
 llama.cpp, including requests already sent to the worker that never run.
@@ -62,14 +66,14 @@ availability immediately; embedding, scoring and speech restore it only on
 success, using the backend's counter semantics. Web backends still return `null`
 after every request.
 
-## Unreleased: template error labels
+### Template error labels
 
 An empty `tokenizer.chat_template` now names `the built-in ChatML fallback
 template` in render errors. PEG parse errors retain `peg-simple`, `peg-native`
 and the historical `peg-constructed` spelling (still used for Qwen3 Coder XML).
 Exception types and parsing behavior are unchanged.
 
-## Unreleased: native llama.cpp placement diagnostics
+### Native llama.cpp placement diagnostics
 
 With `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none` and a
 negative `mainGpu`, backend name and capabilities now report `CPU`, and
@@ -82,7 +86,7 @@ select the first matching GPU of the load's backend. Explicit nonnegative
 No parameter migration is needed. Explicit `gpu` / `npu`
 validation is unchanged.
 
-## Unreleased: native generation capabilities
+### Native generation capabilities
 
 Native llama.cpp now probes the loaded model/runtime for thinking-budget
 support; check `supportsThinkingBudget` instead of assuming it is available.
@@ -92,7 +96,7 @@ requires a target model with an MTP head and `ModelParams.loadMtp: true`.
 Missing external draft models now throw `LlamaArgumentException` at generation
 start, preserving the diagnostic instead of wrapping it in an inference error.
 
-## Unreleased: WebGPU argument errors
+### WebGPU argument errors
 
 Catch `LlamaArgumentException` for invalid WebGPU request arguments, including
 runtime LoRA scales and bridge-reported argument rejections. These previously
@@ -101,7 +105,7 @@ surfaced as raw argument errors, context errors or `LlamaInferenceException`.
 native. Runtime inference failures and unsupported capabilities retain their
 existing types.
 
-## Unreleased: embedding content API
+### Embedding content API
 
 Web llama.cpp content embeddings now accept image/audio bytes and mono 16 kHz
 Float32 PCM when bridge assets v0.1.64+ positively probe the modality through
