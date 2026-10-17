@@ -393,8 +393,9 @@ void main() {
         guarded,
         barrier: NativeBarrierApi.tryResolve(isWindows: false),
         modelInputWidth: (model) {
-          if (missingWidth)
+          if (missingWidth) {
             throw ArgumentError('missing llama_model_n_embd_inp');
+          }
           return llama_model_n_embd_inp(model);
         },
         mixedBatchResolver: () => LlamaCppMixedBatchApi(
