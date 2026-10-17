@@ -16,6 +16,13 @@ in embedding mode. Native GPU and all Web paths fail with `LlamaUnsupportedExcep
 GGUF loaders still reject true. LiteRT-LM overflow fails the whole call with
 `LlamaInferenceException` and no vectors, possibly after earlier items consumed
 compute; it never truncates. llama.cpp retains pre-inference capacity validation.
+LiteRT-LM concurrent embeds now queue. Cancellation, unload and timeout discard
+the whole batch after the current item settles; timeouts throw
+`LlamaInferenceException`. `contextSize` selects the encoder signature, without
+truncation. Embedding mode rejects conversation tuning (LoRA, chat templates,
+activation type, prefill, parallel loading, dispatch paths, program cache limits),
+MTP/rollback and Web memory hints rather than silently ignoring them. Native CPU
+qualification covers macOS arm64 only.
 
 <a id="013x---0140-llamacpp-v070-abi-qwen3-overrides-and-load-callbacks"></a>
 

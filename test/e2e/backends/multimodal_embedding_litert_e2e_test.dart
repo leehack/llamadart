@@ -19,6 +19,48 @@ void main() {
   final temp = useSuiteSystemTemp();
   final model = Platform.environment['LITERT_LM_EMBEDDING_MODEL'];
   final gpu = Platform.environment['LITERT_LM_EMBEDDING_BACKEND'] == 'gpu';
+  test(
+    'unload and dispose cancel a sixty-item native batch between items',
+    () async {
+      for (final dispose in [false, true]) {
+        final engine = LlamaEngine(LlamaBackend());
+        addTearDown(engine.dispose);
+        await engine.loadModel(
+          model!,
+          modelParams: ModelParams(
+            liteRtLmEmbeddingEngine: true,
+            device: ComputeDevice.cpu,
+            contextSize: 1024,
+            liteRtLmCacheDir: temp().path,
+          ),
+        );
+        await engine.embeddingCapabilities;
+        final input = liteRtEmbeddingInputs()['checker']!;
+        final rejected = expectLater(
+          engine.embedContentBatch(List.filled(60, input)),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        if (dispose) {
+          await engine.dispose();
+        } else {
+          await engine.unloadModel();
+          await engine.loadModel(
+            model,
+            modelParams: ModelParams(
+              liteRtLmEmbeddingEngine: true,
+              device: ComputeDevice.cpu,
+              contextSize: 1024,
+              liteRtLmCacheDir: temp().path,
+            ),
+          );
+          expect(await engine.embed('reusable'), hasLength(768));
+        }
+        await rejected;
+      }
+    },
+    skip: model == null ? 'Set LITERT_LM_EMBEDDING_MODEL.' : false,
+  );
   test('LiteRT embedding-only model text/media/batch/limits/reuse', () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);

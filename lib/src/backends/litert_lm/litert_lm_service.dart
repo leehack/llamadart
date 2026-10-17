@@ -132,6 +132,7 @@ class LiteRtLmService {
     ModelParams params, {
     String? backendOverride,
   }) async {
+    _validateModelParams(params);
     final file = File(path);
     if (!await file.exists()) {
       throw ArgumentError('LiteRT-LM model does not exist: $path');
@@ -144,7 +145,6 @@ class LiteRtLmService {
         'got $path',
       );
     }
-    _validateModelParams(params);
     final resolvedBackend = _resolveBackendName(
       params,
       backendOverride: backendOverride,
@@ -310,11 +310,19 @@ class LiteRtLmService {
         }
       }
     }
-    final result = await session.compute(inputs, normalize: normalize);
     if (_cancelRequested) {
       throw LlamaInferenceException(
-        'LiteRT-LM embedding cancelled after native work settled.',
+        'LiteRT-LM embedding cancelled before native work.',
       );
+    }
+    final result = <List<double>>[];
+    for (final input in inputs) {
+      result.addAll(await session.compute([input], normalize: normalize));
+      if (_cancelRequested) {
+        throw LlamaInferenceException(
+          'LiteRT-LM embedding cancelled after native work settled.',
+        );
+      }
     }
     return result;
   }
@@ -1490,6 +1498,31 @@ class LiteRtLmService {
   void _validateModelParams(ModelParams params) {
     params.validate();
 
+    if (params.liteRtLmEmbeddingEngine) {
+      final ignored = <String>[
+        if (params.loras.isNotEmpty) 'loras',
+        if (params.chatTemplate != null) 'chatTemplate',
+        if (params.liteRtLmActivationDataType != null)
+          'liteRtLmActivationDataType',
+        if (params.liteRtLmPrefillChunkSize != null) 'liteRtLmPrefillChunkSize',
+        if (params.liteRtLmParallelFileSectionLoading != null)
+          'liteRtLmParallelFileSectionLoading',
+        if (params.liteRtLmDispatchLibDir != null) 'liteRtLmDispatchLibDir',
+        if (params.liteRtLmMaxProgramCacheBytes != null)
+          'liteRtLmMaxProgramCacheBytes',
+        if (params.loadMtp) 'loadMtp',
+        if (params.speculativeRollbackTokenMax != 0)
+          'speculativeRollbackTokenMax',
+        if (params.preferMemory64 != null) 'preferMemory64',
+        if (params.modelBytesHint != null) 'modelBytesHint',
+      ];
+      if (ignored.isNotEmpty) {
+        throw LlamaUnsupportedException(
+          'LiteRT-LM embedding mode does not apply: ${ignored.join(', ')}. '
+          'Use contextSize (encoder signature), numberOfThreads, liteRtLmCacheDir and CPU device selection.',
+        );
+      }
+    }
     final unsupported = <String>[];
     if (params.contextSize <= 0) {
       unsupported.add('contextSize=${params.contextSize}');

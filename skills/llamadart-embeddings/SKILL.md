@@ -42,7 +42,12 @@ description: >-
   conversation mode has no embeddings. Probe `await engine.embeddingCapabilities`
   before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
   mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
-  Preflight checks modalities, sources and media decoding across the whole batch.
+  Native CPU qualification covers macOS arm64 only. Concurrent embeds queue;
+  cancellation/unload/timeout settle the current item and discard the whole batch.
+  Timeouts throw `LlamaInferenceException`. `contextSize` selects the encoder
+  signature without truncation; conversation tuning options are rejected.
+  Preflight checks modalities, sources and media decoding across the whole batch
+  in a helper isolate.
   Without a token-count API, LiteRT-LM may detect overflow during computation;
   the whole call fails with `LlamaInferenceException` and no vectors. Earlier
   items can waste compute; never truncate or return partial results. Still treat

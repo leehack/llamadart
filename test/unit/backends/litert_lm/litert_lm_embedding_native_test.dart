@@ -1,6 +1,7 @@
-@TestOn('vm')
+@TestOn('vm && (mac-os || linux)')
 library;
 
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -24,6 +25,8 @@ void main() {
   late void Function(int) mode;
   late int Function() allocations;
   late int Function() processorBackends;
+  late int Function() calls;
+  late void Function() release;
   setUpAll(() async {
     final source = File('${suite().path}/embedding.c');
     await source.writeAsString(_source);
@@ -42,6 +45,10 @@ void main() {
     );
     allocations = lib.lookupFunction<Int Function(), int Function()>(
       'allocations',
+    );
+    calls = lib.lookupFunction<Int Function(), int Function()>('compute_calls');
+    release = lib.lookupFunction<Void Function(), void Function()>(
+      'release_compute',
     );
     processorBackends = lib.lookupFunction<Int Function(), int Function()>(
       'processor_backends',
@@ -65,6 +72,332 @@ void main() {
   List<LiteRtLmEmbeddingPart> input() => [
     LiteRtLmEmbeddingPart(0, Uint8List.fromList([97, 98])),
   ];
+  const embeddingParams = ModelParams(
+    liteRtLmEmbeddingEngine: true,
+    device: ComputeDevice.cpu,
+    contextSize: 1024,
+    numberOfThreads: 2,
+  );
+  Future<(LiteRtLmBackend, int, int)> backendForTest({
+    Duration embeddingTimeout = const Duration(minutes: 10),
+  }) async {
+    final port = ReceivePort();
+    final service = LiteRtLmService(
+      clientFactory: () => LiteRtLmRuntimeClient(libraryPath: library),
+    );
+    runLiteRtLmWorkerForTesting(port.sendPort, service, exitOnDispose: false);
+    final backend = LiteRtLmBackend(
+      initialSendPort: await port.first as SendPort,
+      embeddingTimeout: embeddingTimeout,
+    );
+    port.close();
+    addTearDown(backend.dispose);
+    final handle = await backend.modelLoad(model, embeddingParams);
+    final context = await backend.contextCreate(handle, embeddingParams);
+    await backend.getEmbeddingCapabilities(context);
+    return (backend, handle, context);
+  }
+
+  Future<void> waitForCompute() async {
+    await Future<void>(() async {
+      while (calls() == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    }).timeout(const Duration(seconds: 3));
+  }
+
+  test(
+    'embedding deadline throws a typed error and cancels native work before reuse',
+    () async {
+      final (backend, _, context) = await backendForTest(
+        embeddingTimeout: const Duration(milliseconds: 100),
+      );
+      mode(11);
+      final timedOut = expectLater(
+        backend.embedBatch(context, List.filled(60, 'x')),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (e) => e.message,
+            'timeout',
+            contains('timed out'),
+          ),
+        ),
+      );
+      await waitForCompute();
+      await timedOut;
+      release();
+      // The queued probe waits for cancellation settlement on the production worker chain.
+      await backend.getEmbeddingCapabilities(context);
+      expect(calls(), 1);
+      mode(0);
+      expect(await backend.embed(context, 'reuse', normalize: false), [3, 4]);
+    },
+  );
+  test(
+    'cancel during embedding creation prevents the first native inference',
+    () async {
+      final service = LiteRtLmService(
+        clientFactory: () => LiteRtLmRuntimeClient(libraryPath: library),
+      );
+      addTearDown(service.dispose);
+      final handle = await service.loadModel(model, embeddingParams);
+      final context = service.createContext(handle, embeddingParams);
+      mode(12);
+      final rejected = expectLater(
+        service.embed(context, [input()], normalize: false),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      await waitForCompute();
+      service.cancelGeneration();
+      release();
+      await rejected;
+      expect(calls(), 1, reason: 'only engine creation entered the fake');
+      mode(0);
+      expect(await service.embed(context, [input()], normalize: false), [
+        [3, 4],
+      ]);
+    },
+  );
+  test(
+    'embedding request on a stale context reports a typed state error',
+    () async {
+      final (backend, _, _) = await backendForTest();
+      await expectLater(
+        backend.embed(-1, 'stale'),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect((await backend.getEmbeddingCapabilities(-1)).text, isFalse);
+    },
+  );
+  test(
+    'cancel during helper-isolate preflight prevents later dispatch',
+    () async {
+      final (backend, _, context) = await backendForTest();
+      final pending = backend.embed(context, 'cancel before dispatch');
+      backend.cancelGeneration();
+      await expectLater(pending, throwsA(isA<LlamaInferenceException>()));
+      expect(calls(), 0);
+      expect(await backend.embed(context, 'reuse', normalize: false), [3, 4]);
+    },
+  );
+  test(
+    'temporary native input buffers are freed on success and allocation failure',
+    () async {
+      final session = await create();
+      addTearDown(session.dispose);
+      final baseline = allocations();
+      for (final fault in [0, 2]) {
+        mode(fault);
+        final result = session.compute(
+          [input()],
+          normalize: false,
+          inputAllocator: _FakeAllocator(library),
+        );
+        if (fault == 0) {
+          expect(await result, [
+            [3, 4],
+          ]);
+        } else {
+          await expectLater(result, throwsA(isA<LlamaInferenceException>()));
+        }
+        expect(allocations(), baseline);
+      }
+    },
+  );
+  test('concurrent embeddings queue and both complete', () async {
+    final (backend, _, context) = await backendForTest();
+    expect(
+      await Future.wait([
+        backend.embed(context, 'first', normalize: false),
+        backend.embed(context, 'second', normalize: false),
+      ]),
+      [
+        [3, 4],
+        [3, 4],
+      ],
+    );
+  });
+  for (final operation in ['cancel', 'unload', 'dispose']) {
+    test(
+      '$operation settles a multi-item batch after the current item',
+      () async {
+        final (backend, handle, context) = await backendForTest();
+        mode(11);
+        final pending = backend.embedBatch(context, List.filled(60, 'x'));
+        final rejected = expectLater(
+          pending,
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        await waitForCompute();
+        final settlement = switch (operation) {
+          'unload' => backend.contextFree(context),
+          'dispose' => backend.dispose(),
+          _ => Future<void>(() => backend.cancelGeneration()),
+        };
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        release();
+        await settlement;
+        await rejected;
+        expect(
+          calls(),
+          1,
+          reason: 'cancel must prevent item 2 from entering native code',
+        );
+        mode(0);
+        if (operation == 'cancel') {
+          expect(await backend.embed(context, 'reuse', normalize: false), [
+            3,
+            4,
+          ]);
+        } else if (operation == 'unload') {
+          await backend.modelFree(handle);
+          final next = await backend.modelLoad(model, embeddingParams);
+          final ctx = await backend.contextCreate(next, embeddingParams);
+          expect(await backend.embed(ctx, 'reload', normalize: false), [3, 4]);
+        }
+      },
+    );
+  }
+  test(
+    'cancel suppresses the last native result and queued dispatch; reuse resets it',
+    () async {
+      final (backend, _, context) = await backendForTest();
+      mode(11);
+      final first = expectLater(
+        backend.embed(context, 'active'),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      await waitForCompute();
+      final queued = expectLater(
+        backend.embed(context, 'queued'),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      backend.cancelGeneration();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      release();
+      await Future.wait([first, queued]);
+      expect(calls(), 1);
+      mode(0);
+      expect(await backend.embed(context, 'reuse', normalize: false), [3, 4]);
+    },
+  );
+  test(
+    'media preflight yields the caller and validates the whole batch before native work',
+    () async {
+      final (backend, _, context) = await backendForTest();
+      var callerProgress = false;
+      Timer.run(() => callerProgress = true);
+      await expectLater(
+        backend.embedContentBatch(context, [
+          LlamaEmbeddingInput(const [LlamaTextContent('valid')]),
+          LlamaEmbeddingInput([
+            LlamaImageContent(
+              bytes: Uint8List.fromList([137, 80, 78, 71, 13, 10, 26, 10]),
+            ),
+          ]),
+        ]),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      expect(callerProgress, isTrue);
+      expect(calls(), 0);
+    },
+  );
+  final ignoredOptions = <String, ModelParams>{
+    'loras': embeddingParams.copyWith(
+      loras: [const LoraAdapterConfig(path: 'adapter')],
+    ),
+    'chatTemplate': embeddingParams.copyWith(chatTemplate: 'ignored'),
+    'liteRtLmActivationDataType': embeddingParams.copyWith(
+      liteRtLmActivationDataType: LiteRtLmActivationDataType.float16,
+    ),
+    'liteRtLmPrefillChunkSize': embeddingParams.copyWith(
+      liteRtLmPrefillChunkSize: 32,
+    ),
+    'liteRtLmParallelFileSectionLoading': embeddingParams.copyWith(
+      liteRtLmParallelFileSectionLoading: false,
+    ),
+    'liteRtLmDispatchLibDir': embeddingParams.copyWith(
+      liteRtLmDispatchLibDir: 'dispatch',
+    ),
+    'liteRtLmMaxProgramCacheBytes': embeddingParams.copyWith(
+      liteRtLmMaxProgramCacheBytes: 0,
+    ),
+    'loadMtp': embeddingParams.copyWith(loadMtp: true),
+    'speculativeRollbackTokenMax': embeddingParams.copyWith(
+      speculativeRollbackTokenMax: 1,
+    ),
+    'preferMemory64': embeddingParams.copyWith(preferMemory64: true),
+    'modelBytesHint': embeddingParams.copyWith(modelBytesHint: 42),
+  };
+  for (final entry in ignoredOptions.entries) {
+    test(
+      'embedding mode rejects ${entry.key} before model I/O and at context creation',
+      () async {
+        final service = LiteRtLmService();
+        addTearDown(service.dispose);
+        final matcher = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'option and mode',
+            allOf(contains(entry.key), contains('embedding mode')),
+          ),
+        );
+        await expectLater(
+          service.loadModel('${suite().path}/missing.litertlm', entry.value),
+          matcher,
+        );
+        final handle = await service.loadModel(model, embeddingParams);
+        expect(() => service.createContext(handle, entry.value), matcher);
+      },
+    );
+  }
+  test(
+    'contextSize forwards the encoder signature length without truncating text',
+    () async {
+      final service = LiteRtLmService(
+        clientFactory: () => LiteRtLmRuntimeClient(libraryPath: library),
+      );
+      addTearDown(service.dispose);
+      final params = embeddingParams.copyWith(contextSize: 64);
+      final handle = await service.loadModel(model, params);
+      final context = service.createContext(handle, params);
+      expect(
+        await service.embed(context, [
+          [LiteRtLmEmbeddingPart(0, Uint8List(256))],
+        ], normalize: false),
+        [
+          [3, 4],
+        ],
+      );
+      final limit = DynamicLibrary.open(
+        library,
+      ).lookupFunction<Int Function(), int Function()>('signature_limit');
+      expect(limit(), 64);
+      expect(calls(), 1);
+    },
+  );
+  test(
+    'creation failure releases the cache lease and disposes the client',
+    () async {
+      mode(10);
+      final client = _FailingEmbeddingClient(library);
+      final cache = await Directory(
+        suite().path,
+      ).createTemp('failed-embedding-cache');
+      final service = LiteRtLmService(clientFactory: () => client);
+      addTearDown(service.dispose);
+      final params = embeddingParams.copyWith(liteRtLmCacheDir: cache.path);
+      final modelHandle = await service.loadModel(model, params);
+      final context = service.createContext(modelHandle, params);
+      await expectLater(
+        service.embeddingCapabilities(context),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(client.disposed, isTrue);
+      expect(cache.listSync(), isEmpty);
+    },
+  );
   test(
     'production backend worker and service route embedding mode and reject chat',
     () async {
@@ -342,25 +675,60 @@ void main() {
   );
 }
 
+class _FakeAllocator implements Allocator {
+  final String library;
+  _FakeAllocator(this.library);
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) =>
+      DynamicLibrary.open(library)
+          .lookupFunction<
+            Pointer<Void> Function(Size),
+            Pointer<Void> Function(int)
+          >('tracked_alloc')(byteCount)
+          .cast<T>();
+  @override
+  void free(Pointer<NativeType> pointer) =>
+      DynamicLibrary.open(library).lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('tracked_free')(pointer.cast());
+}
+
+class _FailingEmbeddingClient extends LiteRtLmRuntimeClient {
+  bool disposed = false;
+  _FailingEmbeddingClient(String library) : super(libraryPath: library);
+  @override
+  void dispose() => disposed = true;
+}
+
 const _source = r'''
 #include <stdlib.h>
+#include <stdatomic.h>
+#include <unistd.h>
 void* litert_lm_engine_settings_create(void){return NULL;}
 #include <stddef.h>
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
-static int mode=0, live=0, processors=0;
+static int mode=0, processors=0, signature=0;
+int signature_limit(void){return signature;}
+static atomic_int live=0;
+static atomic_int compute_count=0, released=0;
+int compute_calls(void){return compute_count;}
+void release_compute(void){released=1;}
 int processor_backends(void){return processors;}
-void set_mode(int n){mode=n;}
+void set_mode(int n){mode=n;compute_count=0;released=0;}
 int allocations(void){return live;}
 static void* alloc(void){live++;return calloc(1,16);}
 static void del(void*p){if(p){live--;free(p);}}
+void* tracked_alloc(size_t n){live++;return calloc(1,n);}
+void tracked_free(void*p){del(p);}
 void* litert_lm_embedding_engine_settings_create(const char*m,const char*b,const char*v,const char*a){processors=(v&&strcmp(v,"cpu")==0?1:0)|(a&&strcmp(a,"cpu")==0?2:0);return mode==9||strcmp(b,"cpu")!=0?NULL:alloc();}
 void litert_lm_embedding_engine_settings_delete(void*p){del(p);}
 void litert_lm_embedding_engine_settings_set_cache_dir(void*p,const char*s){}
-void litert_lm_embedding_engine_settings_set_max_input_length(void*p,int n){}
+void litert_lm_embedding_engine_settings_set_max_input_length(void*p,int n){signature=n;}
 void litert_lm_embedding_engine_settings_set_num_threads(void*p,int n){((int*)p)[0]=n;}
-void* litert_lm_embedding_engine_create(void*p){return mode==10||((int*)p)[0]!=2?NULL:alloc();}
+void* litert_lm_embedding_engine_create(void*p){if(mode==12){compute_count++;while(!released)usleep(1000);}return mode==10||((int*)p)[0]!=2?NULL:alloc();}
 void litert_lm_embedding_engine_delete(void*p){del(p);}
 void* litert_lm_embedding_options_create(void){return mode==1?NULL:alloc();}
 void litert_lm_embedding_options_delete(void*p){del(p);}
@@ -369,12 +737,12 @@ void litert_lm_embedding_options_set_input_overflow_strategy(void*p,int n){((int
 void* litert_lm_input_data_create(int t,const void*d,size_t n){return mode==2?NULL:alloc();}
 void litert_lm_input_data_delete(void*p){del(p);}
 static float raw[2]={3,4}, normalized[2]={0.6f,0.8f}, invalid[2]={NAN,1};
-void* litert_lm_embedding_engine_compute_embedding(void*e,const void*const*i,size_t n,const void*o){if(mode==3||((int*)o)[1]!=2)return NULL;void*r=alloc();((int*)r)[0]=((int*)o)[0];return r;}
-void litert_lm_embedding_response_delete(void*p){del(p);}
+void* litert_lm_embedding_engine_compute_embedding(void*e,const void*const*i,size_t n,const void*o){compute_count++; if(mode==11){while(!released)usleep(1000);} if(mode==3||(mode==7&&compute_count==2)||((int*)o)[1]!=2)return NULL;void*r=alloc();((int*)r)[0]=((int*)o)[0];return r;}
+void litert_lm_embedding_response_delete(void*p){raw[0]=-999;raw[1]=-999;normalized[0]=-999;normalized[1]=-999;del(p);}
 size_t litert_lm_embedding_response_get_size(const void*p){return mode==4?0:2;}
-const float* litert_lm_embedding_response_get_values(const void*p){if(mode==5)return NULL;if(mode==6)return invalid;return ((int*)p)[0]?normalized:raw;}
-void* litert_lm_embedding_engine_compute_embedding_batch(void*e,const void*const*const*i,const size_t*n,size_t b,const void*o){return mode==7?NULL:litert_lm_embedding_engine_compute_embedding(e,NULL,0,o);}
-size_t litert_lm_embedding_responses_get_size(const void*p){return mode==8?1:2;}
+const float* litert_lm_embedding_response_get_values(const void*p){raw[0]=3;raw[1]=4;normalized[0]=0.6f;normalized[1]=0.8f;if(mode==5)return NULL;if(mode==6)return invalid;return ((int*)p)[0]?normalized:raw;}
+void* litert_lm_embedding_engine_compute_embedding_batch(void*e,const void*const*const*i,const size_t*n,size_t b,const void*o){if(mode==7)return NULL;void*r=NULL;for(size_t j=0;j<b;j++){if(r)litert_lm_embedding_response_delete(r);r=litert_lm_embedding_engine_compute_embedding(e,NULL,0,o);if(!r)return NULL;}((int*)r)[1]=b;return r;}
+size_t litert_lm_embedding_responses_get_size(const void*p){return mode==8?1:((int*)p)[1];}
 const void* litert_lm_embedding_responses_get_at(const void*p,size_t i){return p;}
 void litert_lm_embedding_responses_delete(void*p){del(p);}
 ''';

@@ -14,17 +14,22 @@ the LiteRT-LM-only flag. A context cannot change its model's selected engine.
 The capability probe checks the actual bundle's text-encoder/embedder and
 vision/audio encoder/adapter sections, the complete optional v0.18 embedding C
 ABI, and successful processor creation. Unknown or unloaded contexts return
-all-false without runtime I/O. Native CPU is qualified; native GPU/NPU and all
-Web embeddings remain unsupported. Synthetic media establishes wiring, not
+all-false without runtime I/O. Native CPU is qualified on macOS arm64 only;
+native GPU/NPU and all Web embeddings remain unsupported. Synthetic media establishes wiring, not
 retrieval quality. Other devices and embedding families were not qualified.
 
 Inputs preserve order and merge adjacent text verbatim. Accepted media are
 PNG/JPEG bytes, mono 16 kHz Float32 PCM samples, and mono 16 kHz PCM16/Float32 WAV
 bytes. Paths, image URLs, video, multiple sources, malformed media and other
 codecs are rejected before inference. All media in the batch is decoded during
-Dart preflight. The native worker owns copied inputs and copies complete pooled
-vectors before freeing responses. It serializes embedding work with generation,
-settles cancellation before reuse/disposal, and never exposes partial output.
+Dart preflight in a helper isolate, keeping the caller responsive. The native
+worker owns copied inputs and copies complete pooled vectors before freeing
+responses. Embedding requests queue on the worker's active-request chain.
+Native inference
+runs one item at a time, checking cancellation after every item and before
+returning any vectors. Unload/dispose requests cancel queued and active embeds
+and await the current item before freeing the engine. Timeouts request cancellation
+and throw `LlamaInferenceException`; no partial output is exposed.
 
 The amended contract still requires whole-batch modalities, part shapes and
 media-source/decoding validation before inference. llama.cpp additionally
@@ -34,6 +39,24 @@ averaging, and a runtime overflow fails the whole call with
 `LlamaInferenceException` and no vectors. Earlier batch items may waste compute.
 The E2E includes a valid input followed by an overflowing input and verifies
 that no partial result is returned and the engine remains reusable.
+
+## Embedding load options
+
+`contextSize` selects the encoder signature through the upstream maximum-input-length
+setting; it is not a token truncation limit. Available signatures depend on the
+bundle, so a small value may select a larger supported signature. Overflow still
+fails the whole call. `numberOfThreads`, `liteRtLmCacheDir`, and native CPU device
+selection are applied. Explicit LoRA, chat templates, activation type, prefill chunk
+size, parallel section loading, dispatch library directory, program cache limits,
+MTP/rollback settings and Web memory hints are rejected with
+`LlamaUnsupportedException` naming the option and embedding mode before model I/O.
+
+The [upstream input constructor](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/engine.cc#L119-L145)
+copies encoded image bytes; it does not validate their contents. PNG/JPEG headers
+and container structure alone cannot establish that compressed pixel data decodes.
+The core `image: ^4.0.0` dependency retains full decoding in a helper isolate to
+honor whole-batch validation before inference, without fetching or executing a
+native processor on the caller isolate.
 
 ## Exact qualification
 

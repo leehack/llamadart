@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Make LiteRT-LM embedding batches responsive to cancellation, queue concurrent calls, and reject unsupported tuning options.
 - Add native CPU LiteRT-LM text, image and audio embeddings with explicit engine selection and whole-call overflow errors.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.

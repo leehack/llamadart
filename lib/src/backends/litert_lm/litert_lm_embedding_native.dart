@@ -177,9 +177,11 @@ class LiteRtLmEmbeddingSession {
   );
 
   /// Copies vectors before deleting native responses; cancellation waits for this call.
+  /// [inputAllocator] substitutes temporary allocations for VM ownership tests.
   Future<List<List<double>>> compute(
     List<List<LiteRtLmEmbeddingPart>> inputs, {
     required bool normalize,
+    Allocator inputAllocator = calloc,
   }) {
     final address = _address;
     if (address == 0) {
@@ -187,7 +189,14 @@ class LiteRtLmEmbeddingSession {
     }
     final runtime = library, libs = companions;
     return Isolate.run(
-      () => _computeEmbedding(runtime, libs, address, inputs, normalize),
+      () => _computeEmbedding(
+        runtime,
+        libs,
+        address,
+        inputs,
+        normalize,
+        inputAllocator,
+      ),
     );
   }
 
@@ -209,6 +218,7 @@ List<List<double>> _computeEmbedding(
   int address,
   List<List<LiteRtLmEmbeddingPart>> inputs,
   bool normalize,
+  Allocator calloc,
 ) {
   if (inputs.isEmpty) {
     return [];

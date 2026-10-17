@@ -265,3 +265,17 @@ example `4` or `8`), then tune based on memory and latency/throughput tradeoffs.
 
 To measure sequential vs batch throughput, see
 [Backend benchmarks](./backend-benchmarks#embedding-throughput).
+
+### LiteRT-LM embedding lifecycle and options
+
+Concurrent embedding calls queue. Whole-batch media decoding runs off the caller
+isolate; native inference checks cancellation between items. Cancel, unload and
+timeout discard all vectors after the current item settles. A timeout throws
+`LlamaInferenceException` and requests worker cancellation.
+
+`contextSize` selects the model's encoder signature without truncating inputs.
+Embedding mode applies `numberOfThreads`, `liteRtLmCacheDir` and CPU selection;
+LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths,
+program cache limits, MTP/rollback and Web memory hints throw
+`LlamaUnsupportedException` before model I/O. Native CPU qualification is limited
+to macOS arm64; GPU/NPU and Web embeddings remain unavailable.

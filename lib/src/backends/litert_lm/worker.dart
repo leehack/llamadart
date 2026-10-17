@@ -27,6 +27,7 @@ void runLiteRtLmWorkerForTesting(
   initialSendPort.send(receivePort.sendPort);
 
   Future<void> activeRequest = Future<void>.value();
+  var cancellationSerial = 0;
   var generationInFlight = false;
   var generationCancelRequested = false;
   var shuttingDown = false;
@@ -88,6 +89,7 @@ void runLiteRtLmWorkerForTesting(
     }
 
     if (message is LiteRtLmCancelGenerationRequest) {
+      cancellationSerial++;
       if (generationInFlight) {
         generationCancelRequested = true;
       }
@@ -97,8 +99,7 @@ void runLiteRtLmWorkerForTesting(
     }
 
     if (message is LiteRtLmGenerateRequest ||
-        message is LiteRtLmGenerateChatRequest ||
-        message is LiteRtLmEmbedRequest) {
+        message is LiteRtLmGenerateChatRequest) {
       if (generationInFlight) {
         message.sendPort.send(
           LiteRtLmErrorResponse(
@@ -111,6 +112,7 @@ void runLiteRtLmWorkerForTesting(
       generationInFlight = true;
     }
 
+    final requestCancellationSerial = cancellationSerial;
     activeRequest = activeRequest.catchError((_) {}).then((_) async {
       try {
         if (shuttingDown) {
@@ -130,6 +132,9 @@ void runLiteRtLmWorkerForTesting(
               ),
             );
           case LiteRtLmEmbedRequest():
+            // Keep queued embed cancellation separate from conversation state.
+            final generationCancelRequested =
+                requestCancellationSerial != cancellationSerial;
             if (generationCancelRequested) {
               message.sendPort.send(
                 LiteRtLmErrorResponse(
@@ -365,8 +370,7 @@ void runLiteRtLmWorkerForTesting(
         message.sendPort.send(LiteRtLmErrorResponse.from(error));
       } finally {
         if (message is LiteRtLmGenerateRequest ||
-            message is LiteRtLmGenerateChatRequest ||
-            message is LiteRtLmEmbedRequest) {
+            message is LiteRtLmGenerateChatRequest) {
           generationCancelRequested = false;
           generationInFlight = false;
         }

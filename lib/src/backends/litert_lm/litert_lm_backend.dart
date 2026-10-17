@@ -52,10 +52,12 @@ class LiteRtLmBackend
   _WorkerGeneration? _runningGeneration;
   _QueuedGeneration? _queuedGeneration;
   final Map<ReceivePort, Completer<Object?>> _pendingRequests = {};
+  final Duration _embeddingTimeout;
   final String? _preferredBackend;
   final void Function(SendPort) _workerEntryPoint;
 
   bool _isReady = false;
+  int _embeddingCancellationSerial = 0;
   bool _embeddingEngine = false;
   int? _embeddingContext;
   bool _disposed = false;
@@ -68,13 +70,16 @@ class LiteRtLmBackend
   /// [ModelParams.device], which also works through the default
   /// `LlamaBackend()` router. A load whose [ModelParams.device] is not auto
   /// throws `LlamaUnsupportedException` when [preferredBackend] is set.
+  /// [embeddingTimeout] bounds embedding requests, including worker queue time.
   /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
   LiteRtLmBackend({
     SendPort? initialSendPort,
+    Duration embeddingTimeout = const Duration(minutes: 10),
     @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
     String? preferredBackend,
     void Function(SendPort)? workerEntryPoint,
-  }) : _preferredBackend = preferredBackend,
+  }) : _embeddingTimeout = embeddingTimeout,
+       _preferredBackend = preferredBackend,
        _workerEntryPoint = workerEntryPoint ?? liteRtLmWorkerEntry {
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
@@ -156,12 +161,33 @@ class LiteRtLmBackend
         'LiteRT-LM embeddings require liteRtLmEmbeddingEngine: true; a conversation engine is loaded.',
       );
     }
-    final prepared = inputs.map(prepareLiteRtLmEmbedding).toList();
-    final response = await _sendRequest(
-      (port) => LiteRtLmEmbedRequest(contextHandle, prepared, normalize, port),
-      timeout: const Duration(minutes: 10),
+    final cancellationSerial = _embeddingCancellationSerial;
+    // Full decoding must not block the caller isolate, even for large media.
+    final prepared = await Isolate.run(
+      () => inputs.map(prepareLiteRtLmEmbedding).toList(),
     );
-    return _expect<LiteRtLmEmbedResponse>(response, 'embedding').vectors;
+    if (cancellationSerial != _embeddingCancellationSerial) {
+      throw LlamaInferenceException(
+        'LiteRT-LM embedding cancelled during media preflight.',
+      );
+    }
+    try {
+      final response = await _sendRequest(
+        (port) =>
+            LiteRtLmEmbedRequest(contextHandle, prepared, normalize, port),
+        timeout: _embeddingTimeout,
+      );
+      return _expect<LiteRtLmEmbedResponse>(response, 'embedding').vectors;
+    } on TimeoutException {
+      await _cancelGeneration();
+      throw LlamaInferenceException(
+        'LiteRT-LM embedding timed out; cancellation requested. Native work settles before reuse.',
+      );
+    } on StateError catch (error) {
+      throw LlamaStateException(
+        'LiteRT-LM embedding unavailable: ${error.message}',
+      );
+    }
   }
 
   @override
@@ -464,6 +490,7 @@ class LiteRtLmBackend
 
   @override
   void cancelGeneration() {
+    _embeddingCancellationSerial++;
     _runningGeneration?.cancelRequested = true;
     _closeQueuedGeneration();
     unawaited(_cancelGeneration());
@@ -668,6 +695,7 @@ class LiteRtLmBackend
   Future<void> dispose() => _disposeFuture ??= _disposeWorker();
 
   Future<void> _disposeWorker() async {
+    _embeddingCancellationSerial++;
     _disposed = true;
     _runningGeneration?.cancelRequested = true;
     _closeQueuedGeneration();
@@ -1001,9 +1029,13 @@ class LiteRtLmBackend
   );
 
   Future<void> _cancelActiveGeneration() async {
+    _embeddingCancellationSerial++;
     _closeQueuedGeneration();
     final cleanup = _activeGenerationCleanup;
     if (cleanup == null) {
+      if (_embeddingEngine) {
+        await _cancelGeneration();
+      }
       return;
     }
     _runningGeneration?.cancelRequested = true;
