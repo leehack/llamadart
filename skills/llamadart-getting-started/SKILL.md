@@ -69,6 +69,11 @@ Linux and web. Full docs: https://llamadart.leehack.com
   the running load with `ModelLoadOptions.cancelToken`.
 - Check `engine.isReady` before inference. Log `engine.getBackendName()` in
   diagnostics so reports name the runtime actually used.
+  Native llama.cpp with `device: ComputeDevice.auto`,
+  `splitMode: ModelSplitMode.none` and a negative `mainGpu` reports `CPU`
+  in backend name/capabilities and `0` resolved GPU layers. Layer and row
+  splits do not disable GPUs this way; explicit `gpu` / `npu` rejects the
+  single-device negative-index combination with `LlamaArgumentException`.
 - `ModelParams(device: ComputeDevice.cpu)` forces the CPU on every runtime.
   `ComputeDevice.gpu` or `npu` runs there or throws
   `LlamaUnsupportedException`, never on another device; native LiteRT-LM

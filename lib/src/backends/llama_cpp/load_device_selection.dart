@@ -49,6 +49,14 @@ final int _typeIgpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
 final int _splitNone = llama_split_mode.LLAMA_SPLIT_MODE_NONE.value;
 final int _splitTensor = llama_split_mode.LLAMA_SPLIT_MODE_TENSOR.value;
 
+/// Whether llama.cpp clears the model's GPU device list for this placement.
+///
+/// Mirrors `llama_prepare_model_devices` in llama.cpp `v0.7.0`: a negative
+/// [mainGpu] selects no GPU only in single-device ([splitMode] NONE) mode.
+/// Other split modes do not use [mainGpu] to prune devices.
+bool selectsNoGpuDevice({required int splitMode, required int mainGpu}) =>
+    splitMode == _splitNone && mainGpu < 0;
+
 /// The devices llama.cpp `v0.6.0` uses for a model, in its order.
 ///
 /// Mirrors `llama_prepare_model_devices` (`src/llama.cpp`). With [listed]
