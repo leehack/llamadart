@@ -10,7 +10,7 @@ pins `v0.7.0-1`; LiteRT-LM and stable_diffusion keep `v0.18.0-2` and `v0.2.0-3`.
 
 ### Content embedding cancellation
 
-`cancelGeneration()` now cancels `embedContent` / `embedContentBatch` even
+`cancelGeneration()` cancels `embedContent` / `embedContentBatch` even
 during capability checks on native and Web backends. Handle the existing
 `LlamaInferenceException` cancellation error and await the embedding future
 before reuse. Calls started after cancellation remain usable. Native LiteRT-LM

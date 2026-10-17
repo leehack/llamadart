@@ -1,7 +1,8 @@
 ## 0.15.0
 
 - Embed ordered text, images and audio with typed inputs and modality probes on
-  native llama.cpp, native CPU LiteRT-LM and compatible Web llama.cpp assets.
+  native llama.cpp, native CPU LiteRT-LM (opt in with
+  `liteRtLmEmbeddingEngine`) and compatible Web llama.cpp assets.
 - Update the native llama.cpp runtime and Apple companion to v0.7.0-1;
   upgrade core and all Apple companions to 0.15.x together.
 * Aligned the default WebGPU bridge assets to `v0.1.65` for image/audio
@@ -12,8 +13,8 @@
   `185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328`.
 - **Behavior change:** Run decision heads on CPU and report CPU with zero GPU
   layers when native llama.cpp single-device placement selects no GPU.
-- Prevent overlapping context operations during native text-to-speech and
-  release handle waits when a speech reply fails.
+- **Behavior change:** Reject embedding, scoring, generation and LoRA calls on a
+  context during native text-to-speech with `LlamaStateException`.
 - Keep performance counters accurate across cancellation, validation and
   dispatch failures, reloads, embeddings, scoring and speech requests.
 - Preserve LiteRT-LM Web runtime failures that race generation cancellation.
