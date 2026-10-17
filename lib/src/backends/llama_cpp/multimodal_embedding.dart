@@ -58,6 +58,8 @@ extension NativeContentEmbeddings on LlamaCppService {
     Pointer<Int8>? cancelToken,
   }) {
     if (inputs.isEmpty) return const [];
+    _ensureNoActiveTts(contextHandle, 'embed content');
+    _contexts[contextHandle]?.performanceAvailable = false;
     final capabilities = getEmbeddingCapabilities(contextHandle);
     for (final input in inputs) {
       for (final kind in input.partKinds) {
@@ -126,11 +128,21 @@ extension NativeContentEmbeddings on LlamaCppService {
           }
         }
       }
+      _calls.synchronize(context.pointer);
+      checkCancelled();
+      _resetRequestPerformance(contextHandle, context);
       final vectors = <List<double>>[];
       for (final item in prepared) {
         checkCancelled();
         if (item.text != null) {
-          vectors.add(embed(contextHandle, item.text!, normalize: normalize));
+          vectors.add(
+            _embed(
+              contextHandle,
+              item.text!,
+              normalize: normalize,
+              resetPerformance: false,
+            ),
+          );
         } else {
           vectors.add(
             _embedPreparedContent(

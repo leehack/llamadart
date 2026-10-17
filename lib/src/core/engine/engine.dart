@@ -2150,12 +2150,16 @@ class LlamaEngine {
     }
   }
 
-  /// Records a backend call starting on the context, whose counters then
-  /// describe that call.
-  void _beginContextCall(int contextHandle, int epoch) {
+  /// Tracks context work; generation backends invalidate counters at entry,
+  /// while other calls must succeed before restoring engine diagnostics.
+  void _beginContextCall(
+    int contextHandle,
+    int epoch, {
+    bool restoresPerformance = true,
+  }) {
     final key = (contextHandle, epoch);
     _contextCallsInFlight.update(key, (count) => count + 1, ifAbsent: () => 1);
-    _stalePerformanceContext = null;
+    if (restoresPerformance) _stalePerformanceContext = null;
   }
 
   /// Records the end of a request: one that called [_beginContextCall] when
@@ -2184,9 +2188,11 @@ class LlamaEngine {
   Future<T> _contextCall<T>(Future<T> Function() call) async {
     final requestContext = _contextHandle!;
     final requestEpoch = _modelEpoch;
-    _beginContextCall(requestContext, requestEpoch);
+    _beginContextCall(requestContext, requestEpoch, restoresPerformance: false);
     try {
-      return await call();
+      final result = await call();
+      if (requestEpoch == _modelEpoch) _stalePerformanceContext = null;
+      return result;
     } finally {
       _endContextRequest(requestContext, requestEpoch, reachedBackend: true);
     }
@@ -3383,11 +3389,22 @@ class LlamaEngine {
   ///
   /// Returns null after a generation that ended before reaching the backend,
   /// such as one cancelled right after it was listened to, instead of the
-  /// counters of the request before it. Counters return once a generation,
-  /// embedding, next-token scoring or text-to-speech call runs on the context.
-  /// A generation that ends that way while another request is running on the
-  /// context leaves that request's counters. Requests from an unloaded model
-  /// cannot change a reloaded context's counter availability.
+  /// counters of the request before it. On native llama.cpp, generation,
+  /// embedding (including a whole batch), next-token scoring and text-to-speech
+  /// reset counters before native execution, so available counters describe
+  /// only that request's work (embedding and scoring report `0` ms). Request
+  /// validation failures in the native worker leave diagnostics unavailable;
+  /// argument checks that fail before dispatch leave them unchanged. Requests
+  /// rejected because text-to-speech is active preserve the synthesis request's
+  /// counters. Native token counters retain llama.cpp's floors. After an early
+  /// cancellation, pending or failed embedding, scoring and speech calls keep
+  /// diagnostics unavailable; only successful calls restore availability
+  /// according to the backend's semantics. Web backends currently return null
+  /// even after successful generation.
+  /// Other backends retain their own counter availability and timing semantics.
+  /// A generation that ends before dispatch while another request is running
+  /// on the context leaves that request's counters. Requests from an unloaded
+  /// model cannot change a reloaded context's counter availability.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;

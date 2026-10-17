@@ -14,6 +14,8 @@ import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/embedding.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -238,6 +240,58 @@ void main() {
       await queued;
       request.sendPort.send(DoneResponse());
       await running;
+    }
+
+    for (final operation in ['embed', 'batch', 'content', 'score', 'tts']) {
+      test(
+        '$operation revives counters after an unsent queued cancellation',
+        () async {
+          final proxy = ReceivePort();
+          addTearDown(proxy.close);
+          proxy.listen((message) {
+            if (message is EmbedContentBatchRequest) {
+              message.sendPort.send(
+                EmbedBatchResponse([
+                  [0.1, 0.2],
+                ]),
+              );
+            } else {
+              harness.sendPort.send(message);
+            }
+          });
+          final target = NativeLlamaBackend(initialSendPort: proxy.sendPort);
+          addTearDown(target.dispose);
+          await staleContext(target);
+          expect(await target.getPerformanceContext(1), isNull);
+          await expectLater(target.embed(1, 'boom'), throwsException);
+          expect(await target.getPerformanceContext(1), isNull);
+          switch (operation) {
+            case 'embed':
+              await target.embed(1, 'ok');
+            case 'batch':
+              await target.embedBatch(1, ['ok']);
+            case 'content':
+              await target.embedContentBatch(1, [
+                LlamaEmbeddingInput([const LlamaTextContent('ok')]),
+              ]);
+            case 'score':
+              await target.scoreNextToken(
+                1,
+                'ok',
+                candidates: [1],
+                topK: 1,
+                reusePromptPrefix: false,
+              );
+            case 'tts':
+              await target.synthesizeTextToSpeech(
+                1,
+                2,
+                const BackendTextToSpeechRequest(text: 'hello'),
+              );
+          }
+          expect((await target.getPerformanceContext(1))?.evalTokens, 7);
+        },
+      );
     }
 
     test(

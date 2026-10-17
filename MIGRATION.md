@@ -2,6 +2,19 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: native text-to-speech context exclusivity
+
+Native llama.cpp rejects embeddings (including content and batch embeddings),
+next-token scoring, text generation, state save/load and LoRA changes on a
+context while text-to-speech is active with `LlamaStateException`. Await the
+synthesis task, including cancellation, before reusing that context. The
+reservation starts before speaker-reference loading; a rejected overlapping
+request leaves the active request's performance counters intact.
+
+Text-to-speech also rejects a start while generation is active on its context,
+and a second synthesis on the same native worker, including during setup.
+This fixes unsafe overlap; method signatures and platform support are unchanged.
+
 ## Unreleased: native wrapper rebuild
 
 The native-assets hook and Apple companion source now pin `v0.7.0-1`, a
@@ -24,10 +37,17 @@ migration is needed.
 Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
 llama.cpp, including requests already sent to the worker that never run.
 LiteRT-LM validation failures, llama.cpp option-validation failures before
-the counter reset, and failed dispatches also return `null` until another
-generation starts. Requests finishing after reload no longer affect the new context's
+the counter reset, and failed dispatches also return `null`. Native llama.cpp
+resets counters before generation, embedding (the entire batch), next-token scoring
+or text-to-speech executes; counters then describe only that request's work.
+Request validation failures in the native worker leave diagnostics unavailable;
+argument checks that fail before dispatch leave them unchanged. LiteRT-LM still recovers counters
+on generation. Requests finishing after reload no longer affect the new context's
 counter availability, even if its handle is reused. No API migration is needed;
-continue handling unavailable diagnostics.
+continue handling unavailable diagnostics. Rejections during active text-to-speech
+preserve that synthesis request's counters. After an early cancellation, pending
+or failed embedding, scoring and speech calls preserve unavailable diagnostics
+until a call succeeds. Web backends still return `null` after every request.
 
 ## Unreleased: template error labels
 

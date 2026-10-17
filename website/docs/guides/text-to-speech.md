@@ -184,6 +184,13 @@ All typed STT and TTS wrappers over one `LlamaEngine` share a one-task speech
 lease. Do not run chat generation, transcription, or another synthesis on the
 same engine until the active speech task completes.
 
+Native llama.cpp rejects embeddings (including content and batch embeddings),
+next-token scoring, text generation, state save/load and LoRA changes on a
+context while text-to-speech is active with `LlamaStateException`. Await the
+synthesis task, including cancellation, before reusing that context. The
+reservation starts before speaker-reference loading; a rejected overlapping
+request leaves the active request's performance counters intact.
+
 The current native and Web wrappers produce PCM only after all requested audio-codec
 frames have been generated. `supportsIncrementalAudio` and
 `supportsOutputBackpressure` are therefore false. Progress events are useful

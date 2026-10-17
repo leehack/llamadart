@@ -87,7 +87,8 @@ void runLlamaWorkerForTesting(
   // before tearing the isolate down. Without this, Isolate.exit() abandons an
   // in-flight generate with no DoneResponse, hanging the consumer's stream.
   Future<void> activeGenerate = Future<void>.value();
-  Future<void> activeTextToSpeech = Future<void>.value();
+  Completer<void>? activeTextToSpeech;
+  var pendingTextToSpeech = 0;
 
   Future<bool> waitForActiveGenerate({Duration? timeout}) async {
     try {
@@ -108,7 +109,7 @@ void runLlamaWorkerForTesting(
 
   Future<bool> waitForActiveTextToSpeech({Duration? timeout}) async {
     try {
-      final synthesis = activeTextToSpeech;
+      final synthesis = activeTextToSpeech?.future ?? Future<void>.value();
       if (timeout == null) {
         await synthesis;
       } else {
@@ -323,6 +324,8 @@ void runLlamaWorkerForTesting(
             );
 
           case TextToSpeechSynthesizeRequest():
+            final idle = activeTextToSpeech ??= Completer<void>();
+            pendingTextToSpeech++;
             final synthesisFuture = () async {
               try {
                 final result = await service.synthesizeTextToSpeech(
@@ -349,8 +352,13 @@ void runLlamaWorkerForTesting(
                 message.sendPort.send(_toErrorResponse(error));
               }
             }();
-            activeTextToSpeech = synthesisFuture;
+            // Rejected overlaps share this wait group so they cannot hide the
+            // original task from disposal. Retire it when all handlers finish.
             await synthesisFuture;
+            if (--pendingTextToSpeech == 0) {
+              activeTextToSpeech = null;
+              idle.complete();
+            }
 
           case GenerationCapabilitiesRequest():
             final capabilities = service.generationCapabilities(
@@ -522,6 +530,7 @@ void runLlamaWorkerForTesting(
 
           case MultimodalContextFreeRequest():
             await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
             service.freeMultimodalContext(message.mmContextHandle);
             message.sendPort.send(DoneResponse());
 

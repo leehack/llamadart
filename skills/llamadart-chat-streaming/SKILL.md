@@ -44,6 +44,10 @@ description: >-
 - Only one generation runs at a time per engine. Starting another while one is
   running (and not cancelled) throws `LlamaStateException`; queue requests in
   app code.
+- On native llama.cpp, await text-to-speech (including cancellation) before
+  using the same context for generation, embeddings, scoring, state save/load
+  or LoRA changes. Overlap throws `LlamaStateException` from speaker-reference
+  loading through synthesis cleanup and preserves the active request's counters.
 - Stop generation with `engine.cancelGeneration()`, or by cancelling the stream
   subscription (including `break` out of `await for`), which also stops the
   backend. Keep a `StreamSubscription` in UI code so a Stop button can cancel
@@ -52,8 +56,16 @@ description: >-
   after a queued generation is cancelled before it runs, including a request
   already sent to the LiteRT-LM worker. LiteRT-LM validation failures,
   llama.cpp option-validation failures before its counter reset, and failed
-  dispatches also invalidate counters until another generation starts.
-  Reloaded contexts keep their own counter availability. Treat null as
+  dispatches also invalidate counters. On native llama.cpp, generation,
+  embedding (the whole batch), scoring and text-to-speech reset counters
+  before execution and restore diagnostics for only that request. Request
+  validation failures in the native worker leave diagnostics unavailable;
+  rejections during active text-to-speech preserve its counters. Argument
+  checks that fail before dispatch leave them unchanged. Native token counts retain llama.cpp's
+  minimum of one; embedding and scoring report `0` ms timings. LiteRT-LM recovers counters on generation.
+  After an early cancellation, pending or failed embedding, scoring and speech
+  calls keep diagnostics unavailable until a call succeeds. Web backends always
+  return `null` diagnostics. Reloaded contexts keep their own counter availability. Treat null as
   unavailable diagnostics for the cancelled or unsent request.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
   `engine.create` when reasoning output is not wanted. Native LiteRT-LM
