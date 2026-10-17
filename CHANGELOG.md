@@ -1,6 +1,12 @@
 ## Unreleased
 
 - Prevent embeddings and other context changes from interrupting native text-to-speech, and release handle waits even when a speech reply fails.
+* Aligned the default WebGPU bridge assets to `v0.1.65` for image/audio
+  embeddings (API floor v0.1.64+); qualified on Chrome CPU wasm memory64 against native CPU/Metal.
+  Qualified against native `v0.7.0-1`, with upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM remains
+  `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328`.
 - Embed ordered images, audio and text with native llama.cpp embedding models and compatible projectors, preserving text-only embedding compatibility.
 - Update the native llama.cpp runtime to v0.7.0-1.
 - **Behavior change:** Run decision heads on CPU when native llama.cpp single-device placement selects no GPU.

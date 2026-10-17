@@ -93,6 +93,18 @@ existing types.
 
 ## Unreleased: embedding content API
 
+Web llama.cpp content embeddings now accept image/audio bytes and mono 16 kHz
+Float32 PCM when bridge assets v0.1.64+ positively probe the modality through
+`getEmbeddingCapabilities()` API version 1. Load a compatible embedding model
+and projector first. Paths and image URLs throw `LlamaUnsupportedException`.
+Older or mismatched bridge assets retain text embeddings and report media
+unavailable with an upgrade diagnostic. The default pinned assets include the API;
+EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
+native CPU/Metal; repeated media batches require memory64. Hardware WebGPU is
+unqualified. Text-only content keeps legacy `embed` support on pooling NONE.
+Image bytes are always encoded data; width/height are ignored for embeddings.
+Reserved mixed-input media markers are unsupported, matching native.
+
 The new `embedContent` / `embedContentBatch` APIs return one vector per input;
 a backend count mismatch throws `LlamaInferenceException`. Adjacent text parts
 form one verbatim-concatenated segment on every backend, including mixed inputs.

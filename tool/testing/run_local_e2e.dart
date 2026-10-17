@@ -909,6 +909,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'web-multimodal-embeddings',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify direct/worker Web media embeddings against local native reference vectors; no downloads. See doc/multimodal_embeddings_web.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome',
+            '--run-skipped',
+            '--tags',
+            'local-only',
+            'test/e2e/backends/multimodal_embedding_web_e2e_test.dart',
+          ],
+          description:
+              'Web media embedding reference qualification (local assets/weights required)',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'native-multimodal-embeddings',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

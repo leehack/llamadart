@@ -26,7 +26,7 @@ their old text support test, including model-specific rejection at execution,
 and always report image/audio false. LiteRT-LM probes its embedding engine and bundle processors.
 The presence of the SPI never enables a modality by itself. Its probes for
 unknown or unloaded contexts return all-false without I/O. Native CPU LiteRT-LM executes media embeddings with qualified bundle processors;
-Web remains unsupported after qualification.
+LiteRT-LM Web remains unsupported after qualification.
 
 Custom `BackendMultimodalEmbeddings` implementations may set
 `LlamaEmbeddingCapabilities.mediaUnsupportedReason` to actionable runtime
@@ -86,7 +86,7 @@ there is no GGUF mmproj for LiteRT-LM.
 | B: llama.cpp native | Content SPI -> worker request with context/projector -> mtmd text/media tokenization and media encoding -> one mixed `llama_batch_ext_*` -> `llama_process` DECODE -> pooled sequence vector | Text through existing API; image/audio unsupported |
 | C: LiteRT-LM native | Explicit embedding-only load -> separate `litert_lm_embedding_engine_*` engine/settings; ordered `LiteRtLmInputData*[]` -> compute embedding / batch -> owned response vectors | Native CPU text/image/audio, qualified bundle processors |
 | C: LiteRT-LM Web | Explicit embedding-only load -> `EmbeddingEngine.create` with qualified vision/audio settings; ordered ContentPart/Blob inputs -> `computeEmbedding` / `computeEmbeddingBatch` | All embeddings unsupported |
-| D/E: llama.cpp Web | Existing bridge model/projector -> direct or worker embed(parts) -> the same mixed mtmd/extended-batch path as B -> pooled sequence vectors | Existing bridge strings only; image/audio unsupported |
+| D/E: llama.cpp Web | Existing bridge model/projector -> direct or worker embed(parts) -> the same mixed mtmd/extended-batch path as B -> pooled sequence vectors | Strings on existing assets; image/audio with assets v0.1.64+ and API-version-1 probe (qualified Chrome CPU wasm memory64) |
 
 Native llama.cpp reference:
 https://github.com/leehack/llamadart-native/blob/main/tools/embedding_smoke.cpp
@@ -96,11 +96,14 @@ The issue's qualification comment pins llama.cpp to
 Native LiteRT-LM reference:
 https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/embedding_engine.h.
 Web LiteRT-LM contract must be qualified against `@litert-lm/core@0.18.0`.
-The current bridge pin supports text embeddings; media embeddings need a future
-published bridge with an explicit embedding modality probe. Do not infer a
-minimum tag before that artifact exists.
+The default bridge pin supports text and the API-version-1 media
+contract. Image/audio support requires a positive modality probe on the loaded
+model/projector; text retains the legacy string route even when the bridge's
+pooled-text flag is false. Chrome CPU wasm memory64 vectors were qualified
+against native CPU/Metal; see [Web embedding qualification](multimodal_embeddings_web.md).
+Repeated media batches require memory64; hardware WebGPU remains unqualified.
 
-## Proposed bridge JS contract (D/E, not implemented here)
+## Bridge JS contract (D/E, assets v0.1.64+)
 
 ```ts
 type EmbedPart =
@@ -122,8 +125,9 @@ embedBatch(inputs: EmbedInput[], options?: EmbedOptions): Promise<number[][]>;
 A parts array describes one vector, not a batch. Reject empty parts arrays;
 `embedBatch([])` returns `[]`. Strings retain the old route and defaults.
 No `parts.toString()`, JSON text, chat template or separate per-media vectors.
-Dart text maps to `type: 'text'`; image bytes/dimensions and audio bytes/samples
-map directly. Local filesystem paths are unavailable in browsers and must
+Dart text maps to `type: 'text'`; encoded image bytes and audio bytes/samples
+map directly. Image width/height metadata is omitted so encoded bytes are never
+inferred as raw RGB. Reserved `<__media__>` in mixed text is unsupported, matching native. Local filesystem paths are unavailable in browsers and must
 produce an unsupported error unless resolved to bytes before the backend call.
 URL fields are reserved for runtime-qualified, securely fetched inputs; their
 presence does not promise URL support. PCM follows the 16 kHz mono convention.
@@ -183,7 +187,7 @@ backend unsupported defaults, load-mode rejection, redaction, order, batching,
 normalization forwarding and cancellation forwarding. It downloads no weights
 and claims no media runtime or retrieval qualification.
 
-Before enabling any modality, each lane must compare text/image/audio and
+Numerical qualification requires each lane to compare text/image/audio and
 interleaved results against its exact runtime reference with the closest
 EmbeddingGemma-2 model/projector/bundle. Cover output width, raw/normalized
 outputs, empty/oversized batches, missing processors, old symbols/protocol,
@@ -193,8 +197,7 @@ exercise embedding-only load versus conversation load on native and Web,
 including bundle metadata and both processor backends; D/E must independently
 qualify direct and worker paths, old bridges, copied/transferred buffers and
 projector unload/reload. Synthetic media establishes wiring, not retrieval
-quality. Record absent weights/hardware explicitly and leave those modalities
-unsupported until qualification is complete.
+quality. Record absent weights/hardware explicitly and record numerical qualification separately from adapter capability support.
 
 `test/support/embedding_contract.dart` provides
 `expectAdjacentTextEmbeddingEquivalence` for later lanes: pass the qualified

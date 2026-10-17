@@ -114,9 +114,12 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   /// Loads KV-cache/session state from a bridge WASMFS path.
   external JSPromise<JSAny?>? stateLoadFile(String path, int tokenCapacity);
 
-  /// Generates a single embedding vector for [text].
+  /// Probes loaded-model embedding modalities (API version 1).
+  external JSPromise<JSAny?>? getEmbeddingCapabilities();
+
+  /// Generates one vector for a string or an ordered embedding-parts array.
   external JSPromise<JSAny?>? embed(
-    String text, [
+    JSAny input, [
     WebGpuEmbeddingOptions? options,
   ]);
 

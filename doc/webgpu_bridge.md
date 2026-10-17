@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.63`.
+Default pinned tag in the example is `v0.1.65`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.63 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.65 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,23 +81,20 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.63';
+  window.__llamadartBridgeAssetsTag = 'v0.1.65';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-1`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.63` differs from the native runtime tag
-`v0.7.0-1`. Provenance for this immutable consumer artifact: release `415205376`,
-tag commit `c1665e3c9a38b78c553806f590f7948b36c8d148`, bridge source
-`57d9971817897115c6312a712ccb21c9a25671f9`, and manifest SHA-256
-`65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`. The bridge
-assets were qualified against native `v0.7.0`; the current native
-pin `v0.7.0-1` rebuilds only the wrapper on the same upstream commit. Their
-JavaScript, type declarations and worker remain byte-identical to `v0.1.59`; the WebAssembly
-cores update llama.cpp and fix graph reservation when embedding extraction is
-toggled on an unpooled context. State and extraction qualification covers
-wasm32 and memory64 through direct and worker runtimes. Existing decision,
+even though the bridge asset tag `v0.1.65` differs from the native runtime tag
+`v0.7.0-1`. Provenance for this immutable consumer artifact: release `416001697`,
+tag commit `44e9cc17de655f6dfcc48b82fe51da4ec34b11a5`, bridge source
+`d1c1b9aac0e88b5748ea436e0bc81a0ef6c54876`, and manifest SHA-256
+`185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328`. The bridge
+assets were qualified against native `v0.7.0-1`, matching the current native pin.
+They expose the API-version-1 media embedding contract. State and extraction
+qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
 
 Published release qualification covers CPU/WASM state persistence, multimodal
@@ -136,6 +133,32 @@ physical playback, intelligibility or speaker-reference fidelity.
   adapters and speculative decoding, which llamadart gates on the bridge's
   capability probes rather than on this tag, and the bridge's
   `supportsCompletionUsage` flag for per-request usage.
+
+### Media embeddings
+
+Assets v0.1.64+ expose `getEmbeddingCapabilities()` with `apiVersion: 1` and
+boolean `text`, `image`, `audio` flags. The Dart backend probes each request,
+including after projector changes and worker restoration; generation's media
+flags do not enable embeddings. Unknown/missing APIs preserve legacy string embeddings and disable media with
+a v0.1.64+ requirement diagnostic. Runtime probe failures, cancellation and
+disposal remain typed inference errors. Present APIs explain missing loaded
+model/projector modalities. The bridge's pooled `text` flag does not gate the
+legacy last-token string route, including text-only content on pooling NONE.
+The default pinned assets include this API.
+
+`embedContentBatch` sends strings for text-only inputs and ordered parts arrays
+for mixed/media inputs. Adjacent text is concatenated verbatim. Image/audio bytes
+and mono 16 kHz Float32 PCM are forwarded without transfer/detachment; browser
+filesystem paths and image URLs are rejected. The bridge validates the complete
+batch before inference. Stable `EmbeddingError.code` values map to typed Dart
+argument, unsupported or inference errors; arbitrary media diagnostics are never
+included. Cancellation forwards to `cancel()` and disposal awaits `dispose()`;
+the bridge owns settling queued/active operations before freeing its runtime.
+Await cancelled embedding futures before reuse.
+
+Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
+hardware WebGPU was not exercised. Repeated media batches require memory64. See
+[multimodal embedding qualification](multimodal_embeddings_web.md).
 
 ### Completion termination
 
@@ -273,8 +296,9 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `detokenize(tokens, special)`
 - `stateSaveFile(path, tokens)`
 - `stateLoadFile(path, tokenCapacity)`
-- `embed(text, { normalize })`
-- `embedBatch(texts, { normalize })`
+- `getEmbeddingCapabilities()` (API version 1, assets v0.1.64+)
+- `embed(input, { normalize })` (string or ordered content parts)
+- `embedBatch(inputs, { normalize })`
 - `getModelMetadata()`
 - `getContextSize()`
 - `cancel()`
@@ -390,7 +414,7 @@ be `RangeError`. The classifier requires an anchored validator message from the
 pinned bridge and a JS error name of `TypeError`, `RangeError` or `Error` on
 both direct and worker paths. Unknown messages retain the operation's fallback.
 The allowlist covers these TypeError/RangeError emissions in the
-[pinned JavaScript](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js):
+[original validator JavaScript](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js):
 
 | Lines | Validator prefixes / fields |
 | --- | --- |
@@ -413,7 +437,9 @@ Runtime-side validators such as next-token candidate checks can pass through
 The shared message allowlist preserves classification across that transport;
 it does not infer argument provenance from a JS error name alone.
 
-The classifier is separate from operation fallbacks so later pinned assets can
-add stable error-code mappings; `EmbeddingError` codes from
-[bridge PR #160](https://github.com/leehack/llama-web-bridge/pull/160) are not
-assumed available.
+The classifier is separate from operation fallbacks. Media embeddings map the
+pinned API's stable `EmbeddingError.code` values to argument, unsupported and
+inference exceptions, preserving known codes (including `EMBEDDING_INPUT_TOO_LARGE`
+and `EMBEDDING_FAILED`) and the `aborted` runtime label without copying diagnostic
+payloads. Unknown codes are omitted. Reserved mixed-input media markers are
+rejected as unsupported before dispatch, matching native.

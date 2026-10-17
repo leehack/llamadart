@@ -15,6 +15,7 @@ import '../../core/models/config/compute_device.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/gpu_layer_count.dart';
@@ -51,6 +52,7 @@ class WebGpuLlamaBackend
         LlamaBackend,
         BackendAvailability,
         BackendBatchEmbeddings,
+        BackendMultimodalEmbeddings,
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
         BackendDecision,
@@ -101,6 +103,7 @@ class WebGpuLlamaBackend
   LlamaWebGpuBridge? _bridge;
   bool _usingBridge = false;
   bool _isReady = false;
+  int _embeddingCancelEpoch = 0;
   String? _chatTemplate;
   LlamaLogLevel _logLevel = LlamaLogLevel.info;
   _GenerationAbort? _generationAbort;
@@ -2219,6 +2222,7 @@ class WebGpuLlamaBackend
 
   @override
   void cancelGeneration() {
+    _embeddingCancelEpoch++;
     final generationAbort = _generationAbort;
     if (generationAbort != null) {
       generationAbort.cancelRequested = true;
@@ -2518,6 +2522,231 @@ class WebGpuLlamaBackend
 
   LlamaWebGpuBridge? get _activeBridge => _usingBridge ? _bridge : null;
 
+  static const String _mediaEmbeddingRequirement =
+      'Web media embeddings require llama-web-bridge-assets v0.1.64+ '
+      'with embedding capability API version 1 and a compatible loaded '
+      'embedding model/projector.';
+
+  @override
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  ) async {
+    if (!_isReady || _activeBridge == null || contextHandle != 1) {
+      return const LlamaEmbeddingCapabilities();
+    }
+    const legacy = LlamaEmbeddingCapabilities(
+      text: true,
+      mediaUnsupportedReason: _mediaEmbeddingRequirement,
+    );
+    final bridge = _bridge!;
+    final epoch = _embeddingCancelEpoch;
+    void checkCancelled() {
+      if (!identical(bridge, _activeBridge) || epoch != _embeddingCancelEpoch) {
+        throw LlamaInferenceException('Web embedding operation was cancelled.');
+      }
+    }
+
+    final JSAny? value;
+    try {
+      // A missing facade method is an old asset, not a runtime failure.
+      if (!bridge
+          .getProperty<JSAny?>('getEmbeddingCapabilities'.toJS)
+          .isA<JSFunction>()) {
+        return legacy;
+      }
+      value = await bridge.getEmbeddingCapabilities()?.toDart;
+    } catch (error) {
+      checkCancelled();
+      final code = _embeddingBridgeCode(error);
+      final message = webGpuBridgeErrorText(error);
+      if (code == 'EMBEDDING_CAPABILITY_UNAVAILABLE' ||
+          message == 'bridge[method] is not a function') {
+        return legacy;
+      }
+      throw _mediaEmbeddingError(error);
+    }
+    checkCancelled();
+    if (!value.isA<JSObject>()) return legacy;
+    final object = value as JSObject;
+    final version = object.getProperty<JSAny?>('apiVersion'.toJS)?.dartify();
+    final text = object.getProperty<JSAny?>('text'.toJS)?.dartify();
+    final image = object.getProperty<JSAny?>('image'.toJS)?.dartify();
+    final audio = object.getProperty<JSAny?>('audio'.toJS)?.dartify();
+    if (version != 1 || text is! bool || image is! bool || audio is! bool) {
+      return legacy;
+    }
+    final missing = [if (!image) 'image', if (!audio) 'audio'];
+    return LlamaEmbeddingCapabilities(
+      // The probe's text flag means pooled parts, excluding legacy last-token
+      // embeddings on pooling NONE. Only its media flags govern content support.
+      text: legacy.text,
+      image: image,
+      audio: audio,
+      mediaUnsupportedReason: missing.isEmpty
+          ? null
+          : 'The loaded Web model/projector lacks ${missing.join(' and ')} '
+                'embedding support (compatible pooling and modality encoder required).',
+    );
+  }
+
+  @override
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) async {
+    if (inputs.isEmpty) return const <List<double>>[];
+    final bridge = _requireBridge();
+    final epoch = _embeddingCancelEpoch;
+    final snapshot = List<LlamaEmbeddingInput>.of(inputs);
+    final mapped = snapshot.map(_embeddingInput).toList(growable: false);
+    final capabilities = await getEmbeddingCapabilities(contextHandle);
+    if (!identical(bridge, _bridge) || epoch != _embeddingCancelEpoch) {
+      throw LlamaInferenceException('Web embedding operation was cancelled.');
+    }
+    for (final input in snapshot) {
+      for (final kind in input.partKinds) {
+        if (!capabilities.supports(kind)) {
+          throw LlamaUnsupportedException(
+            '${kind.name} embeddings are unavailable. ${capabilities.mediaUnsupportedReason}',
+          );
+        }
+      }
+    }
+    if (snapshot.every(
+      (input) =>
+          input.partKinds.every((kind) => kind == LlamaEmbeddingModality.text),
+    )) {
+      return embedBatch(contextHandle, [
+        for (final input in snapshot)
+          input.parts.cast<LlamaTextContent>().map((part) => part.text).join(),
+      ], normalize: normalize);
+    }
+    try {
+      final result = await _toFuture(
+        bridge.embedBatch(
+          mapped.toJS,
+          WebGpuEmbeddingOptions(normalize: normalize),
+        ),
+      );
+      return _parseEmbeddingBatch(result);
+    } catch (error) {
+      throw _mediaEmbeddingError(error);
+    }
+  }
+
+  JSAny _embeddingInput(LlamaEmbeddingInput input) {
+    if (input.parts.every((part) => part is LlamaTextContent)) {
+      return input.parts
+          .cast<LlamaTextContent>()
+          .map((part) => part.text)
+          .join()
+          .toJS;
+    }
+    final parts = <JSObject>[];
+    for (var index = 0; index < input.parts.length; index++) {
+      final object = JSObject();
+      switch (input.partKinds[index]) {
+        case LlamaEmbeddingModality.text:
+          final part = input.parts[index] as LlamaTextContent;
+          if (parts.isNotEmpty &&
+              parts.last.getProperty<JSString>('type'.toJS).toDart == 'text') {
+            final previous = parts.last
+                .getProperty<JSString>('text'.toJS)
+                .toDart;
+            parts.last.setProperty('text'.toJS, (previous + part.text).toJS);
+            continue;
+          }
+          object.setProperty('type'.toJS, 'text'.toJS);
+          object.setProperty('text'.toJS, part.text.toJS);
+        case LlamaEmbeddingModality.image:
+          final part = input.parts[index] as LlamaImageContent;
+          if (part.path != null || part.url != null) {
+            throw LlamaUnsupportedException(
+              'Web image embeddings require bytes; filesystem paths and image URLs are unsupported.',
+            );
+          }
+          object.setProperty('type'.toJS, 'image'.toJS);
+          // Dimensions would make the bridge infer raw RGB when encoded byte
+          // length happens to match, violating LlamaImageContent.bytes.
+          object.setProperty('bytes'.toJS, part.bytes?.toJS);
+        case LlamaEmbeddingModality.audio:
+          final part = input.parts[index] as LlamaAudioContent;
+          if (part.path != null) {
+            throw LlamaUnsupportedException(
+              'Web audio embeddings require encoded bytes or mono 16 kHz PCM; filesystem paths are unsupported.',
+            );
+          }
+          object.setProperty('type'.toJS, 'audio'.toJS);
+          object.setProperty('bytes'.toJS, part.bytes?.toJS);
+          object.setProperty('samples'.toJS, part.samples?.toJS);
+      }
+      parts.add(object);
+    }
+    for (final part in parts) {
+      if (part.getProperty<JSString>('type'.toJS).toDart == 'text' &&
+          part
+              .getProperty<JSString>('text'.toJS)
+              .toDart
+              .contains('<__media__>')) {
+        throw LlamaUnsupportedException(
+          'Embedding text contains the reserved native media marker.',
+        );
+      }
+    }
+    return parts.toJS;
+  }
+
+  static String? _embeddingBridgeCode(Object error) {
+    try {
+      final value = (error as JSObject).getProperty<JSAny?>('code'.toJS);
+      if (value.isA<JSString>()) return (value as JSString).toDart;
+    } catch (_) {
+      // Primitive and Dart rejections carry no bridge error code.
+    }
+    return null;
+  }
+
+  static LlamaException _mediaEmbeddingError(Object error) {
+    final code = _embeddingBridgeCode(error);
+    // Only known stable codes cross this boundary; diagnostics may carry media,
+    // paths or URLs. Unknown codes are untrusted input too.
+    const knownCodes = {
+      'INVALID_EMBEDDING_INPUT',
+      'EMBEDDING_CAPABILITY_UNAVAILABLE',
+      'MODEL_NOT_EMBEDDING',
+      'EMBEDDING_PROJECTOR_MISSING',
+      'EMBEDDING_MODALITY_UNSUPPORTED',
+      'EMBEDDING_INPUT_TOO_LARGE',
+      'EMBEDDING_FAILED',
+      'aborted',
+    };
+    final message = webGpuBridgeErrorText(error).toLowerCase();
+    final stableCode = knownCodes.contains(code)
+        ? ' ($code)'
+        : message.startsWith('runtimeerror: aborted(') ||
+              message.startsWith('aborted(')
+        ? ' (aborted)'
+        : '';
+    return switch (code) {
+      'INVALID_EMBEDDING_INPUT' => LlamaArgumentException(
+        'Web embedding input is invalid$stableCode; check media sources and part shapes.',
+      ),
+      'EMBEDDING_CAPABILITY_UNAVAILABLE' => LlamaUnsupportedException(
+        '$_mediaEmbeddingRequirement$stableCode',
+      ),
+      'MODEL_NOT_EMBEDDING' ||
+      'EMBEDDING_PROJECTOR_MISSING' ||
+      'EMBEDDING_MODALITY_UNSUPPORTED' => LlamaUnsupportedException(
+        'The loaded Web model/projector lacks the requested embedding capability$stableCode.',
+      ),
+      _ => LlamaInferenceException(
+        'The Web runtime could not compute media embeddings$stableCode; the operation '
+        'may have been cancelled or exceeded the allocated input capacity.',
+      ),
+    };
+  }
+
   @override
   Future<List<double>> embed(
     int contextHandle,
@@ -2527,7 +2756,7 @@ class WebGpuLlamaBackend
     final bridge = _requireBridge();
     try {
       final result = await _toFuture(
-        bridge.embed(text, WebGpuEmbeddingOptions(normalize: normalize)),
+        bridge.embed(text.toJS, WebGpuEmbeddingOptions(normalize: normalize)),
       );
       return _parseEmbeddingVector(result);
     } catch (error) {
