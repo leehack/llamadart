@@ -684,6 +684,53 @@ void main() {
       }
     },
   );
+  const batchOnly = [
+    'engine_compute_embedding_batch',
+    'responses_delete',
+    'responses_get_size',
+    'responses_get_at',
+  ];
+  for (final removed in [
+    ...batchOnly.map((symbol) => [symbol]),
+    batchOnly,
+  ]) {
+    test(
+      'embedding does not require batch-only exports: ${removed.join(', ')}',
+      () async {
+        var variant = _source;
+        for (final symbol in removed) {
+          variant = variant.replaceAll(
+            'litert_lm_embedding_$symbol',
+            'unused_$symbol',
+          );
+        }
+        final name = removed.length == 1 ? removed.single : 'all';
+        final source = File('${suite().path}/no-$name.c');
+        await source.writeAsString(variant);
+        final path =
+            '${suite().path}/no-$name${Platform.isMacOS ? '.dylib' : '.so'}';
+        final built = await Process.run('cc', [
+          Platform.isMacOS ? '-dynamiclib' : '-shared',
+          '-fPIC',
+          source.path,
+          '-o',
+          path,
+        ]);
+        expect(built.exitCode, 0, reason: '${built.stderr}');
+        final session = await create(libraryPath: path);
+        try {
+          expect(await session.compute(input(), normalize: false), [3, 4]);
+        } finally {
+          session.dispose();
+        }
+        final live = DynamicLibrary.open(
+          path,
+        ).lookupFunction<Int Function(), int Function()>('allocations');
+        expect(live(), 0);
+      },
+    );
+  }
+
   test(
     'unknown bundle and old runtime fail before allocating an engine',
     () async {
@@ -696,8 +743,8 @@ void main() {
       final source = File('${suite().path}/old.c');
       await source.writeAsString(
         _source.replaceAll(
-          'litert_lm_embedding_engine_compute_embedding_batch',
-          'old_compute_batch',
+          'litert_lm_embedding_engine_compute_embedding',
+          'old_compute',
         ),
       );
       final old = '${suite().path}/old${Platform.isMacOS ? '.dylib' : '.so'}';

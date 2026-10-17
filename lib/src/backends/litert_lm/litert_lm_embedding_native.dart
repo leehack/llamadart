@@ -78,7 +78,6 @@ int _createEmbeddingEngine(
     'engine_create',
     'engine_delete',
     'engine_compute_embedding',
-    'engine_compute_embedding_batch',
     'options_create',
     'options_delete',
     'options_set_normalize',
@@ -86,14 +85,11 @@ int _createEmbeddingEngine(
     'response_delete',
     'response_get_size',
     'response_get_values',
-    'responses_delete',
-    'responses_get_size',
-    'responses_get_at',
   ];
   for (final suffix in required) {
     if (!lib.providesSymbol('litert_lm_embedding_$suffix')) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM embedding engines require the complete v0.18.0 embedding C API.',
+        'LiteRT-LM embedding engines require the v0.18.0 single-input embedding C API.',
       );
     }
   }
