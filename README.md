@@ -241,6 +241,9 @@ dependencies:
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
+The unreleased llama.cpp companion source pins `v0.7.0-1`; release
+preparation will assign matching core/companion minor versions.
+
 Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
 Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
 for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
@@ -390,12 +393,14 @@ for the full list.
 
 Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
 and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.
+Decision heads select their device separately; see
+[head placement](website/docs/guides/decision-models.md#current-support-matrix).
 
 Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.0-2` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.63` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |

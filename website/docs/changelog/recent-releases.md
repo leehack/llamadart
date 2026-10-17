@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Update the native llama.cpp runtime to v0.7.0-1.
 - Keep native performance counters accurate after cancellation, failed dispatch and model reload.
 
 - Correct chat-template error labels for empty model templates and document historical PEG format names.

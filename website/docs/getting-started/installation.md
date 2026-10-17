@@ -87,7 +87,8 @@ and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
 names the companion release of your core's minor to depend on, such as
 `^0.14.0` with core `0.14.x`. Core `0.14.x` requires the matching
-v0.7.0 companion; older v0.6.0 companions are ABI-incompatible. On macOS,
+v0.7.0 companion; older v0.6.0 companions are ABI-incompatible. The unreleased
+source moves both pins to `v0.7.0-1` and requires a matching companion release. On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
 including the GPU accelerators. The build uses it only when the resolved
 companion's `Package.swift` is the one this core release expects; any other
@@ -343,7 +344,7 @@ hooks:
     llamadart:
       llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
       # Compatibility testing only; omit to use the tested pin.
-      # llamadart_native_tag: v0.7.0
+      # llamadart_native_tag: v0.7.0-1
 ```
 
 A `llamadart_native_backends` request that names any backend module the target
@@ -358,7 +359,7 @@ rebuild counters start at 1. Build-hook overrides must always name an explicit
 tag; `latest` is limited to maintainer synchronization and header/binding
 regeneration. An override does not regenerate the Dart bindings, so its
 binary must stay ABI-compatible with the default
-`leehack/llamadart-native@v0.7.0` runtime.
+`leehack/llamadart-native@v0.7.0-1` runtime.
 
 Every key, per-target backend and Android CPU variant selection, local bundle
 paths, and fallback rules:

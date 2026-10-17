@@ -50,8 +50,12 @@ The API keeps the names of TypeSafe's
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 
-The head runs on CPU when the model is loaded on CPU, and on the model's GPU
-when a device of its backend is available, otherwise on CPU.
+The native head runs on CPU with a CPU backend or disabled GPU layers
+(`gpuLayers: 0`). Otherwise
+it selects a GPU of the load's backend, falling back to CPU if none matches.
+`mainGpu` picks among matching devices; a negative or out-of-range index picks
+the first. In particular, `splitMode: ModelSplitMode.none` with a negative
+`mainGpu` places the model on CPU but can still place its head on Metal.
 `decisions.info.deviceName` names that device, such as `CPU` or `MTL0`; on Web,
 the bridge reports its own device name.
 

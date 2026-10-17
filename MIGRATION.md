@@ -2,6 +2,15 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: native wrapper rebuild
+
+The native-assets hook and Apple companion source now pin `v0.7.0-1`, a
+wrapper rebuild of upstream llama.cpp `v0.7.0`. Existing inference behavior
+and the app API are unchanged. Apple apps need the companion release that
+ships this pin; the published `0.14.0` companion still pins `v0.7.0` and is
+rejected by the updated hook. Release preparation will assign the matching
+core/companion minor versions.
+
 ## Unreleased: native performance counters
 
 Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
@@ -23,6 +32,9 @@ With `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none` and a
 negative `mainGpu`, backend name and capabilities now report `CPU`, and
 `getResolvedGpuLayers()` returns `0`. The model already ran on the CPU;
 context, draft-model and decision-head execution settings are unchanged.
+With GPU layers enabled, the decision head still selects the first matching
+GPU of the load's backend for a negative `mainGpu`; read
+`DecisionModelInfo.deviceName` for its separate placement.
 No parameter migration is needed. Explicit `gpu` / `npu`
 validation is unchanged.
 
