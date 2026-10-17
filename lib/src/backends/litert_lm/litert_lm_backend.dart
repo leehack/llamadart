@@ -51,6 +51,7 @@ class LiteRtLmBackend
   void Function([Object? error])? _activeGenerationCleanup;
   _WorkerGeneration? _runningGeneration;
   _QueuedGeneration? _queuedGeneration;
+  final Set<int> _stalePerformanceContexts = {};
   final Map<ReceivePort, Completer<Object?>> _pendingRequests = {};
   final Duration _embeddingTimeout;
   final String? _preferredBackend;
@@ -281,6 +282,7 @@ class LiteRtLmBackend
         timeout: const Duration(seconds: 5),
       );
       _embeddingContext = null;
+      _stalePerformanceContexts.remove(contextHandle);
     } on TimeoutException {
       _nativeSettlementUnverified = true;
       _killWorker();
@@ -306,6 +308,7 @@ class LiteRtLmBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) => _generateOnWorker(
+    contextHandle,
     (sendPort) => LiteRtLmGenerateRequest(
       contextHandle,
       prompt,
@@ -335,6 +338,7 @@ class LiteRtLmBackend
         ?.map((tool) => tool.toJson())
         .toList(growable: false);
     return _generateOnWorker(
+      contextHandle,
       (sendPort) => LiteRtLmGenerateChatRequest(
         contextHandle,
         messages,
@@ -359,18 +363,24 @@ class LiteRtLmBackend
   /// A generation listened to while a cancelled one is still running on the
   /// worker waits for that run's terminal response, then starts.
   Stream<List<int>> _generateOnWorker(
+    int contextHandle,
     LiteRtLmWorkerRequest Function(SendPort responsePort) buildRequest,
   ) {
     late final StreamController<List<int>> controller;
     _WorkerGeneration? generation;
     _QueuedGeneration? queued;
     var closed = false;
+    var admitted = false;
+    var requestSent = false;
 
     void close([Object? error]) {
       if (closed) {
         return;
       }
       closed = true;
+      if (admitted && !requestSent) {
+        _stalePerformanceContexts.add(contextHandle);
+      }
       if (!controller.isClosed) {
         if (error != null) {
           controller.addError(error);
@@ -416,6 +426,8 @@ class LiteRtLmBackend
             return;
           }
           sendPort.send(buildRequest(port.sendPort));
+          requestSent = true;
+          _stalePerformanceContexts.remove(contextHandle);
         } catch (error, stackTrace) {
           if (!closed && !controller.isClosed) {
             controller.addError(error, stackTrace);
@@ -439,6 +451,7 @@ class LiteRtLmBackend
           );
           return;
         }
+        admitted = true;
         if (running == null) {
           start();
           return;
@@ -639,9 +652,12 @@ class LiteRtLmBackend
   Future<BackendPerfContextData?> getPerformanceContext(
     int contextHandle,
   ) async {
+    // An unsent cancellation never resets the service's previous metrics.
+    if (_stalePerformanceContexts.contains(contextHandle)) return null;
     final response = await _sendRequest(
       (sendPort) => LiteRtLmPerformanceContextRequest(contextHandle, sendPort),
     );
+    if (_stalePerformanceContexts.contains(contextHandle)) return null;
     if (response is LiteRtLmDoneResponse) {
       return null;
     }
@@ -1009,6 +1025,7 @@ class LiteRtLmBackend
       }
     }
     _pendingRequests.clear();
+    _stalePerformanceContexts.clear();
     _embeddingEngine = false;
     _embeddingContext = null;
     _workerGeneration += 1;
