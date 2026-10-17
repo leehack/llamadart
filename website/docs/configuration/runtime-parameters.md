@@ -53,10 +53,10 @@ Important fields:
   `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
   On native llama.cpp with `device: ComputeDevice.auto`, a negative index
   in that mode selects no GPU: `getBackendName()` and `capabilities.backendName`
-  report `CPU`, and `getResolvedGpuLayers()` reports `0`. Context, draft-model
-  and decision-head execution settings are unchanged by this reporting
-  correction. Layer and row split
-  modes do not use a negative `mainGpu` to disable GPUs. Explicit `gpu` and
+  report `CPU`, and `getResolvedGpuLayers()` reports `0`. Decision heads
+  follow this CPU placement and report `CPU` in `DecisionModelInfo.deviceName`.
+  Model context and draft-model settings are unchanged. Other split modes do
+  not use a negative `mainGpu` to disable GPUs. Explicit `gpu` and
   `npu` requests still reject the single-device negative-index combination
   with `LlamaArgumentException`.
 - `batchSize`: context logical batch size (`n_batch`). On native,

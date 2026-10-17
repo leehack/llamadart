@@ -61,16 +61,23 @@ void main(List<String> arguments) {
       (_read(service, '_modelResolvedGpuLayers') as Map)[1] =
           ModelParams.maxGpuLayers;
       final params = _read(service, '_modelLoadParams') as Map;
-      for (final (mainGpu, expectedDevice, reportedBackend, reportedLayers) in [
-        (-1, 12, 'CPU', 0),
-        (-2, 12, 'CPU', 0),
-        (0, 12, 'Metal', ModelParams.maxGpuLayers),
-        (1, 13, 'Metal', ModelParams.maxGpuLayers),
-      ]) {
-        params[1] = ModelParams(
-          splitMode: ModelSplitMode.none,
-          mainGpu: mainGpu,
-        );
+      for (final (
+            splitMode,
+            mainGpu,
+            expectedDevice,
+            reportedBackend,
+            reportedLayers,
+          )
+          in [
+            (ModelSplitMode.none, -1, null, 'CPU', 0),
+            (ModelSplitMode.none, -2, null, 'CPU', 0),
+            (ModelSplitMode.none, 0, 12, 'Metal', ModelParams.maxGpuLayers),
+            (ModelSplitMode.none, 1, 13, 'Metal', ModelParams.maxGpuLayers),
+            (ModelSplitMode.layer, -1, 12, 'Metal', ModelParams.maxGpuLayers),
+            (ModelSplitMode.row, -1, 12, 'Metal', ModelParams.maxGpuLayers),
+            (ModelSplitMode.tensor, -1, 12, 'Metal', ModelParams.maxGpuLayers),
+          ]) {
+        params[1] = ModelParams(splitMode: splitMode, mainGpu: mainGpu);
         _invoke(service, '_activateModelReport', [1]);
         _check(service.getActiveBackendName(), reportedBackend);
         _check(service.getResolvedGpuLayers(), reportedLayers);

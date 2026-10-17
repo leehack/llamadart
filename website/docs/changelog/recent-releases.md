@@ -10,6 +10,7 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Update the native llama.cpp runtime to v0.7.0-1.
+- **Behavior change:** Run decision heads on CPU when native llama.cpp single-device placement selects no GPU.
 - Keep native performance counters accurate after cancellation, validation failure, failed dispatch and model reload.
 
 - Correct chat-template error labels for empty model templates and document historical PEG format names.

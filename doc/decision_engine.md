@@ -221,16 +221,16 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
   `llama_dart_ggml_backend_sched_graph_compute`, so exit teardown frees a
   head that is still loaded (`doc/llama_cpp_exit_teardown.md`).
 
-Head device: CPU when the load's backend is CPU (`_modelBackendNames`) or its
-requested GPU layer count resolves to zero, with `op_offload` false. Otherwise
+Head device: CPU when the load's backend is CPU (`_modelBackendNames`), its
+requested GPU layer count resolves to zero, or single-device placement
+(`splitMode: ModelSplitMode.none` with a negative `mainGpu`) selects no GPU,
+with `op_offload` false. Otherwise
 a GPU or iGPU device whose registry maps to that backend (`mainGpu` picks
 among several; a negative or out-of-range index picks the first matching
 device; none matching means CPU; `decisionHeadDeviceIndex` decides), with the
 CPU backend last in the sched (required by `ggml_backend_sched_new`).
-Selection is independent of the model's placement report: with
-`splitMode: ModelSplitMode.none` and a negative `mainGpu`, the model reports
-CPU and zero GPU layers, but a Metal load can still run its head on the first
-Metal device. `DecisionModelInfo.deviceName` reports the head's device. Never
+With single-device placement selecting no GPU, the model reports CPU and zero
+GPU layers, and `DecisionModelInfo.deviceName` reports `CPU` for the head. Never
 `ggml_backend_init_best`, which would start a GPU backend in explicit CPU
 mode.
 
