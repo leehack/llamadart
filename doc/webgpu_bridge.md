@@ -86,14 +86,15 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
-(`v0.7.0`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+(`v0.7.0-1`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
 even though the bridge asset tag `v0.1.63` differs from the native runtime tag
-`v0.7.0`. Provenance for this immutable consumer artifact: release `415205376`,
+`v0.7.0-1`. Provenance for this immutable consumer artifact: release `415205376`,
 tag commit `c1665e3c9a38b78c553806f590f7948b36c8d148`, bridge source
 `57d9971817897115c6312a712ccb21c9a25671f9`, and manifest SHA-256
 `65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`. The bridge
-assets were qualified against the same native release. Their JavaScript, type
-declarations and worker remain byte-identical to `v0.1.59`; the WebAssembly
+assets were qualified against native `v0.7.0`; the current native
+pin `v0.7.0-1` rebuilds only the wrapper on the same upstream commit. Their
+JavaScript, type declarations and worker remain byte-identical to `v0.1.59`; the WebAssembly
 cores update llama.cpp and fix graph reservation when embedding extraction is
 toggled on an unpooled context. State and extraction qualification covers
 wasm32 and memory64 through direct and worker runtimes. Existing decision,

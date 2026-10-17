@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.7.0';
+const llamaCppTag = 'v0.7.0-1';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,7 +16,7 @@ const llamaCppTag = 'v0.7.0';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.14.0';
+const llamaCppAppleCompanionVersion = '0.14.1';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
@@ -38,27 +38,27 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'a272fb8e5ea692fe4b93f2368c4c1a774f37320a1038b6145cae4e6186064fdd',
+      'e25056a80c0520e0198350da395814285dc5a116da581e90e49b02e106b56174',
   'android-x64':
-      '4be5ee439bc26402a288d5e08796c8d42604b4fa8880a3395b7f6d24f46026d1',
+      '600ab700681f879bef3f583ca001ac7cea50f04085f4ccd5dd9789f599354850',
   'ios-arm64':
-      '6824bb95723d9a88e5edeb9ddf4ea48b8e7df4d0873824c6759683e56eed885d',
+      '022f29fccab8f2abb521d5270bf774c079cee9a66525272655278291b4a050f8',
   'ios-arm64-sim':
-      '4af2962e1705f3a812d0b3599eac18e6b62955c2c36b24ce2b8b7d17899ab54c',
+      '1438643353a02aec1343509b23841d750930b849c3edbb038d05e72c410b18ea',
   'ios-x86_64-sim':
-      'c9c2c130d1f469011d07aa377b582ee3f841e1ba7c6d8504480a7d4f4a3ab4af',
+      '449a760fabc32688a27c4ce5183c1d422fe4ed626568c45c2386e09f664a475b',
   'linux-arm64':
-      '1e5bcdb180aa464e71746187baab5233b1b399f99aee1216c9292c1a03c061b9',
+      'cd679e88094921eef0dd2983e407aaf087d55a8a375336c4f3a345105916aff0',
   'linux-x64':
-      'f56a68ec18875420bf751d7900cdecddea426f82666f428a3259d1d05c0a0b40',
+      'af61abad6457f98a93da226db48e3d3144e4542f24d5b803f9636d4ad482d2aa',
   'macos-arm64':
-      'a555b551a7fe1424f75119f30d824561dab4cb5f87b0b751f590a3b5913dbb3c',
+      '091524ad25e1f083f08e08ee078f74e777ed3045700b6fc9de7c28465d427c1d',
   'macos-x86_64':
-      '5ea274cd68747e7ca0798515a0ae02a1c752b63d5b32fc49b13c545558c8dac2',
+      'f4c70bdbe5a735dc1c35a3e2cdf21a2563bd8aef71ed82f2b02357fce2379f1f',
   'windows-arm64':
-      'fe6119e827c8dc319ed2089718f9c8c02aa80f61dbd95eab433f48afc2cc3f2d',
+      '13aec59acad0621ce8f0f64ac098dd2ab0255ae52084559201d4414c7328f99e',
   'windows-x64':
-      '6f658286925f37e71a0a6f50fb034bd0c52ff44f0661b58f6bdfb011a35e4a18',
+      'b3499bf92f532392698421a39d1246665b469d6f2b0988a9000960275e179727',
 };
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.

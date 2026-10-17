@@ -307,14 +307,15 @@ The example currently pins bridge assets to `v0.1.63`, with local vendored asset
 identified as `v0.1.63-local-v0.7.0`.
 
 - The pinned `v0.1.63` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
-  (`v0.7.0`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+  (`v0.7.0-1`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
   even though the bridge asset tag `v0.1.63` differs from the native runtime tag
-  `v0.7.0`. Pinned artifact provenance: release `415205376`, tag commit
+  `v0.7.0-1`. Pinned artifact provenance: release `415205376`, tag commit
   `c1665e3c9a38b78c553806f590f7948b36c8d148`, bridge source
   `57d9971817897115c6312a712ccb21c9a25671f9`, manifest SHA-256
   `65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`. The
-  bridge assets were qualified against the same native release. Extraction and
-  state smokes pass through direct and worker paths in both memory modes.
+  bridge assets were qualified against native `v0.7.0`; the current native
+  pin `v0.7.0-1` rebuilds only the wrapper on the same upstream commit.
+  Extraction and state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
