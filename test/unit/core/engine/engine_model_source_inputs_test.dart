@@ -6,7 +6,8 @@ import 'package:llamadart/src/backends/backend.dart'
     show BackendModelFormatRouting, BackendRuntimeIdentity;
 import 'package:test/test.dart';
 
-import 'engine_test.dart' show MockLlamaBackend, NativeChatMockBackend;
+import 'engine_test.dart'
+    show MockLlamaBackend, NativeChatMockBackend, PerformanceCounterBackend;
 
 void main() {
   final hfAdapter = ModelSource.parse('hf://owner/repo/adapters/style.gguf');
@@ -976,6 +977,39 @@ void main() {
       ),
     );
 
+    for (final nativeChat in [false, true]) {
+      for (final reuseHandle in [false, true]) {
+        test('late draft resolution preserves reload counters '
+            '(native: $nativeChat, reused: $reuseHandle)', () async {
+          final backend = _ReloadPerformanceBackend(
+            nativeChat: nativeChat,
+            reuseHandle: reuseHandle,
+          );
+          final manager = _GatedManager({hfDraft: '/cache/draft.gguf'});
+          final engine = LlamaEngine(backend, modelDownloadManager: manager);
+          addTearDown(engine.dispose);
+          await engine.loadModel('/models/model.gguf');
+          final old = nativeChat
+              ? engine.create(const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'hi',
+                  ),
+                ], params: draftParams()).drain<void>()
+              : engine.generate('hi', params: draftParams()).drain<void>();
+          final settled = expectLater(old, throwsA(isA<LlamaStateException>()));
+          await manager.started.future;
+          await engine.unloadModel();
+          await engine.loadModel('/models/reloaded.gguf');
+          await engine.generate('new').drain<void>();
+          expect((await engine.getPerformanceContext())?.evalTokens, 1);
+          manager.gate.complete();
+          await settled;
+          expect((await engine.getPerformanceContext())?.evalTokens, 1);
+        });
+      }
+    }
+
     test('a draft model resolves once across generations, and again after '
         'the model reloads', () async {
       final backend = _RecordingBackend();
@@ -1544,5 +1578,20 @@ class _GatedManager extends _CacheManager {
       source,
       options: ModelLoadOptions(cacheDirectory: options.cacheDirectory),
     );
+  }
+}
+
+class _ReloadPerformanceBackend extends PerformanceCounterBackend {
+  _ReloadPerformanceBackend({
+    required super.nativeChat,
+    required this.reuseHandle,
+  });
+  final bool reuseHandle;
+  int contexts = 0;
+
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async {
+    contexts++;
+    return reuseHandle ? 1 : contexts;
   }
 }

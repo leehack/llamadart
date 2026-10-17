@@ -2032,6 +2032,8 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
+    final requestContext = _contextHandle!;
+    final requestEpoch = _modelEpoch;
     var reachedBackend = false;
     try {
       await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
@@ -2078,7 +2080,11 @@ class LlamaEngine {
         );
       }
     } finally {
-      _endContextRequest(reachedBackend: reachedBackend);
+      _endContextRequest(
+        requestContext,
+        requestEpoch,
+        reachedBackend: reachedBackend,
+      );
     }
   }
 
@@ -2097,6 +2103,8 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
+    final requestContext = _contextHandle!;
+    final requestEpoch = _modelEpoch;
     var reachedBackend = false;
     try {
       if (request.isCancelled()) return;
@@ -2134,7 +2142,11 @@ class LlamaEngine {
         );
       }
     } finally {
-      _endContextRequest(reachedBackend: reachedBackend);
+      _endContextRequest(
+        requestContext,
+        requestEpoch,
+        reachedBackend: reachedBackend,
+      );
     }
   }
 
@@ -2148,21 +2160,27 @@ class LlamaEngine {
   /// Records the end of a request: one that called [_beginContextCall] when
   /// [reachedBackend] is true, otherwise one that ended before reaching the
   /// backend.
-  void _endContextRequest({required bool reachedBackend}) {
+  void _endContextRequest(
+    int contextHandle,
+    int epoch, {
+    required bool reachedBackend,
+  }) {
     if (reachedBackend) {
       _contextCallsInFlight -= 1;
-    } else if (_contextCallsInFlight == 0) {
-      _stalePerformanceContext = _contextHandle;
+    } else if (_contextCallsInFlight == 0 && epoch == _modelEpoch) {
+      _stalePerformanceContext = contextHandle;
     }
   }
 
   /// Runs [call], a backend call on the context, such as embeddings.
   Future<T> _contextCall<T>(Future<T> Function() call) async {
+    final requestContext = _contextHandle!;
+    final requestEpoch = _modelEpoch;
     _beginContextCall();
     try {
       return await call();
     } finally {
-      _endContextRequest(reachedBackend: true);
+      _endContextRequest(requestContext, requestEpoch, reachedBackend: true);
     }
   }
 
