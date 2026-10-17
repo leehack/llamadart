@@ -13,6 +13,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
+import 'package:llamadart/src/backends/llama_cpp/native_barrier_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
 import 'package:test/test.dart';
@@ -101,7 +102,11 @@ void main() {
                 : mode == 'unknown'
                 ? 'invalid'
                 : EmbeddingCapabilitiesResponse(
-                    const LlamaEmbeddingCapabilities(text: true),
+                    const LlamaEmbeddingCapabilities(
+                      text: true,
+                      mediaUnsupportedReason:
+                          'guarded mixed-batch ABI v0.7.0-1',
+                    ),
                   ),
           );
         } else if (message is EmbedContentBatchRequest) {
@@ -133,7 +138,9 @@ void main() {
         await subscription.cancel();
         port.close();
       });
-      expect((await backend.getEmbeddingCapabilities(7)).text, isTrue);
+      final capabilities = await backend.getEmbeddingCapabilities(7);
+      expect(capabilities.text, isTrue);
+      expect(capabilities.mediaUnsupportedReason, contains('v0.7.0-1'));
       for (final next in ['ok', 'cancel', 'error', 'unknown']) {
         mode = next;
         final bytes = Uint8List.fromList([1, 2]);
@@ -452,6 +459,129 @@ void main() {
     },
   );
 
+  test('mixed special tokens follow string rules even when BOS equals EOS', () {
+    final dir = Directory.systemTemp.createTempSync('embedding_special_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = writeSyntheticLlamaGguf(
+      '${dir.path}/model.gguf',
+      poolingType: 1,
+      causalAttention: false,
+      eosTokenId: 1,
+    );
+    final service = LlamaCppService()..initializeBackend();
+    addTearDown(service.dispose);
+    const params = ModelParams(
+      gpuLayers: 0,
+      preferredBackend: GpuBackend.cpu,
+      contextSize: 64,
+      batchSize: 64,
+      microBatchSize: 64,
+    );
+    final model = service.loadModel(file.path, params);
+    final models = _privateField(service, '_models') as Map;
+    final pointer =
+        reflect(models[model]).getField(#pointer).reflectee
+            as Pointer<llama_model>;
+    final vocab = llama_model_get_vocab(pointer);
+    expect(llama_vocab_bos(vocab), llama_vocab_eos(vocab));
+    final library = reflectClass(LlamaCppService).owner as LibraryMirror;
+    for (final text in ['a', '<s>a']) {
+      final addSpecial = reflect(service).invoke(
+        MirrorSystem.getSymbol('_embeddingAddsSpecial', library),
+        [vocab, text],
+      ).reflectee;
+      expect(addSpecial, !text.startsWith('<s>'));
+      expect(
+        service.tokenize(model, text, addSpecial as bool),
+        service.tokenize(model, text, true),
+      );
+    }
+  });
+
+  for (final gate in ['mean', 'causal', 'abi', 'inputWidth']) {
+    test('projector cannot bypass the $gate media gate', () {
+      final dir = Directory.systemTemp.createTempSync('embedding_gate_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      var mropeProbes = 0;
+      final barrier = FakeNativeBarrier(
+        real: NativeBarrierApi.tryResolve(isWindows: false),
+      );
+      addTearDown(barrier.dispose);
+      final calls = LlamaCppObjectCalls.tracked(
+        ExitTeardownApi.tryResolve(isWindows: false)!,
+        barrier: barrier.api,
+        mixedBatchResolver: () => gate == 'abi'
+            ? null
+            : LlamaCppMixedBatchApi(
+                init: (_) => throw StateError('unexpected allocation'),
+                process: (_, _, _) => throw StateError('unexpected process'),
+                projectorUsesMrope: (_) {
+                  mropeProbes++;
+                  return true;
+                },
+              ),
+        modelInputWidth: gate == 'inputWidth'
+            ? (_) => throw ArgumentError('missing llama_model_n_embd_inp')
+            : null,
+      );
+      final service = LlamaCppService(objectCalls: calls)..initializeBackend();
+      addTearDown(service.dispose);
+      final file = writeSyntheticLlamaGguf(
+        '${dir.path}/model.gguf',
+        poolingType: gate == 'mean' ? 0 : 1,
+        causalAttention: gate == 'causal',
+      );
+      const params = ModelParams(
+        gpuLayers: 0,
+        preferredBackend: GpuBackend.cpu,
+        contextSize: 64,
+        batchSize: 64,
+        microBatchSize: 64,
+      );
+      final model = service.loadModel(file.path, params);
+      final context = service.createContext(model, params);
+      expect(service.getEmbeddingCapabilities(context).text, isTrue);
+      final map = _privateField(service, '_mtmdContexts') as Map;
+      final models = _privateField(service, '_modelToMtmd') as Map;
+      map[123] = Pointer<mtmd_context>.fromAddress(123);
+      models[model] = 123;
+      try {
+        final caps = service.getEmbeddingCapabilities(context);
+        expect([caps.text, caps.image, caps.audio], [true, false, false]);
+        expect(
+          caps.mediaUnsupportedReason,
+          allOf(contains('llama_model_n_embd_inp'), contains('v0.7.0-1')),
+        );
+        expect(
+          mropeProbes,
+          0,
+          reason: 'must stop before dereferencing the projector',
+        );
+        expect(
+          service.embedContentBatch(context, [
+            LlamaEmbeddingInput([const LlamaTextContent('a')]),
+          ]).single,
+          orderedEquals(service.embed(context, 'a')),
+        );
+        expect(
+          () => service.embedContentBatch(context, [
+            LlamaEmbeddingInput([LlamaAudioContent(samples: Float32List(4))]),
+          ]),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'native floor',
+              contains('v0.7.0-1'),
+            ),
+          ),
+        );
+      } finally {
+        map.clear();
+        models.clear();
+      }
+    });
+  }
+
   test('native backend implements both embedding contracts', () {
     final backend = NativeLlamaBackend();
     expect(backend, isA<BackendEmbeddings>());
@@ -484,3 +614,10 @@ ExitTeardownApi _withFailedEncoder(ExitTeardownApi real) => ExitTeardownApi(
   schedGraphCompute: real.schedGraphCompute,
   mtmdEncodeChunk: (_, _) => 1,
 );
+
+Object? _privateField(Object target, String name) {
+  final library = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(
+    target,
+  ).getField(MirrorSystem.getSymbol(name, library)).reflectee;
+}

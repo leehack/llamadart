@@ -62,6 +62,9 @@ reports text only. Oversized expanded media inputs throw
 `LlamaInferenceException` before encoding; M-RoPE projectors, URLs and
 ambiguous media sources throw `LlamaUnsupportedException`. Each media part
 needs exactly one encoded bytes/local-file source, or mono 16 kHz audio PCM.
+Text-only content follows `embed`, including causal unpooled models; media
+requirements do not restrict text. Older native overrides can retain text
+with media disabled; unsupported media errors name the v0.7.0-1 ABI.
 No task prefix is inserted. Await a cancelled embedding before reusing it.
 
 `ModelParams.liteRtLmEmbeddingEngine` defaults to false for conversation loading.

@@ -960,6 +960,12 @@ extension BackendEmbeddingDispatch on LlamaBackend {
           final runtime = this is BackendRuntimeIdentity
               ? (this as BackendRuntimeIdentity).runtime
               : null;
+          if (kind != LlamaEmbeddingModality.text &&
+              capabilities.mediaUnsupportedReason != null) {
+            throw LlamaUnsupportedException(
+              '${kind.name} embeddings are unavailable: ${capabilities.mediaUnsupportedReason!}',
+            );
+          }
           throw LlamaUnsupportedException(
             '${kind.name} embeddings are unavailable for the loaded model/runtime '
             '(${runtime?.name ?? 'unknown'}); the embedding capability probe '

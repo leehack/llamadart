@@ -476,6 +476,8 @@ final class LlamaCppObjectCalls {
 
   final LlamaCppMixedBatchApi? Function()? _mixedBatchResolver;
 
+  final int Function(Pointer<llama_model>) _modelInputWidth;
+
   /// Reads model shape and pooling support without mutating inference state.
   ({
     bool encoder,
@@ -489,12 +491,20 @@ final class LlamaCppObjectCalls {
     return (
       encoder: llama_model_has_encoder(model),
       decoder: llama_model_has_decoder(model),
-      inputWidth: llama_model_n_embd_inp(model),
+      inputWidth: _optionalEmbeddingInputWidth(model),
       outputWidth: llama_model_n_embd_out(model) > 0
           ? llama_model_n_embd_out(model)
           : llama_model_n_embd(model),
       vocab: llama_model_get_vocab(model),
     );
+  }
+
+  int _optionalEmbeddingInputWidth(Pointer<llama_model> model) {
+    try {
+      return _modelInputWidth(model);
+    } on ArgumentError {
+      return 0;
+    }
   }
 
   /// Actual allocated limits, rather than the requested model parameters.
@@ -639,7 +649,9 @@ final class LlamaCppObjectCalls {
     required this.stateSeqSetDataExt,
     required this.adapterLoraInit,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
-  }) : _mixedBatchResolver = mixedBatchResolver;
+    int Function(Pointer<llama_model>)? modelInputWidth,
+  }) : _mixedBatchResolver = mixedBatchResolver,
+       _modelInputWidth = modelInputWidth ?? llama_model_n_embd_inp;
 
   /// The tracked and guarded functions of [exit].
   ///
@@ -652,12 +664,14 @@ final class LlamaCppObjectCalls {
     NativeBarrierApi? barrier,
     bool isWindows = false,
     LlamaCppMixedBatchApi? Function()? mixedBatchResolver,
+    int Function(Pointer<llama_model>)? modelInputWidth,
   }) {
     final failures = NativeCallFailures(barrier, isWindows: isWindows);
     return LlamaCppObjectCalls._(
       exit: exit,
       failures: failures,
       mixedBatchResolver: mixedBatchResolver,
+      modelInputWidth: modelInputWidth,
       loadModel: (path, params) {
         final model = exit.modelLoadFromFile(path, params);
         if (model == nullptr) {

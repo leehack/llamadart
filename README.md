@@ -101,7 +101,8 @@ Web llama.cpp retains text embeddings. LiteRT-LM supports text,
 image and audio embeddings (qualified on macOS arm64 CPU only) with
 `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all Web paths throw
 `LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
-llama.cpp string embeddings retain their existing behavior.
+llama.cpp text-only content follows `embed`, including causal unpooled models.
+Unsupported native media diagnostics name the required v0.7.0-1 ABI.
 Adjacent text parts concatenate verbatim.
 See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).

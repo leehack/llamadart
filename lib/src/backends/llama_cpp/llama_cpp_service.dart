@@ -657,8 +657,8 @@ class LlamaCppService {
   /// backend policy, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the calls that allocate and free
-  /// token batches, the read of the Vulkan device facts, and the registered
-  /// ggml devices a load selects from.
+  /// token batches and prepared embedding resources, the read of the Vulkan
+  /// device facts, and the registered ggml devices a load selects from.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -671,6 +671,9 @@ class LlamaCppService {
     LlamaCppObjectCalls? objectCalls,
     llama_batch Function(int tokens, int embd, int sequences)? batchInit,
     void Function(llama_batch batch)? batchFree,
+    void Function(Pointer<mtmd_input_chunks>)? embeddingChunksFree,
+    void Function(Pointer<mtmd_bitmap>)? embeddingBitmapFree,
+    void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
@@ -683,6 +686,9 @@ class LlamaCppService {
        _objectCallsOverride = objectCalls,
        _batchInit = batchInit ?? llama_batch_init,
        _batchFree = batchFree ?? llama_batch_free,
+       _embeddingChunksFree = embeddingChunksFree,
+       _embeddingBitmapFree = embeddingBitmapFree,
+       _embeddingBatchFree = embeddingBatchFree ?? llama_batch_ext_free,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices;
 
@@ -696,6 +702,9 @@ class LlamaCppService {
   final LlamaCppObjectCalls? _objectCallsOverride;
   final llama_batch Function(int tokens, int embd, int sequences) _batchInit;
   final void Function(llama_batch batch) _batchFree;
+  final void Function(Pointer<mtmd_input_chunks>)? _embeddingChunksFree;
+  final void Function(Pointer<mtmd_bitmap>)? _embeddingBitmapFree;
+  final void Function(Pointer<llama_batch_ext>) _embeddingBatchFree;
   final VulkanDeviceProbe Function()? _vulkanDeviceProbeOverride;
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
@@ -5611,12 +5620,15 @@ class LlamaCppService {
     return vectors.map((vector) => vector!).toList(growable: false);
   }
 
+  bool _embeddingAddsSpecial(Pointer<llama_vocab> vocab, String text) =>
+      !_promptStartsWithBosToken(vocab, text);
+
   List<int> _tokenizeEmbeddingText(
     Pointer<llama_vocab> vocab,
     String text,
     int maxTokens,
   ) {
-    final shouldAddSpecial = !_promptStartsWithBosToken(vocab, text);
+    final shouldAddSpecial = _embeddingAddsSpecial(vocab, text);
     final (textPtr, textLength) = _toNativeUtf8WithLength(text);
 
     final int requiredTokenCount;

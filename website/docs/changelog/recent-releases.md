@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Embed ordered images, audio and text with native llama.cpp embedding models and compatible projectors.
+- Embed ordered images, audio and text with native llama.cpp embedding models and compatible projectors, preserving text-only embedding compatibility.
 - Update the native llama.cpp runtime to v0.7.0-1.
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.

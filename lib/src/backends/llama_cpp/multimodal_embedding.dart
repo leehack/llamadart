@@ -1,5 +1,9 @@
 part of 'llama_cpp_service.dart';
 
+const _nativeEmbeddingMediaRequirements =
+    'Native media embeddings require noncausal MEAN pooling, a compatible '
+    'non-M-RoPE projector, llama_model_n_embd_inp and guarded mixed-batch ABI v0.7.0-1.';
+
 /// Native content embedding operations on the service's existing model/projector.
 extension NativeContentEmbeddings on LlamaCppService {
   /// Reports loaded-model support; a missing context performs no native calls.
@@ -20,17 +24,24 @@ extension NativeContentEmbeddings on LlamaCppService {
     if (!text ||
         projector == null ||
         _calls.mixedBatch == null ||
+        modelInfo.inputWidth <= 0 ||
         _mtmdBarrier == null ||
         _mtmdExitTeardown == null ||
         pooling != llama_pooling_type.LLAMA_POOLING_TYPE_MEAN ||
         _embeddingModelHasCausalAttention(modelHandle) ||
         modelInfo.encoder) {
-      return LlamaEmbeddingCapabilities(text: text);
+      return LlamaEmbeddingCapabilities(
+        text: text,
+        mediaUnsupportedReason: _nativeEmbeddingMediaRequirements,
+      );
     }
     _calls.failures.ensureUsable(projector, 'This multimodal projector');
     // Extended batches receive exactly one position per row in this adapter.
     if (_calls.embeddingProjectorUsesMrope(projector)) {
-      return LlamaEmbeddingCapabilities(text: text);
+      return LlamaEmbeddingCapabilities(
+        text: text,
+        mediaUnsupportedReason: _nativeEmbeddingMediaRequirements,
+      );
     }
     return LlamaEmbeddingCapabilities(
       text: text,
@@ -145,8 +156,8 @@ extension NativeContentEmbeddings on LlamaCppService {
     Pointer<llama_vocab> vocab,
   ) {
     final item = _PreparedEmbedding(
-      freeChunks: _mtmdInputChunksFree,
-      freeBitmap: _mtmdBitmapFree,
+      freeChunks: _embeddingChunksFree ?? _mtmdInputChunksFree,
+      freeBitmap: _embeddingBitmapFree ?? _mtmdBitmapFree,
     );
     try {
       item.chunks = _mtmdInputChunksInit();
@@ -176,10 +187,7 @@ extension NativeContentEmbeddings on LlamaCppService {
         nativeText.ref
           ..text = text.toNativeUtf8(allocator: arena).cast()
           ..text_len = utf8.encode(text).length
-          ..add_special =
-              (llama_vocab_bos(vocab) != llama_vocab_eos(vocab) &&
-                  llama_vocab_bos(vocab) != -1) &&
-              !_promptStartsWithBosToken(vocab, text)
+          ..add_special = _embeddingAddsSpecial(vocab, text)
           ..parse_special = true;
         final bitmaps = arena<Pointer<mtmd_bitmap>>(item.bitmaps.length);
         for (var i = 0; i < item.bitmaps.length; i++) {
@@ -273,7 +281,7 @@ extension NativeContentEmbeddings on LlamaCppService {
       throw LlamaInferenceException('Cannot decode embedding media');
     }
     if (mtmd_bitmap_is_audio(bitmap) != (part is LlamaAudioContent)) {
-      _mtmdBitmapFree(bitmap);
+      (_embeddingBitmapFree ?? _mtmdBitmapFree)(bitmap);
       throw LlamaUnsupportedException(
         'Embedding media encoding does not match its declared modality.',
       );
@@ -290,12 +298,13 @@ extension NativeContentEmbeddings on LlamaCppService {
     required void Function() checkCancelled,
   }) {
     final batch = _calls.createEmbeddingBatch(context.pointer);
-    final mediaCopies = <Pointer<Float>>[];
     var embeddingsEnabled = false;
     try {
       final width = _calls.embeddingModelInfo(model).inputWidth;
       if (width <= 0) {
-        throw LlamaInferenceException('Invalid media embedding input width');
+        throw LlamaUnsupportedException(
+          'Native media embeddings require llama_model_n_embd_inp and guarded mixed-batch ABI v0.7.0-1.',
+        );
       }
       using((arena) {
         final countPtr = arena<Size>();
@@ -322,11 +331,7 @@ extension NativeContentEmbeddings on LlamaCppService {
                 'Media encoder output is unavailable',
               );
             }
-            media = calloc<Float>(countPtr.value * width);
-            mediaCopies.add(media);
-            media
-                .asTypedList(countPtr.value * width)
-                .setAll(0, output.asTypedList(countPtr.value * width));
+            media = output;
           }
           for (var i = 0; i < countPtr.value; i++, row++) {
             final int index;
@@ -371,10 +376,7 @@ extension NativeContentEmbeddings on LlamaCppService {
       return normalize ? _normalizeEmbeddingVector(vector) : vector;
     } finally {
       if (embeddingsEnabled) _calls.setEmbeddingOutput(context.pointer, false);
-      llama_batch_ext_free(batch);
-      for (final copy in mediaCopies) {
-        calloc.free(copy);
-      }
+      _embeddingBatchFree(batch);
     }
   }
 }

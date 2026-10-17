@@ -65,11 +65,13 @@ File writeSyntheticModernBertGguf(
 /// llama.cpp creates a KV cache for this architecture. [poolingType] is the
 /// raw `llama_pooling_type` value. [causalAttention] overrides the model's
 /// default causal attention; null leaves the optional metadata key absent.
-/// [architecture] also accepts `llada`, whose tensors share this layout and
+/// [eosTokenId] overrides the tokenizer default for special-token compatibility
+/// tests. [architecture] also accepts `llada`, whose tensors share this layout and
 /// whose runtime forces non-causal attention even with a true metadata value.
 File writeSyntheticLlamaGguf(
   String path, {
   String architecture = 'llama',
+  int? eosTokenId,
   int? poolingType,
   bool? causalAttention,
   int contextLength = 1024,
@@ -81,6 +83,8 @@ File writeSyntheticLlamaGguf(
     path,
     arch: arch,
     metadata: {
+      if (eosTokenId != null)
+        'tokenizer.ggml.eos_token_id': _GgufValue.uint32(eosTokenId),
       '$arch.context_length': _GgufValue.uint32(contextLength),
       '$arch.embedding_length': _GgufValue.uint32(_embd),
       '$arch.feed_forward_length': _GgufValue.uint32(_ff),

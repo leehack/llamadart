@@ -4,6 +4,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -132,6 +133,14 @@ void main() {
                   : ModelParams.maxGpuLayers,
             ),
           );
+          expect(
+            (await engine.getBackendName()).toLowerCase(),
+            contains(backend.name),
+          );
+          expect(
+            await engine.getResolvedGpuLayers(),
+            backend == GpuBackend.cpu ? 0 : greaterThan(0),
+          );
           inputs = _inputs();
           final path = Platform
               .environment['LLAMADART_EMBEDDING_REFERENCE_${backend.name.toUpperCase()}'];
@@ -236,6 +245,13 @@ void main() {
             final invalid = <(LlamaContentPart, Type)>[
               (
                 const LlamaImageContent(url: 'https://invalid.example/private'),
+                LlamaUnsupportedException,
+              ),
+              (
+                LlamaImageContent(
+                  url: 'https://invalid.example/private',
+                  bytes: _image(false),
+                ),
                 LlamaUnsupportedException,
               ),
               (const LlamaImageContent(), LlamaUnsupportedException),
@@ -349,21 +365,48 @@ void main() {
       var mrope = false, tokenizeFails = false;
       var sampleRate = 16000;
       var outputEnabled = false;
+      var encodeFails = false, processFails = false, missingWidth = false;
+      var failWidthAfterAllocation = false;
+      var chunksFreed = 0,
+          bitmapsFreed = 0,
+          batchesCreated = 0,
+          batchesFreed = 0;
+      void expectFreed(int chunks, int bitmaps, int batches) {
+        expect(
+          [chunksFreed, bitmapsFreed, batchesFreed],
+          [chunks, bitmaps, batches],
+        );
+        expect(batchesFreed, batchesCreated);
+        chunksFreed = bitmapsFreed = batchesCreated = batchesFreed = 0;
+      }
+
       final guarded = _recordEmbeddingExit(
         exit,
         onEncode: () => encodes++,
         onTokenize: (rows) => expandedRows += rows,
         tokenizeFails: () => tokenizeFails,
+        encodeFails: () => encodeFails,
+        onSpecial: (enabled) => expect(enabled, isTrue),
       );
       final mixed = LlamaCppMixedBatchApi.tryResolve()!;
       final calls = LlamaCppObjectCalls.tracked(
         guarded,
         barrier: NativeBarrierApi.tryResolve(isWindows: false),
+        modelInputWidth: (model) {
+          if (missingWidth)
+            throw ArgumentError('missing llama_model_n_embd_inp');
+          return llama_model_n_embd_inp(model);
+        },
         mixedBatchResolver: () => LlamaCppMixedBatchApi(
-          init: mixed.init,
+          init: (ctx) {
+            final batch = mixed.init(ctx);
+            if (batch != nullptr) batchesCreated++;
+            missingWidth = failWidthAfterAllocation;
+            return batch;
+          },
           process: (context, type, batch) {
             processes++;
-            return mixed.process(context, type, batch);
+            return processFails ? -1 : mixed.process(context, type, batch);
           },
           projectorUsesMrope: (_) => mrope,
           audioSampleRate: (_) => sampleRate,
@@ -378,7 +421,21 @@ void main() {
           },
         ),
       );
-      final service = LlamaCppService(objectCalls: calls)..initializeBackend();
+      final service = LlamaCppService(
+        objectCalls: calls,
+        embeddingChunksFree: (chunks) {
+          chunksFreed++;
+          mtmd_input_chunks_free(chunks);
+        },
+        embeddingBitmapFree: (bitmap) {
+          bitmapsFreed++;
+          mtmd_bitmap_free(bitmap);
+        },
+        embeddingBatchFree: (batch) {
+          batchesFreed++;
+          llama_batch_ext_free(batch);
+        },
+      )..initializeBackend();
       service.setLogLevel(LlamaLogLevel.error);
       addTearDown(service.dispose);
       const params = ModelParams(
@@ -393,6 +450,8 @@ void main() {
         params,
       );
       final context = service.createContext(model, params);
+      expect(service.getActiveBackendName().toLowerCase(), contains('metal'));
+      expect(service.getResolvedGpuLayers(), greaterThan(0));
       expect(service.getEmbeddingCapabilities(context).image, isFalse);
       service.createMultimodalContext(
         model,
@@ -419,11 +478,47 @@ void main() {
         throwsA(isA<LlamaInferenceException>()),
       );
       expect([encodes, processes], [0, 0]);
+      expectFreed(2, 2, 0);
+      expect(
+        () => service.embedContentBatch(context, [
+          inputs[1],
+          LlamaEmbeddingInput([LlamaTextContent('a ' * 300)]),
+        ]),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      expect(
+        [encodes, processes],
+        [0, 0],
+        reason: 'text-item pass-limit preflight precedes all inference',
+      );
+      expectFreed(1, 1, 0);
+      expect(
+        () => service.embedContentBatch(context, [
+          inputs[1],
+          LlamaEmbeddingInput([
+            LlamaImageContent(
+              url: 'https://invalid.example',
+              bytes: _image(false),
+            ),
+          ]),
+        ]),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect([encodes, processes], [0, 0]);
+      expectFreed(2, 1, 0);
+      expect(
+        () => service.embedContentBatch(context, [
+          LlamaEmbeddingInput([LlamaAudioContent(bytes: _image(false))]),
+        ]),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expectFreed(1, 1, 0);
       sampleRate = 8000;
       expect(
         () => service.embedContentBatch(context, [inputs[3]]),
         throwsA(isA<LlamaUnsupportedException>()),
       );
+      expectFreed(1, 0, 0);
       sampleRate = 16000;
       tokenizeFails = true;
       expect(
@@ -431,6 +526,7 @@ void main() {
         throwsA(isA<LlamaInferenceException>()),
       );
       tokenizeFails = false;
+      expectFreed(1, 1, 0);
       expect([encodes, processes], [0, 0]);
       expandedRows = 0;
       expect(
@@ -441,6 +537,23 @@ void main() {
       expect(outputEnabled, isFalse);
       expect(expandedRows, greaterThan(0));
       expect(outputRows, expandedRows);
+      expectFreed(1, 1, 1);
+      for (final failure in ['encode', 'process', 'width']) {
+        encodeFails = failure == 'encode';
+        processFails = failure == 'process';
+        failWidthAfterAllocation = failure == 'width';
+        expect(
+          () => service.embedContentBatch(context, [inputs[1]]),
+          throwsA(
+            failure == 'width'
+                ? isA<LlamaUnsupportedException>()
+                : isA<LlamaInferenceException>(),
+          ),
+        );
+        expect(outputEnabled, isFalse);
+        expectFreed(1, 1, 1);
+        missingWidth = false;
+      }
     },
     skip: root == null || !Platform.isMacOS
         ? 'Requires local BF16 weights and macOS Metal.'
@@ -453,6 +566,8 @@ ExitTeardownApi _recordEmbeddingExit(
   required void Function() onEncode,
   required bool Function() tokenizeFails,
   required void Function(int) onTokenize,
+  required void Function(bool) onSpecial,
+  bool Function()? encodeFails,
 }) => ExitTeardownApi(
   track: real.track,
   untrack: real.untrack,
@@ -477,9 +592,12 @@ ExitTeardownApi _recordEmbeddingExit(
   schedGraphCompute: real.schedGraphCompute,
   mtmdEncodeChunk: (context, chunk) {
     onEncode();
-    return real.mtmdEncodeChunk(context, chunk);
+    return encodeFails?.call() == true
+        ? 1
+        : real.mtmdEncodeChunk(context, chunk);
   },
   mtmdTokenize: (context, chunks, text, bitmaps, count) {
+    onSpecial(text.ref.add_special);
     final status = tokenizeFails()
         ? 2
         : real.mtmdTokenize(context, chunks, text, bitmaps, count);

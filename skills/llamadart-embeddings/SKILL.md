@@ -25,6 +25,8 @@ description: >-
   expanded inputs must fit one context/batch/micro-batch; no chunking or implicit
   task prefixes. M-RoPE projectors and image URLs are unsupported. Use exactly
   one media source per part: encoded bytes/local file or mono 16 kHz audio PCM.
+  Text-only native content follows `embed`, including causal unpooled models.
+  Missing media symbols leave text available; native media errors name v0.7.0-1.
   Await cancellation before reuse.
   Adjacent text parts form one verbatim-concatenated text segment on every
   backend, including within mixed inputs. Add no separators or task prefixes.

@@ -13,7 +13,10 @@ mixed content uses the model's existing projector.
 The capability probe checks the loaded context's pooling/attention mode,
 encoder/decoder configuration, projector vision/audio encoders, M-RoPE mode,
 exception/exit barriers and optional mixed-batch ABI. A text-only embedding
-GGUF reports text only. Missing/unknown contexts report all false without
+GGUF reports text only. Text acceptance matches `embed`, including causal
+unpooled models; only media requires noncausal MEAN pooling. Missing
+`llama_model_n_embd_inp` leaves text unaffected and disables media; the probe
+carries `mediaUnsupportedReason` through the engine with the v0.7.0-1 floor. Missing/unknown contexts report all false without
 starting a worker. Media needs noncausal MEAN pooling and the v0.7.0-1 guarded
 mixed-batch functions. M-RoPE projectors are unavailable because the adapter
 passes exactly one position per row. Qualified weights are EmbeddingGemma-2
@@ -29,8 +32,9 @@ All inputs are tokenized and their expanded row counts checked before any
 media encode or model decode. Each complete mixed input must fit actual
 `n_ctx`, `n_ctx_seq`, `n_batch`, `n_ubatch` and one sequence slot. There is no
 chunking, truncation, separate-part pooling, prefix insertion or frame sampling.
-Every media chunk is encoded through the guarded mtmd wrapper and copied
-before the next encode, because mtmd reuses its output buffer. Each input
+Every media chunk is encoded through the guarded mtmd wrapper. Extended-batch
+insertion copies each row before the next encode reuses mtmd output, so Dart
+does not retain another media copy. Each input
 builds one extended batch with tokens/media rows, sequential positions and
 embedding output flags, then makes one guarded `llama_dart_process` DECODE.
 Output is the full pooled sequence width (768 for the qualified model, whose
@@ -39,8 +43,7 @@ input width is 512), with the same normalization as string embeddings.
 Cancellation is polled between native calls and after the complete process;
 it does not interrupt synchronous media encoding. Await the future before
 reusing or unloading. Flags stay alive until the worker settles, including
-worker exit. Chunks, decoded bitmaps, copied encoder outputs and extended
-batches are released on success, error and cancellation. A native caught
+worker exit. Chunks, decoded bitmaps and extended batches are released on success, error and cancellation. A native caught
 exception preserves the existing free-only object policy; cleanup skips
 context state writes after that context becomes free-only.
 

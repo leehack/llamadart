@@ -64,6 +64,10 @@ attention mode, mixed-batch ABI and projector encoders. EmbeddingGemma-2 with
 its projector supports images/audio on native v0.7.0-1 (qualified macOS CPU/Metal);
 without a projector it reports text only. Web llama.cpp reports text only.
 LiteRT-LM embedding engines probe text/image/audio processors on native CPU.
+Native text-only content follows `embed`, including causal unpooled models;
+media gates do not restrict text. `mediaUnsupportedReason` on the capability
+report explains native media requirements, including the v0.7.0-1 ABI when
+an older override lacks the mixed-batch or input-width symbols.
 Chat vision/audio support does not imply embedding support. Custom backends may implement the
 optional `BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart`
 and positively probe each loaded model/runtime modality.

@@ -93,6 +93,61 @@ class RuntimeContentBackend extends ContentBackend
 
 void main() {
   test(
+    'native media diagnostics name the guarded ABI and native version',
+    () async {
+      final backend = RuntimeContentBackend(LlamaRuntime.llamaCpp)
+        ..supported = const LlamaEmbeddingCapabilities(
+          text: true,
+          mediaUnsupportedReason:
+              'Native media embeddings require guarded mixed-batch ABI v0.7.0-1.',
+        );
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('fake.gguf');
+      for (final part in <LlamaContentPart>[
+        LlamaAudioContent(samples: Float32List(4)),
+        LlamaImageContent(bytes: Uint8List(4)),
+      ]) {
+        await expectLater(
+          engine.embedContent(LlamaEmbeddingInput([part])),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'required ABI',
+              allOf(
+                contains('mixed-batch'),
+                contains('v0.7.0-1'),
+                contains(part is LlamaImageContent ? 'image' : 'audio'),
+              ),
+            ),
+          ),
+        );
+      }
+      expect(backend.received, isEmpty);
+    },
+  );
+
+  test('media requirements never replace a rejected text diagnostic', () async {
+    final backend = ContentBackend()
+      ..supported = const LlamaEmbeddingCapabilities(
+        mediaUnsupportedReason: 'media-only diagnostic',
+      );
+    final engine = LlamaEngine(backend);
+    addTearDown(engine.dispose);
+    await engine.loadModel('fake.gguf');
+    await expectLater(
+      engine.embedContent(LlamaEmbeddingInput([const LlamaTextContent('a')])),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'text diagnostic',
+          allOf(contains('text'), isNot(contains('media-only'))),
+        ),
+      ),
+    );
+  });
+
+  test(
     'unidentified backend diagnostics use a stable unknown runtime',
     () async {
       final engine = LlamaEngine(MockLlamaBackend());
