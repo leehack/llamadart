@@ -112,8 +112,6 @@ models before creating a context. Embedding inputs that need one-pass attention
 or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.
 See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning)
 and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
-Cancelling a queued native llama.cpp generation before dispatch makes
-`getPerformanceContext()` return `null` until another generation is dispatched.
 After `cancelGeneration()`, LiteRT-LM Web treats only the runtime's exact
 `Task cancelled` error as a normal end. Other runtime failures still surface as
 `LlamaInferenceException`; keep an error handler after stopping.
