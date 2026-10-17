@@ -13,6 +13,10 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
+  test('llama.cpp pins the approved v0.7.0 wrapper rebuild', () {
+    expect(llamaCppTag, 'v0.7.0-1');
+  });
+
   test('llama.cpp tag follows the native release tag grammar', () {
     expect(isValidNativeReleaseTag(llamaCppTag), isTrue, reason: llamaCppTag);
   });

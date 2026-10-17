@@ -2,6 +2,15 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: native wrapper rebuild
+
+The native-assets hook and Apple companion source now pin `v0.7.0-1`, a
+wrapper rebuild of upstream llama.cpp `v0.7.0`. Existing inference behavior
+and the app API are unchanged. Apple apps need the companion release that
+ships this pin; the published `0.14.0` companion still pins `v0.7.0` and is
+rejected by the updated hook. Release preparation will assign the matching
+core/companion minor versions.
+
 ## Unreleased: template error labels
 
 An empty `tokenizer.chat_template` now names `the built-in ChatML fallback
