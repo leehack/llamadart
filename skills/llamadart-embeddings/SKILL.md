@@ -22,8 +22,7 @@ description: >-
   LiteRT-LM reports none. Every packaged backend rejects image/audio embeddings
   with `LlamaUnsupportedException`; do not advertise runtime media support.
   Adjacent text parts form one verbatim-concatenated text segment on every
-  backend, including within mixed inputs. LiteRT-LM adapters merge adjacent text
-  before building runtime inputs. Add no separators or task prefixes.
+  backend, including within mixed inputs. Add no separators or task prefixes.
   The modality enum may gain values; include a default in switches.
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
 - `ModelParams(liteRtLmEmbeddingEngine: true)` is the explicit LiteRT-LM

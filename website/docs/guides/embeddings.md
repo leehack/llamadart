@@ -43,8 +43,7 @@ Future<void> main() async {
 `LlamaEmbeddingInput` accepts a nonempty ordered list of `LlamaTextContent`,
 `LlamaImageContent` and `LlamaAudioContent` parts. Use `embedContent(input)`
 or `embedContentBatch(inputs)` for one vector per input. Adjacent text parts
-form one verbatim-concatenated text segment on every backend, including within mixed inputs. LiteRT-LM adapters merge adjacent text
-before building runtime inputs; no separator or task prefix is added. An empty
+form one verbatim-concatenated text segment on every backend, including within mixed inputs; no separator or task prefix is added. An empty
 batch returns no vectors; an empty parts list throws `LlamaArgumentException`.
 
 ```dart

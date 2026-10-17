@@ -585,6 +585,12 @@ class LlamaEngine {
         'ComputeDevice.auto, cpu or gpu.',
       );
     }
+    if (params.liteRtLmEmbeddingEngine && format == ModelFormat.gguf) {
+      throw LlamaUnsupportedException(
+        'ModelParams.liteRtLmEmbeddingEngine applies only to LiteRT-LM '
+        'models; llama.cpp GGUF models embed through their own context.',
+      );
+    }
     if (source.format case final declared?) _checkBackendLoads(declared);
   }
 

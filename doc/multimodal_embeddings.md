@@ -11,7 +11,8 @@ https://github.com/leehack/llamadart/issues/1126.
 `LlamaEngine.embedContent` returns one vector; `embedContentBatch` returns
 one per input, in input order. Adjacent text parts form one
 verbatim-concatenated text segment on every backend, including within mixed
-inputs. LiteRT-LM adapters merge adjacent text before building runtime inputs.
+inputs. LiteRT-LM adapters must merge adjacent text before building runtime
+inputs.
 There is no chat template, instruction insertion,
 implicit separator, truncation or frame sampling. `embed(String)` and
 `embedBatch(List<String>)` keep their existing contracts.

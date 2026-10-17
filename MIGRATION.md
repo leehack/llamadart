@@ -9,9 +9,7 @@ a backend count mismatch throws `LlamaInferenceException`. Adjacent text parts
 form one verbatim-concatenated segment on every backend, including mixed inputs.
 The modality enum may grow; include a default case in switches.
 
-The pre-release `ModelParams.embeddingOnly` name is now
-`ModelParams.liteRtLmEmbeddingEngine`, following other LiteRT-LM-only options.
-It defaults to false. Current LiteRT-LM adapters reject true until their
+`ModelParams.liteRtLmEmbeddingEngine` defaults to false. Current LiteRT-LM adapters reject true until their
 separate embedding engine is integrated; llama.cpp GGUF loaders reject true
 with `LlamaUnsupportedException`. Existing string embedding calls are unchanged.
 

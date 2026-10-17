@@ -886,7 +886,7 @@ abstract class BackendEmbeddingsSupport {
 abstract class BackendMultimodalEmbeddings {
   /// Probes model, projector/processors and runtime support for this context.
   ///
-  /// Unknown or unloaded contexts return all-false without I/O.
+  /// Unloaded contexts return all-false without I/O.
   /// Unknown or absent ABI/features must report false, or throw a typed
   /// unsupported exception. Generation's vision/audio flags are not evidence.
   Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
@@ -897,8 +897,8 @@ abstract class BackendMultimodalEmbeddings {
   ///
   /// Preserve part order and media; never flatten a mixed request to text.
   /// Adjacent text parts form one verbatim-concatenated text segment on every
-  /// backend, including within mixed inputs. LiteRT-LM adapters merge adjacent
-  /// text before building runtime inputs; no separators or templates are added.
+  /// backend, including within mixed inputs. LiteRT-LM adapters must merge
+  /// adjacent text before building runtime inputs; no separators or templates are added.
   /// Validate the entire batch, including expanded media token limits, before
   /// inference. Empty batches return no vectors. With [normalize], L2-normalize
   /// each pooled output. Otherwise return the full raw pooled vector.
