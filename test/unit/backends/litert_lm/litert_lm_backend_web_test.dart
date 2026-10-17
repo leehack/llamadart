@@ -1320,7 +1320,10 @@ void main() {
     // Mirrors @litert-lm/core 0.18.0: Conversation.cancel() stops the native
     // run, whose cancelled status errors the stream and rejects the pending
     // read. [error] errors the stream without a cancel instead.
-    String moduleUrl({String? error}) =>
+    String moduleUrl({
+      String? error,
+      String cancelError = "new Error('Task cancelled')",
+    }) =>
         'data:text/javascript;charset=utf-8,${Uri.encodeComponent('''
       export const Backend = { CPU: 3, GPU_ARTISAN: 2, GPU: 4 };
       export const Engine = {
@@ -1348,7 +1351,7 @@ void main() {
                   }, { highWaterMark: 0 });
                 },
                 cancel() {
-                  fail(new Error('Task cancelled'));
+                  fail($cancelError);
                 },
                 async delete() {},
               };
@@ -1363,10 +1366,15 @@ void main() {
       LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Reply'),
     ];
 
-    Future<(LlamaEngine, _ResultRecorder)> loadEngine({String? error}) async {
+    Future<(LlamaEngine, _ResultRecorder)> loadEngine({
+      String? error,
+      String cancelError = "new Error('Task cancelled')",
+    }) async {
       final recorder = _ResultRecorder();
       final engine = LlamaEngine(
-        LiteRtLmBackend(moduleUrl: moduleUrl(error: error)),
+        LiteRtLmBackend(
+          moduleUrl: moduleUrl(error: error, cancelError: cancelError),
+        ),
         observers: [recorder],
       );
       addTearDown(engine.dispose);
@@ -1402,6 +1410,41 @@ void main() {
       expect(recorder.results.single.error, isNull);
       expect(recorder.results.single.cancelled, isTrue);
     });
+
+    for (final (error, diagnostic) in [
+      ("new Error('GPU device lost')", 'GPU device lost'),
+      (
+        "new Error('Task cancelled: device lost')",
+        'Task cancelled: device lost',
+      ),
+      ("new DOMException('aborted', 'AbortError')", 'aborted'),
+      ("'Task cancelled'", 'Task cancelled'),
+      ("({ message: 42 })", '[object Object]'),
+      (
+        "({ get message() { throw new Error('lookup failed'); }, "
+            "toString() { return 'runtime fault'; } })",
+        'runtime fault',
+      ),
+    ]) {
+      test('surfaces $error after cancelGeneration', () async {
+        final (engine, recorder) = await loadEngine(cancelError: error);
+        final result = expectLater(
+          engine.create(userTurn).toList(),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.toString(),
+              'original diagnostic',
+              contains(diagnostic),
+            ),
+          ),
+        );
+        await cancelAtPendingRead(engine);
+        await result;
+
+        expect(recorder.results.single.error, isA<LlamaInferenceException>());
+        expect(recorder.results.single.cancelled, isFalse);
+      });
+    }
 
     for (final error in [
       "new DOMException('aborted', 'AbortError')",

@@ -29,6 +29,9 @@ description: >-
   error. `ChatSession` cancellation before any reply content instead throws
   `LlamaStateException` and rolls back the turn, including structured JSON.
   Track cancels in the code that issues them.
+  On LiteRT-LM Web, only the exact `Task cancelled` runtime error after a
+  cancel request ends normally. Other failures still surface as
+  `LlamaInferenceException`; keep the stream's error handler after stopping.
 - Ministral-format replies stopped inside a leading `[THINK]` block without
   `[TOOL_CALLS]` keep the unfinished thought in `thinking`, including after
   cancellation or a token limit. A normal end under `ToolChoice.required` still
