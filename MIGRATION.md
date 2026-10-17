@@ -2,6 +2,13 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: template error labels
+
+An empty `tokenizer.chat_template` now names `the built-in ChatML fallback
+template` in render errors. PEG parse errors retain `peg-simple`, `peg-native`
+and the historical `peg-constructed` spelling (still used for Qwen3 Coder XML).
+Exception types and parsing behavior are unchanged.
+
 ## Unreleased: WebGPU argument errors
 
 Catch `LlamaArgumentException` for invalid WebGPU request arguments, including
