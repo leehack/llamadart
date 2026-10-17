@@ -15,6 +15,9 @@ With `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none` and a
 negative `mainGpu`, backend name and capabilities now report `CPU`, and
 `getResolvedGpuLayers()` returns `0`. The model already ran on the CPU;
 context, draft-model and decision-head execution settings are unchanged.
+With GPU layers enabled, the decision head still selects the first matching
+GPU of the load's backend for a negative `mainGpu`; read
+`DecisionModelInfo.deviceName` for its separate placement.
 No parameter migration is needed. Explicit `gpu` / `npu`
 validation is unchanged.
 
