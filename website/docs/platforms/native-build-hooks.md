@@ -407,7 +407,9 @@ resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
 an earlier build is accepted only when the core explicitly lists it as
 ABI-compatible. Core `0.14.0` lists no earlier companion pins: use companion
-`0.14.0` with native `v0.7.0`; v0.6.0 companions are rejected. The tag,
+`0.14.0` with native `v0.7.0`. The unreleased hook instead requires the
+companion source pin `v0.7.0-1`; release preparation assigns matching
+core/companion minor versions. Earlier companion pins are rejected. The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. On macOS the hook hands LiteRT-LM to the companion
