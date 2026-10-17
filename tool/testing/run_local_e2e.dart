@@ -1031,6 +1031,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'litert-lm-multimodal-embedding',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify embedding-only LiteRT-LM text, image, audio, mixed inputs and batch order.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/multimodal_embedding_litert_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_EMBEDDING_MODEL': context.modelPath!,
+            'LITERT_LM_EMBEDDING_BACKEND': context.backend,
+          },
+          description: 'LiteRT-LM multimodal embedding qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-lifecycle',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1915,6 +1944,7 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'native-prompt-cancel' ||
           scenario.name == 'native-exit-teardown' ||

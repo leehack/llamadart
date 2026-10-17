@@ -20,17 +20,19 @@ description: >-
   text/image/audio content parts. Probe `await engine.embeddingCapabilities`
   after loading: native llama.cpp v0.7.0-1 supports EmbeddingGemma-2 image/audio
   embeddings with its matching projector (qualified macOS CPU/Metal), and
-  reports text only without one. Web llama.cpp reports text only; LiteRT-LM
-  reports none. Native expanded inputs must fit one context/batch/micro-batch;
-  no chunking or implicit task prefixes. M-RoPE projectors and image URLs are
-  unsupported. Use exactly one media source per part: encoded bytes/local file
-  or mono 16 kHz audio PCM. Await cancellation before reuse.
+  reports text only without one. Web llama.cpp reports text only. LiteRT-LM
+  embedding engines probe text/image/audio on native CPU. Native llama.cpp
+  expanded inputs must fit one context/batch/micro-batch; no chunking or implicit
+  task prefixes. M-RoPE projectors and image URLs are unsupported. Use exactly
+  one media source per part: encoded bytes/local file or mono 16 kHz audio PCM.
+  Await cancellation before reuse.
   Adjacent text parts form one verbatim-concatenated text segment on every
   backend, including within mixed inputs. Add no separators or task prefixes.
   The modality enum may gain values; include a default in switches.
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
 - `ModelParams(liteRtLmEmbeddingEngine: true)` is the explicit LiteRT-LM
-  embedding-engine loading contract, currently rejected before conversation loading. Keep the
+  embedding-engine selector. Select `ComputeDevice.cpu` on native. Native GPU
+  and all Web paths throw typed unsupported errors. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use
   their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example
@@ -41,10 +43,21 @@ description: >-
 - Native v0.7.0 supports EmbeddingGemma-2 text embeddings with 768-dimensional output.
 - Give the embedding model and the chat model separate `LlamaEngine`s. An
   engine holds one model, and switching models per query reloads weights.
-- Embeddings are llama.cpp-only. LiteRT-LM (`.litertlm`) engines, native or
-  web, throw `LlamaUnsupportedException`. After loading, check
-  `(await engine.capabilities).supportsEmbeddings` (false on LiteRT-LM) before
-  offering the feature. It reports the backend only, so still treat
+- LiteRT-LM requires an embedding bundle and the explicit selector above;
+  conversation mode has no embeddings. Probe `await engine.embeddingCapabilities`
+  before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
+  mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
+  Native CPU qualification covers macOS arm64 only. Concurrent embeds queue;
+  cancellation/unload/dispose settle the current item and discard all active and
+  queued batches. A timeout discards only its own batch; other queued callers
+  retain their own deadlines.
+  Timeouts throw `LlamaInferenceException`. `contextSize` selects the encoder
+  signature without truncation; conversation tuning options are rejected.
+  Preflight checks modalities, sources and media decoding across the whole batch
+  in a helper isolate.
+  Without a token-count API, LiteRT-LM may detect overflow during computation;
+  the whole call fails with `LlamaInferenceException` and no vectors. Earlier
+  items can waste compute; never truncate or return partial results. Still treat
   `LlamaUnsupportedException` from `embed` as a configuration error, not
   something to retry or swallow.
 - Rank-pooled reranker GGUFs (such as Qwen3-Reranker) produce classifier

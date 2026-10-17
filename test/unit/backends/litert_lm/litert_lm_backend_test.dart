@@ -31,24 +31,32 @@ import 'package:test/test.dart';
 
 void main() {
   test(
-    'embedding-only load fails before starting the conversation runtime',
+    'embedding load reaches the worker with its explicit engine selector',
     () async {
-      final backend = LiteRtLmBackend();
-      addTearDown(backend.dispose);
-      await expectLater(
-        backend.modelLoad(
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const [],
+        detokenizeResponse: '',
+        generationChunks: const [],
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+      try {
+        await backend.modelLoad(
           'fake.litertlm',
           const ModelParams(liteRtLmEmbeddingEngine: true),
-        ),
-        throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'engine condition',
-            contains('separate embedding engine'),
-          ),
-        ),
-      );
-      expect(backend.isReady, isFalse);
+        );
+        expect(
+          worker.requests
+              .whereType<LiteRtLmModelLoadRequest>()
+              .single
+              .modelParams
+              .liteRtLmEmbeddingEngine,
+          isTrue,
+        );
+        expect(backend.supportsEmbeddings, isTrue);
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
     },
   );
 

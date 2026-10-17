@@ -2368,8 +2368,9 @@ class LlamaEngine {
 
   /// Whether the active backend reports [embed] and [embedBatch] support.
   ///
-  /// Native llama.cpp and WebGPU backends report true; LiteRT-LM backends
-  /// report false, and calls throw [LlamaUnsupportedException]. Routing
+  /// Native llama.cpp and WebGPU backends report true. Native LiteRT-LM
+  /// reports true for a loaded embedding engine; conversation and Web engines
+  /// report false and throw [LlamaUnsupportedException]. Routing
   /// backends such as [LlamaBackend] pick their runtime when a model loads,
   /// so check this after loading. A true value is not a model check: a
   /// rank-pooled or encoder-decoder model, or WebGPU bridge assets older than

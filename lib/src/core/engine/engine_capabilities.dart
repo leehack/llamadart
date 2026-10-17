@@ -70,7 +70,8 @@ class LlamaEngineCapabilities implements EngineCapabilities {
 
   /// Whether `LlamaEngine.embed` and `embedBatch` are available.
   ///
-  /// True on llama.cpp, natively and on WebGPU, and false on LiteRT-LM. A
+  /// True on llama.cpp, natively and on WebGPU, and on a native LiteRT-LM
+  /// embedding engine. False on LiteRT-LM conversation and Web engines. A
   /// rank-pooled or encoder-decoder model, or WebGPU bridge assets older than
   /// `v0.1.7`, still throw.
   final bool supportsEmbeddings;

@@ -94,14 +94,22 @@ at generation start when it is missing.
 
 For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
-`await engine.embeddingCapabilities` after loading. Native llama.cpp supports image/audio embeddings with EmbeddingGemma-2 and
-its projector on native v0.7.0-1; expanded inputs must fit one micro-batch.
-Web llama.cpp and LiteRT-LM media embeddings remain unavailable.
-llama.cpp string embeddings retain their existing behavior. Adjacent text parts
-concatenate verbatim on every backend. `ModelParams.liteRtLmEmbeddingEngine`
-is LiteRT-LM-only and currently rejected; GGUF loaders also reject true.
+`await engine.embeddingCapabilities` after loading. Native llama.cpp supports
+image/audio embeddings with EmbeddingGemma-2 and its projector on native
+v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
+Web llama.cpp retains text embeddings. LiteRT-LM supports text,
+image and audio embeddings (qualified on macOS arm64 CPU only) with
+`ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all Web paths throw
+`LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
+llama.cpp string embeddings retain their existing behavior.
+Adjacent text parts concatenate verbatim.
 See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
+LiteRT-LM queues concurrent embedding requests, validates media off the caller
+isolate and cancels batches between items. A timeout cancels only its own request;
+explicit cancellation, unload and dispose cancel active and queued requests.
+`contextSize` selects an encoder
+signature without truncation; unsupported conversation tuning options are rejected.
 
 Native llama.cpp rejects nonzero rollback capacity on recurrent or hybrid
 models before creating a context. Embedding inputs that need one-pass attention

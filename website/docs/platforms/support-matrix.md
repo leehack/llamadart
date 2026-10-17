@@ -84,8 +84,8 @@ unavailable choice there throws `LlamaModelException`.
 | Repetition `penalty` | Yes | Yes | No: rejects a value other than the default | No: rejects a value other than the default |
 | Speculative decoding | Draft model, MTP, n-gram and DSpark strategies; external drafts require `draftModel`, in-file MTP requires an MTP head and `loadMtp`; recurrent/hybrid models reject nonzero rollback capacity | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, and MTP uses the model's own layers; otherwise rejected | Runtime default or MTP, for bundles with a speculative drafter; `capabilities` reports the bundle's declaration | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
-| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Bridge `v0.1.7+` | No | No |
-| Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (qualified macOS CPU/Metal) | Unsupported | Unsupported | Unsupported |
+| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Bridge `v0.1.7+` | CPU, explicit embedding engine; qualified on macOS arm64 only | Unsupported (parity gate) |
+| Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (qualified macOS CPU/Metal) | Unsupported | CPU; macOS arm64 qualified bundle processors only | Unsupported (parity gate) |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
 | Generation-limit reporting | `length` for output or context limits | `length` with bridge usage probe (`v0.1.54+`); cap cause unspecified | No | No |
 | Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.54+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
