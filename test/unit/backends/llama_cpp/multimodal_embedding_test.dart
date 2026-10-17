@@ -225,7 +225,10 @@ void main() {
         reason: missing,
       );
     }
-    expect(LlamaCppMixedBatchApi.tryResolve(), isNotNull);
+    expect(
+      LlamaCppMixedBatchApi.tryResolve(isWindows: Platform.isWindows),
+      isNotNull,
+    );
   });
 
   test(
@@ -351,7 +354,7 @@ void main() {
     'mixed wrapper dispatch pins DECODE, failures, exception poisoning and allocation',
     () {
       final recorder = RecordingExitTeardown(
-        ExitTeardownApi.tryResolve(isWindows: false)!,
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
       );
       final barrier = FakeNativeBarrier();
       addTearDown(barrier.dispose);
@@ -504,11 +507,11 @@ void main() {
       addTearDown(() => dir.deleteSync(recursive: true));
       var mropeProbes = 0;
       final barrier = FakeNativeBarrier(
-        real: NativeBarrierApi.tryResolve(isWindows: false),
+        real: NativeBarrierApi.tryResolve(isWindows: Platform.isWindows),
       );
       addTearDown(barrier.dispose);
       final calls = LlamaCppObjectCalls.tracked(
-        ExitTeardownApi.tryResolve(isWindows: false)!,
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
         barrier: barrier.api,
         mixedBatchResolver: () => gate == 'abi'
             ? null
