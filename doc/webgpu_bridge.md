@@ -375,3 +375,45 @@ gates against real assets and models; its header lists the setup.
 - `window.__llamadartAllowSafariWebGpu`,
   `window.__llamadartBridgeAdaptiveSafariGpu`: see
   [Safari compatibility](#safari-compatibility).
+
+## Request errors
+
+Invalid WebGPU request arguments surface as `LlamaArgumentException`;
+capability rejections remain `LlamaUnsupportedException`. `scoreNextToken`
+keeps `RangeError` for int32 bounds and vocabulary errors, matching the
+engine/native contract. Generation, embedding and scoring runtime failures
+remain `LlamaInferenceException`; LoRA fetch failures remain `LlamaModelException`.
+
+JS `TypeError` and `RangeError` alone cannot identify argument failures:
+network/CORS fetches reject with `TypeError`, and stack/allocation failures can
+be `RangeError`. The classifier requires an anchored validator message from the
+pinned bridge and a JS error name of `TypeError`, `RangeError` or `Error` on
+both direct and worker paths. Unknown messages retain the operation's fallback.
+The allowlist covers these TypeError/RangeError emissions in the
+[pinned JavaScript](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js):
+
+| Lines | Validator prefixes / fields |
+| --- | --- |
+| [46–81](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L46-L81) | `CompletionOptions.minP`, `presencePenalty`; `thinkingBudget` object, `maxTokens`, `startTag`, `endTag`, `forcedMessage` |
+| [86–149](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L86-L149) | `CompletionOptions.speculativeDecoding` object/strategies; integer fields `draftTokenMax`, `draftTokenMin`, `ngramSizeN`, `ngramSizeM`, `ngramMinHits`, `ngramMatch`, `ngramTokenMin`, `ngramTokenMax`; probabilities `minProbability`, `draftSplitProbability`; cache source/type/empty validators `ngramCacheStatic`, `ngramCacheDynamic` |
+| [180–205](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L180-L205) | `ngramTokenMin` / `draftTokenMin` must-not-exceed limits |
+| [471–483](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L471-L483) | `LoRA adapter handle`, `LoRA adapter scale` finite/float32 |
+| [3728](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L3728), [7052](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L7052) | `LoRA adapter source` type |
+| [1001–1014](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L1001-L1014), [4389–4400](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L4389-L4400) | `Next-token candidates` shape/int32, `Next-token scoring prompt`, `Next-token topK` int32 |
+
+Completion sampling validation happens in the facade before routing
+([line 6153](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L6153));
+LoRA scale validation does too
+([lines 7078–7079](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L7078-L7079)).
+Runtime-side validators such as next-token candidate checks can pass through
+`serializeWorkerError`, which sends only `error.message`
+([lines 4558–4573](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L4558-L4573));
+`BridgeWorkerProxy` reconstructs an ordinary `Error`
+([lines 4705–4714](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js#L4705-L4714)).
+The shared message allowlist preserves classification across that transport;
+it does not infer argument provenance from a JS error name alone.
+
+The classifier is separate from operation fallbacks so later pinned assets can
+add stable error-code mappings; `EmbeddingError` codes from
+[bridge PR #160](https://github.com/leehack/llama-web-bridge/pull/160) are not
+assumed available.

@@ -37,6 +37,15 @@ requires a target model with an MTP head and `ModelParams.loadMtp: true`.
 Missing external draft models now throw `LlamaArgumentException` at generation
 start, preserving the diagnostic instead of wrapping it in an inference error.
 
+## Unreleased: WebGPU argument errors
+
+Catch `LlamaArgumentException` for invalid WebGPU request arguments, including
+runtime LoRA scales and bridge-reported argument rejections. These previously
+surfaced as raw argument errors, context errors or `LlamaInferenceException`.
+`scoreNextToken` vocabulary and int32 bounds still throw `RangeError`, matching
+native. Runtime inference failures and unsupported capabilities retain their
+existing types.
+
 ## Unreleased: embedding content API
 
 The new `embedContent` / `embedContentBatch` APIs return one vector per input;

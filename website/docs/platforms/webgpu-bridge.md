@@ -16,6 +16,12 @@ load the app and still lack an adapter, device features, memory headroom or
 compatible bridge assets for a given model.
 :::
 
+Invalid WebGPU request arguments throw `LlamaArgumentException`;
+`scoreNextToken` vocabulary and int32 bounds retain `RangeError`. Unsupported
+capabilities throw `LlamaUnsupportedException`. Runtime generation, embedding
+and scoring failures throw `LlamaInferenceException`; LoRA fetch failures remain
+`LlamaModelException`.
+
 ## Requirements
 
 | Browser | Minimum | Notes |
@@ -205,7 +211,7 @@ The feature-by-runtime table is in the
     `ModelParams.speculativeRollbackTokenMax` of at least the draft length for
     `mtp` and the draft-model strategies. N-gram strategies need none: the
     bridge replays accepted tokens after a rejection.
-  - N-gram sizes above 65535 throw `RangeError`.
+  - N-gram sizes above 65535 throw `LlamaArgumentException`.
   - The draft and acceptance counts are not reported:
     `LlamaEngine.getPerformanceContext()` returns null on WebGPU.
 - `presencePenalty`, `minP` and `thinkingBudget` need bridge assets whose

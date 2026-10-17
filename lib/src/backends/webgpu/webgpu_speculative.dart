@@ -7,6 +7,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
+import 'webgpu_errors.dart';
 import 'webgpu_url.dart';
 
 /// The llama.cpp `--spec-type` name the bridge takes for each strategy.
@@ -361,7 +362,8 @@ LlamaException webGpuSpeculativeCompletionError(
   Object error,
   Iterable<String> sourceUrls,
 ) {
-  if (error is LlamaException) return error;
+  final classified = webGpuBridgeRequestError(error, sourceUrls: sourceUrls);
+  if (classified != null) return classified;
   final message = webGpuBridgeErrorText(error, sourceUrls: sourceUrls);
   const unsupported = <String>[
     "needs the model's MTP head",
