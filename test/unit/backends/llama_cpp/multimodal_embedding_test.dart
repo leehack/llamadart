@@ -1024,6 +1024,162 @@ void main() {
     });
   }
 
+  test(
+    'direct SPI text rejection names rank and encoder-decoder restrictions',
+    () {
+      final dir = Directory.systemTemp.createTempSync('embedding_rank_reason_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = writeSyntheticLlamaGguf(
+        '${dir.path}/rank.gguf',
+        poolingType: 4,
+      );
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      const params = ModelParams(
+        gpuLayers: 0,
+        preferredBackend: GpuBackend.cpu,
+        contextSize: 64,
+        batchSize: 64,
+        microBatchSize: 64,
+      );
+      final model = service.loadModel(file.path, params);
+      final context = service.createContext(model, params);
+      expect(
+        () => service.embedContentBatch(context, [
+          LlamaEmbeddingInput([const LlamaTextContent('text')]),
+        ]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'text restriction',
+            allOf(
+              contains('RANK'),
+              contains('encoder-decoder'),
+              isNot(contains('projector')),
+              isNot(contains('mixed-batch')),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'mixed call sites preserve BOS equals EOS and use resolved API pointers',
+    () {
+      final h = _MixedEmbeddingHarness();
+      for (final text in ['a', '<s>a']) {
+        final vectors = h.service.embedContentBatch(h.context, [
+          h.input(text),
+        ], normalize: false);
+        expect(vectors.single, hasLength(16));
+        expect(vectors.single.every((v) => v.isFinite), isTrue);
+      }
+      expect(h.addSpecial, [true, false]);
+      expect(
+        h.calls,
+        containsAll([
+          'mrope',
+          'bitmapIsAudio',
+          'tokenCount',
+          'init',
+          'chunksSize',
+          'chunksGet',
+          'chunkType',
+          'chunkTokenCount',
+          'chunkTokens',
+          'encode',
+          'mediaOutput',
+          'addToken',
+          'addEmbedding',
+          'setPosition',
+          'setOutputRow',
+          'setOutput',
+          'process',
+          'free',
+        ]),
+      );
+      expect(h.chunksFreed, 2);
+      expect(h.bitmapsFreed, 2);
+      expect(h.batchesFreed, 2);
+      expect(h.outputModes, [true, false, true, false]);
+      expect(h.positions, [0, 1, 0, 1]);
+      expect(h.outputRows, [0, 1, 0, 1]);
+    },
+  );
+
+  test(
+    'mixed audio call site uses the probed sample rate and modality pointers',
+    () {
+      final h = _MixedEmbeddingHarness()..bitmapAudio = true;
+      h.service.embedContentBatch(h.context, [
+        LlamaEmbeddingInput([LlamaAudioContent(samples: Float32List(4))]),
+      ]);
+      expect(
+        h.calls,
+        containsAll(['audioSampleRate', 'bitmapIsAudio', 'free']),
+      );
+      expect(h.bitmapsFreed, 1);
+      expect(h.chunksFreed, 1);
+      expect(h.batchesFreed, 1);
+    },
+  );
+
+  test('mixed cleanup honors an explicit batch releaser', () {
+    final h = _MixedEmbeddingHarness(overrideBatchFree: true);
+    h.service.embedContentBatch(h.context, [h.input('a')]);
+    expect(h.batchesFreed, 1);
+    expect(h.calls, contains('overrideFree'));
+    expect(h.calls, isNot(contains('free')));
+  });
+
+  for (final failure in [
+    'tokenize',
+    'modality',
+    'later-prepare',
+    'capacity',
+    'process',
+  ]) {
+    test(
+      'mixed cleanup balances resources after $failure failure and permits reuse',
+      () {
+        final h = _MixedEmbeddingHarness();
+        h.tokenizeFails = failure == 'tokenize';
+        h.bitmapAudio = failure == 'modality';
+        h.expandedRows = failure == 'capacity' ? 65 : 2;
+        h.processFails = failure == 'process';
+        final inputs = [h.input('a')];
+        if (failure == 'later-prepare') {
+          inputs.add(
+            LlamaEmbeddingInput([
+              const LlamaTextContent('bad <__media__> marker'),
+              LlamaImageContent(bytes: Uint8List.fromList([1])),
+            ]),
+          );
+        }
+        expect(
+          () => h.service.embedContentBatch(h.context, inputs),
+          throwsA(isA<LlamaException>()),
+        );
+        expect(h.chunksFreed, failure == 'later-prepare' ? 2 : 1);
+        expect(h.bitmapsFreed, 1);
+        expect(h.batchesFreed, failure == 'process' ? 1 : 0);
+        expect(h.outputModes, failure == 'process' ? [true, false] : isEmpty);
+        h.tokenizeFails = h.bitmapAudio = h.processFails = false;
+        h.expandedRows = 2;
+        final before = (h.chunksFreed, h.bitmapsFreed, h.batchesFreed);
+        expect(
+          h.service.embedContentBatch(h.context, [h.input('a')]).single,
+          hasLength(16),
+        );
+        expect(
+          (h.chunksFreed, h.bitmapsFreed, h.batchesFreed),
+          (before.$1 + 1, before.$2 + 1, before.$3 + 1),
+        );
+      },
+    );
+  }
+
   test('native backend implements both embedding contracts', () {
     final backend = NativeLlamaBackend();
     expect(backend, isA<BackendEmbeddings>());
@@ -1062,4 +1218,215 @@ Object? _privateField(Object target, String name) {
   return reflect(
     target,
   ).getField(MirrorSystem.getSymbol(name, library)).reflectee;
+}
+
+/// A synthetic CPU model with fake projector/chunks and recorded mixed accessors.
+/// Real extended batches exercise row construction without a media model or GPU.
+final class _MixedEmbeddingHarness {
+  final List<String> calls = [];
+  final List<bool> addSpecial = [];
+  final List<bool> outputModes = [];
+  final List<int> positions = [];
+  final List<int> outputRows = [];
+  int chunksFreed = 0;
+  int bitmapsFreed = 0;
+  int batchesFreed = 0;
+  int expandedRows = 2;
+  bool tokenizeFails = false;
+  bool bitmapAudio = false;
+  bool processFails = false;
+  late final LlamaCppService service;
+  late final int context;
+
+  _MixedEmbeddingHarness({bool overrideBatchFree = false}) {
+    final dir = Directory.systemTemp.createTempSync('mixed_embedding_calls_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final tokens = calloc<llama_token>()..value = 3;
+    final media = calloc<Float>(16);
+    media.asTypedList(16).fillRange(0, 16, 0.125);
+    addTearDown(() {
+      calloc.free(tokens);
+      calloc.free(media);
+    });
+    final realExit = ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!;
+    final recorder = RecordingExitTeardown(realExit);
+    final barrier = FakeNativeBarrier(
+      real: NativeBarrierApi.tryResolve(isWindows: Platform.isWindows),
+    );
+    addTearDown(barrier.dispose);
+    final exit = _copyMixedExit(recorder.api, {
+      #mtmdTokenize:
+          (
+            Pointer<mtmd_context> _,
+            Pointer<mtmd_input_chunks> _,
+            Pointer<mtmd_input_text> text,
+            Pointer<Pointer<mtmd_bitmap>> _,
+            int _,
+          ) {
+            addSpecial.add(text.ref.add_special);
+            return tokenizeFails ? 1 : 0;
+          },
+      #mtmdEncodeChunk: (Pointer<mtmd_context> _, Pointer<mtmd_input_chunk> _) {
+        calls.add('encode');
+        return 0;
+      },
+    });
+    final real = LlamaCppMixedBatchApi.tryResolve(
+      isWindows: Platform.isWindows,
+    )!;
+    final api = LlamaCppMixedBatchApi(
+      init: (ctx) {
+        calls.add('init');
+        return real.init(ctx);
+      },
+      process: (ctx, type, batch) {
+        calls.add('process');
+        expect(type, 1);
+        return processFails ? -1 : real.process(ctx, type, batch);
+      },
+      setOutput: (ctx, enabled) {
+        calls.add('setOutput');
+        outputModes.add(enabled);
+        real.setOutput(ctx, enabled);
+      },
+      free: (batch) {
+        calls.add('free');
+        batchesFreed++;
+        real.free(batch);
+      },
+      projectorUsesMrope: (_) {
+        calls.add('mrope');
+        return false;
+      },
+      audioSampleRate: (_) {
+        calls.add('audioSampleRate');
+        return 16000;
+      },
+      bitmapIsAudio: (_) {
+        calls.add('bitmapIsAudio');
+        return bitmapAudio;
+      },
+      tokenCount: (_) {
+        calls.add('tokenCount');
+        return expandedRows;
+      },
+      chunksSize: (_) {
+        calls.add('chunksSize');
+        return 2;
+      },
+      chunksGet: (_, index) {
+        calls.add('chunksGet');
+        return Pointer.fromAddress(100 + index);
+      },
+      chunkType: (chunk) {
+        calls.add('chunkType');
+        return chunk.address == 100 ? 0 : 1;
+      },
+      chunkTokenCount: (_) {
+        calls.add('chunkTokenCount');
+        return 1;
+      },
+      chunkTokens: (_, count) {
+        calls.add('chunkTokens');
+        count.value = 1;
+        return tokens;
+      },
+      mediaOutput: (_) {
+        calls.add('mediaOutput');
+        return media;
+      },
+      addToken: (batch, seq, token) {
+        calls.add('addToken');
+        expect(token, 3);
+        return real.addToken(batch, seq, token);
+      },
+      addEmbedding: (batch, seq, embd) {
+        calls.add('addEmbedding');
+        expect(embd.n_embd, 16);
+        expect(embd.n_rows, 1);
+        expect(embd.data.asTypedList(16), everyElement(0.125));
+        return real.addEmbedding(batch, seq, embd);
+      },
+      setPosition: (batch, index, pos) {
+        calls.add('setPosition');
+        positions.add(pos.value);
+        return real.setPosition(batch, index, pos);
+      },
+      setOutputRow: (batch, index, enabled) {
+        calls.add('setOutputRow');
+        outputRows.add(index);
+        expect(enabled, isTrue);
+        return real.setOutputRow(batch, index, enabled);
+      },
+    );
+    service = LlamaCppService(
+      objectCalls: LlamaCppObjectCalls.tracked(
+        exit,
+        barrier: barrier.api,
+        isWindows: true,
+        mixedBatchResolver: () => api,
+      ),
+      embeddingBatchFree: overrideBatchFree
+          ? (batch) {
+              calls.add('overrideFree');
+              batchesFreed++;
+              real.free(batch);
+            }
+          : null,
+      embeddingChunksFree: (_) {
+        chunksFreed++;
+      },
+      embeddingBitmapFree: (_) {
+        bitmapsFreed++;
+      },
+    )..initializeBackend();
+    addTearDown(service.dispose);
+    FakeMtmd.install(service, tokens: [1], vision: true);
+    final file = writeSyntheticLlamaGguf(
+      '${dir.path}/model.gguf',
+      poolingType: 1,
+      causalAttention: false,
+      eosTokenId: 1,
+    );
+    const params = ModelParams(
+      gpuLayers: 0,
+      preferredBackend: GpuBackend.cpu,
+      contextSize: 64,
+      batchSize: 64,
+      microBatchSize: 64,
+    );
+    final model = service.loadModel(file.path, params);
+    context = service.createContext(model, params);
+    final projectors = _privateField(service, '_mtmdContexts') as Map;
+    final modelProjectors = _privateField(service, '_modelToMtmd') as Map;
+    projectors[999] = FakeMtmd.projector;
+    modelProjectors[model] = 999;
+    addTearDown(() {
+      projectors.clear();
+      modelProjectors.clear();
+    });
+  }
+
+  LlamaEmbeddingInput input(String text) => LlamaEmbeddingInput([
+    LlamaTextContent(text),
+    LlamaImageContent(bytes: Uint8List.fromList([1])),
+  ]);
+}
+
+ExitTeardownApi _copyMixedExit(
+  ExitTeardownApi source,
+  Map<Symbol, dynamic> overrides,
+) {
+  final type = reflectClass(ExitTeardownApi);
+  final constructor = type.declarations.values
+      .whereType<MethodMirror>()
+      .singleWhere((m) => m.isConstructor && m.constructorName == Symbol.empty);
+  return type.newInstance(Symbol.empty, [], {
+        for (final parameter in constructor.parameters)
+          parameter.simpleName: reflect(
+            source,
+          ).getField(parameter.simpleName).reflectee,
+        ...overrides,
+      }).reflectee
+      as ExitTeardownApi;
 }

@@ -35,6 +35,7 @@ final class LlamaEmbeddingCapabilities {
   /// Actionable runtime requirements when image or audio support is unavailable.
   ///
   /// Used only for a rejected media modality; text support is independent.
+  /// Must not contain input payloads, file paths, URLs or credentials.
   final String? mediaUnsupportedReason;
 
   /// Creates a capability report. Unknown capabilities default to unavailable.

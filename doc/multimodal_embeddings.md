@@ -28,6 +28,13 @@ The presence of the SPI never enables a modality by itself. Its probes for
 unknown or unloaded contexts return all-false without I/O. Native CPU LiteRT-LM executes media embeddings with qualified bundle processors;
 Web remains unsupported after qualification.
 
+Custom `BackendMultimodalEmbeddings` implementations may set
+`LlamaEmbeddingCapabilities.mediaUnsupportedReason` to actionable runtime
+requirements when image or audio support is unavailable. The engine uses it
+only for a rejected media modality; it never overrides independent text support
+or enables a modality. Keep this diagnostic free of input payloads, file paths,
+URLs and credentials, since it can be exposed in an unsupported error.
+
 Every requested modality is checked across the entire batch before dispatch.
 Empty batches and modality-preflight failures leave inference counters
 unchanged; compute bookkeeping starts only after preflight succeeds.

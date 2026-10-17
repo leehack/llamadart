@@ -2125,6 +2125,54 @@ void main() {
       });
 
       test('single-device CPU placement reports a CPU decision head', () {
+        var registryReads = 0;
+        var exposeGpu = false;
+        var integrated = false;
+        final gpu = Pointer<ggml_backend_device>.fromAddress(0x1234);
+        service = LlamaCppService(
+          registeredDevices: () {
+            registryReads++;
+            return exposeGpu
+                ? [
+                    GgmlDeviceEntry(
+                      name: 'Description only',
+                      registry: 'Metal',
+                      type: ggml_backend_dev_type
+                          .GGML_BACKEND_DEVICE_TYPE_GPU
+                          .value,
+                    ),
+                    GgmlDeviceEntry(
+                      name: 'Null device',
+                      registry: 'Metal',
+                      device: nullptr,
+                      type: ggml_backend_dev_type
+                          .GGML_BACKEND_DEVICE_TYPE_GPU
+                          .value,
+                    ),
+                    GgmlDeviceEntry(
+                      name: 'CPU',
+                      registry: 'Metal',
+                      device: Pointer.fromAddress(0x5678),
+                      type: ggml_backend_dev_type
+                          .GGML_BACKEND_DEVICE_TYPE_CPU
+                          .value,
+                    ),
+                    GgmlDeviceEntry(
+                      name: 'Fake Metal GPU',
+                      registry: 'Metal',
+                      type: integrated
+                          ? ggml_backend_dev_type
+                                .GGML_BACKEND_DEVICE_TYPE_IGPU
+                                .value
+                          : ggml_backend_dev_type
+                                .GGML_BACKEND_DEVICE_TYPE_GPU
+                                .value,
+                      device: gpu,
+                    ),
+                  ]
+                : [];
+          },
+        );
         final encoderPath = path.join(tempDir.path, 'encoder.gguf');
         final headPath = path.join(tempDir.path, 'head.safetensors');
         final configPath = path.join(tempDir.path, 'config.json');
@@ -2144,8 +2192,37 @@ void main() {
           service,
           '_modelResolvedGpuLayers',
         )[model] = 99;
+        exposeGpu = true;
+        registryReads = 0;
         final head = service.loadDecisionHead(model, headPath, configPath);
         expect(head.deviceName, 'CPU');
+        expect(
+          registryReads,
+          0,
+          reason: 'CPU placement must skip GPU selection',
+        );
+        _readPrivateForTesting<Map<int, ModelParams>>(
+          service,
+          '_modelLoadParams',
+        )[model] = const ModelParams();
+        expect(
+          _invokePrivateForTesting<ggml_backend_dev_t?>(
+            service,
+            '_decisionHeadDevice',
+            [model],
+          ),
+          gpu,
+          reason: 'the fake GPU registry must discriminate on a CPU-only host',
+        );
+        integrated = true;
+        expect(
+          _invokePrivateForTesting<ggml_backend_dev_t?>(
+            service,
+            '_decisionHeadDevice',
+            [model],
+          ),
+          gpu,
+        );
       });
 
       DecisionHeadRuntime tinyRuntime() {
@@ -2616,6 +2693,7 @@ void main() {
     test('decisionHeadRunsOnCpu follows the model placement', () {
       expect(
         LlamaCppService.decisionHeadRunsOnCpu(
+          params: const ModelParams(),
           modelBackendName: 'CPU',
           resolvedGpuLayers: 99,
         ),
@@ -2623,6 +2701,7 @@ void main() {
       );
       expect(
         LlamaCppService.decisionHeadRunsOnCpu(
+          params: const ModelParams(),
           modelBackendName: 'Metal',
           resolvedGpuLayers: 0,
         ),
@@ -2630,6 +2709,7 @@ void main() {
       );
       expect(
         LlamaCppService.decisionHeadRunsOnCpu(
+          params: const ModelParams(),
           modelBackendName: 'Metal',
           resolvedGpuLayers: 99,
         ),
@@ -2637,6 +2717,7 @@ void main() {
       );
       expect(
         LlamaCppService.decisionHeadRunsOnCpu(
+          params: const ModelParams(),
           modelBackendName: null,
           resolvedGpuLayers: 99,
         ),
@@ -2679,6 +2760,7 @@ void main() {
         List<GpuBackend> deviceBackends, {
         int mainGpu = 0,
       }) => LlamaCppService.decisionHeadDeviceIndex(
+        splitMode: ModelSplitMode.layer,
         modelBackendName: modelBackendName,
         deviceBackends: deviceBackends,
         mainGpu: mainGpu,

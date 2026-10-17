@@ -63,8 +63,11 @@ extension NativeContentEmbeddings on LlamaCppService {
       for (final kind in input.partKinds) {
         if (!capabilities.supports(kind)) {
           throw LlamaUnsupportedException(
-            'Native ${kind.name} embeddings require a pooled embedding model, '
-            'a compatible non-M-RoPE projector and guarded mixed-batch ABI v0.7.0-1.',
+            kind == LlamaEmbeddingModality.text
+                ? 'Native text embeddings do not support RANK pooling or '
+                      'encoder-decoder models; use an encoder-only or '
+                      'decoder-only embedding model with non-RANK pooling.'
+                : _nativeEmbeddingMediaRequirements,
           );
         }
       }
@@ -377,7 +380,7 @@ extension NativeContentEmbeddings on LlamaCppService {
       return normalize ? _normalizeEmbeddingVector(vector) : vector;
     } finally {
       if (embeddingsEnabled) _calls.setEmbeddingOutput(context.pointer, false);
-      _embeddingBatchFree(batch);
+      (_embeddingBatchFree ?? _calls.mixedBatch!.free)(batch);
     }
   }
 }
