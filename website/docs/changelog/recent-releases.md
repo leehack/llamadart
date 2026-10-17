@@ -11,6 +11,8 @@ For canonical full release notes, use:
 
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
+- Probe native thinking-budget support and report missing speculative draft
+  models as typed argument errors.
 - **Behavior change:** Report WebGPU argument rejections as typed argument errors instead of inference failures.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.

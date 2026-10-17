@@ -315,8 +315,8 @@ Important fields:
   existing behavior. WebGPU applies it only with bridge assets whose
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
   and LiteRT-LM reject non-zero values rather than silently ignoring them.
-- `thinkingBudget`: llama.cpp reasoning-token cap, native or WebGPU with
-  bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget`.
+- `thinkingBudget`: llama.cpp reasoning-token cap, native with the
+  reasoning-budget API exported, or WebGPU with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget`.
   Use `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use
   template delimiters automatically, or specify `startTag` and `endTag` for
   raw generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
@@ -343,11 +343,17 @@ than the default throws `LlamaUnsupportedException`:
 | `penalty` | `supportsPenalty` | Yes | Yes | No | No |
 | `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | No | No |
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
-| `thinkingBudget` | `supportsThinkingBudget` | Yes | Bridge reports | No | No |
+| `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | No | No |
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
 | `grammarLazy` | `supportsLazyGrammar` | Yes | No | No | No |
 | Stream batching thresholds | `supportsStreamBatching` | Yes | Ignored | Yes | No |
-| Speculative strategies | `speculativeDecodingStrategies` | All | Bridge reports | `backendDefault`, `mtp` unless the bundle declares no drafter | None |
+| Speculative strategies | `speculativeDecodingStrategies` | All, subject to draft/model requirements | Bridge reports | `backendDefault`, `mtp` unless the bundle declares no drafter | None |
+
+Native llama.cpp keeps `mtp` in the set because it accepts an external MTP
+`draftModel`. In-file MTP instead needs a target model with an MTP head and
+`loadMtp: true`. The `draftSimple`, `draftEagle3`, `draftDflash` and `draftDspark`
+strategies require `draftModel`; a missing draft throws `LlamaArgumentException`
+at generation start. Advertising a strategy does not waive these requirements.
 
 Every field is `false`, and the strategy set empty, before a load. Native
 LiteRT-LM reads speculative, image and audio support from the bundle's

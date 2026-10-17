@@ -86,7 +86,11 @@ reports what it supports: image and audio input, embeddings, multi-turn chat,
 tools, structured output and grammars, each sampling control
 (`penalty`, `presencePenalty`, `minP`, `thinkingBudget`), and the speculative
 decoding strategies it runs. Branch on these instead of the model's file
-extension or backend name.
+extension or backend name. Native llama.cpp reports thinking-budget support
+only when the runtime exports its reasoning-budget API. Its `mtp` strategy can
+use an external draft model; in-file MTP needs an MTP head and `loadMtp: true`.
+Other draft strategies require `draftModel` and throw `LlamaArgumentException`
+at generation start when it is missing.
 
 For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
