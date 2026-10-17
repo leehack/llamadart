@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:mirrors';
 
 import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/src/backends/backend.dart';
@@ -2419,6 +2420,52 @@ void main() {
     );
     await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
   });
+
+  test(
+    'embedding startup timeout before request construction stays typed',
+    () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const [],
+        detokenizeResponse: '',
+        generationChunks: const [],
+      );
+      final backend = LiteRtLmBackend(
+        initialSendPort: worker.sendPort,
+        workerEntryPoint: _silentWorker,
+      );
+      final mirror = reflect(backend);
+      final owner = mirror.type.owner as LibraryMirror;
+      final portField = MirrorSystem.getSymbol('_sendPort', owner);
+      addTearDown(() async {
+        mirror.setField(portField, worker.sendPort);
+        await backend.dispose();
+        worker.close();
+      });
+      await backend.modelLoad(
+        'fake.litertlm',
+        const ModelParams(liteRtLmEmbeddingEngine: true),
+      );
+      // Normal lifecycle paths clear embedding mode with the port. Simulate
+      // future startup/recovery wiring without adding a production test hook.
+      mirror.setField(portField, null);
+      await expectLater(
+        backend.embed(1, 'hello'),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'startup diagnostic',
+            contains('startup timed out'),
+          ),
+        ),
+      );
+      expect(worker.requests.whereType<LiteRtLmEmbedRequest>(), isEmpty);
+      expect(
+        worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+        isEmpty,
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 15)),
+  );
 
   test('a worker startup timeout releases the generation slot', () async {
     final backend = LiteRtLmBackend(workerEntryPoint: _silentWorker);

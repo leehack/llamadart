@@ -174,7 +174,7 @@ class LiteRtLmBackend
         'LiteRT-LM embedding cancelled during media preflight.',
       );
     }
-    late SendPort embeddingPort;
+    SendPort? embeddingPort;
     try {
       final response = await _sendRequest((port) {
         embeddingPort = port;
@@ -182,6 +182,11 @@ class LiteRtLmBackend
       }, timeout: _embeddingTimeout);
       return _expect<LiteRtLmEmbedResponse>(response, 'embedding').vectors;
     } on TimeoutException {
+      if (embeddingPort == null) {
+        throw LlamaInferenceException(
+          'LiteRT-LM embedding worker startup timed out before dispatch.',
+        );
+      }
       await _cancelGeneration(embeddingPort);
       throw LlamaInferenceException(
         'LiteRT-LM embedding timed out; cancellation requested. Native work settles before reuse.',
