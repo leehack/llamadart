@@ -802,6 +802,61 @@ void main() {
       },
     );
 
+    for (final failFirst in [false, true]) {
+      test(
+        'waits for later TTS after completion (failure: $failFirst)',
+        () async {
+          final service = _SequentialTextToSpeechService(failFirst);
+          final worker = await _startWorkerInCurrentIsolate(service);
+          final synthesis = _PendingResponse();
+          final disposal = _PendingResponse();
+          var disposalSent = false;
+          try {
+            final first = await _sendRequest(
+              worker.sendPort,
+              (port) => TextToSpeechSynthesizeRequest(
+                2,
+                3,
+                const BackendTextToSpeechRequest(text: 'first'),
+                0,
+                port,
+              ),
+            );
+            expect(
+              first,
+              failFirst
+                  ? isA<ErrorResponse>()
+                  : isA<TextToSpeechResultResponse>(),
+            );
+            worker.sendPort.send(
+              TextToSpeechSynthesizeRequest(
+                2,
+                3,
+                const BackendTextToSpeechRequest(text: 'second'),
+                0,
+                synthesis.sendPort,
+              ),
+            );
+            await service.synthesisStarted.future;
+            worker.sendPort.send(DisposeRequest(disposal.sendPort));
+            disposalSent = true;
+            await disposal.expectNoResponse();
+            expect(service.disposeCalls, 0);
+          } finally {
+            service.releaseSynthesis();
+            if (disposalSent) {
+              await disposal.nextResponse;
+            } else {
+              await _disposeWorker(worker);
+            }
+            synthesis.close();
+            disposal.close();
+          }
+          expect(service.disposeCalls, 1);
+        },
+      );
+    }
+
     test('waits for active generation before freeing native handles', () async {
       final service = _BlockingLlamaCppService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -1514,4 +1569,42 @@ class _BlockingTtsHandleService extends _BlockingTextToSpeechService {
   void freeContext(int contextHandle) => frees.add('context');
   @override
   void freeMultimodalContext(int mmContextHandle) => frees.add('projector');
+}
+
+class _SequentialTextToSpeechService extends _BlockingTextToSpeechService {
+  final bool failFirst;
+  int disposeCalls = 0;
+
+  _SequentialTextToSpeechService(this.failFirst);
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request,
+    int cancelFlagAddress, {
+    void Function(BackendTextToSpeechProgress)? onProgress,
+  }) async {
+    if (request.text == 'first') {
+      if (failFirst) {
+        throw LlamaStateException('Injected first request failure');
+      }
+      return BackendTextToSpeechResult(
+        samples: Float32List(0),
+        sampleRateHz: 24000,
+        channelCount: 1,
+        framesGenerated: 0,
+        truncated: false,
+      );
+    }
+    return super.synthesizeTextToSpeech(
+      contextHandle,
+      mmContextHandle,
+      request,
+      cancelFlagAddress,
+    );
+  }
+
+  @override
+  void dispose() => disposeCalls++;
 }

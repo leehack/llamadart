@@ -7508,8 +7508,11 @@ class LlamaCppService {
     }
     _ensureContextUsable(contextHandle, ctx);
     if (_generatingContexts.containsKey(contextHandle)) {
+      final activity = _activeTtsContextHandle == contextHandle
+          ? 'text-to-speech'
+          : 'generation';
       throw LlamaStateException(
-        'Cannot save state while generation is active on context $contextHandle',
+        'Cannot save state while $activity is active on context $contextHandle',
       );
     }
     _calls.synchronize(ctx.pointer);
@@ -7563,8 +7566,11 @@ class LlamaCppService {
     }
     _ensureContextUsable(contextHandle, ctx);
     if (_generatingContexts.containsKey(contextHandle)) {
+      final activity = _activeTtsContextHandle == contextHandle
+          ? 'text-to-speech'
+          : 'generation';
       throw LlamaStateException(
-        'Cannot load state while generation is active on context $contextHandle',
+        'Cannot load state while $activity is active on context $contextHandle',
       );
     }
     if (tokenCapacity <= 0) {

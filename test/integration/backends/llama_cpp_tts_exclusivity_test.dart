@@ -46,6 +46,11 @@ void main() {
           await h.service
               .generate(h.context, 'ab', _generation, h.flag.address)
               .drain<void>();
+          if (operation == 'load') {
+            final path = '${h.directory.path}/state';
+            expect(h.service.stateSaveFile(h.context, path, [4, 5]), isTrue);
+            expect(h.service.stateLoadFile(h.context, path, 64), [4, 5]);
+          }
           final progress = Completer<void>();
           final synthesis = h.start(
             reference: phase == 'reference',
@@ -58,15 +63,32 @@ void main() {
           addTearDown(() => terminal);
           if (phase == 'step') await progress.future;
           final before = h.service.getPerformanceContext(h.context);
+          if (phase == 'step') {
+            expect(before, isNotNull);
+            expect(before!.promptEvalTokens, greaterThan(0));
+          } else {
+            expect(before, isNull);
+          }
           final initCalls = h.initCalls;
           await expectLater(
             Future.sync(() => h.run(operation)),
-            throwsA(isA<LlamaStateException>()),
+            throwsA(
+              isA<LlamaStateException>().having(
+                (error) => error.message.toLowerCase(),
+                'message',
+                contains('text-to-speech'),
+              ),
+            ),
           );
           final after = h.service.getPerformanceContext(h.context);
-          expect(after?.promptEvalTokens, before?.promptEvalTokens);
-          expect(after?.evalTokens, before?.evalTokens);
-          expect(after?.sampleCount, before?.sampleCount);
+          if (phase == 'step') {
+            expect(after, isNotNull);
+            expect(after!.promptEvalTokens, before!.promptEvalTokens);
+            expect(after.evalTokens, before.evalTokens);
+            expect(after.sampleCount, before.sampleCount);
+          } else {
+            expect(after, isNull);
+          }
           expect(h.initCalls, initCalls);
           await terminal;
           // Failure releases the reservation; the context can be used again.
@@ -97,6 +119,32 @@ void main() {
         );
         await original;
         expect(h.initCalls, 1);
+      },
+    );
+  }
+
+  for (final operation in ['save', 'load']) {
+    test(
+      '$operation names generation when generation holds the context',
+      () async {
+        final iterator = StreamIterator(
+          h.service.generate(h.context, 'ab', _generation, h.flag.address),
+        );
+        try {
+          expect(await iterator.moveNext(), isTrue);
+          await expectLater(
+            Future.sync(() => h.run(operation)),
+            throwsA(
+              isA<LlamaStateException>().having(
+                (error) => error.message,
+                'message',
+                contains('while generation is active'),
+              ),
+            ),
+          );
+        } finally {
+          await iterator.cancel();
+        }
       },
     );
   }
