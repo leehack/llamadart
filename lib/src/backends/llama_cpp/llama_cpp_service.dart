@@ -2167,8 +2167,8 @@ class LlamaCppService {
       splitMode: params.splitMode.llamaCppValue,
       mainGpu: params.mainGpu,
     );
-    // Execution metadata also drives independent auxiliary GPU selection;
-    // correcting model diagnostics must not change those existing policies.
+    // Retain load metadata for auxiliary device selection and apply placement
+    // separately where a consumer must follow the model onto the CPU.
     _activeBackendName = noGpu
         ? _backendDisplayName('cpu')
         : _modelBackendNames[handle]!;
@@ -9254,6 +9254,7 @@ class LlamaCppService {
             isIosSimulator: _isIosSimulator,
           );
       final runsOnCpu = decisionHeadRunsOnCpu(
+        params: params,
         modelBackendName: _modelBackendNames[modelHandle],
         resolvedGpuLayers: resolvedGpuLayers,
       );
@@ -9564,13 +9565,19 @@ class LlamaCppService {
   /// Returns whether a decision head for a model runs on the CPU.
   ///
   /// True when the model loaded on the CPU backend ([modelBackendName]
-  /// `CPU`) or offloads no layers ([resolvedGpuLayers] <= 0).
+  /// `CPU`), offloads no layers ([resolvedGpuLayers] <= 0), or [params]
+  /// selects no GPU (single-device split mode with a negative main GPU).
   static bool decisionHeadRunsOnCpu({
+    ModelParams params = const ModelParams(),
     required String? modelBackendName,
     required int resolvedGpuLayers,
   }) {
     return modelBackendName == _backendDisplayName('cpu') ||
-        resolvedGpuLayers <= 0;
+        resolvedGpuLayers <= 0 ||
+        selectsNoGpuDevice(
+          splitMode: params.splitMode.llamaCppValue,
+          mainGpu: params.mainGpu,
+        );
   }
 
   /// Picks the device of a decision head for a model on [modelBackendName].
@@ -9579,13 +9586,21 @@ class LlamaCppService {
   /// registry order, and [mainGpu] counts among the devices of the model's
   /// backend. Returns the index in [deviceBackends] of the device [mainGpu]
   /// selects, or of the backend's first device when [mainGpu] is out of
-  /// range. Returns null, meaning the CPU, when [modelBackendName] maps to
+  /// range. Returns null, meaning the CPU, when single-device [splitMode]
+  /// with a negative [mainGpu] selects no GPU, when [modelBackendName] maps to
   /// the CPU or to no backend, or when no device has the model's backend.
   static int? decisionHeadDeviceIndex({
+    ModelSplitMode splitMode = ModelSplitMode.layer,
     required String? modelBackendName,
     required List<GpuBackend> deviceBackends,
     required int mainGpu,
   }) {
+    if (selectsNoGpuDevice(
+      splitMode: splitMode.llamaCppValue,
+      mainGpu: mainGpu,
+    )) {
+      return null;
+    }
     final backend = gpuBackendFromRegName(modelBackendName ?? '');
     if (backend == GpuBackend.auto || backend == GpuBackend.cpu) {
       return null;
@@ -9641,12 +9656,14 @@ class LlamaCppService {
         devices.add(device);
       }
     }
+    final params = _modelLoadParams[modelHandle] ?? const ModelParams();
     final index = decisionHeadDeviceIndex(
+      splitMode: params.splitMode,
       modelBackendName: _modelBackendNames[modelHandle],
       deviceBackends: [
         for (final device in devices) _gpuBackendForDevice(device),
       ],
-      mainGpu: _modelLoadParams[modelHandle]?.mainGpu ?? 0,
+      mainGpu: params.mainGpu,
     );
     return index == null ? null : devices[index];
   }
