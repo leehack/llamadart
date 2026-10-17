@@ -109,6 +109,8 @@ qualified.
 Adjacent text parts concatenate verbatim.
 See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
+Native llama.cpp rejects embedding requests on a context with active text-to-speech
+with `LlamaStateException`; await synthesis or its cancellation before reuse.
 LiteRT-LM queues concurrent embedding requests, validates media off the caller
 isolate and cancels batches between items. A timeout cancels only its own request;
 explicit cancellation, unload and dispose cancel active and queued requests.
@@ -128,9 +130,11 @@ makes `getPerformanceContext()` return `null`. LiteRT-LM validation failures,
 early llama.cpp option-validation failures, and failed dispatches also leave
 counters unavailable. Native llama.cpp resets counters before each generation,
 embedding batch, next-token scoring or text-to-speech request executes, so
-counters describe only that request (embedding and scoring report `0` ms). A
-request the native worker rejects leaves diagnostics unavailable (argument
-checks that fail before dispatch leave them unchanged); LiteRT-LM retains its generation-only recovery behavior.
+counters describe only that request (embedding and scoring report `0` ms).
+Request validation failures in the native worker leave diagnostics unavailable;
+argument checks that fail before dispatch leave them unchanged. LiteRT-LM retains
+its generation-only recovery behavior. Requests rejected because text-to-speech
+is active preserve the synthesis request's counters.
 After an early cancellation, pending or failed embedding, scoring and speech
 calls keep diagnostics unavailable until a call succeeds. Web backends return
 `null` even after successful generation.

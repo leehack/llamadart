@@ -58,6 +58,7 @@ extension NativeContentEmbeddings on LlamaCppService {
     Pointer<Int8>? cancelToken,
   }) {
     if (inputs.isEmpty) return const [];
+    _ensureNoActiveTts(contextHandle, 'embed content');
     _contexts[contextHandle]?.performanceAvailable = false;
     final capabilities = getEmbeddingCapabilities(contextHandle);
     for (final input in inputs) {
