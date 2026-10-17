@@ -83,7 +83,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   - Runtime LoRA calls, and loads with `ModelParams.loras`, throw
     `LlamaUnsupportedException` unless the assets report LoRA support
     (`v0.1.54+`).
-  - Other floors: embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
+  - Media embeddings need assets `v0.1.64+`, an API-version-1 embedding
+    capability probe and a compatible embedding model/projector. Use encoded
+    image/audio bytes or mono 16 kHz Float32 audio PCM; paths and image URLs
+    throw `LlamaUnsupportedException`. Numerical Web/native media parity is
+    unqualified; the default assets pin is unchanged.
+  - Other floors: text embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS
     `v0.1.33+` on memory64.

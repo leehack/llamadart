@@ -62,7 +62,10 @@ After loading a model and any projector, `await engine.embeddingCapabilities`
 reports `text`, `image` and `audio`. Native llama.cpp probes the loaded pooling/
 attention mode, mixed-batch ABI and projector encoders. EmbeddingGemma-2 with
 its projector supports images/audio on native v0.7.0-1 (qualified macOS CPU/Metal);
-without a projector it reports text only. Web llama.cpp reports text only.
+without a projector it reports text only. Web llama.cpp probes image/audio
+embeddings with bridge assets v0.1.64+
+and a compatible model/projector. The default pinned assets remain text-only.
+Web media embeddings are numerically unqualified against native.
 LiteRT-LM embedding engines probe text/image/audio processors on native CPU.
 Native text-only content follows `embed`, including causal unpooled models;
 media gates do not restrict text. `mediaUnsupportedReason` on the capability
@@ -85,7 +88,7 @@ or media payloads; old string calls retain their existing text observations.
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
 `loadMultimodalProjector` loading path. `ModelParams(liteRtLmEmbeddingEngine: true)`
 selects the separate LiteRT-LM embedding engine. Use `ComputeDevice.cpu` on
-native. Native GPU and all Web paths throw `LlamaUnsupportedException`. This flag
+native. Native GPU and all LiteRT-LM Web paths throw `LlamaUnsupportedException`. This flag
 is LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
 existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
 than inferring modality support from its name. Follow

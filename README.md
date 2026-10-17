@@ -97,9 +97,12 @@ For ordered embedding content, use `LlamaEmbeddingInput` with
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports
 image/audio embeddings with EmbeddingGemma-2 and its projector on native
 v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
-Web llama.cpp retains text embeddings. LiteRT-LM supports text,
+Web llama.cpp also accepts image/audio content with bridge assets v0.1.64+
+and an API-version-1 embedding modality probe. Web media vectors remain
+numerically unqualified against native; the default assets pin stays unchanged.
+LiteRT-LM supports text,
 image and audio embeddings (qualified on macOS arm64 CPU only) with
-`ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all Web paths throw
+`ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all LiteRT-LM Web paths throw
 `LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
 llama.cpp text-only content follows `embed`, including causal unpooled models.
 Unsupported native media diagnostics name the required v0.7.0-1 ABI. Windows

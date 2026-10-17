@@ -137,6 +137,28 @@ physical playback, intelligibility or speaker-reference fidelity.
   capability probes rather than on this tag, and the bridge's
   `supportsCompletionUsage` flag for per-request usage.
 
+### Media embeddings
+
+Assets v0.1.64+ expose `getEmbeddingCapabilities()` with `apiVersion: 1` and
+boolean `text`, `image`, `audio` flags. The Dart backend probes each request,
+including after projector changes and worker restoration; generation's media
+flags do not enable embeddings. Unknown/missing/failed probes preserve legacy
+string embeddings and disable media with a v0.1.64+ requirement diagnostic.
+This adapter change does not update the default assets pin.
+
+`embedContentBatch` sends strings for text-only inputs and ordered parts arrays
+for mixed/media inputs. Adjacent text is concatenated verbatim. Image/audio bytes
+and mono 16 kHz Float32 PCM are forwarded without transfer/detachment; browser
+filesystem paths and image URLs are rejected. The bridge validates the complete
+batch before inference. Stable `EmbeddingError.code` values map to typed Dart
+argument, unsupported or inference errors; arbitrary media diagnostics are never
+included. Cancellation forwards to `cancel()` and disposal awaits `dispose()`;
+the bridge owns settling queued/active operations before freeing its runtime.
+Await cancelled embedding futures before reuse.
+
+Web media vectors remain numerically unqualified against native; see
+[multimodal embedding qualification](multimodal_embeddings_web.md).
+
 ### Completion termination
 
 With `supportsCompletionUsage`, the backend consumes `onUsage.finishReason`
@@ -273,8 +295,9 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `detokenize(tokens, special)`
 - `stateSaveFile(path, tokens)`
 - `stateLoadFile(path, tokenCapacity)`
-- `embed(text, { normalize })`
-- `embedBatch(texts, { normalize })`
+- `getEmbeddingCapabilities()` (API version 1, assets v0.1.64+)
+- `embed(input, { normalize })` (string or ordered content parts)
+- `embedBatch(inputs, { normalize })`
 - `getModelMetadata()`
 - `getContextSize()`
 - `cancel()`

@@ -20,7 +20,10 @@ description: >-
   text/image/audio content parts. Probe `await engine.embeddingCapabilities`
   after loading: native llama.cpp v0.7.0-1 supports EmbeddingGemma-2 image/audio
   embeddings with its matching projector (qualified macOS CPU/Metal), and
-  reports text only without one. Web llama.cpp reports text only. LiteRT-LM
+  reports text only without one. Web llama.cpp probes image/audio embeddings
+  with bridge assets v0.1.64+ and a compatible model/projector. The default
+  pinned assets remain text-only. Web media embeddings are numerically
+  unqualified against native. LiteRT-LM
   embedding engines probe text/image/audio on native CPU. Native llama.cpp
   expanded inputs must fit one context/batch/micro-batch; no chunking or implicit
   task prefixes. M-RoPE projectors and image URLs are unsupported. Use exactly
@@ -36,7 +39,7 @@ description: >-
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
 - `ModelParams(liteRtLmEmbeddingEngine: true)` is the explicit LiteRT-LM
   embedding-engine selector. Select `ComputeDevice.cpu` on native. Native GPU
-  and all Web paths throw typed unsupported errors. Keep the
+  and all LiteRT-LM Web paths throw typed unsupported errors. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use
   their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example

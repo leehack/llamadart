@@ -330,6 +330,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Generation latency, streaming, batching, prompt reuse, or performance changes.',
   ),
   TestMatrixRow(
+    id: 'web-multimodal-embeddings',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Direct/worker Web text/image/audio/mixed vectors against local native references, normalization, order and adjacent text',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings',
+    useWhen:
+        'Web embedding bridge changes; requires local assets v0.1.64+, EmbeddingGemma-2/projector and reference vectors per doc/multimodal_embeddings_web.md. Numerically unqualified until run.',
+  ),
+  TestMatrixRow(
     id: 'native-multimodal-embeddings',
     tier: 'targeted',
     mode: 'local-only',
