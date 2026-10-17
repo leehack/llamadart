@@ -3025,13 +3025,17 @@ void main() {
       tearDown(() => tempDir.deleteSync(recursive: true));
 
       test('negative single-device placement changes only reporting', () {
-        final service = LlamaCppService();
+        final service = _MetalReportingService();
         addTearDown(service.dispose);
         final handle = service.loadModel(
           modelPath,
           const ModelParams(splitMode: ModelSplitMode.none, mainGpu: -1),
         );
 
+        expect(
+          _readPrivateForTesting<Map>(service, '_modelBackendNames')[handle],
+          'Metal',
+        );
         expect(service.getActiveBackendName(), 'CPU');
         expect(service.getResolvedGpuLayers(), 0);
         expect(
@@ -3338,6 +3342,31 @@ void main() {
         expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
         expect(simulatorWarnings(), isEmpty);
       });
+
+      test(
+        'negative single-device placement suppresses the simulator warning',
+        () {
+          final service = LlamaCppService(isIosSimulator: true);
+          addTearDown(service.dispose);
+          const params = ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.metal,
+            gpuLayers: 42,
+            splitMode: ModelSplitMode.none,
+            mainGpu: -1,
+          );
+          final handle = service.loadModel(modelPath, params);
+          expect(
+            _readPrivateForTesting<Map>(
+              service,
+              '_modelResolvedGpuLayers',
+            )[handle],
+            42,
+          );
+          expect(service.getResolvedGpuLayers(), 0);
+          expect(simulatorWarnings(), isEmpty);
+        },
+      );
 
       test('an explicit Metal request keeps its GPU layers and warns', () {
         final service = LlamaCppService(isIosSimulator: true);
@@ -7806,4 +7835,9 @@ class _EmbeddingMetadataService extends LlamaCppService {
   final Map<String, String> metadata;
   @override
   Map<String, String> getMetadata(int modelHandle) => metadata;
+}
+
+class _MetalReportingService extends LlamaCppService {
+  @override
+  List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];
 }

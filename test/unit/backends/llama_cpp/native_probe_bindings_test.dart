@@ -48,6 +48,8 @@ void main() {
           Abi.current().toString(): {
             'package:llamadart/llamadart': ['absolute', library],
             'package:llamadart/llamadart_wrapper': ['absolute', library],
+            'package:llamadart/ggml': ['absolute', library],
+            'package:llamadart/ggml-base': ['absolute', library],
           },
         },
       }),
@@ -83,4 +85,11 @@ void main() {
       },
     );
   }
+
+  test(
+    'model diagnostics and decision-head selection use fake devices',
+    () async {
+      await run(Platform.resolvedExecutable, [kernel, 'placement']);
+    },
+  );
 }

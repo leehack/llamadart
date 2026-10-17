@@ -5,6 +5,8 @@ import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/config/gpu_backend.dart';
+import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
 final LibraryMirror _owner =
@@ -12,6 +14,15 @@ final LibraryMirror _owner =
 
 dynamic _read(Object object, String field) =>
     reflect(object).getField(MirrorSystem.getSymbol(field, _owner)).reflectee;
+
+dynamic _invoke(
+  LlamaCppService service,
+  String method,
+  List<Object?> arguments, [
+  Map<Symbol, Object?> named = const {},
+]) => reflect(
+  service,
+).invoke(MirrorSystem.getSymbol(method, _owner), arguments, named).reflectee;
 
 void main(List<String> arguments) {
   final calls = LlamaCppObjectCalls.untracked();
@@ -31,6 +42,46 @@ void main(List<String> arguments) {
   _check(_read(service, '_reasoningBudgetApiLookupAttempted'), isFalse);
   _check(_read(service, '_reasoningBudgetApi'), isNull);
   switch (arguments.single) {
+    case 'placement':
+      _check(service.getBackendInfo(), [
+        'CPU',
+        'Vulkan (Vulkan0)',
+        'Metal (MTL0)',
+        'Metal (MTL1)',
+      ]);
+      final backend =
+          _invoke(service, '_resolveBackendNameForLoad', [], {
+                #requestedBackend: GpuBackend.metal,
+                #resolvedGpuLayers: ModelParams.maxGpuLayers,
+                #forcedCpuFallback: false,
+              })
+              as String;
+      _check(backend, 'Metal');
+      (_read(service, '_modelBackendNames') as Map)[1] = backend;
+      (_read(service, '_modelResolvedGpuLayers') as Map)[1] =
+          ModelParams.maxGpuLayers;
+      final params = _read(service, '_modelLoadParams') as Map;
+      for (final (mainGpu, expectedDevice, reportedBackend, reportedLayers) in [
+        (-1, 12, 'CPU', 0),
+        (-2, 12, 'CPU', 0),
+        (0, 12, 'Metal', ModelParams.maxGpuLayers),
+        (1, 13, 'Metal', ModelParams.maxGpuLayers),
+      ]) {
+        params[1] = ModelParams(
+          splitMode: ModelSplitMode.none,
+          mainGpu: mainGpu,
+        );
+        _invoke(service, '_activateModelReport', [1]);
+        _check(service.getActiveBackendName(), reportedBackend);
+        _check(service.getResolvedGpuLayers(), reportedLayers);
+        final device =
+            _invoke(service, '_decisionHeadDevice', [1]) as ggml_backend_dev_t?;
+        _check(device?.address, expectedDevice);
+      }
+      (_read(service, '_modelBackendNames') as Map)[1] = 'CPU';
+      _check(_invoke(service, '_decisionHeadDevice', [1]), isNull);
+      (_read(service, '_modelBackendNames') as Map)[1] = 'CUDA';
+      _check(_invoke(service, '_decisionHeadDevice', [1]), isNull);
     case 'cold':
       final capabilities = service.generationCapabilities(1);
       _check(capabilities.thinkingBudget, isTrue);
@@ -61,7 +112,8 @@ void main(List<String> arguments) {
   }
 }
 
-void _check(Object? actual, Matcher matcher) {
+void _check(Object? actual, Object? expected) {
+  final matcher = wrapMatcher(expected);
   if (!matcher.matches(actual, <Object?, Object?>{})) {
     throw StateError(
       'Expected ${matcher.describe(StringDescription())}; got $actual',
