@@ -8,19 +8,17 @@ import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
-
-import '../../../support/recording_exit_teardown.dart';
-import '../../../support/fake_native_barrier.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
-
-import 'package:llamadart/backend.dart';
-import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_native_barrier.dart';
+import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 void main() {
