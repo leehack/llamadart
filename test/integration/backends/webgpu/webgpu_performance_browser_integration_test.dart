@@ -12,7 +12,7 @@ import '../../../support/fake_webgpu_feature_bridge.dart';
 
 void main() {
   for (final batch in [false, true]) {
-    test('Web counters stay unavailable after generation, early cancellation '
+    test('Web null-diagnostics contract after generation, early cancel '
         'and embedding: batch=$batch', () async {
       final bridge = FakeFeatureBridge();
       var embeddings = 0;

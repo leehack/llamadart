@@ -46,8 +46,11 @@ on generation. Requests finishing after reload no longer affect the new context'
 counter availability, even if its handle is reused. No API migration is needed;
 continue handling unavailable diagnostics. Rejections during active text-to-speech
 preserve that synthesis request's counters. After an early cancellation, pending
-or failed embedding, scoring and speech calls preserve unavailable diagnostics
-until a call succeeds. Web backends still return `null` after every request.
+or failed embedding, scoring and speech calls preserve unavailable diagnostics,
+including calls started before cancellation. Generation dispatch restores
+availability immediately; embedding, scoring and speech restore it only on
+success, using the backend's counter semantics. Web backends still return `null`
+after every request.
 
 ## Unreleased: template error labels
 

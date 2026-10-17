@@ -140,7 +140,10 @@ argument checks that fail before dispatch leave them unchanged. LiteRT-LM retain
 its generation-only recovery behavior. Requests rejected because text-to-speech
 is active preserve the synthesis request's counters.
 After an early cancellation, pending or failed embedding, scoring and speech
-calls keep diagnostics unavailable until a call succeeds. Web backends return
+calls keep diagnostics unavailable, including calls started before cancellation.
+Generation dispatch restores availability immediately; embedding, scoring and
+speech restore it only on success, using the backend's counter semantics.
+Web backends return
 `null` even after successful generation.
 Requests from an unloaded model do not invalidate a reloaded model's counters.
 
