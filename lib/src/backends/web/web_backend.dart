@@ -5,6 +5,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/model_format.dart';
 import '../../core/template/media_placeholders.dart';
@@ -29,6 +30,7 @@ class WebAutoBackend
         BackendAvailability,
         BackendChatScope,
         BackendEmbeddingsSupport,
+        BackendMultimodalEmbeddings,
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
         BackendGrammarConstraintsSupport,
@@ -425,6 +427,26 @@ class WebAutoBackend
     }
     return Future<void>.value();
   }
+
+  @override
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  ) async {
+    final delegate = _delegate;
+    if (delegate == null) return const LlamaEmbeddingCapabilities();
+    return delegate.probeEmbeddingCapabilities(contextHandle);
+  }
+
+  @override
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) => _requireDelegate().embedContentWithFallback(
+    contextHandle,
+    inputs,
+    normalize: normalize,
+  );
 
   @override
   Future<List<double>> embed(

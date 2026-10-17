@@ -7,6 +7,20 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'embedding-only loading is explicit and survives model parameter copies',
+    () {
+      expect(const ModelParams().embeddingOnly, isFalse);
+      final params = const ModelParams(embeddingOnly: true);
+      expect(params.copyWith(contextSize: 256).embeddingOnly, isTrue);
+      expect(params.copyWith(embeddingOnly: false).embeddingOnly, isFalse);
+      expect(
+        const ModelParams().copyWith(embeddingOnly: true).embeddingOnly,
+        isTrue,
+      );
+    },
+  );
+
   test('ModelParams defaults use automatic context batching', () {
     const params = ModelParams();
 

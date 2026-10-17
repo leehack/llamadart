@@ -9,6 +9,7 @@ import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
@@ -42,6 +43,7 @@ class NativeAutoBackend
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
+        BackendMultimodalEmbeddings,
         BackendBatchEmbeddings,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
@@ -653,6 +655,26 @@ class NativeAutoBackend
     }
     return delegate is BackendEmbeddings;
   }
+
+  @override
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  ) async {
+    final delegate = _delegate;
+    if (delegate == null) return const LlamaEmbeddingCapabilities();
+    return delegate.probeEmbeddingCapabilities(contextHandle);
+  }
+
+  @override
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) => _requireDelegate().embedContentWithFallback(
+    contextHandle,
+    inputs,
+    normalize: normalize,
+  );
 
   @override
   Future<List<double>> embed(

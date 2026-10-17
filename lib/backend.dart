@@ -40,6 +40,7 @@ export 'src/backends/backend.dart'
         BackendDecisionSequence,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
+        BackendMultimodalEmbeddings,
         BackendGenerationCapabilities,
         BackendGenerationCapabilitiesSupport,
         BackendGenerationLimitSupport,

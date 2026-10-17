@@ -37,6 +37,55 @@ Future<void> main() async {
 }
 ```
 
+## Ordered content inputs
+
+`embed(String)` and `embedBatch(List<String>)` are unchanged. The additive
+`LlamaEmbeddingInput` accepts a nonempty ordered list of `LlamaTextContent`,
+`LlamaImageContent` and `LlamaAudioContent` parts. Use `embedContent(input)`
+or `embedContentBatch(inputs)` for one vector per input. Multiple text parts
+concatenate verbatim, without a separator or task prefix. An empty batch
+returns no vectors; an empty parts list throws `LlamaArgumentException`.
+
+```dart
+Future<List<double>> embedContentExample(LlamaEngine engine) async {
+  final capabilities = await engine.embeddingCapabilities;
+  if (!capabilities.text) {
+    throw LlamaUnsupportedException('This loaded runtime cannot embed text.');
+  }
+  return engine.embedContent(
+    LlamaEmbeddingInput([const LlamaTextContent('hello world')]),
+  );
+}
+```
+
+After loading a model and any projector, `await engine.embeddingCapabilities`
+reports `text`, `image` and `audio`. Packaged llama.cpp backends currently
+report text only (with existing model restrictions); LiteRT-LM reports none.
+**Image/audio content embedding calls currently throw
+`LlamaUnsupportedException` on all packaged backends.** Chat vision/audio
+support does not imply embedding support. Custom backends may implement the
+optional `BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart`
+and positively probe each loaded model/runtime modality.
+
+Video and chat-only parts throw `LlamaUnsupportedException`; a portable
+video frame/timestamp sampling contract has not been defined. No media is
+silently flattened into text. Source/codec support is runtime-specific;
+embedding PCM uses mono 16 kHz Float32 samples. Keep media buffers unchanged
+until the future settles. `normalize` and cancellation through
+`cancelGeneration()` follow the existing embedding semantics. Content-call
+observers receive only ordered part kinds/counts, with no text, paths, URLs
+or media payloads; old string calls retain their existing text observations.
+
+GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
+`loadMultimodalProjector` loading path. `ModelParams(embeddingOnly: true)`
+reserves an explicit LiteRT-LM embedding-engine load; current native/Web
+LiteRT-LM adapters reject it with `LlamaUnsupportedException` before starting
+a conversation engine. The default false preserves existing loading. This
+lane adds no runtime implementation or model qualification. Follow
+[the multimodal tracker](https://github.com/leehack/llamadart/issues/1072);
+[task-prefix and Matryoshka helpers](https://github.com/leehack/llamadart/issues/1126)
+remain separate.
+
 ## Backend support and compatibility
 
 - Embeddings are an optional backend capability. After loading a model,

@@ -82,6 +82,13 @@ tools, structured output and grammars, each sampling control
 decoding strategies it runs. Branch on these instead of the model's file
 extension or backend name.
 
+For ordered embedding content, use `LlamaEmbeddingInput` with
+`engine.embedContent` / `embedContentBatch` and check
+`await engine.embeddingCapabilities` after loading. Image/audio embeddings
+currently throw `LlamaUnsupportedException` on every packaged backend;
+llama.cpp text embeddings retain their existing behavior. See the
+[embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
+
 Native llama.cpp rejects nonzero rollback capacity on recurrent or hybrid
 models before creating a context. Embedding inputs that need one-pass attention
 or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.

@@ -30,6 +30,28 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'embedding-only load fails before starting the conversation runtime',
+    () async {
+      final backend = LiteRtLmBackend();
+      addTearDown(backend.dispose);
+      await expectLater(
+        backend.modelLoad(
+          'fake.litertlm',
+          const ModelParams(embeddingOnly: true),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'engine condition',
+            contains('separate embedding engine'),
+          ),
+        ),
+      );
+      expect(backend.isReady, isFalse);
+    },
+  );
+
   late Directory tempDir;
   late File modelFile;
 

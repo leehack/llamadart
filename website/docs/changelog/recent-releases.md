@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Add typed embedding content inputs and modality probes; packaged backends
+  continue to reject image/audio embeddings until runtime integration ships.
+
 ## 0.14.0
 
 - **ABI break:** Update the native llama.cpp runtime to v0.7.0 with matching

@@ -1,3 +1,8 @@
+## Unreleased
+
+- Add typed embedding content inputs and modality probes; packaged backends
+  continue to reject image/audio embeddings until runtime integration ships.
+
 ## 0.14.0
 
 - **ABI break:** Update the native llama.cpp runtime to v0.7.0 with matching
