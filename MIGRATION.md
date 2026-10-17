@@ -11,6 +11,14 @@ ships this pin; the published `0.14.0` companion still pins `v0.7.0` and is
 rejected by the updated hook. Release preparation will assign the matching
 core/companion minor versions.
 
+## Unreleased: LiteRT-LM Web cancellation errors
+
+Keep handling `LlamaInferenceException` after `cancelGeneration()`: a runtime
+failure racing cancellation now surfaces instead of ending normally. Only the
+pinned runtime's exact `Task cancelled` error after a cancel request ends
+normally. The same error without a cancel request remains a failure. No API
+migration is needed.
+
 ## Unreleased: template error labels
 
 An empty `tokenizer.chat_template` now names `the built-in ChatML fallback

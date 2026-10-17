@@ -119,6 +119,9 @@ See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-t
 and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
 Cancelling a queued native llama.cpp generation before dispatch makes
 `getPerformanceContext()` return `null` until another generation is dispatched.
+After `cancelGeneration()`, LiteRT-LM Web treats only the runtime's exact
+`Task cancelled` error as a normal end. Other runtime failures still surface as
+`LlamaInferenceException`; keep an error handler after stopping.
 
 Custom backend load callbacks use `void Function(double progress)?` in 0.14.
 Existing `Function(double progress)?` overrides still compile; prefer the

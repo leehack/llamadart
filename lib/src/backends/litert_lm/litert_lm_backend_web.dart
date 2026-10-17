@@ -812,10 +812,10 @@ class LiteRtLmBackend
         final _LiteRtLmStreamReadResult result;
         try {
           result = await reader.read().toDart;
-        } catch (_) {
-          // conversation.cancel() ends the run with a cancelled status, which
-          // rejects the pending read with a plain Error.
-          if (_cancelRequested) break;
+        } catch (error) {
+          // @litert-lm/core@0.18.0 forwards the cancelled status message as a
+          // plain Error. Other failures racing cancellation must still surface.
+          if (_cancelRequested && _isCancellationError(error)) break;
           rethrow;
         }
         if (result.done) {
@@ -843,6 +843,16 @@ class LiteRtLmBackend
       } catch (_) {
         // Some stream implementations auto-release after completion/cancel.
       }
+    }
+  }
+
+  bool _isCancellationError(Object error) {
+    try {
+      final message = (error as JSObject).getProperty<JSAny?>('message'.toJS);
+      return message.isA<JSString>() &&
+          (message as JSString).toDart == 'Task cancelled';
+    } catch (_) {
+      return false;
     }
   }
 
