@@ -112,8 +112,10 @@ models before creating a context. Embedding inputs that need one-pass attention
 or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.
 See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning)
 and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
-Cancelling a queued native llama.cpp generation before dispatch makes
-`getPerformanceContext()` return `null` until another generation is dispatched.
+Cancelling a queued native llama.cpp or LiteRT-LM generation before dispatch
+makes `getPerformanceContext()` return `null` until another generation is
+dispatched. Failed llama.cpp dispatches also leave counters unavailable.
+Requests from an unloaded model do not invalidate a reloaded model's counters.
 
 Custom backend load callbacks use `void Function(double progress)?` in 0.14.
 Existing `Function(double progress)?` overrides still compile; prefer the

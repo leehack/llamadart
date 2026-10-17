@@ -712,6 +712,7 @@ class NativeLlamaBackend
       );
       _stalePerformanceContexts.remove(contextHandle);
     } catch (error, stackTrace) {
+      _stalePerformanceContexts.add(contextHandle);
       // The worker never received the request, such as for a parameter that
       // cannot cross an isolate, so this generation fails alone and the
       // backend stays usable.
@@ -1016,6 +1017,8 @@ class NativeLlamaBackend
   Future<BackendPerfContextData?> getPerformanceContext(
     int contextHandle,
   ) async {
+    // Capture unavailability before an RPC can race a later dispatch.
+    if (_stalePerformanceContexts.contains(contextHandle)) return null;
     await _ensureIsolate();
     final rp = _openResponsePort();
     _dispatchRequest(rp, PerformanceContextRequest(contextHandle, rp.sendPort));
@@ -1141,6 +1144,7 @@ class NativeLlamaBackend
     // onExit proves the worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
     _queuedGeneration?.close();
+    _stalePerformanceContexts.clear();
     textToSpeechCancelFlag?.free();
     _activeCancelToken = null;
     _activeGenerationCleanup = null;

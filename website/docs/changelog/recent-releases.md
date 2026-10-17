@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Keep native performance counters accurate after cancellation, failed dispatch and model reload.
+
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
 - Probe native thinking-budget support and report missing speculative draft

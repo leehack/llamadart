@@ -3379,14 +3379,15 @@ class LlamaEngine {
     return Future<ModelFileType?>.value(null);
   }
 
-  /// Returns native llama.cpp perf timings for the active context when available.
+  /// Returns backend perf timings for the active context when available.
   ///
   /// Returns null after a generation that ended before reaching the backend,
   /// such as one cancelled right after it was listened to, instead of the
   /// counters of the request before it. Counters return once a generation,
   /// embedding, next-token scoring or text-to-speech call runs on the context.
   /// A generation that ends that way while another request is running on the
-  /// context leaves that request's counters.
+  /// context leaves that request's counters. Requests from an unloaded model
+  /// cannot change a reloaded context's counter availability.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;

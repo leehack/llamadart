@@ -2,6 +2,14 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: native performance counters
+
+Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
+llama.cpp. Failed llama.cpp dispatches also return `null` until the next
+dispatch. Requests finishing after reload no longer affect the new context's
+counter availability, even if its handle is reused. No API migration is needed;
+continue handling unavailable diagnostics.
+
 ## Unreleased: template error labels
 
 An empty `tokenizer.chat_template` now names `the built-in ChatML fallback
