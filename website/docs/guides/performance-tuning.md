@@ -352,11 +352,12 @@ unavailable for the cancelled request, LiteRT-LM validation failures,
 llama.cpp option-validation failures before its counter reset, and failed
 dispatches. Native llama.cpp resets native counters, saved timings and sampler
 counters before generation, embedding, next-token scoring or text-to-speech
-executes. An embedding batch accumulates all its inputs. Rejected inputs do
-not restore unavailable diagnostics; successful requests restore their own
+executes. An embedding batch accumulates all its inputs. A rejected request
+leaves diagnostics unavailable; successful requests restore their own
 diagnostics. Token counters retain llama.cpp's native minimum of one
-for `evalTokens` and `promptEvalTokens`, even with no work in that category;
-check the corresponding timings too. LiteRT-LM still restores diagnostics on
+for `evalTokens` and `promptEvalTokens`, even with no work in that category.
+Embedding and scoring report `0` ms timings because llama.cpp contexts
+disable native perf timing by default. LiteRT-LM still restores diagnostics on
 generation, and Web behavior is unchanged.
 Requests finishing after unload do not change a reloaded context's counter
 availability, including when the native handle is reused.

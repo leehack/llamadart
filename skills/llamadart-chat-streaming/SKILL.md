@@ -55,8 +55,8 @@ description: >-
   dispatches also invalidate counters. On native llama.cpp, generation,
   embedding (the whole batch), scoring and text-to-speech reset counters
   before execution and restore diagnostics for only that request. Rejected
-  inputs do not restore unavailable diagnostics. Native token counts retain llama.cpp's
-  minimum of one; check timings too. LiteRT-LM recovers counters on generation.
+  requests leave diagnostics unavailable. Native token counts retain llama.cpp's
+  minimum of one; embedding and scoring report `0` ms timings. LiteRT-LM recovers counters on generation.
   Reloaded contexts keep their own counter availability. Treat null as
   unavailable diagnostics for the cancelled or unsent request.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to

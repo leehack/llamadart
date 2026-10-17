@@ -3385,9 +3385,9 @@ class LlamaEngine {
   /// such as one cancelled right after it was listened to, instead of the
   /// counters of the request before it. On native llama.cpp, generation,
   /// embedding (including a whole batch), next-token scoring and text-to-speech
-  /// reset timings before native execution, so available counters describe
-  /// only that request's work. Rejected requests do not restore diagnostics
-  /// made unavailable by cancellation. Native token counters retain
+  /// reset counters before native execution, so available counters describe
+  /// only that request's work (embedding and scoring report `0` ms). A rejected
+  /// request leaves diagnostics unavailable. Native token counters retain
   /// llama.cpp's floors.
   /// Other backends retain their own counter availability and timing semantics.
   /// A generation that ends before dispatch while another request is running

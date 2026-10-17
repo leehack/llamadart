@@ -27,7 +27,7 @@ LiteRT-LM validation failures, llama.cpp option-validation failures before
 the counter reset, and failed dispatches also return `null`. Native llama.cpp
 resets counters before generation, embedding (the entire batch), next-token scoring
 or text-to-speech executes; counters then describe only that request's work.
-Rejected inputs do not restore unavailable diagnostics. LiteRT-LM still recovers counters
+A rejected request leaves diagnostics unavailable. LiteRT-LM still recovers counters
 on generation. Requests finishing after reload no longer affect the new context's
 counter availability, even if its handle is reused. No API migration is needed;
 continue handling unavailable diagnostics.

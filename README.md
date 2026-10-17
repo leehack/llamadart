@@ -128,8 +128,8 @@ makes `getPerformanceContext()` return `null`. LiteRT-LM validation failures,
 early llama.cpp option-validation failures, and failed dispatches also leave
 counters unavailable. Native llama.cpp resets counters before each generation,
 embedding batch, next-token scoring or text-to-speech request executes, so
-available timings describe only that request. Rejected inputs do not restore
-unavailable diagnostics; LiteRT-LM retains its generation-only recovery behavior.
+counters describe only that request (embedding and scoring report `0` ms). A
+rejected request leaves diagnostics unavailable; LiteRT-LM retains its generation-only recovery behavior.
 Requests from an unloaded model do not invalidate a reloaded model's counters.
 
 Custom backend load callbacks use `void Function(double progress)?` in 0.14.
