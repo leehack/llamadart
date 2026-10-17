@@ -38,6 +38,30 @@ void main() {
   );
 
   group('PegChatParser runtime', () {
+    for (final (format, label) in const [
+      (ChatFormat.pegSimple, 'peg-simple'),
+      (ChatFormat.pegNative, 'peg-native'),
+      (ChatFormat.pegConstructed, 'peg-constructed'),
+    ]) {
+      test('parse failure uses the $label error spelling', () {
+        expect(
+          () => ChatTemplateEngine.parse(
+            format.index,
+            '',
+            parser: _buildNativeParser(),
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              'The model output does not match the expected $label format: '
+                  'the parse failed at character 0 of 0.',
+            ),
+          ),
+        );
+      });
+    }
+
     test('parses peg-native output using serialized parser', () {
       final parser = _buildNativeParser();
       final output = 'plan|answer|tool(get_weather:{"city":"Seoul"})';

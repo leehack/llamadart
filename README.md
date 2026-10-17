@@ -35,6 +35,10 @@ preference falls back to CPU with a warning. See the
 
 ## What It Supports
 
+Chat-template errors name the selected source, including the built-in ChatML
+fallback when model template metadata is empty. See
+[template diagnostics](https://llamadart.leehack.com/docs/guides/template-engine-internals).
+
 - GGUF model loading and generation through llama.cpp.
 - `.litertlm` model loading and generation through LiteRT-LM. Automatic tool
   loops require reliable runtime termination reporting and reject the pinned

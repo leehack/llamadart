@@ -21,7 +21,8 @@ ChatFormat? pegParseFormat(ChatFormat format, String? parser) {
   };
 }
 
-// llama.cpp's `common_chat_format_name` spelling, as its errors use.
+// llama.cpp's `common_chat_format_name` spellings, including the historical
+// peg-constructed name removed before b10549, retained for Dart's XML mapper.
 String _formatName(ChatFormat format) => switch (format) {
   ChatFormat.pegSimple => 'peg-simple',
   ChatFormat.pegNative => 'peg-native',
