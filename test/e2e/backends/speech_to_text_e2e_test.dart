@@ -302,7 +302,7 @@ void main() {
               }
               return (
                 utf8.decode(bytes),
-                service.getPerformanceContext(context).promptEvalTokens,
+                service.getPerformanceContext(context)!.promptEvalTokens,
               );
             }
 

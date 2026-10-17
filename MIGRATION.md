@@ -19,6 +19,16 @@ pinned runtime's exact `Task cancelled` error after a cancel request ends
 normally. The same error without a cancel request remains a failure. No API
 migration is needed.
 
+## Unreleased: native performance counters
+
+Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
+llama.cpp, including requests already sent to the worker that never run.
+LiteRT-LM validation failures, llama.cpp option-validation failures before
+the counter reset, and failed dispatches also return `null` until another
+generation starts. Requests finishing after reload no longer affect the new context's
+counter availability, even if its handle is reused. No API migration is needed;
+continue handling unavailable diagnostics.
+
 ## Unreleased: template error labels
 
 An empty `tokenizer.chat_template` now names `the built-in ChatML fallback

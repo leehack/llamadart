@@ -4873,6 +4873,7 @@ class LlamaCppService {
   }) async* {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
+    ctx.performanceAvailable = false;
     _ensureContextUsable(contextHandle, ctx);
     if (_activeTtsContextHandle == contextHandle) {
       throw LlamaStateException(
@@ -4963,6 +4964,7 @@ class LlamaCppService {
       );
       ctx.resetLastPerf();
       llama_perf_context_reset(ctx.pointer);
+      ctx.performanceAvailable = true;
       final existingSampler = _samplers[contextHandle];
       if (existingSampler != null) {
         llama_perf_sampler_reset(existingSampler);
@@ -8918,7 +8920,8 @@ class LlamaCppService {
     );
   }
 
-  /// Returns native llama.cpp perf timings for [contextHandle].
+  /// Returns native llama.cpp perf timings, or null after a generation fails
+  /// before its counters can be reset.
   ({
     double loadMs,
     double promptEvalMs,
@@ -8936,12 +8939,14 @@ class LlamaCppService {
     int? speculativeReplayTokens,
     double? speculativeDraftMs,
     double? speculativeVerifyMs,
-  })
+  })?
   getPerformanceContext(int contextHandle) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
       throw Exception("Invalid context handle");
     }
+
+    if (!ctx.performanceAvailable) return null;
 
     final perf = llama_perf_context(ctx.pointer);
     final sampler = _samplers[contextHandle];
@@ -10770,6 +10775,7 @@ class _LlamaContextWrapper {
   int lastPerfSpeculativeVerifyTokens = 0;
   int lastPerfSpeculativeReplayTokens = 0;
   bool lastPerfSpeculativeRan = false;
+  bool performanceAvailable = true;
   final LlamaCppObjectCalls _calls;
 
   /// Most tokens of a text prompt one decode call takes, or `null` for the

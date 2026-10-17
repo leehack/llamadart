@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:mirrors';
 
 import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/src/backends/backend.dart';
@@ -1673,6 +1674,305 @@ void main() {
       worker.close();
     }
   });
+
+  for (final nativeChat in [false, true]) {
+    test(
+      'worker queued cancellation clears previous metrics (chat: $nativeChat)',
+      () async {
+        final service = _CounterRunService();
+        final backend = LiteRtLmBackend(
+          initialSendPort: await _startWorkerInCurrentIsolate(service),
+        );
+        addTearDown(() async {
+          service.tokenizeGate?.complete();
+          service.finishAll();
+          await backend.dispose();
+        });
+        final first = _CollectedGeneration(
+          backend.generate(1, 'first', const GenerationParams()),
+        );
+        (await service.started(0)).finish();
+        await first.done;
+        expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+        service.tokenizeGate = Completer<void>();
+        final tokenized = backend.tokenize(1, 'busy');
+        await service.tokenizeStarted.future;
+        final next = _CollectedGeneration(
+          nativeChat
+              ? backend.generateChat(1, [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'next',
+                  ),
+                ], const GenerationParams())
+              : backend.generate(1, 'next', const GenerationParams()),
+        );
+        await _settle();
+        backend.cancelGeneration();
+        await _settle();
+        service.tokenizeGate!.complete();
+        service.tokenizeGate = null;
+        await tokenized;
+        await next.done;
+        expect(service.runs, hasLength(1));
+        expect(await backend.getPerformanceContext(1), isNull);
+      },
+    );
+  }
+
+  test('failed LiteRT send invalidates previous counters', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const [],
+      detokenizeResponse: '',
+      generationChunks: const [],
+      performanceContextResponse: LiteRtLmPerformanceContextResponse(
+        loadMs: 1,
+        promptEvalMs: 1,
+        evalMs: 1,
+        sampleMs: 0,
+        promptEvalTokens: 1,
+        evalTokens: 7,
+        sampleCount: 7,
+        reusedGraphs: 0,
+      ),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+    addTearDown(() async {
+      await backend.dispose();
+      worker.close();
+    });
+    expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+    final unsendable = ReceivePort();
+    addTearDown(unsendable.close);
+    await expectLater(
+      backend.generateChat(
+        1,
+        [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'next')],
+        const GenerationParams(),
+        chatTemplateKwargs: {'port': unsendable},
+      ),
+      emitsError(isA<ArgumentError>()),
+    );
+    expect(await backend.getPerformanceContext(1), isNull);
+    expect(worker.requests.whereType<LiteRtLmGenerateChatRequest>(), isEmpty);
+    await backend
+        .generate(1, 'recovery', const GenerationParams())
+        .drain<void>();
+    expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+  });
+
+  test('worker teardown clears stale marks before handle reuse', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const [],
+      detokenizeResponse: '',
+      generationChunks: const [],
+      performanceContextResponse: LiteRtLmPerformanceContextResponse(
+        loadMs: 1,
+        promptEvalMs: 1,
+        evalMs: 1,
+        sampleMs: 0,
+        promptEvalTokens: 1,
+        evalTokens: 7,
+        sampleCount: 7,
+        reusedGraphs: 0,
+      ),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+    addTearDown(() async {
+      await backend.dispose();
+      worker.close();
+    });
+    final unsendable = ReceivePort();
+    addTearDown(unsendable.close);
+    await expectLater(
+      backend.generateChat(
+        1,
+        [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'next')],
+        const GenerationParams(),
+        chatTemplateKwargs: {'port': unsendable},
+      ),
+      emitsError(isA<ArgumentError>()),
+    );
+    expect(await backend.getPerformanceContext(1), isNull);
+    final mirror = reflect(backend);
+    final owner = mirror.type.owner as LibraryMirror;
+    mirror.invoke(MirrorSystem.getSymbol('_killWorker', owner), []);
+    mirror.setField(
+      MirrorSystem.getSymbol('_sendPort', owner),
+      worker.sendPort,
+    );
+    expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+  });
+
+  test(
+    'rejected LiteRT overlap preserves the running request counters',
+    () async {
+      final service = _CounterRunService();
+      final backend = LiteRtLmBackend(
+        initialSendPort: await _startWorkerInCurrentIsolate(service),
+      );
+      addTearDown(() async {
+        final disposed = backend.dispose();
+        service.finishAll();
+        await disposed;
+      });
+      final active = _CollectedGeneration(
+        backend.generate(1, 'active', const GenerationParams()),
+      );
+      final run = await service.started(0);
+      await active.firstChunk;
+      await expectLater(
+        backend.generate(1, 'overlap', const GenerationParams()),
+        emitsInOrder([emitsError(isA<LlamaStateException>()), emitsDone]),
+      );
+      run.finish();
+      await active.done;
+      expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+    },
+  );
+
+  test(
+    'LiteRT cancellation invalidates a perf RPC already waiting on the worker',
+    () async {
+      final service = _CounterRunService();
+      final backend = LiteRtLmBackend(
+        initialSendPort: await _startWorkerInCurrentIsolate(service),
+      );
+      addTearDown(() async {
+        final disposed = backend.dispose();
+        service.finishAll();
+        await disposed;
+      });
+      final active = _CollectedGeneration(
+        backend.generate(1, 'active', const GenerationParams()),
+      );
+      final run = await service.started(0);
+      await active.firstChunk;
+      final lookup = backend.getPerformanceContext(1);
+      await _settle();
+      backend.cancelGeneration();
+      final abandoned = _CollectedGeneration(
+        backend.generate(1, 'abandoned', const GenerationParams()),
+      );
+      await _settle();
+      backend.cancelGeneration();
+      await abandoned.done;
+      run.finish();
+      await active.done;
+      expect(await lookup, isNull);
+    },
+  );
+
+  test('stale LiteRT lookup cannot revive after a later dispatch', () async {
+    final service = _CounterRunService();
+    final workerPort = await _startWorkerInCurrentIsolate(service);
+    final proxy = ReceivePort();
+    final held = <LiteRtLmPerformanceContextRequest>[];
+    proxy.listen((message) {
+      if (message is LiteRtLmPerformanceContextRequest) {
+        held.add(message);
+      } else {
+        workerPort.send(message);
+      }
+    });
+    final backend = LiteRtLmBackend(initialSendPort: proxy.sendPort);
+    addTearDown(() async {
+      final disposed = backend.dispose();
+      service.finishAll();
+      await disposed;
+      proxy.close();
+    });
+    final active = _CollectedGeneration(
+      backend.generate(1, 'active', const GenerationParams()),
+    );
+    final run = await service.started(0);
+    await active.firstChunk;
+    backend.cancelGeneration();
+    final abandoned = _CollectedGeneration(
+      backend.generate(1, 'abandoned', const GenerationParams()),
+    );
+    await _settle();
+    backend.cancelGeneration();
+    await abandoned.done;
+    run.finish();
+    await active.done;
+    final lookup = backend.getPerformanceContext(1);
+    await _settle();
+    final next = _CollectedGeneration(
+      backend.generate(1, 'next', const GenerationParams()),
+    );
+    final nextRun = await service.started(1);
+    nextRun.finish();
+    await next.done;
+    for (final request in held) {
+      workerPort.send(request);
+    }
+    expect(await lookup, isNull);
+    expect(held, isEmpty, reason: 'stale metrics need no worker RPC');
+  });
+
+  for (final nativeChat in [false, true]) {
+    for (final subscriptionCancel in [false, true]) {
+      test('unsent LiteRT cancellation invalidates only its context counters '
+          '(chat: $nativeChat, subscription: $subscriptionCancel)', () async {
+        final service = _CounterRunService();
+        final backend = LiteRtLmBackend(
+          initialSendPort: await _startWorkerInCurrentIsolate(service),
+        );
+        addTearDown(() async {
+          final disposed = backend.dispose();
+          service.finishAll();
+          await disposed;
+        });
+        const params = GenerationParams();
+        Stream<List<int>> start(String prompt) => nativeChat
+            ? backend.generateChat(1, [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: prompt,
+                ),
+              ], params)
+            : backend.generate(1, prompt, params);
+        final first = _CollectedGeneration(start('first'));
+        final run = await service.started(0);
+        await first.firstChunk;
+        backend.cancelGeneration();
+        final queued = _CollectedGeneration(start('queued'));
+        await _settle();
+        if (subscriptionCancel) {
+          await queued.subscription.cancel();
+        } else {
+          backend.cancelGeneration();
+          await queued.done;
+        }
+        run.finish();
+        await first.done;
+        expect((await backend.getPerformanceContext(2))?.evalTokens, 7);
+        expect(await backend.getPerformanceContext(1), isNull);
+        final next = _CollectedGeneration(start('next'));
+        final nextRun = await service.started(1);
+        await next.firstChunk;
+        nextRun.finish();
+        await next.done;
+        expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+        // Teardown must also forget a stale mark on a recycled handle.
+        backend.cancelGeneration();
+        final active = _CollectedGeneration(start('active'));
+        final activeRun = await service.started(2);
+        await active.firstChunk;
+        backend.cancelGeneration();
+        final abandoned = _CollectedGeneration(start('abandoned'));
+        await _settle();
+        backend.cancelGeneration();
+        await abandoned.done;
+        activeRun.finish();
+        await active.done;
+        await backend.contextFree(1);
+        expect((await backend.getPerformanceContext(1))?.evalTokens, 7);
+      });
+    }
+  }
+
   group('a generation started after a cancel', () {
     const params = GenerationParams(streamBatchTokenThreshold: 1);
     late _CancellableRunService service;
@@ -2251,6 +2551,52 @@ void main() {
     await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
   });
 
+  test(
+    'embedding startup timeout before request construction stays typed',
+    () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const [],
+        detokenizeResponse: '',
+        generationChunks: const [],
+      );
+      final backend = LiteRtLmBackend(
+        initialSendPort: worker.sendPort,
+        workerEntryPoint: _silentWorker,
+      );
+      final mirror = reflect(backend);
+      final owner = mirror.type.owner as LibraryMirror;
+      final portField = MirrorSystem.getSymbol('_sendPort', owner);
+      addTearDown(() async {
+        mirror.setField(portField, worker.sendPort);
+        await backend.dispose();
+        worker.close();
+      });
+      await backend.modelLoad(
+        'fake.litertlm',
+        const ModelParams(liteRtLmEmbeddingEngine: true),
+      );
+      // Normal lifecycle paths clear embedding mode with the port. Simulate
+      // future startup/recovery wiring without adding a production test hook.
+      mirror.setField(portField, null);
+      await expectLater(
+        backend.embed(1, 'hello'),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'startup diagnostic',
+            contains('startup timed out'),
+          ),
+        ),
+      );
+      expect(worker.requests.whereType<LiteRtLmEmbedRequest>(), isEmpty);
+      expect(
+        worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+        isEmpty,
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 15)),
+  );
+
   test('a worker startup timeout releases the generation slot', () async {
     final backend = LiteRtLmBackend(workerEntryPoint: _silentWorker);
     const params = GenerationParams();
@@ -2728,4 +3074,50 @@ class _CancellableRunService extends LiteRtLmService {
 
   @override
   void freeContext(int contextHandle) {}
+}
+
+class _CounterRunService extends _CancellableRunService {
+  BackendPerfContextData? metrics;
+  Completer<void>? tokenizeGate;
+  final tokenizeStarted = Completer<void>();
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text,
+    bool addSpecial,
+  ) async {
+    tokenizeStarted.complete();
+    await tokenizeGate?.future;
+    return const [1];
+  }
+
+  @override
+  Stream<List<int>> _run(String prompt) async* {
+    metrics = null;
+    try {
+      yield* super._run(prompt);
+    } finally {
+      metrics = _completedMetrics;
+    }
+  }
+
+  @override
+  void resetPerformanceMetrics() {
+    metrics = null;
+  }
+
+  @override
+  BackendPerfContextData? getPerformanceContext(int contextHandle) => metrics;
+
+  static const _completedMetrics = BackendPerfContextData(
+    loadMs: 1,
+    promptEvalMs: 1,
+    evalMs: 1,
+    sampleMs: 0,
+    promptEvalTokens: 1,
+    evalTokens: 7,
+    sampleCount: 7,
+    reusedGraphs: 0,
+  );
 }

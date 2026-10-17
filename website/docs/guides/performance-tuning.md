@@ -345,7 +345,12 @@ Benchmark and parity scripts for a repository checkout, and measured
 llama.cpp and LiteRT-LM results, are in
 [Backend benchmarks](./backend-benchmarks#reproducing).
 
-On native llama.cpp, cancelling a queued generation before it starts makes
+On native llama.cpp and LiteRT-LM, cancelling a queued generation before it starts makes
 `getPerformanceContext()` return `null` for that context until another
-generation is dispatched. Previous request counters are unavailable for the
-cancelled request.
+generation starts. This includes LiteRT-LM requests already sent to the
+worker that are cancelled before they run. Previous request counters are
+unavailable for the cancelled request, LiteRT-LM validation failures,
+llama.cpp option-validation failures before its counter reset, and failed
+dispatches.
+Requests finishing after unload do not change a reloaded context's counter
+availability, including when the native handle is reused.
