@@ -129,7 +129,8 @@ early llama.cpp option-validation failures, and failed dispatches also leave
 counters unavailable. Native llama.cpp resets counters before each generation,
 embedding batch, next-token scoring or text-to-speech request executes, so
 counters describe only that request (embedding and scoring report `0` ms). A
-rejected request leaves diagnostics unavailable; LiteRT-LM retains its generation-only recovery behavior.
+request the native worker rejects leaves diagnostics unavailable (argument
+checks that fail before dispatch leave them unchanged); LiteRT-LM retains its generation-only recovery behavior.
 Requests from an unloaded model do not invalidate a reloaded model's counters.
 
 Custom backend load callbacks use `void Function(double progress)?` in 0.14.

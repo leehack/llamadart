@@ -3386,8 +3386,9 @@ class LlamaEngine {
   /// counters of the request before it. On native llama.cpp, generation,
   /// embedding (including a whole batch), next-token scoring and text-to-speech
   /// reset counters before native execution, so available counters describe
-  /// only that request's work (embedding and scoring report `0` ms). A rejected
-  /// request leaves diagnostics unavailable. Native token counters retain
+  /// only that request's work (embedding and scoring report `0` ms). A request the
+  /// native worker rejects leaves diagnostics unavailable; argument checks that
+  /// fail before dispatch leave them unchanged. Native token counters retain
   /// llama.cpp's floors.
   /// Other backends retain their own counter availability and timing semantics.
   /// A generation that ends before dispatch while another request is running
