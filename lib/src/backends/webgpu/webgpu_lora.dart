@@ -5,6 +5,7 @@ import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
+import 'webgpu_errors.dart';
 import 'webgpu_url.dart';
 
 /// LoRA API version that [WebGpuLoraAdapters] speaks.
@@ -27,12 +28,18 @@ class WebGpuLoraAdapters {
 
   /// Applies the adapter at [path] at [scale], loading it on first use.
   ///
-  /// Throws [LlamaUnsupportedException] for an aLoRA adapter,
+  /// Throws [LlamaArgumentException] for a scale outside finite float32,
+  /// [LlamaUnsupportedException] for an aLoRA adapter,
   /// [LlamaModelException] when the adapter cannot be fetched or loaded,
   /// including one made for another base model, [LlamaStateException] when
   /// the bridge refuses the call for its state, and [LlamaContextException]
   /// when it rejects applying the adapter.
   Future<void> set(LlamaWebGpuBridge? bridge, String path, double scale) async {
+    webGpuValidateArguments(() {
+      if (!scale.isFinite || scale.abs() > 3.4028234663852886e38) {
+        throw ArgumentError.value(scale, 'scale', 'must fit a finite float32');
+      }
+    });
     final active = await _requireSupport(bridge);
     path = webGpuDocumentUrl(path);
     final pending = _handles[path];
@@ -174,6 +181,11 @@ class WebGpuLoraAdapters {
     String? path,
     LlamaException Function(String message) fallback,
   ) {
+    final classified = webGpuBridgeRequestError(
+      error,
+      sourceUrls: <String>[?path],
+    );
+    if (classified != null) return classified;
     final message = webGpuBridgeErrorText(error, sourceUrls: <String>[?path]);
     if (message.contains('its model was unloaded or replaced')) {
       if (path != null) _handles.remove(path);

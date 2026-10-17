@@ -13,6 +13,7 @@ For canonical full release notes, use:
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
 - Probe native thinking-budget support and report missing speculative draft
   models as typed argument errors.
+- **Behavior change:** Report WebGPU argument rejections as typed argument errors instead of inference failures.
 - Add native CPU LiteRT-LM text, image and audio embeddings with explicit engine selection, per-request timeouts and whole-call overflow errors.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option.
