@@ -9,10 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Make LiteRT-LM embedding batches responsive to cancellation, queue concurrent calls, and reject unsupported tuning options.
+- Correct chat-template error labels for empty model templates and document historical PEG format names.
+- Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
 - Add native CPU LiteRT-LM text, image and audio embeddings with explicit engine selection and whole-call overflow errors.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
-  `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
+  `liteRtLmEmbeddingEngine` load option.
 
 ## 0.14.0
 

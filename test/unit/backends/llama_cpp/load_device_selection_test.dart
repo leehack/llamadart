@@ -166,6 +166,24 @@ void main() {
     });
   });
 
+  group('selectsNoGpuDevice', () {
+    test('single-device mode with a negative mainGpu selects CPU', () {
+      for (final mainGpu in [-1, -2]) {
+        expect(selectsNoGpuDevice(splitMode: _none, mainGpu: mainGpu), isTrue);
+      }
+    });
+
+    test('single-device mode with mainGpu zero retains GPU selection', () {
+      expect(selectsNoGpuDevice(splitMode: _none, mainGpu: 0), isFalse);
+    });
+
+    test('layer, row and tensor modes do not prune a negative mainGpu', () {
+      for (final splitMode in [_layer, 2, _tensor]) {
+        expect(selectsNoGpuDevice(splitMode: splitMode, mainGpu: -1), isFalse);
+      }
+    });
+  });
+
   group('vulkanFactsOf', () {
     final rtx = _device('Vulkan0', description: 'RTX 4090');
 

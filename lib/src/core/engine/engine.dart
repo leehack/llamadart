@@ -1558,15 +1558,16 @@ class LlamaEngine {
   ///   optionally with `name`, `description` and `strict` beside `schema`
   /// - `{'type': 'text'}`, which requests unconstrained text
   /// Any other type or key throws [LlamaUnsupportedException] before
-  /// generation on every backend. A schema the grammar converter cannot
-  /// represent, such as an untyped `{'description': ...}` property, a
-  /// non-local `$ref` or one nested too deeply for the stack, throws
-  /// [LlamaUnsupportedException]; one holding a cycle or another non-JSON
-  /// value that stops conversion throws [LlamaArgumentException]. The grammar
-  /// covers a subset of JSON Schema; other keywords, such as `format` or
-  /// numeric bounds, are not enforced. On grammar-capable backends, a tool or
-  /// schema grammar that llama.cpp would refuse to load throws
-  /// [LlamaUnsupportedException] before generation.
+  /// generation on every backend. Raw schemas get the same validation as
+  /// [LlamaStructuredOutput] before generation: supported assertions such as
+  /// `pattern`, the documented `format` values and integer bounds are
+  /// enforced, and an annotation-only property accepts any JSON value. An
+  /// unsupported keyword such as `multipleOf`, an unresolved or external
+  /// `$ref`, or nesting deeper than 128 containers throws
+  /// [LlamaUnsupportedException] naming the schema path; a cycle or another
+  /// non-JSON value throws [LlamaArgumentException]. On grammar-capable
+  /// backends, a tool or schema grammar that llama.cpp would refuse to load
+  /// throws [LlamaUnsupportedException] before generation.
   /// Use [LlamaStructuredOutput.responseFormat] or [createStructuredJson] for a
   /// typed helper that also validates and decodes the final JSON output.
   ///

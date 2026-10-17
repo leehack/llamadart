@@ -35,6 +35,10 @@ preference falls back to CPU with a warning. See the
 
 ## What It Supports
 
+Chat-template errors name the selected source, including the built-in ChatML
+fallback when model template metadata is empty. See
+[template diagnostics](https://llamadart.leehack.com/docs/guides/template-engine-internals).
+
 - GGUF model loading and generation through llama.cpp.
 - `.litertlm` model loading and generation through LiteRT-LM. Automatic tool
   loops require reliable runtime termination reporting and reject the pinned
@@ -373,6 +377,9 @@ controls such as context size, GPU layers, backend preference, LiteRT-LM backend
 selection, and WebGPU mem64 hints. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
+
+Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
+and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.
 
 Current default runtime pins:
 
