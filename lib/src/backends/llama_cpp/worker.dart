@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:isolate';
 
 import '../../core/exceptions.dart';
@@ -381,6 +382,27 @@ void runLlamaWorkerForTesting(
           case DecisionHeadFreeRequest():
             service.freeDecisionHead(message.headHandle);
             message.sendPort.send(DoneResponse());
+
+          case EmbeddingCapabilitiesRequest():
+            message.sendPort.send(
+              EmbeddingCapabilitiesResponse(
+                service.getEmbeddingCapabilities(message.contextHandle),
+              ),
+            );
+
+          case EmbedContentBatchRequest():
+            message.sendPort.send(
+              EmbedBatchResponse(
+                service.embedContentBatch(
+                  message.contextHandle,
+                  message.inputs,
+                  normalize: message.normalize,
+                  cancelToken: Pointer<Int8>.fromAddress(
+                    message.cancelTokenAddress,
+                  ),
+                ),
+              ),
+            );
 
           case EmbedRequest():
             final embedding = service.embed(

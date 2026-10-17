@@ -18,9 +18,13 @@ description: >-
   need raw vectors, and then compute full cosine similarity.
 - `LlamaEmbeddingInput` and `embedContent` / `embedContentBatch` accept ordered
   text/image/audio content parts. Probe `await engine.embeddingCapabilities`
-  after loading: packaged llama.cpp backends currently report text only and
-  LiteRT-LM reports none. Every packaged backend rejects image/audio embeddings
-  with `LlamaUnsupportedException`; do not advertise runtime media support.
+  after loading: native llama.cpp v0.7.0-1 supports EmbeddingGemma-2 image/audio
+  embeddings with its matching projector (qualified macOS CPU/Metal), and
+  reports text only without one. Web llama.cpp reports text only; LiteRT-LM
+  reports none. Native expanded inputs must fit one context/batch/micro-batch;
+  no chunking or implicit task prefixes. M-RoPE projectors and image URLs are
+  unsupported. Use exactly one media source per part: encoded bytes/local file
+  or mono 16 kHz audio PCM. Await cancellation before reuse.
   Adjacent text parts form one verbatim-concatenated text segment on every
   backend, including within mixed inputs. Add no separators or task prefixes.
   The modality enum may gain values; include a default in switches.

@@ -94,9 +94,10 @@ at generation start when it is missing.
 
 For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
-`await engine.embeddingCapabilities` after loading. Image/audio embeddings
-currently throw `LlamaUnsupportedException` on every packaged backend;
-llama.cpp text embeddings retain their existing behavior. Adjacent text parts
+`await engine.embeddingCapabilities` after loading. Native llama.cpp supports image/audio embeddings with EmbeddingGemma-2 and
+its projector on native v0.7.0-1; expanded inputs must fit one micro-batch.
+Web llama.cpp and LiteRT-LM media embeddings remain unavailable.
+llama.cpp string embeddings retain their existing behavior. Adjacent text parts
 concatenate verbatim on every backend. `ModelParams.liteRtLmEmbeddingEngine`
 is LiteRT-LM-only and currently rejected; GGUF loaders also reject true.
 See the

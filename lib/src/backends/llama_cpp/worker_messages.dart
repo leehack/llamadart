@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../backend.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/next_token_scores.dart';
@@ -132,6 +133,84 @@ class EmbedBatchRequest extends WorkerRequest {
     this.normalize,
     super.sendPort,
   );
+}
+
+/// Probe the loaded embedding model and its attached projector.
+class EmbeddingCapabilitiesRequest extends WorkerRequest {
+  /// Context to probe; unknown contexts report no capabilities.
+  final int contextHandle;
+
+  /// Creates a probe request.
+  EmbeddingCapabilitiesRequest(this.contextHandle, super.sendPort);
+}
+
+/// Ordered content inputs with owned worker media snapshots.
+class EmbedContentBatchRequest extends WorkerRequest {
+  /// Context to embed with.
+  final int contextHandle;
+
+  /// Inputs with adjacent text merged verbatim and copied media buffers.
+  final List<LlamaEmbeddingInput> inputs;
+
+  /// Whether to normalize each pooled output.
+  final bool normalize;
+
+  /// Shared flag, retained until the worker settles.
+  final int cancelTokenAddress;
+
+  /// Creates an owned request without transferring caller buffers.
+  EmbedContentBatchRequest(
+    this.contextHandle,
+    List<LlamaEmbeddingInput> inputs,
+    this.normalize,
+    this.cancelTokenAddress,
+    super.sendPort,
+  ) : inputs = [for (final input in inputs) _copyEmbeddingInput(input)];
+}
+
+LlamaEmbeddingInput _copyEmbeddingInput(LlamaEmbeddingInput input) {
+  final parts = <LlamaContentPart>[];
+  for (final part in input.parts) {
+    if (part is LlamaTextContent) {
+      if (parts.isNotEmpty && parts.last is LlamaTextContent) {
+        parts[parts.length - 1] = LlamaTextContent(
+          (parts.last as LlamaTextContent).text + part.text,
+        );
+      } else {
+        parts.add(part);
+      }
+    } else if (part is LlamaImageContent) {
+      parts.add(
+        LlamaImageContent(
+          bytes: part.bytes == null ? null : Uint8List.fromList(part.bytes!),
+          path: part.path,
+          url: part.url,
+          width: part.width,
+          height: part.height,
+        ),
+      );
+    } else if (part is LlamaAudioContent) {
+      parts.add(
+        LlamaAudioContent(
+          bytes: part.bytes == null ? null : Uint8List.fromList(part.bytes!),
+          samples: part.samples == null
+              ? null
+              : Float32List.fromList(part.samples!),
+          path: part.path,
+        ),
+      );
+    }
+  }
+  return LlamaEmbeddingInput(parts);
+}
+
+/// Loaded-context embedding support, without model sources or media.
+class EmbeddingCapabilitiesResponse {
+  /// Qualified modalities.
+  final LlamaEmbeddingCapabilities capabilities;
+
+  /// Creates a probe response.
+  EmbeddingCapabilitiesResponse(this.capabilities);
 }
 
 /// Request to score the token that would follow a prompt.

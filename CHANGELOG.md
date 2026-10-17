@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Embed ordered images, audio and text with native llama.cpp embedding models and compatible projectors.
 - Update the native llama.cpp runtime to v0.7.0-1.
 - Correct chat-template error labels for empty model templates and document historical PEG format names.
 - Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
@@ -7,7 +8,7 @@
   models as typed argument errors.
 - **Behavior change:** Report WebGPU argument rejections as typed argument errors instead of inference failures.
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
-  `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
+  `liteRtLmEmbeddingEngine` load option; probe support per loaded model.
 
 ## 0.14.0
 

@@ -59,11 +59,11 @@ Future<List<double>> embedContentExample(LlamaEngine engine) async {
 ```
 
 After loading a model and any projector, `await engine.embeddingCapabilities`
-reports `text`, `image` and `audio`. Packaged llama.cpp backends currently
-report text only (with existing model restrictions); LiteRT-LM reports none.
-**Image/audio content embedding calls currently throw
-`LlamaUnsupportedException` on all packaged backends.** Chat vision/audio
-support does not imply embedding support. Custom backends may implement the
+reports `text`, `image` and `audio`. Native llama.cpp probes the loaded pooling/attention mode, mixed-batch ABI and
+projector encoders. EmbeddingGemma-2 with its projector supports images/audio
+on native v0.7.0-1 (qualified on macOS CPU/Metal); without a projector it reports
+text only. Web llama.cpp reports text only; LiteRT-LM reports none.
+Chat vision/audio support does not imply embedding support. Custom backends may implement the
 optional `BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart`
 and positively probe each loaded model/runtime modality.
 
@@ -133,13 +133,55 @@ remain separate.
 
 ## EmbeddingGemma-2 on native
 
-Native v0.7.0 loads the official EmbeddingGemma-2 BF16 GGUF through the existing
+Native v0.7.0-1 loads the official EmbeddingGemma-2 BF16 GGUF through the existing
 `embed` and `embedBatch` APIs. Its projected text output has 768 components;
 its 512-wide hidden representation is not the returned vector size. The
 local model-backed test covers normalization, distinct inputs, sequential/batch
-parity and reuse on macOS CPU and Metal. Image/audio embedding inputs still
-require a public API tracked in
-[#1072](https://github.com/leehack/llamadart/issues/1072).
+parity and reuse on macOS CPU and Metal. Load the matching projector through
+`LlamaModel.projector` to use `embedContent` with ordered images/audio/text.
+Media-only inputs receive no implicit task prefix. Each input is decoded as
+one complete mixed micro-batch; its expanded text/media rows must fit the
+actual context, batch and micro-batch capacities. Oversized input throws
+`LlamaInferenceException` before any input in the batch is encoded.
+M-RoPE projectors and image URLs throw `LlamaUnsupportedException`. Use exactly
+one source per media part: encoded bytes/local file, or mono 16 kHz audio PCM.
+Cancellation settles the worker before releasing its media buffers; await the
+embedding future before reuse or unload. Qualification details are in
+[the native qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_native.md).
+
+For example, after downloading the matching model/projector and local media:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> embedNativeMedia() async {
+  final engine = await LlamaEngine.load(
+    LlamaModel(
+      ModelSource.path('embeddinggemma-2-BF16.gguf'),
+      projector: ModelSource.path('mmproj-embeddinggemma-2-BF16.gguf'),
+    ),
+    params: const ModelParams(
+      contextSize: 2048,
+      batchSize: 2048,
+      microBatchSize: 2048,
+    ),
+  );
+  try {
+    final capabilities = await engine.embeddingCapabilities;
+    if (!capabilities.image || !capabilities.audio) {
+      throw LlamaUnsupportedException('This model/runtime cannot embed media.');
+    }
+    final vector = await engine.embedContent(LlamaEmbeddingInput([
+      const LlamaTextContent('A document with an image and audio.'),
+      const LlamaImageContent(path: 'image.png'),
+      const LlamaAudioContent(path: 'audio.wav'),
+    ]));
+    print(vector.length); // 768 for EmbeddingGemma-2.
+  } finally {
+    await engine.dispose();
+  }
+}
+```
 
 For document embeddings, pass the model's task prefix as part of the text:
 
