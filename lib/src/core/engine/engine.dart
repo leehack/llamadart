@@ -2845,7 +2845,11 @@ class LlamaEngine {
   /// Returns the optional [GenerationParams] controls that the loaded model's
   /// runtime applies.
   ///
-  /// Native llama.cpp applies all of them. LiteRT-LM applies none but
+  /// Native llama.cpp reports thinking-budget control only when its runtime
+  /// exports the reasoning-budget API. Its MTP strategy supports an external
+  /// draft model; in-file MTP requires a model with an MTP head and
+  /// [ModelParams.loadMtp]. Other draft strategies require a draft model.
+  /// LiteRT-LM applies none but
   /// speculative decoding, which native LiteRT-LM runs for
   /// [SpeculativeDecodingStrategy.backendDefault] and
   /// [SpeculativeDecodingStrategy.mtp] on a bundle with a speculative

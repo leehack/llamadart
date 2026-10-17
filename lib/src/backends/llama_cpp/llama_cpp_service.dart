@@ -3298,6 +3298,48 @@ class LlamaCppService {
     _logLevelProbeOutcome = failures.describe();
   }
 
+  /// Reports generation controls for a loaded model and this runtime bundle.
+  BackendGenerationCapabilities generationCapabilities(int modelHandle) {
+    final model = _models[modelHandle];
+    if (model == null) {
+      return const BackendGenerationCapabilities(
+        presencePenalty: false,
+        minP: false,
+        thinkingBudget: false,
+      );
+    }
+    _ensureModelUsable(model);
+    return BackendGenerationCapabilities(
+      penalty: true,
+      presencePenalty: true,
+      minP: true,
+      thinkingBudget: _supportsThinkingBudget(),
+      streamBatching: true,
+      speculativeDecodingStrategies: const <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.backendDefault,
+        SpeculativeDecodingStrategy.mtp,
+        SpeculativeDecodingStrategy.ngramSimple,
+        SpeculativeDecodingStrategy.draftSimple,
+        SpeculativeDecodingStrategy.draftEagle3,
+        SpeculativeDecodingStrategy.draftDflash,
+        SpeculativeDecodingStrategy.ngramMapK,
+        SpeculativeDecodingStrategy.ngramMapK4v,
+        SpeculativeDecodingStrategy.ngramMod,
+        SpeculativeDecodingStrategy.ngramCache,
+        SpeculativeDecodingStrategy.draftDspark,
+      },
+    );
+  }
+
+  bool _supportsThinkingBudget() {
+    try {
+      _resolveReasoningBudgetApi();
+      return true;
+    } on LlamaUnsupportedException {
+      return false;
+    }
+  }
+
   _ReasoningBudgetApi _resolveReasoningBudgetApi({
     List<String>? candidates,
     DynamicLibrary Function(String)? open,
@@ -4464,7 +4506,7 @@ class LlamaCppService {
           strategy == SpeculativeDecodingStrategy.draftDspark,
     );
     if (requiresExternalDraft && draftModelPath == null) {
-      throw ArgumentError(
+      throw LlamaArgumentException(
         'llama.cpp ${uniqueStrategies.map((s) => _llamaCppSpeculativeTypeNames[s]).join(', ')} '
         'requires SpeculativeDecodingConfig.draftModel.',
       );

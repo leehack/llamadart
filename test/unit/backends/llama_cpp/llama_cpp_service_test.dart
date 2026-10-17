@@ -21,6 +21,7 @@ import 'package:llamadart/src/backends/llama_cpp/vulkan_device_probe.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/compute_device.dart';
@@ -103,6 +104,134 @@ void main() {
       ],
     );
     expect(stops, ['cedar17', '<tool_call>suffix']);
+  });
+
+  group('loaded-model generation capabilities', () {
+    late LlamaCppService service;
+    late int handle;
+    setUp(() {
+      final temp = Directory.systemTemp.createTempSync('generation-caps-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      final file = writeSyntheticLlamaGguf(path.join(temp.path, 'model.gguf'));
+      handle = service.loadModel(file.path, const ModelParams(gpuLayers: 0));
+    });
+
+    test('unknown and freed handles report no generation controls', () {
+      expect(service.generationCapabilities(-1).thinkingBudget, isFalse);
+      expect(service.generationCapabilities(-1).penalty, isFalse);
+      expect(
+        service.generationCapabilities(-1).speculativeDecodingStrategies,
+        isEmpty,
+      );
+      service.freeModel(handle);
+      expect(service.generationCapabilities(handle).presencePenalty, isFalse);
+    });
+
+    for (final present in [false, true]) {
+      test(
+        'reasoning-budget symbol present=$present controls the snapshot',
+        () {
+          final candidates = [
+            present
+                ? path.absolute(
+                    '.dart_tool',
+                    'lib',
+                    Platform.isWindows
+                        ? 'llamadart.dll'
+                        : Platform.isMacOS
+                        ? 'libllamadart.dylib'
+                        : 'libllamadart.so',
+                  )
+                : 'no-export',
+          ];
+          Object? resolve() => _invokePrivateForTesting<Object?>(
+            service,
+            '_resolveReasoningBudgetApi',
+            const [],
+            {
+              #candidates: candidates,
+              if (!present)
+                #open: (String _) => DynamicLibrary.open(
+                  Platform.isWindows
+                      ? 'kernel32.dll'
+                      : Platform.isMacOS
+                      ? '/usr/lib/libSystem.B.dylib'
+                      : 'libc.so.6',
+                ),
+            },
+          );
+          if (present) {
+            expect(resolve(), isNotNull);
+          } else {
+            expect(resolve, throwsA(isA<LlamaUnsupportedException>()));
+          }
+          final caps = service.generationCapabilities(handle);
+          expect(caps.thinkingBudget, present);
+          expect(caps.penalty, isTrue);
+          expect(caps.presencePenalty, isTrue);
+          expect(caps.minP, isTrue);
+          expect(caps.streamBatching, isTrue);
+          // MTP can use an external draft even when this model has no MTP head.
+          expect(
+            caps.speculativeDecodingStrategies,
+            SpeculativeDecodingStrategy.values.toSet(),
+          );
+          expect(
+            service.generationCapabilities(handle).thinkingBudget,
+            present,
+          );
+          if (!present) {
+            expect(resolve, throwsA(isA<LlamaUnsupportedException>()));
+          }
+        },
+      );
+    }
+
+    test(
+      'missing draft stays typed through worker, backend and engine',
+      () async {
+        final temp = Directory.systemTemp.createTempSync('draft-argument-');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final file = writeSyntheticLlamaGguf(
+          path.join(temp.path, 'model.gguf'),
+        );
+        final engine = LlamaEngine(NativeLlamaBackend());
+        addTearDown(engine.dispose);
+        await engine.loadModel(
+          file.path,
+          modelParams: const ModelParams(gpuLayers: 0, contextSize: 512),
+        );
+        for (final strategy in [
+          SpeculativeDecodingStrategy.draftSimple,
+          SpeculativeDecodingStrategy.draftEagle3,
+          SpeculativeDecodingStrategy.draftDflash,
+          SpeculativeDecodingStrategy.draftDspark,
+        ]) {
+          await expectLater(
+            engine
+                .generate(
+                  'Hello',
+                  params: GenerationParams(
+                    maxTokens: 1,
+                    speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+                      strategies: [strategy],
+                    ),
+                  ),
+                )
+                .drain<void>(),
+            throwsA(
+              isA<LlamaArgumentException>().having(
+                (error) => error.message,
+                'message',
+                'llama.cpp draft-${strategy.name.substring(5).toLowerCase()} requires SpeculativeDecodingConfig.draftModel.',
+              ),
+            ),
+          );
+        }
+      },
+    );
   });
 
   group('reasoning-budget resolver diagnostics', () {
@@ -899,6 +1028,43 @@ void main() {
       );
     });
 
+    for (final strategy in [
+      SpeculativeDecodingStrategy.draftSimple,
+      SpeculativeDecodingStrategy.draftEagle3,
+      SpeculativeDecodingStrategy.draftDflash,
+      SpeculativeDecodingStrategy.draftDspark,
+    ]) {
+      test('$strategy missing draft is a typed argument error', () {
+        expect(
+          () => service.debugResolveSpeculativeTypeNamesForTesting(
+            GenerationParams(
+              speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+                strategies: [strategy],
+              ),
+            ),
+          ),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              'llama.cpp draft-${strategy.name.substring(5).toLowerCase()} requires SpeculativeDecodingConfig.draftModel.',
+            ),
+          ),
+        );
+        expect(
+          service.debugResolveSpeculativeTypeNamesForTesting(
+            GenerationParams(
+              speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+                strategies: [strategy],
+                draftModelPath: 'draft.gguf',
+              ),
+            ),
+          ),
+          startsWith('draft-'),
+        );
+      });
+    }
+
     test('requires draftModelPath for external draft strategies', () {
       expect(
         () => service.debugResolveSpeculativeTypeNamesForTesting(
@@ -909,7 +1075,7 @@ void main() {
           ),
         ),
         throwsA(
-          isA<ArgumentError>().having(
+          isA<LlamaArgumentException>().having(
             (error) => error.message,
             'message',
             contains('requires SpeculativeDecodingConfig.draftModel'),
@@ -928,7 +1094,7 @@ void main() {
           ),
         ),
         throwsA(
-          isA<ArgumentError>().having(
+          isA<LlamaArgumentException>().having(
             (error) => error.message,
             'message',
             contains('requires SpeculativeDecodingConfig.draftModel'),

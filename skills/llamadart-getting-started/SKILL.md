@@ -46,7 +46,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
   llama.cpp-only options; do not catch and ignore it. After a load,
   `engine.runtime` names the runtime and `await engine.capabilities` reports
   every option it applies; gate features on these, never on the file
-  extension or `getBackendName()` text.
+  extension or `getBackendName()` text. Native thinking-budget support requires
+  the runtime's reasoning-budget export. Native `mtp` stays advertised for
+  external drafts; in-file MTP needs an MTP head and `loadMtp: true`. Other
+  draft strategies need `draftModel` or throw `LlamaArgumentException` at start.
 - KV-state save/load is not an exact generation checkpoint. On native
   llama.cpp, an exact restored prompt with prefix reuse re-evaluates its final
   token; scores and continuation may differ from full-prompt evaluation. The

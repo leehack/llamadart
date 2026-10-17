@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Probe native thinking-budget support and report missing speculative draft
+  models as typed argument errors.
+
 - Add typed embedding inputs, modality probes and the LiteRT-LM-only
   `liteRtLmEmbeddingEngine` load option; media embeddings remain unavailable.
 
