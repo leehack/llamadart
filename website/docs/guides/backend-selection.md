@@ -51,6 +51,12 @@ what each runtime reports.
 on LiteRT-LM, and GGUF files run on llama.cpp. The `LlamaEngine` API is the
 same for both, including `ChatSession` on native.
 
+On LiteRT-LM Web, keep handling `LlamaInferenceException` after
+`cancelGeneration()`. Only the pinned `@litert-lm/core@0.18.0` runtime's exact
+`Task cancelled` error following a cancel request ends normally. Other errors,
+including abort errors, still surface; `Task cancelled` without a cancel request
+also remains a failure.
+
 Native targets read the file header (`GGUF` or `LITERTLM`), so a file named
 without a model extension, such as a download cached as `download`, still
 loads in the right runtime. Only when the header is unrecognized do they fall
