@@ -3383,11 +3383,16 @@ class LlamaEngine {
   ///
   /// Returns null after a generation that ended before reaching the backend,
   /// such as one cancelled right after it was listened to, instead of the
-  /// counters of the request before it. Counters return once a generation,
-  /// embedding, next-token scoring or text-to-speech call runs on the context.
-  /// A generation that ends that way while another request is running on the
-  /// context leaves that request's counters. Requests from an unloaded model
-  /// cannot change a reloaded context's counter availability.
+  /// counters of the request before it. On native llama.cpp, generation,
+  /// embedding (including a whole batch), next-token scoring and text-to-speech
+  /// reset timings before native execution, so available counters describe
+  /// only that request's work. Rejected requests do not restore diagnostics
+  /// made unavailable by cancellation. Native token counters retain
+  /// llama.cpp's floors.
+  /// Other backends retain their own counter availability and timing semantics.
+  /// A generation that ends before dispatch while another request is running
+  /// on the context leaves that request's counters. Requests from an unloaded
+  /// model cannot change a reloaded context's counter availability.
   Future<BackendPerfContextData?> getPerformanceContext() {
     final candidate = backend;
     final contextHandle = _contextHandle;

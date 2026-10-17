@@ -4980,13 +4980,7 @@ class LlamaCppService {
             speculativeConfig != null ||
             !params.reusePromptPrefix,
       );
-      ctx.resetLastPerf();
-      llama_perf_context_reset(ctx.pointer);
-      ctx.performanceAvailable = true;
-      final existingSampler = _samplers[contextHandle];
-      if (existingSampler != null) {
-        llama_perf_sampler_reset(existingSampler);
-      }
+      _resetRequestPerformance(contextHandle, ctx);
 
       // 2. Prepare Resources
       final nCtx = llama_n_ctx(ctx.pointer);
@@ -5177,6 +5171,7 @@ class LlamaCppService {
   }) {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception('Invalid context handle');
+    ctx.performanceAvailable = false;
     _ensureContextUsable(contextHandle, ctx);
     if (_activeTtsContextHandle == contextHandle) {
       throw LlamaStateException(
@@ -5206,6 +5201,7 @@ class LlamaCppService {
     final vocab = llama_model_get_vocab(model.pointer);
     final modelParams = _contextParams[contextHandle]!;
     ctx = _resetContext(contextHandle, ctx, clearMemory: !reusePromptPrefix);
+    _resetRequestPerformance(contextHandle, ctx);
     final nCtx = llama_n_ctx(ctx.pointer);
     final tokensPtr = malloc<Int32>(nCtx);
     var pieceCapacity = 256;
@@ -5333,6 +5329,21 @@ class LlamaCppService {
 
   /// Generates a single embedding vector for [text].
   List<double> embed(int contextHandle, String text, {bool normalize = true}) {
+    _contexts[contextHandle]?.performanceAvailable = false;
+    return _embed(
+      contextHandle,
+      text,
+      normalize: normalize,
+      resetPerformance: true,
+    );
+  }
+
+  List<double> _embed(
+    int contextHandle,
+    String text, {
+    required bool normalize,
+    required bool resetPerformance,
+  }) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
       throw Exception('Invalid context handle');
@@ -5385,6 +5396,7 @@ class LlamaCppService {
 
     try {
       _calls.synchronize(ctx.pointer);
+      if (resetPerformance) _resetRequestPerformance(contextHandle, ctx);
       _clearContextMemory(ctx.pointer, strict: false);
       ctx.cachedPromptTokens = null;
       llama_set_embeddings(ctx.pointer, true);
@@ -5461,6 +5473,7 @@ class LlamaCppService {
     }
 
     final ctx = _contexts[contextHandle];
+    ctx?.performanceAvailable = false;
     if (ctx == null) {
       throw Exception('Invalid context handle');
     }
@@ -5517,11 +5530,20 @@ class LlamaCppService {
       tokenizedInputs.add(tokens);
     }
 
+    _resetRequestPerformance(contextHandle, ctx);
+
     if (poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_NONE ||
         maxParallelSequences <= 1) {
       final fallbackVectors = <List<double>>[];
       for (final text in texts) {
-        fallbackVectors.add(embed(contextHandle, text, normalize: normalize));
+        fallbackVectors.add(
+          _embed(
+            contextHandle,
+            text,
+            normalize: normalize,
+            resetPerformance: false,
+          ),
+        );
       }
       return fallbackVectors;
     }
@@ -5533,10 +5555,11 @@ class LlamaCppService {
       final currentTokenCount = tokenizedInputs[index].length;
 
       if (currentTokenCount > batchCapacity) {
-        vectors[index] = embed(
+        vectors[index] = _embed(
           contextHandle,
           texts[index],
           normalize: normalize,
+          resetPerformance: false,
         );
         index += 1;
         continue;
@@ -5561,10 +5584,11 @@ class LlamaCppService {
       }
 
       if (groupStart == index) {
-        vectors[index] = embed(
+        vectors[index] = _embed(
           contextHandle,
           texts[index],
           normalize: normalize,
+          resetPerformance: false,
         );
         index += 1;
         continue;
@@ -5803,6 +5827,15 @@ class LlamaCppService {
       normalized[i] = vector[i] * scale;
     }
     return normalized;
+  }
+
+  // Native counters and Dart timing fallbacks must share a request boundary.
+  void _resetRequestPerformance(int contextHandle, _LlamaContextWrapper ctx) {
+    ctx.resetLastPerf();
+    llama_perf_context_reset(ctx.pointer);
+    final sampler = _samplers[contextHandle];
+    if (sampler != null) llama_perf_sampler_reset(sampler);
+    ctx.performanceAvailable = true;
   }
 
   /// Helper: Resets the context state to be ready for new generation.
@@ -8947,7 +8980,7 @@ class LlamaCppService {
     );
   }
 
-  /// Returns native llama.cpp perf timings, or null after a generation fails
+  /// Returns native llama.cpp perf timings, or null after a request fails
   /// before its counters can be reset.
   ({
     double loadMs,
@@ -9823,6 +9856,7 @@ class LlamaCppService {
   }) async {
     final cancelFlag = Pointer<Int8>.fromAddress(cancelFlagAddress);
     final context = _contexts[contextHandle];
+    context?.performanceAvailable = false;
     final mtmd = _mtmdContexts[mmContextHandle];
     if (context == null ||
         mtmd == null ||
@@ -9902,6 +9936,8 @@ class LlamaCppService {
           'Text-to-speech synthesis was cancelled.',
         );
       }
+      _calls.synchronize(context.pointer);
+      _resetRequestPerformance(contextHandle, context);
       task = api.init(context.pointer, mtmd, initStatus);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.session,

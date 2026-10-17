@@ -24,8 +24,11 @@ migration is needed.
 Queued cancellations on native LiteRT-LM now return `null` diagnostics, matching
 llama.cpp, including requests already sent to the worker that never run.
 LiteRT-LM validation failures, llama.cpp option-validation failures before
-the counter reset, and failed dispatches also return `null` until another
-generation starts. Requests finishing after reload no longer affect the new context's
+the counter reset, and failed dispatches also return `null`. Native llama.cpp
+resets counters before generation, embedding (the entire batch), next-token scoring
+or text-to-speech executes; counters then describe only that request's work.
+Rejected inputs do not restore unavailable diagnostics. LiteRT-LM still recovers counters
+on generation. Requests finishing after reload no longer affect the new context's
 counter availability, even if its handle is reused. No API migration is needed;
 continue handling unavailable diagnostics.
 

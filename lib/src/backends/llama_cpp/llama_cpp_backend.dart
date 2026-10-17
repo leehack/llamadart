@@ -805,7 +805,10 @@ class NativeLlamaBackend
       EmbedRequest(contextHandle, text, normalize, rp.sendPort),
     );
     final res = await _receiveResponse(rp);
-    if (res is EmbedResponse) return res.embedding;
+    if (res is EmbedResponse) {
+      _stalePerformanceContexts.remove(contextHandle);
+      return res.embedding;
+    }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Embedding failed');
   }
@@ -850,7 +853,10 @@ class NativeLlamaBackend
       await _ensureIsolate();
       _dispatchRequest(rp, request);
       final response = await _receiveResponse(rp);
-      if (response is EmbedBatchResponse) return response.embeddings;
+      if (response is EmbedBatchResponse) {
+        _stalePerformanceContexts.remove(contextHandle);
+        return response.embeddings;
+      }
       if (response is ErrorResponse) throw _workerError(response);
       throw LlamaInferenceException('Content embedding failed');
     } finally {
@@ -886,7 +892,10 @@ class NativeLlamaBackend
       ),
     );
     final res = await _receiveResponse(rp);
-    if (res is ScoreNextTokenResponse) return res.scores;
+    if (res is ScoreNextTokenResponse) {
+      _stalePerformanceContexts.remove(contextHandle);
+      return res.scores;
+    }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Next-token scoring failed');
   }
@@ -913,7 +922,10 @@ class NativeLlamaBackend
       ),
     );
     final res = await _receiveResponse(rp);
-    if (res is EmbedBatchResponse) return res.embeddings;
+    if (res is EmbedBatchResponse) {
+      _stalePerformanceContexts.remove(contextHandle);
+      return res.embeddings;
+    }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Batch embedding failed');
   }
@@ -1343,6 +1355,7 @@ class NativeLlamaBackend
         return;
       }
       if (response is TextToSpeechResultResponse) {
+        _stalePerformanceContexts.remove(contextHandle);
         final bytes = response.pcm.materialize().asUint8List();
         final samples = Float32List.view(
           bytes.buffer,
