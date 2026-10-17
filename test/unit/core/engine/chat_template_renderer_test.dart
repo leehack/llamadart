@@ -160,6 +160,45 @@ void main() {
       );
     });
 
+    for (final metadata in <Map<String, String>>[
+      const {},
+      const {'tokenizer.chat_template': ''},
+    ]) {
+      test('render failure names the ChatML fallback for $metadata', () async {
+        await expectLater(
+          ChatTemplateRenderer.render(
+            loadMetadata: () async => metadata,
+            tokenize: (text, {bool addSpecial = true}) async => const [],
+            messages: const [_UnrenderableMessage()],
+            includeTokenCount: false,
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              'The chat template from the built-in ChatML fallback template '
+                  'failed to render: fallback content failed',
+            ),
+          ),
+        );
+      });
+
+      test('render uses the ChatML fallback for $metadata', () async {
+        final result = await ChatTemplateRenderer.render(
+          loadMetadata: () async => metadata,
+          tokenize: (text, {bool addSpecial = true}) async => const [],
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ],
+          includeTokenCount: false,
+        );
+        expect(
+          result.prompt,
+          '<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n',
+        );
+      });
+    }
+
     test('templateSourceName names the ChatML fallback when no template '
         'is set', () {
       expect(
@@ -197,4 +236,22 @@ void main() {
       expect(result.prompt, 'MODEL:hello');
     });
   });
+}
+
+// Fail inside Jinja's context conversion, after the production renderer has
+// selected its fallback; replacing the template would change the source label.
+class _UnrenderableMessage extends LlamaChatMessage {
+  const _UnrenderableMessage()
+    : super.fromText(role: LlamaChatRole.user, text: 'hi');
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'role': 'user',
+    'content': _UnrenderableContent(),
+  };
+}
+
+class _UnrenderableContent {
+  @override
+  String toString() => throw Exception('fallback content failed');
 }

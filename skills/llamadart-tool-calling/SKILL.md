@@ -100,6 +100,9 @@ description: >-
   those results is appended with a newline on that retry. Stored history and
   successful first renders stay unchanged; unrelated consecutive user turns
   still follow the template's validation.
+- Render errors name the built-in ChatML fallback when model template metadata
+  is absent or empty. PEG parse errors use `peg-simple`, `peg-native`, or the
+  historical `peg-constructed` name retained for Qwen3 Coder XML.
 - A recursive chat template (for example Command R+ or
   Hermes-2-Pro-Llama-3-8B `tool_use` with a null-typed parameter) fails with
   `LlamaInferenceException` naming the selected template on the Dart VM and
