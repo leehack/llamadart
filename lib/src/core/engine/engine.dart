@@ -93,7 +93,7 @@ class LlamaEngine {
   // because the latest request on it ended before reaching the backend while
   // no backend call was running on it.
   int? _stalePerformanceContext;
-  int _contextCallsInFlight = 0;
+  final Map<(int, int), int> _contextCallsInFlight = {};
   int? _mmContextHandle;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
@@ -2045,7 +2045,7 @@ class LlamaEngine {
       try {
         final candidate = backend;
         reachedBackend = true;
-        _beginContextCall();
+        _beginContextCall(requestContext, requestEpoch);
         final stream =
             chatMediaMarker != null && candidate is BackendChatPromptGeneration
             ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
@@ -2114,7 +2114,7 @@ class LlamaEngine {
 
       try {
         reachedBackend = true;
-        _beginContextCall();
+        _beginContextCall(requestContext, requestEpoch);
         final stream = nativeBackend.generateChat(
           _contextHandle!,
           messages,
@@ -2152,8 +2152,9 @@ class LlamaEngine {
 
   /// Records a backend call starting on the context, whose counters then
   /// describe that call.
-  void _beginContextCall() {
-    _contextCallsInFlight += 1;
+  void _beginContextCall(int contextHandle, int epoch) {
+    final key = (contextHandle, epoch);
+    _contextCallsInFlight.update(key, (count) => count + 1, ifAbsent: () => 1);
     _stalePerformanceContext = null;
   }
 
@@ -2165,9 +2166,16 @@ class LlamaEngine {
     int epoch, {
     required bool reachedBackend,
   }) {
+    final key = (contextHandle, epoch);
+    final remaining = (_contextCallsInFlight[key] ?? 0) - 1;
     if (reachedBackend) {
-      _contextCallsInFlight -= 1;
-    } else if (_contextCallsInFlight == 0 && epoch == _modelEpoch) {
+      if (remaining == 0) {
+        _contextCallsInFlight.remove(key);
+      } else {
+        _contextCallsInFlight[key] = remaining;
+      }
+    } else if (!_contextCallsInFlight.containsKey(key) &&
+        epoch == _modelEpoch) {
       _stalePerformanceContext = contextHandle;
     }
   }
@@ -2176,7 +2184,7 @@ class LlamaEngine {
   Future<T> _contextCall<T>(Future<T> Function() call) async {
     final requestContext = _contextHandle!;
     final requestEpoch = _modelEpoch;
-    _beginContextCall();
+    _beginContextCall(requestContext, requestEpoch);
     try {
       return await call();
     } finally {
