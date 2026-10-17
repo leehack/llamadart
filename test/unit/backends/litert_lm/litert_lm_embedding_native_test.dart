@@ -134,6 +134,59 @@ void main() {
     },
   );
   test(
+    'one embedding timeout preserves another caller queued behind it',
+    () async {
+      final (backend, _, context) = await backendForTest(
+        embeddingTimeout: const Duration(seconds: 2),
+      );
+      mode(11);
+      final first = expectLater(
+        backend.embedBatch(context, List.filled(60, 'active')),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (e) => e.message,
+            'deadline',
+            contains('timed out'),
+          ),
+        ),
+      );
+      await waitForCompute();
+      await Future<void>.delayed(const Duration(seconds: 1));
+      final second = backend.embed(context, 'queued', normalize: false);
+      // Attach the expectation before releasing the held native item.
+      final secondResult = expectLater(second, completion([3.0, 4.0]));
+      await first;
+      release();
+      await secondResult;
+      expect(
+        calls(),
+        2,
+        reason: 'only the timed-out batch loses its remaining items',
+      );
+    },
+  );
+  for (final operation in ['dispose', 'contextFree']) {
+    test('$operation during preflight prevents embedding dispatch', () async {
+      final (backend, _, context) = await backendForTest();
+      final pending = backend.embedBatch(context, List.filled(60, 'preflight'));
+      final rejected = expectLater(
+        pending,
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (e) => e.message,
+            'preflight cancellation',
+            contains('during media preflight'),
+          ),
+        ),
+      );
+      await (operation == 'dispose'
+          ? backend.dispose()
+          : backend.contextFree(context));
+      await rejected;
+      expect(calls(), 0);
+    });
+  }
+  test(
     'cancel during embedding creation prevents the first native inference',
     () async {
       final service = LiteRtLmService(
@@ -189,14 +242,12 @@ void main() {
       for (final fault in [0, 2]) {
         mode(fault);
         final result = session.compute(
-          [input()],
+          input(),
           normalize: false,
           inputAllocator: _FakeAllocator(library),
         );
         if (fault == 0) {
-          expect(await result, [
-            [3, 4],
-          ]);
+          expect(await result, [3, 4]);
         } else {
           await expectLater(result, throwsA(isA<LlamaInferenceException>()));
         }
@@ -565,7 +616,7 @@ void main() {
     }
   });
   test(
-    'single and batch copy pooled width, normalize and overflow-error options',
+    'single-item compute copies pooled width, normalize and overflow-error options',
     () async {
       final session = await create();
       expect(processorBackends(), 3);
@@ -577,40 +628,32 @@ void main() {
         ],
         [true, true, true],
       );
-      expect(await session.compute([input()], normalize: true), [
-        [closeTo(0.6, 1e-6), closeTo(0.8, 1e-6)],
+      expect(await session.compute(input(), normalize: true), [
+        closeTo(0.6, 1e-6),
+        closeTo(0.8, 1e-6),
       ]);
-      expect(await session.compute([input(), input()], normalize: false), [
-        [3, 4],
-        [3, 4],
-      ]);
-      expect(await session.compute([], normalize: true), isEmpty);
+      expect(await session.compute(input(), normalize: false), [3, 4]);
       session.dispose();
       session.dispose();
       expect(allocations(), 0);
       expect(
-        () => session.compute([input()], normalize: true),
+        () => session.compute(input(), normalize: true),
         throwsA(isA<LlamaStateException>()),
       );
     },
   );
-  for (final fault in [1, 2, 3, 4, 5, 6, 7, 8]) {
+  for (final fault in [1, 2, 3, 4, 5, 6]) {
     test(
       'native fault $fault releases every allocated input option and response',
       () async {
         final session = await create();
         mode(fault);
         await expectLater(
-          session.compute(
-            fault == 7 || fault == 8 ? [input(), input()] : [input()],
-            normalize: true,
-          ),
+          session.compute(input(), normalize: true),
           throwsA(isA<LlamaInferenceException>()),
         );
         mode(0);
-        expect(await session.compute([input()], normalize: false), [
-          [3, 4],
-        ]);
+        expect(await session.compute(input(), normalize: false), [3, 4]);
         session.dispose();
         expect(allocations(), 0);
       },

@@ -28,6 +28,8 @@ void runLiteRtLmWorkerForTesting(
 
   Future<void> activeRequest = Future<void>.value();
   var cancellationSerial = 0;
+  final embeddings = <SendPort, bool>{};
+  SendPort? activeEmbedding;
   var generationInFlight = false;
   var generationCancelRequested = false;
   var shuttingDown = false;
@@ -88,6 +90,17 @@ void runLiteRtLmWorkerForTesting(
       return;
     }
 
+    if (message is LiteRtLmCancelEmbeddingRequest) {
+      if (embeddings.containsKey(message.embeddingPort)) {
+        embeddings[message.embeddingPort] = true;
+      }
+      if (activeEmbedding == message.embeddingPort) {
+        service.cancelGeneration();
+      }
+      message.sendPort.send(LiteRtLmDoneResponse());
+      return;
+    }
+
     if (message is LiteRtLmCancelGenerationRequest) {
       cancellationSerial++;
       if (generationInFlight) {
@@ -112,6 +125,9 @@ void runLiteRtLmWorkerForTesting(
       generationInFlight = true;
     }
 
+    if (message is LiteRtLmEmbedRequest) {
+      embeddings[message.sendPort] = false;
+    }
     final requestCancellationSerial = cancellationSerial;
     activeRequest = activeRequest.catchError((_) {}).then((_) async {
       try {
@@ -133,9 +149,10 @@ void runLiteRtLmWorkerForTesting(
             );
           case LiteRtLmEmbedRequest():
             // Keep queued embed cancellation separate from conversation state.
-            final generationCancelRequested =
-                requestCancellationSerial != cancellationSerial;
-            if (generationCancelRequested) {
+            final embeddingCancelled =
+                requestCancellationSerial != cancellationSerial ||
+                embeddings[message.sendPort] == true;
+            if (embeddingCancelled) {
               message.sendPort.send(
                 LiteRtLmErrorResponse(
                   'LiteRT-LM embedding cancelled before dispatch.',
@@ -144,6 +161,7 @@ void runLiteRtLmWorkerForTesting(
               );
               return;
             }
+            activeEmbedding = message.sendPort;
             message.sendPort.send(
               LiteRtLmEmbedResponse(
                 await service.embed(
@@ -369,6 +387,10 @@ void runLiteRtLmWorkerForTesting(
       } catch (error) {
         message.sendPort.send(LiteRtLmErrorResponse.from(error));
       } finally {
+        if (message is LiteRtLmEmbedRequest) {
+          embeddings.remove(message.sendPort);
+          activeEmbedding = null;
+        }
         if (message is LiteRtLmGenerateRequest ||
             message is LiteRtLmGenerateChatRequest) {
           generationCancelRequested = false;

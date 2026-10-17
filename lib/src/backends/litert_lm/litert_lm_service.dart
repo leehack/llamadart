@@ -317,7 +317,7 @@ class LiteRtLmService {
     }
     final result = <List<double>>[];
     for (final input in inputs) {
-      result.addAll(await session.compute([input], normalize: normalize));
+      result.add(await session.compute(input, normalize: normalize));
       if (_cancelRequested) {
         throw LlamaInferenceException(
           'LiteRT-LM embedding cancelled after native work settled.',

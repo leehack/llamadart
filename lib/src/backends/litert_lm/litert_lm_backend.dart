@@ -71,6 +71,8 @@ class LiteRtLmBackend
   /// `LlamaBackend()` router. A load whose [ModelParams.device] is not auto
   /// throws `LlamaUnsupportedException` when [preferredBackend] is set.
   /// [embeddingTimeout] bounds embedding requests, including worker queue time.
+  /// Expiry cancels only that request; other queued calls keep their deadlines.
+  /// Explicit cancellation, context/model teardown and disposal cancel all embeds.
   /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
   LiteRtLmBackend({
     SendPort? initialSendPort,
@@ -171,15 +173,15 @@ class LiteRtLmBackend
         'LiteRT-LM embedding cancelled during media preflight.',
       );
     }
+    late SendPort embeddingPort;
     try {
-      final response = await _sendRequest(
-        (port) =>
-            LiteRtLmEmbedRequest(contextHandle, prepared, normalize, port),
-        timeout: _embeddingTimeout,
-      );
+      final response = await _sendRequest((port) {
+        embeddingPort = port;
+        return LiteRtLmEmbedRequest(contextHandle, prepared, normalize, port);
+      }, timeout: _embeddingTimeout);
       return _expect<LiteRtLmEmbedResponse>(response, 'embedding').vectors;
     } on TimeoutException {
-      await _cancelGeneration();
+      await _cancelGeneration(embeddingPort);
       throw LlamaInferenceException(
         'LiteRT-LM embedding timed out; cancellation requested. Native work settles before reuse.',
       );
@@ -1043,14 +1045,21 @@ class LiteRtLmBackend
     cleanup();
   }
 
-  Future<void> _cancelGeneration() async {
+  Future<void> _cancelGeneration([SendPort? embeddingPort]) async {
     final sendPort = _sendPort;
     if (sendPort == null) {
       return;
     }
     final responsePort = ReceivePort();
     try {
-      sendPort.send(LiteRtLmCancelGenerationRequest(responsePort.sendPort));
+      sendPort.send(
+        embeddingPort == null
+            ? LiteRtLmCancelGenerationRequest(responsePort.sendPort)
+            : LiteRtLmCancelEmbeddingRequest(
+                embeddingPort,
+                responsePort.sendPort,
+              ),
+      );
       await responsePort.first.timeout(const Duration(seconds: 1));
     } catch (_) {
       // Cancellation is best-effort because this method is also used by

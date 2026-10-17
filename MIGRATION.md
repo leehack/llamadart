@@ -44,7 +44,9 @@ GGUF loaders still reject true. LiteRT-LM overflow fails the whole call with
 compute; it never truncates. llama.cpp retains pre-inference capacity validation.
 LiteRT-LM concurrent embeds now queue. Cancellation, unload and timeout discard
 the whole batch after the current item settles; timeouts throw
-`LlamaInferenceException`. `contextSize` selects the encoder signature, without
+`LlamaInferenceException` and cancel only that request. Other queued callers retain
+their own deadlines; explicit cancellation, unload and dispose cancel all requests.
+`contextSize` selects the encoder signature, without
 truncation. Embedding mode rejects conversation tuning (LoRA, chat templates,
 activation type, prefill, parallel loading, dispatch paths, program cache limits),
 MTP/rollback and Web memory hints rather than silently ignoring them. Native CPU

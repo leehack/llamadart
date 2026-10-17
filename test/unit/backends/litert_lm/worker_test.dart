@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_embedding.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
@@ -31,6 +32,69 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test(
+    'a queued embedding deadline preserves the active call and other requests',
+    () async {
+      final service = _QueuedEmbeddingService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+      final expiredPort = ReceivePort();
+      final survivorPort = ReceivePort();
+      try {
+        final active = _sendRequest(
+          worker.sendPort,
+          (port) => LiteRtLmTokenizeRequest(1, 'held', false, port),
+        );
+        await service.tokenizeStarted.future;
+        worker.sendPort.send(
+          LiteRtLmEmbedRequest(1, [], false, expiredPort.sendPort),
+        );
+        worker.sendPort.send(
+          LiteRtLmEmbedRequest(1, [], false, survivorPort.sendPort),
+        );
+        expect(
+          await _sendRequest(
+            worker.sendPort,
+            (port) =>
+                LiteRtLmCancelEmbeddingRequest(expiredPort.sendPort, port),
+          ),
+          isA<LiteRtLmDoneResponse>(),
+        );
+        expect(
+          service.cancelCount,
+          0,
+          reason: 'the active call belongs to another caller',
+        );
+        service.releaseTokenize();
+        await active;
+        expect(
+          await expiredPort.first,
+          isA<LiteRtLmErrorResponse>().having(
+            (e) => e.message,
+            'expired queue entry',
+            contains('cancelled before dispatch'),
+          ),
+        );
+        expect(await survivorPort.first, isA<LiteRtLmEmbedResponse>());
+        expect(service.embedCount, 1);
+        // A late deadline must not cancel a different request or retain an active target.
+        expect(
+          await _sendRequest(
+            worker.sendPort,
+            (port) =>
+                LiteRtLmCancelEmbeddingRequest(survivorPort.sendPort, port),
+          ),
+          isA<LiteRtLmDoneResponse>(),
+        );
+        expect(service.cancelCount, 0);
+      } finally {
+        service.releaseTokenize();
+        expiredPort.close();
+        survivorPort.close();
+        await _disposeWorker(worker);
+      }
+    },
+  );
 
   test('liteRtLmWorkerEntry function is available', () {
     expect(liteRtLmWorkerEntry, isA<Function>());
@@ -1110,4 +1174,20 @@ class _FeatureLiteRtLmService extends LiteRtLmService {
 class _FailingDisposeService extends LiteRtLmService {
   @override
   void dispose() => throw StateError('injected cleanup failure');
+}
+
+class _QueuedEmbeddingService extends _BlockingLiteRtLmService {
+  int embedCount = 0;
+
+  @override
+  Future<List<List<double>>> embed(
+    int contextHandle,
+    List<List<LiteRtLmEmbeddingPart>> inputs, {
+    required bool normalize,
+  }) async {
+    embedCount++;
+    return [
+      [3, 4],
+    ];
+  }
 }

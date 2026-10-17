@@ -176,10 +176,10 @@ class LiteRtLmEmbeddingSession {
     this.capabilities,
   );
 
-  /// Copies vectors before deleting native responses; cancellation waits for this call.
+  /// Copies one vector before deleting its native response; cancellation waits for this call.
   /// [inputAllocator] substitutes temporary allocations for VM ownership tests.
-  Future<List<List<double>>> compute(
-    List<List<LiteRtLmEmbeddingPart>> inputs, {
+  Future<List<double>> compute(
+    List<LiteRtLmEmbeddingPart> input, {
     required bool normalize,
     Allocator inputAllocator = calloc,
   }) {
@@ -193,7 +193,7 @@ class LiteRtLmEmbeddingSession {
         runtime,
         libs,
         address,
-        inputs,
+        input,
         normalize,
         inputAllocator,
       ),
@@ -212,17 +212,14 @@ class LiteRtLmEmbeddingSession {
   }
 }
 
-List<List<double>> _computeEmbedding(
+List<double> _computeEmbedding(
   String library,
   List<String> companions,
   int address,
-  List<List<LiteRtLmEmbeddingPart>> inputs,
+  List<LiteRtLmEmbeddingPart> input,
   bool normalize,
   Allocator calloc,
 ) {
-  if (inputs.isEmpty) {
-    return [];
-  }
   final keep = liteRtLmOpenCompanionLibraries(companions);
   final api = emb.LiteRtLmEmbeddingBindings(
     _openLiteRtLmLibraryCandidate(library),
@@ -234,10 +231,7 @@ List<List<double>> _computeEmbedding(
       'LiteRT-LM embedding options allocation failed.',
     );
   }
-  final batches = calloc<Pointer<Pointer<emb.LiteRtLmInputData>>>(
-    inputs.length,
-  );
-  final counts = calloc<Size>(inputs.length);
+  final data = calloc<Pointer<emb.LiteRtLmInputData>>(input.length);
   final allocated = <Pointer<emb.LiteRtLmInputData>>[];
   List<double> vector(Pointer<emb.LiteRtLmEmbeddingResponse> response) {
     if (response == nullptr) {
@@ -265,81 +259,45 @@ List<List<double>> _computeEmbedding(
       options,
       emb.LiteRtLmInputOverflowStrategy.kLiteRtLmInputOverflowStrategyError,
     );
-    for (var i = 0; i < inputs.length; i++) {
-      counts[i] = inputs[i].length;
-      batches[i] = calloc<Pointer<emb.LiteRtLmInputData>>(inputs[i].length);
-      for (var j = 0; j < inputs[i].length; j++) {
-        final part = inputs[i][j];
-        final bytes = calloc<Uint8>(part.bytes.length + 1);
-        try {
-          bytes.asTypedList(part.bytes.length).setAll(0, part.bytes);
-          final data = api.litert_lm_input_data_create(
-            emb.LiteRtLmInputDataType.fromValue(part.type),
-            bytes.cast(),
-            part.bytes.length,
-          );
-          if (data == nullptr) {
-            throw LlamaInferenceException(
-              'LiteRT-LM embedding input allocation failed.',
-            );
-          }
-          allocated.add(data);
-          batches[i][j] = data;
-        } finally {
-          calloc.free(bytes);
-        }
-      }
-    }
-    if (inputs.length == 1) {
-      final response = api.litert_lm_embedding_engine_compute_embedding(
-        engine,
-        batches[0],
-        counts[0],
-        options,
-      );
+    for (var i = 0; i < input.length; i++) {
+      final part = input[i];
+      final bytes = calloc<Uint8>(part.bytes.length + 1);
       try {
-        return [vector(response)];
-      } finally {
-        if (response != nullptr) {
-          api.litert_lm_embedding_response_delete(response);
+        bytes.asTypedList(part.bytes.length).setAll(0, part.bytes);
+        final partData = api.litert_lm_input_data_create(
+          emb.LiteRtLmInputDataType.fromValue(part.type),
+          bytes.cast(),
+          part.bytes.length,
+        );
+        if (partData == nullptr) {
+          throw LlamaInferenceException(
+            'LiteRT-LM embedding input allocation failed.',
+          );
         }
+        allocated.add(partData);
+        data[i] = partData;
+      } finally {
+        calloc.free(bytes);
       }
     }
-    final responses = api.litert_lm_embedding_engine_compute_embedding_batch(
+    final response = api.litert_lm_embedding_engine_compute_embedding(
       engine,
-      batches,
-      counts,
-      inputs.length,
+      data,
+      input.length,
       options,
     );
-    if (responses == nullptr) {
-      throw LlamaInferenceException(
-        'LiteRT-LM embedding batch failed (input capacity or runtime execution).',
-      );
-    }
     try {
-      if (api.litert_lm_embedding_responses_get_size(responses) !=
-          inputs.length) {
-        throw LlamaInferenceException(
-          'LiteRT-LM embedding batch returned an incorrect vector count.',
-        );
-      }
-      return [
-        for (var i = 0; i < inputs.length; i++)
-          vector(api.litert_lm_embedding_responses_get_at(responses, i)),
-      ];
+      return vector(response);
     } finally {
-      api.litert_lm_embedding_responses_delete(responses);
+      if (response != nullptr) {
+        api.litert_lm_embedding_response_delete(response);
+      }
     }
   } finally {
     for (final data in allocated) {
       api.litert_lm_input_data_delete(data);
     }
-    for (var i = 0; i < inputs.length; i++) {
-      calloc.free(batches[i]);
-    }
-    calloc.free(batches);
-    calloc.free(counts);
+    calloc.free(data);
     api.litert_lm_embedding_options_delete(options);
     _keepAlive(keep);
   }

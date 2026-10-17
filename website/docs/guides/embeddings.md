@@ -270,8 +270,11 @@ To measure sequential vs batch throughput, see
 
 Concurrent embedding calls queue. Whole-batch media decoding runs off the caller
 isolate; native inference checks cancellation between items. Cancel, unload and
-timeout discard all vectors after the current item settles. A timeout throws
-`LlamaInferenceException` and requests worker cancellation.
+dispose discard all vectors after the current item settles and cancel queued
+requests too. A timeout throws `LlamaInferenceException` and cancels only its own
+request; other callers stay queued with their own deadlines. A timed-out queued
+request never enters native inference. Reuse waits for any active native item to
+settle.
 
 `contextSize` selects the model's encoder signature without truncating inputs.
 Embedding mode applies `numberOfThreads`, `liteRtLmCacheDir` and CPU selection;

@@ -100,7 +100,9 @@ this LiteRT-LM-only flag. Adjacent text parts concatenate verbatim.
 See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
 LiteRT-LM queues concurrent embedding requests, validates media off the caller
-isolate and cancels batches between items. `contextSize` selects an encoder
+isolate and cancels batches between items. A timeout cancels only its own request;
+explicit cancellation, unload and dispose cancel active and queued requests.
+`contextSize` selects an encoder
 signature without truncation; unsupported conversation tuning options are rejected.
 
 Native llama.cpp rejects nonzero rollback capacity on recurrent or hybrid

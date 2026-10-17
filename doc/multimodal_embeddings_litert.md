@@ -28,8 +28,11 @@ responses. Embedding requests queue on the worker's active-request chain.
 Native inference
 runs one item at a time, checking cancellation after every item and before
 returning any vectors. Unload/dispose requests cancel queued and active embeds
-and await the current item before freeing the engine. Timeouts request cancellation
-and throw `LlamaInferenceException`; no partial output is exposed.
+and await the current item before freeing the engine. Timeouts cancel only their
+own request and throw `LlamaInferenceException`; other queued callers retain their
+own deadlines. A queued request whose deadline expires never enters inference.
+No partial output is exposed. Native dispatch uses the single-input C API so
+cancellation can settle between items; there is no native batch-API path.
 
 The amended contract still requires whole-batch modalities, part shapes and
 media-source/decoding validation before inference. llama.cpp additionally

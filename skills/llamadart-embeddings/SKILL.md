@@ -43,7 +43,9 @@ description: >-
   before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
   mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
   Native CPU qualification covers macOS arm64 only. Concurrent embeds queue;
-  cancellation/unload/timeout settle the current item and discard the whole batch.
+  cancellation/unload/dispose settle the current item and discard all active and
+  queued batches. A timeout discards only its own batch; other queued callers
+  retain their own deadlines.
   Timeouts throw `LlamaInferenceException`. `contextSize` selects the encoder
   signature without truncation; conversation tuning options are rejected.
   Preflight checks modalities, sources and media decoding across the whole batch

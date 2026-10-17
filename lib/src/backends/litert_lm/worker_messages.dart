@@ -613,6 +613,15 @@ class LiteRtLmEmbeddingCapabilitiesRequest extends LiteRtLmWorkerRequest {
   LiteRtLmEmbeddingCapabilitiesRequest(this.contextHandle, super.sendPort);
 }
 
+/// Cancels only the embedding identified by its response port.
+class LiteRtLmCancelEmbeddingRequest extends LiteRtLmWorkerRequest {
+  /// Response port of the active or queued request whose deadline expired.
+  final SendPort embeddingPort;
+
+  /// Creates a request-scoped cancellation.
+  LiteRtLmCancelEmbeddingRequest(this.embeddingPort, super.sendPort);
+}
+
 /// Request containing owned embedding input bytes.
 class LiteRtLmEmbedRequest extends LiteRtLmWorkerRequest {
   /// Loaded context.
