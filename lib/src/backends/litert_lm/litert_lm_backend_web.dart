@@ -176,8 +176,9 @@ class LiteRtLmBackend
   }) async {
     if (params.liteRtLmEmbeddingEngine) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM embedding-only model loading is unavailable in this Dart '
-        'adapter; the separate embedding engine integration is required.',
+        _resolveBackendName(params) == 'cpu'
+            ? 'LiteRT-LM Web CPU embeddings are unavailable in @litert-lm/core@0.18.0: upstream streams text-encoder weights only for WebGPU (Failed to get external weight).'
+            : 'LiteRT-LM WebGPU embeddings are unavailable in @litert-lm/core@0.18.0: EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
       );
     }
     _validateModelParams(params);

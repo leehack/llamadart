@@ -899,8 +899,13 @@ abstract class BackendMultimodalEmbeddings {
   /// Adjacent text parts form one verbatim-concatenated text segment on every
   /// backend, including within mixed inputs. LiteRT-LM adapters must merge
   /// adjacent text before building runtime inputs; no separators or templates are added.
-  /// Validate the entire batch, including expanded media token limits, before
-  /// inference. Empty batches return no vectors. With [normalize], L2-normalize
+  /// Validate modalities, part shapes and media sources/decoding across the
+  /// entire batch before inference. Check expanded-token limits before inference
+  /// when the runtime exposes counts (required for llama.cpp). Runtimes without
+  /// a token-count API, such as LiteRT-LM, may detect overflow during the batch,
+  /// but must fail the whole call with `LlamaInferenceException` and no vectors.
+  /// Earlier items may consume wasted compute; never truncate or return partial results.
+  /// Empty batches return no vectors. With [normalize], L2-normalize
   /// each pooled output. Otherwise return the full raw pooled vector.
   ///
   /// Cancellation uses [LlamaBackend.cancelGeneration], as for text embeddings.
