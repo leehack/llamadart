@@ -9205,10 +9205,11 @@ class LlamaCppService {
   /// `laya.config` metadata. The head gets a private encoder context of the
   /// config's `max_len` tokens, whose batch thread count also drives the
   /// head's CPU work. It runs on a GPU device of the load's backend
-  /// (`mainGpu` picks among several; negative or out-of-range picks the first),
-  /// or on CPU with a CPU backend, disabled GPU layers or no matching device.
-  /// Head selection is independent of model placement: single-device mode
-  /// with negative `mainGpu` can put the model on CPU and the head on Metal.
+  /// (`mainGpu` picks among several), or on CPU with a CPU backend, disabled
+  /// GPU layers, no matching device, or single-device mode with negative
+  /// `mainGpu`. In other split modes, a negative or out-of-range `mainGpu`
+  /// picks the first matching head device. An out-of-range nonnegative
+  /// `mainGpu` in single-device mode fails the model load before head loading.
   /// Throws [LlamaStateException] for an unknown
   /// model, [LlamaUnsupportedException] for a model [decisionCapabilities]
   /// rejects, [LlamaModelException] for a head or config that does not fit
@@ -9585,7 +9586,7 @@ class LlamaCppService {
   /// `CPU`), offloads no layers ([resolvedGpuLayers] <= 0), or [params]
   /// selects no GPU (single-device split mode with a negative main GPU).
   static bool decisionHeadRunsOnCpu({
-    ModelParams params = const ModelParams(),
+    required ModelParams params,
     required String? modelBackendName,
     required int resolvedGpuLayers,
   }) {
@@ -9603,11 +9604,14 @@ class LlamaCppService {
   /// registry order, and [mainGpu] counts among the devices of the model's
   /// backend. Returns the index in [deviceBackends] of the device [mainGpu]
   /// selects, or of the backend's first device when [mainGpu] is out of
-  /// range. Returns null, meaning the CPU, when single-device [splitMode]
+  /// range in other split modes. A single-device model load with an
+  /// out-of-range nonnegative index fails before head selection; callers must
+  /// pass the placement of a successfully loaded model.
+  /// Returns null, meaning the CPU, when single-device [splitMode]
   /// with a negative [mainGpu] selects no GPU, when [modelBackendName] maps to
   /// the CPU or to no backend, or when no device has the model's backend.
   static int? decisionHeadDeviceIndex({
-    ModelSplitMode splitMode = ModelSplitMode.layer,
+    required ModelSplitMode splitMode,
     required String? modelBackendName,
     required List<GpuBackend> deviceBackends,
     required int mainGpu,
@@ -9665,30 +9669,26 @@ class LlamaCppService {
   }
 
   ggml_backend_dev_t? _decisionHeadDevice(int modelHandle) {
-    final devices = <ggml_backend_dev_t>[];
-    final count = _ggmlBackendDevCount();
-    for (var i = 0; i < count; i++) {
-      final device = _ggmlBackendDevGet(i);
-      if (device != nullptr && _isGpuClassDevice(device)) {
-        devices.add(device);
-      }
-    }
+    final devices = [
+      for (final entry in _registeredDevices())
+        if (entry.device != null &&
+            entry.device != nullptr &&
+            (entry.type ==
+                    ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value ||
+                entry.type ==
+                    ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value))
+          entry,
+    ];
     final params = _modelLoadParams[modelHandle] ?? const ModelParams();
     final index = decisionHeadDeviceIndex(
       splitMode: params.splitMode,
       modelBackendName: _modelBackendNames[modelHandle],
       deviceBackends: [
-        for (final device in devices) _gpuBackendForDevice(device),
+        for (final entry in devices) gpuBackendFromRegName(entry.registry),
       ],
       mainGpu: params.mainGpu,
     );
-    return index == null ? null : devices[index];
-  }
-
-  bool _isGpuClassDevice(ggml_backend_dev_t device) {
-    final type = _ggmlBackendDevType(device);
-    return type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value ||
-        type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
+    return index == null ? null : devices[index].device;
   }
 
   BackendDecisionOutput _runDecisionSequence(

@@ -54,8 +54,9 @@ The native head runs on CPU with a CPU backend, disabled GPU layers
 (`gpuLayers: 0`), or single-device placement (`splitMode: ModelSplitMode.none`
 with a negative `mainGpu`) that selects no GPU. Otherwise it selects a GPU of
 the load's backend, falling back to CPU if none matches. `mainGpu` picks among
-matching devices; an out-of-range index or a negative index in other split
-modes picks the first.
+matching devices; in other split modes a negative or out-of-range index picks
+the first. In single-device mode, a nonnegative out-of-range `mainGpu` fails
+the model load before the head can be loaded.
 `decisions.info.deviceName` names that device, such as `CPU` or `MTL0`; on Web,
 the bridge reports its own device name.
 
