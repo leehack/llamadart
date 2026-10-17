@@ -684,6 +684,47 @@ void main() {
       }
     },
   );
+
+  for (final symbol in [
+    'response_get_values',
+    'options_set_input_overflow_strategy',
+    'engine_settings_set_num_threads',
+  ]) {
+    test(
+      'missing required embedding export $symbol fails before allocation',
+      () async {
+        final source = File('${suite().path}/missing-$symbol.c');
+        await source.writeAsString(
+          _source.replaceAll('litert_lm_embedding_$symbol', 'unused_$symbol'),
+        );
+        final path =
+            '${suite().path}/missing-$symbol${Platform.isMacOS ? '.dylib' : '.so'}';
+        final built = await Process.run('cc', [
+          Platform.isMacOS ? '-dynamiclib' : '-shared',
+          '-fPIC',
+          source.path,
+          '-o',
+          path,
+        ]);
+        expect(built.exitCode, 0, reason: '${built.stderr}');
+        final live = DynamicLibrary.open(
+          path,
+        ).lookupFunction<Int Function(), int Function()>('allocations');
+        await expectLater(
+          create(libraryPath: path),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'capability diagnostic',
+              contains('single-input embedding C API'),
+            ),
+          ),
+        );
+        expect(live(), 0);
+      },
+    );
+  }
+
   const batchOnly = [
     'engine_compute_embedding_batch',
     'responses_delete',
