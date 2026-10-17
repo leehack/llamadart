@@ -688,7 +688,7 @@ class LlamaCppService {
        _batchFree = batchFree ?? llama_batch_free,
        _embeddingChunksFree = embeddingChunksFree,
        _embeddingBitmapFree = embeddingBitmapFree,
-       _embeddingBatchFree = embeddingBatchFree ?? llama_batch_ext_free,
+       _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices;
 
@@ -704,7 +704,7 @@ class LlamaCppService {
   final void Function(llama_batch batch) _batchFree;
   final void Function(Pointer<mtmd_input_chunks>)? _embeddingChunksFree;
   final void Function(Pointer<mtmd_bitmap>)? _embeddingBitmapFree;
-  final void Function(Pointer<llama_batch_ext>) _embeddingBatchFree;
+  final void Function(Pointer<llama_batch_ext>)? _embeddingBatchFree;
   final VulkanDeviceProbe Function()? _vulkanDeviceProbeOverride;
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
