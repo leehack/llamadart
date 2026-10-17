@@ -3,8 +3,8 @@
 Tracking: https://github.com/leehack/llamadart/issues/1072 (lane E).
 
 The Dart WebGPU adapter supports API-version-1 media embeddings from bridge
-assets v0.1.64+. The default pin is unchanged: media is disabled there with
-a `LlamaUnsupportedException` naming the required assets. A compatible embedding
+assets v0.1.64+. The default pinned assets include this API. Older or mismatched
+assets disable media with a `LlamaUnsupportedException` naming the required assets. A compatible embedding
 model and image/audio projector must also be loaded. Probes run against the
 current bridge, so projector unload/reload and worker restoration are visible.
 
@@ -29,7 +29,8 @@ Bridge source contract inspected read-only at
 restore and structured-clone ownership; those are bridge responsibilities.
 
 **Web media vectors are numerically unqualified against native.** No weights or
-published v0.1.64 assets were downloaded for this lane. Neither fake tests nor
+runtime binaries were downloaded for this lane. Published release metadata and
+the manifest were verified for the default pin adoption. Neither fake tests nor
 the future scenario below establish GPU acceleration or retrieval quality.
 
 ## Local reference scenario (not yet run)

@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.63`.
+Default pinned tag in the example is `v0.1.65`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.63 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.65 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,23 +81,20 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.63';
+  window.__llamadartBridgeAssetsTag = 'v0.1.65';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-1`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.63` differs from the native runtime tag
-`v0.7.0-1`. Provenance for this immutable consumer artifact: release `415205376`,
-tag commit `c1665e3c9a38b78c553806f590f7948b36c8d148`, bridge source
-`57d9971817897115c6312a712ccb21c9a25671f9`, and manifest SHA-256
-`65d146539eaba034d2c42bfc88a8ff376b937254ea089772401e07cade79f0b9`. The bridge
-assets were qualified against native `v0.7.0`; the current native
-pin `v0.7.0-1` rebuilds only the wrapper on the same upstream commit. Their
-JavaScript, type declarations and worker remain byte-identical to `v0.1.59`; the WebAssembly
-cores update llama.cpp and fix graph reservation when embedding extraction is
-toggled on an unpooled context. State and extraction qualification covers
-wasm32 and memory64 through direct and worker runtimes. Existing decision,
+even though the bridge asset tag `v0.1.65` differs from the native runtime tag
+`v0.7.0-1`. Provenance for this immutable consumer artifact: release `416001697`,
+tag commit `44e9cc17de655f6dfcc48b82fe51da4ec34b11a5`, bridge source
+`d1c1b9aac0e88b5748ea436e0bc81a0ef6c54876`, and manifest SHA-256
+`185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328`. The bridge
+assets were qualified against native `v0.7.0-1`, matching the current native pin.
+They expose the API-version-1 media embedding contract. State and extraction
+qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
 
 Published release qualification covers CPU/WASM state persistence, multimodal
@@ -144,7 +141,7 @@ boolean `text`, `image`, `audio` flags. The Dart backend probes each request,
 including after projector changes and worker restoration; generation's media
 flags do not enable embeddings. Unknown/missing/failed probes preserve legacy
 string embeddings and disable media with a v0.1.64+ requirement diagnostic.
-This adapter change does not update the default assets pin.
+The default pinned assets include this API.
 
 `embedContentBatch` sends strings for text-only inputs and ordered parts arrays
 for mixed/media inputs. Adjacent text is concatenated verbatim. Image/audio bytes
@@ -413,7 +410,7 @@ be `RangeError`. The classifier requires an anchored validator message from the
 pinned bridge and a JS error name of `TypeError`, `RangeError` or `Error` on
 both direct and worker paths. Unknown messages retain the operation's fallback.
 The allowlist covers these TypeError/RangeError emissions in the
-[pinned JavaScript](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js):
+[original validator JavaScript](https://github.com/leehack/llama-web-bridge-assets/blob/c1665e3c9a38b78c553806f590f7948b36c8d148/llama_webgpu_bridge.js):
 
 | Lines | Validator prefixes / fields |
 | --- | --- |

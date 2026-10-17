@@ -22,7 +22,7 @@ description: >-
   embeddings with its matching projector (qualified macOS CPU/Metal), and
   reports text only without one. Web llama.cpp probes image/audio embeddings
   with bridge assets v0.1.64+ and a compatible model/projector. The default
-  pinned assets remain text-only. Web media embeddings are numerically
+  pinned assets include the media API. Web media embeddings are numerically
   unqualified against native. LiteRT-LM
   embedding engines probe text/image/audio on native CPU. Native llama.cpp
   expanded inputs must fit one context/batch/micro-batch; no chunking or implicit

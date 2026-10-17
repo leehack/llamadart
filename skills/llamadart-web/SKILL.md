@@ -87,7 +87,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     capability probe and a compatible embedding model/projector. Use encoded
     image/audio bytes or mono 16 kHz Float32 audio PCM; paths and image URLs
     throw `LlamaUnsupportedException`. Numerical Web/native media parity is
-    unqualified; the default assets pin is unchanged.
+    unqualified; the default pinned assets include the media API.
   - Other floors: text embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS

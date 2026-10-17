@@ -64,7 +64,7 @@ attention mode, mixed-batch ABI and projector encoders. EmbeddingGemma-2 with
 its projector supports images/audio on native v0.7.0-1 (qualified macOS CPU/Metal);
 without a projector it reports text only. Web llama.cpp probes image/audio
 embeddings with bridge assets v0.1.64+
-and a compatible model/projector. The default pinned assets remain text-only.
+and a compatible model/projector. The default pinned assets include the media API.
 Web media embeddings are numerically unqualified against native.
 LiteRT-LM embedding engines probe text/image/audio processors on native CPU.
 Native text-only content follows `embed`, including causal unpooled models;

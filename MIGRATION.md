@@ -75,7 +75,7 @@ Float32 PCM when bridge assets v0.1.64+ positively probe the modality through
 `getEmbeddingCapabilities()` API version 1. Load a compatible embedding model
 and projector first. Paths and image URLs throw `LlamaUnsupportedException`.
 Older or mismatched bridge assets retain text embeddings and report media
-unavailable with an upgrade diagnostic. The default pin is unchanged;
+unavailable with an upgrade diagnostic. The default pinned assets include the API;
 Web media vectors are numerically unqualified against native.
 
 The new `embedContent` / `embedContentBatch` APIs return one vector per input;

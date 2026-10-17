@@ -99,7 +99,7 @@ image/audio embeddings with EmbeddingGemma-2 and its projector on native
 v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
 Web llama.cpp also accepts image/audio content with bridge assets v0.1.64+
 and an API-version-1 embedding modality probe. Web media vectors remain
-numerically unqualified against native; the default assets pin stays unchanged.
+numerically unqualified against native; the default pinned assets include the API.
 LiteRT-LM supports text,
 image and audio embeddings (qualified on macOS arm64 CPU only) with
 `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all LiteRT-LM Web paths throw
@@ -418,7 +418,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.0-2` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.63` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.65` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve
