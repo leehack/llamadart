@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Honor content embedding cancellation during capability checks and worker startup.
+
 - Prevent embeddings and other context changes from interrupting native text-to-speech, and release handle waits even when a speech reply fails.
 * Aligned the default WebGPU bridge assets to `v0.1.65` for image/audio
   embeddings (API floor v0.1.64+); qualified on Chrome CPU wasm memory64 against native CPU/Metal.

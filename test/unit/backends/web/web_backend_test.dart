@@ -1,6 +1,7 @@
 @TestOn('browser')
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
@@ -33,6 +34,28 @@ import '../../core/engine/engine_test.dart';
 import '../../core/engine/multimodal_embeddings_test.dart';
 
 void main() {
+  test('router cancels content during its own capability probe', () async {
+    final delegate = ContentBackend()..probeGate = Completer<void>();
+    final router = WebAutoBackend(webGpuFactory: () => delegate);
+    addTearDown(router.dispose);
+    final model = await router.modelLoad('fake.gguf', const ModelParams());
+    final context = await router.contextCreate(model, const ModelParams());
+    final input = LlamaEmbeddingInput([const LlamaTextContent('text')]);
+    final future = router.embedContentBatch(context, List.filled(64, input));
+    await pumpEventQueue();
+    router.cancelGeneration();
+    final cancelled = expectLater(
+      future,
+      throwsA(isA<LlamaInferenceException>()),
+    );
+    delegate.probeGate!.complete();
+    await cancelled;
+    expect(delegate.received, isEmpty);
+    expect(await router.embedContentBatch(context, [input]), [
+      [1.0],
+    ]);
+  });
+
   test(
     'unloaded context probes return all-false without creating a runtime',
     () async {

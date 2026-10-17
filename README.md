@@ -110,7 +110,10 @@ Unsupported native media diagnostics name the required v0.7.0-1 ABI. Windows
 requires the complete native DLL bundle; missing media symbols leave text
 embeddings available. Windows media model execution is not yet locally
 qualified.
-Adjacent text parts concatenate verbatim.
+Adjacent text parts concatenate verbatim. `cancelGeneration()` also cancels
+content embedding calls still awaiting capability checks, with
+`LlamaInferenceException` before inference starts. Await the embedding future
+before reusing the engine.
 See the
 [embedding guide](https://llamadart.leehack.com/docs/guides/embeddings).
 Native llama.cpp rejects embedding requests on a context with active text-to-speech

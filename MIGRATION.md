@@ -2,6 +2,16 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: content embedding cancellation
+
+`cancelGeneration()` now cancels `embedContent` / `embedContentBatch` even
+during capability checks on native and Web backends. Handle the existing
+`LlamaInferenceException` cancellation error and await the embedding future
+before reuse. Calls started after cancellation remain usable. Native LiteRT-LM
+also checks cancellation after worker startup, including its string embedding
+methods, which share the content implementation. Native llama.cpp and Web
+legacy `embed` / `embedBatch` cancellation contracts are unchanged.
+
 ## Unreleased: native text-to-speech context exclusivity
 
 Native llama.cpp rejects embeddings (including content and batch embeddings),

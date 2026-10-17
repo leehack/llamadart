@@ -33,7 +33,11 @@ description: >-
   Missing media symbols leave text available; native media errors name v0.7.0-1.
   Windows needs the complete native DLL bundle. Its media symbol routing is
   covered; Windows model-backed media qualification remains pending.
-  Await cancellation before reuse.
+  `cancelGeneration()` cancels content calls even during capability checks,
+  with `LlamaInferenceException` before inference. Await the future before reuse;
+  later calls start independently. Native LiteRT-LM also checks after worker
+  startup for content and string calls. Native llama.cpp and Web legacy string
+  cancellation contracts are unchanged.
   Adjacent text parts form one verbatim-concatenated text segment on every
   backend, including within mixed inputs. Add no separators or task prefixes.
   The modality enum may gain values; include a default in switches.

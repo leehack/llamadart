@@ -47,6 +47,28 @@ worker exit. Chunks, decoded bitmaps and extended batches are released on succes
 exception preserves the existing free-only object policy; cleanup skips
 context state writes after that context becomes free-only.
 
+## Embeddings during text generation
+
+The native worker serializes `embed`, `embedBatch` and `embedContentBatch`
+behind text generation. Its receive-port listener is async, but the production
+ordinary and speculative inference loops have no event-queue awaits. Their
+`async*` yields and the worker's `await for` resume in microtasks, which drain
+before another port or timer event runs. An embedding sent during generation
+therefore starts after generation's counters and terminal response are saved;
+it cannot clear memory or invalidate counters in the middle of generation.
+Its later execution replaces counters normally. This differs from TTS, whose
+setup actually awaits event-queue work and needs explicit exclusion guards.
+
+`worker_embedding_serialization_test.dart` runs the real worker/service with a
+small generated CPU GGUF, queues all three embedding requests during prompt
+decode and verifies generation completes first in both ordinary and n-gram
+speculative modes. A timer also proves the active-context reservation is gone
+before event processing resumes. Adding an event-queue await to either loop
+breaks the test. Any future asynchronous I/O, timer wait or stream backpressure
+in those loops must re-evaluate exclusivity before changing memory or counters.
+Direct service consumers that pause a generation stream are outside this worker
+guarantee; the public engine uses the worker's unpaused consumer.
+
 ## Local qualification
 
 Windows split bundles export guarded allocation/processing from `llamadart.dll`,

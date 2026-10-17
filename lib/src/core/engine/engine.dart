@@ -106,6 +106,7 @@ class LlamaEngine {
   // Changes on every load and unload, so a probe that awaits can tell whether
   // the model it started on is still the loaded one.
   int _modelEpoch = 0;
+  int _embeddingCancelEpoch = 0;
   bool get _isReady => _isReadyState;
   set _isReady(bool value) {
     _isReadyState = value;
@@ -2263,9 +2264,14 @@ class LlamaEngine {
   /// A stream that has not reached the backend yet ends without generating.
   /// A stream listened to after this call is not affected.
   ///
+  /// Also cancels active [embedContent] and [embedContentBatch] calls, including
+  /// capability preflight, with [LlamaInferenceException]. Await their futures
+  /// before reuse. Calls started after this cancel are independent.
+  ///
   /// Does nothing after [dispose].
   void cancelGeneration() {
     if (isDisposed) return;
+    _embeddingCancelEpoch++;
     _generationCancellation.cancel();
     backend.cancelGeneration();
   }
@@ -2331,8 +2337,9 @@ class LlamaEngine {
   /// or templates, including when interleaved with media.
   /// [normalize] has the same L2 semantics as [embed]. Video is unavailable.
   ///
-  /// As with [embed], cancellation is requested through [cancelGeneration];
-  /// completion and cleanup follow the backend's embedding cancellation policy.
+  /// Cancellation is requested through [cancelGeneration], including while
+  /// capability checks are pending; cancellation throws [LlamaInferenceException].
+  /// Completion and cleanup follow the backend's embedding cancellation policy.
   /// Observer operations record only part kinds/counts, including for text.
   Future<List<double>> embedContent(
     LlamaEmbeddingInput input, {
@@ -2351,8 +2358,13 @@ class LlamaEngine {
     bool normalize = true,
   }) {
     final snapshot = List<LlamaEmbeddingInput>.unmodifiable(inputs);
+    final cancelEpoch = _embeddingCancelEpoch;
     return observeFuture(
-      () => _embedContentBatch(snapshot, normalize: normalize),
+      () => _embedContentBatch(
+        snapshot,
+        normalize: normalize,
+        cancelEpoch: cancelEpoch,
+      ),
       observers: observers,
       operation: LlamaEmbeddingsOperation(
         model: _observedModel,
@@ -2367,6 +2379,7 @@ class LlamaEngine {
   Future<List<List<double>>> _embedContentBatch(
     List<LlamaEmbeddingInput> inputs, {
     required bool normalize,
+    required int cancelEpoch,
   }) async {
     _ensureReady();
     try {
@@ -2374,7 +2387,15 @@ class LlamaEngine {
         _contextHandle!,
         inputs,
         normalize: normalize,
-        onCompute: _contextCall,
+        onCompute: (compute) {
+          // The backend cannot cancel work that is still in engine preflight.
+          if (cancelEpoch != _embeddingCancelEpoch) {
+            throw LlamaInferenceException(
+              'Content embedding cancelled before dispatch.',
+            );
+          }
+          return _contextCall(compute);
+        },
       );
       if (vectors.length != inputs.length) {
         throw LlamaInferenceException(

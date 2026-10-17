@@ -172,7 +172,13 @@ execution failure -> `LlamaInferenceException`; malformed empty request ->
 
 Cancellation keeps the existing Future embedding semantics:
 `engine.cancelGeneration()` forwards to the backend; there is no new token or
-subscription API and no universal interrupt-latency guarantee. Implementations
+subscription API and no universal interrupt-latency guarantee. A content call
+records cancellation before capability preflight: a cancel during any engine or
+router probe throws `LlamaInferenceException` before dispatch or inference.
+Backend cancellation covers the subsequent dispatch/execution phase. Later calls
+do not inherit cancellation. Native LiteRT-LM also checks after worker startup;
+its legacy string methods share that implementation. Native llama.cpp and Web
+legacy string cancellation contracts are unchanged. Implementations
 must settle native/worker work before freeing resources and allow a clean
 subsequent request. Callers must await an embedding future before switching or
 unloading its model, as with existing embedding calls. Observers receive a

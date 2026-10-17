@@ -92,6 +92,40 @@ class RuntimeContentBackend extends ContentBackend
 }
 
 void main() {
+  for (final single in [false, true]) {
+    for (final duringProbe in [false, true]) {
+      test(
+        'content cancellation before dispatch: single=$single probe=$duringProbe',
+        () async {
+          final backend = ContentBackend()..probeGate = Completer<void>();
+          final engine = LlamaEngine(backend);
+          addTearDown(engine.dispose);
+          await engine.loadModel('fake.gguf');
+          final input = LlamaEmbeddingInput([const LlamaTextContent('text')]);
+          final future = single
+              ? engine.embedContent(input)
+              : engine.embedContentBatch(List.filled(64, input));
+          if (duringProbe) await pumpEventQueue();
+          engine.cancelGeneration();
+          final cancelled = expectLater(
+            future,
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (e) => e.message,
+                'cancellation',
+                contains('cancel'),
+              ),
+            ),
+          );
+          backend.probeGate!.complete();
+          await cancelled;
+          expect(backend.received, isEmpty);
+          expect(await engine.embedContent(input), [1.0]);
+        },
+      );
+    }
+  }
+
   test(
     'native media diagnostics name the guarded ABI and native version',
     () async {
