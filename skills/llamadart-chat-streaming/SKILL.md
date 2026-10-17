@@ -52,7 +52,12 @@ description: >-
   after a queued generation is cancelled before it runs, including a request
   already sent to the LiteRT-LM worker. LiteRT-LM validation failures,
   llama.cpp option-validation failures before its counter reset, and failed
-  dispatches also invalidate counters until another generation starts.
+  dispatches also invalidate counters. On native llama.cpp, generation,
+  embedding (the whole batch), scoring and text-to-speech reset counters
+  before execution and restore diagnostics for only that request. A request the
+  native worker rejects leaves diagnostics unavailable; argument checks that
+  fail before dispatch leave them unchanged. Native token counts retain llama.cpp's
+  minimum of one; embedding and scoring report `0` ms timings. LiteRT-LM recovers counters on generation.
   Reloaded contexts keep their own counter availability. Treat null as
   unavailable diagnostics for the cancelled or unsent request.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to

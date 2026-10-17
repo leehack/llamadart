@@ -346,11 +346,19 @@ llama.cpp and LiteRT-LM results, are in
 [Backend benchmarks](./backend-benchmarks#reproducing).
 
 On native llama.cpp and LiteRT-LM, cancelling a queued generation before it starts makes
-`getPerformanceContext()` return `null` for that context until another
-generation starts. This includes LiteRT-LM requests already sent to the
-worker that are cancelled before they run. Previous request counters are
+`getPerformanceContext()` return `null` for that context. This includes
+LiteRT-LM requests already sent to the worker that are cancelled before they run. Previous request counters are
 unavailable for the cancelled request, LiteRT-LM validation failures,
 llama.cpp option-validation failures before its counter reset, and failed
-dispatches.
+dispatches. Native llama.cpp resets native counters, saved timings and sampler
+counters before generation, embedding, next-token scoring or text-to-speech
+executes. An embedding batch accumulates all its inputs. A request the native
+worker rejects leaves diagnostics unavailable, while argument checks that fail
+before dispatch leave them unchanged; successful requests restore their own
+diagnostics. Token counters retain llama.cpp's native minimum of one
+for `evalTokens` and `promptEvalTokens`, even with no work in that category.
+Embedding and scoring report `0` ms timings because llama.cpp contexts
+disable native perf timing by default. LiteRT-LM still restores diagnostics on
+generation, and Web behavior is unchanged.
 Requests finishing after unload do not change a reloaded context's counter
 availability, including when the native handle is reused.
