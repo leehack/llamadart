@@ -18,6 +18,13 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
 - **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop model (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
+After loading a model, check `await engine.capabilities` before enabling
+optional controls. Native `supportsThinkingBudget` requires the runtime's
+reasoning-budget export. Native `mtp` can use an external `draftModel`;
+in-file MTP requires an MTP head and `ModelParams(loadMtp: true)`.
+Other external-draft strategies throw `LlamaArgumentException` at generation
+start if `draftModel` is missing.
+
 ## Usage
 
 To try an imported JSON Schema with nested array arguments, run:

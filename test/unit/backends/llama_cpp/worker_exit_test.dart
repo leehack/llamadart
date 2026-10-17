@@ -66,6 +66,10 @@ void main() {
       await Future.wait([tokenizing, probing]);
       expect(backend.isReady, isFalse);
       await expectLater(
+        backend.generationCapabilities().timeout(_deadline),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await expectLater(
         backend.tokenize(42, 'later').timeout(_deadline),
         throwsA(isA<LlamaStateException>()),
       );

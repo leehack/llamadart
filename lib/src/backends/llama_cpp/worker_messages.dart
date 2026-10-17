@@ -407,6 +407,15 @@ class TextToSpeechSynthesizeRequest extends WorkerRequest {
 /// Fire-and-forget request to cancel active native speech synthesis.
 class TextToSpeechCancelRequest {}
 
+/// Request for generation controls of a loaded model and runtime bundle.
+class GenerationCapabilitiesRequest extends WorkerRequest {
+  /// Handle of the loaded model.
+  final int modelHandle;
+
+  /// Creates a generation capability request.
+  GenerationCapabilitiesRequest(this.modelHandle, super.sendPort);
+}
+
 /// Request for decision-model support of a loaded model.
 class DecisionCapabilitiesRequest extends WorkerRequest {
   /// Handle of the loaded model.
@@ -602,6 +611,15 @@ class TextToSpeechResultResponse {
     required this.framesGenerated,
     required this.truncated,
   }) : pcm = TransferableTypedData.fromList(<TypedData>[samples]);
+}
+
+/// Worker response containing the loaded model's generation controls.
+class GenerationCapabilitiesResponse {
+  /// Capability snapshot from the native runtime.
+  final BackendGenerationCapabilities capabilities;
+
+  /// Creates a generation capability response.
+  GenerationCapabilitiesResponse(this.capabilities);
 }
 
 /// Worker response containing decision-model support.
