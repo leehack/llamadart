@@ -206,13 +206,16 @@ Use `--no-pub` for this build: ordinary Flutter commands can regenerate the
 `flutter clean`, deleting `macos/Flutter/ephemeral`, changing dependencies or
 running `flutter pub get`; do not commit generated files. The guard stops on
 an unexpected SDK manifest instead of silently claiming to repair it. This is
-a consumer bootstrap, not a Flutter SDK fix.
+a consumer bootstrap, not a Flutter SDK fix; the upstream defect is tracked in
+[flutter/flutter#186804](https://github.com/flutter/flutter/issues/186804) and
+[flutter/flutter#162196](https://github.com/flutter/flutter/issues/162196).
 
 A fresh ordinary `flutter build macos --debug` succeeds on our Xcode 27.1 host
 with Flutter 3.47.1. The original first-build failure was reported with Xcode
 27; the bootstrap is for affected toolchains and direct Xcode builds before
 Flutter has updated the generated floor. iOS still requires Runner's 16.4 floor;
-no iOS manifest workaround is needed for the verified fresh simulator build.
+no iOS manifest workaround is needed for the verified fresh
+`flutter build ios --simulator`. Direct Xcode iOS builds are unverified.
 
 ### Flutter macOS LiteRT-LM build phase
 

@@ -95,6 +95,9 @@ enum ChatFormat {
   pegNative,
 
   /// PEG constructed parser-backed format.
+  ///
+  /// Retains llama.cpp's historical `peg-constructed` name and XML mapper;
+  /// upstream removed this format before b10549. Used by Qwen3 Coder XML.
   pegConstructed,
 
   /// FunctionGemma — `<start_function_call>call:name{args}<end_function_call>`.
