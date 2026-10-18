@@ -133,6 +133,10 @@ class ReleaseAutomationTests(unittest.TestCase):
                                          'status': 'modified'})
         self.assertEqual(self.run_step('Check release-prep gate',
             workflow='release_on_prep_merge.yml')['should_release'], 'false')
+        self.scenario['files'][0][-1] = {'filename': 'doc/moved-adapter.md',
+            'previous_filename': 'packages/genkit_llamadart/README.md', 'status': 'renamed'}
+        self.assertEqual(self.run_step('Check release-prep gate',
+            workflow='release_on_prep_merge.yml')['should_release'], 'false')
         self.scenario['files_exit'] = 1
         self.run_step('Check release-prep gate', success=False,
                       workflow='release_on_prep_merge.yml')

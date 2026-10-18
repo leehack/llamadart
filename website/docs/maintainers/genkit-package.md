@@ -19,6 +19,12 @@ history. Preserve the import merge when landing this migration; **do not squash
 or rebase away the source parent**. See the package's
 [provenance record](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/PROVENANCE.md).
 Old issue/release links intentionally remain in the original repository.
+The manifest's `repository` also retains the actual published 3.4.0 source until
+first release prep. Pana verifies only a repository's default branch, so the new
+package path cannot pass that check before this migration lands. This preserves
+the existing zero-tolerance score gate; source navigation and new issues already
+point here. The first new release must switch the manifest repository to
+`https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart`.
 
 Native and bridge owners remain separate repositories. Flutter Edge AI's GGUF
 connector remains upstream; its pending embedding/upgrade work is not part of
@@ -104,7 +110,8 @@ publisher settings, protected environment, credential or repository settings.
    environment protections to the new prefix. Do not weaken any core protection.
    Automated publishing configuration follows
    [Dart's official procedure](https://dart.dev/tools/pub/automated-publishing).
-4. With separate release approval, prepare a new adapter version only, review
+4. With separate release approval, prepare a new adapter version only and
+   update its manifest's `repository` to the new package directory above. Review
    its two-file prep PR, then merge it to authorize package-specific automation.
    Do not reuse 3.4.0 or manually push release tags.
 5. Verify exact tag-to-merge SHA, publisher verify/lower-bound/publish jobs,

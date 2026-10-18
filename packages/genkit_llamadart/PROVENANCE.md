@@ -14,3 +14,9 @@ This source move does not republish that immutable version. Package imports,
 MIT license, adapter behavior and independently numbered changelog are retained.
 The original repository remains available for historical issues and releases.
 New package releases use `genkit_llamadart-vX.Y.Z` in `leehack/llamadart`.
+
+The manifest's repository still identifies the published 3.4.0 source. During
+first approved release prep from the new repository, change it to
+`https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart` together
+with the new adapter version. New issues and source documentation already point
+to llamadart; the old repository stays available for provenance.

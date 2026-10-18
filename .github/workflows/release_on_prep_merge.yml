@@ -61,7 +61,9 @@ jobs:
             if ! jq -e '
               [.[][]] as $files |
               any($files[]; .filename == "pubspec.yaml" and .status == "modified") and
-              all($files[]; (.filename | startswith("packages/genkit_llamadart/")) | not)
+              all($files[];
+                ([.filename, (.previous_filename // "")] |
+                 all(.[]; startswith("packages/genkit_llamadart/") | not)))
             ' <<< "$files" >/dev/null; then
               should_release=false
               reason="core prep must modify root pubspec and exclude independent Genkit changes"

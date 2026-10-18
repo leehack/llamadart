@@ -4,8 +4,9 @@ description: >-
   tool calling, JSON, embeddings, plus native batch transcription, speech
   synthesis and image generation.
 version: 3.4.0
-homepage: https://llamadart.leehack.com/docs/integrations/genkit
-repository: https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart
+homepage: https://llamadart.leehack.com
+# 3.4.0 was published here; switch on the first approved monorepo release.
+repository: https://github.com/leehack/genkit-llamadart
 issue_tracker: https://github.com/leehack/llamadart/issues
 topics:
   - genkit
