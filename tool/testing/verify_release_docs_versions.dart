@@ -3,6 +3,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
 import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -563,35 +565,14 @@ List<String> checkCompanionPublishedCorePins(Directory repoRoot) {
       if (source == null) continue;
       publishedPins[tag] = source;
       final (variable, compatibility) = contracts[companion.package]!;
-      final pins = RegExp(
-        "^const $variable = '([^']+)';\\s*\$",
-        multiLine: true,
-      ).allMatches(source).toList();
-      if (pins.length != 1) {
-        errors.add('Cannot uniquely read $variable in published core $tag.');
-        continue;
-      }
-      final accepted = <String>{pins.single.group(1)!};
-      if (compatibility != null) {
-        final maps = RegExp(
-          '^const $compatibility = <String, String>\\{(.*?)\\};',
-          dotAll: true,
-          multiLine: true,
-        ).allMatches(source).toList();
-        if (maps.length > 1 ||
-            (maps.isEmpty && source.contains('const $compatibility'))) {
-          errors.add('Cannot read $compatibility in published core $tag.');
-          continue;
-        }
-        if (maps.isNotEmpty) {
-          accepted.addAll(
-            RegExp(
-              r"^\s*'([^']+)':",
-              multiLine: true,
-            ).allMatches(maps.single.group(1)!).map((match) => match.group(1)!),
-          );
-        }
-      }
+      final accepted = _historicalCompanionPins(
+        source,
+        variable,
+        compatibility,
+        tag,
+        errors,
+      );
+      if (accepted == null) continue;
       if (!accepted.contains(pin)) {
         errors.add(
           '${companion.package} pins ${companion.nativeRepo}@$pin, '
@@ -603,6 +584,67 @@ List<String> checkCompanionPublishedCorePins(Directory repoRoot) {
     }
   }
   return errors;
+}
+
+Set<String>? _historicalCompanionPins(
+  String source,
+  String variable,
+  String? compatibility,
+  String tag,
+  List<String> errors,
+) {
+  // Parse historical code as data. Comments and string contents can contain
+  // plausible declarations or keys, but must never grant compatibility.
+  final parsed = parseString(content: source, throwIfDiagnostics: false);
+  if (parsed.errors.isNotEmpty) {
+    errors.add(
+      'Cannot read ${compatibility ?? variable} in published core $tag.',
+    );
+    return null;
+  }
+  final declarations = parsed.unit.declarations
+      .whereType<TopLevelVariableDeclaration>()
+      .expand((declaration) => declaration.variables.variables)
+      .toList();
+  final pins = declarations
+      .where((node) => node.name.lexeme == variable)
+      .toList();
+  final pin = pins.length == 1 ? pins.single.initializer : null;
+  if (pins.length != 1 ||
+      !pins.single.isConst ||
+      pin is! StringLiteral ||
+      pin.stringValue == null) {
+    errors.add('Cannot uniquely read $variable in published core $tag.');
+    return null;
+  }
+  final accepted = <String>{pin.stringValue!};
+  if (compatibility == null) return accepted;
+  final maps = declarations
+      .where((node) => node.name.lexeme == compatibility)
+      .toList();
+  if (maps.isEmpty) return accepted;
+  final map = maps.length == 1 ? maps.single.initializer : null;
+  if (maps.length != 1 || !maps.single.isConst || map is! SetOrMapLiteral) {
+    errors.add('Cannot read $compatibility in published core $tag.');
+    return null;
+  }
+  final keys = <String>{};
+  for (final element in map.elements) {
+    if (element is MapLiteralEntry) {
+      final key = element.key;
+      final value = element.value;
+      if (key is StringLiteral &&
+          key.stringValue != null &&
+          value is StringLiteral &&
+          value.stringValue != null &&
+          keys.add(key.stringValue!)) {
+        continue;
+      }
+    }
+    errors.add('Cannot read $compatibility in published core $tag.');
+    return null;
+  }
+  return accepted..addAll(keys);
 }
 
 /// Checks that every companion version release automation already published,

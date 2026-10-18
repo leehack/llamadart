@@ -481,7 +481,7 @@ const llamaCppTag = '$llamaCppTag';
 const liteRtLmReleaseTag = '$liteRtLmReleaseTag';
 const stableDiffusionReleaseTag = 'v0.2.0-3';
 const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
-  '$stableDiffusionReleaseTag': 'verified explicit compatibility',
+  '$stableDiffusionReleaseTag': 'verified ' 'explicit compatibility',
 };
 """;
       expect(checkCompanionPublishedCorePins(pair(source: source)), isEmpty);
@@ -489,8 +489,83 @@ const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
         checkCompanionPublishedCorePins(
           pair(source: source.replaceFirst('<String, String>{', 'unknown(')),
         ),
-        [contains('Cannot read stableDiffusionCompatibleAppleCompanionTags')],
+        contains(
+          contains('Cannot read stableDiffusionCompatibleAppleCompanionTags'),
+        ),
       );
+    });
+
+    test('commented and string-contained keys never qualify a historical pin', () {
+      for (final body in [
+        "/* '$stableDiffusionReleaseTag': 'comment only', */",
+        "/* outer /* nested */ '$stableDiffusionReleaseTag': 'comment only', */",
+        "// '$stableDiffusionReleaseTag': 'comment only',",
+        "'v0.2.0-2': \"\"\"example\n  '$stableDiffusionReleaseTag': 'string only',\n\"\"\",",
+      ]) {
+        final source =
+            """
+const llamaCppTag = '$llamaCppTag';
+const liteRtLmReleaseTag = '$liteRtLmReleaseTag';
+const stableDiffusionReleaseTag = 'v0.2.0-3';
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
+  $body
+};
+""";
+        expect(checkCompanionPublishedCorePins(pair(source: source)), [
+          contains('whose hook rejects that pin'),
+        ], reason: body);
+      }
+    });
+
+    test('string-contained declarations cannot impersonate live constants', () {
+      final source =
+          """
+const llamaCppTag = '$llamaCppTag';
+const liteRtLmReleaseTag = '$liteRtLmReleaseTag';
+const stableDiffusionReleaseTag = 'v0.2.0-3';
+const example = \"\"\"
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
+  '$stableDiffusionReleaseTag': 'string only',
+};
+\"\"\";
+""";
+      expect(checkCompanionPublishedCorePins(pair(source: source)), [
+        contains('whose hook rejects that pin'),
+      ]);
+      expect(
+        checkCompanionPublishedCorePins(
+          pair(
+            source: source.replaceFirst(
+              "const stableDiffusionReleaseTag = 'v0.2.0-3';",
+              "/* const stableDiffusionReleaseTag = '$stableDiffusionReleaseTag'; */",
+            ),
+          ),
+        ),
+        [contains('Cannot uniquely read stableDiffusionReleaseTag')],
+      );
+    });
+
+    test('nonliteral and duplicate compatibility entries fail closed', () {
+      for (final body in [
+        "...{'$stableDiffusionReleaseTag': 'spread'},",
+        "if (true) '$stableDiffusionReleaseTag': 'conditional',",
+        "'$stableDiffusionReleaseTag': describe(),",
+        r"'v0.2.0-4': '${runtimeValue}',",
+        "'$stableDiffusionReleaseTag': 'first', '$stableDiffusionReleaseTag': 'duplicate',",
+      ]) {
+        final source =
+            """
+const llamaCppTag = '$llamaCppTag';
+const liteRtLmReleaseTag = '$liteRtLmReleaseTag';
+const stableDiffusionReleaseTag = 'v0.2.0-3';
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
+  $body
+};
+""";
+        expect(checkCompanionPublishedCorePins(pair(source: source)), [
+          contains('Cannot read stableDiffusionCompatibleAppleCompanionTags'),
+        ], reason: body);
+      }
     });
 
     test('the production release-prep reverse check cannot be bypassed', () {
