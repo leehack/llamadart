@@ -38,9 +38,9 @@ Bridge source contract inspected read-only at
 `tests/bridge/multimodal_embedding_test.mjs`. It covers direct/worker cancellation,
 restore and structured-clone ownership; those are bridge responsibilities.
 
-Qualification target: EmbeddingGemma-2 BF16 with its matching mmproj and
-pinned assets `v0.1.66` on Chrome CPU wasm memory64 (`gpuLayers: 0`). The
-current rerun, exact-artifact provenance and lifecycle results are tracked in
+Qualification target: EmbeddingGemma-2 BF16 with its matching
+mmproj and pinned assets `v0.1.66` on Chrome CPU wasm memory64
+(`gpuLayers: 0`). The current rerun, exact-artifact provenance and lifecycle results are tracked in
 [PR 1205](https://github.com/leehack/llamadart/pull/1205); the table below
 retains its original artifact identity.
 
