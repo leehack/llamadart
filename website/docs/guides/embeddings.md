@@ -136,6 +136,23 @@ whole call throws `LlamaInferenceException` and returns no vectors. It never
 truncates or returns partial results. llama.cpp still validates actual expanded
 context/batch/micro-batch capacity before inference.
 
+## Native overflow errors
+
+Native llama.cpp throws `LlamaEmbeddingInputTooLongException` when a complete
+input exceeds its context or single-pass capacity. It remains an inference
+exception for existing callers. The effective limit can be lower than the model
+context because of batch, micro-batch or parallel-sequence settings. For mixed
+inputs the counts are expanded rows; no prefix or media content appears in the
+structured fields. Other runtimes retain their existing inference errors.
+
+```dart
+try {
+  await engine.embed(text);
+} on LlamaEmbeddingInputTooLongException catch (error) {
+  print('Input needs ${error.actualTokens} tokens; limit ${error.maxInputTokens}.');
+}
+```
+
 ## Backend support and compatibility
 
 - Embeddings are an optional backend capability. After loading a model,
@@ -154,7 +171,9 @@ context/batch/micro-batch capacity before inference.
   `LlamaUnsupportedException`; use an encoder-only or decoder-only embedding
   model.
 - On native, an input with more tokens than the context holds per sequence
-  throws `LlamaInferenceException`; shorten it or raise `contextSize`. With
+  throws `LlamaEmbeddingInputTooLongException` (a `LlamaInferenceException`);
+  shorten it or raise `contextSize`. The typed error reports `maxInputTokens`
+  and `actualTokens`, including special tokens. With
   `kvUnified: false`, the context is split across `maxParallelSequences`.
 - On native, encoder-only models, models without a KV cache, non-causal
   models and MEAN/CLS-pooled models embed each input in one pass. This also

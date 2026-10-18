@@ -68,6 +68,27 @@ class LlamaInferenceException extends LlamaException {
   LlamaInferenceException(super.message, [super.details]);
 }
 
+/// An embedding input exceeds the loaded context or single-pass budget.
+///
+/// Nothing is truncated. Split the input or load a larger context and batch.
+/// Native llama.cpp reports exact counts, including special tokens (or expanded
+/// multimodal rows). Other runtimes may not expose this structured failure.
+class LlamaEmbeddingInputTooLongException extends LlamaInferenceException {
+  /// Creates an overflow with the effective [maxInputTokens] and, when known,
+  /// the [actualTokens] required by the complete input.
+  LlamaEmbeddingInputTooLongException(
+    super.message, {
+    required this.maxInputTokens,
+    this.actualTokens,
+  });
+
+  /// Effective input capacity, including context and one-pass constraints.
+  final int maxInputTokens;
+
+  /// Complete input size in tokens or expanded rows, when the runtime knows it.
+  final int? actualTokens;
+}
+
 /// Exception thrown when a backend cannot initialize its runtime.
 class LlamaBackendInitializationException extends LlamaException {
   /// Creates a new [LlamaBackendInitializationException].

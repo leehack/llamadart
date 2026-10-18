@@ -1,3 +1,7 @@
+## Unreleased
+
+- Report native embedding overflow with typed limits and input counts.
+
 ## 0.15.0
 
 - Embed ordered text, images and audio with typed inputs and modality probes on

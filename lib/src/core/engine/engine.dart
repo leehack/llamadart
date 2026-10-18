@@ -2336,6 +2336,8 @@ class LlamaEngine {
   /// verbatim-concatenated text segment on every backend, without separators
   /// or templates, including when interleaved with media.
   /// [normalize] has the same L2 semantics as [embed]. Video is unavailable.
+  /// Native llama.cpp input overflow throws [LlamaEmbeddingInputTooLongException]
+  /// with token/expanded-row counts; other runtimes may report an inference error.
   ///
   /// Cancellation is requested through [cancelGeneration], including while
   /// capability checks are pending; cancellation throws [LlamaInferenceException].
@@ -2432,7 +2434,9 @@ class LlamaEngine {
   ///
   /// Throws [LlamaUnsupportedException] when [supportsEmbeddings] is false
   /// or the loaded model cannot embed, and [LlamaInferenceException] when
-  /// native llama.cpp input exceeds the context or a single embedding pass.
+  /// native inference fails. Native llama.cpp overflow throws
+  /// [LlamaEmbeddingInputTooLongException] (an inference exception) with its
+  /// effective capacity and input count, without truncation.
   Future<List<double>> embed(String text, {bool normalize = true}) =>
       _observeEmbeddings(
         <String>[text],
