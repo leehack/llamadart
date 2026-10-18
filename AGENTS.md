@@ -31,6 +31,10 @@ dart test -p chrome --exclude-tags local-only
   format does not): companion packages keep their own dependency, analyze,
   test, SwiftPM and publish-validation lanes, and the Jaspr docs site its own
   analyze and test lane (`ci.yml`).
+- `packages/genkit_llamadart` is independently versioned and resolved. Its
+  package-specific CI, history and release routing are documented in
+  `website/docs/maintainers/genkit-package.md`; never include it in core or
+  Apple companion release numbering.
 - Chat app changes: `(cd example/chat_app && flutter test test test_vm)`
   (`test_vm/` holds VM-only tests kept out of the Web compile), plus
   `flutter test --platform chrome test/chat_generation_service_test.dart

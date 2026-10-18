@@ -61,3 +61,6 @@ test/unit/backends/wllama/
 
 # Agent-only maintainer notes
 AGENTS.md
+
+# Independently published packages and their dependency graphs.
+/packages/genkit_llamadart/

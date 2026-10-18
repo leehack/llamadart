@@ -53,6 +53,81 @@ void main() {
   });
 
   group('assessHighRiskFiles', () {
+    test(
+      'independent Genkit runtime, schema, archive and policy paths retain gates',
+      () {
+        const prefix = 'packages/genkit_llamadart/';
+        expect(
+          assessHighRiskFiles([
+            'tool/release/genkit_release_helpers.sh',
+          ]).surfaces,
+          contains(HighRiskSurface.releaseAutomation),
+        );
+        for (final path in [
+          'lib/src/core/runtime/engine_registry.dart',
+          'lib/src/api/runtime_owner.dart',
+          'lib/src/api/model_preparation.dart',
+        ]) {
+          expect(
+            assessHighRiskFiles(['$prefix$path']).surfaces,
+            contains(HighRiskSurface.backendRuntime),
+            reason: path,
+          );
+        }
+        for (final path in [
+          'lib/genkit_llamadart.dart',
+          'lib/experimental.dart',
+          'lib/src/core/streaming/completion_accumulator.dart',
+          'lib/src/integration/genkit/converters/schema_to_tool_params.dart',
+          'lib/src/integration/genkit/converters/genkit_to_llama.dart',
+          'lib/src/integration/genkit/actions/model_action.dart',
+        ]) {
+          expect(
+            assessHighRiskFiles(['$prefix$path']).surfaces,
+            containsAll({
+              HighRiskSurface.structuredOutput,
+              HighRiskSurface.backendRuntime,
+            }),
+            reason: path,
+          );
+        }
+        for (final path in [
+          'pubspec.yaml',
+          '.pubignore',
+          'pubspec_overrides.yaml',
+        ]) {
+          expect(
+            assessHighRiskFiles(['$prefix$path']).surfaces,
+            contains(HighRiskSurface.artifactConsumer),
+            reason: path,
+          );
+        }
+        expect(
+          assessHighRiskFiles(['${prefix}CONTRIBUTING.md']).surfaces,
+          contains(HighRiskSurface.regressionPolicy),
+        );
+        expect(
+          assessHighRiskFiles(['$prefix.github/check_docs.py']).surfaces,
+          contains(HighRiskSurface.regressionPolicy),
+        );
+        for (final path in [
+          'test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
+          'test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
+          'test/integration/genkit/test_support/tool_schema_grammar_validation.dart',
+        ]) {
+          expect(
+            assessHighRiskFiles(['$prefix$path']).surfaces,
+            contains(HighRiskSurface.structuredOutput),
+          );
+        }
+        expect(assessHighRiskFiles(['${prefix}README.md']).isHighRisk, isFalse);
+        expect(
+          assessHighRiskFiles(['${prefix}doc/usage.md']).isHighRisk,
+          isFalse,
+        );
+      },
+    );
+
     test('classifies structured-output production and parity changes', () {
       final assessment = assessHighRiskFiles([
         'lib/src/core/template/chat_template_handler.dart',

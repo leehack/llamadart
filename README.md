@@ -21,6 +21,9 @@ explicit GPU requests throw, while automatic selection with a Vulkan
 preference falls back to CPU with a warning. See the
 [device limitations](https://llamadart.leehack.com/docs/platforms/support-matrix#known-limitations).
 
+
+Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.com/docs/next/integrations/choosing-an-api) for your application. Genkit remains a [separate package](https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart); the Flutter Edge AI connector is an upstream source integration.
+
 ## Start Here
 
 | Need | Link |

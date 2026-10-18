@@ -35,6 +35,39 @@ class TestMatrixRow {
 /// The canonical contributor-facing validation matrix.
 const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
+    id: 'genkit-contracts',
+    tier: 'targeted',
+    mode: 'CI + local; model-free',
+    covers:
+        'independent published/local-core resolution, minimum Dart and lower bounds, docs snippets and browser guards',
+    command:
+        'CI jobs genkit and genkit-lower-bounds in .github/workflows/ci.yml; package commands in packages/genkit_llamadart/CONTRIBUTING.md',
+    useWhen:
+        'Genkit adapter, core API or integration quickstart changes. Browser guards do not qualify a full Genkit Web deployment.',
+  ),
+  TestMatrixRow(
+    id: 'genkit-native-cpu',
+    tier: 'platform',
+    mode: 'local + tiny-model CI; CPU',
+    covers:
+        'adapter native capability guards, embeddings, cancellation, disposal and owner isolation',
+    command:
+        'From packages/genkit_llamadart: supply LLAMADART_INTEGRATION_MODEL_PATH and LLAMADART_INTEGRATION_EMBED_MODEL_PATH, then dart test -t real-model -j 1; optional-family fixtures are documented in CONTRIBUTING.md',
+    useWhen:
+        'Adapter runtime or core integration changes; reuse local fixtures and record skipped families explicitly.',
+  ),
+  TestMatrixRow(
+    id: 'genkit-release',
+    tier: 'release',
+    mode: 'CI + local; no publication',
+    covers:
+        'core/adapter release isolation, two-file prep scope, tag/version guards, HTTP failure handling and standalone staging',
+    command:
+        'dart test -p vm test/unit/tooling/genkit_release_routing_test.dart test/unit/tooling/genkit_package_staging_test.dart',
+    useWhen:
+        'Independent adapter release routing or archives change; owner handoff checklist: website/docs/maintainers/genkit-package.md.',
+  ),
+  TestMatrixRow(
     id: 'ci-selection',
     tier: 'targeted',
     mode: 'CI + local; no models',

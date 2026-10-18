@@ -6,6 +6,9 @@ description: Download a small GGUF model from Hugging Face, load it with LlamaEn
 
 This quickstart uses the core `LlamaEngine` API.
 
+For Genkit flows or Flutter Edge AI model/chat orchestration, start with
+[Choose an integration](../integrations/choosing-an-api).
+
 ## Minimal generation example
 
 Start with a model source instead of a machine-specific file path. On native

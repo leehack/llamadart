@@ -97,7 +97,12 @@ the test command, `head_result: pass`, `control_result: fail`, `control_kind`
 (`before-fix` or `mutation`), control description, and evidence notes linking the
 observed results. The independent reviewer checks that the case really reaches
 the affected branch and that the failure is causal, not a setup error. Every
-changed production path under `lib/`, `tool/`, or `hook/` needs this coverage.
+changed production path under `lib/`, `tool/`, `hook/`, or
+`packages/genkit_llamadart/lib/` needs this coverage. The independent Genkit
+package may cite its own `packages/genkit_llamadart/test/**/*_test.dart` files;
+the same exact-blob, callsite, causal-control and structured-output obligations
+apply. This does not admit arbitrary package paths or relax compiled-grammar,
+independent-audit or external-authentication requirements.
 
 The evaluator verifies named cases/snippets against exact Git blobs and rejects
 missing or disconnected references. A literal match does **not** establish a
@@ -203,7 +208,15 @@ exercise compiled valid and malformed/unknown/missing/wrong-type shapes.
 Acceptance/rejection still cite a maintained compiled production grammar test:
 
 - `test/integration/core/grammar/generated_tool_schema_grammar_test.dart`; or
-- `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart`.
+- `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart`;
+- `packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart`; or
+- `packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart`.
+
+The adapter suites compile serialized tool/response schemas with the native
+sampler and test accepted and rejected token sequences. They require the pinned
+Qwen3 fixture; an optional-fixture skip is not passing model evidence. This keeps
+adapter tests independent of core's dependency graph without accepting arbitrary
+package tests as compiled grammar proof.
 
 Path hints establish conservative minimum impacts. The render-context boundary
 is rendering/history; dedicated PEG execution/fallback parse files are parsing/streaming;

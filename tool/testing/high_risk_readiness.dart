@@ -593,6 +593,8 @@ class HighRiskReadinessEvaluator {
   static const _knownCompiledGrammarTests = <String>{
     'test/integration/core/grammar/generated_tool_schema_grammar_test.dart',
     'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
+    'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
+    'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
   };
 
   Future<HighRiskReadinessResult> evaluate({
@@ -1199,9 +1201,7 @@ class HighRiskReadinessEvaluator {
       final path = ref['path'];
       if (path is! String ||
           !paths.add(path) ||
-          !(path.startsWith('lib/') ||
-              path.startsWith('tool/') ||
-              path.startsWith('hook/')) ||
+          !_isProductionPath(path) ||
           path.contains('..') ||
           path.contains('\\') ||
           RegExp(r'[\x00-\x20\x7f*?\[\]]').hasMatch(path) ||
@@ -1238,14 +1238,7 @@ class HighRiskReadinessEvaluator {
           change.previousPath!,
     };
     final inspectedPaths = {...changes.keys, ...renamedSources};
-    final changedProduction = inspectedPaths
-        .where(
-          (path) =>
-              path.startsWith('lib/') ||
-              path.startsWith('tool/') ||
-              path.startsWith('hook/'),
-        )
-        .toSet();
+    final changedProduction = inspectedPaths.where(_isProductionPath).toSet();
     Future<bool> refsExist(List<dynamic> refs) async {
       for (final ref in refs.cast<Map<String, dynamic>>()) {
         final path = ref['path'] as String;
@@ -1710,6 +1703,12 @@ class HighRiskReadinessEvaluator {
         parsed.second == int.parse(match.group(6)!);
   }
 
+  static bool _isProductionPath(String path) =>
+      path.startsWith('lib/') ||
+      path.startsWith('tool/') ||
+      path.startsWith('hook/') ||
+      path.startsWith('packages/genkit_llamadart/lib/');
+
   static bool _isProductionTestPath(String path) {
     if (path.startsWith('/') ||
         path.contains('\\') ||
@@ -1723,7 +1722,9 @@ class HighRiskReadinessEvaluator {
             .any((part) => part.isEmpty || part == '.' || part == '..')) {
       return false;
     }
-    return path.startsWith('test/') && path.endsWith('_test.dart');
+    return (path.startsWith('test/') ||
+            path.startsWith('packages/genkit_llamadart/test/')) &&
+        path.endsWith('_test.dart');
   }
 
   static bool _isValidRepositoryChange(RepositoryChange change) {

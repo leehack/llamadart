@@ -29,11 +29,15 @@ jobs:
     steps:
       - name: Check release-prep gate
         id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           set -euo pipefail
 
           head_ref="$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH")"
+          head_repo="$(jq -r '.pull_request.head.repo.full_name // ""' "$GITHUB_EVENT_PATH")"
           labels="$(jq -r '.pull_request.labels[].name // empty' "$GITHUB_EVENT_PATH")"
 
           should_release=false
@@ -45,6 +49,25 @@ jobs:
             "$head_ref" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep$ ]]; then
             should_release=true
             reason="release-prep branch $head_ref"
+          fi
+
+          # Adapter releases have their own gate and cannot publish core or companions.
+          if [[ "$head_repo" != "$GITHUB_REPOSITORY" || "$head_ref" == release/genkit_llamadart-* ]]; then
+            should_release=false
+            reason="not a same-repository core release prep"
+          fi
+          if [[ "$should_release" == true ]]; then
+            files="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files")"
+            if ! jq -e '
+              [.[][]] as $files |
+              any($files[]; .filename == "pubspec.yaml" and .status == "modified") and
+              all($files[];
+                ([.filename, (.previous_filename // "")] |
+                 all(.[]; startswith("packages/genkit_llamadart/") | not)))
+            ' <<< "$files" >/dev/null; then
+              should_release=false
+              reason="core prep must modify root pubspec and exclude independent Genkit changes"
+            fi
           fi
 
           {
