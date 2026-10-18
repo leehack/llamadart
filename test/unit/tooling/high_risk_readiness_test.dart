@@ -1710,10 +1710,60 @@ void main() {
 
   group('candidate-tree evidence paths', () {
     test(
+      'Genkit test and production paths bind exact-head evidence without bypasses',
+      () async {
+        const source =
+            'packages/genkit_llamadart/lib/src/core/runtime/engine_registry.dart';
+        const target =
+            'packages/genkit_llamadart/test/core/runtime/engine_registry/reuse_test.dart';
+        final evidence =
+            jsonDecode(
+                  jsonEncode(backendEvidence())
+                      .replaceAll(backendSource, source)
+                      .replaceAll(backendTest, target),
+                )
+                as Map<String, dynamic>;
+        final changes = [
+          const RepositoryChange(
+            path: source,
+            kind: RepositoryChangeKind.modified,
+          ),
+          const RepositoryChange(
+            path: target,
+            kind: RepositoryChangeKind.added,
+          ),
+        ];
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          changes,
+          existingPaths: {source, target, backendSource},
+        ).evaluate(evidence: evidence, context: context);
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        evidence['test_evidence'][target]['production_refs'] = productionRefs(
+          backendSource,
+        );
+        final disconnected = await evaluate();
+        expect(disconnected.decision, ReadinessDecision.rejected);
+        expect(disconnected.message, contains('disconnected'));
+        evidence['test_evidence'][target]['production_refs'] = productionRefs(
+          source,
+        );
+        evidence['test_evidence'][target]['control_result'] = 'pass';
+        expect((await evaluate()).decision, ReadinessDecision.rejected);
+      },
+    );
+
+    test(
       'rejects traversal, absolute, non-test, and tool script paths',
       () async {
         for (final path in [
           '../test/escape_test.dart',
+          'packages/other/test/escape_test.dart',
+          'packages/genkit_llamadart/lib/not_a_test.dart',
+          'packages/genkit_llamadart/test/../lib/escape_test.dart',
+          'packages/genkit_llamadart/test/unit/*_test.dart',
           '/test/absolute_test.dart',
           'test/../test/escape_test.dart',
           'lib/readme.dart',
@@ -2164,6 +2214,19 @@ void main() {
         (definitions['testPath'] as Map<String, dynamic>)['pattern'] as String,
       );
       expect(testPathPattern.hasMatch(backendTest), isTrue);
+      expect(
+        testPathPattern.hasMatch(
+          'packages/genkit_llamadart/test/core/runtime/reuse_test.dart',
+        ),
+        isTrue,
+      );
+      for (final path in [
+        'packages/other/test/reuse_test.dart',
+        'packages/genkit_llamadart/test/../lib/reuse_test.dart',
+        'packages/genkit_llamadart/test/unit/*_test.dart',
+      ]) {
+        expect(testPathPattern.hasMatch(path), isFalse, reason: path);
+      }
       for (final unsafePath in [
         'test/../escape_test.dart',
         r'test\escape_test.dart',

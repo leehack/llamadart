@@ -1,5 +1,6 @@
 """Exercise the same package staging used by CI and the publisher."""
 from pathlib import Path
+import os
 import runpy
 import tempfile
 import unittest
@@ -29,7 +30,7 @@ class StageTest(unittest.TestCase):
                 self.assertEqual((target / name).read_bytes(), (source / name).read_bytes())
             self.assertTrue((source / 'pubspec_overrides.yaml').exists())
 
-    def test_refuses_existing_destination_nested_destination_and_symlinks(self):
+    def test_refuses_existing_and_nested_destinations(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / 'source'
             source.mkdir()
@@ -38,6 +39,14 @@ class StageTest(unittest.TestCase):
             for target in (source, source / 'nested', Path(folder)):
                 with self.assertRaises(ValueError):
                     stage(source, target)
+
+    @unittest.skipIf(os.name == 'nt', 'Windows symlink fixtures require elevation')
+    def test_refuses_symlink_sources_before_copying(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'source'
+            source.mkdir()
+            for name in ('pubspec.yaml', 'README.md', 'CHANGELOG.md', 'LICENSE'):
+                (source / name).write_text(name)
             (source / 'escaped').symlink_to(Path(folder) / 'outside')
             with self.assertRaises(ValueError):
                 stage(source, Path(folder) / 'staged')

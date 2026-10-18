@@ -110,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          source "$GITHUB_WORKSPACE/.github/genkit_release_helpers.sh"
+          source "$GITHUB_WORKSPACE/tool/release/genkit_release_helpers.sh"
           release_validate_wait_settings
 
           cd packages/genkit_llamadart
@@ -249,7 +249,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          source "$GITHUB_WORKSPACE/.github/genkit_release_helpers.sh"
+          source "$GITHUB_WORKSPACE/tool/release/genkit_release_helpers.sh"
           release_validate_wait_settings
           version_url="https://pub.dev/api/packages/$PACKAGE_NAME/versions/$VERSION"
           for attempt in $(seq 1 "$RELEASE_WAIT_ATTEMPTS"); do

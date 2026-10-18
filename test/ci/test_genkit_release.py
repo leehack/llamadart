@@ -63,9 +63,9 @@ class ReleaseAutomationTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / "bin").mkdir()
-        (self.root / ".github").mkdir()
+        (self.root / "tool/release").mkdir(parents=True)
         (self.root / "packages/genkit_llamadart").mkdir(parents=True)
-        shutil.copy(ROOT / ".github/genkit_release_helpers.sh", self.root / ".github")
+        shutil.copy(ROOT / "tool/release/genkit_release_helpers.sh", self.root / "tool/release")
         for name in ("git", "gh", "curl"):
             p = self.root / "bin" / name
             p.write_text(FAKE)

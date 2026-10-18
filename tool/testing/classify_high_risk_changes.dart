@@ -110,13 +110,25 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
 }
 
 bool _isPublicEntrypoint(String path) {
-  return path == 'lib/llamadart.dart' ||
+  return path == 'packages/genkit_llamadart/lib/genkit_llamadart.dart' ||
+      path == 'packages/genkit_llamadart/lib/experimental.dart' ||
+      path == 'lib/llamadart.dart' ||
       path == 'lib/backend.dart' ||
       path == 'lib/llama_cpp_bindings.dart';
 }
 
 bool _isStructuredOutput(String path) {
   return _isPublicEntrypoint(path) ||
+      path.startsWith('packages/genkit_llamadart/lib/src/core/streaming/') ||
+      path.startsWith(
+        'packages/genkit_llamadart/lib/src/integration/genkit/converters/',
+      ) ||
+      const {
+        'packages/genkit_llamadart/lib/src/integration/genkit/actions/model_action.dart',
+        'packages/genkit_llamadart/lib/src/integration/genkit/plugin.dart',
+        'packages/genkit_llamadart/lib/src/integration/genkit/bidi_plugin.dart',
+        'packages/genkit_llamadart/lib/src/integration/genkit/request_support.dart',
+      }.contains(path) ||
       path.startsWith('lib/src/core/template/') ||
       path.startsWith('lib/src/core/grammar/') ||
       path.startsWith('lib/src/core/models/tools/') ||
@@ -151,6 +163,7 @@ bool _isStructuredOutputEvidence(String path) {
 
 bool _isBackendRuntime(String path) {
   return _isPublicEntrypoint(path) ||
+      path.startsWith('packages/genkit_llamadart/lib/') ||
       path.startsWith('lib/src/backends/') ||
       path.startsWith('lib/src/core/engine/') ||
       path.startsWith('lib/src/core/models/') ||
@@ -161,7 +174,11 @@ bool _isBackendRuntime(String path) {
 }
 
 bool _isArtifactConsumer(String path) {
-  return path == 'pubspec.yaml' ||
+  return path == '.pubignore' ||
+      path == 'packages/genkit_llamadart/pubspec.yaml' ||
+      path == 'packages/genkit_llamadart/pubspec_overrides.yaml' ||
+      path == 'packages/genkit_llamadart/.pubignore' ||
+      path == 'pubspec.yaml' ||
       path == 'pubspec.lock' ||
       path.startsWith('hook/') ||
       path.startsWith('lib/src/hook/') ||
@@ -195,7 +212,10 @@ bool _isReleaseAutomation(String path) {
 }
 
 bool _isRegressionPolicy(String path) {
-  return path == 'AGENTS.md' ||
+  return path == 'packages/genkit_llamadart/AGENTS.md' ||
+      path == 'packages/genkit_llamadart/CONTRIBUTING.md' ||
+      path.startsWith('packages/genkit_llamadart/.github/') ||
+      path == 'AGENTS.md' ||
       path == 'CONTRIBUTING.md' ||
       path == '.github/CODEOWNERS' ||
       path == '.github/pull_request_template.md' ||
