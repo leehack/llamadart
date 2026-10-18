@@ -216,7 +216,7 @@ runtime without it, into one of its optional groups, which is `null` there
 ([exit teardown](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#image-models)).
 
 After a sync, run
-`dart test --run-skipped -t local-only test/integration/stable_diffusion_runtime_hook_test.dart`
+`dart test -p vm --run-skipped -t local-only test/integration/stable_diffusion_runtime_hook_test.dart`
 on macOS: it builds a throwaway consumer against the new pin and probes the
 runtime it bundles. Then run the `image-generation-smoke` and
 `image-exit-teardown` rows of `doc/testing_matrix.md`.
