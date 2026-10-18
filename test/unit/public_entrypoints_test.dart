@@ -125,6 +125,7 @@ const _appNames = <String>{
   'LlamaImageContent',
   'LlamaImageGenerationException',
   'LlamaInferenceException',
+  'LlamaEmbeddingInputTooLongException',
   'LlamaLogLevel',
   'LlamaLogRecord',
   'LlamaLogger',

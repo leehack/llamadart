@@ -5690,11 +5690,13 @@ class LlamaCppService {
     }
     if (requiredTokenCount > maxTokens) {
       malloc.free(textPtr);
-      throw LlamaInferenceException(
+      throw LlamaEmbeddingInputTooLongException(
         'The embedding input has $requiredTokenCount tokens, but the context '
         'holds at most $maxTokens tokens per sequence. Shorten the input or '
         'raise ModelParams.contextSize; with ModelParams.kvUnified false, the '
         'context is split across ModelParams.maxParallelSequences.',
+        maxInputTokens: maxTokens,
+        actualTokens: requiredTokenCount,
       );
     }
 
@@ -5794,11 +5796,13 @@ class LlamaCppService {
 
   void _checkEmbeddingPassTokenLimit(int tokenCount, int? passTokenLimit) {
     if (passTokenLimit != null && tokenCount > passTokenLimit) {
-      throw LlamaInferenceException(
+      throw LlamaEmbeddingInputTooLongException(
         'The embedding input has $tokenCount tokens, but this model '
         'embeds its input in one pass of at most $passTokenLimit tokens '
         '(n_ubatch). Shorten the input or raise ModelParams.microBatchSize '
         'and ModelParams.batchSize.',
+        maxInputTokens: passTokenLimit,
+        actualTokens: tokenCount,
       );
     }
   }

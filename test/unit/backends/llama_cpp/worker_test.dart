@@ -293,6 +293,34 @@ void main() {
       }
     });
 
+    test(
+      'preserves typed embedding overflow fields through the worker',
+      () async {
+        final worker = await _startWorkerInCurrentIsolate(
+          _DecisionService(
+            error: LlamaEmbeddingInputTooLongException(
+              'input too long',
+              maxInputTokens: 64,
+              actualTokens: 65,
+            ),
+          ),
+        );
+        try {
+          final response =
+              await _sendRequest(
+                    worker.sendPort,
+                    (sendPort) => DecisionRunRequest(1, const [], sendPort),
+                  )
+                  as ErrorResponse;
+          expect(response.kind, WorkerErrorKind.embeddingInputTooLong);
+          expect(response.maxInputTokens, 64);
+          expect(response.actualTokens, 65);
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
     test('preserves decision error categories', () async {
       final cases = <(Object, WorkerErrorKind)>[
         (LlamaModelException('bad head tensor'), WorkerErrorKind.model),
