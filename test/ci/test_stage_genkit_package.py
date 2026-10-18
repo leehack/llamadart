@@ -24,7 +24,7 @@ class StageTest(unittest.TestCase):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('content of ' + name)
             target = stage(source, Path(folder) / 'staged')
-            self.assertEqual(sorted(str(p.relative_to(target)) for p in target.rglob('*') if p.is_file()),
+            self.assertEqual(sorted(p.relative_to(target).as_posix() for p in target.rglob('*') if p.is_file()),
                              sorted(expected))
             for name in expected:
                 self.assertEqual((target / name).read_bytes(), (source / name).read_bytes())
