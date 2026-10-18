@@ -170,6 +170,15 @@ class CandidateScoreTest(unittest.TestCase):
             self.execute()
         self.assertFalse(self.calls)
 
+    def test_shallow_checkout_stops_before_pana(self):
+        shallow = self.folder / 'shallow'
+        RUN(['git', 'clone', '--quiet', '--depth', '1', self.root.as_uri(), str(shallow)],
+            check=True)
+        self.root = shallow
+        with self.assertRaisesRegex(ValueError, 'fetch-depth: 0'):
+            self.execute()
+        self.assertFalse(self.calls)
+
     def test_modified_archive_manifest_stops_before_pana(self):
         (self.package / 'pubspec.yaml').write_text('name: another_package\n')
         with self.assertRaisesRegex(ValueError, 'Staged manifest differs'):

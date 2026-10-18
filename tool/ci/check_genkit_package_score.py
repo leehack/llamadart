@@ -45,6 +45,8 @@ def candidate_commit(root, environment):
     merge, base, head = revisions
     if git(root, 'rev-parse', 'HEAD').decode().strip() != merge:
         raise ValueError('Checkout differs from GitHub tested merge')
+    if git(root, 'rev-parse', '--is-shallow-repository').decode().strip() != 'false':
+        raise ValueError('Candidate source needs complete checkout; use fetch-depth: 0')
     parents = git(root, 'show', '-s', '--format=%P', merge).decode().split()
     if parents != [base, head]:
         raise ValueError('Tested merge does not match GitHub PR base and head')

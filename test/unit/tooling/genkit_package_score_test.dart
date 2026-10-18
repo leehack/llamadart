@@ -4,6 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 void main() {
   test(
@@ -29,6 +30,8 @@ void main() {
   test('candidate scoring is CI only and publication keeps public Pana', () {
     final ci = File('.github/workflows/ci.yml').readAsStringSync();
     expect(ci, contains('python3 tool/ci/check_genkit_package_score.py'));
+    final checkout = loadYaml(ci)['jobs']['genkit']['steps'].first;
+    expect(checkout['with'], {'fetch-depth': 0, 'persist-credentials': false});
     final publisher = File(
       '.github/workflows/publish_genkit_pubdev.yml',
     ).readAsStringSync();
