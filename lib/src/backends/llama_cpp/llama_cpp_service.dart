@@ -763,6 +763,7 @@ class LlamaCppService {
   String _activeBackendName = 'CPU';
   int _activeResolvedGpuLayers = 0;
   bool _mtmdFallbackLookupAttempted = false;
+  String? _mtmdFallbackLookupDirectory;
   bool _mtmdPrimarySymbolsUnavailable = false;
   bool _mtmdVideoPrimarySymbolUnavailable = false;
   _MtmdApi? _mtmdFallbackApi;
@@ -8685,14 +8686,30 @@ class LlamaCppService {
     return library.lookup<NativeType>(name);
   }
 
-  _MtmdApi? _resolveMtmdFallbackApi() {
-    if (_mtmdFallbackLookupAttempted) {
+  // Log setup can probe before backend initialization discovers the bundle's
+  // module directory. A miss only describes that search, while a loaded API
+  // must stay bound to the same library for live projector objects.
+  static bool _shouldRetryMtmdFallbackLookup({
+    required bool attempted,
+    required bool hasApi,
+    required String? searchedDirectory,
+    required String? moduleDirectory,
+  }) => !attempted || (!hasApi && searchedDirectory != moduleDirectory);
+
+  _MtmdApi? _resolveMtmdFallbackApi({DynamicLibrary Function(String)? open}) {
+    if (!_shouldRetryMtmdFallbackLookup(
+      attempted: _mtmdFallbackLookupAttempted,
+      hasApi: _mtmdFallbackApi != null,
+      searchedDirectory: _mtmdFallbackLookupDirectory,
+      moduleDirectory: _backendModuleDirectory,
+    )) {
       return _mtmdFallbackApi;
     }
     _mtmdFallbackLookupAttempted = true;
+    _mtmdFallbackLookupDirectory = _backendModuleDirectory;
 
     final fileNameCandidates = _mtmdLibraryCandidateFileNames();
-    final candidates = <String>{...fileNameCandidates};
+    final candidates = <String>{};
     final backendModuleDirectory = _backendModuleDirectory;
     if (backendModuleDirectory != null) {
       for (final fileName in fileNameCandidates) {
@@ -8700,10 +8717,13 @@ class LlamaCppService {
       }
     }
 
+    // Keep the bundled runtime ahead of unrelated libraries on the search path.
+    candidates.addAll(fileNameCandidates);
+
     DynamicLibrary? library;
     for (final candidate in candidates) {
       try {
-        library = DynamicLibrary.open(candidate);
+        library = (open ?? DynamicLibrary.open)(candidate);
         break;
       } catch (_) {
         continue;
