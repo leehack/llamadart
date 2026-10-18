@@ -25,7 +25,7 @@ Future<void> main(List<String> arguments) async {
         '  speech --pack stt|tts|litert-asr --backend cpu|metal|vulkan|cuda --out <new-directory> [--model <file>] [--projector <file>]\n'
         '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>] [--internal-diagnostic-run-id <new-id>]\n'
         '    Android NPU: --kit <directory> --model <file> [--execution-path public_api|native_c_api]\n'
-        '  local --profile <id> [--model <path>] [--out <new-directory>]\n'
+        '  local --profile <id> [--model <path>] [--projector <path>] [--out <new-directory>]\n'
         '  report --out <run-directory>\n'
         '  npu-preflight --profile npu-qualcomm-sm8650|npu-tensor-g5 [--model <file>] [--kit <directory>] [--out <new-json>]\n'
         '  plan --target <remote-target> --config <local-json> --bundle <directory> --out <plan.json>\n'
@@ -188,6 +188,10 @@ Future<void> main(List<String> arguments) async {
                 '--model',
                 p.absolute(options['model']!),
               ],
+              if (options['projector'] != null) ...[
+                '--projector',
+                p.absolute(options['projector']!),
+              ],
               '--out',
               localOutput,
               '--cache',
@@ -332,6 +336,7 @@ Map<String, String> _options(
           'out',
           'profile',
           'model',
+          'projector',
           'kit',
           'execution-path',
           'internal-diagnostic-run-id',

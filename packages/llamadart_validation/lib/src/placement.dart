@@ -34,6 +34,7 @@ Map<String, dynamic> inspectPlacement(
   // case inventory or the evidence records that happen to be present.
   final List<String> selected;
   var headContexts = const <String, int>{};
+  var embeddingMetal = false;
   try {
     final parsed = ValidationProfile.fromJson(
       Map<String, dynamic>.from(profile),
@@ -44,6 +45,7 @@ Map<String, dynamic> inspectPlacement(
       return result;
     }
     if (parsed.isDecision) headContexts = decisionHeadContexts;
+    embeddingMetal = parsed.isEmbedding && backend == 'metal';
     final catalog = manifest['catalog'] as Map?;
     final version = catalog?['version'] ?? 1;
     selected =
@@ -184,10 +186,16 @@ Map<String, dynamic> inspectPlacement(
       deviceIdentityVerified &&
       offloads.length == expectedLoads &&
       offloads.every(
-        (m) => int.parse(m[1]!) > 0 && int.parse(m[1]!) <= int.parse(m[2]!),
+        (m) =>
+            int.parse(m[1]!) > 0 &&
+            (embeddingMetal
+                ? m[1] == m[2]
+                : int.parse(m[1]!) <= int.parse(m[2]!)),
       ) &&
-      buffers.length ==
-          expectedLoads + headContexts.values.fold(0, (a, b) => a + b) &&
+      (embeddingMetal
+          ? _embeddingMetalBuffers(log, expectedLoads)
+          : buffers.length ==
+                expectedLoads + headContexts.values.fold(0, (a, b) => a + b)) &&
       buffers.every((m) => (double.tryParse(m[1]!) ?? 0) > 0);
   return {
     ...result,
@@ -201,6 +209,74 @@ Map<String, dynamic> inspectPlacement(
     'offload_records': offloads.map((m) => m[0]).toList(),
     'compute_records': buffers.map((m) => m[0]).toList(),
   };
+}
+
+// Pooled embedding requests toggle the graph shape, so sched_reserve can emit
+// repeatedly for one llama_context. Count contexts, then account for every
+// reservation instead of imposing a request-dependent buffer-record ceiling.
+// This shape is qualified only for the locked Gemma embedding Metal pack.
+bool _embeddingMetalBuffers(String log, int expectedLoads) {
+  final contexts = RegExp(
+    r'llama_context: constructing llama_context',
+  ).allMatches(log).toList();
+  final allocations = RegExp(
+    r'(\w+):\s*(\S+) compute buffer size =\s*([0-9.]+) (?:MiB|MB)',
+  ).allMatches(log).toList();
+  if (contexts.length != expectedLoads ||
+      allocations.length != 'compute buffer size'.allMatches(log).length) {
+    return false;
+  }
+  var accounted = 0;
+  for (var i = 0; i < contexts.length; i++) {
+    final start = contexts[i].start;
+    final end = i + 1 < contexts.length ? contexts[i + 1].start : log.length;
+    final context = log.substring(start, end);
+    final reservations = RegExp(
+      r'sched_reserve: reserving \.\.\.[\s\S]*?'
+      r'sched_reserve: reserve took[^\r\n]*',
+    ).allMatches(context).toList();
+    final projectors = RegExp(
+      r'clip_ctx: CLIP using (\S+) backend[\s\S]*?'
+      r'reserve_compute_meta: graph splits =[^\r\n]*',
+    ).allMatches(context).toList();
+    final projectorIdentities = projectors.map((p) {
+      final types = RegExp(
+        r'load_hparams: projector:\s*(\S+)',
+      ).allMatches(p[0]!).map((m) => m[1]).join(',');
+      return '${p[1]}:$types';
+    });
+    if (reservations.isEmpty ||
+        reservations.length !=
+            'sched_reserve: reserving ...'.allMatches(context).length ||
+        projectors.length !=
+            'clip_ctx: CLIP using '.allMatches(context).length ||
+        projectorIdentities.join(',') != 'MTL0:gemma4v,MTL0:gemma4a') {
+      return false;
+    }
+    for (final block in [...reservations, ...projectors]) {
+      final records = allocations
+          .where(
+            (a) => a.start >= start + block.start && a.end <= start + block.end,
+          )
+          .toList();
+      final owner = reservations.contains(block)
+          ? 'sched_reserve'
+          : 'reserve_compute_meta';
+      if (records.where((a) => a[2] == 'MTL0').length != 1 ||
+          records.any(
+            (a) =>
+                a[1] != owner ||
+                !['MTL0', 'CPU'].contains(a[2]) ||
+                (double.tryParse(a[3]!) ?? 0) <= 0,
+          )) {
+        return false;
+      }
+      accounted += records.length;
+    }
+  }
+  // Includes CPU scratch buffers: they may accompany Metal, but a CPU-only
+  // reservation cannot satisfy the per-block MTL0 requirement above.
+  return accounted == allocations.length;
 }
 
 final _softwareRenderer = RegExp(
