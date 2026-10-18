@@ -53,6 +53,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.1
@@ -70,11 +73,9 @@ jobs:
       - name: Verify standalone adapter archive and score
         run: |
           python3 tool/release/stage_genkit_package.py "$RUNNER_TEMP/genkit-package"
-          cd "$RUNNER_TEMP/genkit-package"
-          dart pub get
-          dart pub publish --dry-run
+          (cd "$RUNNER_TEMP/genkit-package" && dart pub get && dart pub publish --dry-run)
           dart pub global activate pana
-          dart pub global run pana . --exit-code-threshold 0
+          python3 tool/ci/check_genkit_package_score.py "$RUNNER_TEMP/genkit-package"
       - name: Test adapter against checkout core
         working-directory: packages/genkit_llamadart
         run: |
