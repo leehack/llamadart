@@ -21,8 +21,12 @@ throws `LlamaUnsupportedException`, matching native.
 All requested modalities are checked before dispatch; the bridge validates the
 whole batch's shapes, codecs and expanded-token limits before inference.
 Caller buffers remain owned by the caller and must stay unchanged until the
-future settles. Cancellation forwards to bridge `cancel`; await the embedding
-future before reuse. Disposal awaits bridge teardown, which settles active work.
+future settles. Cancellation forwards to bridge `cancel`; cancelled content
+calls discard a late successful bridge result and throw
+`LlamaInferenceException`, including text-only content on older assets. Await
+the embedding future before reuse: cancellation does not imply immediate
+interruption of synchronous WASM compute. Disposal awaits bridge teardown,
+which settles active work and prevents a stale successful content result.
 
 ## Current evidence and limits
 
@@ -34,9 +38,18 @@ Bridge source contract inspected read-only at
 `tests/bridge/multimodal_embedding_test.mjs`. It covers direct/worker cancellation,
 restore and structured-clone ownership; those are bridge responsibilities.
 
-The independent PR audit qualified EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.65` on Chrome CPU wasm memory64 (`gpuLayers: 0`). Direct
-and worker vectors were identical. WebGPU hardware was not exercised.
+Qualification target: EmbeddingGemma-2 BF16 with its matching
+mmproj and pinned assets `v0.1.66` on Chrome CPU wasm memory64
+(`gpuLayers: 0`). The current rerun, exact-artifact provenance and lifecycle results are tracked in
+[PR 1205](https://github.com/leehack/llamadart/pull/1205); the table below
+retains its original artifact identity.
+
+The independent PR audit qualified the same model and projector with the
+then-pinned `v0.1.65` assets on Chrome CPU wasm memory64 (`gpuLayers: 0`).
+Direct and worker-configured runs returned identical vectors. Those historical
+runs did not assert worker retention after each batch, so they establish
+CPU/WASM numerical parity rather than sustained worker execution. WebGPU
+hardware was not exercised.
 
 | Input | Cosine versus native CPU |
 | --- | --- |
@@ -56,9 +69,11 @@ measurements, not retrieval-quality or GPU-acceleration qualification. Source:
 This revision records the auditor's measurements; it did not rerun weights.
 
 The wasm32 core aborted on a second media batch. **Memory64 is required for
-repeated media batches** on this qualified setup. Cancellation during real
-compute, projector reload, worker restoration, capacity failures and hardware
-WebGPU still need consumer model-backed qualification.
+repeated media batches** on this qualified setup. The scenario below adds
+consumer model-backed checks for cancellation of a pending worker RPC,
+projector reload, CPU worker restoration and capacity rejection. Hardware
+WebGPU, device-loss recovery and mobile browser resource limits require
+separate device qualification.
 
 ## Local reference scenario
 
@@ -82,7 +97,8 @@ Create `config.json` there with relative paths:
   "image": "image.png",
   "audio": "audio.wav",
   "text": "The Eiffel Tower is in Paris.",
-  "normalizedVectors": []
+  "normalizedVectors": [],
+  "normalizedMetalVectors": []
 }
 ```
 
@@ -91,7 +107,12 @@ native reference vectors in `normalizedVectors`: text, image, encoded audio,
 then `first ` + image + ` between ` + audio + ` last `. Use identical local
 media files and the pinned native runtime; record model/projector/media hashes,
 bridge manifest/source/upstream commits, native provenance and browser/backend.
-The empty placeholder intentionally fails; no fabricated reference is supplied.
+Optionally supply four matching native Metal vectors in
+`normalizedMetalVectors`; omit that key when no qualified Metal reference is
+available. Empty placeholders intentionally fail; no fabricated reference is
+supplied. The audio fixture must be mono IEEE float32 WAV at 16 kHz with a
+44-byte header and its `data` chunk starting at byte 36. The scenario checks
+this format before comparing its payload with the public PCM input route.
 
 As with the existing browser scenario, configure `CHROME_EXECUTABLE` with a
 wrapper allowing SharedArrayBuffer for the test server:
@@ -102,6 +123,14 @@ scenario maps these to the bridge constructor's `coreModuleUrlMem64` and
 `wasmUrlMem64` and sets `preferMemory64: true`; the wasm32 `core`/`wasm` keys
 alone do not select memory64. It reports `llamadart.webgpu.core_variant` from
 runtime metadata and requires `wasm64`, so a wasm32 fallback fails qualification.
+The qualification constructor also sets `workerRequestTimeoutMs: 1200000`
+(20 minutes): real CPU media batches can exceed the bridge's two-minute
+default. It asserts the effective worker timeout and checks worker presence
+after each stage, so successful direct-runtime fallback cannot count as a
+worker pass. This is a qualification timeout, not a change to production defaults.
+The default budget can move slow CPU media batches to the direct runtime while
+still returning valid vectors; budget selection and fallback visibility are
+tracked in [bridge issue 165](https://github.com/leehack/llama-web-bridge/issues/165).
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings --dry-run
@@ -111,6 +140,15 @@ dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings
 The cosine gate is 0.999 with unit-norm tolerance 1e-5, below the measured
 CPU wasm/native minimum above. Any tolerance change needs exact-artifact
 evidence. The scenario checks raw/normalized consistency, batch order,
-adjacent-text equivalence and text reuse. Keep model/projector/media hashes,
-manifest provenance and native references with each rerun. No additional
-hardware or lifecycle support is implied by the recorded numerical results.
+adjacent-text equivalence, WAV/PCM equality, capacity rejection and reuse, and
+projector unload/reload. Its worker lane cancels a pending real media RPC and
+then verifies reuse. It also terminates the worker and invokes its installed
+error handler, exercising actual CPU worker-to-direct restoration of the model,
+projector and batch settings. This fault injection does not prove natural
+browser error delivery or WebGPU device-loss recovery. Cancellation is
+cooperative; the test does not establish interruption at a particular native
+kernel instruction. `EMBEDDING_METRIC` records per-input cosine, maximum
+component difference, norm and width; `EMBEDDING_VECTORS` permits an exact
+direct/worker comparison. Keep model/projector/media hashes, manifest
+provenance and native references with each rerun. No hardware WebGPU support
+is implied by CPU/WASM results.

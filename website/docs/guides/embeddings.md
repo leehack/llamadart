@@ -86,7 +86,9 @@ embedding PCM uses mono 16 kHz Float32 samples. Keep media buffers unchanged
 until the future settles. `normalize` and cancellation through
 `cancelGeneration()` use the existing `LlamaInferenceException` cancellation
 error. Content calls cancelled during capability checks fail before inference;
-native LiteRT-LM also checks again after worker startup. Await the future before
+native LiteRT-LM also checks again after worker startup. Web content calls
+discard late successful bridge results after cancellation; synchronous WASM
+compute may still finish before the future throws. Await the future before
 reuse; a later call starts independently. Native llama.cpp and Web legacy
 string embedding cancellation contracts are unchanged. Content-call
 observers receive only ordered part kinds/counts, with no text, paths, URLs

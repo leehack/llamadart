@@ -1,4 +1,4 @@
-@TestOn('mac-os')
+@TestOn('vm && mac-os')
 @Tags(['local-only'])
 @Timeout(Duration(minutes: 10))
 library;

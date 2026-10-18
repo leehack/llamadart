@@ -181,10 +181,10 @@ the tag explicitly, since `latest` skips GitHub prereleases.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-3 \
+  --stable-diffusion-tag v0.2.0-4 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-3
+  --stable-diffusion-tag v0.2.0-4
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 
@@ -216,7 +216,7 @@ runtime without it, into one of its optional groups, which is `null` there
 ([exit teardown](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#image-models)).
 
 After a sync, run
-`dart test --run-skipped -t local-only test/integration/stable_diffusion_runtime_hook_test.dart`
+`dart test -p vm --run-skipped -t local-only test/integration/stable_diffusion_runtime_hook_test.dart`
 on macOS: it builds a throwaway consumer against the new pin and probes the
 runtime it bundles. Then run the `image-generation-smoke` and
 `image-exit-teardown` rows of `doc/testing_matrix.md`.
@@ -283,6 +283,10 @@ and `0.12.0`. Companion `llamadart_litert_lm_flutter` `0.0.15` pairs with core
 core `0.11.1` and `0.11.0`. The iOS
 artifacts meet the declared 16.4 deployment floor, but runtime execution at
 16.4 remains unqualified; keep [#831](https://github.com/leehack/llamadart/issues/831) open.
+
+The pending SD `v0.2.0-4` sync leaves companion versions unchanged and must
+ship in the next core minor release, together with the corresponding companion
+version and constraints. It is not a core 0.15.x patch or a publishing approval.
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version
