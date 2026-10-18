@@ -429,7 +429,8 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "projector"
+        "projector",
+        "case_timeout_ms"
       ],
       "properties": {
         "projector": {
@@ -464,6 +465,10 @@
               "pattern": "^https://"
             }
           }
+        },
+        "case_timeout_ms": {
+          "type": "integer",
+          "const": 300000
         }
       }
     }

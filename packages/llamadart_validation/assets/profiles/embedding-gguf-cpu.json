@@ -20,7 +20,8 @@
       "url": "https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/bfcd298762cc34d0357ece5ebdd31791a3a374d8/mmproj-embeddinggemma-2-BF16.gguf",
       "sha256": "d2033b3cd0223cfb2e7a2b50dc80a664c78c816d375f5b017ec3ef80ee0bc766",
       "bytes": 982074784
-    }
+    },
+    "case_timeout_ms": 300000
   },
   "selection": "quick",
   "context_size": 2048,

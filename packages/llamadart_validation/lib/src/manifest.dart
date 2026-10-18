@@ -124,11 +124,13 @@ class ValidationProfile {
     if (isEmbedding) {
       final embedding = data['embedding'];
       if (embedding is! Map ||
-          embedding.length != 1 ||
+          embedding.length != 2 ||
+          embedding['case_timeout_ms'] is! int ||
+          embedding['case_timeout_ms'] != 300000 ||
           !_isArtifact(embedding['projector'], '.gguf') ||
           embedding['projector']['revision'] != model['revision']) {
         throw const FormatException(
-          'Embedding projector requires a matching immutable GGUF lock',
+          'Embedding pack requires a matching immutable GGUF projector lock and case_timeout_ms 300000',
         );
       }
     }
@@ -299,6 +301,13 @@ class ValidationProfile {
     final value = data['engine_create_case_timeout_ms'] as int?;
     return value == null ? null : Duration(milliseconds: value);
   }
+
+  /// Locked phone-sized deadline for the embedding pack, including load.
+  Duration? get embeddingCaseTimeout => isEmbedding
+      ? Duration(
+          milliseconds: (data['embedding'] as Map)['case_timeout_ms'] as int,
+        )
+      : null;
 
   /// Catalog selection; release includes explicit uncovered obligations.
   String get selection => data['selection'] as String? ?? 'quick';
@@ -610,6 +619,8 @@ class ValidationProfile {
 
   /// Expanded options and explicit defaults for replay and cohort matching.
   Map<String, Object?> get effectiveConfig => {
+    if (isEmbedding)
+      'embedding_case_timeout_ms': embeddingCaseTimeout!.inMilliseconds,
     'context_size': contextSize,
     'threads': threads,
     'batch_threads': runtime == 'litert' ? 0 : threads,

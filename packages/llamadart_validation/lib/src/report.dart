@@ -186,7 +186,11 @@ class ValidationReport {
           id.startsWith('E') &&
           (event['feature_id'] != 'embeddings' ||
               event['status'] == 'PASS' &&
-                  !validEmbeddingCaseEvidence(id, event))) {
+                  !validEmbeddingCaseEvidence(
+                    id,
+                    event,
+                    backend: profile!.backend,
+                  ))) {
         problems.add('Invalid embedding case evidence: $id');
       }
       if (!const [

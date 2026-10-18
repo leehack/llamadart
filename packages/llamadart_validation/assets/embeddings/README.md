@@ -11,8 +11,8 @@ they do not measure retrieval quality or speech understanding.
   signed 16-bit PCM WAV. 32,044 bytes; SHA256
   `963aa326ea0d5067c3981f029116ce68a33518463b23035d503b4350f4b5f8b3`.
 - `v1/reference.json`: five normalized 768-component native CPU vectors,
-  provenance, and model/projector hashes. 109,034 bytes; SHA256
-  `382b8067c257c5713931d2d40640d0ba203279eaad5b7b5ef599654c517133fe`.
+  provenance, and model/projector hashes. 109,332 bytes; SHA256
+  `89321caf3f61e6905d018f0b8c0975cc96fd5f0d33518060f9bd3b7544764d08`.
 
 Regenerate inputs with Python's standard library:
 
@@ -42,9 +42,18 @@ versioned reference cohort and hash before introducing that profile.
 
 ## Reproduce references
 
-The checked-in vectors were generated on macOS 26.7.1 arm64 with the actual
-consumed `llamadart-native` v0.7.0-1 library. Its SHA256 is recorded in
-`reference.json`. Use upstream headers at exactly
+The checked-in vectors were generated on macOS 26.7.1 arm64 using
+`llamadart-native` v0.7.0-1. `reference.json` identifies the published
+[macOS arm64 archive](https://github.com/leehack/llamadart-native/releases/download/v0.7.0-1/llamadart-native-macos-arm64-v0.7.0-1.tar.gz)
+by URL and SHA256 `091524ad25e1f083f08e08ee078f74e777ed3045700b6fc9de7c28465d427c1d`,
+and its `./libllamadart.dylib` by SHA256
+`adb51ad5aebbe09c589f68a4939371274757d461cd8fc40ecf38611aa60bba1a`.
+The archive digest agrees with GitHub's release asset metadata. The Dart hook
+rewrites install names and signs its local copy; that processed copy's hash is
+worktree-dependent and is not a reproducible runtime identity. Re-running the
+reference against the unprocessed published dylib reproduced all five CPU
+vectors exactly. Extract that archive and set `NATIVE_LIBRARY_DIR` to its directory.
+Use upstream headers at exactly
 `620d2225cc436ab0b001e3200e590e3b286ef9ab`, not the head of a sibling checkout.
 Follow the [native reference setup](../../../../doc/multimodal_embeddings_native.md#upstream-only-reference)
 to obtain those headers and the consumed runtime. No Dart engine or adapter is
@@ -72,7 +81,10 @@ Reference refreshes require a reviewed fixture version, not relaxed thresholds.
 
 ## Numerical contract
 
-Both cosine ≥ 0.9999 and maximum absolute component error ≤ 0.002 are required.
+The fixture locks separate `cpu` and `metal` threshold entries. Both currently
+require cosine ≥ 0.999 and maximum absolute component error ≤ 0.01. The runner
+selects by the profile backend; report import independently applies that same
+backend entry. Thresholds are part of the hashed fixture/catalog, not journal overrides.
 Vector width is 768; nonfinite values and zero norms cannot pass. Normalized
 vectors must have norm within 1e-6 of one; `normalize: false` must return a
 non-unit raw vector whose normalization passes the same CPU reference gate.
@@ -87,10 +99,62 @@ Measured CPU-versus-Metal spread on this fixture/runtime (one run per backend):
 | Mixed | 0.999982139 | 0.000697839 |
 | Reversed mixed | 0.999975319 | 0.000777091 |
 
-The cosine floor preserves the prior native CPU/Metal audit's 0.9999 gate;
-the 0.002 component limit leaves about 27.5% margin above this observed maximum.
-Audio has only 6.35e-7 cosine margin. This is a strict conformance gate, not a
-statistical tolerance estimate: a different device that misses it must retain
-FAIL and undergo native reference diagnosis. The previous Web audit's 0.99998
-floor does not qualify this pack's Web path. Web and LiteRT-LM remain NOT_RUN
-until their own locked inputs and reference adapters are implemented.
+Kernel variants must have headroom beyond one Mac's default Metal path. The
+original audio cosine was 0.999900635 against a 0.9999 floor (only 6.35e-7
+margin). Disabling Metal fusion alone changes the result. The table below records
+fresh runs of the published dylib on M4 Max; CPU threads apply to both model and
+projector. These are numerical observations, not phone qualification.
+
+| Kernel path | Minimum cosine vs CPU reference | Maximum absolute error |
+| --- | ---: | ---: |
+| CPU, 4 threads | 1.000000000 | 0 |
+| CPU, 1 thread | 1.000000000 | 0 |
+| Metal, default | 0.999900635 | 0.001568219 |
+| Metal, `GGML_METAL_FUSION_DISABLE=1` | 0.999906460 | 0.001644426 |
+| Metal, `GGML_METAL_CONCURRENCY_DISABLE=1` | 0.999900635 | 0.001568219 |
+| Metal, both disabled | 0.999906460 | 0.001644426 |
+
+CPU one/four-thread vectors are byte-identical to the reference. Concurrency
+disabling alone is identical to default; both flags match fusion disabling.
+The maximum cosine-error allowance ratio is 0.001 / 0.000099365 ≈ 10.1;
+the component-error ratio is 0.01 / 0.001644426 ≈ 6.1.
+
+A 0.001 cosine-error allowance and 0.01 component-error allowance leave roughly
+10x and 6x headroom over the observed CPU/Metal errors. This covers expected
+arithmetic variation without accepting different embeddings. Android's
+`libggml-cpu-android_armv8.0_1` through `armv9.2_2` and iOS GPUs still require
+real-device qualification; no distribution across those kernels is claimed.
+
+Negative controls in `test/fixtures/embedding_negative_controls.json` are upstream
+CPU text emissions: generate them with the same command above, limiting the loop
+to the text row, once with `cp.pooling_type=LLAMA_POOLING_TYPE_LAST`, and once
+with MEAN pooling but writing `double(e[j])` without dividing by `norm`.
+LAST pooling gives cosine 0.867616684 / max-abs 0.104777438; missing normalization
+keeps cosine 1 but has max-abs 490.591334860. Swapping the two mixed reference
+rows gives cosine 0.988407863 / max-abs 0.018697541. All fail either backend's
+gate. Wrong-projector hashes are rejected before inference on both backends;
+there is no claim of a measured alternate-projector vector. Existing tests also
+reject a backend that ignores `normalize: false`, non-unit normalized output,
+reordered/truncated batches and forged report metrics.
+
+## Phone work budget
+
+Both profiles lock `embedding.case_timeout_ms: 300000`; it appears as
+`embedding_case_timeout_ms` in the effective configuration hash and applies to
+load and every embedding case. The 29 existing non-embedding profiles retain
+their prior effective-config hashes and 60-second deadlines (including the
+existing 120-second LiteRT GPU first-use/reload exception).
+
+E05 checks image→audio once. E06 checks audio→image within the batch
+`audio/text/reversed-mixed/audio`, retaining order and repeat assertions with one
+image encode. E07 uses raw and normalized audio to test normalization without
+another image encode. Thus both mixed orders remain independently checked
+against their own upstream vectors across E05/E06. The 224×224 fixture is
+encoded at 432×432 by this projector; 768×768 in native logs is its warmup
+allocation, not the actual fixture encoding size. Shrinking the PNG is not a
+substitute for reducing repeated projector work.
+
+CPU peak footprint is about 1.4 GB and max RSS about 1.9 GB on this Mac; the
+projector is not mmapped. Use devices with at least 6 GB RAM for Firebase runs.
+The prior Web audit's floor does not qualify this pack's Web path. Web and
+LiteRT-LM remain NOT_RUN until their own locked inputs and adapters are qualified.

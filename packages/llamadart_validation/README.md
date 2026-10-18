@@ -61,7 +61,7 @@ initialization. In LiteRT, the first `C02.unicode` tokenization call can include
 deferred engine creation. Its `tokenize_call_ms` is therefore not isolated
 tokenizer latency. The runner records this timing scope, separate detokenization
 latency, and the active public operation on errors/timeouts. A first-use timeout
-does not establish a tokenizer defect. Case deadlines remain 60s unless a LiteRT
+does not establish a tokenizer defect. Case deadlines remain 60s unless the embedding pack locks its 300s deadline or a LiteRT
 GPU profile sets `engine_create_case_timeout_ms` for engine-create cases; provider
 process deadlines can additionally include model preparation and host startup.
 
@@ -126,8 +126,9 @@ predicate and its limits are in `doc/cross_platform_validation.md`.
 
 `embedding-gguf-cpu` (native desktop/Android/iOS) and `embedding-gguf-metal`
 (macOS/iOS) lock EmbeddingGemma-2 BF16 plus its matching projector. They select
-load plus ten embedding cases: capabilities, text/image/audio, both mixed media
-orders, repeated/reordered batch items, normalization, typed unsupported/marker
+load plus ten embedding cases: capabilities, text/image/audio, image→audio and
+audio→image across the mixed and batch cases, repeated/reordered batch items,
+audio normalization, typed unsupported/marker
 errors, cancellation before/after backend SPI dispatch and text/media reuse.
 They produce no token-throughput samples.
 
@@ -140,7 +141,22 @@ dart run tool/testing/validation.dart local --profile embedding-gguf-cpu \
 
 The [fixture README](assets/embeddings/README.md) records deterministic PNG/WAV
 regeneration, upstream-only native CPU reference generation and measured
-CPU/Metal spread. Both cosine ≥ 0.9999 and max-abs ≤ 0.002 are mandatory.
+CPU/Metal kernel spread and negative controls. Separate CPU and Metal entries
+both require cosine ≥ 0.999 and max-abs ≤ 0.01, allowing about 10x/6x headroom
+over the measured errors while rejecting wrong pooling, missing normalization
+and swapped media order. Wrong-projector cohort hashes fail before inference.
+CPU one/four-thread vectors reproduced the reference exactly; Metal default and
+concurrency-disabled audio had cosine 0.999900635/max-abs 0.001568219, while
+fusion-disabled and both-disabled had 0.999906460/0.001644426.
+The published archive and contained dylib hashes identify the reference runtime;
+a hook-processed local dylib hash does not.
+
+Both profiles lock `embedding.case_timeout_ms: 300000`, included in their
+effective-config hashes. E05/E06 each encode one image, and E07 uses audio;
+both mixed orders and the batch's repeated item remain checked. The 224×224
+fixture encodes at 432×432; the logged 768×768 is projector warmup allocation.
+CPU peak footprint is about 1.4 GB (max RSS about 1.9 GB); the projector is not
+mmapped. Use ≥6 GB devices for Firebase runs.
 Every case verifies all fixture hashes; a missing or changed reference errors
 rather than skips. The journal binds `feature_id: embeddings`, case/fixture and
 catalog hashes; report import rechecks successful numerical and contract

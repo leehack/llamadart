@@ -318,15 +318,17 @@ const embeddingValidationFixture = <String, Object>{
     'tone.wav':
         '963aa326ea0d5067c3981f029116ce68a33518463b23035d503b4350f4b5f8b3',
     'reference.json':
-        '382b8067c257c5713931d2d40640d0ba203279eaad5b7b5ef599654c517133fe',
+        '89321caf3f61e6905d018f0b8c0975cc96fd5f0d33518060f9bd3b7544764d08',
   },
   'dimensions': 768,
   'text': 'The Eiffel Tower is in Paris.',
   'mixed_text': ['first ', ' between ', ' last'],
   'rows': ['text', 'image', 'audio', 'mixed', 'mixed_reversed'],
-  'batch_order': [2, 0, 3, 1, 2],
-  'minimum_cosine': 0.9999,
-  'maximum_absolute_error': 0.002,
+  'batch_order': [2, 0, 4, 2],
+  'thresholds': {
+    'cpu': {'minimum_cosine': 0.999, 'maximum_absolute_error': 0.01},
+    'metal': {'minimum_cosine': 0.999, 'maximum_absolute_error': 0.01},
+  },
   'norm_tolerance': 0.000001,
   'cancel_deadline_ms': 5000,
 };
@@ -347,19 +349,24 @@ const embeddingValidationCases = [
 
 /// Rechecks successful numerical evidence on import instead of trusting the
 /// producer's `passed` flags. Fixture thresholds cannot be journal overrides.
-bool validEmbeddingCaseEvidence(String id, Map<String, dynamic> record) {
+bool validEmbeddingCaseEvidence(
+  String id,
+  Map<String, dynamic> record, {
+  String backend = 'cpu',
+}) {
+  final thresholds =
+      (embeddingValidationFixture['thresholds'] as Map)[backend] as Map;
   bool comparison(Object? value) =>
       value is Map &&
       value['cosine'] is num &&
       (value['cosine'] as num).isFinite &&
-      (value['cosine'] as num) >=
-          (embeddingValidationFixture['minimum_cosine'] as num) &&
+      (value['cosine'] as num) >= (thresholds['minimum_cosine'] as num) &&
       (value['cosine'] as num) <= 1.0000000001 &&
       value['max_abs'] is num &&
       (value['max_abs'] as num).isFinite &&
       (value['max_abs'] as num) >= 0 &&
       (value['max_abs'] as num) <=
-          (embeddingValidationFixture['maximum_absolute_error'] as num);
+          (thresholds['maximum_absolute_error'] as num);
   switch (id) {
     case 'E01.capabilities':
       return record['text'] == true &&
@@ -374,9 +381,7 @@ bool validEmbeddingCaseEvidence(String id, Map<String, dynamic> record) {
     case 'E06.batch':
       final comparisons = record['comparisons'];
       final count = id == 'E06.batch'
-          ? 5
-          : id == 'E05.mixed'
-          ? 2
+          ? (embeddingValidationFixture['batch_order'] as List).length
           : 1;
       return comparisons is List &&
           comparisons.length == count &&

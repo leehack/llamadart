@@ -2,11 +2,69 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:test/test.dart';
 
-import '../../../test/unit/core/engine/multimodal_embeddings_test.dart';
+class ContentBackend implements LlamaBackend, BackendMultimodalEmbeddings {
+  final List<LlamaEmbeddingInput> received = [];
+  bool? normalized;
+  Object? failure;
+  Completer<void>? gate;
+  String? lastMultimodalProjectorPath;
+
+  @override
+  bool get supportsUrlLoading => false;
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {}
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async => 1;
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async => 1;
+  @override
+  Future<int> multimodalContextCreate(int modelHandle, String path) async {
+    lastMultimodalProjectorPath = path;
+    return 1;
+  }
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async => {};
+  @override
+  Future<int> getContextSize(int contextHandle) async => 2048;
+  @override
+  Future<void> contextFree(int contextHandle) async {}
+  @override
+  Future<void> modelFree(int modelHandle) async {}
+  @override
+  Future<void> multimodalContextFree(int handle) async {}
+  @override
+  Future<void> dispose() async {}
+  @override
+  void cancelGeneration() {}
+  @override
+  Future<LlamaEmbeddingCapabilities> getEmbeddingCapabilities(
+    int contextHandle,
+  ) async =>
+      const LlamaEmbeddingCapabilities(text: true, image: true, audio: true);
+  @override
+  Future<List<List<double>>> embedContentBatch(
+    int contextHandle,
+    List<LlamaEmbeddingInput> inputs, {
+    bool normalize = true,
+  }) async {
+    received.addAll(inputs);
+    normalized = normalize;
+    await gate?.future;
+    if (failure != null) throw failure!;
+    return [
+      for (final input in inputs) [input.parts.length.toDouble()],
+    ];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _CancellableBackend extends ContentBackend {
   @override

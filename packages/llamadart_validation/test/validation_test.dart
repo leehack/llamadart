@@ -1863,8 +1863,10 @@ void main() {
         for (final id in selected.caseIds) {
           expect(
             runner.caseDeadline(id),
-            selected.id == 'qwen35-litert-gpu' &&
-                    ValidationRunner.engineReloadCaseIds.contains(id)
+            selected.isEmbedding
+                ? const Duration(seconds: 300)
+                : selected.id == 'qwen35-litert-gpu' &&
+                      ValidationRunner.engineReloadCaseIds.contains(id)
                 ? const Duration(seconds: 120)
                 : const Duration(seconds: 60),
             reason: '${selected.id} $id',
@@ -1872,7 +1874,9 @@ void main() {
         }
         expect(
           runner.caseDeadline('C02.unicode', firstUse: true),
-          selected.id == 'qwen35-litert-gpu'
+          selected.isEmbedding
+              ? const Duration(seconds: 300)
+              : selected.id == 'qwen35-litert-gpu'
               ? const Duration(seconds: 120)
               : const Duration(seconds: 60),
           reason: selected.id,

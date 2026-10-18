@@ -348,9 +348,9 @@ weights. Q8_0 needs its own reference cohort; it must not reuse BF16 vectors.
 | `C01.load` | Public model/projector load and diagnostics |
 | `E01.capabilities` | `embeddingCapabilities` advertises text/image/audio and `mediaUnsupportedReason` is null |
 | `E02.text`, `E03.image`, `E04.audio` | One normalized vector matches its native CPU reference |
-| `E05.mixed` | Text/image/audio interleaving and reversed media order each match their own reference |
-| `E06.batch` | `embedContentBatch` returns audio/text/mixed/image/audio in that order, including the repeated item |
-| `E07.normalization` | Unit normalized output; non-unit raw output normalizes to the reference |
+| `E05.mixed` | Text/image/audio interleaving matches its reference (one image encode) |
+| `E06.batch` | `embedContentBatch` returns audio/text/reversed-mixed/audio, checking the other media order and a repeated item (one image encode) |
+| `E07.normalization` | Unit normalized audio output; non-unit raw audio output normalizes to the reference |
 | `E08.guards` | Video input, an image without a source and reserved `<__media__>` with media throw `LlamaUnsupportedException`; text reuse succeeds |
 | `E09.cancel.before` | Immediate `cancelGeneration` before backend SPI dispatch; typed cancellation and text/media reuse |
 | `E10.cancel.after` | Cancellation after backend SPI dispatch while pending; typed cancellation and text/media reuse |
@@ -366,12 +366,29 @@ run cannot qualify.
 The deterministic PNG checkerboard, PCM WAV square tone, native C++ reference
 program, generation procedure and measured spread are in
 [the version-one fixture README](../packages/llamadart_validation/assets/embeddings/README.md).
-The five 768-dimensional CPU vectors use pinned upstream headers and the consumed
-v0.7.0-1 library, independently of Dart. On macOS arm64, CPU/Metal cosine was
-0.999900635–0.999996863 and max-abs was 0.000337743–0.001568219. Both gates are
-mandatory: cosine ≥ **0.9999**, max-abs ≤ **0.002**. Audio is close to the cosine
-boundary; preserve a device failure for diagnosis rather than widening the gate.
-The prior Web audit's 0.99998 floor is not transferred to an unrun pack.
+The five 768-dimensional CPU vectors use pinned upstream headers and the
+published v0.7.0-1 macOS arm64 archive/dylib, independently of Dart. The fixture
+README records their reproducible hashes; hook-processed dylib bytes are not
+portable runtime identities. Separate CPU and Metal threshold entries both
+require cosine ≥ **0.999**, max-abs ≤ **0.01**, allowing roughly 10x/6x headroom
+over measured kernel-path error. The original Metal audio cosine was 0.999900635;
+fusion/concurrency and CPU thread-count measurements and negative controls are
+recorded in that README. CPU one/four-thread vectors reproduced the reference
+exactly; Metal default and concurrency-disabled audio had cosine
+0.999900635/max-abs 0.001568219, while fusion-disabled and both-disabled had
+0.999906460/0.001644426. LAST pooling (cosine 0.867617), missing normalization
+(max-abs 490.59) and swapped media order (cosine 0.988408, max-abs 0.018698)
+fail these gates; a mismatched projector hash errors before inference.
+
+Both embedding profiles lock `embedding.case_timeout_ms: 300000`, bound into
+their effective configuration hashes and applied to every selected case,
+including load. Existing non-embedding profile hashes/deadlines are unchanged.
+Each of E05/E06 encodes one image; E07 uses audio. The 224×224 PNG actually
+encodes at 432×432; 768×768 is the projector's warmup allocation. CPU peak
+footprint is approximately **1.4 GB**, with **1.9 GB max RSS**; the projector
+is not mmapped. Choose **≥6 GB RAM** devices for Firebase runs. The 300-second
+deadline accommodates slower CPUs but does not prove a particular phone passes.
+The prior Web audit's floor is not transferred to an unrun pack.
 
 All three fixture files have compiled hashes in `case_catalog.dart`. They are
 verified before every embedding case, bound through each case's fixture hash and

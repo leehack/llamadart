@@ -533,10 +533,12 @@ class ValidationRunner {
 
   /// Deadline applied to [id]. The profile override, when declared, applies to
   /// [engineReloadCaseIds] and to the [firstUse] case that follows `C01.load`.
+  /// The embedding pack instead locks a deadline for every selected case.
   Duration caseDeadline(String id, {bool firstUse = false}) =>
-      firstUse || engineReloadCaseIds.contains(id)
-      ? profile.engineCreateCaseTimeout ?? caseTimeout
-      : caseTimeout;
+      profile.embeddingCaseTimeout ??
+      (firstUse || engineReloadCaseIds.contains(id)
+          ? profile.engineCreateCaseTimeout ?? caseTimeout
+          : caseTimeout);
   var _sequence = 0;
   var _cancelled = false;
   bool _closed = false;

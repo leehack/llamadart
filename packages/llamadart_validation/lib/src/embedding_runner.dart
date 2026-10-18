@@ -91,8 +91,11 @@ class PublicEmbeddingValidationEngine extends PublicValidationEngine
 /// Validates dimensions, finiteness, cosine and maximum component error.
 Map<String, dynamic> compareEmbeddingVectors(
   List<double> actual,
-  List<double> reference,
-) {
+  List<double> reference, {
+  String backend = 'cpu',
+}) {
+  final thresholds =
+      (embeddingValidationFixture['thresholds'] as Map)[backend] as Map;
   final width = embeddingValidationFixture['dimensions'];
   if (actual.length != width ||
       reference.length != width ||
@@ -113,8 +116,8 @@ Map<String, dynamic> compareEmbeddingVectors(
   final cosine = dot / math.sqrt(aa * bb);
   return {
     'passed':
-        cosine >= (embeddingValidationFixture['minimum_cosine'] as num) &&
-        maxAbs <= (embeddingValidationFixture['maximum_absolute_error'] as num),
+        cosine >= (thresholds['minimum_cosine'] as num) &&
+        maxAbs <= (thresholds['maximum_absolute_error'] as num),
     'cosine': _jsonSafe(cosine),
     'max_abs': maxAbs,
   };
@@ -176,7 +179,11 @@ extension on ValidationRunner {
     final reference = _embeddingReference();
     final inputs = reference.inputs;
     Map<String, dynamic> compared(List<double> actual, int row) =>
-        compareEmbeddingVectors(actual, reference.vectors[row]);
+        compareEmbeddingVectors(
+          actual,
+          reference.vectors[row],
+          backend: profile.backend,
+        );
     Future<Map<String, dynamic>> recover() async => compared(
       await _checked(() => _embeddingEngine.embedContent(inputs[0])),
       0,
@@ -213,14 +220,6 @@ extension on ValidationRunner {
             row,
           ),
         ];
-        if (id == 'E05.mixed') {
-          comparisons.add(
-            compared(
-              await _checked(() => _embeddingEngine.embedContent(inputs[4])),
-              4,
-            ),
-          );
-        }
         return {
           'comparisons': comparisons,
           'status': comparisons.every((c) => c['passed'] == true)
@@ -251,17 +250,17 @@ extension on ValidationRunner {
         };
       case 'E07.normalization':
         final normalized = await _checked(
-          () => _embeddingEngine.embedContent(inputs[3]),
+          () => _embeddingEngine.embedContent(inputs[2]),
         );
         final raw = await _checked(
-          () => _embeddingEngine.embedContent(inputs[3], normalize: false),
+          () => _embeddingEngine.embedContent(inputs[2], normalize: false),
         );
         final norm = math.sqrt(raw.fold(0.0, (s, v) => s + v * v));
         final normalizedNorm = math.sqrt(
           normalized.fold(0.0, (s, v) => s + v * v),
         );
-        final scaled = compared([for (final v in raw) v / norm], 3);
-        final normal = compared(normalized, 3);
+        final scaled = compared([for (final v in raw) v / norm], 2);
+        final normal = compared(normalized, 2);
         return {
           'raw_norm': _jsonSafe(norm),
           'normalized_norm': _jsonSafe(normalizedNorm),

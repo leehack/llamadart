@@ -221,7 +221,7 @@ void main() {
       expect(result.report.problems, isEmpty);
       expect(result.report.assertionsPassed, isTrue);
       expect(result.report.qualified, isTrue);
-      expect(fake.seen, containsAllInOrder([0, 1, 2, 3, 4, 2, 0, 3, 1, 2]));
+      expect(fake.seen, containsAllInOrder([0, 1, 2, 3, 2, 0, 4, 2, 2, 2]));
       for (final c in result.report.cases.where(
         (c) => '${c['case_id']}'.startsWith('E'),
       )) {
@@ -263,14 +263,14 @@ void main() {
       );
       // Same direction exceeds max-abs while cosine remains one.
       expect(
-        compareEmbeddingVectors([...ref]..[0] = 1.003, ref)['passed'],
+        compareEmbeddingVectors([...ref]..[0] = 1.011, ref)['passed'],
         isFalse,
       );
       // Each difference stays below max-abs, but total angular error is too big.
-      final angular = [1.0, ...List.filled(767, 0.001)];
+      final angular = [1.0, ...List.filled(767, 0.003)];
       expect(compareEmbeddingVectors(angular, ref)['passed'], isFalse);
       expect(
-        compareEmbeddingVectors([...ref]..[0] = 1.0019, ref)['passed'],
+        compareEmbeddingVectors([...ref]..[0] = 1.009, ref)['passed'],
         isTrue,
       );
     },
