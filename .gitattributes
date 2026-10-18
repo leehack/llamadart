@@ -1,0 +1,3 @@
+# Catalog SHA256 locks require exact bytes; -text retains JSON text diffs.
+packages/llamadart_validation/assets/embeddings/v1/** -text
+packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json -text
