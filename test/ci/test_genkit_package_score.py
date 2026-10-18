@@ -29,6 +29,8 @@ class CandidateScoreTest(unittest.TestCase):
         self.git('config', 'user.email', 'test@example.invalid')
         self.git('config', 'user.name', 'Fixture')
         self.git('config', 'commit.gpgsign', 'false')
+        # Fixture bytes must survive Git checkout unchanged on Windows.
+        self.git('config', 'core.autocrlf', 'false')
         self.metadata = self.root / score.PUBSPEC
         self.metadata.parent.mkdir(parents=True)
         self.metadata.write_text('name: genkit_llamadart\nversion: 3.4.0\n'
