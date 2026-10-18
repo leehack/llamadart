@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fix multimodal projector loading in Windows `dart build cli` bundles after early log setup.
+
 - Honor content embedding cancellation during capability checks and worker startup.
 
 - Prevent embeddings and other context changes from interrupting native text-to-speech, and release handle waits even when a speech reply fails.
