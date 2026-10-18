@@ -1159,7 +1159,12 @@ void main() {
               ? throwsA(
                   isA<LlamaEmbeddingInputTooLongException>()
                       .having((e) => e.maxInputTokens, 'capacity', 64)
-                      .having((e) => e.actualTokens, 'expanded rows', 65),
+                      .having((e) => e.actualTokens, 'expanded rows', 65)
+                      .having(
+                        (e) => e.message,
+                        'actionable guidance',
+                        contains('Shorten the input'),
+                      ),
                 )
               : throwsA(isA<LlamaException>()),
         );

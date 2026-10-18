@@ -119,19 +119,19 @@ extension NativeContentEmbeddings on LlamaCppService {
           final count = _calls.mixedBatch!.tokenCount(item.chunks);
           final limits = _calls.embeddingContextInfo(context.pointer);
           final capacity = limits.capacity;
-          if (count > capacity) {
-            throw LlamaEmbeddingInputTooLongException(
-              'Expanded embedding input exceeds the single-pass capacity.',
-              maxInputTokens: capacity,
-              actualTokens: count,
-            );
-          }
-          if (count <= 0 || limits.sequences < 1) {
-            throw LlamaInferenceException(
-              'Expanded embedding input has $count rows; '
-              'one complete input must fit the context, batch and micro-batch capacity ($capacity). '
-              'Shorten the input or increase contextSize, batchSize and microBatchSize.',
-            );
+          if (count <= 0 || count > capacity || limits.sequences < 1) {
+            final message =
+                'Expanded embedding input has $count rows; '
+                'one complete input must fit the context, batch and micro-batch capacity ($capacity). '
+                'Shorten the input or increase contextSize, batchSize and microBatchSize.';
+            if (count > capacity) {
+              throw LlamaEmbeddingInputTooLongException(
+                message,
+                maxInputTokens: capacity,
+                actualTokens: count,
+              );
+            }
+            throw LlamaInferenceException(message);
           }
         }
       }
