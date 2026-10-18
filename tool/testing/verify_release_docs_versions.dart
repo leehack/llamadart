@@ -316,8 +316,9 @@ List<PendingCompanionBump> checkCompanionSwiftPins(
 /// every release of [coreVersion]'s minor and nothing newer.
 ///
 /// Pub then refuses to pair a companion with a core minor it was not built
-/// for. The window is honest only because a core patch release never moves a
-/// companion's native pin; [checkPublishedCompanionPins] enforces that.
+/// for. Patch repins additionally require qualified older-companion support
+/// and a narrowed new-companion floor, checked in both directions by
+/// [checkPublishedCompanionPins] and [checkCompanionPublishedCorePins].
 String companionCoreConstraintFor(Version coreVersion) =>
     '>=${coreVersion.major}.${coreVersion.minor}.0 '
     '<${coreVersion.major}.${coreVersion.minor + 1}.0';
