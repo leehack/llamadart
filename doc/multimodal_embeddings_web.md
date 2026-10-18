@@ -46,7 +46,10 @@ retains its original artifact identity.
 
 The independent PR audit qualified the same model and projector with the
 then-pinned `v0.1.65` assets on Chrome CPU wasm memory64 (`gpuLayers: 0`).
-Direct and worker vectors were identical. WebGPU hardware was not exercised.
+Direct and worker-configured runs returned identical vectors. Those historical
+runs did not assert worker retention after each batch, so they establish
+CPU/WASM numerical parity rather than sustained worker execution. WebGPU
+hardware was not exercised.
 
 | Input | Cosine versus native CPU |
 | --- | --- |
@@ -125,6 +128,9 @@ The qualification constructor also sets `workerRequestTimeoutMs: 1200000`
 default. It asserts the effective worker timeout and checks worker presence
 after each stage, so successful direct-runtime fallback cannot count as a
 worker pass. This is a qualification timeout, not a change to production defaults.
+The default budget can move slow CPU media batches to the direct runtime while
+still returning valid vectors; budget selection and fallback visibility are
+tracked in [bridge issue 165](https://github.com/leehack/llama-web-bridge/issues/165).
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings --dry-run
