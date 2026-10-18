@@ -20,12 +20,15 @@ ValidationHost createHost() => _NativeHost();
 class _NativeHost implements ValidationHost {
   static const _npuChannel = MethodChannel('llamadart_validation/npu');
   AndroidNpuMonitor? _npu;
+  String? _embeddingProjector;
   String? _probeLibrary;
   ({String head, String? config, Map<String, dynamic> evidence})? _decision;
   @override
   ValidationEngine createEngine(ValidationProfile profile) =>
       profile.nativeReference
       ? NativeNpuReferenceEngine(_npu!, _probeLibrary!)
+      : profile.isEmbedding
+      ? PublicEmbeddingValidationEngine(projector: _embeddingProjector!)
       : PublicValidationEngine(
           npu: _npu,
           decisionHead: _decision?.head,
@@ -53,6 +56,7 @@ class _NativeHost implements ValidationHost {
     _npu = null;
     _probeLibrary = null;
     _decision = null;
+    _embeddingProjector = null;
     if (profile.backend == 'npu') {
       if (!Platform.isAndroid) {
         throw UnsupportedError('NPU app validation requires Android');
@@ -112,6 +116,23 @@ class _NativeHost implements ValidationHost {
         onProgress: _diagnostic?.emitPreparation ?? _journal!.emitPreparation,
         timeout: const Duration(minutes: 10),
       );
+      if (profile.isEmbedding) {
+        final projector = await prepareEmbeddingProjector(
+          profile,
+          cache,
+          client: _client = http.Client(),
+          onProgress: _diagnostic?.emitPreparation ?? _journal!.emitPreparation,
+          timeout: const Duration(minutes: 10),
+        );
+        _embeddingProjector = projector.path;
+        return (
+          path: model.path,
+          evidence: {
+            ...model.evidence,
+            'embedding_projector': projector.evidence,
+          },
+        );
+      }
       if (!profile.isDecision) return model;
       final decision = _decision = await prepareDecisionAssets(
         profile,

@@ -18,6 +18,7 @@ flutter:
   assets:
     - assets/profiles/
     - assets/decision/
+    - assets/embeddings/v1/
 hooks:
   user_defines:
     llamadart:

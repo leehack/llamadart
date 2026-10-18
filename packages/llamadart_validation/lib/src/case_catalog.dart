@@ -250,7 +250,10 @@ const catalogFiveCaseIds = {
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// the current catalog, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    decisionValidationCases.any((definition) => definition.id == id)
+    [
+      ...decisionValidationCases,
+      ...embeddingValidationCases,
+    ].any((definition) => definition.id == id)
     ? catalogVersion == validationCatalogVersion
     : catalogVersion >= 5 || !catalogFiveCaseIds.contains(id);
 
@@ -275,6 +278,7 @@ ValidationCaseDefinition validationCase(
       : [
           ...validationCaseCatalog,
           ...decisionValidationCases,
+          ...embeddingValidationCases,
         ].singleWhere((definition) => definition.id == id);
   if (catalogVersion < 4 &&
       ['C05.thinking', 'C07.tools', 'C02.generate'].contains(id)) {
@@ -302,4 +306,127 @@ ValidationCaseDefinition validationCase(
     );
   }
   return current;
+}
+
+/// Version-one synthetic media, native CPU vectors and numerical contracts.
+const embeddingValidationFixture = <String, Object>{
+  'version': 1,
+  'directory': 'assets/embeddings/v1',
+  'files': {
+    'checker.png':
+        '48907b2f7a4c600cdbc4de829a7badc4801f48b2e53816276bbc81f31367e030',
+    'tone.wav':
+        '963aa326ea0d5067c3981f029116ce68a33518463b23035d503b4350f4b5f8b3',
+    'reference.json':
+        '382b8067c257c5713931d2d40640d0ba203279eaad5b7b5ef599654c517133fe',
+  },
+  'dimensions': 768,
+  'text': 'The Eiffel Tower is in Paris.',
+  'mixed_text': ['first ', ' between ', ' last'],
+  'rows': ['text', 'image', 'audio', 'mixed', 'mixed_reversed'],
+  'batch_order': [2, 0, 3, 1, 2],
+  'minimum_cosine': 0.9999,
+  'maximum_absolute_error': 0.002,
+  'norm_tolerance': 0.000001,
+  'cancel_deadline_ms': 5000,
+};
+
+/// Selected only by embedding profiles; no text generation or TPS claims.
+const embeddingValidationCases = [
+  ValidationCaseDefinition('E01.capabilities', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E02.text', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E03.image', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E04.audio', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E05.mixed', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E06.batch', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E07.normalization', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E08.guards', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E09.cancel.before', ['embeddings'], ['embeddings']),
+  ValidationCaseDefinition('E10.cancel.after', ['embeddings'], ['embeddings']),
+];
+
+/// Rechecks successful numerical evidence on import instead of trusting the
+/// producer's `passed` flags. Fixture thresholds cannot be journal overrides.
+bool validEmbeddingCaseEvidence(String id, Map<String, dynamic> record) {
+  bool comparison(Object? value) =>
+      value is Map &&
+      value['cosine'] is num &&
+      (value['cosine'] as num).isFinite &&
+      (value['cosine'] as num) >=
+          (embeddingValidationFixture['minimum_cosine'] as num) &&
+      (value['cosine'] as num) <= 1.0000000001 &&
+      value['max_abs'] is num &&
+      (value['max_abs'] as num).isFinite &&
+      (value['max_abs'] as num) >= 0 &&
+      (value['max_abs'] as num) <=
+          (embeddingValidationFixture['maximum_absolute_error'] as num);
+  switch (id) {
+    case 'E01.capabilities':
+      return record['text'] == true &&
+          record['image'] == true &&
+          record['audio'] == true &&
+          record.containsKey('media_unsupported_reason') &&
+          record['media_unsupported_reason'] == null;
+    case 'E02.text':
+    case 'E03.image':
+    case 'E04.audio':
+    case 'E05.mixed':
+    case 'E06.batch':
+      final comparisons = record['comparisons'];
+      final count = id == 'E06.batch'
+          ? 5
+          : id == 'E05.mixed'
+          ? 2
+          : 1;
+      return comparisons is List &&
+          comparisons.length == count &&
+          comparisons.every(comparison) &&
+          (id != 'E06.batch' ||
+              record['vector_count'] == count &&
+                  '${record['order']}' ==
+                      '${embeddingValidationFixture['batch_order']}');
+    case 'E07.normalization':
+      final raw = record['raw_norm'];
+      final normalized = record['normalized_norm'];
+      return raw is num &&
+          raw.isFinite &&
+          raw > 0 &&
+          (raw - 1).abs() > 0.0001 &&
+          normalized is num &&
+          normalized.isFinite &&
+          (normalized - 1).abs() <=
+              (embeddingValidationFixture['norm_tolerance'] as num) &&
+          comparison(record['raw_comparison']) &&
+          comparison(record['normalized_comparison']);
+    case 'E08.guards':
+      return [
+            'unsupported_input',
+            'unsupported_source',
+            'reserved_marker',
+          ].every(
+            (key) =>
+                record[key] is Map &&
+                (record[key] as Map)['rejected'] == true &&
+                (record[key] as Map)['error_type'] ==
+                    'LlamaUnsupportedException',
+          ) &&
+          comparison(record['recovery']);
+    case 'E09.cancel.before':
+    case 'E10.cancel.after':
+      final elapsed = record['cancel_ms'];
+      return record['precondition_met'] == true &&
+          record['in_flight'] == true &&
+          record['dispatch_observed'] == (id == 'E10.cancel.after') &&
+          record['cancelled'] == true &&
+          record['error_type'] == 'LlamaInferenceException' &&
+          elapsed is num &&
+          elapsed.isFinite &&
+          elapsed >= 0 &&
+          elapsed <=
+              (embeddingValidationFixture['cancel_deadline_ms'] as num) &&
+          comparison(record['recovery']) &&
+          comparison(record['media_recovery']);
+    default:
+      return false;
+  }
 }

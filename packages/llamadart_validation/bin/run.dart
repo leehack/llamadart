@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:llamadart_validation/io.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
@@ -16,6 +17,7 @@ Future<void> main(List<String> args) async {
       'profile',
       'profile-file',
       'model',
+      'projector',
       'cache',
       'out',
       'run-id',
@@ -56,6 +58,7 @@ Future<void> main(List<String> args) async {
       'assets',
       'profile-file',
       'model',
+      'projector',
       'cache',
       'out',
       'environment-file',
@@ -126,6 +129,14 @@ Future<void> main(List<String> args) async {
         suppliedPath: options['model'],
         onProgress: journal.emitPreparation,
       );
+      final projector = profile.isEmbedding
+          ? await prepareEmbeddingProjector(
+              profile,
+              cache,
+              suppliedPath: options['projector'],
+              onProgress: journal.emitPreparation,
+            )
+          : null;
       final decision = profile.isDecision
           ? await prepareDecisionAssets(
               profile,
@@ -145,11 +156,24 @@ Future<void> main(List<String> args) async {
       };
       final runner = ValidationRunner(
         profile: profile,
-        engine: PublicValidationEngine(
-          decisionHead: decision?.head,
-          decisionConfig: decision?.config,
-        ),
+        engine: profile.isEmbedding
+            ? PublicEmbeddingValidationEngine(projector: projector!.path)
+            : PublicValidationEngine(
+                decisionHead: decision?.head,
+                decisionConfig: decision?.config,
+              ),
         emit: journal.emit,
+        embeddingAssets: profile.isEmbedding
+            ? {
+                for (final name
+                    in (embeddingValidationFixture['files'] as Map).keys)
+                  name as String: Uint8List.fromList(
+                    File(
+                      p.join(assetRoot, 'embeddings', 'v1', name),
+                    ).readAsBytesSync(),
+                  ),
+              }
+            : null,
         decisionReference: profile.isDecision
             ? File(
                 p.join(
@@ -167,7 +191,11 @@ Future<void> main(List<String> args) async {
           prepared.path,
           runId: runId,
           environment: environment,
-          preparation: {...prepared.evidence, ...?decision?.evidence},
+          preparation: {
+            ...prepared.evidence,
+            ...?decision?.evidence,
+            if (projector != null) 'embedding_projector': projector.evidence,
+          },
         );
       } finally {
         await interrupt.cancel();

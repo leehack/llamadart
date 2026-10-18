@@ -89,7 +89,7 @@ class ValidationReport {
       if (legacy && profile.selection == 'focused') {
         problems.add('Focused selection requires result schema 2');
       }
-      if (legacy && profile.isDecision) {
+      if (legacy && (profile.isDecision || profile.isEmbedding)) {
         problems.add('Decision cases require result schema 2');
       }
       if (!legacy) {
@@ -177,6 +177,18 @@ class ValidationReport {
           'Unimplemented catalog case cannot claim an executed result: $id',
         );
       }
+      if (profile?.isEmbedding == true &&
+          (manifest['environment'] as Map?)?['web'] == true &&
+          event['status'] != 'NOT_RUN') {
+        problems.add('Web embedding pack must remain NOT_RUN: $id');
+      }
+      if (profile?.isEmbedding == true &&
+          id.startsWith('E') &&
+          (event['feature_id'] != 'embeddings' ||
+              event['status'] == 'PASS' &&
+                  !validEmbeddingCaseEvidence(id, event))) {
+        problems.add('Invalid embedding case evidence: $id');
+      }
       if (!const [
         'PASS',
         'FAIL',
@@ -262,6 +274,9 @@ class ValidationReport {
     final tag = environment[runtime == 'litert' ? 'litert_tag' : 'native_tag'];
     final model = (manifest['profile'] as Map?)?['model'] as Map? ?? {};
     final decision = (manifest['profile'] as Map?)?['decision'] as Map? ?? {};
+    final projector =
+        ((manifest['profile'] as Map?)?['embedding'] as Map?)?['projector']
+            as Map?;
     final preparation = manifest['preparation'] is Map
         ? manifest['preparation'] as Map
         : const {};
@@ -275,6 +290,14 @@ class ValidationReport {
           preparation['sha256'] != model['sha256'] ||
           preparation['bytes'] != model['bytes'])
         'Verified model hash and byte size do not match the profile lock',
+      if (projector != null &&
+          (preparation['embedding_projector'] is! Map ||
+              (preparation['embedding_projector'] as Map)['verified'] != true ||
+              (preparation['embedding_projector'] as Map)['sha256'] !=
+                  projector['sha256'] ||
+              (preparation['embedding_projector'] as Map)['bytes'] !=
+                  projector['bytes']))
+        'Verified embedding projector hash and byte size do not match the profile lock',
       for (final MapEntry(:key, :value) in decision.entries)
         if (preparation['decision_$key'] is! Map ||
             (preparation['decision_$key'] as Map)['verified'] != true ||

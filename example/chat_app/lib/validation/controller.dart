@@ -111,6 +111,15 @@ class ValidationController extends ChangeNotifier {
         profile: profile,
         engine: host.createEngine(profile),
         decisionReference: decisionReference,
+        embeddingAssets: profile.isEmbedding
+            ? {
+                for (final name
+                    in (embeddingValidationFixture['files'] as Map).keys)
+                  name as String: (await rootBundle.load(
+                    'packages/llamadart_validation/assets/embeddings/v1/$name',
+                  )).buffer.asUint8List(),
+              }
+            : null,
         emit: (event) async {
           await host.emit(event);
           if (event['type'] == 'case' || event['type'] == 'case_start') {

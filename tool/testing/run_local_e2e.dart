@@ -346,6 +346,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test',
             'test/unit/tooling/validation_remote_test.dart',
             'test/unit/tooling/validation_image_profile_test.dart',
+            'test/unit/tooling/validation_embedding_profile_test.dart',
             'test/unit/tooling/validation_npu_test.dart',
           ],
           description:

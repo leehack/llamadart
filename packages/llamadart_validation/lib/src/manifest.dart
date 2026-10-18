@@ -73,8 +73,15 @@ class ValidationProfile {
         (model['bytes'] as int) <= 0) {
       throw const FormatException('Invalid model filename, format or size');
     }
-    if (!const ['raw', 'chat', 'decision'].contains(model['kind'])) {
-      throw const FormatException('Model kind must be raw, chat or decision');
+    if (!const [
+      'raw',
+      'chat',
+      'decision',
+      'embedding',
+    ].contains(model['kind'])) {
+      throw const FormatException(
+        'Model kind must be raw, chat, decision or embedding',
+      );
     }
     if (isDecision != data.containsKey('decision') ||
         (isDecision &&
@@ -97,6 +104,31 @@ class ValidationProfile {
               !_isArtifact(decision['config'], '.json'))) {
         throw const FormatException(
           'Decision head and config need immutable HTTPS locks',
+        );
+      }
+    }
+    if (isEmbedding != data.containsKey('embedding') ||
+        (isEmbedding &&
+            (runtime != 'gguf' ||
+                !['cpu', 'metal'].contains(backend) ||
+                selection != 'quick' ||
+                data.containsKey('fixtures') ||
+                data['history_controls'] == true ||
+                nativeReference ||
+                contextSize != 2048 ||
+                threads != 4))) {
+      throw const FormatException(
+        'Embedding pack requires a quick native CPU/Metal GGUF profile, context 2048, four threads and no overrides',
+      );
+    }
+    if (isEmbedding) {
+      final embedding = data['embedding'];
+      if (embedding is! Map ||
+          embedding.length != 1 ||
+          !_isArtifact(embedding['projector'], '.gguf') ||
+          embedding['projector']['revision'] != model['revision']) {
+        throw const FormatException(
+          'Embedding projector requires a matching immutable GGUF lock',
         );
       }
     }
@@ -210,6 +242,13 @@ class ValidationProfile {
   /// Whether the model is a decision encoder that runs only decision cases.
   bool get isDecision => model['kind'] == 'decision';
 
+  /// Whether this is a multimodal embedding-only pack.
+  bool get isEmbedding => model['kind'] == 'embedding';
+
+  /// Immutable matching projector definition.
+  Map<String, dynamic> get embeddingProjector =>
+      (data['embedding'] as Map)['projector'] as Map<String, dynamic>;
+
   /// Locked decision head and optional config, keyed `head` and `config`.
   Map<String, dynamic> get decisionArtifacts =>
       data['decision'] as Map<String, dynamic>? ?? const {};
@@ -279,7 +318,12 @@ class ValidationProfile {
   bool get historyControls =>
       nativeReference || data['history_controls'] == true;
 
-  List<String> _quickCaseIds(int catalogVersion) => isDecision
+  List<String> _quickCaseIds(int catalogVersion) => isEmbedding
+      ? [
+          'C01.load',
+          for (final definition in embeddingValidationCases) definition.id,
+        ]
+      : isDecision
       ? [
           'C01.load',
           for (final definition in decisionValidationCases) definition.id,
@@ -344,6 +388,7 @@ class ValidationProfile {
       for (final entry in validationFixtures.entries)
         entry.key: {...entry.value, ...?overrides[entry.key] as Map?},
       if (isDecision) 'decision': {...decisionValidationFixture},
+      if (isEmbedding) 'embeddings': {...embeddingValidationFixture},
     };
   }
 
@@ -401,7 +446,7 @@ class ValidationProfile {
   /// Reconstructs a supported historical catalog without inventing new evidence.
   Map<String, dynamic> catalogForVersion(int version) {
     validationCase('C11.batching', catalogVersion: version);
-    if (isDecision && version != validationCatalogVersion) {
+    if ((isDecision || isEmbedding) && version != validationCatalogVersion) {
       throw const FormatException(
         'Decision cases require catalog version $validationCatalogVersion',
       );
@@ -426,6 +471,7 @@ class ValidationProfile {
         for (final entry in validationFeatures.entries)
           if (version != 1 || entry.key != 'batching') entry.key: entry.value,
         if (isDecision) 'decision': 1,
+        if (isEmbedding) 'embeddings': 1,
       },
       'selection': selection,
       'focus_features': focusFeatures,
@@ -439,6 +485,7 @@ class ValidationProfile {
         for (final definition in [
           ...validationCaseCatalog,
           if (isDecision) ...decisionValidationCases,
+          if (isEmbedding) ...embeddingValidationCases,
         ])
           if (catalogDeclaresCase(definition.id, version))
             {
@@ -456,6 +503,7 @@ class ValidationProfile {
 
   String _omissionReason(String id) {
     if (isDecision) return 'decision_model_has_no_text_generation';
+    if (isEmbedding) return 'embedding_model_has_no_text_generation';
     if (id.startsWith('C06.history.') && !historyControls) {
       return 'history_controls_disabled';
     }
@@ -504,6 +552,11 @@ class ValidationProfile {
         'to inspect the locked inputs without downloading or loading a model.',
       );
     }
+    if (isEmbedding && web) {
+      throw LlamaUnsupportedException(
+        'Embedding pack Web artifact/reference adapter is unqualified; keep Web NOT_RUN.',
+      );
+    }
     if (backend == 'webgpu' && !web) {
       throw LlamaUnsupportedException(
         'The webgpu backend runs only in the Web validation host.',
@@ -535,6 +588,8 @@ class ValidationProfile {
           : backend == 'webgpu'
           ? GpuBackend.auto
           : GpuBackend.values.byName(backend),
+      batchSize: isEmbedding ? 2048 : 0,
+      microBatchSize: isEmbedding ? 2048 : 0,
       numberOfThreads: threads,
       numberOfThreadsBatch: runtime == 'litert' ? 0 : threads,
     );
@@ -584,8 +639,8 @@ class ValidationProfile {
     'activation_type': null,
     'prefill_chunk_size': null,
     'dispatch_dir': backend == 'npu' ? 'android.nativeLibraryDir' : null,
-    'batch_size': 0,
-    'micro_batch_size': 0,
+    'batch_size': isEmbedding ? 2048 : 0,
+    'micro_batch_size': isEmbedding ? 2048 : 0,
     'flash_attention': 'auto',
     'cache_type_k': 'f16',
     'cache_type_v': 'f16',

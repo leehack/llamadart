@@ -101,7 +101,8 @@
           "enum": [
             "raw",
             "chat",
-            "decision"
+            "decision",
+            "embedding"
           ]
         },
         "access": {
@@ -423,6 +424,48 @@
           "type": "string"
         }
       }
+    },
+    "embedding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projector"
+      ],
+      "properties": {
+        "projector": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename",
+            "revision",
+            "sha256",
+            "bytes",
+            "url"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]+\\.gguf$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [
@@ -516,6 +559,51 @@
         "not": {
           "required": [
             "decision"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "model": {
+            "properties": {
+              "kind": {
+                "const": "embedding"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "embedding"
+        ],
+        "properties": {
+          "runtime": {
+            "const": "gguf"
+          },
+          "backend": {
+            "enum": [
+              "cpu",
+              "metal"
+            ]
+          },
+          "selection": {
+            "const": "quick"
+          },
+          "context_size": {
+            "const": 2048
+          },
+          "threads": {
+            "const": 4
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "embedding"
           ]
         }
       }

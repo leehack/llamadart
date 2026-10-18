@@ -22,6 +22,11 @@ void requireExecutableValidationProfile(
   bool supportsLocalModelPath = false,
   bool web = false,
 }) {
+  if (web && (profile['model'] as Map?)?['kind'] == 'embedding') {
+    throw StateError(
+      'Embedding pack Web artifact/reference adapter is unqualified; keep Web NOT_RUN.',
+    );
+  }
   if (profile['backend'] == 'webgpu' && !web) {
     throw StateError('The webgpu backend runs only in Web bundles.');
   }

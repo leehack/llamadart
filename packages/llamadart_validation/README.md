@@ -121,3 +121,34 @@ LiteRT-LM tag), subgraphs LiteRT lets delegation skip, the closed ML Drift
 delegate internals, or the identity of the shipped binary, and the embedding
 and other side models run on the XNNPACK CPU delegate, not the GPU. The
 predicate and its limits are in `doc/cross_platform_validation.md`.
+
+## Multimodal embeddings
+
+`embedding-gguf-cpu` (native desktop/Android/iOS) and `embedding-gguf-metal`
+(macOS/iOS) lock EmbeddingGemma-2 BF16 plus its matching projector. They select
+load plus ten embedding cases: capabilities, text/image/audio, both mixed media
+orders, repeated/reordered batch items, normalization, typed unsupported/marker
+errors, cancellation before/after backend SPI dispatch and text/media reuse.
+They produce no token-throughput samples.
+
+```sh
+dart run tool/testing/validation.dart local --profile embedding-gguf-cpu \
+  --model /path/to/embeddinggemma-2-BF16.gguf \
+  --projector /path/to/mmproj-embeddinggemma-2-BF16.gguf \
+  --out .dart_tool/validation/runs/embedding-cpu
+```
+
+The [fixture README](assets/embeddings/README.md) records deterministic PNG/WAV
+regeneration, upstream-only native CPU reference generation and measured
+CPU/Metal spread. Both cosine ≥ 0.9999 and max-abs ≤ 0.002 are mandatory.
+Every case verifies all fixture hashes; a missing or changed reference errors
+rather than skips. The journal binds `feature_id: embeddings`, case/fixture and
+catalog hashes; report import rechecks successful numerical and contract
+metrics and projector SHA256/size evidence. Existing catalogs are preserved.
+
+The [runbook](../../doc/cross_platform_validation.md#multimodal-embedding-pack)
+has the mobile/Firebase commands and qualification limits. Web and LiteRT-LM
+pack coverage remains NOT_RUN until locked inputs and adapters are qualified;
+the Web builder rejects these native profiles before downloading. Local JIT
+runs cannot supply portable runtime evidence. This private pack changes no
+public core API or release changelog.

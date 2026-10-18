@@ -1,17 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'case_catalog.dart';
+import 'embedding_backend.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 import 'runtime_environment.dart';
 
 part 'decision_runner.dart';
+part 'embedding_runner.dart';
 
 /// Sink implemented by file, browser and Firebase host adapters.
 typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
@@ -70,8 +73,10 @@ class PublicValidationEngine
     LlamaEngine Function()? engineFactory,
     this.decisionHead,
     this.decisionConfig,
+    this.projector,
   }) : _engineFactory = engineFactory ?? (() => LlamaEngine(LlamaBackend()));
   final NpuExecutionMonitor? npu;
+  final String? projector;
   @override
   final String? decisionHead;
   @override
@@ -93,7 +98,10 @@ class PublicValidationEngine
     }
     await LlamaLogging.configure(level: LlamaLogLevel.info);
     await _engine.setModel(
-      LlamaModel(ModelSource.parse(location)),
+      LlamaModel(
+        ModelSource.parse(location),
+        projector: projector == null ? null : ModelSource.parse(projector!),
+      ),
       params: profile.loadParams.copyWith(
         liteRtLmDispatchLibDir: npu?.dispatchDirectory,
       ),
@@ -501,6 +509,7 @@ class ValidationRunner {
     required this.emit,
     this.caseTimeout = const Duration(seconds: 60),
     this.decisionReference,
+    this.embeddingAssets,
   });
 
   final ValidationProfile profile;
@@ -510,6 +519,9 @@ class ValidationRunner {
 
   /// Text of the decision fixture's reference file, for decision profiles.
   final String? decisionReference;
+
+  /// Versioned embedding fixture bytes, verified before every embedding case.
+  final Map<String, Uint8List>? embeddingAssets;
 
   /// Cases that reload the model and generate within one deadline.
   static const engineReloadCaseIds = {
@@ -570,6 +582,13 @@ class ValidationRunner {
       var poisoned = false;
       var firstUsePending = false;
       for (final id in caseIds) {
+        if (profile.isEmbedding && engine.isWeb) {
+          await _record(id, 'NOT_RUN', {
+            'reason':
+                'Embedding pack Web artifact/reference adapter is unqualified',
+          });
+          continue;
+        }
         if (_cancelled || poisoned || (!usable && id != 'C01.load')) {
           await _record(id, 'NOT_RUN', {
             'reason': _cancelled
@@ -661,6 +680,7 @@ class ValidationRunner {
       emit({
         'type': 'case',
         'case_id': id,
+        if (id.startsWith('E')) 'feature_id': 'embeddings',
         'case_version': validationCase(id).version,
         'fixture_hash': jsonHash(profile.caseFixtures(id)),
         'status': status,
@@ -1282,6 +1302,7 @@ class ValidationRunner {
   }
 
   Future<Map<String, dynamic>> _runCase(String id, String location) async {
+    if (id.startsWith('E')) return _embeddingCase(id);
     if (id.startsWith('D')) return _decisionCase(id, location);
     if (profile.nativeReference &&
         [
