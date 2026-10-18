@@ -10,6 +10,12 @@ For canonical full release notes, use:
 ## 0.15.1
 
 - Report native embedding overflow with typed limits and input counts.
+- Aligned default WebGPU bridge assets to `v0.1.65` (unchanged from 0.15.0) for image/audio
+  embeddings (API floor v0.1.64+), qualified on Chrome CPU wasm memory64
+  against native CPU/Metal `v0.7.0-1` with upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`. Web LiteRT-LM remains
+  `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328`.
 
 ## 0.15.0
 
