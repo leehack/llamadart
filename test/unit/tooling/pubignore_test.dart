@@ -63,6 +63,24 @@ void main() {
     }
   });
 
+  test(
+    'core archive excludes the independent adapter and its dependency state',
+    () async {
+      for (final candidate in <String>[
+        'packages/genkit_llamadart/pubspec.yaml',
+        'packages/genkit_llamadart/lib/genkit_llamadart.dart',
+        'packages/genkit_llamadart/skills/genkit-llamadart-getting-started/SKILL.md',
+        'packages/genkit_llamadart/pubspec_overrides.yaml',
+      ]) {
+        expect(
+          await _isIgnored(repository, candidate),
+          isTrue,
+          reason: candidate,
+        );
+      }
+    },
+  );
+
   test('leaves companion checkout overrides out of the core archive', () async {
     expect(
       await _isIgnored(

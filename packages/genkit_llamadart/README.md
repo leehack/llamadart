@@ -2,7 +2,7 @@
 
 [![pub package](https://img.shields.io/pub/v/genkit_llamadart.svg)](https://pub.dev/packages/genkit_llamadart)
 [![pub points](https://img.shields.io/pub/points/genkit_llamadart)](https://pub.dev/packages/genkit_llamadart/score)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/leehack/genkit-llamadart/blob/main/LICENSE)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/LICENSE)
 
 Run local LLMs in [Genkit Dart](https://pub.dev/packages/genkit) applications.
 Use llama.cpp GGUF models or LiteRT-LM bundles through
@@ -14,11 +14,11 @@ WAV synthesis and PNG image generation.
 The model runs in your application's process. Download it once or supply a
 local file, then run inference offline. Features depend on the loaded model
 and backend; strict JSON requires grammar support and embeddings require an
-embedding model. See [runtime support](https://github.com/leehack/genkit-llamadart/blob/main/doc/runtime-support.md).
+embedding model. See [runtime support](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/runtime-support.md).
 
 ## Install
 
-Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.11.x.
+Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.15.x.
 
 ```bash
 dart pub add genkit genkit_llamadart
@@ -106,7 +106,7 @@ Requests to the same model run one at a time; different model names use separate
 runtimes. Dispose the prepared handle when your app is done, then shut down
 Genkit. Disposal is terminal.
 
-For other models, [prepare a source](https://github.com/leehack/genkit-llamadart/blob/main/doc/model-preparation.md)
+For other models, [prepare a source](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-preparation.md)
 from a local path, HTTPS URL or Hugging Face repository. The preparation guide
 covers revision pinning, checksum verification and download progress. Use an
 instruct/chat GGUF for chat, an embedding GGUF for vectors, or a `.litertlm` bundle on a supported
@@ -135,39 +135,40 @@ if (response.finishReason == FinishReason.failed ||
 
 For a stop button, call `prepared.cancelActiveGeneration()`.
 For request cancellation, pass a Genkit `CancellationController` token. See
-[lifecycle and cancellation](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md#lifecycle-and-cancellation).
+[lifecycle and cancellation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#lifecycle-and-cancellation).
 
 ## What you can build
 
 | Feature | Requirements / guide |
 | --- | --- |
-| Offline chat and streaming | Instruct/chat model; [streaming example](https://github.com/leehack/genkit-llamadart/blob/main/example/genkit_llamadart_streaming_example.dart) |
-| Tool calling and agent loops | Tool-capable model/runtime; richer [input schemas](https://github.com/leehack/genkit-llamadart/blob/main/doc/tool-input-schemas.md) require grammar support; [tool calling](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md#tool-calling) |
-| Structured JSON output | Grammar-capable backend; [JSON with active tools](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md#constrained-json-with-tools) requires native llama.cpp; [JSON guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md#structured-json-output) |
-| Text/image/audio embeddings for search / RAG | Compatible embedding model; [embedding guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md#embeddings) |
-| Application resource/data input | Explicit allowlisted normalization before generation; [resource recipe](https://github.com/leehack/genkit-llamadart/blob/main/doc/resource-input.md) |
-| Next-token probabilities | Capability-enabled decoder runtime; [typed scoring action](https://github.com/leehack/genkit-llamadart/blob/main/doc/next-token-scoring.md) |
-| Image and audio input | Compatible multimodal model and runtime, matching projector when required; explicit resolver for native HTTP(S) input; [media guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md#image-and-audio-input) |
-| Batch transcription, speech synthesis and image generation | Loaded native typed engines; [speech/image guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/media-models.md) |
-| Choice, score and yes/no decisions | Experimental Laya encoder/head; native CPU [Genkit flow recipe](https://github.com/leehack/genkit-llamadart/blob/main/doc/decision-flows.md) |
-| Dedicated raw-prompt contexts and live LoRA | Application-owned native runtimes; [owner guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/runtime-owners.md) |
-| Same-process raw-prompt caches | Opt-in default native owners; [cache limits](https://github.com/leehack/genkit-llamadart/blob/main/doc/prompt-caches.md); no general chat checkpoints |
-| Experimental text sessions | Separate `experimental.dart` entry point; bounded native [Genkit bidi sessions](https://github.com/leehack/genkit-llamadart/blob/main/doc/bidi-sessions.md) |
-| Token counts and loaded runtime diagnostics | Explicit inspection without inference; [inspection guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/model-inspection.md) |
-| Downloads, cache and progress UI | `ModelSource` and preparation tasks; [model preparation](https://github.com/leehack/genkit-llamadart/blob/main/doc/model-preparation.md) |
-| OpenTelemetry traces and metrics | Application-configured telemetry provider; [observability](https://github.com/leehack/genkit-llamadart/blob/main/doc/observability.md) |
+| Offline chat and streaming | Instruct/chat model; [streaming example](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_streaming_example.dart) |
+| Tool calling and agent loops | Tool-capable model/runtime; richer [input schemas](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/tool-input-schemas.md) require grammar support; [tool calling](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#tool-calling) |
+| Structured JSON output | Grammar-capable backend; [JSON with active tools](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#constrained-json-with-tools) requires native llama.cpp; [JSON guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#structured-json-output) |
+| Text/image/audio embeddings for search / RAG | Compatible embedding model; [embedding guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#embeddings) |
+| Application resource/data input | Explicit allowlisted normalization before generation; [resource recipe](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/resource-input.md) |
+| Next-token probabilities | Capability-enabled decoder runtime; [typed scoring action](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/next-token-scoring.md) |
+| Image and audio input | Compatible multimodal model and runtime, matching projector when required; explicit resolver for native HTTP(S) input; [media guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md#image-and-audio-input) |
+| Batch transcription, speech synthesis and image generation | Loaded native typed engines; [speech/image guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/media-models.md) |
+| Choice, score and yes/no decisions | Experimental Laya encoder/head; native CPU [Genkit flow recipe](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/decision-flows.md) |
+| Dedicated raw-prompt contexts and live LoRA | Application-owned native runtimes; [owner guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/runtime-owners.md) |
+| Same-process raw-prompt caches | Opt-in default native owners; [cache limits](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/prompt-caches.md); no general chat checkpoints |
+| Experimental text sessions | Separate `experimental.dart` entry point; bounded native [Genkit bidi sessions](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/bidi-sessions.md) |
+| Token counts and loaded runtime diagnostics | Explicit inspection without inference; [inspection guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-inspection.md) |
+| Downloads, cache and progress UI | `ModelSource` and preparation tasks; [model preparation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-preparation.md) |
+| OpenTelemetry traces and metrics | Application-configured telemetry provider; [observability](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/observability.md) |
 
 The plugin checks loaded runtime capabilities before each request. Definition
 flags permit features; they do not guarantee model support. Discovery stays
 lazy, so support booleans start at `false` until verified. Unsupported requests
-fail explicitly. See [feature permissions and discovery](https://github.com/leehack/genkit-llamadart/blob/main/doc/runtime-support.md).
+fail explicitly. See [feature permissions and discovery](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/runtime-support.md).
 
 Strict JSON with active tools requires native llama.cpp, one call per turn and
 thinking disabled. LiteRT-LM does not provide this adapter's grammar-constrained
-JSON or embeddings. Tool-call quality varies by model; runtime support alone
-does not prove reliability.
-This plugin embeds text for RAG; retrieval and Genkit document augmentation
-remain application responsibilities.
+JSON. Dedicated native LiteRT-LM CPU embedding engines support qualified
+text/image/audio inputs; conversation engines and Web LiteRT-LM reject embedding
+requests. Tool-call quality varies by model; runtime support alone does not prove
+reliability. Retrieval and Genkit document augmentation remain application
+responsibilities.
 
 ## Runnable examples
 
@@ -175,14 +176,14 @@ Runnable examples download and cache pinned Hugging Face models by default.
 Overrides accept local paths, `hf://` sources or HTTPS URLs. Media input/output
 files remain local. The example index includes a verification matrix.
 
-Run the standalone [pub.dev quickstart](https://github.com/leehack/genkit-llamadart/blob/main/example/genkit_llamadart_example.dart)
+Run the standalone [pub.dev quickstart](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_example.dart)
 from a checkout; its default downloads the pinned Qwen3.5 model:
 
 ```bash
 dart run example/genkit_llamadart_example.dart
 ```
 
-The [example index](https://github.com/leehack/genkit-llamadart/blob/main/example/README.md)
+The [example index](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/README.md)
 provides commands, model sizes and setup for streaming, typed tool loops,
 structured JSON, embeddings, local retrieval, inspection/scoring, download UI,
 Laya decisions, dedicated owners, live LoRA, image input, transcription, WAV
@@ -190,21 +191,21 @@ synthesis, PNG generation and telemetry. Most chat examples can reuse a local
 model through `LLAMADART_MODEL_SOURCE` (or the older `LLAMADART_MODEL_PATH`).
 
 For a small retrieval application, try the
-[local-text question-answering recipe](https://github.com/leehack/genkit-llamadart/blob/main/doc/local-retrieval.md).
+[local-text question-answering recipe](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/local-retrieval.md).
 It explicitly inserts bounded passages in messages; Genkit's standard `docs`
 forwarding remains unsupported.
 
 ## Guides and API reference
 
-- [Generation settings (including thinking, presence penalties and speculative decoding), tools, JSON, embeddings and cancellation](https://github.com/leehack/genkit-llamadart/blob/main/doc/usage.md)
-- [Model preparation, cache policy and loading UI](https://github.com/leehack/genkit-llamadart/blob/main/doc/model-preparation.md)
-- [Raw-text token counts, context capacity and backend inspection](https://github.com/leehack/genkit-llamadart/blob/main/doc/model-inspection.md)
-- [Batch transcription, WAV synthesis and PNG generation](https://github.com/leehack/genkit-llamadart/blob/main/doc/media-models.md)
-- [Runtime support, discovery and custom runtimes](https://github.com/leehack/genkit-llamadart/blob/main/doc/runtime-support.md)
-- [Telemetry and engine observers](https://github.com/leehack/genkit-llamadart/blob/main/doc/observability.md)
-- [Migration to 3.0 / Genkit 1.0](https://github.com/leehack/genkit-llamadart/blob/main/doc/migration.md)
+- [Generation settings (including thinking, presence penalties and speculative decoding), tools, JSON, embeddings and cancellation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/usage.md)
+- [Model preparation, cache policy and loading UI](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-preparation.md)
+- [Raw-text token counts, context capacity and backend inspection](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-inspection.md)
+- [Batch transcription, WAV synthesis and PNG generation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/media-models.md)
+- [Runtime support, discovery and custom runtimes](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/runtime-support.md)
+- [Telemetry and engine observers](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/observability.md)
+- [Migration to 3.0 / Genkit 1.0](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/migration.md)
 - [Public API reference](https://pub.dev/documentation/genkit_llamadart/latest/)
-- [Changelog](https://github.com/leehack/genkit-llamadart/blob/main/CHANGELOG.md)
+- [Changelog](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/CHANGELOG.md)
 
 ## Coding agent setup
 
@@ -219,6 +220,6 @@ dart run skills@ get
 ## Help and contributing
 
 Report bugs or request features in the
-[issue tracker](https://github.com/leehack/genkit-llamadart/issues).
-[CONTRIBUTING.md](https://github.com/leehack/genkit-llamadart/blob/main/CONTRIBUTING.md) covers local checks, meaningful regression
-tests and releases; [ARCHITECTURE.md](https://github.com/leehack/genkit-llamadart/blob/main/ARCHITECTURE.md) describes package layering.
+[issue tracker](https://github.com/leehack/llamadart/issues).
+[CONTRIBUTING.md](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/CONTRIBUTING.md) covers local checks, meaningful regression
+tests and releases; [ARCHITECTURE.md](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/ARCHITECTURE.md) describes package layering.

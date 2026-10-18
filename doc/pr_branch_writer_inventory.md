@@ -18,7 +18,9 @@ local fixtures.
 | `.github/dependabot.yml` | GitHub Dependabot | Weekly GitHub-managed schedule | Managed inside GitHub; not exposed to checkout-local code | Server-side creation/update of Dependabot PR branches; bounded but not enforced by the local helper |
 
 The repository also contains a direct HEAD-to-main push in
-`.github/workflows/docs_version_cut.yml`, tag creation in release automation,
+`.github/workflows/docs_version_cut.yml`, tag creation in `release_on_prep_merge.yml` and
+`release_genkit_on_prep_merge.yml` (the latter creates only
+`genkit_llamadart-vX.Y.Z` tags),
 historical companion tag-push examples under `website/versioned_docs/`, a
 forced local detached checkout for an upstream test fixture, `codesign --force`,
 and `pub publish --force`. None writes an open PR head ref. The static test

@@ -23,6 +23,7 @@ CORE_JOBS = (
     'validation-integration', 'companion-packages', 'test-linux-coverage',
     'test-web', 'web-chat-contract', 'test-other-os',
     'native-prompt-reuse-parity', 'artifact-contract',
+    'genkit', 'genkit-lower-bounds',
 )
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
@@ -77,6 +78,8 @@ def select(paths, force_full=False):
         if path.startswith(('.github/workflows/', '.github/actions/', 'tool/ci/', 'test/ci/')):
             full('workflow or selector change')
             jobs.add('artifact-contract')
+        elif path.startswith('packages/genkit_llamadart/'):
+            jobs.update(('genkit', 'genkit-lower-bounds'))
         elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md', 'LICENSE')
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
               or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):

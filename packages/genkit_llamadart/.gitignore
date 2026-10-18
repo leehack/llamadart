@@ -12,3 +12,6 @@ pubspec.lock
 # Test coverage and native instrumentation output.
 coverage/
 *.profraw
+
+# Local core qualification only; never published.
+pubspec_overrides.yaml

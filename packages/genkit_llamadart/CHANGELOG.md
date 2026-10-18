@@ -1,3 +1,7 @@
+## Unreleased
+
+- Move source and guides into the llamadart repository while retaining separate package versions and releases.
+
 ## 3.4.0 - 2026-10-18
 
 - Upgrade to llamadart 0.15.0 and matching 0.15.x Apple companions; native overrides must match the v0.7 ABI.

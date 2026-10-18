@@ -26,7 +26,7 @@ class DocumentationTest(unittest.TestCase):
             readme = root / "README.md"
             readme.write_text(
                 "# Guide\n[section](#guide)\n"
-                "[file](https://github.com/leehack/genkit-llamadart/blob/main/README.md)\n"
+                "[file](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/README.md)\n"
                 "![badge](https://example.invalid/badge.svg)\n"
                 "[reference]: https://example.invalid/guide\n"
                 "```markdown\n[example](relative.md)\n```\n"
@@ -50,7 +50,7 @@ class DocumentationTest(unittest.TestCase):
             readme = root / "README.md"
             readme.write_text(
                 "[local](doc/guide%20name.md#useful-api)\n"
-                "[canonical](https://github.com/leehack/genkit-llamadart/blob/main/"
+                "[canonical](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/"
                 "doc/guide%20name.md#useful-api-1)\n"
                 "[reference]: doc/guide%20name.md#useful-api\n"
                 "[remote](https://example.invalid/does-not-exist)\n"
@@ -72,8 +72,8 @@ class DocumentationTest(unittest.TestCase):
             root = Path(folder)
             readme = root / "README.md"
             readme.write_text(
-                "https://github.com/leehack/genkit-llamadart/blob/main/missing.md.\n"
-                "<https://github.com/leehack/genkit-llamadart/blob/main/also-missing.md>\n"
+                "https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/missing.md.\n"
+                "<https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/also-missing.md>\n"
             )
             self.assertEqual(len(check_links(root, readme)), 2)
 

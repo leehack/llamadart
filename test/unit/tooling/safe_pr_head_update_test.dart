@@ -1417,6 +1417,11 @@ void main() {
         if (path == '.github/workflows/release_on_prep_merge.yml') {
           expect(content, contains('"ref=refs/tags/\$tag"'));
           expect(RegExp(r'git/refs').allMatches(content).length, 1);
+        } else if (path ==
+            '.github/workflows/release_genkit_on_prep_merge.yml') {
+          expect(content, contains(r'"ref=refs/tags/$TAG"'));
+          expect(content, contains(r'tag="genkit_llamadart-v$version"'));
+          expect(RegExp(r'git/refs').allMatches(content).length, 1);
         } else {
           expect(
             content,

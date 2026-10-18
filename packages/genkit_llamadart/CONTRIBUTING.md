@@ -63,10 +63,18 @@ examples from README, guides, example READMEs and skills in one analyzer run.
 
 ## Test Commands
 
-Known prose-only PRs run package analysis, publication checks, local documentation
-links/anchors and Dart snippet analysis without model downloads. Runtime changes,
-runnable examples, unknown paths and every main push retain full validation.
-New prose files need explicit classification in `.github/select_ci.py`.
+Work from `packages/genkit_llamadart` in the llamadart repository. The adapter
+resolves dependencies independently: root preparation and analysis exclude it.
+CI runs its published-dependency, checkout-core, browser and Dart 3.12 lower-bound
+lanes when the adapter, core or shared tooling changes. Real-model qualification
+is opt-in and can use existing local fixtures; ordinary CI downloads no models.
+
+Release prep changes only this package's `pubspec.yaml` and `CHANGELOG.md`, on
+`release/genkit_llamadart-vX.Y.Z` or with `release-prep:genkit_llamadart`.
+Tags use `genkit_llamadart-vX.Y.Z`; core and Apple companion release numbers do
+not follow this package. See the
+[maintainer migration procedure](https://github.com/leehack/llamadart/blob/main/website/docs/maintainers/genkit-package.md)
+for the owner-controlled publisher handoff and verification checklist.
 
 ```bash
 python3 .github/check_docs.py
@@ -245,7 +253,9 @@ dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test -x real-model
 LLAMADART_AUTO_DOWNLOAD_TEST_MODELS=1 dart test -t real-model -j 1
-dart pub publish --dry-run
+# Choose a new staging directory outside the checkout:
+python3 ../../tool/release/stage_genkit_package.py /tmp/genkit-publish-check
+(cd /tmp/genkit-publish-check && dart pub get && dart pub publish --dry-run)
 ```
 
 The full CI job runs after `flutter pub upgrade`, so it exercises the latest
@@ -319,7 +329,9 @@ The publish workflow then:
 - verifies latest-compatible dependencies in the full job and lower-bound
   dependencies in a focused compatibility job
 - reruns formatting, analysis, pana, all tagged real-model tests, and
-  `dart pub publish --dry-run`
+  `# Choose a new staging directory outside the checkout:
+python3 ../../tool/release/stage_genkit_package.py /tmp/genkit-publish-check
+(cd /tmp/genkit-publish-check && dart pub get && dart pub publish --dry-run)`
 - publishes to pub.dev using GitHub OIDC trusted publishing
 - creates a GitHub release for the tag after a successful publish
 

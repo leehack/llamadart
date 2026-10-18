@@ -7,6 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Add integration setup guides and host the independently versioned Genkit adapter in this repository.
+
 ## 0.15.0
 
 - Embed ordered text, images and audio with typed inputs and modality probes on

@@ -158,7 +158,7 @@ Future<Map<String, dynamic>?> streamJson(
 ## More
 
 - Runnable JSON example:
-  https://github.com/leehack/genkit-llamadart/blob/main/example/genkit_llamadart_json_example.dart
+  https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_json_example.dart
 - Schemantic: https://pub.dev/packages/schemantic
 
 Thinking budgets are supported when the runtime reports them; omitted tags are

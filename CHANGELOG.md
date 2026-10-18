@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add integration setup guides and host the independently versioned Genkit adapter in this repository.
+
 ## 0.15.0
 
 - Embed ordered text, images and audio with typed inputs and modality probes on

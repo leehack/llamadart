@@ -44,6 +44,22 @@ class SelectionTest(unittest.TestCase):
                                  {'analyze', 'web-chat-contract'})
                 self.assertEqual(plan['apps'], [])
 
+    def test_genkit_is_independent_but_core_and_shared_changes_test_the_adapter(self):
+        for path in ('lib/genkit_llamadart.dart', 'README.md', 'pubspec.yaml',
+                     '.github/check_docs.py', 'test/contract_test.dart'):
+            plan = ci.select(['packages/genkit_llamadart/' + path])
+            self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                             {'genkit', 'genkit-lower-bounds'})
+            self.assertEqual(plan['companions'], [])
+            self.assertEqual(plan['apps'], [])
+            self.assertEqual(plan['desktops'], [])
+        for paths in (['lib/llamadart.dart'], ['pubspec.yaml'], ['hook/build.dart'],
+                      ['.github/workflows/ci.yml'], [],
+                      ['packages/genkit_llamadart/lib/a.dart', 'lib/llamadart.dart']):
+            plan = ci.select(paths)
+            self.assertTrue(plan['jobs']['genkit'])
+            self.assertTrue(plan['jobs']['genkit-lower-bounds'])
+
     def test_shared_runtime_and_unknown_select_full(self):
         for path in ('lib/src/core/engine.dart', 'hook/build.dart', 'pubspec.yaml',
                      'pubspec.lock', '.flutter-version', 'dart_test.yaml',

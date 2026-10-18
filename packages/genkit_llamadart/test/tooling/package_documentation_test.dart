@@ -93,6 +93,12 @@ void main() {
 
       int count = 0;
       final documents = _documents(skills, Directory('doc'));
+      final integrationGuide = File(
+        '../../website/docs/integrations/genkit.md',
+      );
+      if (integrationGuide.existsSync()) {
+        documents[integrationGuide.path] = integrationGuide.readAsStringSync();
+      }
       documents.forEach((String name, String markdown) {
         final String prefix = name.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
         for (final RegExpMatch block in _dartBlock.allMatches(markdown)) {

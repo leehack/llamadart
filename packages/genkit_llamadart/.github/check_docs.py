@@ -7,7 +7,7 @@ from urllib.parse import unquote, urlsplit
 
 ROOT_DOCUMENTS = ("README.md", "CHANGELOG.md", "ARCHITECTURE.md", "CONTRIBUTING.md")
 PUB_DOCUMENTS = ("README.md", "CHANGELOG.md", "example/README.md", "example/example.md")
-REPOSITORY_PATH = "/leehack/genkit-llamadart/blob/main/"
+REPOSITORY_PATH = "/leehack/llamadart/blob/main/packages/genkit_llamadart/"
 
 
 def prose(markdown):
@@ -29,7 +29,7 @@ def destinations(markdown):
     text = prose(markdown)
     inline = re.findall(r"\]\(\s*(<[^>]+>|[^\s)]+)(?:\s+[^)]*)?\)", text)
     references = re.findall(r"(?m)^\s*\[[^]]+\]:\s*(<[^>]+>|\S+)", text)
-    canonical = re.findall(r"https://github\.com/leehack/genkit-llamadart/blob/main/[^\s<>)\]]+", text)
+    canonical = re.findall(r"https://github\.com/leehack/llamadart/blob/main/packages/genkit_llamadart/[^\s<>)\]]+", text)
     return list(dict.fromkeys(value.strip("<>").rstrip(".,;") for value in inline + references + canonical))
 
 

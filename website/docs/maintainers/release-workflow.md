@@ -3,7 +3,9 @@ title: Release checklist
 description: Use this checklist to cut a llamadart release, snapshot docs, and verify the published artifacts afterward.
 ---
 
-Use this checklist when releasing `llamadart`.
+Use this checklist when releasing `llamadart`. The independently versioned
+Genkit adapter follows [its own procedure](./genkit-package); it is not an Apple
+companion and is not released by this checklist.
 
 ## 1. Pre-release validation
 

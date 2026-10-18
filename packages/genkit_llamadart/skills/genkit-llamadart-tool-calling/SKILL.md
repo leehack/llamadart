@@ -33,8 +33,8 @@ description: >-
   until final argument validation; invalid output publishes no partial result.
   Numeric bounds, patterns, formats and `oneOf`/`allOf` remain rejected. Do not
   remove a safety constraint and assume it is enforced. See the
-  [schema guide](https://github.com/leehack/genkit-llamadart/blob/main/doc/tool-input-schemas.md)
-  and [runnable example](https://github.com/leehack/genkit-llamadart/blob/main/example/genkit_llamadart_tool_schema_example.dart).
+  [schema guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/tool-input-schemas.md)
+  and [runnable example](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_tool_schema_example.dart).
 - Named Schemantic object schemas work; local `$ref`/`$defs` wrappers are
   resolved before parameters are mapped.
 - The model definition must keep `supportsTools: true` (the default).
@@ -234,6 +234,6 @@ Future<String> streamAgentTurn(
   the next turn's choice when it needs a final text answer.
 
 - Runnable agent example:
-  https://github.com/leehack/genkit-llamadart/blob/main/example/genkit_llamadart_agent_example.dart
+  https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_agent_example.dart
 - llamadart tool-calling behavior per runtime:
   https://llamadart.leehack.com/docs/guides/tool-calling

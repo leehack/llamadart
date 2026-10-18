@@ -211,6 +211,6 @@ plugins use `inspectModel(name)`, `countTokens(name, text)` and
 ## More
 
 - Preparation task example:
-  https://github.com/leehack/genkit-llamadart/blob/main/example/genkit_llamadart_preparation_task_example.dart
+  https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/example/genkit_llamadart_preparation_task_example.dart
 - Model sources, caching and platform limits:
   https://llamadart.leehack.com/

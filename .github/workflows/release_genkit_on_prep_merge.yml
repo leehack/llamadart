@@ -1,4 +1,4 @@
-name: Release on prep merge
+name: Genkit release on prep merge
 
 on:
   pull_request:
@@ -12,7 +12,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: release-on-prep-merge-${{ github.event.pull_request.number }}
+  group: genkit-release-on-prep-merge-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
@@ -36,22 +36,17 @@ jobs:
           labels="$(jq -r '.pull_request.labels[]?.name // empty' "$GITHUB_EVENT_PATH")"
 
           branch_version=""
-          if [[ "$head_ref" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+)$ ||
-            "$head_ref" =~ ^release/prep-v?([0-9]+\.[0-9]+\.[0-9]+)$ ||
-            "$head_ref" =~ ^release/v?([0-9]+\.[0-9]+\.[0-9]+)-prep$ ]]; then
+          if [[ "$head_ref" =~ ^release/genkit_llamadart-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             branch_version="${BASH_REMATCH[1]}"
           fi
 
           should_release=false
-          reason="missing release-prep label or branch pattern"
+          reason="missing Genkit release-prep branch or package label"
           if [[ "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
             reason="release prep must originate in $GITHUB_REPOSITORY"
-          elif printf '%s\n' "$labels" | grep -Fxq "release-prep"; then
+          elif [[ -n "$branch_version" ]] || printf '%s\n' "$labels" | grep -Fxq 'release-prep:genkit_llamadart'; then
             should_release=true
-            reason="release-prep label"
-          elif [[ -n "$branch_version" ]]; then
-            should_release=true
-            reason="release-prep branch $head_ref"
+            reason="independent Genkit release prep"
           fi
 
           {
@@ -79,10 +74,10 @@ jobs:
             "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files")"
           if ! jq -e '
             [.[][]] as $files |
-            ($files | map(.filename) | sort) == ["CHANGELOG.md", "pubspec.yaml"] and
+            ($files | map(.filename) | sort) == ["packages/genkit_llamadart/CHANGELOG.md", "packages/genkit_llamadart/pubspec.yaml"] and
             ($files | all(.status == "modified"))
           ' <<< "$files" >/dev/null; then
-            echo "Release-prep PRs must modify only CHANGELOG.md and pubspec.yaml." >&2
+            echo "Genkit release-prep PRs must modify only packages/genkit_llamadart/CHANGELOG.md and pubspec.yaml." >&2
             exit 1
           fi
 
@@ -101,7 +96,7 @@ jobs:
       RELEASE_WAIT_INTERVAL_SECONDS: ${{ vars.RELEASE_AUTOMATION_WAIT_INTERVAL_SECONDS || '10' }}
     steps:
       - name: Check out merged release
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
@@ -115,9 +110,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          source .github/release_helpers.sh
+          source "$GITHUB_WORKSPACE/.github/genkit_release_helpers.sh"
           release_validate_wait_settings
 
+          cd packages/genkit_llamadart
           package_name="$(awk '/^name:[[:space:]]*/ {print $2; exit}' pubspec.yaml)"
           version="$(awk '/^version:[[:space:]]*/ {print $2; exit}' pubspec.yaml)"
           if [[ ! "$package_name" =~ ^[a-z0-9_]+$ ]]; then
@@ -145,7 +141,7 @@ jobs:
             exit 1
           fi
 
-          tag="v$version"
+          tag="genkit_llamadart-v$version"
           release_sha="$(git rev-parse HEAD)"
           tag_sha="$(
             git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" |
@@ -215,7 +211,7 @@ jobs:
         run: |
           # A retry must wait for an existing publisher, not enqueue another.
           runs="$(gh api --paginate --slurp \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/runs?head_sha=$RELEASE_SHA&per_page=100")"
+            "repos/$GITHUB_REPOSITORY/actions/workflows/publish_genkit_pubdev.yml/runs?head_sha=$RELEASE_SHA&per_page=100")"
           active="$(jq --arg tag "$TAG" '[.[] | .workflow_runs[] |
             select(.head_branch == $tag and .status != "completed")] | length' <<< "$runs")"
           if [[ "$active" != 0 ]]; then
@@ -224,10 +220,10 @@ jobs:
           fi
           gh api \
             --method POST \
-            "repos/$GITHUB_REPOSITORY/actions/workflows/publish.yml/dispatches" \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/publish_genkit_pubdev.yml/dispatches" \
             -f "ref=$TAG" \
             >/dev/null
-          echo "Dispatched publish.yml for $TAG."
+          echo "Dispatched publish_genkit_pubdev.yml for $TAG."
 
       - name: Repair missing GitHub Release
         if: steps.release.outputs.pub_live == 'true' && steps.release.outputs.release_live != 'true'
@@ -239,7 +235,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$TAG" \
-            --generate-notes
+            --generate-notes \
+            --latest=false
 
       - name: Wait for publication
         if: steps.release.outputs.should_dispatch == 'true'
@@ -252,7 +249,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          source .github/release_helpers.sh
+          source "$GITHUB_WORKSPACE/.github/genkit_release_helpers.sh"
           release_validate_wait_settings
           version_url="https://pub.dev/api/packages/$PACKAGE_NAME/versions/$VERSION"
           for attempt in $(seq 1 "$RELEASE_WAIT_ATTEMPTS"); do

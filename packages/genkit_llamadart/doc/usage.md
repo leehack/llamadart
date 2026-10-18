@@ -52,8 +52,9 @@ projector; native LiteRT-LM needs a dedicated CPU embedding engine selected with
 projector. Leave llama.cpp-only batch and batch-thread parameters at their
 defaults for LiteRT-LM. Conversation engines and Web LiteRT-LM do not support
 embeddings.
-Web llama.cpp requires compatible bridge assets (v0.1.64+; 0.15 defaults to
-v0.1.65). Real Web release qualification covers Chrome CPU wasm memory64;
+Web llama.cpp requires compatible bridge assets (v0.1.64+); follow the
+[pinned asset setup](https://llamadart.leehack.com/docs/platforms/webgpu-bridge).
+Real Web release qualification covers Chrome CPU wasm memory64;
 this adapter's browser tests establish routing/guards, not device parity.
 
 ```dart
