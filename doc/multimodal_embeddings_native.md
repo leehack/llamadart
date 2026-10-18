@@ -83,8 +83,9 @@ precedence over bare names on the DLL search path. The pre-initialization
 log-level lookup still uses bare names, so a foreign `mtmd.dll` on `PATH` can
 win then; a successfully resolved API remains cached.
 Windows export routing has host-independent unit coverage and is checked against
-the published v0.7.0-1 windows-arm64 export tables. Windows model execution
-remains unqualified.
+the published v0.7.0-1 windows-arm64 export tables. EmbeddingGemma-2 BF16 media
+execution passed the 11-case `embedding-gguf-cpu` pack on Windows x64 CPU after
+[#1198](https://github.com/leehack/llamadart/pull/1198).
 
 No test downloads weights or SDK artifacts. The local-only
 `native-multimodal-embeddings` scenario requires:
@@ -132,8 +133,10 @@ cosine >= 0.9998 and relative L2 < 2% against the matching CPU/Metal reference.
 The test also checks string/content exact parity, raw/normalized outputs,
 adjacent-text equivalence with media, batch order, whole-batch source/capacity
 preflight, cancellation and text/media reuse. Synthetic images/audio establish
-wiring and media sensitivity, not retrieval quality. No device other than
-macOS arm64 CPU/Metal is claimed as locally qualified.
+wiring and media sensitivity, not retrieval quality. This scenario qualifies
+macOS arm64 CPU/Metal; Linux x64, Windows x64, Android and iOS CPU qualification
+comes from the `embedding-gguf-cpu`
+[validation pack](cross_platform_validation.md#multimodal-embedding-pack).
 
 ## Upstream-only reference
 

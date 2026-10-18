@@ -437,6 +437,9 @@ this native pack before preparation; their pack coverage remains **NOT_RUN**
 with those explicit reasons. A directly invoked shared runner on Web journals
 all pack cases as NOT_RUN without loading a model.
 
+Release 0.15.0 runs passed 11/11 on macOS CPU and Metal, Linux x64 CPU and
+Windows x64 CPU (GCE), Galaxy S24 CPU and iPhone 16 Pro CPU.
+
 ### Focused selections and replay metadata
 
 The shared runner accepts three profile selections:

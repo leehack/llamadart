@@ -108,8 +108,9 @@ existing types.
 ### Embedding content API
 
 Web llama.cpp content embeddings now accept image/audio bytes and mono 16 kHz
-Float32 PCM when bridge assets v0.1.64+ positively probe the modality through
-`getEmbeddingCapabilities()` API version 1. Load a compatible embedding model
+Float32 PCM when bridge assets v0.1.64+ positively probe the modality
+(bridge `getEmbeddingCapabilities()` API version 1; read it with
+`await engine.embeddingCapabilities`). Load a compatible embedding model
 and projector first. Paths and image URLs throw `LlamaUnsupportedException`.
 Older or mismatched bridge assets retain text embeddings and report media
 unavailable with an upgrade diagnostic. The default pinned assets include the API;
@@ -133,10 +134,11 @@ needs exactly one encoded bytes/local-file source, or mono 16 kHz audio PCM.
 Text-only content follows `embed`, including causal unpooled models; media
 requirements do not restrict text. Older native overrides can retain text
 with media disabled; unsupported media errors name the v0.7.0-1 ABI.
-No task prefix is inserted. Await a cancelled embedding before reusing it.
+No task prefix is inserted. Await a cancelled embedding before reusing the engine.
 Windows resolves media functions across the complete native DLL bundle; missing
-media symbols disable media without restricting text. Model-backed Windows
-qualification remains pending.
+media symbols disable media without restricting text. EmbeddingGemma-2 BF16
+media embeddings are qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS,
+and on macOS Metal.
 
 `ModelParams.liteRtLmEmbeddingEngine` defaults to false for conversation loading.
 Set true and `device: ComputeDevice.cpu` for native LiteRT-LM embeddings. This intentionally

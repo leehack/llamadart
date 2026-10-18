@@ -96,20 +96,20 @@ For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports
 image/audio embeddings with EmbeddingGemma-2 and its projector on native
-v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
-Web llama.cpp also accepts image/audio content with bridge assets v0.1.64+
-and an API-version-1 embedding modality probe. The default pin is qualified with EmbeddingGemma-2 on Chrome CPU wasm
-memory64 against native CPU/Metal; repeated media batches require memory64.
-Hardware WebGPU remains unqualified.
-LiteRT-LM supports text,
-image and audio embeddings (qualified on macOS arm64 CPU only) with
-`ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all LiteRT-LM Web paths throw
+v0.7.0-1 (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android
+and iOS, and on macOS Metal); expanded inputs must fit one micro-batch. Web
+llama.cpp also accepts image/audio content with bridge assets v0.1.64+ and an
+API-version-1 embedding modality probe. The default pin is qualified with
+EmbeddingGemma-2 on Chrome CPU wasm memory64 against native CPU/Metal; repeated
+media batches require memory64. Hardware WebGPU remains unqualified. LiteRT-LM
+supports text, image and audio embeddings (qualified on macOS arm64 CPU only)
+with `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu`
+on native; native GPU and all LiteRT-LM Web paths throw
 `LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
 llama.cpp text-only content follows `embed`, including causal unpooled models.
 Unsupported native media diagnostics name the required v0.7.0-1 ABI. Windows
 requires the complete native DLL bundle; missing media symbols leave text
-embeddings available. Windows media model execution is not yet locally
-qualified.
+embeddings available.
 Adjacent text parts concatenate verbatim. `cancelGeneration()` also cancels
 content embedding calls still awaiting capability checks, with
 `LlamaInferenceException` before inference starts. Await the embedding future

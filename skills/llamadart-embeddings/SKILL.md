@@ -1,10 +1,13 @@
 ---
 name: llamadart-embeddings
 description: >-
-  Use when generating text embeddings with llamadart (engine.embed,
-  engine.embedBatch), ranking documents by cosine similarity, building a local
-  retrieval-augmented generation (RAG) loop, storing vectors, or tuning
-  ModelParams batch sizes and input length limits for embedding models.
+  Use when generating text or multimodal embeddings with llamadart (engine.embed,
+  engine.embedBatch, engine.embedContent, engine.embedContentBatch,
+  LlamaEmbeddingInput, embeddingCapabilities), embedding images or audio with
+  EmbeddingGemma-2 or a LiteRT-LM embedding bundle, ranking documents by cosine
+  similarity, building a local retrieval-augmented generation (RAG) loop, storing
+  vectors, or tuning ModelParams batch sizes and input length limits for embedding
+  models.
 ---
 
 # Embeddings and retrieval with llamadart
@@ -19,8 +22,9 @@ description: >-
 - `LlamaEmbeddingInput` and `embedContent` / `embedContentBatch` accept ordered
   text/image/audio content parts. Probe `await engine.embeddingCapabilities`
   after loading: native llama.cpp v0.7.0-1 supports EmbeddingGemma-2 image/audio
-  embeddings with its matching projector (qualified macOS CPU/Metal), and
-  reports text only without one. Web llama.cpp probes image/audio embeddings
+  embeddings with its matching projector (BF16 qualified on CPU on macOS,
+  Linux x64, Windows x64, Android and iOS, plus macOS Metal), and reports text
+  only without one. Web llama.cpp probes image/audio embeddings
   with bridge assets v0.1.64+ and a compatible model/projector. The default
   pinned assets include the media API. EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
   native CPU/Metal; repeated media batches require memory64. Hardware WebGPU
@@ -31,8 +35,7 @@ description: >-
   one media source per part: encoded bytes/local file or mono 16 kHz audio PCM.
   Text-only native and Web content follows `embed`, including causal unpooled models.
   Missing media symbols leave text available; native media errors name v0.7.0-1.
-  Windows needs the complete native DLL bundle. Its media symbol routing is
-  covered; Windows model-backed media qualification remains pending.
+  Windows needs the complete native DLL bundle.
   `cancelGeneration()` cancels content calls even during capability checks,
   with `LlamaInferenceException` before inference. Await the future before reuse;
   later calls start independently. Native LiteRT-LM also checks after worker
@@ -117,6 +120,32 @@ description: >-
   nearest-neighbour search there.
 
 ## Examples
+
+Embed an image with its caption after probing the loaded model/runtime:
+
+```dart
+import 'dart:io';
+
+import 'package:llamadart/llamadart.dart';
+
+Future<List<double>?> embedCaptionedImage(
+  LlamaEngine embedder,
+  String caption,
+  String imagePath,
+) async {
+  final capabilities = await embedder.embeddingCapabilities;
+  if (!capabilities.image) {
+    print(capabilities.mediaUnsupportedReason);
+    return null;
+  }
+  return embedder.embedContent(
+    LlamaEmbeddingInput(<LlamaContentPart>[
+      LlamaTextContent(caption),
+      LlamaImageContent(bytes: await File(imagePath).readAsBytes()),
+    ]),
+  );
+}
+```
 
 Index documents and rank them for a query:
 
