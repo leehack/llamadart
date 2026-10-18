@@ -123,7 +123,7 @@ requirement.
 GGUF embeddings/RAG through this connector are deferred. The upstream
 [embedding SPI PR #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685)
 remains separate from this chat quickstart. Core's typed embedding-overflow
-change is on main but is not part of the published 0.15.0 SDK or the pinned
-connector recipe. Neither establishes GGUF embeddings through this connector. Use
+error ships in 0.15.1, while the pinned connector recipe still uses 0.13.1.
+Neither establishes GGUF embeddings through this connector. Use
 [direct embeddings](../guides/embeddings) or the
 [Genkit retrieval guide](./genkit) for the available routes.

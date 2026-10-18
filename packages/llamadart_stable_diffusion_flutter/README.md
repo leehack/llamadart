@@ -20,8 +20,8 @@ including `0.9.x`, ignore it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.0
-  llamadart_stable_diffusion_flutter: ^0.15.0
+  llamadart: ^0.15.1
+  llamadart_stable_diffusion_flutter: ^0.15.1
 ```
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
