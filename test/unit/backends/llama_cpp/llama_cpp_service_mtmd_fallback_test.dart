@@ -26,7 +26,7 @@ void main() {
     ('macOS', '/Applications/bundle/lib'),
   ]) {
     test(
-      '$platform mtmd retry policy preserves misses and successful APIs',
+      'directory-change policy preserves misses and APIs ($platform-style path)',
       () {
         bool retry({
           required bool attempted,
@@ -153,6 +153,50 @@ void main() {
     expect(resolve(), same(api));
     expect(opened, isEmpty);
   });
+
+  test('fake mtmd installation records the current module directory', () {
+    setDirectory(moduleDirectory);
+    final fake = FakeMtmd.install(service, tokens: const []);
+    addTearDown(fake.dispose);
+    expect(
+      reflect(
+        service,
+      ).getField(private('_mtmdFallbackLookupDirectory')).reflectee,
+      moduleDirectory,
+    );
+  });
+
+  for (final changeDirectory in [false, true]) {
+    test('fake mtmd absence survives a real library beside the backend '
+        '(directory changed: $changeDirectory)', () {
+      final libraryName = Platform.isWindows
+          ? 'mtmd.dll'
+          : Platform.isMacOS || Platform.isIOS
+          ? 'libllamadart.dylib'
+          : 'libmtmd.so';
+      final source = path.join('.dart_tool', 'lib', libraryName);
+      if (!changeDirectory) setDirectory(moduleDirectory);
+      final fake = FakeMtmd.install(service, tokens: const []);
+      addTearDown(fake.dispose);
+      File(source).copySync(path.join(moduleDirectory, fileName));
+      setDirectory(moduleDirectory);
+      fake.setFallback(present: false);
+      // Probe only the API cache: never pass the fake projector to native code.
+      // Keep the original loaded so Windows can delete the temporary DLL copy.
+      final library = DynamicLibrary.open(source);
+      expect(library.providesSymbol('mtmd_support_vision'), isTrue);
+      expect(
+        resolve(
+          open: (candidate) {
+            opened.add(candidate);
+            return library;
+          },
+        ),
+        isNull,
+      );
+      expect(opened, isEmpty);
+    });
+  }
 
   test(
     'module mtmd library is opened before a bare name on the search path',

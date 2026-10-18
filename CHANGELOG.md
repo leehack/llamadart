@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Fix multimodal projector loading in Windows `dart build cli` bundles.
+- Fix multimodal projector loading in Windows `dart build cli` bundles after early log setup.
 
 - Honor content embedding cancellation during capability checks and worker startup.
 

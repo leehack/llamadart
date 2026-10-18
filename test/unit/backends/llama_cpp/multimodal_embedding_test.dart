@@ -340,11 +340,7 @@ void main() {
         '_mtmdFallbackLookupAttempted',
         library,
       );
-      mirror.setField(
-        MirrorSystem.getSymbol('_mtmdFallbackApi', library),
-        null,
-      );
-      mirror.setField(attempted, true);
+      setMtmdFallbackForTesting(service, null);
       expect(
         () => mirror.invoke(lookup, ['mtmd_get_output_embd']),
         throwsArgumentError,

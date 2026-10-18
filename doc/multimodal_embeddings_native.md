@@ -78,8 +78,10 @@ probe and calls. Every used accessor is resolved before media is advertised;
 genuine absence retains typed unsupported behavior without restricting text.
 In `dart build cli` bundles with the executable in `bin/` and DLLs in `lib/`,
 an early mtmd lookup miss is retried when backend initialization finds the
-module directory. Its bundled mtmd library takes precedence over bare names
-on the DLL search path; a successfully resolved API remains cached.
+module directory. After backend initialization, its bundled mtmd library takes
+precedence over bare names on the DLL search path. The pre-initialization
+log-level lookup still uses bare names, so a foreign `mtmd.dll` on `PATH` can
+win then; a successfully resolved API remains cached.
 Windows export routing has host-independent unit coverage and is checked against
 the published v0.7.0-1 windows-arm64 export tables. Windows model execution
 remains unqualified.
