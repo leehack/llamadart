@@ -124,6 +124,16 @@ class NativeLlamaBackend
         return LlamaModelException(response.message);
       case WorkerErrorKind.context:
         return LlamaContextException(response.message);
+      case WorkerErrorKind.embeddingInputTooLong:
+        final limit = response.maxInputTokens;
+        if (limit == null || limit <= 0) {
+          return LlamaInferenceException(response.message);
+        }
+        return LlamaEmbeddingInputTooLongException(
+          response.message,
+          maxInputTokens: limit,
+          actualTokens: response.actualTokens,
+        );
       case WorkerErrorKind.inference:
         return LlamaInferenceException(response.message);
       case WorkerErrorKind.unsupported:

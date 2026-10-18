@@ -856,6 +856,9 @@ enum WorkerErrorKind {
 
   /// An argument or parameter combination was invalid.
   argument,
+
+  /// An embedding input exceeds the context or single-pass capacity.
+  embeddingInputTooLong,
 }
 
 /// Response containing an error message and category.
@@ -867,7 +870,18 @@ class ErrorResponse {
   final WorkerErrorKind kind;
 
   /// Creates a new [ErrorResponse].
-  ErrorResponse(this.message, {this.kind = WorkerErrorKind.generic});
+  ErrorResponse(
+    this.message, {
+    this.kind = WorkerErrorKind.generic,
+    this.maxInputTokens,
+    this.actualTokens,
+  });
+
+  /// Effective limit for an embedding overflow; null for other errors.
+  final int? maxInputTokens;
+
+  /// Exact input size when supplied by the embedding runtime.
+  final int? actualTokens;
 }
 
 /// Response containing backend name.

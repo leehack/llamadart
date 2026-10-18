@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Add integration setup guides and host the independently versioned Genkit adapter in this repository.
+- Report native embedding overflow with typed limits and input counts.
 
 ## 0.15.0
 

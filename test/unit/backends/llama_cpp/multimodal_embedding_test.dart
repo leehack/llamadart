@@ -1155,7 +1155,18 @@ void main() {
         }
         expect(
           () => h.service.embedContentBatch(h.context, inputs),
-          throwsA(isA<LlamaException>()),
+          failure == 'capacity'
+              ? throwsA(
+                  isA<LlamaEmbeddingInputTooLongException>()
+                      .having((e) => e.maxInputTokens, 'capacity', 64)
+                      .having((e) => e.actualTokens, 'expanded rows', 65)
+                      .having(
+                        (e) => e.message,
+                        'actionable guidance',
+                        contains('Shorten the input'),
+                      ),
+                )
+              : throwsA(isA<LlamaException>()),
         );
         expect(h.chunksFreed, failure == 'later-prepare' ? 2 : 1);
         expect(h.bitmapsFreed, 1);

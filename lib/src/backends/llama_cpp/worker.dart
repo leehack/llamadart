@@ -27,6 +27,14 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaContextException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.context);
   }
+  if (error is LlamaEmbeddingInputTooLongException) {
+    return ErrorResponse(
+      error.message,
+      kind: WorkerErrorKind.embeddingInputTooLong,
+      maxInputTokens: error.maxInputTokens,
+      actualTokens: error.actualTokens,
+    );
+  }
   if (error is LlamaInferenceException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.inference);
   }

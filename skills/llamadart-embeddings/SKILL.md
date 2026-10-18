@@ -86,8 +86,11 @@ description: >-
 - Nothing is truncated for you. Native encoder-only, no-memory and
   non-causal models (BERT, ModernBERT, EmbeddingGemma), plus MEAN/CLS-pooled
   models even with a KV cache, need one micro-batch per input. Exceeding the
-  context's actual micro-batch capacity throws `LlamaInferenceException` before
-  decoding. Chunk documents into passages, measure with
+  context's actual micro-batch capacity throws
+  `LlamaEmbeddingInputTooLongException` before decoding. It extends
+  `LlamaInferenceException` and exposes `maxInputTokens` and, when known,
+  `actualTokens`, including special tokens or expanded multimodal rows.
+  Chunk documents into passages, measure with
   `engine.getTokenCount(text)`, or raise `microBatchSize` and `batchSize`
   together (and `contextSize` past its value). Causal LAST/unpooled models
   with memory retain chunked input support.
@@ -290,8 +293,9 @@ Future<List<String>> chunkByTokens(
 ```
 
 A single paragraph longer than `maxTokens` still needs splitting (for example
-by sentence) before `embed`, or it throws `LlamaInferenceException` on
-non-causal models.
+by sentence) before `embed`, or native llama.cpp throws
+`LlamaEmbeddingInputTooLongException`. Other runtimes may report
+`LlamaInferenceException` without structured counts.
 
 ## More
 
