@@ -76,6 +76,54 @@ void main() {
       1200000,
     );
   });
+  for (final isPending in [true, false]) {
+    test(
+      'scenario contract interrupts only pending RPCs in its test zone: $isPending',
+      () async {
+        final testZone = Zone.current;
+        final pending = globalContext
+            .getProperty<JSFunction>('Map'.toJS)
+            .callAsConstructor<JSObject>();
+        if (isPending) {
+          pending.callMethod<JSAny?>('set'.toJS, 1.toJS, true.toJS);
+        }
+        var posts = 0;
+        final worker = JSObject()
+          ..setProperty(
+            'postMessage'.toJS,
+            ((JSAny? _, JSAny? _) {
+              posts++;
+            }).toJS,
+          );
+        final proxy = JSObject()
+          ..setProperty('_worker'.toJS, worker)
+          ..setProperty('_pending'.toJS, pending);
+        final bridge = JSObject()..setProperty('_workerProxy'.toJS, proxy);
+        var interrupted = false;
+        final fired = _interruptWorkerEmbedding(bridge as LlamaWebGpuBridge, (
+          _,
+        ) {
+          expect(Zone.current, same(testZone));
+          interrupted = true;
+        });
+        final assertion = isPending
+            ? expectLater(fired, completes)
+            : expectLater(fired, throwsA(isA<TestFailure>()));
+        final message = JSObject()
+          ..setProperty('method'.toJS, 'embedBatch'.toJS)
+          ..setProperty('id'.toJS, 1.toJS);
+        // JavaScript invokes exported Dart callbacks outside the test zone.
+        Zone.root.run(
+          () => worker
+              .getProperty<JSFunction>('postMessage'.toJS)
+              .callAsFunction(worker, message, null),
+        );
+        await assertion;
+        expect(posts, 1);
+        expect(interrupted, isPending);
+      },
+    );
+  }
   final configUrl = Uri.base.resolve(
     '../../../build/webgpu_embeddings_e2e/config.json',
   );
@@ -408,9 +456,10 @@ Future<void> _interruptWorkerEmbedding(
   final worker = proxy.getProperty<JSObject>('_worker'.toJS);
   final original = worker.getProperty<JSFunction>('postMessage'.toJS);
   final fired = Completer<void>();
+  final testZone = Zone.current;
   worker.setProperty(
     'postMessage'.toJS,
-    ((JSAny? message, JSAny? transfers) {
+    testZone.bindBinaryCallback((JSAny? message, JSAny? transfers) {
       original.callAsFunction(worker, message, transfers);
       final request = message as JSObject;
       if (request.getProperty<JSAny?>('method'.toJS)?.dartify() !=
