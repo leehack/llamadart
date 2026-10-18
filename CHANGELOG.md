@@ -1,4 +1,4 @@
-## Unreleased
+## 0.15.1
 
 - Report native embedding overflow with typed limits and input counts.
 

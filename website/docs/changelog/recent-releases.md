@@ -7,6 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.15.1
+
+- Report native embedding overflow with typed limits and input counts.
+
 ## 0.15.0
 
 - Embed ordered text, images and audio with typed inputs and modality probes on

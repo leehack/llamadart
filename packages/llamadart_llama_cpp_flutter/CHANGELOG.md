@@ -1,3 +1,7 @@
+## 0.15.1
+
+- Update core 0.15.1 examples; retain `leehack/llamadart-native@v0.7.0-1`.
+
 ## 0.15.0
 
 * Pair with core `0.15.x`; Apple SwiftPM pins `leehack/llamadart-native@v0.7.0-1`.
