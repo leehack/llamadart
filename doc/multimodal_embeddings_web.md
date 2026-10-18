@@ -120,6 +120,11 @@ scenario maps these to the bridge constructor's `coreModuleUrlMem64` and
 `wasmUrlMem64` and sets `preferMemory64: true`; the wasm32 `core`/`wasm` keys
 alone do not select memory64. It reports `llamadart.webgpu.core_variant` from
 runtime metadata and requires `wasm64`, so a wasm32 fallback fails qualification.
+The qualification constructor also sets `workerRequestTimeoutMs: 1200000`
+(20 minutes): real CPU media batches can exceed the bridge's two-minute
+default. It asserts the effective worker timeout and checks worker presence
+after each stage, so successful direct-runtime fallback cannot count as a
+worker pass. This is a qualification timeout, not a change to production defaults.
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings --dry-run

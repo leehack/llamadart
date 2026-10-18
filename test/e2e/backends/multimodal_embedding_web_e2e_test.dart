@@ -71,6 +71,10 @@ void main() {
       'wasmMem64',
     );
     expect(config.getProperty<JSBoolean>('preferMemory64'.toJS).toDart, isTrue);
+    expect(
+      config.getProperty<JSNumber>('workerRequestTimeoutMs'.toJS).toDartDouble,
+      1200000,
+    );
   });
   final configUrl = Uri.base.resolve(
     '../../../build/webgpu_embeddings_e2e/config.json',
@@ -81,7 +85,7 @@ void main() {
     return response;
   }
 
-  for (final worker in [false, true]) {
+  for (final worker in [true, false]) {
     test(
       '${worker ? 'worker' : 'direct'} local media reference qualification',
       () async {
@@ -127,6 +131,18 @@ void main() {
           worker,
           reason: 'Worker fallback must not count as worker qualification.',
         );
+        if (worker) {
+          final proxy = _expectWorkerState(bridge, true, 'initialization')!;
+          expect(
+            proxy
+                .callMethod<JSNumber>(
+                  '_resolveRequestTimeoutMs'.toJS,
+                  'embedBatch'.toJS,
+                )
+                .toDartDouble,
+            1200000,
+          );
+        }
         final caps = await engine.embeddingCapabilities;
         expect([caps.text, caps.image, caps.audio], [true, true, true]);
         Future<Uint8List> bytes(String key) async {
@@ -186,6 +202,31 @@ void main() {
             );
           }
         }
+        _expectWorkerState(bridge, worker, 'reference batch');
+        if (worker) {
+          final cancelled = _interruptWorkerEmbedding(
+            bridge,
+            (_) => engine.cancelGeneration(),
+          );
+          await expectLater(
+            engine.embedContent(inputs.last),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (error) => error.message.toLowerCase(),
+                'message',
+                contains('cancel'),
+              ),
+            ),
+          );
+          await cancelled;
+          _expectOrderedVectors(
+            [await engine.embedContent(inputs[1])],
+            [actual[1]],
+          );
+          print('worker in-flight cancellation and reuse: PASS');
+
+          _expectWorkerState(bridge, true, 'cancellation and reuse');
+        }
         expect(
           await engine.embedContent(inputs.first),
           orderedEquals(actual.first),
@@ -194,6 +235,7 @@ void main() {
           inputs.reversed.toList(),
         );
         _expectOrderedVectors(reversed, actual.reversed.toList());
+        _expectWorkerState(bridge, worker, 'reversed batch');
         final raw = await engine.embedContentBatch(inputs, normalize: false);
         for (var i = 0; i < raw.length; i++) {
           final norm = math.sqrt(raw[i].fold<double>(0, (s, x) => s + x * x));
@@ -201,11 +243,13 @@ void main() {
             expect(raw[i][j] / norm, closeTo(actual[i][j], 1e-5));
           }
         }
+        _expectWorkerState(bridge, worker, 'raw batch');
         await expectAdjacentTextEmbeddingEquivalence(
           engine.embedContent,
           before: [image],
           after: [audio],
         );
+        _expectWorkerState(bridge, worker, 'adjacent text');
         final wav = audio.bytes!;
         // The recorded fixture is mono IEEE float32 WAV at 16 kHz. Check its
         // format before comparing the two public audio source representations.
@@ -228,6 +272,7 @@ void main() {
           [actual[2]],
         );
 
+        _expectWorkerState(bridge, worker, 'PCM');
         await expectLater(
           engine.embedContent(
             LlamaEmbeddingInput([
@@ -247,6 +292,7 @@ void main() {
           [await engine.embedContent(inputs[1])],
           [actual[1]],
         );
+        _expectWorkerState(bridge, worker, 'capacity rejection and reuse');
         print(
           '${worker ? 'worker' : 'direct'} capacity rejection and reuse: PASS',
         );
@@ -271,30 +317,10 @@ void main() {
           [await engine.embedContent(inputs[1])],
           [actual[1]],
         );
+        _expectWorkerState(bridge, worker, 'projector reload');
         print('${worker ? 'worker' : 'direct'} projector unload/reload: PASS');
 
         if (worker) {
-          final cancelled = _interruptWorkerEmbedding(
-            bridge,
-            (_) => engine.cancelGeneration(),
-          );
-          await expectLater(
-            engine.embedContent(inputs.last),
-            throwsA(
-              isA<LlamaInferenceException>().having(
-                (error) => error.message.toLowerCase(),
-                'message',
-                contains('cancel'),
-              ),
-            ),
-          );
-          await cancelled;
-          _expectOrderedVectors(
-            [await engine.embedContent(inputs[1])],
-            [actual[1]],
-          );
-          print('worker in-flight cancellation and reuse: PASS');
-
           final terminated = _interruptWorkerEmbedding(bridge, (workerObject) {
             workerObject.callMethod<JSAny?>('terminate'.toJS);
             // Terminate the real worker, then deliver its error notification to
@@ -358,11 +384,27 @@ void _recordComparison(
   );
 }
 
+JSObject? _expectWorkerState(
+  LlamaWebGpuBridge bridge,
+  bool worker,
+  String stage,
+) {
+  final proxy = (bridge as JSObject).getProperty<JSObject?>(
+    '_workerProxy'.toJS,
+  );
+  expect(
+    proxy != null,
+    worker,
+    reason: 'Worker fallback must not count as worker qualification ($stage).',
+  );
+  return proxy;
+}
+
 Future<void> _interruptWorkerEmbedding(
   LlamaWebGpuBridge bridge,
   void Function(JSObject worker) interrupt,
 ) {
-  final proxy = (bridge as JSObject).getProperty<JSObject>('_workerProxy'.toJS);
+  final proxy = _expectWorkerState(bridge, true, 'fault injection')!;
   final worker = proxy.getProperty<JSObject>('_worker'.toJS);
   final original = worker.getProperty<JSFunction>('postMessage'.toJS);
   final fired = Completer<void>();
@@ -404,6 +446,8 @@ Future<void> _interruptWorkerEmbedding(
 JSObject _bridgeConfig(bool worker, String Function(String) url) {
   return JSObject()
     ..setProperty('disableWorker'.toJS, (!worker).toJS)
+    // Real media batches can exceed the bridge's two-minute default on CPU.
+    ..setProperty('workerRequestTimeoutMs'.toJS, 1200000.toJS)
     ..setProperty('workerUrl'.toJS, url('worker').toJS)
     ..setProperty('coreModuleUrl'.toJS, url('core').toJS)
     ..setProperty('wasmUrl'.toJS, url('wasm').toJS)
