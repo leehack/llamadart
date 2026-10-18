@@ -619,10 +619,7 @@ void _workerMain(
         // its shutdown frees it; a later cancel from the calling isolate
         // does nothing for a freed context.
         // The generation's errors belong to this thread until its next call.
-        var generated = _generate(calls, context, request);
-        if (generated.images == null && log.backendFailed()) {
-          generated = const _Generated(null, backendFailed: true);
-        }
+        final generated = _generate(calls, context, request, log);
         log.forward(logPosition);
         replies.send(generated);
       case _Dispose(:final logPosition):
@@ -657,6 +654,7 @@ _Generated _generate(
   StableDiffusionCalls calls,
   Pointer<sd.sd_ctx_t> context,
   ImageGenerationSessionRequest request,
+  _WorkerLog log,
 ) {
   return using((arena) {
     final params = arena<sd.sd_img_gen_params_t>();
@@ -666,11 +664,15 @@ _Generated _generate(
     final imagesOut = arena<Pointer<sd.sd_image_t>>();
     final countOut = arena<Int>();
     final ok = calls.generateImage(context, params, imagesOut, countOut);
+    // Older wrappers can return images after a failed Metal command buffer.
+    // Read the calling thread's error window before any further native call,
+    // asynchronous gap or pixel copy, independently of display logging.
+    final backendFailed = log.backendFailed();
     final images = imagesOut.value;
     final count = countOut.value;
     try {
-      if (!ok || images == nullptr) {
-        return const _Generated(null);
+      if (!ok || images == nullptr || backendFailed) {
+        return _Generated(null, backendFailed: backendFailed);
       }
       return _Generated([
         for (var i = 0; i < count; i++)

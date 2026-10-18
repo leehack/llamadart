@@ -284,21 +284,45 @@ core `0.11.1` and `0.11.0`. The iOS
 artifacts meet the declared 16.4 deployment floor, but runtime execution at
 16.4 remains unqualified; keep [#831](https://github.com/leehack/llamadart/issues/831) open.
 
-The pending SD `v0.2.0-4` sync leaves companion versions unchanged and must
-ship in the next core minor release, together with the corresponding companion
-version and constraints. It is not a core 0.15.x patch or a publishing approval.
+The SD `v0.2.0-4` adoption can ship in core `0.15.2` after the matching
+SD companion patch is prepared with `llamadart: '>=0.15.2 <0.16.0'`. Earlier
+cores reject its pin. Existing locked `0.15.0`/`0.15.1` SD companions remain
+accepted only for the explicitly verified `v0.2.0-3` artifact; the hook warns
+that the older native payload is still linked and names the new companion.
+Updating core alone does not upgrade an immutable companion XCFramework.
+
+The two published Apple artifacts have identical C declarations (the wrapper
+header differs only in comments), 86 identical exported symbols on each of
+five architecture slices, matching deployment targets and the same upstream
+commit. Exact ZIP checksums and the comparison record live in
+`test/fixtures/native/stable_diffusion_apple_compatibility.json`. This is
+ABI compatibility, not identical machine code or universal GPU qualification.
+
+The Dart worker checks the native call's recorded Metal errors before copying
+any returned pixels, even if the old wrapper reports success. It frees such
+images and requires a fresh engine. This is a backstop for recognized recorded
+errors: the old recorder is bounded and concurrent calls conservatively share
+its error window. It does not replace the `v0.2.0-4` native guard or prove
+watchdog prevention. Prefer the updated core/companion pair.
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version
 does not exist yet. That is expected before merge, but it must be resolved by
 the next core `llamadart` release.
 
-Each companion constrains `llamadart` to the core's minor, so a sync that moves
-a companion's native pin ships in the next core minor release, not a patch.
-Every companion published for the current minor would otherwise still resolve
-beside the patch and fail its Apple build, unless the core hook keeps accepting
-its earlier pin. `verify_release_docs_versions.dart --release-prep` enforces
-this from the published companion tags.
+Companion native pins may move within a core minor only when both directions
+of dependency resolution remain safe. The release-prep verifier checks every
+published companion whose constraint admits the new core against its accepted
+pins, and checks each new companion against every published core its constraint
+admits. It rejects an old core/new pin pairing until the companion's lower
+bound excludes the rejecting core. Full release-tag history is required.
+
+Keep legacy compatibility explicit and tied to exact artifact checksums. A tag
+prefix or rebuild number alone establishes no ABI compatibility. SD pin syncs
+clear the older-pin list and checksum proof when the target changes; same-tag
+refreshes preserve it and reject a changed checksum. Requalify before adding
+an older artifact back. A minor release remains necessary when older admitted
+companions cannot remain supported safely.
 
 Companion versions share the core's `MAJOR.MINOR` and move only their patch
 independently, so a core minor release sets every companion to `M.m.0` and a

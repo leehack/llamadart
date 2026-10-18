@@ -1,0 +1,206 @@
+{
+  "previous_tag": "v0.2.0-3",
+  "current_tag": "v0.2.0-4",
+  "upstream_commit": "3f8527a46c54ecf4cb4ed6003da8e8982283c73c",
+  "xcframework_checksums": {
+    "v0.2.0-3": "0d496cb8f16cf11c99ac4612b47781e1f01cfe727b402936c6a2308e628688f5",
+    "v0.2.0-4": "24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b"
+  },
+  "slices": [
+    {
+      "library": "ios-arm64",
+      "architecture": "arm64",
+      "headers": {
+        "sd_dart_wrapper.h": {
+          "old_sha256": "4e2fc063eb4cace217a0b00d09e9bf208f1345ea99a42d75a3fb4e9c62607d69",
+          "new_sha256": "8a75bab2e70d0eeed61f9f79a42a207c61921d583fbe78c8445116cf1b836e02",
+          "declarations_sha256": "bc41289737577f8c54781bb9de690b65e89187e1a42896eb24ddea98e9707344"
+        },
+        "stable-diffusion.h": {
+          "old_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "new_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "declarations_sha256": "06e67348c92a78c7ce9ac533868939fe490b52c711a2958170232304f13801c9"
+        }
+      },
+      "exported_symbol_count": 86,
+      "exported_symbols_sha256": "9a21afa1233cce34952985226c30cdd2be341251623beca952dcbb5ef5e2aaa7",
+      "build_version": [
+        [
+          "platform",
+          "2"
+        ],
+        [
+          "minos",
+          "16.4"
+        ],
+        [
+          "version",
+          "1267.0"
+        ],
+        [
+          "version",
+          "0.0"
+        ]
+      ],
+      "declarations_equal": true,
+      "exported_symbols_equal": true,
+      "binary_byte_identical": false
+    },
+    {
+      "library": "ios-arm64_x86_64-simulator",
+      "architecture": "arm64",
+      "headers": {
+        "sd_dart_wrapper.h": {
+          "old_sha256": "4e2fc063eb4cace217a0b00d09e9bf208f1345ea99a42d75a3fb4e9c62607d69",
+          "new_sha256": "8a75bab2e70d0eeed61f9f79a42a207c61921d583fbe78c8445116cf1b836e02",
+          "declarations_sha256": "bc41289737577f8c54781bb9de690b65e89187e1a42896eb24ddea98e9707344"
+        },
+        "stable-diffusion.h": {
+          "old_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "new_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "declarations_sha256": "06e67348c92a78c7ce9ac533868939fe490b52c711a2958170232304f13801c9"
+        }
+      },
+      "exported_symbol_count": 86,
+      "exported_symbols_sha256": "9a21afa1233cce34952985226c30cdd2be341251623beca952dcbb5ef5e2aaa7",
+      "build_version": [
+        [
+          "platform",
+          "7"
+        ],
+        [
+          "minos",
+          "16.4"
+        ],
+        [
+          "version",
+          "1267.0"
+        ],
+        [
+          "version",
+          "0.0"
+        ]
+      ],
+      "declarations_equal": true,
+      "exported_symbols_equal": true,
+      "binary_byte_identical": false
+    },
+    {
+      "library": "ios-arm64_x86_64-simulator",
+      "architecture": "x86_64",
+      "headers": {
+        "sd_dart_wrapper.h": {
+          "old_sha256": "4e2fc063eb4cace217a0b00d09e9bf208f1345ea99a42d75a3fb4e9c62607d69",
+          "new_sha256": "8a75bab2e70d0eeed61f9f79a42a207c61921d583fbe78c8445116cf1b836e02",
+          "declarations_sha256": "bc41289737577f8c54781bb9de690b65e89187e1a42896eb24ddea98e9707344"
+        },
+        "stable-diffusion.h": {
+          "old_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "new_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "declarations_sha256": "06e67348c92a78c7ce9ac533868939fe490b52c711a2958170232304f13801c9"
+        }
+      },
+      "exported_symbol_count": 86,
+      "exported_symbols_sha256": "9a21afa1233cce34952985226c30cdd2be341251623beca952dcbb5ef5e2aaa7",
+      "build_version": [
+        [
+          "platform",
+          "7"
+        ],
+        [
+          "minos",
+          "16.4"
+        ],
+        [
+          "version",
+          "1267.0"
+        ],
+        [
+          "version",
+          "0.0"
+        ]
+      ],
+      "declarations_equal": true,
+      "exported_symbols_equal": true,
+      "binary_byte_identical": false
+    },
+    {
+      "library": "macos-arm64_x86_64",
+      "architecture": "arm64",
+      "headers": {
+        "sd_dart_wrapper.h": {
+          "old_sha256": "4e2fc063eb4cace217a0b00d09e9bf208f1345ea99a42d75a3fb4e9c62607d69",
+          "new_sha256": "8a75bab2e70d0eeed61f9f79a42a207c61921d583fbe78c8445116cf1b836e02",
+          "declarations_sha256": "bc41289737577f8c54781bb9de690b65e89187e1a42896eb24ddea98e9707344"
+        },
+        "stable-diffusion.h": {
+          "old_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "new_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "declarations_sha256": "06e67348c92a78c7ce9ac533868939fe490b52c711a2958170232304f13801c9"
+        }
+      },
+      "exported_symbol_count": 86,
+      "exported_symbols_sha256": "9a21afa1233cce34952985226c30cdd2be341251623beca952dcbb5ef5e2aaa7",
+      "build_version": [
+        [
+          "platform",
+          "1"
+        ],
+        [
+          "minos",
+          "13.3"
+        ],
+        [
+          "version",
+          "1267.0"
+        ],
+        [
+          "version",
+          "0.0"
+        ]
+      ],
+      "declarations_equal": true,
+      "exported_symbols_equal": true,
+      "binary_byte_identical": false
+    },
+    {
+      "library": "macos-arm64_x86_64",
+      "architecture": "x86_64",
+      "headers": {
+        "sd_dart_wrapper.h": {
+          "old_sha256": "4e2fc063eb4cace217a0b00d09e9bf208f1345ea99a42d75a3fb4e9c62607d69",
+          "new_sha256": "8a75bab2e70d0eeed61f9f79a42a207c61921d583fbe78c8445116cf1b836e02",
+          "declarations_sha256": "bc41289737577f8c54781bb9de690b65e89187e1a42896eb24ddea98e9707344"
+        },
+        "stable-diffusion.h": {
+          "old_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "new_sha256": "c655beb9d3c9b8d33dd5e9d71b2fe96bf17c1aaa06dcf35d893ff277a3fd13a3",
+          "declarations_sha256": "06e67348c92a78c7ce9ac533868939fe490b52c711a2958170232304f13801c9"
+        }
+      },
+      "exported_symbol_count": 86,
+      "exported_symbols_sha256": "9a21afa1233cce34952985226c30cdd2be341251623beca952dcbb5ef5e2aaa7",
+      "build_version": [
+        [
+          "platform",
+          "1"
+        ],
+        [
+          "minos",
+          "13.3"
+        ],
+        [
+          "version",
+          "1267.0"
+        ],
+        [
+          "version",
+          "0.0"
+        ]
+      ],
+      "declarations_equal": true,
+      "exported_symbols_equal": true,
+      "binary_byte_identical": false
+    }
+  ]
+}

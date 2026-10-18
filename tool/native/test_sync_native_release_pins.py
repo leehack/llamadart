@@ -2986,6 +2986,32 @@ def _sd_fixture(
     return manifest, release
 
 
+class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.source = (Path(__file__).resolve().parents[2] /
+                       "lib/src/hook/native_release_pins.dart").read_text()
+        self.current = pins.current_stable_diffusion_release_tag(self.source)
+        self.checksum = "24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b"
+
+    def test_same_tag_retains_verified_compatibility(self) -> None:
+        self.assertEqual(pins.refresh_stable_diffusion_apple_contract(
+            self.source, self.current, self.current, self.checksum), self.source)
+
+    def test_same_tag_checksum_changes_fail_closed(self) -> None:
+        with self.assertRaisesRegex(pins.ReleaseError, "Same-tag Apple SD checksum changed"):
+            pins.refresh_stable_diffusion_apple_contract(
+                self.source, self.current, self.current, "0" * 64)
+
+    def test_changed_pin_clears_older_compatibility_and_checksum(self) -> None:
+        result = pins.refresh_stable_diffusion_apple_contract(
+            self.source, self.current, "v0.2.0-5", "a" * 64)
+        self.assertIn("const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};", result)
+        block = re.search(r"const stableDiffusionAppleCompanionChecksums = <String, String>\{(.*?)\};", result, re.S).group(1)
+        self.assertIn("'v0.2.0-5': '" + "a" * 64 + "'", block)
+        self.assertNotIn("v0.2.0-3", block)
+        self.assertNotIn("v0.2.0-4", block)
+
+
 class StableDiffusionPinSyncTest(unittest.TestCase):
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory()

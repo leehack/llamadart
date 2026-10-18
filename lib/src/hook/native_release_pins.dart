@@ -196,6 +196,30 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 /// stable-diffusion.cpp runtime.
 const stableDiffusionReleaseTag = 'v0.2.0-4';
 
+/// First Apple companion release containing [stableDiffusionReleaseTag].
+const stableDiffusionAppleCompanionVersion = '0.15.2';
+
+/// Explicitly qualified older Apple SD pins that preserve existing app locks.
+///
+/// These builds share the pinned upstream and C ABI, not identical machine
+/// code. The Dart worker rejects recorded Metal backend failures even when
+/// native generation returns images; the newer native guard remains preferred.
+/// Clear and requalify this map whenever [stableDiffusionReleaseTag] changes.
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
+  'v0.2.0-3':
+      'the native Metal command-buffer/VAE failure guard in v0.2.0-4; '
+      'Dart rejects recorded Metal backend errors, but this older native '
+      'payload is not upgraded by updating the core alone',
+};
+
+/// Checksums of the exact published XCFrameworks accepted by the SD hook.
+const stableDiffusionAppleCompanionChecksums = <String, String>{
+  'v0.2.0-3':
+      '0d496cb8f16cf11c99ac4612b47781e1f01cfe727b402936c6a2308e628688f5',
+  'v0.2.0-4':
+      '24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b',
+};
+
 /// stable_diffusion cache directory version derived from
 /// [stableDiffusionReleaseTag].
 const stableDiffusionVersion = '0.2.0-4';

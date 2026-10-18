@@ -1,5 +1,7 @@
 ## Unreleased
 
+* The next companion patch requires core `>=0.15.2 <0.16.0`, whose hook accepts this native pin.
+
 * Updated Apple SwiftPM native pin to `leehack/stable-diffusion-native@v0.2.0-4`.
 
 ## 0.15.1

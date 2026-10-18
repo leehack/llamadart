@@ -1078,6 +1078,12 @@ def main() -> int:
                 "them.",
                 file=sys.stderr,
             )
+        pins_text = refresh_stable_diffusion_apple_contract(
+            pins_text,
+            current_stable_diffusion_release_tag(pins_text),
+            resolved_stable_diffusion_tag,
+            xcframework_checksum,
+        )
         pins_text = replace_one(
             pins_text,
             r"const stableDiffusionReleaseTag = '[^']+';",
@@ -1122,18 +1128,29 @@ def main() -> int:
             package_root = companion_package_root(
                 stable_diffusion_package_swift_path
             )
-            project_doc_dependency_versions[package_root.name] = (
-                update_companion_package_metadata(
-                    pending_writes,
-                    package_root,
-                    args.stable_diffusion_native_repo,
-                    resolved_stable_diffusion_tag,
-                    bump_version=(
-                        args.bump_companion_versions
-                        and swift_text != original_swift_text
-                    ),
-                )
+            companion_version = update_companion_package_metadata(
+                pending_writes,
+                package_root,
+                args.stable_diffusion_native_repo,
+                resolved_stable_diffusion_tag,
+                bump_version=(
+                    args.bump_companion_versions
+                    and swift_text != original_swift_text
+                ),
             )
+            project_doc_dependency_versions[package_root.name] = companion_version
+            if swift_text != original_swift_text:
+                first_release = (
+                    companion_version if args.bump_companion_versions
+                    else bump_patch_version(companion_version)
+                )
+                pins_text = replace_one(
+                    pins_text,
+                    r"const stableDiffusionAppleCompanionVersion = '[^']+';",
+                    f"const stableDiffusionAppleCompanionVersion = '{first_release}';",
+                    "native pins Apple SD companion version",
+                )
+
         summaries.append(
             "stable_diffusion -> "
             f"{args.stable_diffusion_native_repo}@{resolved_stable_diffusion_tag}"
@@ -2852,6 +2869,37 @@ def fetch_litert_lm_release_manifest(
     if not isinstance(manifest, dict):
         raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
     return manifest, hashlib.sha256(payload).hexdigest()
+
+
+def refresh_stable_diffusion_apple_contract(
+    source: str, current: str, target: str, checksum: str | None
+) -> str:
+    """Bind compatibility to one exact pin; same-tag refreshes retain proof."""
+    pattern = r"const stableDiffusionAppleCompanionChecksums = <String, String>\{(.*?)\};"
+    found = re.search(pattern, source, flags=re.DOTALL)
+    if found is None:
+        raise ReleaseError("Missing Apple SD checksum contract")
+    checksums = dict(re.findall(r"'([^']+)':\s*'([a-f0-9]{64})'", found.group(1)))
+    if current == target:
+        if checksum is not None and checksums.get(target) != checksum:
+            raise ReleaseError("Same-tag Apple SD checksum changed; requalify the contract")
+        return source
+    if not re.search(
+        r"const stableDiffusionCompatibleAppleCompanionTags = <String, String>\{.*?\};",
+        source, flags=re.DOTALL,
+    ):
+        raise ReleaseError("Missing Apple SD compatibility contract")
+    source = re.sub(
+        r"const stableDiffusionCompatibleAppleCompanionTags = <String, String>\{.*?\};",
+        "const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};",
+        source, flags=re.DOTALL,
+    )
+    entry = f"\n  '{target}': '{checksum}',\n" if checksum is not None else ""
+    return re.sub(
+        pattern,
+        "const stableDiffusionAppleCompanionChecksums = <String, String>{" + entry + "};",
+        source, flags=re.DOTALL,
+    )
 
 
 def normalize_stable_diffusion_release_tag(tag: str) -> str:

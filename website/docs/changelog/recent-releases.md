@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Keep qualified older Apple SD companions working across patch updates, with an explicit upgrade warning; reject recorded Metal failures before returning images.
+
 - Reject late Web content-embedding results after cancellation or disposal.
 - Aligned default WebGPU bridge assets to `v0.1.66` to preserve worker
   timeout settings and model load tuning during CPU recovery. The bridge still

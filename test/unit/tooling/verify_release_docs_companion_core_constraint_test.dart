@@ -108,7 +108,8 @@ List<String> _cliContractProblems(String source) {
   final strict = RegExp(
     r'if \(releasePrep\) \{\s*errors\.addAll\(\s*'
     r'checkPublishedCompanionPins\(\s*Directory\.current,\s*coreVersion,?\s*'
-    r'\),?\s*\);\s*\}',
+    r'\),?\s*\);\s*errors\.addAll\(\s*'
+    r'checkCompanionPublishedCorePins\(Directory\.current\),?\s*\);\s*\}',
   ).allMatches(source).toList();
   if (always.length != 1) {
     problems.add('expected one unconditional core-constraint check');
@@ -390,6 +391,121 @@ void main() {
           reason: companion.package,
         );
       }
+    });
+  });
+
+  group('checkCompanionPublishedCorePins', () {
+    Directory pair({
+      String floor = '0.15.0',
+      String oldPin = 'v0.2.0-3',
+      String? source,
+      String oldIdentity = '0.15.1',
+    }) {
+      final root = _gitRepo();
+      const current = <String, String>{
+        _llamaCpp: llamaCppTag,
+        _liteRtLm: liteRtLmReleaseTag,
+        _stableDiffusion: stableDiffusionReleaseTag,
+      };
+      _writeCompanions(root, core: "'>=0.15.0 <0.16.0'", pins: current);
+      File(
+        '${root.path}/pubspec.yaml',
+      ).writeAsStringSync('version: $oldIdentity\n');
+      File('${root.path}/lib/src/hook/native_release_pins.dart')
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(
+          source ??
+              """
+const llamaCppTag = '$llamaCppTag';
+const liteRtLmReleaseTag = '$liteRtLmReleaseTag';
+const stableDiffusionReleaseTag = '$oldPin';
+""",
+        );
+      _commitAndTag(root, ['v0.15.1']);
+      _writeCompanions(
+        root,
+        core: "'>=0.15.0 <0.16.0'",
+        pins: current,
+        pubspecs: {
+          _stableDiffusion: _pubspec('0.15.2', core: "'>=$floor <0.16.0'"),
+        },
+      );
+      return root;
+    }
+
+    test('new SD companion excludes the older rejecting core', () {
+      expect(checkCompanionPublishedCorePins(pair()), [
+        allOf(
+          contains('llamadart_stable_diffusion_flutter'),
+          contains('published core v0.15.1'),
+          contains('Raise the companion core lower bound'),
+        ),
+      ]);
+      expect(checkCompanionPublishedCorePins(pair(floor: '0.15.2')), isEmpty);
+    });
+
+    test('an unchanged native pin can retain the wider constraint', () {
+      expect(
+        checkCompanionPublishedCorePins(
+          pair(oldPin: stableDiffusionReleaseTag),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('published core tag identity is checked before trusting its pins', () {
+      expect(
+        checkCompanionPublishedCorePins(pair(oldIdentity: '0.15.0')),
+        everyElement(contains('does not match its pubspec version')),
+      );
+    });
+
+    test('unreadable and duplicate historical pin declarations fail closed', () {
+      for (final declarations in [
+        '',
+        "const stableDiffusionReleaseTag = '$stableDiffusionReleaseTag';\n" * 2,
+      ]) {
+        final source =
+            "const llamaCppTag = '$llamaCppTag';\n"
+            "const liteRtLmReleaseTag = '$liteRtLmReleaseTag';\n$declarations";
+        expect(checkCompanionPublishedCorePins(pair(source: source)), [
+          contains('Cannot uniquely read stableDiffusionReleaseTag'),
+        ]);
+      }
+    });
+
+    test('historical compatibility is interpreted as data, not executed', () {
+      final source =
+          """
+const llamaCppTag = '$llamaCppTag';
+const liteRtLmReleaseTag = '$liteRtLmReleaseTag';
+const stableDiffusionReleaseTag = 'v0.2.0-3';
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
+  '$stableDiffusionReleaseTag': 'verified explicit compatibility',
+};
+""";
+      expect(checkCompanionPublishedCorePins(pair(source: source)), isEmpty);
+      expect(
+        checkCompanionPublishedCorePins(
+          pair(source: source.replaceFirst('<String, String>{', 'unknown(')),
+        ),
+        [contains('Cannot read stableDiffusionCompatibleAppleCompanionTags')],
+      );
+    });
+
+    test('the production release-prep reverse check cannot be bypassed', () {
+      final source = File(
+        'tool/testing/verify_release_docs_versions.dart',
+      ).readAsStringSync();
+      expect(_cliContractProblems(source), isEmpty);
+      final bypassed = source.replaceFirst(
+        'errors.addAll(checkCompanionPublishedCorePins(Directory.current));',
+        '',
+      );
+      expect(
+        _cliContractProblems(bypassed),
+        contains('expected one release-prep published-pin check'),
+      );
     });
   });
 

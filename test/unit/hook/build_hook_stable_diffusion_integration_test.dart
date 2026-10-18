@@ -762,6 +762,8 @@ dependencies:
 
   for (final scenario in [
     'old-pin',
+    'unknown-rebuild',
+    'wrong-checksum',
     'local-artifacts',
     'hardcoded-url',
     'missing-resolution',
@@ -777,6 +779,14 @@ dependencies:
             'old-pin' => manifest.replaceFirst(
               'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
               'let stableDiffusionTag = "v0.1.1"',
+            ),
+            'unknown-rebuild' => manifest.replaceFirst(
+              'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+              'let stableDiffusionTag = "v0.2.0-5"',
+            ),
+            'wrong-checksum' => manifest.replaceFirst(
+              stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
+              '0' * 64,
             ),
             'hardcoded-url' => manifest.replaceFirst(
               r'url: "https://github.com/\(repository)/releases/download/\(tag)/\(artifactName)"',
@@ -808,15 +818,60 @@ dependencies:
     );
   }
 
-  // No first stable_diffusion companion release pinning the tag is recorded,
-  // so even a lockstep core must not claim a constraint that pins it.
-  for (final core in ['0.12.2', '0.13.0', '0.13.2']) {
+  test('core 0.15.2 accepts the qualified locked SD companion and warns '
+      'that its native payload needs an explicit upgrade', () async {
+    final defines = await _flutterAppleApp(
+      companions: const [_stableDiffusionCompanionName],
+      editManifest: (manifest) => manifest
+          .replaceFirst(stableDiffusionReleaseTag, 'v0.2.0-3')
+          .replaceFirst(
+            stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
+            stableDiffusionAppleCompanionChecksums['v0.2.0-3']!,
+          ),
+    );
+    final records = await _captureHookLog(
+      () => withHookCoreVersion(
+        '0.15.2',
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, output) {
+            final assets = output.assets.encodedAssets
+                .map((asset) => asset.asCodeAsset)
+                .toList();
+            expect(
+              assets
+                  .singleWhere((asset) => asset.id == _stableDiffusionAssetId)
+                  .linkMode,
+              isA<LookupInProcess>(),
+            );
+          },
+        ),
+      ),
+    );
+    expect(
+      records.join('\n'),
+      allOf(
+        contains('v0.2.0-3'),
+        contains('native Metal command-buffer/VAE failure guard'),
+        contains('not upgraded by updating the core alone'),
+        contains('llamadart_stable_diffusion_flutter: ^0.15.2'),
+      ),
+    );
+  });
+
+  for (final (core, constraint) in [
+    ('0.15.1', '^0.15.2'),
+    ('0.15.2', '^0.15.2'),
+    ('0.16.0', '^0.16.0'),
+  ]) {
     final requirement =
-        'Resolve llamadart_stable_diffusion_flutter with a Package.swift pin '
-        'matching leehack/stable-diffusion-native@$stableDiffusionReleaseTag '
-        'and rerun flutter pub get.';
+        'Depend on `llamadart_stable_diffusion_flutter: $constraint`';
     test('core $core: the stable_diffusion companion rejection names the '
-        'native pin and no companion release', () async {
+        'first compatible companion release', () async {
       final defines = await _flutterAppleApp(
         companions: const [_stableDiffusionCompanionName],
         editManifest: (manifest) => manifest.replaceFirst(
@@ -836,16 +891,7 @@ dependencies:
             check: (_, _) => fail('Must not emit in-process assets'),
           ),
         ),
-        throwsA(
-          predicate(
-            (error) =>
-                error.toString().contains(
-                  'the required native runtime $stableDiffusionReleaseTag. '
-                  '$requirement Upgrade the core and companion together',
-                ) &&
-                !error.toString().contains('Depend on'),
-          ),
-        ),
+        throwsA(predicate((error) => error.toString().contains(requirement))),
       );
     });
   }

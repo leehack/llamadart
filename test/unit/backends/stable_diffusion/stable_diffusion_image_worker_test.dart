@@ -97,6 +97,7 @@ final _reloadFailure = isA<LlamaInferenceException>().having(
 const _generateCalls = [
   'sd_img_gen_params_init+held',
   'sd_dart_generate_image+held',
+  'sd_dart_last_error',
   'free_sd_images+held',
 ];
 
@@ -738,13 +739,57 @@ void main() {
       expect(await worker.generate(_request(), (_, _) {}), hasLength(1));
     });
 
-    test('a generation that succeeds does not read its errors', () async {
-      final worker = await loaded();
+    for (final (name, errors) in [
+      ('command-buffer failure', _commandBufferFailed),
+      ('poisoned backend', _backendInErrorState),
+    ]) {
+      test('an apparent native success with $name rejects and frees its '
+          'images even with logging disabled', () async {
+        final worker = await loaded();
+        runtime
+          ..generationErrors = errors
+          ..returnImagesDespiteError = true;
 
+        await expectLater(
+          worker.generate(_request(count: 2), (_, _) {}),
+          throwsA(_reloadFailure),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), _generateCalls);
+        runtime
+          ..generationErrors = null
+          ..clearCalls();
+        await expectLater(
+          worker.generate(_request(), (_, _) {}),
+          throwsA(_reloadFailure),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), isEmpty);
+        await worker.dispose();
+        final fresh = await loaded();
+        expect(await fresh.generate(_request(), (_, _) {}), hasLength(1));
+      });
+    }
+
+    test('an apparent native success with an unrelated recorded error '
+        'still returns its image', () async {
+      final worker = await loaded();
+      runtime
+        ..generationErrors = 'unrelated optional backend diagnostic'
+        ..returnImagesDespiteError = true;
       expect(await worker.generate(_request(), (_, _) {}), hasLength(1));
-      await runtime.flush();
-      expect(runtime.calls('worker'), _generateCalls);
     });
+
+    test(
+      'a generation that succeeds checks for recorded backend failures',
+      () async {
+        final worker = await loaded();
+
+        expect(await worker.generate(_request(), (_, _) {}), hasLength(1));
+        await runtime.flush();
+        expect(runtime.calls('worker'), _generateCalls);
+      },
+    );
 
     group('with a log level', () {
       test('the recorder is set to the level before the worker starts, and '
@@ -1056,7 +1101,7 @@ void main() {
         ]);
         expect(runtime.calls('worker'), [
           ..._loadCalls,
-          ..._generateCalls,
+          ..._generateCalls.where((call) => call != 'sd_dart_last_error'),
           'sd_dart_exit_free',
         ]);
         expect(logged, isEmpty);

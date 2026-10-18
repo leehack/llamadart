@@ -458,8 +458,151 @@ Map<String, Set<String>> coreAcceptedCompanionPins() => <String, Set<String>>{
     ...llamaCppCompatibleAppleCompanionTags.keys,
   },
   'llamadart_litert_lm_flutter': <String>{liteRtLmReleaseTag},
-  'llamadart_stable_diffusion_flutter': <String>{stableDiffusionReleaseTag},
+  'llamadart_stable_diffusion_flutter': <String>{
+    stableDiffusionReleaseTag,
+    ...stableDiffusionCompatibleAppleCompanionTags.keys,
+  },
 };
+
+/// Checks that each current companion excludes every published core whose
+/// hook rejects its native pin. This is the reverse of
+/// [checkPublishedCompanionPins]: a new companion must not resolve beside an
+/// older core merely because both share the same minor.
+List<String> checkCompanionPublishedCorePins(Directory repoRoot) {
+  final errors = <String>[];
+  final tags = _git(repoRoot, ['tag', '--list', 'v*'], errors);
+  if (tags == null) return errors;
+  if (tags.trim().isEmpty) {
+    return [
+      'No core release tags are checked out; fetch the full tag history '
+          'before checking companion dependency floors.',
+    ];
+  }
+  const contracts = <String, (String, String?)>{
+    'llamadart_llama_cpp_flutter': (
+      'llamaCppTag',
+      'llamaCppCompatibleAppleCompanionTags',
+    ),
+    'llamadart_litert_lm_flutter': ('liteRtLmReleaseTag', null),
+    'llamadart_stable_diffusion_flutter': (
+      'stableDiffusionReleaseTag',
+      'stableDiffusionCompatibleAppleCompanionTags',
+    ),
+  };
+  final publishedPins = <String, String>{};
+  final verifiedTags = <String>{};
+  final shallow = _git(repoRoot, [
+    'rev-parse',
+    '--is-shallow-repository',
+  ], errors);
+  if (shallow?.trim() != 'false') {
+    errors.add(
+      'Fetch full core tag history before checking companion dependency floors.',
+    );
+    return errors;
+  }
+  for (final companion in companionSwiftPins) {
+    final pubspec = _readFromRoot(repoRoot, companion.pubspecPath, errors);
+    final manifest = _readFromRoot(
+      repoRoot,
+      companion.swiftPackagePath,
+      errors,
+    );
+    if (pubspec == null || manifest == null) continue;
+    final constraint = companionCoreConstraint(pubspec).constraint;
+    final pin = companion.swiftTag.firstMatch(manifest)?.group(1);
+    if (constraint == null || pin == null) {
+      errors.add(
+        '${companion.package} has no verifiable core constraint/native pin.',
+      );
+      continue;
+    }
+    if (!(coreAcceptedCompanionPins()[companion.package]?.contains(pin) ??
+        false)) {
+      errors.add(
+        '${companion.package} current native pin is not accepted by the prepared core.',
+      );
+    }
+    final VersionConstraint allowed;
+    try {
+      allowed = VersionConstraint.parse(constraint);
+    } on FormatException {
+      errors.add(
+        '${companion.package} has an invalid core constraint: $constraint.',
+      );
+      continue;
+    }
+    for (final tag in const LineSplitter().convert(tags)) {
+      final match = RegExp(r'^v(\d+\.\d+\.\d+)$').firstMatch(tag);
+      if (match == null || !allowed.allows(Version.parse(match.group(1)!))) {
+        continue;
+      }
+      if (!verifiedTags.contains(tag)) {
+        final pubspec = _git(repoRoot, ['show', '$tag:pubspec.yaml'], errors);
+        final identity = pubspec == null
+            ? null
+            : RegExp(
+                r'^version:\s*(\S+)\s*$',
+                multiLine: true,
+              ).allMatches(pubspec).toList();
+        if (identity == null ||
+            identity.length != 1 ||
+            identity.single.group(1) != match.group(1)) {
+          errors.add('Published core $tag does not match its pubspec version.');
+          continue;
+        }
+        verifiedTags.add(tag);
+      }
+      final source =
+          publishedPins[tag] ??
+          _git(repoRoot, [
+            'show',
+            '$tag:lib/src/hook/native_release_pins.dart',
+          ], errors);
+      if (source == null) continue;
+      publishedPins[tag] = source;
+      final (variable, compatibility) = contracts[companion.package]!;
+      final pins = RegExp(
+        "^const $variable = '([^']+)';\\s*\$",
+        multiLine: true,
+      ).allMatches(source).toList();
+      if (pins.length != 1) {
+        errors.add('Cannot uniquely read $variable in published core $tag.');
+        continue;
+      }
+      final accepted = <String>{pins.single.group(1)!};
+      if (compatibility != null) {
+        final maps = RegExp(
+          '^const $compatibility = <String, String>\\{(.*?)\\};',
+          dotAll: true,
+          multiLine: true,
+        ).allMatches(source).toList();
+        if (maps.length > 1 ||
+            (maps.isEmpty && source.contains('const $compatibility'))) {
+          errors.add('Cannot read $compatibility in published core $tag.');
+          continue;
+        }
+        if (maps.isNotEmpty) {
+          accepted.addAll(
+            RegExp(
+              r"^\s*'([^']+)':",
+              multiLine: true,
+            ).allMatches(maps.single.group(1)!).map((match) => match.group(1)!),
+          );
+        }
+      }
+      if (!accepted.contains(pin)) {
+        errors.add(
+          '${companion.package} pins ${companion.nativeRepo}@$pin, '
+          "but its constraint '$constraint' admits published core $tag "
+          'whose hook rejects that pin. Raise the companion core lower '
+          'bound past that release and bump its package version.',
+        );
+      }
+    }
+  }
+  return errors;
+}
 
 /// Checks that every companion version release automation already published,
 /// read from its `<package>-v<version>` tag in [repoRoot], either declares a
@@ -769,6 +912,7 @@ void main(List<String> arguments) {
         errors.addAll(
           checkPublishedCompanionPins(Directory.current, coreVersion),
         );
+        errors.addAll(checkCompanionPublishedCorePins(Directory.current));
       }
     }
   }

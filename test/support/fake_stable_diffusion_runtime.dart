@@ -30,6 +30,7 @@ const _logEnabled = 25;
 const _quietReject = 26;
 const _holdLogDrain = 27;
 const _racingReads = 28;
+const _returnImagesDespiteError = 29;
 const _latest = 32;
 const _modelVersion = 40;
 const _ring = 64;
@@ -205,6 +206,11 @@ final class FakeStableDiffusionRuntime {
         : bytes.length;
     (_state + _generationError).asTypedList(bytes.length).setAll(0, bytes);
   }
+
+  /// Returns an image even after recording [generationErrors], as an older
+  /// native runtime can when upstream ignores a failed Metal command buffer.
+  set returnImagesDespiteError(bool value) =>
+      _state[_returnImagesDespiteError] = value ? 1 : 0;
 
   /// Keeps a generation from starting, so from clearing a pending cancel,
   /// while it is set.
@@ -630,7 +636,7 @@ final class _FakeCalls {
         _ints[_lastErrorLength ~/ 4] = errorLength;
         (_state + _lastError).asTypedList(errorLength).setAll(0, errors);
       }
-      return false;
+      if (_state[_returnImagesDespiteError] == 0) return false;
     }
     final steps = params.ref.sample_params.sample_steps;
     final images = params.ref.batch_count;

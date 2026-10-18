@@ -938,6 +938,7 @@ typedef _AppleCompanionContract = ({
   String nativeRepository,
   String nativeTag,
   Map<String, String> compatibleTags,
+  Map<String, String> artifactChecksums,
   String? companionVersion,
   String templateSha256,
 });
@@ -949,6 +950,7 @@ const _AppleCompanionContract _llamaCppCompanion = (
   nativeRepository: _nativeRepoSlug,
   nativeTag: llamaCppTag,
   compatibleTags: llamaCppCompatibleAppleCompanionTags,
+  artifactChecksums: <String, String>{},
   companionVersion: llamaCppAppleCompanionVersion,
   templateSha256: _appleCompanionManifestTemplateSha256,
 );
@@ -959,8 +961,9 @@ const _AppleCompanionContract _stableDiffusionCompanion = (
   tagVariable: 'stableDiffusionTag',
   nativeRepository: _stableDiffusionNativeRepoSlug,
   nativeTag: stableDiffusionReleaseTag,
-  compatibleTags: <String, String>{},
-  companionVersion: null,
+  compatibleTags: stableDiffusionCompatibleAppleCompanionTags,
+  artifactChecksums: stableDiffusionAppleCompanionChecksums,
+  companionVersion: stableDiffusionAppleCompanionVersion,
   templateSha256: _stableDiffusionCompanionManifestTemplateSha256,
 );
 
@@ -1037,6 +1040,14 @@ void _validateAppleCompanion(
     }
     final normalizedSource = source.replaceAll('\r\n', '\n');
     final checksum = RegExp(r'checksum: "[0-9a-f]{64}"');
+    if (contract.artifactChecksums.isNotEmpty &&
+        checksum.firstMatch(normalizedSource)?.group(0) !=
+            'checksum: "${contract.artifactChecksums[pinnedTag]}"') {
+      reject(
+        'Companion XCFramework checksum does not match the qualified '
+        'published artifact for $pinnedTag.',
+      );
+    }
     final template = normalizedSource
         .replaceFirst(
           RegExp('^let $tagVariable = "[^"\\r\\n]+"\$', multiLine: true),
