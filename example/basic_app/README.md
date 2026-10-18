@@ -102,10 +102,13 @@ Future<List<double>> embedOrderedText(LlamaEngine engine) async {
 }
 ```
 
-Image/audio embeddings remain unsupported on all packaged backends; chat media
-support does not enable them. LiteRT-LM embedding-only loads are also explicitly
-unavailable until its separate embedding engine is integrated. The option
-`ModelParams.liteRtLmEmbeddingEngine` is LiteRT-LM-only; GGUF loaders reject true.
+Image/audio embeddings are available only when `embeddingCapabilities` reports
+them: native llama.cpp with EmbeddingGemma-2 and its projector, Web llama.cpp with
+bridge assets v0.1.64+, or a LiteRT-LM embedding bundle loaded with
+`ModelParams(liteRtLmEmbeddingEngine: true)` on native CPU (see
+[LiteRT-LM image embeddings](#litert-lm-image-embeddings)). Chat media support does
+not enable them. `ModelParams.liteRtLmEmbeddingEngine` is LiteRT-LM-only; GGUF
+loaders reject true.
 
 By default, embedding CLIs use
 `ggml-org/embeddinggemma-300M-GGUF` (`embeddinggemma-300M-Q8_0.gguf`). Use
@@ -407,7 +410,7 @@ dart test
 
 Use an existing embedding bundle with vision encoder/adapter sections and a local
 PNG/JPEG. This example selects the separate native CPU embedding engine; native
-GPU and Web embeddings are unavailable on the pinned runtime.
+GPU and LiteRT-LM Web embeddings are unavailable on the pinned runtime.
 
 ```bash
 dart run bin/llamadart_litert_embedding_example.dart /path/model.litertlm /path/image.png

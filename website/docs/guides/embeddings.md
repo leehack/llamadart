@@ -1,7 +1,7 @@
 ---
-title: On-device text embeddings
+title: On-device text, image and audio embeddings
 sidebar_label: Embeddings
-description: Generate local embeddings with llamadart, understand backend support, and build retrieval-style workflows.
+description: Generate local text, image and audio embeddings with llamadart, probe modality support per backend, and build retrieval-style workflows.
 ---
 
 `llamadart` supports local embedding generation through `LlamaEngine` on
@@ -61,8 +61,9 @@ Future<List<double>> embedContentExample(LlamaEngine engine) async {
 After loading a model and any projector, `await engine.embeddingCapabilities`
 reports `text`, `image` and `audio`. Native llama.cpp probes the loaded pooling/
 attention mode, mixed-batch ABI and projector encoders. EmbeddingGemma-2 with
-its projector supports images/audio on native v0.7.0-1 (qualified macOS CPU/Metal);
-without a projector it reports text only. Web llama.cpp probes image/audio
+its projector supports images/audio on native v0.7.0-1 (BF16 qualified on CPU on
+macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other
+GPU backends unqualified); without a projector it reports text only. Web llama.cpp probes image/audio
 embeddings with bridge assets v0.1.64+
 and a compatible model/projector. The default pinned assets include the media API.
 EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
@@ -105,6 +106,10 @@ remain separate.
 ### LiteRT-LM embedding engine
 
 ```dart
+import 'dart:typed_data';
+
+import 'package:llamadart/llamadart.dart';
+
 Future<List<double>> embedLiteRtImage(LlamaEngine engine, Uint8List png) async {
   await engine.setModel(
     LlamaModel(ModelSource.path('embeddinggemma-2-740m.litertlm')),
@@ -118,7 +123,7 @@ Future<List<double>> embedLiteRtImage(LlamaEngine engine, Uint8List png) async {
 }
 ```
 
-Web embeddings remain unsupported: Web CPU cannot load external text-encoder
+LiteRT-LM Web embeddings remain unsupported: Web CPU cannot load external text-encoder
 weights, and pinned WebGPU vectors missed the native CPU parity gate. Media inputs accept encoded PNG/JPEG bytes,
 mono 16 kHz PCM16/Float32 WAV bytes, or mono 16 kHz Float32 samples. Paths,
 image URLs, video and multiple sources per part are unsupported. All parts are
@@ -178,8 +183,9 @@ context/batch/micro-batch capacity before inference.
 
 Windows uses the complete native DLL bundle for media embeddings. Missing media
 symbols disable media with a typed unsupported error and leave text embeddings
-available. Windows model-backed media qualification remains pending; current
-local qualification covers macOS CPU/Metal.
+available. The BF16 model/projector pair is qualified on CPU on macOS arm64,
+Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends
+are unqualified.
 
 Native v0.7.0-1 loads the official EmbeddingGemma-2 BF16 GGUF through the existing
 `embed` and `embedBatch` APIs. Its projected text output has 768 components;

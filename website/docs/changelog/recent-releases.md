@@ -7,32 +7,33 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.15.0
 
-- Fix multimodal projector loading in Windows `dart build cli` bundles after early log setup.
-
-- Honor content embedding cancellation during capability checks and worker startup.
-
-- Prevent embeddings and other context changes from interrupting native text-to-speech, and release handle waits even when a speech reply fails.
+- Embed ordered text, images and audio with typed inputs and modality probes on
+  native llama.cpp, native CPU LiteRT-LM (opt in with
+  `liteRtLmEmbeddingEngine`) and compatible Web llama.cpp assets.
+- Fix vision/audio projector and media-embedding loading in Windows
+  `dart build cli` bundles, which also affected 0.14.
+- Update the native llama.cpp runtime and Apple companion to v0.7.0-1;
+  upgrade core and all Apple companions to 0.15.x together.
 - Aligned default WebGPU bridge assets to `v0.1.65` for image/audio
-  embeddings (API floor v0.1.64+); qualified on Chrome CPU wasm memory64 against native CPU/Metal.
-  Qualified against native `v0.7.0-1`, with upstream
-  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM remains
+  embeddings (API floor v0.1.64+), qualified on Chrome CPU wasm memory64
+  against native CPU/Metal `v0.7.0-1` with upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`. Web LiteRT-LM remains
   `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
   `185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328`.
-- Embed ordered images, audio and text with native llama.cpp embedding models and compatible projectors, preserving text-only embedding compatibility.
-- Update the native llama.cpp runtime to v0.7.0-1.
-- **Behavior change:** Run decision heads on CPU when native llama.cpp single-device placement selects no GPU.
+- **Behavior change:** Run decision heads on CPU and report CPU with zero GPU
+  layers when native llama.cpp single-device placement selects no GPU.
+- **Behavior change:** Reject embedding, scoring, generation and LoRA calls on a
+  context during native text-to-speech with `LlamaStateException`.
+- Keep performance counters accurate across cancellation, validation and
+  dispatch failures, reloads, embeddings, scoring and speech requests.
 - Preserve LiteRT-LM Web runtime failures that race generation cancellation.
-- Keep performance counters accurate across cancellation, validation or dispatch failures and reloads, including pending llama.cpp embedding, scoring and speech requests.
-- Correct chat-template error labels for empty model templates and document historical PEG format names.
-- Report CPU and zero GPU layers when native llama.cpp single-device placement selects no GPU.
+- Correct chat-template error labels for empty model templates.
 - Probe native thinking-budget support and report missing speculative draft
   models as typed argument errors.
-- **Behavior change:** Report WebGPU argument rejections as typed argument errors instead of inference failures.
-- Add native CPU LiteRT-LM text, image and audio embeddings with explicit engine selection, per-request timeouts and whole-call overflow errors.
-- Add typed embedding inputs, modality probes and the LiteRT-LM-only
-  `liteRtLmEmbeddingEngine` load option.
+- **Behavior change:** Report WebGPU argument rejections as typed argument
+  errors instead of inference failures.
 
 ## 0.14.0
 

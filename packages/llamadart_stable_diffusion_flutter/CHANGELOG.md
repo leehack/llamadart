@@ -1,3 +1,7 @@
+## 0.15.0
+
+* Pair with core `0.15.x`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.2.0-3`.
+
 ## 0.14.0
 
 * Pair with core `0.14.x`; Apple SwiftPM pins `leehack/stable-diffusion-native@v0.2.0-3`.

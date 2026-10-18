@@ -96,20 +96,20 @@ For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports
 image/audio embeddings with EmbeddingGemma-2 and its projector on native
-v0.7.0-1 (qualified macOS CPU/Metal); expanded inputs must fit one micro-batch.
-Web llama.cpp also accepts image/audio content with bridge assets v0.1.64+
-and an API-version-1 embedding modality probe. The default pin is qualified with EmbeddingGemma-2 on Chrome CPU wasm
-memory64 against native CPU/Metal; repeated media batches require memory64.
-Hardware WebGPU remains unqualified.
-LiteRT-LM supports text,
-image and audio embeddings (qualified on macOS arm64 CPU only) with
-`ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu` on native; native GPU and all LiteRT-LM Web paths throw
+v0.7.0-1 (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android
+and iOS, and on macOS Metal); expanded inputs must fit one micro-batch. Web
+llama.cpp also accepts image/audio content with bridge assets v0.1.64+ and an
+API-version-1 embedding modality probe. The default pin is qualified with
+EmbeddingGemma-2 on Chrome CPU wasm memory64 against native CPU/Metal; repeated
+media batches require memory64. Hardware WebGPU remains unqualified. LiteRT-LM
+supports text, image and audio embeddings (qualified on macOS arm64 CPU only)
+with `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu`
+on native; native GPU and all LiteRT-LM Web paths throw
 `LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
 llama.cpp text-only content follows `embed`, including causal unpooled models.
 Unsupported native media diagnostics name the required v0.7.0-1 ABI. Windows
 requires the complete native DLL bundle; missing media symbols leave text
-embeddings available. Windows media model execution is not yet locally
-qualified.
+embeddings available.
 Adjacent text parts concatenate verbatim. `cancelGeneration()` also cancels
 content embedding calls still awaiting capability checks, with
 `LlamaInferenceException` before inference starts. Await the embedding future
@@ -187,7 +187,8 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. Pair companion `0.14.0` with core `0.14.x`, `0.13.0` with core
+  the entry above. Pair companion `0.15.0` with core `0.15.x`, `0.14.0` with core
+  `0.14.x`, `0.13.0` with core
   `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2`
   with core `0.11.1` and `0.11.0`.
   Without it, `all` leaves the image runtime out of a Flutter iOS/macOS app
@@ -268,15 +269,13 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.14.0
+  llamadart: ^0.15.0
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-The unreleased llama.cpp companion source pins `v0.7.0-1`; release
-preparation will assign matching core/companion minor versions.
-
+Pair companion `0.15.0` with core `0.15.x` for llama.cpp `v0.7.0-1`.
 Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
 Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
 for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
@@ -298,13 +297,13 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.14.0
-  llamadart_llama_cpp_flutter: ^0.14.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.14.0 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.14.0 # Apple image generation, opt-in
+  llamadart: ^0.15.0
+  llamadart_llama_cpp_flutter: ^0.15.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.15.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.15.0 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.14.0` with core `0.14.x`,
+Pair `llamadart_stable_diffusion_flutter` `0.15.0` with core `0.15.x`, `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
 `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
@@ -313,7 +312,8 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Pair LiteRT-LM companion `0.14.0` with core `0.14.x` for native `v0.18.0-2`,
+Pair LiteRT-LM companion `0.15.0` with core `0.15.x` (or `0.14.0` with core `0.14.x`)
+for native `v0.18.0-2`,
 which reduces duplicated words at untimed ASR window boundaries with the
 default overlap. Other boundary and recognition errors can remain.
 

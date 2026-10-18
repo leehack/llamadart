@@ -60,4 +60,6 @@ LLAMADART_EMBEDDING_BACKEND=cpu dart test \
 This local-only check verifies 768-dimensional projected text outputs,
 normalization, distinct inputs, batch parity and reuse. Set the backend to
 `metal` to qualify that path separately. It does not exercise image or audio
-embedding inputs; those still require the owning native C smoke.
+embedding inputs; those are covered by the
+`native-multimodal-embeddings` local E2E scenario and the `embedding-gguf-*`
+validation pack.
