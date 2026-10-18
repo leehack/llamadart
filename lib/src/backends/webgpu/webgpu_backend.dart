@@ -2598,12 +2598,16 @@ class WebGpuLlamaBackend
     if (inputs.isEmpty) return const <List<double>>[];
     final bridge = _requireBridge();
     final epoch = _embeddingCancelEpoch;
+    void checkCancelled() {
+      if (!identical(bridge, _activeBridge) || epoch != _embeddingCancelEpoch) {
+        throw LlamaInferenceException('Web embedding operation was cancelled.');
+      }
+    }
+
     final snapshot = List<LlamaEmbeddingInput>.of(inputs);
     final mapped = snapshot.map(_embeddingInput).toList(growable: false);
     final capabilities = await getEmbeddingCapabilities(contextHandle);
-    if (!identical(bridge, _bridge) || epoch != _embeddingCancelEpoch) {
-      throw LlamaInferenceException('Web embedding operation was cancelled.');
-    }
+    checkCancelled();
     for (final input in snapshot) {
       for (final kind in input.partKinds) {
         if (!capabilities.supports(kind)) {
@@ -2617,10 +2621,12 @@ class WebGpuLlamaBackend
       (input) =>
           input.partKinds.every((kind) => kind == LlamaEmbeddingModality.text),
     )) {
-      return embedBatch(contextHandle, [
+      final result = await embedBatch(contextHandle, [
         for (final input in snapshot)
           input.parts.cast<LlamaTextContent>().map((part) => part.text).join(),
       ], normalize: normalize);
+      checkCancelled();
+      return result;
     }
     try {
       final result = await _toFuture(
@@ -2629,6 +2635,7 @@ class WebGpuLlamaBackend
           WebGpuEmbeddingOptions(normalize: normalize),
         ),
       );
+      checkCancelled();
       return _parseEmbeddingBatch(result);
     } catch (error) {
       throw _mediaEmbeddingError(error);

@@ -90,7 +90,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     CPU wasm memory64 against native CPU/Metal; repeated media batches require
     memory64. Hardware WebGPU is unqualified; default assets include
     the API. Text content preserves legacy unpooled support. Image bytes are
-    encoded; embedding calls ignore width/height.
+    encoded; embedding calls ignore width/height. Cancelled content calls discard
+    late successful bridge results with `LlamaInferenceException`; await the
+    future before reuse because synchronous WASM cancellation is cooperative.
   - Other floors: text embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS

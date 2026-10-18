@@ -1,8 +1,9 @@
 @TestOn('browser')
 @Tags(['local-only', 'e2e'])
-@Timeout(Duration(minutes: 20))
+@Timeout(Duration(minutes: 30))
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -151,6 +152,9 @@ void main() {
           ]),
         ];
         final actual = await engine.embedContentBatch(inputs);
+        print(
+          'EMBEDDING_VECTORS ${jsonEncode({'runtime': worker ? 'worker' : 'direct', 'vectors': actual})}',
+        );
         final expected = (config['normalizedVectors'] as List)
             .map(
               (row) => (row as List).map((v) => (v as num).toDouble()).toList(),
@@ -170,6 +174,17 @@ void main() {
           // Qualified CPU wasm/native cosine exceeds 0.99998. Keep a portable
           // gate; changes require exact-artifact evidence.
           expect(dot / math.sqrt(aa * bb), greaterThanOrEqualTo(0.999));
+          _recordComparison(actual[i], expected[i], worker, i, 'cpu');
+          final metal = config['normalizedMetalVectors'] as List?;
+          if (metal != null) {
+            _recordComparison(
+              actual[i],
+              (metal[i] as List).cast<num>().map((v) => v.toDouble()).toList(),
+              worker,
+              i,
+              'metal',
+            );
+          }
         }
         expect(
           await engine.embedContent(inputs.first),
@@ -191,9 +206,199 @@ void main() {
           before: [image],
           after: [audio],
         );
+        final wav = audio.bytes!;
+        // The recorded fixture is mono IEEE float32 WAV at 16 kHz. Check its
+        // format before comparing the two public audio source representations.
+        final header = ByteData.sublistView(wav);
+        expect(header.getUint16(20, Endian.little), 3);
+        expect(header.getUint16(22, Endian.little), 1);
+        expect(header.getUint32(24, Endian.little), 16000);
+        expect(header.getUint16(34, Endian.little), 32);
+        expect(ascii.decode(wav.sublist(36, 40)), 'data');
+        final pcm = Float32List.fromList([
+          for (var offset = 44; offset < wav.length; offset += 4)
+            header.getFloat32(offset, Endian.little),
+        ]);
+        _expectOrderedVectors(
+          [
+            await engine.embedContent(
+              LlamaEmbeddingInput([LlamaAudioContent(samples: pcm)]),
+            ),
+          ],
+          [actual[2]],
+        );
+
+        await expectLater(
+          engine.embedContent(
+            LlamaEmbeddingInput([
+              LlamaTextContent(List.filled(5000, 'overflow ').join()),
+              image,
+            ]),
+          ),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'code',
+              contains('EMBEDDING_INPUT_TOO_LARGE'),
+            ),
+          ),
+        );
+        _expectOrderedVectors(
+          [await engine.embedContent(inputs[1])],
+          [actual[1]],
+        );
+        print(
+          '${worker ? 'worker' : 'direct'} capacity rejection and reuse: PASS',
+        );
+
+        await engine.unloadMultimodalProjector();
+        final unloaded = await engine.embeddingCapabilities;
+        expect(
+          [unloaded.text, unloaded.image, unloaded.audio],
+          [true, false, false],
+        );
+        await expectLater(
+          engine.embedContent(inputs[1]),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await engine.loadMultimodalProjector(url('projector'));
+        final reloaded = await engine.embeddingCapabilities;
+        expect(
+          [reloaded.text, reloaded.image, reloaded.audio],
+          [true, true, true],
+        );
+        _expectOrderedVectors(
+          [await engine.embedContent(inputs[1])],
+          [actual[1]],
+        );
+        print('${worker ? 'worker' : 'direct'} projector unload/reload: PASS');
+
+        if (worker) {
+          final cancelled = _interruptWorkerEmbedding(
+            bridge,
+            (_) => engine.cancelGeneration(),
+          );
+          await expectLater(
+            engine.embedContent(inputs.last),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (error) => error.message.toLowerCase(),
+                'message',
+                contains('cancel'),
+              ),
+            ),
+          );
+          await cancelled;
+          _expectOrderedVectors(
+            [await engine.embedContent(inputs[1])],
+            [actual[1]],
+          );
+          print('worker in-flight cancellation and reuse: PASS');
+
+          final terminated = _interruptWorkerEmbedding(bridge, (workerObject) {
+            workerObject.callMethod<JSAny?>('terminate'.toJS);
+            // Terminate the real worker, then deliver its error notification to
+            // the production proxy. Inference and restoration stay unmocked.
+            final event = JSObject()
+              ..setProperty(
+                'message'.toJS,
+                'Qualification worker termination'.toJS,
+              );
+            workerObject
+                .getProperty<JSFunction>('onerror'.toJS)
+                .callAsFunction(workerObject, event);
+          });
+          _expectOrderedVectors(
+            [await engine.embedContent(inputs[1])],
+            [actual[1]],
+          );
+          await terminated;
+          expect(
+            (bridge as JSObject).getProperty<JSAny?>('_workerProxy'.toJS),
+            isNull,
+          );
+          final restored = await engine.embeddingCapabilities;
+          expect(
+            [restored.text, restored.image, restored.audio],
+            [true, true, true],
+          );
+          final metadata = await engine.getMetadata();
+          expect(metadata['llamadart.webgpu.core_variant'], 'wasm64');
+          expect(metadata['llamadart.webgpu.n_batch'], '4096');
+          expect(metadata['llamadart.webgpu.n_ubatch'], '4096');
+          print(
+            'worker loss, CPU recovery, projector and load-option restoration: PASS',
+          );
+        }
       },
     );
   }
+}
+
+void _recordComparison(
+  List<double> actual,
+  List<double> reference,
+  bool worker,
+  int input,
+  String backend,
+) {
+  expect(actual, hasLength(768));
+  expect(reference, hasLength(actual.length));
+  double dot = 0, aa = 0, bb = 0, maxAbs = 0;
+  for (var i = 0; i < actual.length; i++) {
+    dot += actual[i] * reference[i];
+    aa += actual[i] * actual[i];
+    bb += reference[i] * reference[i];
+    maxAbs = math.max(maxAbs, (actual[i] - reference[i]).abs());
+  }
+  final cosine = dot / math.sqrt(aa * bb);
+  expect(cosine, greaterThanOrEqualTo(0.999));
+  print(
+    'EMBEDDING_METRIC ${jsonEncode({'runtime': worker ? 'worker' : 'direct', 'input': input, 'reference': backend, 'cosine': cosine, 'maxAbs': maxAbs, 'norm': math.sqrt(aa), 'width': actual.length})}',
+  );
+}
+
+Future<void> _interruptWorkerEmbedding(
+  LlamaWebGpuBridge bridge,
+  void Function(JSObject worker) interrupt,
+) {
+  final proxy = (bridge as JSObject).getProperty<JSObject>('_workerProxy'.toJS);
+  final worker = proxy.getProperty<JSObject>('_worker'.toJS);
+  final original = worker.getProperty<JSFunction>('postMessage'.toJS);
+  final fired = Completer<void>();
+  worker.setProperty(
+    'postMessage'.toJS,
+    ((JSAny? message, JSAny? transfers) {
+      original.callAsFunction(worker, message, transfers);
+      final request = message as JSObject;
+      if (request.getProperty<JSAny?>('method'.toJS)?.dartify() !=
+          'embedBatch') {
+        return;
+      }
+      worker.setProperty('postMessage'.toJS, original);
+      Timer(const Duration(milliseconds: 100), () {
+        try {
+          final pending = proxy.getProperty<JSObject>('_pending'.toJS);
+          expect(
+            pending
+                .callMethod<JSBoolean>(
+                  'has'.toJS,
+                  request.getProperty<JSAny?>('id'.toJS),
+                )
+                .toDart,
+            isTrue,
+            reason: 'Fault must arrive while the real media RPC is pending.',
+          );
+          interrupt(worker);
+          fired.complete();
+        } catch (error, stack) {
+          fired.completeError(error, stack);
+        }
+      });
+    }).toJS,
+  );
+  addTearDown(() => worker.setProperty('postMessage'.toJS, original));
+  return fired.future;
 }
 
 JSObject _bridgeConfig(bool worker, String Function(String) url) {

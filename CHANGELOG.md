@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Reject late Web content-embedding results after cancellation or disposal.
 * Aligned the default WebGPU bridge assets to `v0.1.66` to preserve worker
   timeout settings and model load tuning during CPU recovery. The bridge still
   embeds upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, matching

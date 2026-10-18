@@ -357,6 +357,70 @@ void main() {
     ]);
   });
 
+  for (final route in ['media', 'text', 'sequential text fallback']) {
+    test('content cancellation rejects late success through $route', () async {
+      final gate = Completer<JSAny?>();
+      final entered = Completer<void>();
+      final sequential = route == 'sequential text fallback';
+      if (sequential) {
+        fake.object.setProperty('embedBatch'.toJS, null);
+        fake.object.setProperty(
+          'embed'.toJS,
+          ((JSString _, JSObject _) {
+            entered.complete();
+            return gate.future.toJS;
+          }).toJS,
+        );
+      } else {
+        fake.object.setProperty(
+          'embedBatch'.toJS,
+          ((JSArray _, JSObject _) {
+            entered.complete();
+            return gate.future.toJS;
+          }).toJS,
+        );
+      }
+      final request = route == 'media'
+          ? image()
+          : input([const LlamaTextContent('text')]);
+      final pending = run([request]);
+      final assertion = expectLater(
+        pending,
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message.toLowerCase(),
+            'message',
+            contains('cancel'),
+          ),
+        ),
+      );
+      await entered.future;
+      backend.cancelGeneration();
+      // Published bridge cancel() is best effort. A completed native operation
+      // can still resolve normally; the content adapter owns its cancellation.
+      gate.complete(
+        (sequential
+                ? [0.6, 0.8]
+                : [
+                    [0.6, 0.8],
+                  ])
+            .jsify(),
+      );
+      await assertion;
+      fake.object.setProperty(
+        'embedBatch'.toJS,
+        ((JSArray _, JSObject _) => Future<JSAny>.value(
+          [
+            [0.6, 0.8],
+          ].jsify()!,
+        ).toJS).toJS,
+      );
+      expect(await run([request]), [
+        [0.6, 0.8],
+      ]);
+    });
+  }
+
   test('dispose awaits bridge settlement of active embedding', () async {
     final gate = Completer<JSAny?>();
     final entered = Completer<void>();
@@ -369,6 +433,10 @@ void main() {
     );
     fake.object.setProperty('dispose'.toJS, (() => gate.future.toJS).toJS);
     final pending = run([image()]);
+    final assertion = expectLater(
+      pending,
+      throwsA(isA<LlamaInferenceException>()),
+    );
     await entered.future;
     var disposed = false;
     final disposal = backend.dispose().then((_) {
@@ -381,7 +449,7 @@ void main() {
         [1.0],
       ].jsify(),
     );
-    await pending;
+    await assertion;
     await disposal;
     expect(disposed, isTrue);
   });
