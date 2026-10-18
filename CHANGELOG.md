@@ -1,3 +1,14 @@
+## Unreleased
+
+* Aligned the default WebGPU bridge assets to `v0.1.66` to preserve worker
+  timeout settings and model load tuning during CPU recovery. The bridge still
+  embeds upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, matching
+  native `v0.7.0-1`; Web LiteRT-LM remains `@litert-lm/core@0.18.0`.
+  Immutable Web asset manifest:
+  `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
+* Update the opt-in stable_diffusion runtime and Apple companion pin to
+  `v0.2.0-4`, which rejects images after a detected Metal command-buffer failure.
+
 ## 0.15.1
 
 - Report native embedding overflow with typed limits and input counts.

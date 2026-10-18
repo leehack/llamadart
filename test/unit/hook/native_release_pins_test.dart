@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -159,6 +160,50 @@ void main() {
         reason: entry.key,
       );
     }
+  });
+
+  test('stable_diffusion pins the qualified v0.2.0-4 release artifacts', () {
+    // Exact published owner manifest, independently checked against GitHub
+    // asset digests before adoption. This also binds the Apple binary target.
+    final manifest =
+        jsonDecode(
+              File(
+                'test/fixtures/native/stable_diffusion_v0_2_0_4_manifest.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(stableDiffusionReleaseTag, manifest['tag']);
+    final artifacts = (manifest['artifacts'] as List)
+        .cast<Map<String, dynamic>>();
+    final runtimes = {
+      for (final artifact in artifacts)
+        if (artifact['kind'] == 'runtime') artifact['target']: artifact,
+    };
+    expect(
+      stableDiffusionBundleSpecs.map((spec) => spec.bundle).toSet(),
+      runtimes.keys.toSet(),
+    );
+    for (final spec in stableDiffusionBundleSpecs) {
+      expect(
+        spec.sha256,
+        runtimes[spec.bundle]!['sha256'],
+        reason: spec.bundle,
+      );
+      expect(spec.requiredLibraries, {
+        runtimes[spec.bundle]!['library'],
+      }, reason: spec.bundle);
+    }
+    final apple = artifacts.singleWhere(
+      (artifact) =>
+          artifact['file'] ==
+          'stable-diffusion-native-apple-xcframework-v0.2.0-4.zip',
+    );
+    final swift = File(
+      'packages/llamadart_stable_diffusion_flutter/darwin/'
+      'llamadart_stable_diffusion_flutter/Package.swift',
+    ).readAsStringSync();
+    expect(swift, contains('let stableDiffusionTag = "${manifest['tag']}"'));
+    expect(swift, contains(apple['sha256'] as String));
   });
 
   test('stable_diffusion cache version is the release tag without its v', () {

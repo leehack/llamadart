@@ -35,7 +35,10 @@ Flutter iOS and macOS it does so only with this package.
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.2.0-3`.
+The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.2.0-4`.
+This checkout prepares that pin for the next core minor release; the published
+0.15.1 companion retains `v0.2.0-3`. Upgrade core and companion together when
+the matching versions are released.
 
 Apps bound for the App Store should use this package: an Apple privacy
 manifest for the stable-diffusion.cpp runtime ships inside this XCFramework,

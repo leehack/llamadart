@@ -34,9 +34,13 @@ Bridge source contract inspected read-only at
 `tests/bridge/multimodal_embedding_test.mjs`. It covers direct/worker cancellation,
 restore and structured-clone ownership; those are bridge responsibilities.
 
-The independent PR audit qualified EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.65` on Chrome CPU wasm memory64 (`gpuLayers: 0`). Direct
-and worker vectors were identical. WebGPU hardware was not exercised.
+Current rerun target: EmbeddingGemma-2 BF16 with its matching
+mmproj and pinned assets `v0.1.66` on Chrome CPU wasm memory64
+(`gpuLayers: 0`). Numerical parity on this tag remains to be requalified.
+
+The independent PR audit qualified the same model and projector with the
+then-pinned `v0.1.65` assets on Chrome CPU wasm memory64 (`gpuLayers: 0`).
+Direct and worker vectors were identical. WebGPU hardware was not exercised.
 
 | Input | Cosine versus native CPU |
 | --- | --- |
