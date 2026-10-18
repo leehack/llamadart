@@ -1,4 +1,4 @@
-## Unreleased
+## 3.4.1 - 2026-10-18
 
 - Move source and guides into the llamadart repository while retaining separate package versions and releases.
 
