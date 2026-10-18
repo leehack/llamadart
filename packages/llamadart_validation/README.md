@@ -151,6 +151,17 @@ fusion-disabled and both-disabled had 0.999906460/0.001644426.
 The published archive and contained dylib hashes identify the reference runtime;
 a hook-processed local dylib hash does not.
 
+Metal placement requires one full positive tensor-offload record and one
+`llama_context` per expected load, plus exactly two MTL0 projector contexts
+(`gemma4v`, then `gemma4a`). Each complete llama graph reservation and each
+projector reservation must contain exactly one positive MTL0 compute allocation;
+CPU scratch allocations may accompany it. Every compute record must belong to
+one of those reservations. Pooled embedding toggles can reserve the same llama
+context repeatedly, so reservation count has no fixed ceiling; context count
+stays exact. CPU-only, partial/zero/missing offload, wrong-device, zero-size,
+unattributed or incomplete records remain unverified. Other profiles retain
+their existing placement rule and effective-config hashes.
+
 Both profiles lock `embedding.case_timeout_ms: 300000`, included in their
 effective-config hashes. E05/E06 each encode one image, and E07 uses audio;
 both mixed orders and the batch's repeated item remain checked. The 224×224

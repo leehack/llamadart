@@ -380,6 +380,18 @@ exactly; Metal default and concurrency-disabled audio had cosine
 (max-abs 490.59) and swapped media order (cosine 0.988408, max-abs 0.018698)
 fail these gates; a mismatched projector hash errors before inference.
 
+Embedding Metal placement counts real contexts rather than compute-log lines:
+one llama context and one full positive offload record per expected load, plus
+exactly two MTL0 projector contexts (`gemma4v`, `gemma4a`). Every complete
+`sched_reserve` and projector `reserve_compute_meta` block needs exactly one
+positive MTL0 allocation; positive CPU scratch buffers may accompany it. All
+compute records must be attributed to those blocks. Pooled embedding toggles
+change the graph shape and reserve the same context again, so the number of
+complete reservations is request-dependent, with no fixed ceiling. Unknown,
+extra or missing contexts, malformed/unattributed records, CPU-only blocks,
+wrong devices, zero sizes and partial/zero/missing offload remain unverified.
+Non-embedding placement rules and effective-config hashes are unchanged.
+
 Both embedding profiles lock `embedding.case_timeout_ms: 300000`, bound into
 their effective configuration hashes and applied to every selected case,
 including load. Existing non-embedding profile hashes/deadlines are unchanged.
