@@ -3002,6 +3002,72 @@ class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
             pins.refresh_stable_diffusion_apple_contract(
                 self.source, self.current, self.current, "0" * 64)
 
+    def test_checksum_contract_rejects_comments_duplicates_and_nonliteral_values(self) -> None:
+        for body in [
+            f"/* '{self.current}': '{self.checksum}', */",
+            f"// '{self.current}': '{self.checksum}',\n",
+            f"'{self.current}': '{'0' * 64}', '{self.current}': '{self.checksum}',",
+            f"'{self.current}': expectedChecksum,",
+        ]:
+            with self.subTest(body=body):
+                source = re.sub(
+                    r"const stableDiffusionAppleCompanionChecksums = <String, String>\{.*?\};",
+                    "const stableDiffusionAppleCompanionChecksums = <String, String>{" + body + "};",
+                    self.source, flags=re.DOTALL,
+                )
+                with self.assertRaisesRegex(pins.ReleaseError, "Malformed Apple SD checksum contract"):
+                    pins.refresh_stable_diffusion_apple_contract(
+                        source, self.current, self.current, self.checksum)
+
+    def test_duplicate_checksum_contract_declarations_fail_closed(self) -> None:
+        source = self.source + "\nconst stableDiffusionAppleCompanionChecksums = <String, String>{};\n"
+        with self.assertRaisesRegex(pins.ReleaseError, "uniquely.*Apple SD checksum contract"):
+            pins.refresh_stable_diffusion_apple_contract(
+                source, self.current, self.current, self.checksum)
+
+    def test_duplicate_compatibility_contract_declarations_fail_closed(self) -> None:
+        source = self.source + "\nconst stableDiffusionCompatibleAppleCompanionTags = <String, String>{};\n"
+        with self.assertRaisesRegex(pins.ReleaseError, "uniquely.*Apple SD compatibility contract"):
+            pins.refresh_stable_diffusion_apple_contract(
+                source, self.current, "v0.2.0-5", "a" * 64)
+
+    def test_non_code_declarations_cannot_supply_or_override_proof(self) -> None:
+        pattern = r"const stableDiffusionAppleCompanionChecksums = <String, String>\{.*?\};"
+        declaration = re.search(pattern, self.source, re.DOTALL).group(0)
+        for wrapper in [
+            "/* outer /* nested */\n%s\n*/",
+            "const example = '''\n%s\n''';",
+            'const example = r"""literal $dollar\n%s\n""";',
+        ]:
+            with self.subTest(wrapper=wrapper):
+                hidden = wrapper % declaration
+                source = re.sub(pattern, lambda _: hidden, self.source, flags=re.DOTALL)
+                with self.assertRaisesRegex(pins.ReleaseError, "Missing Apple SD checksum contract"):
+                    pins.refresh_stable_diffusion_apple_contract(
+                        source, self.current, self.current, self.checksum)
+                # A non-code example beside the real declaration is ignored
+                # and is never rewritten when the live contracts move.
+                source = self.source + "\n" + hidden
+                self.assertEqual(pins.refresh_stable_diffusion_apple_contract(
+                    source, self.current, self.current, self.checksum), source)
+                result = pins.refresh_stable_diffusion_apple_contract(
+                    source, self.current, "v0.2.0-5", "a" * 64)
+                self.assertIn(hidden, result)
+
+    def test_native_pin_source_requires_complete_literal_strings_and_comments(self) -> None:
+        for suffix in [
+            "\n/* unterminated",
+            "\nconst example = 'unterminated",
+            '\nconst example = "${value}";',
+        ]:
+            with self.subTest(suffix=suffix):
+                with self.assertRaises(pins.ReleaseError):
+                    pins.refresh_stable_diffusion_apple_contract(
+                        self.source + suffix, self.current, self.current, self.checksum)
+        source = self.source + "\nconst example = 'it\\'s // literal text';\n"
+        self.assertEqual(pins.refresh_stable_diffusion_apple_contract(
+            source, self.current, self.current, self.checksum), source)
+
     def test_changed_pin_clears_older_compatibility_and_checksum(self) -> None:
         result = pins.refresh_stable_diffusion_apple_contract(
             self.source, self.current, "v0.2.0-5", "a" * 64)

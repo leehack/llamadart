@@ -324,6 +324,12 @@ refreshes preserve it and reject a changed checksum. Requalify before adding
 an older artifact back. A minor release remains necessary when older admitted
 companions cannot remain supported safely.
 
+Keep checksum maps in the generated literal format, with explanatory comments
+outside the map. Sync rejects duplicate declarations or tags, computed or
+commented checksum entries, and interpolated strings in the native pin file.
+Declarations inside comments or strings cannot supply proof and are never
+rewritten as live contracts.
+
 Companion versions share the core's `MAJOR.MINOR` and move only their patch
 independently, so a core minor release sets every companion to `M.m.0` and a
 companion change within a minor bumps its patch. The release docs verifier
