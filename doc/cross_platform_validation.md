@@ -38,7 +38,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
 | Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
 | Accelerators | GGUF native-log proof, S24 per-generation NPU dispatch evidence and Android LiteRT GPU per-load delegate-initialization evidence | LiteRT GPU per-request execution, iOS/desktop/Web LiteRT GPU proof, Pixel 10 NPU and the remaining device rotation |
-| Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls | Exact-model feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal, speech qualification and embeddings |
+| Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls; native embeddings now have a separate locked pack | Exact-model/device feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal and speech qualification |
 
 Do not weaken semantic predicates to obtain a green run. The Gemma original-model
 control below passes the strict history predicate; the LiteRT results remain failed.
@@ -322,6 +322,121 @@ and `D05` failed on `plain_text/urgency5` (probability 0.0628, score 0.1224).
 dart run tool/testing/validation.dart local --profile decision-gguf-metal
 ```
 
+### Multimodal embedding pack
+
+[Issue #1194](https://github.com/leehack/llamadart/issues/1194) adds a separate
+embedding-only inventory under catalog 5. `embedding-gguf-cpu` runs on native
+desktops, Android CPU and iOS CPU. `embedding-gguf-metal` is the macOS/iOS Metal
+counterpart, following the existing backend-specific profile convention. Both
+use context/batch/microbatch 2048, four threads, no generation or benchmark cases,
+and the same immutable model/projector pair:
+
+| Artifact | Bytes | SHA256 |
+| --- | ---: | --- |
+| `embeddinggemma-2-BF16.gguf` | 557,950,176 | `68bae29d62fb8c7d23e98d21fd4662753ddd636e6b62b8a70dfe059a9844f216` |
+| `mmproj-embeddinggemma-2-BF16.gguf` | 982,074,784 | `d2033b3cd0223cfb2e7a2b50dc80a664c78c816d375f5b017ec3ef80ee0bc766` |
+
+The profile URLs pin
+`ggml-org/embeddinggemma-2-GGUF@bfcd298762cc34d0357ece5ebdd31791a3a374d8`.
+Hugging Face API/LFS metadata was inspected without downloading weights. A
+matched Q8_0 pair exists (864,676,480 bytes total); BF16 was chosen to generate
+independent CPU references from the available local files without downloading
+weights. Q8_0 needs its own reference cohort; it must not reuse BF16 vectors.
+
+| Case | Contract |
+| --- | --- |
+| `C01.load` | Public model/projector load and diagnostics |
+| `E01.capabilities` | `embeddingCapabilities` advertises text/image/audio and `mediaUnsupportedReason` is null |
+| `E02.text`, `E03.image`, `E04.audio` | One normalized vector matches its native CPU reference |
+| `E05.mixed` | Text/image/audio interleaving matches its reference (one image encode) |
+| `E06.batch` | `embedContentBatch` returns audio/text/reversed-mixed/audio, checking the other media order and a repeated item (one image encode) |
+| `E07.normalization` | Unit normalized audio output; non-unit raw audio output normalizes to the reference |
+| `E08.guards` | Video input, an image without a source and reserved `<__media__>` with media throw `LlamaUnsupportedException`; text reuse succeeds |
+| `E09.cancel.before` | Immediate `cancelGeneration` before backend SPI dispatch; typed cancellation and text/media reuse |
+| `E10.cancel.after` | Cancellation after backend SPI dispatch while pending; typed cancellation and text/media reuse |
+
+Cancellation uses a forwarding backend at the exported SPI to observe dispatch;
+it does not claim that the worker has started native encoding. The latter is
+synchronous and cannot be forcibly interrupted. Both cases await settlement,
+require a `LlamaInferenceException` containing cancellation, cap latency at 5 s,
+and compare subsequent text/image calls with the CPU references. If work already
+completed or the dispatch precondition was missed, the case is NOT_RUN and the
+run cannot qualify.
+
+The deterministic PNG checkerboard, PCM WAV square tone, native C++ reference
+program, generation procedure and measured spread are in
+[the version-one fixture README](../packages/llamadart_validation/assets/embeddings/README.md).
+The five 768-dimensional CPU vectors use pinned upstream headers and the
+published v0.7.0-1 macOS arm64 archive/dylib, independently of Dart. The fixture
+README records their reproducible hashes; hook-processed dylib bytes are not
+portable runtime identities. Separate CPU and Metal threshold entries both
+require cosine ≥ **0.999**, max-abs ≤ **0.01**, allowing roughly 10x/6x headroom
+over measured kernel-path error. The original Metal audio cosine was 0.999900635;
+fusion/concurrency and CPU thread-count measurements and negative controls are
+recorded in that README. CPU one/four-thread vectors reproduced the reference
+exactly; Metal default and concurrency-disabled audio had cosine
+0.999900635/max-abs 0.001568219, while fusion-disabled and both-disabled had
+0.999906460/0.001644426. LAST pooling (cosine 0.867617), missing normalization
+(max-abs 490.59) and swapped media order (cosine 0.988408, max-abs 0.018698)
+fail these gates; a mismatched projector hash errors before inference.
+
+Embedding Metal placement counts real contexts rather than compute-log lines:
+one llama context and one full positive offload record per expected load, plus
+exactly two MTL0 projector contexts (`gemma4v`, `gemma4a`). Every complete
+`sched_reserve` and projector `reserve_compute_meta` block needs exactly one
+positive MTL0 allocation; positive CPU scratch buffers may accompany it. All
+compute records must be attributed to those blocks. Pooled embedding toggles
+change the graph shape and reserve the same context again, so the number of
+complete reservations is request-dependent, with no fixed ceiling. Unknown,
+extra or missing contexts, malformed/unattributed records, CPU-only blocks,
+wrong devices, zero sizes and partial/zero/missing offload remain unverified.
+Non-embedding placement rules and effective-config hashes are unchanged.
+
+Both embedding profiles lock `embedding.case_timeout_ms: 300000`, bound into
+their effective configuration hashes and applied to every selected case,
+including load. Existing non-embedding profile hashes/deadlines are unchanged.
+Each of E05/E06 encodes one image; E07 uses audio. The 224×224 PNG actually
+encodes at 432×432; 768×768 is the projector's warmup allocation. CPU peak
+footprint is approximately **1.4 GB**, with **1.9 GB max RSS**; the projector
+is not mmapped. Choose **≥6 GB RAM** devices for Firebase runs. The 300-second
+deadline accommodates slower CPUs but does not prove a particular phone passes.
+The prior Web audit's floor is not transferred to an unrun pack.
+
+All three fixture files have compiled hashes in `case_catalog.dart`. They are
+verified before every embedding case, bound through each case's fixture hash and
+`feature_id: embeddings`, and included in the canonical catalog hash. Missing or
+changed inputs/references cause ERROR; the reporter independently rechecks PASS
+metrics, capability/error/cancel evidence and verified projector preparation.
+Historical and other model catalogs keep their original inventories.
+
+```sh
+# Existing files are streamed and SHA256/size-verified; no copy or download.
+dart run tool/testing/validation.dart local --profile embedding-gguf-cpu \
+  --model /path/to/embeddinggemma-2-BF16.gguf \
+  --projector /path/to/mmproj-embeddinggemma-2-BF16.gguf \
+  --out .dart_tool/validation/runs/embedding-cpu
+# Omit supplied paths only when explicitly allowing the two locked downloads.
+
+# Build without submitting; Flutter assets include the reference and media.
+dart run tool/testing/validation.dart build --target android \
+  --profile embedding-gguf-cpu --out .dart_tool/validation/bundles/android-embedding
+dart run tool/testing/validation.dart build --target ios \
+  --profile embedding-gguf-metal --out .dart_tool/validation/bundles/ios-embedding
+```
+
+Use the normal Firebase plan/run/collect/cleanup procedure below, with one
+explicit device and the existing quota/budget receipts. For example, `plan
+--target firebase-android --config <receipt-config> --bundle
+.dart_tool/validation/bundles/android-embedding --out <new-plan>`; only a separately
+authorized `run --plan <new-plan>` submits. A device downloads and verifies both
+locked files under the existing ten-minute per-artifact deadline. iOS CPU uses
+`embedding-gguf-cpu`; Metal requires the usual bound native offload log. No
+Firebase device, Windows/Linux host or portable bundle is qualified by the Mac
+JIT smoke. LiteRT-LM has no pack profile/reference adapter, and Web builds reject
+this native pack before preparation; their pack coverage remains **NOT_RUN**
+with those explicit reasons. A directly invoked shared runner on Web journals
+all pack cases as NOT_RUN without loading a model.
+
 ### Focused selections and replay metadata
 
 The shared runner accepts three profile selections:
@@ -377,8 +492,9 @@ selections claiming the old catalog fail closed. A legacy report is not evidence
 newer extended selection ran. Focused selection requires schema 2.
 
 Thinking budgets, tool-bearing batching, expanded unsupported guards,
-multimodal/speech/embedding packs and full browser/device rotation remain
-subsequent qualification work. NPU requires the verified Android packaging
+multimodal/speech packs, embedding device qualification and full browser/device
+rotation remain subsequent work. The native embedding pack above now supplies
+its locked fixtures and executable cases. NPU requires the verified Android packaging
 described below; selecting `npu` alone cannot supply vendor libraries or evidence.
 Catalog 4 executes all currently selected core release cases. This does not
 qualify the broader planned feature packs or historical runs: existing journals

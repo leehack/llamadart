@@ -45,6 +45,9 @@
     "fixture_hash": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "feature_id": {
+      "type": "string"
     }
   },
   "allOf": [
@@ -121,6 +124,34 @@
           "catalog",
           "catalog_hash"
         ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "type",
+          "case_id"
+        ],
+        "properties": {
+          "type": {
+            "const": "case"
+          },
+          "case_id": {
+            "pattern": "^E[0-9]"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "feature_id",
+          "case_version",
+          "fixture_hash"
+        ],
+        "properties": {
+          "feature_id": {
+            "const": "embeddings"
+          }
+        }
       }
     }
   ]

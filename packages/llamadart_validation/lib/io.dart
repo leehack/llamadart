@@ -67,6 +67,26 @@ prepareDecisionAssets(
   );
 }
 
+/// Verifies the embedding projector through the same bounded artifact path.
+Future<({String path, Map<String, dynamic> evidence})>
+prepareEmbeddingProjector(
+  ValidationProfile profile,
+  Directory cache, {
+  String? suppliedPath,
+  Duration timeout = const Duration(minutes: 5),
+  http.Client? client,
+  Future<void> Function(Map<String, dynamic>)? onProgress,
+}) => _prepareArtifact(
+  profile,
+  profile.embeddingProjector,
+  cache,
+  artifact: 'embedding_projector',
+  suppliedPath: suppliedPath,
+  timeout: timeout,
+  client: client,
+  onProgress: onProgress,
+);
+
 Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
   ValidationProfile profile,
   Map<String, dynamic> lock,
