@@ -107,9 +107,19 @@ void main() {
           contains(HighRiskSurface.regressionPolicy),
         );
         expect(
-          assessHighRiskFiles(['${prefix}.github/check_docs.py']).surfaces,
+          assessHighRiskFiles(['$prefix.github/check_docs.py']).surfaces,
           contains(HighRiskSurface.regressionPolicy),
         );
+        for (final path in [
+          'test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
+          'test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
+          'test/integration/genkit/test_support/tool_schema_grammar_validation.dart',
+        ]) {
+          expect(
+            assessHighRiskFiles(['$prefix$path']).surfaces,
+            contains(HighRiskSurface.structuredOutput),
+          );
+        }
         expect(assessHighRiskFiles(['${prefix}README.md']).isHighRisk, isFalse);
         expect(
           assessHighRiskFiles(['${prefix}doc/usage.md']).isHighRisk,

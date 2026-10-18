@@ -146,7 +146,12 @@ bool _isStructuredOutput(String path) {
 }
 
 bool _isStructuredOutputEvidence(String path) {
-  return path ==
+  return const {
+        'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
+        'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
+        'packages/genkit_llamadart/test/integration/genkit/test_support/tool_schema_grammar_validation.dart',
+      }.contains(path) ||
+      path ==
           'test/integration/core/grammar/'
               'generated_tool_schema_grammar_test.dart' ||
       path == 'tool/testing/run_llama_cpp_chat_tests.sh' ||

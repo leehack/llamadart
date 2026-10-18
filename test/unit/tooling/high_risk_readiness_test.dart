@@ -1710,6 +1710,61 @@ void main() {
 
   group('candidate-tree evidence paths', () {
     test(
+      'only maintained compiled adapter suites can satisfy grammar axes',
+      () async {
+        const source =
+            'packages/genkit_llamadart/lib/src/integration/genkit/converters/constrained_tools.dart';
+        const compiled =
+            'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart';
+        const ordinary =
+            'packages/genkit_llamadart/test/integration/genkit/plugin/ordinary_test.dart';
+        final evidence =
+            jsonDecode(
+                  jsonEncode(structuredEvidence())
+                      .replaceAll(structuredSource, source)
+                      .replaceAll(compiledTest, compiled),
+                )
+                as Map<String, dynamic>;
+        evidence['surfaces'] = ['structuredOutput', 'backendRuntime'];
+        final changes = [
+          const RepositoryChange(
+            path: source,
+            kind: RepositoryChangeKind.modified,
+          ),
+          const RepositoryChange(
+            path: compiled,
+            kind: RepositoryChangeKind.modified,
+          ),
+          const RepositoryChange(
+            path: ordinary,
+            kind: RepositoryChangeKind.added,
+          ),
+        ];
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          changes,
+        ).evaluate(evidence: evidence, context: context);
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        evidence['affected_test_paths'].add(ordinary);
+        evidence['test_evidence'][ordinary] = testProof(source);
+        for (final axis in [
+          'compiled_grammar_acceptance',
+          'compiled_grammar_rejection',
+        ]) {
+          evidence['structured_output_evidence']['coverage'][axis] = [ordinary];
+        }
+        final result = await evaluate();
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('compiled production grammar test'));
+      },
+    );
+
+    test(
       'Genkit test and production paths bind exact-head evidence without bypasses',
       () async {
         const source =
