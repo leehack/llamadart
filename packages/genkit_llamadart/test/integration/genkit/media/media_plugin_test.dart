@@ -27,6 +27,40 @@ void main() {
   ) async => (await plugin.init()).single as api.Model<Map<String, dynamic>>;
 
   test(
+    'media model registration rejects empty names and nonpositive limits',
+    () {
+      final engine = _Recognizer();
+      final valid = LlamaDartSpeechToTextModel(name: 'asr', engine: engine);
+      expect(valid.engine, same(engine));
+      expect(valid.ownsEngine, isFalse);
+      for (final name in ['', '   ']) {
+        expect(
+          () => LlamaDartSpeechToTextModel(name: name, engine: engine),
+          throwsArgumentError,
+        );
+      }
+      for (final limit in [0, -1]) {
+        expect(
+          () => LlamaDartSpeechToTextModel(
+            name: 'asr',
+            engine: engine,
+            maxInputBytes: limit,
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          () => LlamaDartSpeechToTextModel(
+            name: 'asr',
+            engine: engine,
+            maxOutputBytes: limit,
+          ),
+          throwsArgumentError,
+        );
+      }
+    },
+  );
+
+  test(
     'Genkit batch recognition passes encoded bytes and adapter options',
     () async {
       final engine = _Recognizer();
