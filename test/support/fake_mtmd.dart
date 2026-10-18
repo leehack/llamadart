@@ -11,6 +11,22 @@ import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/mtmd_chunk_eval.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 
+/// Records a completed mtmd fallback lookup in the service's current directory.
+///
+/// A null [api] simulates absence without reopening a real library against fake
+/// projector pointers when backend initialization has discovered a directory.
+void setMtmdFallbackForTesting(LlamaCppService service, Object? api) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  final mirror = reflect(service);
+  Symbol private(String name) => MirrorSystem.getSymbol(name, owner);
+  mirror.setField(private('_mtmdFallbackLookupAttempted'), true);
+  mirror.setField(
+    private('_mtmdFallbackLookupDirectory'),
+    mirror.getField(private('_backendModuleDirectory')).reflectee,
+  );
+  mirror.setField(private('_mtmdFallbackApi'), api);
+}
+
 /// What a [FakeMtmd] with chunk-level functions presents its media part as.
 enum FakeMtmdChunk {
   /// A text chunk.
@@ -136,8 +152,7 @@ final class FakeMtmd {
       #helperLogSet: null,
     }).reflectee;
     _setPrivate('_mtmdPrimarySymbolsUnavailable', true);
-    _setPrivate('_mtmdFallbackLookupAttempted', true);
-    _setPrivate('_mtmdFallbackApi', _api);
+    setMtmdFallbackForTesting(service, _api);
   }
 
   late final Object _api;
@@ -260,7 +275,7 @@ final class FakeMtmd {
   /// library, as a native runtime that lacks them does, when [present] is
   /// false; puts this fake back when it is true.
   void setFallback({required bool present}) =>
-      _setPrivate('_mtmdFallbackApi', present ? _api : null);
+      setMtmdFallbackForTesting(service, present ? _api : null);
 
   /// Frees the marker text; call after the service is disposed.
   void dispose() => malloc.free(_marker);

@@ -12,6 +12,7 @@ For canonical full release notes, use:
 - Embed ordered text, images and audio with typed inputs and modality probes on
   native llama.cpp, native CPU LiteRT-LM (opt in with
   `liteRtLmEmbeddingEngine`) and compatible Web llama.cpp assets.
+- Fix multimodal projector loading in Windows `dart build cli` bundles.
 - Update the native llama.cpp runtime and Apple companion to v0.7.0-1;
   upgrade core and all Apple companions to 0.15.x together.
 - Aligned default WebGPU bridge assets to `v0.1.65` for image/audio
