@@ -1,0 +1,134 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Verify tag matches pubspec version
+        id: version
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "Publish must run from a vX.Y.Z tag, not $GITHUB_REF." >&2
+            exit 1
+          fi
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Publish tag must use the stable vX.Y.Z format: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PUBSPEC_VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+
+          if [ "$TAG_VERSION" != "$PUBSPEC_VERSION" ]; then
+            echo "Tag version $TAG_VERSION does not match pubspec version $PUBSPEC_VERSION" >&2
+            exit 1
+          fi
+
+          echo "version=$PUBSPEC_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve latest compatible dependencies
+        run: flutter pub upgrade
+
+      - name: Install pana
+        run: flutter pub global activate pana
+
+      - name: Cache real-model test artifacts
+        uses: actions/cache@v5
+        with:
+          path: .dart_tool/llamadart_test_models
+          key: ${{ runner.os }}-llamadart-test-models-${{ hashFiles('test/integration/genkit/test_support/real_model_test_support.dart') }}
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze package
+        run: dart analyze
+
+      - name: Verify pana score
+        run: flutter pub global run pana . --exit-code-threshold 0
+
+      - name: Run tests
+        run: dart test -x real-model
+
+      - name: Run real-model tests
+        env:
+          LLAMADART_AUTO_DOWNLOAD_TEST_MODELS: '1'
+        run: dart test -t real-model -j 1
+
+      - name: Verify publish readiness
+        run: flutter pub publish --dry-run
+
+  dependency-compatibility:
+    name: Dependency compatibility (lower bounds)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up minimum Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+
+      - name: Resolve lower-bound runtime dependencies
+        run: dart pub add crypto@3.0.7 genkit@1.0.0 llamadart@0.15.0 schemantic@1.0.0
+
+      - name: Analyze package
+        run: dart analyze
+
+      - name: Run fast tests
+        run: dart test -x real-model
+
+  publish:
+    needs:
+      - verify
+      - dependency-compatibility
+    permissions:
+      id-token: write
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+
+  release:
+    needs:
+      - verify
+      - dependency-compatibility
+      - publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
