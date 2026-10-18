@@ -78,6 +78,8 @@ def select(paths, force_full=False):
         if path.startswith(('.github/workflows/', '.github/actions/', 'tool/ci/', 'test/ci/')):
             full('workflow or selector change')
             jobs.add('artifact-contract')
+        elif path == 'website/docs/integrations/genkit.md':
+            jobs.update(('docs-check', 'docs-versions', 'genkit', 'genkit-lower-bounds'))
         elif path.startswith('packages/genkit_llamadart/'):
             jobs.update(('genkit', 'genkit-lower-bounds'))
         elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md', 'LICENSE')

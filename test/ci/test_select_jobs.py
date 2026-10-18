@@ -44,6 +44,13 @@ class SelectionTest(unittest.TestCase):
                                  {'analyze', 'web-chat-contract'})
                 self.assertEqual(plan['apps'], [])
 
+    def test_genkit_gateway_runs_package_snippet_compilation_with_docs(self):
+        plan = ci.select(['website/docs/integrations/genkit.md'])
+        self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                         {'docs-check', 'docs-versions', 'genkit', 'genkit-lower-bounds'})
+        self.assertEqual(plan['companions'], [])
+        self.assertEqual(plan['apps'], [])
+
     def test_genkit_is_independent_but_core_and_shared_changes_test_the_adapter(self):
         for path in ('lib/genkit_llamadart.dart', 'README.md', 'pubspec.yaml',
                      '.github/check_docs.py', 'test/contract_test.dart'):

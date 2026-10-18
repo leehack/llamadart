@@ -66,8 +66,10 @@ examples from README, guides, example READMEs and skills in one analyzer run.
 Work from `packages/genkit_llamadart` in the llamadart repository. The adapter
 resolves dependencies independently: root preparation and analysis exclude it.
 CI runs its published-dependency, checkout-core, browser and Dart 3.12 lower-bound
-lanes when the adapter, core or shared tooling changes. Real-model qualification
-is opt-in and can use existing local fixtures; ordinary CI downloads no models.
+lanes when the adapter, core or shared tooling changes. Ordinary native CI uses
+only the pinned tiny SmolLM2 chat and Jina embedding fixtures. Additional model
+families, media, LoRA and owner proofs remain opt-in and can use existing local
+fixtures.
 
 Release prep changes only this package's `pubspec.yaml` and `CHANGELOG.md`, on
 `release/genkit_llamadart-vX.Y.Z` or with `release-prep:genkit_llamadart`.
@@ -266,74 +268,40 @@ dependency checks.
 
 ## Releasing
 
-Merging a guarded release-preparation PR is the publication approval boundary.
-The merge creates the matching GitHub tag, dispatches the existing publish
-workflow, and waits for both pub.dev and the GitHub Release.
+The adapter keeps its own version, changelog and package-specific release prep.
+Follow the canonical
+[Genkit maintainer procedure](https://github.com/leehack/llamadart/blob/main/website/docs/maintainers/genkit-package.md)
+for publisher handoff, exact two-file prep scope, repository metadata, tags,
+retries and post-publication checks. Merging a reviewed release-prep PR is the
+publication approval boundary; a source migration is not a release.
 
-Before the first automated release, configure pub.dev admin settings for this
-package to allow GitHub Actions publishing from `leehack/genkit-llamadart`
-using the tag pattern `v{{version}}`.
+Prep branches use `release/genkit_llamadart-vX.Y.Z`; the optional package label
+is `release-prep:genkit_llamadart`. Tags use `genkit_llamadart-vX.Y.Z`.
+Core and Apple companion publication are independent. Do not use the old
+repository's generic version tags or release-prep routing here.
 
-Release flow:
-
-1. create a same-repository branch named `release/vX.Y.Z`
-2. update `version:` in `pubspec.yaml`
-3. promote `CHANGELOG.md` so its first heading is
-   `## X.Y.Z - YYYY-MM-DD`
-4. open a release-preparation PR that changes only `pubspec.yaml` and
-   `CHANGELOG.md`
-5. complete review and CI, then merge the PR
-
-The optional `release-prep` label can authorize a nonstandard same-repository
-branch. Ordinary merged PRs are detected and skipped.
-
-After a qualifying merge, the release-on-prep workflow:
-
-- verifies the branch or label gate and the two-file release diff
-- verifies the branch, package, and changelog versions agree
-- creates `vX.Y.Z` at the exact merge commit
-- explicitly dispatches the publish workflow using the tag
-- waits until the package version and GitHub Release are public
-
-The explicit dispatch lets the repository's short-lived `GITHUB_TOKEN` trigger
-the downstream workflow without a personal access token. Rerunning a failed
-release-on-prep job safely reuses a matching tag, and repairs a missing GitHub
-Release when the pub.dev version is already live. Matching lightweight and
-annotated tags are accepted; a tag pointing at another commit is rejected.
-An active publish run for the same tag is allowed to finish before a retry
-attempts another dispatch. Release runs are serialized per PR and publish runs
-per tag, so an ordinary PR cannot displace a queued release.
-
-Lookup errors stop automation: only HTTP 404 means a release surface is absent.
-Authentication, rate-limit, network, and server errors require investigation
-before retrying. Polling settings are checked before tag creation or dispatch.
-A failed workflow dispatch can be retried after fixing its
-cause; the matching tag is reused. The workflow still requires both public
-release surfaces before reporting success.
-
-The release-gate replay tests run the workflow's actual shell snippets against
-fake external commands. Run them with:
+Run the executable shell replay and staging regressions from the **repository
+root**, not this package directory:
 
 ```bash
-python3 -B -m unittest discover -s .github -p 'test_*.py'
-actionlint .github/workflows/*.yml
-shellcheck -s bash .github/release_helpers.sh
+python3 -B -m unittest discover -s test/ci -p 'test_*.py'
+dart test -p vm test/unit/tooling/genkit_release_routing_test.dart test/unit/tooling/genkit_package_staging_test.dart
+actionlint .github/workflows/release_genkit_on_prep_merge.yml .github/workflows/publish_genkit_pubdev.yml
+shellcheck -s bash tool/release/genkit_release_helpers.sh
 ```
 
-These tests do not create tags or publish packages. Verify GitHub token dispatch
-and pub.dev OIDC in the actual approved release workflow.
+The shell replay uses fake external commands and publishes nothing. POSIX
+release-shell replay stays on POSIX hosts; package staging and selector tests
+also run on Windows, with only elevated symlink fixtures skipped there.
 
-The publish workflow then:
-
-- verifies the tag matches `pubspec.yaml`
-- verifies latest-compatible dependencies in the full job and lower-bound
-  dependencies in a focused compatibility job
-- reruns formatting, analysis, pana, all tagged real-model tests, and
-  `# Choose a new staging directory outside the checkout:
-python3 ../../tool/release/stage_genkit_package.py /tmp/genkit-publish-check
-(cd /tmp/genkit-publish-check && dart pub get && dart pub publish --dry-run)`
-- publishes to pub.dev using GitHub OIDC trusted publishing
-- creates a GitHub release for the tag after a successful publish
+The publisher verifies the package-specific tag and dated changelog, latest
+compatible and lower-bound dependencies, format, analysis, docs, fast and tiny
+native model contracts, Pana and a standalone archive dry-run. It stages a copy
+outside ancestor archive exclusions and resolves hosted dependencies before
+publishing with GitHub OIDC, then creates the package-specific GitHub Release.
+No local override or lockfile ships. The owner checklist requires verification
+of the real tag, workflow, pub.dev archive and consumer before retiring the old
+repository; that retirement needs separate approval.
 
 ## Real inference-control qualification
 
