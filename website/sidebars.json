@@ -14,6 +14,15 @@
     },
     {
       "type": "category",
+      "label": "Integrations",
+      "items": [
+        "integrations/choosing-an-api",
+        "integrations/genkit",
+        "integrations/flutter-edge-ai"
+      ]
+    },
+    {
+      "type": "category",
       "label": "Tutorials",
       "items": [
         "tutorials/flutter-chat-app",
@@ -111,6 +120,7 @@
       "items": [
         "guides/template-engine-internals"
       ]
-    }
+    },
+    "maintainers/genkit-package"
   ]
 }

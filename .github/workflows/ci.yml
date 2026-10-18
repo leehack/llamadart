@@ -33,6 +33,8 @@ jobs:
       test-other-os: ${{ steps.select.outputs.test-other-os }}
       native-prompt-reuse-parity: ${{ steps.select.outputs.native-prompt-reuse-parity }}
       artifact-contract: ${{ steps.select.outputs.artifact-contract }}
+      genkit: ${{ steps.select.outputs.genkit }}
+      genkit-lower-bounds: ${{ steps.select.outputs.genkit-lower-bounds }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,6 +44,97 @@ jobs:
         run: python3 -m unittest discover -s test/ci -p 'test_*.py'
       - id: select
         run: python3 tool/ci/select_jobs.py select
+
+  genkit:
+    needs: changes
+    if: needs.changes.outputs.genkit == 'true'
+    name: Genkit (published and local core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - name: Verify published dependencies, docs and archive
+        working-directory: packages/genkit_llamadart
+        run: |
+          dart pub upgrade
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos
+          python3 -B -m unittest discover -s .github -p 'test_*.py'
+          python3 .github/check_docs.py
+          TMPDIR="$(mktemp -d)" dart test -x real-model
+      - name: Verify standalone adapter archive and score
+        run: |
+          python3 tool/release/stage_genkit_package.py "$RUNNER_TEMP/genkit-package"
+          cd "$RUNNER_TEMP/genkit-package"
+          dart pub get
+          dart pub publish --dry-run
+          dart pub global activate pana
+          dart pub global run pana . --exit-code-threshold 0
+      - name: Test adapter against checkout core
+        working-directory: packages/genkit_llamadart
+        run: |
+          printf 'dependency_overrides:\n  llamadart:\n    path: ../..\n' > pubspec_overrides.yaml
+          dart pub get
+          dart analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" dart test -x real-model
+      - name: Cache existing real-model fixtures
+        uses: actions/cache@v6
+        with:
+          path: packages/genkit_llamadart/.dart_tool/llamadart_test_models
+          key: ${{ runner.os }}-genkit-models-${{ hashFiles('packages/genkit_llamadart/test/integration/genkit/test_support/real_model_test_support.dart') }}
+      - name: Run existing native real-model contracts
+        working-directory: packages/genkit_llamadart
+        env:
+          LLAMADART_AUTO_DOWNLOAD_TEST_MODELS: '1'
+        run: TMPDIR="$(mktemp -d)" dart test -t real-model -j 1
+      - name: Verify browser contracts against checkout core
+        working-directory: packages/genkit_llamadart
+        run: >-
+          dart test -p chrome
+          test/api/runtime_owner/browser_guard_test.dart
+          test/integration/genkit/plugin/bidi_browser_guard_test.dart
+          test/integration/genkit/plugin/reasoning_history_test.dart
+          test/integration/genkit/converters/constrained_value_validation_test.dart
+          test/integration/genkit/media/browser_guards_test.dart
+          test/integration/genkit/plugin/runtime_capabilities_test.dart
+          test/integration/genkit/actions/model_action/inference_controls_test.dart
+          test/api/generation_config/inference_controls_codec_test.dart
+          test/integration/genkit/actions/scoring_action_test.dart
+          test/core/runtime/llama_engine_runtime_test.dart
+          test/integration/genkit/actions/embedder_action/multimodal_embedding_test.dart
+          test/integration/genkit/actions/embedder_action/multimodal_cancellation_test.dart
+          test/integration/genkit/converters/genkit_to_llama/rich_tool_schemas_test.dart
+          test/integration/genkit/actions/model_action/rich_tool_schemas_test.dart
+          test/integration/genkit/plugin/rich_tool_schema_loop_test.dart
+      - name: Remove local override
+        if: always()
+        working-directory: packages/genkit_llamadart
+        run: rm -f pubspec_overrides.yaml
+
+  genkit-lower-bounds:
+    needs: changes
+    if: needs.changes.outputs.genkit-lower-bounds == 'true'
+    name: Genkit (minimum Dart and lower bounds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+      - name: Resolve independent minimum dependencies
+        working-directory: packages/genkit_llamadart
+        run: dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.15.0 schemantic@1.0.0
+      - name: Analyze and test
+        working-directory: packages/genkit_llamadart
+        run: |
+          dart analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" dart test -x real-model
 
   analyze:
     needs: changes
@@ -580,6 +673,8 @@ jobs:
       - test-other-os
       - native-prompt-reuse-parity
       - artifact-contract
+      - genkit
+      - genkit-lower-bounds
     steps:
       - uses: actions/checkout@v7
         with:

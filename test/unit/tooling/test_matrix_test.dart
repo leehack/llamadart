@@ -10,6 +10,28 @@ import '../../../tool/testing/test_matrix.dart';
 
 void main() {
   test(
+    'Genkit matrix exposes independent contract native and release lanes',
+    () {
+      final contracts = testMatrixRows.singleWhere(
+        (row) => row.id == 'genkit-contracts',
+      );
+      final native = testMatrixRows.singleWhere(
+        (row) => row.id == 'genkit-native-cpu',
+      );
+      final release = testMatrixRows.singleWhere(
+        (row) => row.id == 'genkit-release',
+      );
+      expect(contracts.command, contains('genkit-lower-bounds'));
+      expect(contracts.covers, contains('published/local-core'));
+      expect(native.command, contains('LLAMADART_INTEGRATION_MODEL_PATH'));
+      expect(native.mode, contains('CPU'));
+      expect(release.command, contains('genkit_release_routing_test.dart'));
+      expect(release.command, contains('genkit_package_staging_test.dart'));
+      expect(release.mode, contains('no publication'));
+    },
+  );
+
+  test(
     'native multimodal embedding row selects the local reference scenario',
     () {
       final row = testMatrixRows.singleWhere(

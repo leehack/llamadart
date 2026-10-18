@@ -143,6 +143,7 @@ Pick targeted rows based on the touched surface:
 
 | Change area | Matrix rows to consider |
 | --- | --- |
+| Genkit adapter, its gateway docs, or independent publication | `genkit-contracts`, `genkit-native-cpu`, `genkit-release`; see [package maintenance](../website/docs/maintainers/genkit-package.md) |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
 | Generation cancel or engine stream forwarding | `native-prompt-cancel` |

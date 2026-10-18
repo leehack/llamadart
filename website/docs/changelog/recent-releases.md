@@ -18,6 +18,7 @@ For canonical full release notes, use:
   `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
 - Update the opt-in stable_diffusion runtime and Apple companion pin to
   `v0.2.0-4`, which rejects images after a detected Metal command-buffer failure.
+- Add integration setup guides and host the independently versioned Genkit adapter in this repository.
 
 ## 0.15.1
 

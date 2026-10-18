@@ -79,3 +79,9 @@ example/chat_app/linux/runner/my_application.cc @leehack
 
 ffigen_litert_lm_embedding.yaml @leehack
 lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
+
+# Independent Genkit publication and archive boundaries.
+/packages/genkit_llamadart/ @leehack
+/.pubignore @leehack
+/tool/release/ @leehack
+/test/ci/test_genkit_release.py @leehack

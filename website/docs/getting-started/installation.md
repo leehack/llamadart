@@ -4,6 +4,9 @@ sidebar_label: Installation
 description: Add llamadart to a Dart or Flutter app, set up Apple and web targets, verify the install, and customize the prebuilt native runtimes.
 ---
 
+For Genkit or Flutter Edge AI integration setup, see
+[Choose an integration](../integrations/choosing-an-api).
+
 ## Requirements
 
 - Dart SDK `>= 3.10.7`
