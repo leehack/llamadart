@@ -81,14 +81,19 @@ version alignment:
   bump every companion version, even one whose native pin did not move:
   pub.dev never changes a published version's constraint, and the release
   workflow skips a companion version that is already published.
-- Move a companion's native pin only in a core minor release. Earlier
-  companions of the same minor would otherwise still resolve beside the new
-  core and fail their Apple build. The only exception is an earlier pin the
-  core hook still accepts, such as a `llamaCppCompatibleAppleCompanionTags`
-  entry. With `--release-prep`, the verifier reads every published
-  companion's `<package>-v<version>` tag and fails when a companion whose
-  constraint admits the new core pins a tag that core rejects, so run it from
-  a checkout with full tag history.
+- A companion native repin can ship in a core patch only with verified
+  compatibility for every older companion whose published constraint admits
+  that patch. Keep accepted older artifacts explicit, with warning/limitations
+  and exact identity checks; otherwise use a new core minor.
+- With `--release-prep`, the verifier checks both published companion -> new
+  core and new companion -> published core pairings from full tag history.
+  Narrow a new companion's core lower bound past every core whose hook rejects
+  its pin, and bump the companion version: published constraints are immutable.
+  For SD `v0.2.0-4`, prepare companion `0.15.2` with
+  `llamadart: '>=0.15.2 <0.16.0'`. Core `0.15.2` retains explicitly qualified
+  SD `v0.2.0-3` companions with an upgrade warning and a Dart backstop for
+  recorded Metal backend failures. Updating core alone retains the old native
+  payload; use the new companion to obtain the native failure guard.
 - In the release-prep PR, bump only companion packages whose native pins or
   publishable package contents changed, move their accumulated `Unreleased`
   notes into the new version section, and keep unchanged companion package

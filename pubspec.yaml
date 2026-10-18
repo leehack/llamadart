@@ -37,6 +37,7 @@ dependencies:
   image: ^4.11.1
 
 dev_dependencies:
+  analyzer: '>=8.0.0 <15.0.0'
   coverage: 1.15.1
   ffigen: ^23.0.0
   lints: ^6.1.0

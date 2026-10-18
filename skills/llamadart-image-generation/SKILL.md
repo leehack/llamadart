@@ -49,6 +49,14 @@ description: >-
   `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and
   `0.0.2` with core `0.11.1` and `0.11.0`. Adding it opts the app into the
   runtime (about 37 MB per Apple target).
+Older Apple SD companions pinning `v0.2.0-3` remain supported by the
+patch-compatible core with an upgrade warning. Updating core alone keeps that
+native payload. The upcoming `0.15.2` companion requires core `>=0.15.2 <0.16.0`
+and selects `v0.2.0-4`, which adds native Metal failure propagation. The core
+also rejects recognized recorded Metal failures before returning images from
+older wrappers, even when display logging is off. This backstop does not
+prevent GPU watchdog resets or replace the newer native guard.
+
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64

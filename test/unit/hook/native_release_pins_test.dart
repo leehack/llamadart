@@ -206,6 +206,31 @@ void main() {
     expect(swift, contains(apple['sha256'] as String));
   });
 
+  test('Apple SD compatibility is bound to the verified artifact pair', () {
+    final proof =
+        jsonDecode(
+              File(
+                'test/fixtures/native/stable_diffusion_apple_compatibility.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(proof['previous_tag'], 'v0.2.0-3');
+    expect(proof['current_tag'], stableDiffusionReleaseTag);
+    expect(stableDiffusionCompatibleAppleCompanionTags.keys, ['v0.2.0-3']);
+    expect(
+      stableDiffusionAppleCompanionChecksums,
+      proof['xcframework_checksums'],
+    );
+    expect(proof['slices'], hasLength(5));
+    for (final row in proof['slices'] as List) {
+      expect(row['declarations_equal'], isTrue);
+      expect(row['exported_symbols_equal'], isTrue);
+      expect(row['exported_symbol_count'], 86);
+      expect(row['binary_byte_identical'], isFalse);
+    }
+    expect(stableDiffusionAppleCompanionVersion, '0.15.2');
+  });
+
   test('stable_diffusion cache version is the release tag without its v', () {
     expect(
       stableDiffusionReleaseTag,

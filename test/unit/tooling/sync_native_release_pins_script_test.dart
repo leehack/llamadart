@@ -13,6 +13,16 @@ import 'package:test/test.dart';
 const _pinsPath = 'lib/src/hook/native_release_pins.dart';
 
 void main() {
+  test('SD sync clears old compatibility proof on a pin change and keeps '
+      'same-tag refreshes immutable', () async {
+    final result = await Process.run('python3', [
+      '-m',
+      'unittest',
+      'tool.native.test_sync_native_release_pins.StableDiffusionAppleCompatibilitySyncTest',
+      'tool.native.test_sync_native_release_pins.StableDiffusionPinSyncTest',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
   test(
     'Apple companion sync retains and clears explicit compatibility entries',
     () async {

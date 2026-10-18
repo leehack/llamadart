@@ -1078,6 +1078,12 @@ def main() -> int:
                 "them.",
                 file=sys.stderr,
             )
+        pins_text = refresh_stable_diffusion_apple_contract(
+            pins_text,
+            current_stable_diffusion_release_tag(pins_text),
+            resolved_stable_diffusion_tag,
+            xcframework_checksum,
+        )
         pins_text = replace_one(
             pins_text,
             r"const stableDiffusionReleaseTag = '[^']+';",
@@ -1122,18 +1128,29 @@ def main() -> int:
             package_root = companion_package_root(
                 stable_diffusion_package_swift_path
             )
-            project_doc_dependency_versions[package_root.name] = (
-                update_companion_package_metadata(
-                    pending_writes,
-                    package_root,
-                    args.stable_diffusion_native_repo,
-                    resolved_stable_diffusion_tag,
-                    bump_version=(
-                        args.bump_companion_versions
-                        and swift_text != original_swift_text
-                    ),
-                )
+            companion_version = update_companion_package_metadata(
+                pending_writes,
+                package_root,
+                args.stable_diffusion_native_repo,
+                resolved_stable_diffusion_tag,
+                bump_version=(
+                    args.bump_companion_versions
+                    and swift_text != original_swift_text
+                ),
             )
+            project_doc_dependency_versions[package_root.name] = companion_version
+            if swift_text != original_swift_text:
+                first_release = (
+                    companion_version if args.bump_companion_versions
+                    else bump_patch_version(companion_version)
+                )
+                pins_text = replace_one(
+                    pins_text,
+                    r"const stableDiffusionAppleCompanionVersion = '[^']+';",
+                    f"const stableDiffusionAppleCompanionVersion = '{first_release}';",
+                    "native pins Apple SD companion version",
+                )
+
         summaries.append(
             "stable_diffusion -> "
             f"{args.stable_diffusion_native_repo}@{resolved_stable_diffusion_tag}"
@@ -2852,6 +2869,101 @@ def fetch_litert_lm_release_manifest(
     if not isinstance(manifest, dict):
         raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
     return manifest, hashlib.sha256(payload).hexdigest()
+
+
+def _native_pins_code_mask(source: str) -> str:
+    """Mask comments and literal strings while retaining source offsets."""
+    masked = list(source)
+    cursor = 0
+    while cursor < len(source):
+        start = cursor
+        if source.startswith("//", cursor):
+            end = source.find("\n", cursor)
+            cursor = len(source) if end < 0 else end
+        elif source.startswith("/*", cursor):
+            cursor += 2
+            depth = 1
+            while cursor < len(source) and depth:
+                if source.startswith("/*", cursor):
+                    depth += 1
+                    cursor += 2
+                elif source.startswith("*/", cursor):
+                    depth -= 1
+                    cursor += 2
+                else:
+                    cursor += 1
+            if depth:
+                raise ReleaseError("Unterminated comment in native pins")
+        else:
+            raw = source[cursor] in "rR" and source[cursor + 1:cursor + 2] in ("'", '"')
+            quote_at = cursor + 1 if raw else cursor
+            quote = source[quote_at:quote_at + 1]
+            if quote not in ("'", '"'):
+                cursor += 1
+                continue
+            delimiter = quote * 3 if source.startswith(quote * 3, quote_at) else quote
+            cursor = quote_at + len(delimiter)
+            while cursor < len(source):
+                if source.startswith(delimiter, cursor):
+                    cursor += len(delimiter)
+                    break
+                if not raw and source[cursor] == "\\":
+                    cursor += 2
+                    continue
+                if not raw and source[cursor] == "$":
+                    raise ReleaseError("Native pins require literal strings without interpolation")
+                if len(delimiter) == 1 and source[cursor] in "\r\n":
+                    raise ReleaseError("Unterminated string in native pins")
+                cursor += 1
+            else:
+                raise ReleaseError("Unterminated string in native pins")
+        for position in range(start, cursor):
+            if source[position] not in "\r\n":
+                masked[position] = " "
+    return "".join(masked)
+
+
+def refresh_stable_diffusion_apple_contract(
+    source: str, current: str, target: str, checksum: str | None
+) -> str:
+    """Bind compatibility to one exact pin; same-tag refreshes retain proof."""
+    pattern = r"^const stableDiffusionAppleCompanionChecksums = <String, String>\{(.*?)\};"
+    flags = re.DOTALL | re.MULTILINE
+    code = _native_pins_code_mask(source)
+    matches = list(re.finditer(pattern, code, flags=flags))
+    if not matches:
+        raise ReleaseError("Missing Apple SD checksum contract")
+    if len(matches) != 1:
+        raise ReleaseError("Could not uniquely find Apple SD checksum contract")
+    checksum_match = matches[0]
+    body = source[checksum_match.start(1):checksum_match.end(1)]
+    # Accept only the generated literal format, never examples in comments,
+    # computed values or duplicate keys that a partial regex could hide.
+    entry_pattern = r"'([^'\r\n]+)':\s*'([a-f0-9]{64})'\s*,"
+    if re.fullmatch(r"(?:\s*" + entry_pattern + r")*\s*", body) is None:
+        raise ReleaseError("Malformed Apple SD checksum contract; requalify the contract")
+    entries = re.findall(entry_pattern, body)
+    checksums = dict(entries)
+    if len(checksums) != len(entries):
+        raise ReleaseError("Malformed Apple SD checksum contract; duplicate tag")
+    compatibility_pattern = r"^const stableDiffusionCompatibleAppleCompanionTags = <String, String>\{.*?\};"
+    compatibility_matches = list(re.finditer(compatibility_pattern, code, flags=flags))
+    if not compatibility_matches:
+        raise ReleaseError("Missing Apple SD compatibility contract")
+    if len(compatibility_matches) != 1:
+        raise ReleaseError("Could not uniquely find Apple SD compatibility contract")
+    if current == target:
+        if checksum is not None and checksums.get(target) != checksum:
+            raise ReleaseError("Same-tag Apple SD checksum changed; requalify the contract")
+        return source
+    entry = f"\n  '{target}': '{checksum}',\n" if checksum is not None else ""
+    replacements = [
+        (compatibility_matches[0], "const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};"),
+        (checksum_match, "const stableDiffusionAppleCompanionChecksums = <String, String>{" + entry + "};"),
+    ]
+    for match, replacement in sorted(replacements, key=lambda item: item[0].start(), reverse=True):
+        source = source[:match.start()] + replacement + source[match.end():]
+    return source
 
 
 def normalize_stable_diffusion_release_tag(tag: str) -> str:

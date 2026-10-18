@@ -3,6 +3,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
 import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -316,8 +318,9 @@ List<PendingCompanionBump> checkCompanionSwiftPins(
 /// every release of [coreVersion]'s minor and nothing newer.
 ///
 /// Pub then refuses to pair a companion with a core minor it was not built
-/// for. The window is honest only because a core patch release never moves a
-/// companion's native pin; [checkPublishedCompanionPins] enforces that.
+/// for. Patch repins additionally require qualified older-companion support
+/// and a narrowed new-companion floor, checked in both directions by
+/// [checkPublishedCompanionPins] and [checkCompanionPublishedCorePins].
 String companionCoreConstraintFor(Version coreVersion) =>
     '>=${coreVersion.major}.${coreVersion.minor}.0 '
     '<${coreVersion.major}.${coreVersion.minor + 1}.0';
@@ -458,8 +461,191 @@ Map<String, Set<String>> coreAcceptedCompanionPins() => <String, Set<String>>{
     ...llamaCppCompatibleAppleCompanionTags.keys,
   },
   'llamadart_litert_lm_flutter': <String>{liteRtLmReleaseTag},
-  'llamadart_stable_diffusion_flutter': <String>{stableDiffusionReleaseTag},
+  'llamadart_stable_diffusion_flutter': <String>{
+    stableDiffusionReleaseTag,
+    ...stableDiffusionCompatibleAppleCompanionTags.keys,
+  },
 };
+
+/// Checks that each current companion excludes every published core whose
+/// hook rejects its native pin. This is the reverse of
+/// [checkPublishedCompanionPins]: a new companion must not resolve beside an
+/// older core merely because both share the same minor.
+List<String> checkCompanionPublishedCorePins(Directory repoRoot) {
+  final errors = <String>[];
+  final tags = _git(repoRoot, ['tag', '--list', 'v*'], errors);
+  if (tags == null) return errors;
+  if (tags.trim().isEmpty) {
+    return [
+      'No core release tags are checked out; fetch the full tag history '
+          'before checking companion dependency floors.',
+    ];
+  }
+  const contracts = <String, (String, String?)>{
+    'llamadart_llama_cpp_flutter': (
+      'llamaCppTag',
+      'llamaCppCompatibleAppleCompanionTags',
+    ),
+    'llamadart_litert_lm_flutter': ('liteRtLmReleaseTag', null),
+    'llamadart_stable_diffusion_flutter': (
+      'stableDiffusionReleaseTag',
+      'stableDiffusionCompatibleAppleCompanionTags',
+    ),
+  };
+  final publishedPins = <String, String>{};
+  final verifiedTags = <String>{};
+  final shallow = _git(repoRoot, [
+    'rev-parse',
+    '--is-shallow-repository',
+  ], errors);
+  if (shallow?.trim() != 'false') {
+    errors.add(
+      'Fetch full core tag history before checking companion dependency floors.',
+    );
+    return errors;
+  }
+  for (final companion in companionSwiftPins) {
+    final pubspec = _readFromRoot(repoRoot, companion.pubspecPath, errors);
+    final manifest = _readFromRoot(
+      repoRoot,
+      companion.swiftPackagePath,
+      errors,
+    );
+    if (pubspec == null || manifest == null) continue;
+    final constraint = companionCoreConstraint(pubspec).constraint;
+    final pin = companion.swiftTag.firstMatch(manifest)?.group(1);
+    if (constraint == null || pin == null) {
+      errors.add(
+        '${companion.package} has no verifiable core constraint/native pin.',
+      );
+      continue;
+    }
+    if (!(coreAcceptedCompanionPins()[companion.package]?.contains(pin) ??
+        false)) {
+      errors.add(
+        '${companion.package} current native pin is not accepted by the prepared core.',
+      );
+    }
+    final VersionConstraint allowed;
+    try {
+      allowed = VersionConstraint.parse(constraint);
+    } on FormatException {
+      errors.add(
+        '${companion.package} has an invalid core constraint: $constraint.',
+      );
+      continue;
+    }
+    for (final tag in const LineSplitter().convert(tags)) {
+      final match = RegExp(r'^v(\d+\.\d+\.\d+)$').firstMatch(tag);
+      if (match == null || !allowed.allows(Version.parse(match.group(1)!))) {
+        continue;
+      }
+      if (!verifiedTags.contains(tag)) {
+        final pubspec = _git(repoRoot, ['show', '$tag:pubspec.yaml'], errors);
+        final identity = pubspec == null
+            ? null
+            : RegExp(
+                r'^version:\s*(\S+)\s*$',
+                multiLine: true,
+              ).allMatches(pubspec).toList();
+        if (identity == null ||
+            identity.length != 1 ||
+            identity.single.group(1) != match.group(1)) {
+          errors.add('Published core $tag does not match its pubspec version.');
+          continue;
+        }
+        verifiedTags.add(tag);
+      }
+      final source =
+          publishedPins[tag] ??
+          _git(repoRoot, [
+            'show',
+            '$tag:lib/src/hook/native_release_pins.dart',
+          ], errors);
+      if (source == null) continue;
+      publishedPins[tag] = source;
+      final (variable, compatibility) = contracts[companion.package]!;
+      final accepted = _historicalCompanionPins(
+        source,
+        variable,
+        compatibility,
+        tag,
+        errors,
+      );
+      if (accepted == null) continue;
+      if (!accepted.contains(pin)) {
+        errors.add(
+          '${companion.package} pins ${companion.nativeRepo}@$pin, '
+          "but its constraint '$constraint' admits published core $tag "
+          'whose hook rejects that pin. Raise the companion core lower '
+          'bound past that release and bump its package version.',
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+Set<String>? _historicalCompanionPins(
+  String source,
+  String variable,
+  String? compatibility,
+  String tag,
+  List<String> errors,
+) {
+  // Parse historical code as data. Comments and string contents can contain
+  // plausible declarations or keys, but must never grant compatibility.
+  final parsed = parseString(content: source, throwIfDiagnostics: false);
+  if (parsed.errors.isNotEmpty) {
+    errors.add(
+      'Cannot read ${compatibility ?? variable} in published core $tag.',
+    );
+    return null;
+  }
+  final declarations = parsed.unit.declarations
+      .whereType<TopLevelVariableDeclaration>()
+      .expand((declaration) => declaration.variables.variables)
+      .toList();
+  final pins = declarations
+      .where((node) => node.name.lexeme == variable)
+      .toList();
+  final pin = pins.length == 1 ? pins.single.initializer : null;
+  if (pins.length != 1 ||
+      !pins.single.isConst ||
+      pin is! StringLiteral ||
+      pin.stringValue == null) {
+    errors.add('Cannot uniquely read $variable in published core $tag.');
+    return null;
+  }
+  final accepted = <String>{pin.stringValue!};
+  if (compatibility == null) return accepted;
+  final maps = declarations
+      .where((node) => node.name.lexeme == compatibility)
+      .toList();
+  if (maps.isEmpty) return accepted;
+  final map = maps.length == 1 ? maps.single.initializer : null;
+  if (maps.length != 1 || !maps.single.isConst || map is! SetOrMapLiteral) {
+    errors.add('Cannot read $compatibility in published core $tag.');
+    return null;
+  }
+  final keys = <String>{};
+  for (final element in map.elements) {
+    if (element is MapLiteralEntry) {
+      final key = element.key;
+      final value = element.value;
+      if (key is StringLiteral &&
+          key.stringValue != null &&
+          value is StringLiteral &&
+          value.stringValue != null &&
+          keys.add(key.stringValue!)) {
+        continue;
+      }
+    }
+    errors.add('Cannot read $compatibility in published core $tag.');
+    return null;
+  }
+  return accepted..addAll(keys);
+}
 
 /// Checks that every companion version release automation already published,
 /// read from its `<package>-v<version>` tag in [repoRoot], either declares a
@@ -769,6 +955,7 @@ void main(List<String> arguments) {
         errors.addAll(
           checkPublishedCompanionPins(Directory.current, coreVersion),
         );
+        errors.addAll(checkCompanionPublishedCorePins(Directory.current));
       }
     }
   }

@@ -850,6 +850,14 @@ final engine = await ImageGenerationEngine.load(model);
 - A `stable_diffusion` runtime older than `stable-diffusion-native`
   `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
+Older Apple SD companions pinning `v0.2.0-3` remain supported by the
+patch-compatible core with an upgrade warning. Updating core alone keeps that
+native payload. The upcoming `0.15.2` companion requires core `>=0.15.2 <0.16.0`
+and selects `v0.2.0-4`, which adds native Metal failure propagation. The core
+also rejects recognized recorded Metal failures before returning images from
+older wrappers, even when display logging is off. This backstop does not
+prevent GPU watchdog resets or replace the newer native guard.
+
 ## Errors
 
 | Exception | When |

@@ -150,9 +150,10 @@ analyze and the relevant tests before the final commit.
   `--release-prep`; resolve pending companion bumps in the release-prep PR.
 - Apple companions constrain `llamadart` to the core minor
   (`'>=M.m.0 <M.(m+1).0'`), so automation publishes the core before them. A
-  core minor bump re-releases every companion, and a companion native pin
-  moves only in a core minor release; the release docs verifier and
-  `tool/release/companion_pub_preflight.dart` enforce both.
+  core minor bump re-releases every companion. A patch repin needs explicitly
+  verified older-companion compatibility and a new companion floor excluding
+  older rejecting cores. Release prep checks both directions from full tag
+  history; see `website/docs/maintainers/native-and-web-sync.md`.
 - Companion versions share the core `MAJOR.MINOR` and move their patch
   independently: core `0.13.0` ships every companion at `0.13.0`. The release
   docs verifier enforces this from core `0.13.0`. A companion-only release
