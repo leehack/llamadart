@@ -20,10 +20,14 @@ or rebase away the source parent**. See the package's
 [provenance record](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/PROVENANCE.md).
 Old issue/release links intentionally remain in the original repository.
 The manifest's `repository` also retains the actual published 3.4.0 source until
-first release prep. Pana verifies only a repository's default branch, so the new
-package path cannot pass that check before this migration lands. This preserves
-the existing zero-tolerance score gate; source navigation and new issues already
-point here. The first new release must switch the manifest repository to
+first release prep. Pana checks a repository's default branch and requires its manifest to name
+that same repository. During same-repository PR validation, CI provides an
+isolated Git mirror of GitHub's exact tested merge commit for that source lookup.
+The staged manifest must match the candidate Git blob; its archive is not edited.
+Pana still checks public URL availability and requires every point. This validates
+candidate source metadata without claiming it is already on main. Fork PRs,
+main builds and publication keep the ordinary public default-branch check. Source
+navigation and new issues already point here. The first new release must switch the manifest repository to
 `https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart`.
 
 Native and bridge owners remain separate repositories. Flutter Edge AI's GGUF
