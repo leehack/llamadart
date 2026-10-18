@@ -9,8 +9,6 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Verify embedding Metal placement across graph reservations and vision/audio projector contexts.
-
 - Honor content embedding cancellation during capability checks and worker startup.
 
 - Prevent embeddings and other context changes from interrupting native text-to-speech, and release handle waits even when a speech reply fails.
