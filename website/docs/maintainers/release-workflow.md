@@ -59,6 +59,11 @@ version alignment:
 
 - Update `pubspec.yaml` version.
 - Update `CHANGELOG.md`.
+- Regenerate tracked path-dependency locks after the core bump. Workspace
+  preparation updates the chat-app lock; run `dart pub get` in
+  `packages/llamadart_validation` and `website/examples/observability` too.
+  A stale validation-harness lock changes during a desktop bundle build and
+  fails its clean-source provenance check.
 - Companion versions share the core's `MAJOR.MINOR`; their patch numbers move
   independently. Core `0.13.0` ships with every companion at `0.13.0`, and a
   later companion change within that minor bumps only the companion patch.
