@@ -87,6 +87,7 @@ class TokenOnlyEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -102,6 +103,7 @@ class TokenOnlyEngine implements ValidationEngine {
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   }) => throw StateError('not a text model');
 }
 
