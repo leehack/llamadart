@@ -23,9 +23,7 @@ Image generation is a Preview.
   yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9));
   the automatic attention and VAE settings were measured on an M4 Max and
   still need re-measuring on Android phones and iPhone
-  ([#805](https://github.com/leehack/llamadart/issues/805)); the chat app's
-  image end-to-end test has not been re-run on a physical iPhone since its
-  last fix ([#789](https://github.com/leehack/llamadart/issues/789)).
+  ([#805](https://github.com/leehack/llamadart/issues/805)).
 - Model licenses differ, including on commercial use; see
   [Model licenses](#model-licenses).
 :::
@@ -108,7 +106,7 @@ Pair `0.15.0` with core `0.15.x`, `0.14.0` with core `0.14.x`, `0.13.0` with cor
 
 ```yaml
 dependencies:
-  llamadart_stable_diffusion_flutter: ^0.15.0
+  llamadart_stable_diffusion_flutter: ^0.15.2
 ```
 
 Without it, `all` leaves the image runtime out of a Flutter iOS or macOS app
@@ -852,7 +850,7 @@ final engine = await ImageGenerationEngine.load(model);
 
 Older Apple SD companions pinning `v0.2.0-3` remain supported by the
 patch-compatible core with an upgrade warning. Updating core alone keeps that
-native payload. The upcoming `0.15.2` companion requires core `>=0.15.2 <0.16.0`
+native payload. The `0.15.2` companion requires core `>=0.15.2 <0.16.0`
 and selects `v0.2.0-4`, which adds native Metal failure propagation. The core
 also rejects recognized recorded Metal failures before returning images from
 older wrappers, even when display logging is off. This backstop does not

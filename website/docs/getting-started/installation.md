@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.1
+  llamadart: ^0.15.2
 ```
 
 Then resolve packages:
@@ -54,10 +54,10 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.1
+  llamadart: ^0.15.2
   llamadart_llama_cpp_flutter: ^0.15.1 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.15.1 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.15.1 # Apple image generation, opt-in
+  llamadart_stable_diffusion_flutter: ^0.15.2 # Apple image generation, opt-in
 ```
 
 Companion versions released with core `0.13.0` and later share its
@@ -113,7 +113,9 @@ universal `flutter build macos` prints
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
 
-Pair `llamadart_stable_diffusion_flutter` `0.15.0` with core `0.15.x`, `0.14.0` with core `0.14.x`,
+Use `llamadart_stable_diffusion_flutter` `0.15.2` with core `>=0.15.2 <0.16.0`.
+Locked `0.15.0`/`0.15.1` SD companions keep their older runtime and work with core
+`0.15.2` with an upgrade warning. Pair `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and
 `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core
 `0.10.0`; older cores, including `0.9.x`, ignore it. Adding it opts iOS and
