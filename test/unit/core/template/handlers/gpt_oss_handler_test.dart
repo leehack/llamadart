@@ -59,8 +59,24 @@ void main() {
       ]),
     );
     expect(
-      result.grammarTriggers.every((t) => t.value.contains('to=functions.')),
+      result.grammarTriggers
+          .where((t) => t.type == 0)
+          .every((t) => t.value.contains('to=functions.')),
       true,
+    );
+    final recipient = RegExp(
+      result.grammarTriggers.singleWhere((t) => t.type == 3).value,
+    );
+    expect(
+      recipient.hasMatch(' to=functions.weather<|channel|>commentary'),
+      true,
+    );
+    expect(recipient.hasMatch('Mention to=functions.weather in prose.'), false);
+    expect(
+      recipient.hasMatch(
+        '<|channel|>analysis<|message|>Quote to=functions.weather',
+      ),
+      false,
     );
   });
 
