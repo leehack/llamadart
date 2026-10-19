@@ -9,8 +9,8 @@ For canonical full release notes, use:
 
 ## 0.15.2
 
-- Preserve worker timeouts and model-load tuning during Web CPU recovery with
-  bridge assets `v0.1.66`.
+- Aligned default WebGPU bridge assets to `v0.1.66` to preserve worker
+  timeouts and model-load tuning during CPU recovery.
 - Reject late Web content-embedding results after cancellation or disposal.
 - Update the opt-in image runtime and Apple companion to `v0.2.0-4` and reject
   images after recorded Metal failures. Keep qualified older Apple companions
