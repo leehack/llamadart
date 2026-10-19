@@ -1,17 +1,16 @@
-## Unreleased
+## 0.15.2
 
-- Keep qualified older Apple SD companions working across patch updates, with an explicit upgrade warning; reject recorded Metal failures before returning images.
-
-- Reject late Web content-embedding results after cancellation or disposal.
 * Aligned the default WebGPU bridge assets to `v0.1.66` to preserve worker
-  timeout settings and model load tuning during CPU recovery. The bridge still
-  embeds upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, matching
-  native `v0.7.0-1`; Web LiteRT-LM remains `@litert-lm/core@0.18.0`.
-  Immutable Web asset manifest:
+  timeouts and model-load tuning during CPU recovery.
+  Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native
+  `v0.7.0-1`; Web LiteRT-LM stays `@litert-lm/core@0.18.0`.
+  Manifest SHA-256:
   `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
-* Update the opt-in stable_diffusion runtime and Apple companion pin to
-  `v0.2.0-4`, which rejects images after a detected Metal command-buffer failure.
-- Add integration setup guides and host the independently versioned Genkit adapter in this repository.
+- Reject late Web content-embedding results after cancellation or disposal.
+- Update the opt-in image runtime and Apple companion to `v0.2.0-4` and reject
+  images after recorded Metal failures. Keep qualified older Apple companions
+  working across patch upgrades with an upgrade warning.
+- Add setup guides for Genkit and Flutter Edge AI integrations.
 
 ## 0.15.1
 
