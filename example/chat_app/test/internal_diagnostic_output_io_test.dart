@@ -45,6 +45,8 @@ void main() {
   final profile = ValidationProfile.fromJson(
     jsonDecode(asset.readAsStringSync()) as Map<String, dynamic>,
   );
+  // These sealing fixtures predate in-flight evidence; they are not model runs.
+  const fixtureCatalogVersion = 5;
   final source = List.filled(40, 'a').join();
   final hook = List.filled(64, 'b').join();
   final binding = <String, dynamic>{
@@ -57,7 +59,7 @@ void main() {
     'source_dirty': true,
     'hook_sha256': hook,
     'litert_tag': 'v0.18.0',
-    'expected_case_ids': profile.caseIds,
+    'expected_case_ids': profile.caseIdsForCatalog(fixtureCatalogVersion),
   };
   final manifest = <String, dynamic>{
     'type': 'manifest',
@@ -79,21 +81,36 @@ void main() {
       'sha256': profile.modelHash,
       'bytes': profile.model['bytes'],
     },
-    'case_ids': profile.caseIds,
-    'catalog': profile.catalog,
-    'catalog_hash': jsonHash(profile.catalog),
+    'case_ids': profile.caseIdsForCatalog(fixtureCatalogVersion),
+    'catalog': profile.catalogForVersion(fixtureCatalogVersion),
+    'catalog_hash': jsonHash(profile.catalogForVersion(fixtureCatalogVersion)),
     'accelerator_evidence_required': profile.requiresAcceleratorProof,
   };
-  Future<void> complete(InternalDiagnosticOutput o, {bool fail = false}) async {
-    await o.emit(manifest);
+  Future<void> complete(
+    InternalDiagnosticOutput o, {
+    bool fail = false,
+    int catalogVersion = fixtureCatalogVersion,
+  }) async {
+    final catalog = profile.catalogForVersion(catalogVersion);
+    await o.emit({
+      ...manifest,
+      'case_ids': profile.caseIdsForCatalog(catalogVersion),
+      'catalog': catalog,
+      'catalog_hash': jsonHash(catalog),
+    });
     var seq = 0;
-    for (final id in profile.caseIds) {
+    for (final id in profile.caseIdsForCatalog(catalogVersion)) {
       await o.emit({
         'type': 'case',
         'sequence': seq++,
         'case_id': id,
-        'case_version': validationCase(id).version,
-        'fixture_hash': jsonHash(profile.caseFixtures(id)),
+        'case_version': validationCase(
+          id,
+          catalogVersion: catalogVersion,
+        ).version,
+        'fixture_hash': jsonHash(
+          profile.caseFixtures(id, catalogVersion: catalogVersion),
+        ),
         'status': fail && id == profile.caseIds.first ? 'FAIL' : 'PASS',
       });
     }
@@ -151,6 +168,21 @@ void main() {
     await complete(o);
     expect(o.finish().assertionsPassed, 'Synthetic report intact');
     expect((seal(o)['files'] as Map).length == 7, 'Preparation inventoried');
+  });
+  check('catalog 6 cannot seal synthetic PASS without in-flight evidence', (
+    root,
+  ) async {
+    final o = InternalDiagnosticOutput.open(root, binding);
+    await complete(o, catalogVersion: validationCatalogVersion);
+    final report = o.finish();
+    expect(
+      !report.assertionsPassed && seal(o)['complete'] == false,
+      'Current in-flight evidence must not be invented by sealing',
+    );
+    expect(
+      report.problems.contains('Invalid in-flight case evidence: C08.cancel'),
+      'The missing interruption proof is retained',
+    );
   });
   check('partial preparation failure stays incomplete', (root) async {
     final o = InternalDiagnosticOutput.open(root, binding);
