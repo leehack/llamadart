@@ -93,16 +93,14 @@ List<(String, AstNode, String)> _exports(
       continue;
     }
     // Class names moved from .name to .namePart between supported analyzer
-    // versions. Read only the AST declaration header; AST nodes still define
-    // member boundaries, so comments and local functions cannot invent APIs.
-    final keyword = declaration is ClassDeclaration ? 'class' : 'extension';
-    final match = RegExp(
-      '\\b$keyword\\s+([A-Za-z_]\\w*)',
-    ).firstMatch(declaration.toSource());
-    if (match == null) {
-      throw FormatException('Unnamed public declaration in $path');
-    }
-    final name = match.group(1)!;
+    // versions. The token after class is stable, and cannot come from metadata
+    // strings. Unnamed extensions export no named declaration here.
+    final name = switch (declaration) {
+      ClassDeclaration() => declaration.classKeyword.next!.lexeme,
+      ExtensionDeclaration() => declaration.name?.lexeme,
+      _ => null,
+    };
+    if (name == null) continue;
     if (!name.startsWith('_')) result.add((path, declaration, name));
   }
   for (final directive in unit.directives.whereType<ExportDirective>()) {

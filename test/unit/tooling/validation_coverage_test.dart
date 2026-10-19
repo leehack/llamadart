@@ -266,6 +266,31 @@ class LlamaEngine {
       expect(inventory.keys, isNot(contains(contains('invented'))));
     });
 
+    test('metadata strings cannot rename or hide exported declarations', () {
+      final reports = File(p.join(fixture.path, 'lib/capabilities.dart'));
+      reports.writeAsStringSync(
+        reports.readAsStringSync().replaceFirst(
+          'class ExtraCapabilities',
+          "@Deprecated('class Misleading')\nclass ExtraCapabilities",
+        ),
+      );
+      final engine = File(p.join(fixture.path, 'lib/engine.dart'));
+      engine.writeAsStringSync(
+        engine.readAsStringSync().replaceFirst(
+          'extension LlamaEngineCompletionExtension',
+          "@Deprecated('extension Misleading')\n"
+              'extension LlamaEngineCompletionExtension',
+        ),
+      );
+      expect(
+        validationSurfaces(fixture).keys,
+        containsAll([
+          'capability:ExtraCapabilities.supported',
+          'api:LlamaEngine.complete',
+        ]),
+      );
+    });
+
     test('removing the matrix or public export fails discovery', () {
       write('lib/llamadart.dart', "export 'engine.dart';\n");
       expect(() => validationSurfaces(fixture), throwsFormatException);
