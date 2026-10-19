@@ -1,12 +1,11 @@
 ---
 title: Maintain the Genkit package
-description: Independent dependency resolution, CI, publication routing and the owner checklist for moving genkit_llamadart.
+description: Source provenance, completed repository cutover, and independent maintenance and releases for genkit_llamadart.
 ---
 
-`packages/genkit_llamadart` is a separate published package, not an Apple
-runtime companion. It keeps version 3.4.0 through the source migration; only a
-later approved release bumps it. Its imports, license, tests, examples and
-consumer skills stay in that package. The dependency is one-way:
+`packages/genkit_llamadart` is a separately versioned published package, not an
+Apple runtime companion. Its imports, license, tests, examples and consumer
+skills stay in that package. The dependency is one-way:
 `genkit_llamadart` → `llamadart`. Never add Genkit to core dependencies, raise
 core's SDK floor for this adapter, or align its release number with core.
 
@@ -15,24 +14,40 @@ core's SDK floor for this adapter, or align its release number with core.
 The original source baseline is
 `leehack/genkit-llamadart@5b15fb9d9a794208f43b89723a8465e3d2473429`, published as
 3.4.0 on 2026-10-18. The subtree merge retains that original parent and full
-history. Preserve the import merge when landing this migration; **do not squash
-or rebase away the source parent**. See the package's
+history. Keep the import merge in history; **do not squash or rebase away the
+source parent**. See the package's
 [provenance record](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/PROVENANCE.md).
 Old issue/release links intentionally remain in the original repository.
-The manifest's `repository` also retains the actual published 3.4.0 source until
-first release prep. Pana checks a repository's default branch and requires its manifest to name
-that same repository. During same-repository PR validation, CI provides an
-isolated Git mirror of GitHub's exact tested merge commit for that source lookup.
-The staged manifest must match the candidate Git blob; its archive is not edited.
-Pana still checks public URL availability and requires every point. This validates
-candidate source metadata without claiming it is already on main. Fork PRs,
-main builds and publication keep the ordinary public default-branch check. Source
-navigation and new issues already point here. The first new release must switch the manifest repository to
+The manifest's `repository` now points to
 `https://github.com/leehack/llamadart/tree/main/packages/genkit_llamadart`.
+Source navigation and new issues also point here.
+
+Pana checks a repository's default branch and requires its manifest to name that
+same repository. During same-repository PR validation, CI provides an isolated
+Git mirror of GitHub's exact tested merge commit for that source lookup. The
+staged manifest must match the candidate Git blob; its archive is not edited.
+Pana still checks public URL availability and requires every point. This
+validates candidate source metadata without claiming it is already on main.
+Fork PRs, main builds and publication keep the ordinary public default-branch
+check.
 
 Native and bridge owners remain separate repositories. Flutter Edge AI's GGUF
 connector remains upstream; its pending embedding/upgrade work is not part of
 this move.
+
+## Completed repository cutover
+
+[Version 3.4.1 on pub.dev](https://pub.dev/packages/genkit_llamadart/versions/3.4.1)
+was the first release from this repository, published on 2026-10-18. The
+[`genkit_llamadart-v3.4.1` release](https://github.com/leehack/llamadart/releases/tag/genkit_llamadart-v3.4.1)
+is tagged at release-prep merge
+[`8be3082f64a82ce6d65c6f34847af573998b9beb`](https://github.com/leehack/llamadart/commit/8be3082f64a82ce6d65c6f34847af573998b9beb).
+The provenance record above retains both the original 3.4.0 archive digest and
+the first monorepo release's digest.
+
+The cutover retained the existing pub.dev package identity and separate release
+numbering. The core and Apple companion publishers were skipped for this adapter
+release.
 
 ## Local checks and CI
 
@@ -92,36 +107,37 @@ package resolves hosted dependencies without a local override, and uses
 `--latest=false` so the repository's latest core release stays selected.
 
 A generic core release label cannot publish a Genkit-only change. A Genkit tag
-matches neither core nor companion publisher. The source migration carries no
-release-prep label, new package version, tag or publication.
+matches neither core nor companion publisher. The source import did not bump
+the adapter version or publish a package; the separate release-prep merge
+approved publication.
 
-## Owner checklist before the first release from this repository
+## Maintainer checklist for future releases
 
-These are separately authorized owner actions; preparing this file changes no
-publisher settings, protected environment, credential or repository settings.
+Each release requires its own approval. Publisher settings, protected
+environments, credentials and repository protections remain owner-controlled.
 
-1. Review the migration's archive contents, extracted-package consumers,
+1. Review the candidate archive, extracted-package consumers,
    published/local-core/minimum/lower-bound tests, exact-head independent audit,
-   hosted CI and resolved review threads. Preserve the source-history merge.
-2. In the existing `genkit_llamadart` pub.dev admin settings, change the GitHub
-   publishing repository to `leehack/llamadart` and the pattern to
+   hosted CI and resolved review threads. Preserve the original source-history
+   merge.
+2. Verify the existing `genkit_llamadart` pub.dev automated publisher still uses
+   repository `leehack/llamadart` and pattern
    `genkit_llamadart-v{{version}}`. Retain any required protected environment
    and configure the publishing job's matching `environment` before
    approving publication. Verify owner permissions; do not create a replacement
    package, token or publisher.
 3. Confirm the existing repository token permits the new release workflow's
    reviewed tag/dispatch operations, and apply the owner's existing tag and
-   environment protections to the new prefix. Do not weaken any core protection.
+   environment protections to the Genkit prefix. Do not weaken any core protection.
    Automated publishing configuration follows
    [Dart's official procedure](https://dart.dev/tools/pub/automated-publishing).
-4. With separate release approval, prepare a new adapter version only and
-   update its manifest's `repository` to the new package directory above. Review
-   its two-file prep PR, then merge it to authorize package-specific automation.
-   Do not reuse 3.4.0 or manually push release tags.
+4. With separate release approval, prepare a new adapter version only. Keep
+   the canonical repository URL above and date the matching changelog entry.
+   Review its two-file prep PR, then merge it to authorize package-specific
+   automation. Never reuse a published version or manually push release tags.
 5. Verify exact tag-to-merge SHA, publisher verify/lower-bound/publish jobs,
    pub.dev version/archive SHA/metadata, clean hosted installation, package skills
    and GitHub Release. Confirm core/companion publishers did not run.
-6. Keep the old repository and its issues/releases intact until publication
-   from the new location has been verified. Retirement or archival needs later
-   explicit approval. Coordinate any open old issues by links; do not silently
-   transfer or close them.
+6. Preserve old repository history, issues and release links. Retirement or
+   archival needs separate explicit approval. Coordinate open old issues by
+   links; do not silently transfer or close them.
