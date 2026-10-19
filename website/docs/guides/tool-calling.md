@@ -23,7 +23,9 @@ output length. See the [owner runtime prerequisite](../maintainers/runtime-owner
 
 GPT-OSS tool frames following prose stay out of streamed answer text. Gemma 4
 preserves visible text after a tool envelope, including its whitespace, across
-split token delivery. Calls still arrive complete in the final chunk.
+split token delivery. GPT-OSS reasoning comes from channel frames; literal
+`<think>`/`</think>` text stays literal, including in tool arguments. Calls still
+arrive complete in the final chunk.
 
 ## Define a tool
 
