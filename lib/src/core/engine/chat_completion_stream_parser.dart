@@ -157,6 +157,22 @@ class ChatCompletionStreamParser {
     await for (final token in tokenStream) {
       buffer.write(token);
 
+      // GPT-OSS reasoning uses assistant channel frames. Generic thought tags
+      // are literal text, including when they occur inside tool arguments.
+      if (templateResult.format == ChatFormat.gptOss.index &&
+          toolCallOpening != null) {
+        final text = contentGate.add(token);
+        if (text.isNotEmpty) {
+          streamedContent += text;
+          yield _chunk(
+            completionId: completionId,
+            modelName: modelName,
+            delta: LlamaCompletionChunkDelta(content: text),
+          );
+        }
+        continue;
+      }
+
       if (streamingMode == _ToolStreamingMode.undecided) {
         undecidedPrefix += token;
         final decisionPrefix = _stripLeadingThinkingForToolDecision(

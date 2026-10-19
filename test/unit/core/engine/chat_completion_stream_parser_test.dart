@@ -571,6 +571,40 @@ void main() {
     });
 
     test(
+      'GPT-OSS keeps generic thought markers literal in framed streams',
+      () async {
+        for (final output in [
+          '<think>unfinished',
+          '<think>plan</thi',
+          'Before <think>literal</think> after.',
+          'Before </think> after.',
+          'Let me check.\n<|start|>assistant to=functions.weather'
+              '<|channel|>commentary<|message|>'
+              '{"city":"<think>literal</think>"}<|end|>',
+          '<|start|>assistant<|channel|>analysis<|message|>Plan.<|end|>'
+              '<|start|>assistant<|channel|>final<|message|>'
+              'Literal <think>text</think>.<|end|>',
+        ]) {
+          for (final forced in [false, true]) {
+            for (final enabled in [false, true]) {
+              for (final ending in ['natural', 'length', 'cancel']) {
+                await _expectStreamMatchesParse(
+                  ChatFormat.gptOss,
+                  output,
+                  forcedOpen: forced,
+                  enableThinking: enabled,
+                  atLimit: ending == 'length',
+                  cancelled: ending == 'cancel',
+                  openings: ['<think>', '</think>', '<|start|>assistant'],
+                );
+              }
+            }
+          }
+        }
+      },
+    );
+
+    test(
       'Gemma 4 preserves post-call text with thinking and disabled tools',
       () async {
         const call =
@@ -2712,12 +2746,16 @@ Future<void> _expectStreamMatchesParse(
   String? parser,
   List<String> openings = const [],
   bool tools = true,
+  bool enableThinking = true,
+  bool atLimit = false,
+  bool cancelled = false,
 }) async {
   final parsed = ChatTemplateEngine.parse(
     format.index,
     output,
     parseToolCalls: tools,
     thinkingForcedOpen: forcedOpen,
+    cancelled: cancelled,
     parser: parser,
     tools: tools ? [_weatherTool] : null,
   );
@@ -2731,9 +2769,11 @@ Future<void> _expectStreamMatchesParse(
         parser: parser,
       ),
       parseToolCallsEnabled: tools,
-      enableThinking: true,
+      enableThinking: enableThinking,
       modelName: 'test-model',
       completionId: 'stream-matches-parse',
+      stoppedAtLimit: () => atLimit,
+      cancelled: () => cancelled,
       tools: tools ? [_weatherTool] : null,
     ).toList();
 
@@ -2747,7 +2787,7 @@ Future<void> _expectStreamMatchesParse(
     );
     expect(
       chunks.map((chunk) => chunk.choices.single.delta.thinking ?? '').join(),
-      parsed.reasoningContent ?? '',
+      enableThinking ? parsed.reasoningContent ?? '' : '',
       reason: '${format.name} tools: $tools $tokens',
     );
     expect(
@@ -2756,14 +2796,19 @@ Future<void> _expectStreamMatchesParse(
           '${call.function?.name} ${call.function?.arguments}',
       ],
       [
-        for (final call in parsed.toolCalls)
-          '${call.function?.name} ${call.function?.arguments}',
+        if (!atLimit)
+          for (final call in parsed.toolCalls)
+            '${call.function?.name} ${call.function?.arguments}',
       ],
       reason: '$tokens',
     );
     expect(
       chunks.last.choices.single.finishReason,
-      parsed.hasToolCalls ? 'tool_calls' : 'stop',
+      atLimit
+          ? 'length'
+          : parsed.hasToolCalls
+          ? 'tool_calls'
+          : 'stop',
     );
   }
 }

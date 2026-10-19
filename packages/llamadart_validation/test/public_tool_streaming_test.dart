@@ -147,6 +147,22 @@ void main() {
           expect(plain['tool_call_deltas'], isEmpty);
           expect(plain['finish_reasons'], ['stop']);
           expect(backend.request!.grammar, isNull);
+          if (sample.family == 'GPT-OSS') {
+            for (final literal in ['<think>unfinished', '<think>plan</thi']) {
+              backend.output = literal;
+              final reply = await adapter.generate(
+                'Quote this text',
+                profile,
+                tools: [tool],
+                toolChoice: ToolChoice.auto,
+                enableThinking: true,
+              );
+              expect(reply['content'], literal);
+              expect(reply['thinking'], isEmpty);
+              expect(reply['tool_call_deltas'], isEmpty);
+              expect(reply['finish_reasons'], ['stop']);
+            }
+          }
         },
       );
     }
