@@ -2,6 +2,10 @@
 
 A Flutter chat application demonstrating real-world usage of llamadart with UI.
 
+Run from a repository checkout. This app and its private validation harness are
+excluded together from the core pub archive; clone
+https://github.com/leehack/llamadart before following the setup commands.
+
 ## Fresh macOS builds
 
 Runner already targets macOS 14.0. If a first SwiftPM build instead reports a

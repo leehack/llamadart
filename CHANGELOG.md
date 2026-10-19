@@ -1,3 +1,9 @@
+## Unreleased
+
+- Refresh media-embedding examples, migration links and upgrade guidance.
+- Keep the chat app and private validation harness together in repository checkouts, outside the core pub archive.
+- Require validation coverage or tracked exemptions for public capabilities, and run tooling checks for Markdown changes.
+
 ## 0.15.2
 
 * Aligned the default WebGPU bridge assets to `v0.1.66` to preserve worker

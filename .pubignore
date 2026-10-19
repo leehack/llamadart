@@ -64,3 +64,8 @@ AGENTS.md
 
 # Independently published packages and their dependency graphs.
 /packages/genkit_llamadart/
+
+# The chat app imports the private validation harness. Keep both checkout-only
+# rather than shipping an example whose local dependency cannot resolve.
+/packages/llamadart_validation/
+/example/chat_app/

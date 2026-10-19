@@ -107,6 +107,12 @@ media turns.
 
 ## Capability checks
 
+Media embeddings use a separate contract from chat input. Use
+`embedContent` / `embedContentBatch` with ordered `LlamaEmbeddingInput` parts,
+and probe `await engine.embeddingCapabilities`. Chat vision/audio support does
+not imply embedding support. See [Embeddings](./embeddings#ordered-content-inputs)
+for model, projector, CPU/backend and batching requirements.
+
 ```dart
 final capabilities = await engine.capabilities;
 final supportsVision = capabilities.supportsVision;

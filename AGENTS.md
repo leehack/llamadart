@@ -104,6 +104,10 @@ dart test -p chrome --exclude-tags local-only
 - Tests close the ports, streams and controllers they open.
 - A public capability or platform-support change updates README, website
   docs/support matrix, examples and changelog in the same PR.
+- Map public capability changes to a validation pack or a reasoned, issue-linked
+  exemption in `packages/llamadart_validation/assets/capability_coverage.json`.
+  Run `dart test -p vm test/unit/tooling/validation_coverage_test.dart`;
+  see the private harness README for the coverage/qualification distinction.
 - `skills/` is published to consumers' coding agents: a public API or behavior
   change updates the affected `SKILL.md` in the same PR
   (`test/unit/tooling/package_skills_test.dart` analyzes its examples).
@@ -219,5 +223,5 @@ constraint or trade-off), never what the code does.
 When a task reveals a durable rule that changes agent behavior and that no
 tool, test or linked doc covers, add it here. Point to docs instead of copying
 them, delete stale rules, and leave out incident history. Tests pin some
-phrases here, and docs-only CI does not run them: after editing, run
+phrases here; Markdown changes select the root VM tooling checks. After editing, run
 `dart test -p vm test/unit/tooling/`.

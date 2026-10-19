@@ -37,6 +37,11 @@ dart run bin/llamadart_decision_example.dart --json
 ```
 
 ### 2. Chat App (`chat_app/`)
+
+This app and its private validation harness run from a
+[repository checkout](https://github.com/leehack/llamadart/tree/main/example/chat_app),
+not the core pub archive. Clone the repository before following these commands.
+
 A Flutter UI application showing:
 - Real-time chat interface
 - Model configuration

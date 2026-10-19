@@ -2,6 +2,8 @@
 
 This document covers the major breaking upgrade paths.
 
+<a id="014x-to-0150-upgrade-guide"></a>
+
 ## `0.14.x` -> `0.15.0`: upgrade guide
 
 Upgrade core and every Apple companion used by the app to `0.15.x` together.

@@ -35,9 +35,6 @@ VALIDATION_IMPORTED_CHAT_APP_FILES = (
     'example/chat_app/integration_test/support/image_settings_evidence.dart',
 )
 
-TOOLING_PINNED_DOCS = ('AGENTS.md', 'CONTRIBUTING.md')
-
-
 def inventory(raw):
     """Return both endpoints of renames/copies and deleted paths; reject truncation."""
     parts = raw.decode('utf-8', errors='strict').split('\0')
@@ -86,9 +83,6 @@ def select(paths, force_full=False):
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
               or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):
             jobs.update(('docs-check', 'docs-versions'))
-            if path in TOOLING_PINNED_DOCS or path.startswith('doc/'):
-                # test/unit/tooling pins wording in these files.
-                jobs.add('test-linux-coverage')
         elif any(path.startswith('packages/' + name + '/') for name in COMPANIONS):
             name = path.split('/')[1]
             companions.add(name)
@@ -129,6 +123,11 @@ def select(paths, force_full=False):
             jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))
         else:
             full('shared/runtime or unclassified path: ' + path)
+        # Root tooling scans all maintained Markdown, including independent
+        # package docs and the Genkit gateway handled above. Keep this additive
+        # so a specialized path cannot bypass those repository-wide contracts.
+        if path.endswith('.md'):
+            jobs.add('test-linux-coverage')
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.
     if 'test-linux-coverage' in jobs and 'web-chat-contract' in jobs:

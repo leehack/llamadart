@@ -16,8 +16,7 @@ spec.loader.exec_module(ci)
 
 class SelectionTest(unittest.TestCase):
     def test_documentation_omits_native_and_bundles(self):
-        for path in ('README.md', 'CHANGELOG.md', 'website/pubspec.lock',
-                     'packages/llamadart_validation/README.md'):
+        for path in ('website/pubspec.lock', 'website/sidebars.json'):
             with self.subTest(path=path):
                 plan = ci.select([path])
                 self.assertEqual({j for j, v in plan['jobs'].items() if v},
@@ -25,15 +24,34 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
 
-    def test_docs_pinned_by_tooling_tests_run_root_vm_tests(self):
+    def test_every_maintained_markdown_path_runs_root_tooling_tests(self):
         for path in ('AGENTS.md', 'CONTRIBUTING.md', 'doc/testing_matrix.md',
-                     'doc/pr_branch_writer_inventory.md'):
+                     'doc/pr_branch_writer_inventory.md', 'README.md', 'CHANGELOG.md',
+                     'website/docs/guides/embeddings.md',
+                     'website/versioned_docs/version-0.15.2/intro.md',
+                     'packages/llamadart_validation/README.md',
+                     'packages/llamadart_stable_diffusion_flutter/README.md',
+                     'example/chat_app/README.md'):
             with self.subTest(path=path):
                 plan = ci.select([path])
-                self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                                 {'docs-check', 'docs-versions', 'test-linux-coverage'})
+                self.assertTrue(plan['jobs']['test-linux-coverage'])
+                self.assertTrue(plan['jobs']['docs-check'])
                 self.assertEqual(plan['apps'], [])
                 self.assertEqual(plan['desktops'], [])
+
+        # Unclassified Markdown retains the conservative full fallback too.
+        self.assertTrue(ci.select(['skills/llamadart-chat/SKILL.md'])
+                        ['jobs']['test-linux-coverage'])
+
+    def test_deleted_and_renamed_markdown_keep_tooling_and_specialized_jobs(self):
+        for raw in (b'D\0website/docs/integrations/genkit.md\0',
+                    b'R100\0packages/genkit_llamadart/README.md\0website/docs/new.md\0'):
+            plan = ci.select(ci.inventory(raw))
+            self.assertTrue(plan['jobs']['test-linux-coverage'])
+            self.assertTrue(plan['jobs']['genkit'])
+            self.assertTrue(plan['jobs']['genkit-lower-bounds'])
+            self.assertEqual(plan['apps'], [])
+            self.assertEqual(plan['desktops'], [])
 
     def test_chat_app_vm_only_tests_select_chat_app_tests_only(self):
         for path in ('example/chat_app/test/unit_test.dart',
@@ -47,7 +65,8 @@ class SelectionTest(unittest.TestCase):
     def test_genkit_gateway_runs_package_snippet_compilation_with_docs(self):
         plan = ci.select(['website/docs/integrations/genkit.md'])
         self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                         {'docs-check', 'docs-versions', 'genkit', 'genkit-lower-bounds'})
+                         {'docs-check', 'docs-versions', 'test-linux-coverage',
+                          'genkit', 'genkit-lower-bounds'})
         self.assertEqual(plan['companions'], [])
         self.assertEqual(plan['apps'], [])
 
@@ -55,8 +74,10 @@ class SelectionTest(unittest.TestCase):
         for path in ('lib/genkit_llamadart.dart', 'README.md', 'pubspec.yaml',
                      '.github/check_docs.py', 'test/contract_test.dart'):
             plan = ci.select(['packages/genkit_llamadart/' + path])
-            self.assertEqual({j for j, v in plan['jobs'].items() if v},
-                             {'genkit', 'genkit-lower-bounds'})
+            expected = {'genkit', 'genkit-lower-bounds'}
+            if path.endswith('.md'):
+                expected.add('test-linux-coverage')
+            self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
             self.assertEqual(plan['companions'], [])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])

@@ -12,6 +12,7 @@
 - [ ] Unsupported platform/option combinations fail loudly with actionable diagnostics or are clearly documented as unavailable.
 - [ ] Public API docs, README/website docs, examples, support matrices, and changelog entries are updated where relevant.
 - [ ] Regression coverage covers the original issue plus key negative/version-skew paths where relevant.
+- [ ] Public capability changes update the validation coverage registry with a pack or a reasoned, issue-linked exemption; inventory checks pass (or N/A with scope).
 - [ ] Security/privacy review completed: no secrets, bearer tokens, signed URLs, or raw secret-bearing paths leak through logs, cache keys, metadata, errors, or snapshots.
 - [ ] Follow-up work that is useful but not required for this PR is tracked in GitHub Issues, or explicitly marked "None" above.
 

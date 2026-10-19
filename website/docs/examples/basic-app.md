@@ -24,6 +24,10 @@ Variants:
 # Embeddings (downloads embeddinggemma-300M-Q8_0.gguf, 334 MB)
 dart run bin/llamadart_embedding_example.dart -i "hello world" -i "rag"
 
+# LiteRT-LM media embeddings: supply a compatible embedding bundle and image
+# (CPU only; no automatic model download)
+dart run bin/llamadart_litert_embedding_example.dart model.litertlm image.png
+
 # Retrieval: embeddings stored and searched in SQLite with sqlite_vector
 dart run bin/llamadart_sqlite_vector_example.dart \
   -q "How do I improve embedding throughput?" \
@@ -49,7 +53,8 @@ dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
   sample tool call (`--tool-test`) in the chat CLI
   ([LoRA adapters](../guides/lora-adapters),
   [Tool calling](../guides/tool-calling)).
-- Single and batched embeddings, and query-versus-candidate probes
+- Single and batched embeddings, query-versus-candidate probes, and ordered
+  text/image embeddings through a compatible LiteRT-LM CPU embedding engine
   ([Embeddings](../guides/embeddings)).
 - Local retrieval with SQLite vector search, exact or quantized, with a
   recall check against exact search ([Embeddings](../guides/embeddings)).
@@ -70,6 +75,6 @@ cd example/basic_app
 dart test
 ```
 
-Full options: every flag of the five CLIs, the retrieval result fields and
+Full options, the retrieval result fields and
 the decision-model head options are in the
 [example README](https://github.com/leehack/llamadart/tree/main/example/basic_app).

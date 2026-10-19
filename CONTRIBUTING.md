@@ -124,6 +124,16 @@ Always verify paths in your environment before using them.
 
 ## 🧪 Testing
 
+When adding or changing a public capability, update a validation feature pack
+or record a concrete exemption and tracking issue in
+[`capability_coverage.json`](packages/llamadart_validation/assets/capability_coverage.json).
+Run `dart test -p vm test/unit/tooling/validation_coverage_test.dart`. The test
+discovers exported engine APIs, capability reports and runtime feature-matrix
+rows; CI rejects missing/stale mappings and invalid pack/case/profile bindings.
+Its output is the current exemption inventory. A mapping records an obligation,
+not model, backend or device qualification. See the
+[validation runbook](doc/cross_platform_validation.md) for execution evidence.
+
 We take testing seriously. CI enforces **>=70% line coverage on maintainable `lib/` code**. Auto-generated files are excluded when they are marked with `// coverage:ignore-file`.
 
 The authoritative contributor test matrix lives in
