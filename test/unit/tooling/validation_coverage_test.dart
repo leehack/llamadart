@@ -252,6 +252,21 @@ class HiddenCapabilities { final bool ignored = false; }
       },
     );
 
+    test('runtime matrix discovery is identical with LF and CRLF', () {
+      final matrix = File(
+        p.join(fixture.path, 'website/docs/platforms/support-matrix.md'),
+      );
+      final content =
+          '${matrix.readAsStringSync()}'
+          '\n## Other section\n'
+          '| Not a runtime feature | No | No | No | No |\n';
+      matrix.writeAsStringSync(content);
+      final expected = validationSurfaces(fixture);
+      matrix.writeAsStringSync(content.replaceAll('\n', '\r\n'));
+      expect(validationSurfaces(fixture), expected);
+      expect(expected, isNot(contains('matrix:Not a runtime feature')));
+    });
+
     test('comments and nested local functions cannot create public APIs', () {
       write('lib/engine.dart', '''
 // class FakeCapabilities { final bool invented = true; }

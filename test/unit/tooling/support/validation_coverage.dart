@@ -42,7 +42,9 @@ Map<String, String> validationSurfaces(Directory root) {
     }
   }
   final matrixPath = 'website/docs/platforms/support-matrix.md';
-  final matrix = File(p.join(root.path, matrixPath)).readAsStringSync();
+  final matrix = File(
+    p.join(root.path, matrixPath),
+  ).readAsStringSync().replaceAll('\r\n', '\n');
   final section = matrix.split('## Features by runtime\n');
   if (section.length != 2) {
     throw const FormatException('Missing or duplicate Features by runtime');
