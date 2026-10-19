@@ -94,3 +94,4 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 /test/unit/tooling/validation_coverage_test.dart @leehack
 /test/unit/tooling/support/validation_coverage.dart @leehack
 /test/ci/test_core_archive.py @leehack
+/test/unit/tooling/core_archive_test.dart @leehack
