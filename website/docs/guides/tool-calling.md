@@ -21,8 +21,10 @@ LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do not
 execute calls automatically based on that value or infer truncation from
 output length. See the [owner runtime prerequisite](../maintainers/runtime-ownership#litert-lm-termination-reporting).
 
-With tools enabled, GPT-OSS tool frames following prose stay out of streamed
-answer text. Its reasoning comes from channel frames; literal `<think>`/`</think>`
+GPT-OSS channel and assistant frames wait for final parsing, including headers
+continued from the model's prompt, with or without tools. Ordinary prose streams
+normally, and `ToolChoice.auto` allows text without a call.
+Its reasoning comes from channel frames; literal `<think>`/`</think>`
 text stays literal, including in tool arguments. Gemma 4 preserves visible text
 after a tool envelope, including its whitespace, across split token delivery.
 Calls still arrive complete in the final chunk.

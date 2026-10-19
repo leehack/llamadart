@@ -82,6 +82,13 @@ void main() {
       content: 'Let me check.',
     ),
     (
+      family: 'GPT-OSS header continuation',
+      marker: '<|channel|>',
+      output:
+          '<|channel|>analysis to=functions.weather<|message|>{"city":"Paris"}<|end|>',
+      content: '',
+    ),
+    (
       family: 'Gemma 4',
       marker: '<|turn><turn|>',
       output:
@@ -135,7 +142,10 @@ void main() {
               expect(backend.request!.grammar, isNotEmpty);
             }
           }
-          backend.output = 'Hello Paris.';
+          backend.output = sample.family.startsWith('GPT-OSS')
+              ? '<|channel|>analysis<|message|>Plan.<|end|>'
+                    '<|start|>assistant<|channel|>final<|message|>Hello Paris.'
+              : 'Hello Paris.';
           final plain = await adapter.generate(
             'Hello',
             profile,
@@ -144,6 +154,7 @@ void main() {
             enableThinking: false,
           );
           expect(plain['content'], 'Hello Paris.');
+          expect(plain['thinking'], '');
           expect(plain['tool_call_deltas'], isEmpty);
           expect(plain['finish_reasons'], ['stop']);
           expect(backend.request!.grammar, isNull);

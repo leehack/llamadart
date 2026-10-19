@@ -112,12 +112,13 @@ class ChatCompletionStreamParser {
     final partialParseStopwatch = Stopwatch()..start();
     final gatedOpening = _toolCallOpeningFor(templateResult);
     final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
+    final isGptOss = templateResult.format == ChatFormat.gptOss.index;
     final isQwen3CoderXml =
         templateResult.format == ChatFormat.qwen3CoderXml.index;
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
-      toolCallOpening ?? _noOpening,
+      (isGptOss ? gatedOpening : toolCallOpening) ?? _noOpening,
       trimsLeading: !pegParsedWithoutTools,
     );
     final reasoningGate = _ReasoningGate(
@@ -159,8 +160,7 @@ class ChatCompletionStreamParser {
 
       // GPT-OSS reasoning uses assistant channel frames. Generic thought tags
       // are literal text, including when they occur inside tool arguments.
-      if (templateResult.format == ChatFormat.gptOss.index &&
-          toolCallOpening != null) {
+      if (isGptOss) {
         final text = contentGate.add(token);
         if (text.isNotEmpty) {
           streamedContent += text;
