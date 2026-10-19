@@ -109,6 +109,7 @@ class GptOssHandler extends ChatTemplateHandler {
                 type: 0,
                 value: '<|start|>assistant to=functions.',
               ),
+              GrammarTrigger(type: 3, value: r'^( to=functions\.)[\s\S]*'),
             ]
           : const <GrammarTrigger>[],
     );
@@ -267,6 +268,7 @@ class GptOssHandler extends ChatTemplateHandler {
     final converter = JsonSchemaConverter();
     final roleRules = <String>[];
     final channelRules = <String>[];
+    final recipientRules = <String>[];
 
     converter.rules['channel'] =
         '${ToolCallGrammarUtils.literal('commentary')} | ${ToolCallGrammarUtils.literal('analysis')}';
@@ -286,16 +288,26 @@ class GptOssHandler extends ChatTemplateHandler {
       converter.rules[channelRule] =
           '${ToolCallGrammarUtils.literal('<|channel|>')} channel ${ToolCallGrammarUtils.literal(' to=functions.${tool.name}<|message|>')} space $argsRule ${ToolCallGrammarUtils.literal('<|end|>')}';
       channelRules.add(channelRule);
+
+      final recipientRule = 'tool-$i-recipient-call';
+      converter.rules[recipientRule] =
+          '${ToolCallGrammarUtils.literal(' to=functions.${tool.name}<|channel|>')} channel ${ToolCallGrammarUtils.literal('<|message|>')} space $argsRule ${ToolCallGrammarUtils.literal('<|end|>')}';
+      recipientRules.add(recipientRule);
     }
 
     final buffer = StringBuffer()
       ..writeln('tool-call-role ::= ${roleRules.join(' | ')}')
-      ..writeln('tool-call-channel ::= ${channelRules.join(' | ')}');
+      ..writeln('tool-call-channel ::= ${channelRules.join(' | ')}')
+      ..writeln('tool-call-recipient ::= ${recipientRules.join(' | ')}');
 
     if (toolCallsRequired) {
-      buffer.writeln('root ::= tool-call-role | tool-call-channel');
+      buffer.writeln(
+        'root ::= tool-call-role | tool-call-channel | tool-call-recipient',
+      );
     } else {
-      buffer.writeln('root ::= tool-call-role | tool-call-channel');
+      buffer.writeln(
+        'root ::= tool-call-role | tool-call-channel | tool-call-recipient',
+      );
     }
 
     final otherRules = converter.rules.entries.toList(growable: false)
@@ -303,7 +315,8 @@ class GptOssHandler extends ChatTemplateHandler {
     for (final entry in otherRules) {
       if (entry.key == 'root' ||
           entry.key == 'tool-call-role' ||
-          entry.key == 'tool-call-channel') {
+          entry.key == 'tool-call-channel' ||
+          entry.key == 'tool-call-recipient') {
         continue;
       }
       buffer.writeln('${entry.key} ::= ${entry.value}');

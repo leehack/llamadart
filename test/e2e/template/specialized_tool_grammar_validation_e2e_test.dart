@@ -457,27 +457,35 @@ void main() {
     },
   );
 
-  test(
-    'GPT-OSS grammar accepts routed frames and rejects invalid arguments',
-    () {
-      final grammar = GptOssHandler().buildGrammar([_weatherWithCityTool])!;
-      const call =
-          '<|start|>assistant to=functions.weather<|channel|>commentary'
-          '<|message|>{"city":"Paris"}<|end|>';
-      _expectGrammar(
-        validator,
-        grammar,
-        valid: [call, call.replaceFirst('commentary', 'analysis')],
-        invalid: [
-          'Let me check.\n$call',
-          call.replaceFirst('functions.weather', 'functions.unknown'),
-          call.replaceFirst('{"city":"Paris"}', '{}'),
-          call.replaceFirst('{"city":"Paris"}', '{"city":7}'),
-          call.replaceFirst('<|end|>', ''),
-        ],
-      );
-    },
-  );
+  test('GPT-OSS grammar accepts routed frames and rejects invalid arguments', () {
+    final grammar = GptOssHandler().buildGrammar([_weatherWithCityTool])!;
+    const call =
+        '<|start|>assistant to=functions.weather<|channel|>commentary'
+        '<|message|>{"city":"Paris"}<|end|>';
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [
+        call,
+        call.replaceFirst('commentary', 'analysis'),
+        call.replaceFirst('<|start|>assistant', ''),
+        '<|channel|>analysis to=functions.weather<|message|>{"city":"Paris"}<|end|>',
+      ],
+      invalid: [
+        'Let me check.\n$call',
+        call.replaceFirst('functions.weather', 'functions.unknown'),
+        call.replaceFirst('{"city":"Paris"}', '{}'),
+        call.replaceFirst('{"city":"Paris"}', '{"city":7}'),
+        call.replaceFirst('<|end|>', ''),
+        call
+            .replaceFirst('<|start|>assistant', '')
+            .replaceFirst('functions.weather', 'functions.unknown'),
+        call
+            .replaceFirst('<|start|>assistant', '')
+            .replaceFirst('{"city":"Paris"}', '{"city":7}'),
+      ],
+    );
+  });
 
   test('Gemma 4 eager grammar enforces one exact schema-valid envelope', () {
     final grammar = Gemma4Handler().buildGrammar([
