@@ -38,6 +38,7 @@ class FakeEngine implements ValidationEngine {
   var wrongHistory = false;
   final requests = <Map<String, dynamic>>[];
   var ignoresCancellation = false;
+  String? cancellationFault;
   String backendName = 'LiteRT-LM CPU';
   Map<String, dynamic> metadata = {};
   int? switchAfterLoad;
@@ -110,6 +111,7 @@ class FakeEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -214,7 +216,11 @@ class FakeEngine implements ValidationEngine {
       'tools': tools?.map((t) => t.toJson()).toList(),
       'tool_choice': featureFault == 'tool_config' ? null : toolChoice?.name,
       'stop_sequences': stopSequences ?? const <String>[],
-      'content': prompt.contains('temperature_celsius from the tool result')
+      'content': cancelAfterMs != null && cancellationFault == 'empty'
+          ? ''
+          : cancelAfterMs != null && cancellationFault == 'prefix'
+          ? 'wrong'
+          : prompt.contains('temperature_celsius from the tool result')
           ? featureFault == 'tool_followup'
                 ? '18'
                 : '17'
@@ -302,15 +308,21 @@ class FakeEngine implements ValidationEngine {
                   : 'stop',
             ],
       'prompt': prompt,
-      'cancel_requested': cancelAfterFirst,
+      'cancel_requested': cancelAfterFirst || cancelAfterMs != null,
       'cancel_on_listen': false,
+      'cancel_after_ms': cancelAfterMs,
       'chunks_before_cancel': cancelAfterFirst ? 1 : null,
-      'cancel_to_done_ms': cancelAfterFirst ? 1 : null,
+      'cancel_to_done_ms': cancelAfterFirst || cancelAfterMs != null ? 1 : null,
       'metrics': {
         'native_decode_tokens':
-            maxTokens == 1 || (cancelAfterFirst && !ignoresCancellation)
-            ? 1
+            maxTokens == 1 ||
+                ((cancelAfterFirst || cancelAfterMs != null) &&
+                    !ignoresCancellation)
+            ? cancellationFault == 'zero'
+                  ? 0
+                  : 1
             : 8,
+        'wall_ms': 16,
         'native_decode_tps': 12,
         'estimated_wall_tps': 10,
         'ttfa_ms': 5,
@@ -337,6 +349,7 @@ class FakeEngine implements ValidationEngine {
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   }) async {
     generated++;
     overlapCalls.add(cancelFirst);
@@ -383,7 +396,7 @@ class FakeEngine implements ValidationEngine {
       };
     }
     return {
-      'first': completed('Once upon', 1, fault == 'overlap_late' ? 1.5 : 4),
+      'first': completed('hello', 1, fault == 'overlap_late' ? 1.5 : 4),
       'second': fault == 'overlap_accepted'
           ? completed('hello', 2, 3)
           : failed(
@@ -422,6 +435,18 @@ void dropUndeclared(
         (e['type'] == 'case' || e['type'] == 'case_start') &&
         !inventory.contains(e['case_id']),
   );
+  if (version > 0) {
+    for (final event in events.where((e) => e['type'] == 'case')) {
+      final id = event['case_id'] as String;
+      event['case_version'] = validationCase(
+        id,
+        catalogVersion: version,
+      ).version;
+      event['fixture_hash'] = jsonHash(
+        selected.caseFixtures(id, catalogVersion: version),
+      );
+    }
+  }
   var sequence = 0;
   for (final event in events.skip(1)) {
     event['sequence'] = sequence++;
@@ -1066,7 +1091,10 @@ void main() {
       expect(omitted['selected'], false);
       expect(omitted['omission_reason'], 'outside_selected_features');
       for (final record in result.report.cases) {
-        expect(record['case_version'], 1);
+        expect(
+          record['case_version'],
+          validationCase(record['case_id'] as String).version,
+        );
         expect(
           record['fixture_hash'],
           jsonHash(selected.caseFixtures(record['case_id'] as String)),
@@ -2093,6 +2121,133 @@ void main() {
     ({ValidationReport report, List<Map<String, dynamic>> events}) result,
     String id,
   ) => result.report.cases.singleWhere((c) => c['case_id'] == id);
+
+  group('catalog 6 in-flight evidence', () {
+    test('empty visible output needs positive native interruption', () async {
+      final engine = ggufEngine()..cancellationFault = 'empty';
+      final result = await run(engine, selected: gguf());
+      final cancelled = record(result, 'C08.cancel');
+      expect(cancelled['status'], 'PASS');
+      expect(cancelled['content'], '');
+      expect(cancelled['cancel_after_ms'], 4);
+      expect(result.report.problems, isEmpty);
+      for (final fault in ['zero', 'prefix']) {
+        final failed = await run(
+          ggufEngine()..cancellationFault = fault,
+          selected: gguf(),
+        );
+        expect(
+          record(failed, 'C08.cancel')['status'],
+          'NOT_RUN',
+          reason: fault,
+        );
+      }
+      final ignored = await run(
+        ggufEngine()..ignoresCancellation = true,
+        selected: gguf(),
+      );
+      expect(record(ignored, 'C08.cancel')['status'], 'NOT_RUN');
+    });
+
+    test(
+      'import rejects unsupported PASS claims and completion/recovery failures',
+      () async {
+        final selected = gguf();
+        final result = await run(ggufEngine(), selected: selected);
+        expect(result.report.qualified, true);
+        final mutations = <String, void Function(Map<String, dynamic>)>{
+          'missing counters': (e) =>
+              e['metrics']['native_decode_tokens'] = null,
+          'zero tokens': (e) => e['metrics']['native_decode_tokens'] = 0,
+          'ignored cancel': (e) => e['metrics']['native_decode_tokens'] =
+              e['uncancelled_control']['metrics']['native_decode_tokens'],
+          'wrong prefix': (e) => e['content'] = 'wrong',
+          'unordered': (e) => e['completion_order_valid'] = false,
+          'recovery cancelled': (e) => e['recovery']['cancel_requested'] = true,
+          'late': (e) => e['cancel_to_done_ms'] = 5001,
+        };
+        for (final entry in mutations.entries) {
+          final events = (jsonDecode(jsonEncode(result.events)) as List)
+              .cast<Map<String, dynamic>>();
+          final cancelled = events.singleWhere(
+            (e) => e['case_id'] == 'C08.cancel' && e['type'] == 'case',
+          );
+          entry.value(cancelled);
+          final report = ValidationReport.parse(
+            events.map(jsonEncode).join('\n'),
+          );
+          expect(
+            report.problems,
+            contains('Invalid in-flight case evidence: C08.cancel'),
+            reason: entry.key,
+          );
+          expect(report.qualified, false, reason: entry.key);
+        }
+        final overlapMutations = <String, void Function(Map<String, dynamic>)>{
+          'no issue': (e) => e['second_issued'] = false,
+          'late': (e) => e['timeline_ms']['second_ended'] =
+              e['timeline_ms']['first_ended'] + 1,
+          'accepted': (e) => e['second']['state_exception'] = false,
+          'wrong type': (e) =>
+              e['second']['error_type'] = 'LlamaInferenceException',
+          'stalled': (e) => e['first_deltas_after_second_ended'] = 0,
+          'unordered': (e) => e['first']['completion_order_valid'] = false,
+          'recovery empty': (e) => e['recovery']['content'] = '',
+        };
+        for (final entry in overlapMutations.entries) {
+          final events = (jsonDecode(jsonEncode(result.events)) as List)
+              .cast<Map<String, dynamic>>();
+          entry.value(
+            events.singleWhere(
+              (e) => e['case_id'] == 'C08.overlap' && e['type'] == 'case',
+            ),
+          );
+          expect(
+            ValidationReport.parse(events.map(jsonEncode).join('\n')).problems,
+            contains('Invalid in-flight case evidence: C08.overlap'),
+            reason: entry.key,
+          );
+        }
+      },
+    );
+
+    test(
+      'catalog 5 keeps version-1 C08 cases and historical classifications',
+      () async {
+        final selected = gguf();
+        final result = await run(ggufEngine(), selected: selected);
+        final events = (jsonDecode(jsonEncode(result.events)) as List)
+            .cast<Map<String, dynamic>>();
+        dropUndeclared(events, selected, 5);
+        events.first['catalog'] = selected.catalogForVersion(5);
+        events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+        for (final id in ['C08.cancel', 'C08.overlap']) {
+          expect(validationCase(id).version, 2);
+          expect(validationCase(id, catalogVersion: 5).version, 1);
+          expect(
+            selected.caseFixtures(id, catalogVersion: 5).keys,
+            isNot(contains('inflight')),
+          );
+          final old = events.singleWhere(
+            (e) => e['type'] == 'case' && e['case_id'] == id,
+          );
+          old['status'] = 'NOT_RUN';
+          old.remove('cancel_after_ms');
+          old.remove('second_after_ms');
+        }
+        expect(
+          (events.first['catalog']['fixtures'] as Map).keys,
+          isNot(contains('inflight')),
+        );
+        final report = ValidationReport.parse(
+          events.map(jsonEncode).join('\n'),
+        );
+        expect(report.problems, isEmpty);
+        expect(report.cases.where((e) => e['status'] == 'NOT_RUN').length, 2);
+        expect(report.qualified, false);
+      },
+    );
+  });
 
   group('catalog 5 cancellation, restart, overlap and grammar cases', () {
     test('GGUF quick core adds them; LiteRT omits the undefined contracts', () {

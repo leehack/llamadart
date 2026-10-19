@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'case_catalog.dart';
+import 'inflight_evidence.dart';
 import 'manifest.dart';
 import 'placement.dart';
 
@@ -176,6 +177,20 @@ class ValidationReport {
         problems.add(
           'Unimplemented catalog case cannot claim an executed result: $id',
         );
+      }
+      if (profile != null &&
+          knownCatalog != null &&
+          knownCatalog >= 6 &&
+          const ['C08.cancel', 'C08.overlap'].contains(id) &&
+          event['status'] == 'PASS' &&
+          !validInflightEvidence(
+            id,
+            event,
+            allowAbort: (manifest['environment'] as Map?)?['web'] == true,
+            deadlineMs:
+                (profile.fixtures['cancel'] as Map)['deadline_ms'] as num,
+          )) {
+        problems.add('Invalid in-flight case evidence: $id');
       }
       if (profile?.isEmbedding == true &&
           (manifest['environment'] as Map?)?['web'] == true &&
