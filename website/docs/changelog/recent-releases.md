@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Keep GPT-OSS tool frames out of streamed answer text after a prose prefix.
+- Preserve Gemma 4 answer text after tool calls across split token delivery.
+
 ## 0.15.3
 
 - Refresh media-embedding examples, migration links and upgrade guidance.

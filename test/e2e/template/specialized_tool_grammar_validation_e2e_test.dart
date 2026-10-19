@@ -21,6 +21,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
+import 'package:llamadart/src/core/template/handlers/gpt_oss_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
@@ -451,6 +452,28 @@ void main() {
           ),
           valid.replaceFirst('$ns</tool_call>', ''),
           'reason</mm:think>No tool',
+        ],
+      );
+    },
+  );
+
+  test(
+    'GPT-OSS grammar accepts routed frames and rejects invalid arguments',
+    () {
+      final grammar = GptOssHandler().buildGrammar([_weatherWithCityTool])!;
+      const call =
+          '<|start|>assistant to=functions.weather<|channel|>commentary'
+          '<|message|>{"city":"Paris"}<|end|>';
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [call, call.replaceFirst('commentary', 'analysis')],
+        invalid: [
+          'Let me check.\n$call',
+          call.replaceFirst('functions.weather', 'functions.unknown'),
+          call.replaceFirst('{"city":"Paris"}', '{}'),
+          call.replaceFirst('{"city":"Paris"}', '{"city":7}'),
+          call.replaceFirst('<|end|>', ''),
         ],
       );
     },

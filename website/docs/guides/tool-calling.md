@@ -21,6 +21,10 @@ LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do not
 execute calls automatically based on that value or infer truncation from
 output length. See the [owner runtime prerequisite](../maintainers/runtime-ownership#litert-lm-termination-reporting).
 
+GPT-OSS tool frames following prose stay out of streamed answer text. Gemma 4
+preserves visible text after a tool envelope, including its whitespace, across
+split token delivery. Calls still arrive complete in the final chunk.
+
 ## Define a tool
 
 `handler` is optional: leave it out for a tool your app runs itself.

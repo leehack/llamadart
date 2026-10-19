@@ -30,6 +30,11 @@ class GptOssHandler extends ChatTemplateHandler {
     '<|end|>',
   ];
 
+  /// Holds back a possible assistant frame until its header can be parsed.
+  /// A frame after prose may route to a tool or a reasoning channel.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, [_assistantStart], from);
+
   @override
   ChatFormat get format => ChatFormat.gptOss;
 

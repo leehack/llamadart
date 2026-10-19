@@ -470,6 +470,133 @@ void main() {
       },
     );
 
+    for (final sample in [
+      (
+        format: ChatFormat.gptOss,
+        output:
+            'Let me check.\n'
+            '<|start|>assistant to=functions.weather<|channel|>commentary'
+            '<|message|>{"city":"Paris"}<|end|>',
+        content: 'Let me check.',
+      ),
+      (
+        format: ChatFormat.gemma4,
+        output:
+            '<|tool_call>call:weather{city:<|"|>Paris<|"|>}'
+            '<tool_call|>\nDone.',
+        content: '\nDone.',
+      ),
+    ]) {
+      for (final size in [1, 2, 7, sample.output.length]) {
+        test(
+          '${sample.format.name} tool/content parity at chunk size $size',
+          () async {
+            final parsed = ChatTemplateEngine.parse(
+              sample.format.index,
+              sample.output,
+              tools: [_weatherTool],
+            );
+            expect(parsed.content, sample.content);
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable([
+                for (var i = 0; i < sample.output.length; i += size)
+                  sample.output.substring(
+                    i,
+                    min(i + size, sample.output.length),
+                  ),
+              ]),
+              templateResult: LlamaChatTemplateResult(
+                prompt: 'prompt',
+                format: sample.format.index,
+              ),
+              parseToolCallsEnabled: true,
+              enableThinking: true,
+              modelName: 'test-model',
+              completionId: '${sample.format.name}-$size',
+              tools: [_weatherTool],
+            ).toList();
+            expect(
+              chunks.map((c) => c.choices.single.delta.content ?? '').join(),
+              parsed.content,
+            );
+            expect(
+              chunks.map((c) => c.choices.single.delta.thinking ?? '').join(),
+              parsed.reasoningContent ?? '',
+            );
+            final calls = chunks
+                .expand(
+                  (c) =>
+                      c.choices.single.delta.toolCalls ??
+                      const <LlamaCompletionChunkToolCall>[],
+                )
+                .toList();
+            expect(calls, hasLength(1));
+            expect(calls.single.function?.name, 'weather');
+            expect(jsonDecode(calls.single.function!.arguments!), {
+              'city': 'Paris',
+            });
+            expect(chunks.last.choices.single.finishReason, 'tool_calls');
+          },
+        );
+      }
+    }
+
+    test('GPT-OSS gates split frames without swallowing ordinary text', () async {
+      const call =
+          '<|start|>assistant to=functions.weather<|channel|>commentary'
+          '<|message|>{"city":"Paris"}<|end|>';
+      for (final output in [
+        'Let me check.\n$call\nDone.',
+        '<|start|>assistant<|channel|>analysis<|message|>Plan.<|end|>'
+            'Let me check.\n$call',
+        'Let me check. <|start|>assistant<|channel|>final<|message|>Done.<|end|>',
+        'Literal <|starfish and <|start|>not an assistant frame. ',
+        'Let me check. <|start|>assistant to=functions.',
+      ]) {
+        await _expectStreamMatchesParse(
+          ChatFormat.gptOss,
+          output,
+          openings: ['<|start|>assistant', '<|message|>', '<|end|>'],
+        );
+      }
+      await _expectContentAfterEachToken(ChatFormat.gptOss, [
+        ('Let me ', 'Let me'),
+        ('check. <|sta', 'Let me check.'),
+        ('rfish swims.', 'Let me check. <|starfish swims.'),
+        (
+          ' <|start|>assistant to=functions.',
+          'Let me check. <|starfish swims.',
+        ),
+      ]);
+    });
+
+    test(
+      'Gemma 4 preserves post-call text with thinking and disabled tools',
+      () async {
+        const call =
+            '<|tool_call>call:weather{city:<|"|>Paris<|"|>}<tool_call|>';
+        for (final tools in [true, false]) {
+          for (final forced in [true, false]) {
+            for (final suffix in [
+              '\nDone.',
+              '\nDone. \n',
+              '',
+              '<|tool_call>call:weather{',
+            ]) {
+              final output = '${forced ? 'Plan.<channel|>' : ''}$call$suffix';
+              await _expectStreamMatchesParse(
+                ChatFormat.gemma4,
+                output,
+                forcedOpen: forced,
+                tools: tools,
+                openings: ['<|tool_call>', '<tool_call|>', '<channel|>'],
+              );
+            }
+          }
+        }
+      },
+    );
+
     test(
       'Gemma 4 withholds a character-split tool envelope after thinking',
       () async {
