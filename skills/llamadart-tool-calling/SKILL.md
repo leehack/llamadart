@@ -66,6 +66,10 @@ description: >-
   `session.send`): `LlamaCompletion.toolCalls` holds `LlamaToolCallContent`
   entries with decoded `arguments` (empty when they are not a JSON object;
   `rawJson` keeps the text).
+- With GPT-OSS templates, prose before an assistant tool frame streams as
+  answer text while the frame is held for final parsing. Gemma 4 keeps visible
+  text after a tool envelope, including its whitespace; the envelope itself
+  stays out of content even across split tokens.
 - By hand, invoke through `tool.invoke(call.arguments)`, which wraps the
   arguments in `ToolParams` for typed access; schema-factory tools validate them, and
   throws `LlamaStateException` for a tool without a handler. Read required

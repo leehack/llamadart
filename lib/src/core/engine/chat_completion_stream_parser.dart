@@ -15,6 +15,7 @@ import '../template/handlers/deepseek_r1_handler.dart';
 import '../template/handlers/deepseek_v3_handler.dart';
 import '../template/handlers/exaone_moe_handler.dart';
 import '../template/handlers/granite_handler.dart';
+import '../template/handlers/gpt_oss_handler.dart';
 import '../template/handlers/hermes_handler.dart';
 import '../template/handlers/hunyuan_v3_handler.dart';
 import '../template/handlers/magistral_handler.dart';
@@ -407,6 +408,8 @@ class ChatCompletionStreamParser {
 
     final suppressFinalToolEnvelopeContent =
         toolCallOpening == null &&
+        // Gemma 4 sanitizes its envelopes and retains post-call text.
+        templateResult.format != ChatFormat.gemma4.index &&
         parsed.hasToolCalls &&
         _isToolCallEnvelopeBuffer(
           fullOutput,
@@ -530,6 +533,7 @@ class ChatCompletionStreamParser {
       ChatFormat.commandR7B ||
       ChatFormat.cohere2Moe => CommandR7BHandler.toolCallOpening,
       ChatFormat.granite => GraniteHandler.toolCallOpening,
+      ChatFormat.gptOss => GptOssHandler.toolCallOpening,
       ChatFormat.nemotronV2 => NemotronV2Handler.toolCallOpening,
       ChatFormat.apertus => ApertusHandler.toolCallOpening,
       ChatFormat.hunyuanV3 => HunyuanV3Handler.toolCallOpening,

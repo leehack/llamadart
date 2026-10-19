@@ -31,6 +31,20 @@ Firebase/GCE runs.
 This private harness and the chat app that imports it are both excluded from
 the core pub archive. Run them from a repository checkout.
 
+## Tool-stream replay regressions
+
+`test/public_tool_streaming_test.dart` feeds the #740 GPT-OSS text-first frame
+and #741 Gemma 4 post-call answer through the real public `LlamaEngine.create`
+path and `PublicValidationEngine`. It asserts exact content, tool arguments,
+completion order and `auto`/`required`/`none` controls under split UTF-8 delivery.
+Run it from this package with `dart test -p vm test/public_tool_streaming_test.dart`;
+the validation-harness CI lane runs it too.
+
+These are deterministic adapter regressions supporting the existing tools pack,
+not inference or grammar-enforcement evidence. They do not qualify a model,
+backend or physical device. #1196's dedicated structured-output pack remains
+open, as do the other family cases under #740 and #741.
+
 ## Running validation
 
 Start from the repository root:
