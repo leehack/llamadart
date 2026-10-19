@@ -2,6 +2,10 @@
 
 * Aligned the default WebGPU bridge assets to `v0.1.66` to preserve worker
   timeouts and model-load tuning during CPU recovery.
+  Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native
+  `v0.7.0-1`; Web LiteRT-LM stays `@litert-lm/core@0.18.0`.
+  Manifest SHA-256:
+  `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
 - Reject late Web content-embedding results after cancellation or disposal.
 - Update the opt-in image runtime and Apple companion to `v0.2.0-4` and reject
   images after recorded Metal failures. Keep qualified older Apple companions
