@@ -33,7 +33,11 @@ class GptOssHandler extends ChatTemplateHandler {
   /// Finds a possible assistant frame for the stream's content gate.
   /// Frames wait for final parsing to classify content, reasoning and calls.
   static int toolCallOpening(String text, [int from = 0]) =>
-      ToolCallParsingUtils.literalOpening(text, const [_assistantStart], from);
+      ToolCallParsingUtils.literalOpening(text, const [
+        _assistantStart,
+        '<|channel|>',
+        'to=functions.',
+      ], from);
 
   @override
   ChatFormat get format => ChatFormat.gptOss;
@@ -93,8 +97,14 @@ class GptOssHandler extends ChatTemplateHandler {
       preservedTokens: _gptOssPreservedTokens,
       grammarTriggers: hasTools
           ? const <GrammarTrigger>[
-              GrammarTrigger(type: 0, value: '<|channel|>commentary'),
-              GrammarTrigger(type: 0, value: '<|channel|>analysis'),
+              GrammarTrigger(
+                type: 0,
+                value: '<|channel|>commentary to=functions.',
+              ),
+              GrammarTrigger(
+                type: 0,
+                value: '<|channel|>analysis to=functions.',
+              ),
               GrammarTrigger(
                 type: 0,
                 value: '<|start|>assistant to=functions.',
@@ -111,6 +121,14 @@ class GptOssHandler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
+    // The model's generation prompt already ends with an assistant header.
+    // Reconstruct only a protocol continuation, never ordinary answer text.
+    final leading = output.trimLeft();
+    if (leading.startsWith('<|channel|>')) {
+      output = '$_assistantStart$leading';
+    } else if (leading.startsWith('to=functions.')) {
+      output = '$_assistantStart $leading';
+    }
     final reasoningParts = <String>[];
     final contentParts = <String>[];
     final toolCalls = <LlamaCompletionChunkToolCall>[];
@@ -136,10 +154,6 @@ class GptOssHandler extends ChatTemplateHandler {
       final headerStart = start + _assistantStart.length;
       final messageIdx = output.indexOf(_messageTag, headerStart);
       if (messageIdx == -1) {
-        final trailing = output.substring(start).trim();
-        if (trailing.isNotEmpty) {
-          contentParts.add(trailing);
-        }
         break;
       }
 
@@ -192,6 +206,9 @@ class GptOssHandler extends ChatTemplateHandler {
     final functionName = _extractFunctionRecipient(header);
 
     if (functionName != null && parseToolCalls) {
+      if (!ToolCallParsingUtils.hasUniqueJsonObjectKeys(normalizedBody)) {
+        return;
+      }
       toolCalls.add(
         ToolCallParsingUtils.createFunctionToolCall(
           index: toolCalls.length,

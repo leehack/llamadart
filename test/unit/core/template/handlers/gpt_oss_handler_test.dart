@@ -1,10 +1,69 @@
 import 'dart:convert';
 
-import 'package:llamadart/src/core/template/chat_format.dart';
-import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'GPT-OSS continuation calls keep JSON data and reject broken arguments',
+    () {
+      for (final city in [
+        'Montréal',
+        '<think>literal</think>',
+        '<|start|>assistant',
+      ]) {
+        final result = ChatTemplateEngine.parse(
+          ChatFormat.gptOss.index,
+          '<|channel|>analysis to=functions.weather<|message|>${jsonEncode({'city': city})}<|end|>',
+        );
+        expect(result.content, '');
+        expect(result.toolCalls.single.function?.name, 'weather');
+        expect(jsonDecode(result.toolCalls.single.function!.arguments!), {
+          'city': city,
+        });
+      }
+      for (final arguments in ['{"city":', '{"city":"Paris","city":"Rome"}']) {
+        final result = ChatTemplateEngine.parse(
+          ChatFormat.gptOss.index,
+          '<|channel|>analysis to=functions.weather<|message|>$arguments',
+        );
+        expect(result.content, '');
+        expect(result.toolCalls, isEmpty);
+      }
+    },
+  );
+
+  test('GPT-OSS lazy grammar starts only at a function recipient', () {
+    final result = ChatTemplateEngine.render(
+      templateSource:
+          '{# <|channel|> #}{{ messages[0].content }}<|start|>assistant',
+      metadata: const {},
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Say hello.'),
+      ],
+      tools: [
+        ToolDefinition(
+          name: 'weather',
+          description: 'Weather.',
+          parameters: [ToolParam.string('city', required: true)],
+        ),
+      ],
+    );
+    expect(result.grammarLazy, true);
+    expect(
+      result.grammarTriggers.map((t) => t.value),
+      containsAll([
+        '<|channel|>commentary to=functions.',
+        '<|channel|>analysis to=functions.',
+        '<|start|>assistant to=functions.',
+      ]),
+    );
+    expect(
+      result.grammarTriggers.every((t) => t.value.contains('to=functions.')),
+      true,
+    );
+  });
+
   group('New format handlers', () {
     test('parses GPT-OSS analysis, tool call, and final content', () {
       const output =

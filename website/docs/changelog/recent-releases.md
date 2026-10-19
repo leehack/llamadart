@@ -9,7 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Keep GPT-OSS tool frames out of streamed answer text after a prose prefix.
+- Keep GPT-OSS reasoning and tool frames out of answer text, including native header continuations.
+- Keep GPT-OSS automatic tool choice optional for ordinary text replies.
 - Preserve Gemma 4 answer text after tool calls across split token delivery.
 
 ## 0.15.3

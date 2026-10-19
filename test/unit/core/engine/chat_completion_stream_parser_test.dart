@@ -541,6 +541,97 @@ void main() {
       }
     }
 
+    test('GPT-OSS parses native assistant-header continuations', () async {
+      for (final sample in [
+        (
+          output:
+              '<|channel|>analysis to=functions.weather<|message|>{"city":"Montréal"}<|end|>',
+          content: '',
+          reasoning: '',
+          calls: 1,
+        ),
+        (
+          output:
+              ' to=functions.weather<|channel|>commentary<|message|>{"city":"Montréal"}<|end|>',
+          content: '',
+          reasoning: '',
+          calls: 1,
+        ),
+        (
+          output:
+              '<|channel|>analysis<|message|>Plan.<|end|><|start|>assistant<|channel|>final<|message|>4',
+          content: '4',
+          reasoning: 'Plan.',
+          calls: 0,
+        ),
+        (output: '<|channel|>analysis', content: '', reasoning: '', calls: 0),
+        (output: ' to=functions.weather', content: '', reasoning: '', calls: 0),
+        (
+          output: '<|channel|>analysis<|message|>Plan.',
+          content: '',
+          reasoning: 'Plan.',
+          calls: 0,
+        ),
+        (
+          output: '<|channel|>analysis to=functions.weather<|message|>{"city":',
+          content: '',
+          reasoning: '',
+          calls: 0,
+        ),
+        (
+          output:
+              '<|channel|>analysis to=functions.weather<|message|>{"city":"<think>literal</think>"}<|end|>',
+          content: '',
+          reasoning: '',
+          calls: 1,
+        ),
+      ]) {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.gptOss.index,
+          sample.output,
+        );
+        expect(parsed.content, sample.content, reason: sample.output);
+        expect(
+          parsed.reasoningContent ?? '',
+          sample.reasoning,
+          reason: sample.output,
+        );
+        expect(
+          parsed.toolCalls,
+          hasLength(sample.calls),
+          reason: sample.output,
+        );
+        for (final thinking in [true, false]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              ChatFormat.gptOss,
+              sample.output,
+              enableThinking: thinking,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+              openings: [
+                '<|channel|>',
+                ' to=functions.',
+                '<|message|>',
+                '<|start|>assistant',
+              ],
+            );
+          }
+        }
+      }
+      for (final tools in [false, true]) {
+        for (final thinking in [false, true]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.gptOss,
+            '<|channel|>analysis<|message|>Plan.<|end|><|start|>assistant<|channel|>final<|message|>4',
+            tools: tools,
+            enableThinking: thinking,
+            openings: ['<|channel|>', '<|start|>assistant'],
+          );
+        }
+      }
+    });
+
     test('GPT-OSS gates split frames without swallowing ordinary text', () async {
       const call =
           '<|start|>assistant to=functions.weather<|channel|>commentary'
@@ -838,7 +929,7 @@ void main() {
     });
 
     for (final (name, format, forced, content, thinking) in [
-      ('gpt-oss', ChatFormat.gptOss, false, '<think>a</thi', 'a</thi'),
+      ('gpt-oss', ChatFormat.gptOss, false, '<think>a</thi', ''),
       ('GLM-4.7-Flash', ChatFormat.glm45, true, '', '<think>a</thi'),
       ('MiniMax-M2', ChatFormat.minimaxM2, true, '', '<think>a</thi'),
     ]) {
