@@ -38,7 +38,7 @@ dependencies:
 
 dev_dependencies:
   analyzer: '>=8.0.0 <15.0.0'
-  coverage: 1.15.1
+  coverage: 1.16.0
   ffigen: ^23.0.0
   lints: ^6.1.0
   pub_semver: ^2.1.4
