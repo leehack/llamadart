@@ -13,6 +13,14 @@ https://leehack-llamadart.static.hf.space
 
 ## Run
 
+Run this example from a repository checkout. The chat app and its private
+validation harness are excluded together from the core pub archive:
+
+```bash
+git clone https://github.com/leehack/llamadart.git
+cd llamadart
+```
+
 ```bash
 cd example/chat_app
 flutter pub get

@@ -42,6 +42,30 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.15.x: media embeddings and Apple companions
+
+For the breaking 0.14-to-0.15 changes, follow the
+[0.15 migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#014x-to-0150-upgrade-guide).
+Use `embeddingCapabilities` for ordered media embeddings; chat media support
+does not establish embedding support. Check the
+[embedding guide](../guides/embeddings) for qualified model/backend pairs.
+
+For the SD native error guard, use core `0.15.2` and SD companion `0.15.2`
+together. The companion requires `>=0.15.2 <0.16.0`. Locked SD companions
+`0.15.0`/`0.15.1` retain their older native runtime with an upgrade warning;
+updating core alone does not replace that payload. The llama.cpp and LiteRT-LM
+companions remain `0.15.1`. See [Installation](../getting-started/installation)
+for the current package combination and
+[Image generation](../guides/image-generation) for the physical-device limits.
+
+### 0.14: unsupported options and structured output
+
+Review the
+[0.14 migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#013x---0140-llamacpp-v070-abi-qwen3-overrides-and-load-callbacks)
+for typed capability refusals, schema validation and callback changes. Keep
+error handling for unsupported model/runtime combinations and unavailable
+performance counters; a successful load does not qualify every operation.
+
 ### 0.8.10: model download and cache defaults
 
 No source change is required, but two runtime defaults changed:

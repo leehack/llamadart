@@ -191,6 +191,13 @@ model-host availability does not make every pull request flaky.
 
 ## Coverage Map
 
+Public capability obligations live in
+[`capability_coverage.json`](../packages/llamadart_validation/assets/capability_coverage.json).
+Run `dart test -p vm test/unit/tooling/validation_coverage_test.dart` for the
+source-derived engine API/capability/runtime-row inventory and its current
+exemptions. A mapping is not evidence of execution or qualification; use the
+affected runtime/model/platform rows for that evidence.
+
 The matrix is designed to cover these essential axes:
 
 | Axis | Covered by |

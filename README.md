@@ -33,6 +33,7 @@ Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.
 | Build chat history | [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session) |
 | Check runtime support | [Platform & backend matrix](https://llamadart.leehack.com/docs/platforms/support-matrix) |
 | Read API reference | [pub.dev API docs](https://pub.dev/documentation/llamadart/latest/) |
+| Upgrade from 0.14.x | [0.15 migration guide](MIGRATION.md#014x-to-0150-upgrade-guide) |
 | Try the Flutter demo | [Hosted chat app](https://leehack-llamadart.static.hf.space) |
 | Generate images on device (Preview) | [Image generation](https://llamadart.leehack.com/docs/guides/image-generation) |
 
@@ -510,9 +511,15 @@ number bounds, other formats and length/item bounds above 2000 are rejected.
 Trivial `uniqueItems: false`, `minProperties: 0` and integer `multipleOf: 1`
 assertions are accepted. Array bounds work without `items`, and unused definitions,
 annotations and unknown vocabulary remain accepted. Nonempty annotation-only untyped schemas
-accept any JSON value. See [0.14 migration](MIGRATION.md) for the breaking changes.
+accept any JSON value. See [0.14 migration](MIGRATION.md#013x---0140-llamacpp-v070-abi-qwen3-overrides-and-load-callbacks)
+for the breaking changes.
 
 ## Examples
+
+Run the Flutter chat app from a
+[repository checkout](https://github.com/leehack/llamadart/tree/main/example/chat_app).
+It and its private validation harness are excluded together from the core pub
+archive; the smaller console examples remain packaged.
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
 - [Flutter chat app](https://github.com/leehack/llamadart/tree/main/example/chat_app)

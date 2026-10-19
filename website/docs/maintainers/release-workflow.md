@@ -18,11 +18,25 @@ dart analyze
 dart run tool/testing/check_platform_boundaries.dart
 dart test -p vm -j 1 --exclude-tags local-only
 dart test -p chrome --exclude-tags local-only
+dart test -p vm test/unit/tooling/validation_coverage_test.dart
 dart run tool/testing/verify_release_docs_versions.dart --release-prep
+python3 tool/release/check_core_archive.py
 ./tool/docs/build_site.sh # fails on broken internal links
 ```
 
 Ensure migration/changelog docs reflect behavior in the release branch.
+
+Review the capability inventory's printed exemptions against the release scope.
+Pack/case/profile bindings do not establish device qualification or waive
+existing evidence requirements. This model-free gate adds no blanket
+Firebase/GCE run requirement; choose affected validation rows and retain the
+existing cost/approval boundaries.
+
+The archive check uses pub's actual selected-file inventory, stages that file
+set, and resolves/analyzes a fresh consumer plus the packaged basic example.
+The chat app and its private validation harness stay together in a repository
+checkout, outside the core archive. Run this check from a clean checkout after
+workspace preparation, with the pinned SDK on PATH.
 
 Before publishing a release that changes native runtime pins, verify native
 version alignment:

@@ -170,6 +170,9 @@ jobs:
       - name: Verify CI workflow selection contracts
         run: dart test -p vm test/unit/tooling/ci_workflow_selection_test.dart
 
+      - name: Verify public capability validation coverage
+        run: dart test -p vm test/unit/tooling/validation_coverage_test.dart
+
       - name: Check platform boundaries
         run: dart run tool/testing/check_platform_boundaries.dart
 
@@ -192,7 +195,7 @@ jobs:
         run: python3 tool/native/test_sync_stable_diffusion_bindings.py
 
       - name: Pub Publish Dry Run
-        run: flutter pub publish --dry-run
+        run: python3 tool/release/check_core_archive.py
 
       - name: Install Pana
         run: flutter pub global activate pana

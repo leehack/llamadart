@@ -4,6 +4,35 @@ Private maintainer package (`publish_to: none`). It exercises the exported
 llamadart API through the same core on desktop, Flutter mobile, and Web.
 It is independent of the public package's implementation and exports.
 
+## Public capability coverage
+
+`assets/capability_coverage.json` maps source-derived public engine APIs,
+capability report members and the support matrix's runtime-feature rows to an
+existing feature/case/profile binding or an explicit exemption. From the root:
+
+```sh
+dart test -p vm test/unit/tooling/validation_coverage_test.dart
+```
+
+CI rejects missing/stale/duplicate mappings, invented cases, missing profiles
+and cases that no declared profile selects. Exemptions need a concrete reason
+and a GitHub issue. The test prints the current gap inventory; do not maintain
+a second copied list. Structured output, multimodal chat, LoRA, state, scoring,
+speculative decoding, sampling and tokenization still need dedicated pack work.
+Speech/image profiles exist, while their individual reported capability
+contracts remain explicitly exempt pending case-ID bindings.
+
+A mapping is not a test run or qualification result. It does not waive
+unsupported-path negatives, physical-device evidence, provenance or release
+gates. Review new exemptions; do not hide a missing pack behind a generic
+reason. This first #1196 slice implements no missing packs and authorizes no
+Firebase/GCE runs.
+
+This private harness and the chat app that imports it are both excluded from
+the core pub archive. Run them from a repository checkout.
+
+## Running validation
+
 Start from the repository root:
 
 ```sh

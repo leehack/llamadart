@@ -333,6 +333,10 @@ void main() {
         'AGENTS.md',
         'CONTRIBUTING.md',
         'doc/testing_matrix.md',
+        'README.md',
+        'website/docs/guides/embeddings.md',
+        'packages/llamadart_stable_diffusion_flutter/README.md',
+        'example/chat_app/README.md',
       ]) {
         expect(await enabled(path), {
           'docs-check',
@@ -344,6 +348,45 @@ void main() {
         await enabled('example/chat_app/test_vm/chat_settings_test.dart'),
         {'analyze', 'web-chat-contract'},
       );
+    },
+  );
+
+  test(
+    'capability registry changes select an unconditional inventory gate',
+    () async {
+      final jobs = readWorkflow('ci')['jobs'] as Map;
+      for (final path in [
+        'packages/llamadart_validation/assets/capability_coverage.json',
+        'packages/llamadart_validation/lib/src/case_catalog.dart',
+        'lib/src/core/engine/engine.dart',
+      ]) {
+        expect(
+          (await selected([path]))['jobs']['analyze'],
+          isTrue,
+          reason: path,
+        );
+      }
+      final gate =
+          (jobs['analyze']['steps'] as List).singleWhere(
+                (step) =>
+                    step['name'] ==
+                    'Verify public capability validation coverage',
+              )
+              as Map;
+      expect(
+        gate['run'],
+        'dart test -p vm test/unit/tooling/validation_coverage_test.dart',
+      );
+      expect(gate.containsKey('if'), isFalse);
+      expect(gate.containsKey('continue-on-error'), isFalse);
+      final archive =
+          (jobs['analyze']['steps'] as List).singleWhere(
+                (step) => step['name'] == 'Pub Publish Dry Run',
+              )
+              as Map;
+      expect(archive['run'], 'python3 tool/release/check_core_archive.py');
+      expect(archive.containsKey('if'), isFalse);
+      expect(archive.containsKey('continue-on-error'), isFalse);
     },
   );
 

@@ -1,0 +1,425 @@
+{
+  "schema_version": 1,
+  "description": "Source-derived obligation inventory only. Existing pack bindings do not assert execution, platform/backend qualification or completeness of every semantic branch. Exemptions remain open work.",
+  "packs": [
+    {
+      "id": "batching",
+      "cases": [
+        "C11.batching"
+      ],
+      "profiles": [
+        "assets/profiles/tiny-gguf-batching.json"
+      ]
+    },
+    {
+      "id": "decision",
+      "cases": [
+        "D01.head",
+        "D02.tokenizer",
+        "D03.logits",
+        "D04.answers",
+        "D05.batch",
+        "D06.reload",
+        "D07.guards"
+      ],
+      "profiles": [
+        "assets/profiles/decision-gguf-cpu.json"
+      ]
+    },
+    {
+      "id": "embeddings",
+      "cases": [
+        "E01.capabilities",
+        "E02.text",
+        "E03.image",
+        "E04.audio",
+        "E05.mixed",
+        "E06.batch",
+        "E07.normalization",
+        "E08.guards",
+        "E09.cancel.before",
+        "E10.cancel.after"
+      ],
+      "profiles": [
+        "assets/profiles/embedding-gguf-cpu.json"
+      ]
+    },
+    {
+      "id": "history",
+      "cases": [
+        "C06.history"
+      ],
+      "profiles": [
+        "assets/profiles/chat-gguf-cpu.json"
+      ]
+    },
+    {
+      "id": "lifecycle",
+      "cases": [
+        "C01.load",
+        "C08.cancel",
+        "C08.cancel.early",
+        "C08.cancel.restart",
+        "C08.overlap",
+        "C09.reload",
+        "C12.recovery",
+        "C09.reload.second"
+      ],
+      "profiles": [
+        "assets/profiles/tiny-gguf-lifecycle.json"
+      ]
+    },
+    {
+      "id": "streaming",
+      "cases": [
+        "C08.cancel",
+        "C08.cancel.early",
+        "C08.cancel.restart",
+        "C08.overlap",
+        "C10.limit"
+      ],
+      "profiles": [
+        "assets/profiles/tiny-gguf-cpu.json"
+      ]
+    },
+    {
+      "id": "text",
+      "cases": [
+        "C03.raw",
+        "C04.hello",
+        "C04.arithmetic"
+      ],
+      "profiles": [
+        "assets/profiles/chat-gguf-cpu.json"
+      ]
+    },
+    {
+      "id": "tools",
+      "cases": [
+        "C07.tools",
+        "C07.tools.auto_text"
+      ],
+      "profiles": [
+        "assets/profiles/chat-gguf-cpu.json"
+      ]
+    }
+  ],
+  "mappings": [
+    {
+      "surfaces": [
+        "matrix:Automatic sendWithTools / completeWithTools loop"
+      ],
+      "exemption": {
+        "id": "automatic-tool-loops",
+        "reason": "Reliable runtime termination and automatic-loop rollback need their own validation contract. Ordinary best-effort tool-call cases are insufficient.",
+        "issue": "https://github.com/leehack/llamadart/issues/919"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.backend",
+        "api:LlamaEngine.backendGenerationCapabilities",
+        "api:LlamaEngine.capabilities",
+        "api:LlamaEngine.chatTemplate",
+        "api:LlamaEngine.configureLogging",
+        "api:LlamaEngine.dartLogLevel",
+        "api:LlamaEngine.getAvailableBackends",
+        "api:LlamaEngine.getBackendName",
+        "api:LlamaEngine.getContextSize",
+        "api:LlamaEngine.getMetadata",
+        "api:LlamaEngine.getModelFileType",
+        "api:LlamaEngine.getPerformanceContext",
+        "api:LlamaEngine.getResolvedGpuLayers",
+        "api:LlamaEngine.getVramInfo",
+        "api:LlamaEngine.isGpuSupported",
+        "api:LlamaEngine.listGpuDevices",
+        "api:LlamaEngine.modelDownloadManager",
+        "api:LlamaEngine.modelResolver",
+        "api:LlamaEngine.nativeLogLevel",
+        "api:LlamaEngine.observers",
+        "api:LlamaEngine.runtime",
+        "api:LlamaEngine.setDartLogLevel",
+        "api:LlamaEngine.setLogLevel",
+        "api:LlamaEngine.setNativeLogLevel",
+        "capability:EngineCapabilities.backendName",
+        "capability:EngineCapabilities.isSupported",
+        "capability:EngineCapabilities.unsupportedReason",
+        "capability:LlamaEngineCapabilities.backendName",
+        "capability:LlamaEngineCapabilities.runtime",
+        "capability:LlamaEngineCapabilities.unsupportedReason",
+        "matrix:Operation observers",
+        "matrix:Per-request usage"
+      ],
+      "exemption": {
+        "id": "configuration-and-diagnostics",
+        "reason": "Administrative/configuration, compatibility or diagnostic surface has existing unit/integration coverage but no dedicated feature-pack contract. Inventory is not a claim of model/device qualification.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.backendName",
+        "capability:ImageGenerationCapabilities.deviceNames",
+        "capability:ImageGenerationCapabilities.isSupported",
+        "capability:ImageGenerationCapabilities.maxConcurrentTasks",
+        "capability:ImageGenerationCapabilities.modelVersion",
+        "capability:ImageGenerationCapabilities.runtimeVersion",
+        "capability:ImageGenerationCapabilities.supportsCancellation",
+        "capability:ImageGenerationCapabilities.unsupportedReason"
+      ],
+      "exemption": {
+        "id": "image-capabilities",
+        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.clearLoras",
+        "api:LlamaEngine.removeLora",
+        "api:LlamaEngine.removeLoraSource",
+        "api:LlamaEngine.setLora",
+        "api:LlamaEngine.setLoraSource",
+        "matrix:LoRA"
+      ],
+      "exemption": {
+        "id": "lora",
+        "reason": "Runtime adapter loading, scaling, removal and unsupported/version-skew paths need a dedicated LoRA pack.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.hasMultimodalProjector",
+        "api:LlamaEngine.loadMultimodalProjector",
+        "api:LlamaEngine.loadMultimodalProjectorSource",
+        "api:LlamaEngine.supportsAudio",
+        "api:LlamaEngine.supportsVision",
+        "api:LlamaEngine.unloadMultimodalProjector",
+        "capability:LlamaEngineCapabilities.supportsAudio",
+        "capability:LlamaEngineCapabilities.supportsVision",
+        "matrix:Multimodal"
+      ],
+      "exemption": {
+        "id": "multimodal-chat",
+        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.scoreNextToken",
+        "api:LlamaEngine.supportsNextTokenScoring",
+        "capability:LlamaEngineCapabilities.supportsNextTokenScoring",
+        "matrix:Next-token scores"
+      ],
+      "exemption": {
+        "id": "next-token-scoring",
+        "reason": "Raw token-ID/top-K scores and unsupported runtime paths need a dedicated scoring pack; text generation does not cover scoring.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsMinP",
+        "capability:LlamaEngineCapabilities.supportsPenalty",
+        "capability:LlamaEngineCapabilities.supportsPresencePenalty",
+        "capability:LlamaEngineCapabilities.supportsThinkingBudget",
+        "matrix:Min-P",
+        "matrix:Presence penalty",
+        "matrix:Renamed legacy Qwen3 thinking switch",
+        "matrix:Repetition penalty",
+        "matrix:Thinking budget"
+      ],
+      "exemption": {
+        "id": "sampler-controls",
+        "reason": "Thinking-output cases do not establish sampler-control or thinking-budget semantics. Dedicated positive/unsupported/runtime-skew pack coverage remains.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "capability:LlamaEngineCapabilities.speculativeDecodingStrategies",
+        "matrix:Speculative decoding"
+      ],
+      "exemption": {
+        "id": "speculative-decoding",
+        "reason": "Draft/MTP/ngram strategies need a dedicated pack with target/draft output and memory controls; ordinary text generation is insufficient.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "capability:SpeechToTextCapabilities.backendName",
+        "capability:SpeechToTextCapabilities.encodedAudioFormats",
+        "capability:SpeechToTextCapabilities.implementation",
+        "capability:SpeechToTextCapabilities.inputKinds",
+        "capability:SpeechToTextCapabilities.isSupported",
+        "capability:SpeechToTextCapabilities.maxConcurrentTasks",
+        "capability:SpeechToTextCapabilities.supportsCancellation",
+        "capability:SpeechToTextCapabilities.supportsConfidence",
+        "capability:SpeechToTextCapabilities.supportsInputBackpressure",
+        "capability:SpeechToTextCapabilities.supportsLanguageDetection",
+        "capability:SpeechToTextCapabilities.supportsLanguageHints",
+        "capability:SpeechToTextCapabilities.supportsOutputBackpressure",
+        "capability:SpeechToTextCapabilities.supportsPartialResults",
+        "capability:SpeechToTextCapabilities.supportsSegmentTimestamps",
+        "capability:SpeechToTextCapabilities.supportsSpeakerDiarization",
+        "capability:SpeechToTextCapabilities.supportsStreamingInput",
+        "capability:SpeechToTextCapabilities.supportsTimestamps",
+        "capability:SpeechToTextCapabilities.supportsWordTimestamps",
+        "capability:SpeechToTextCapabilities.unsupportedReason",
+        "capability:TextToSpeechCapabilities.backendName",
+        "capability:TextToSpeechCapabilities.channelCount",
+        "capability:TextToSpeechCapabilities.implementation",
+        "capability:TextToSpeechCapabilities.isSupported",
+        "capability:TextToSpeechCapabilities.maxConcurrentTasks",
+        "capability:TextToSpeechCapabilities.sampleRateHz",
+        "capability:TextToSpeechCapabilities.speakerReferenceInputKinds",
+        "capability:TextToSpeechCapabilities.supportedLanguages",
+        "capability:TextToSpeechCapabilities.supportsCancellation",
+        "capability:TextToSpeechCapabilities.supportsIncrementalAudio",
+        "capability:TextToSpeechCapabilities.supportsLanguage",
+        "capability:TextToSpeechCapabilities.supportsOutputBackpressure",
+        "capability:TextToSpeechCapabilities.supportsSpeakerReference",
+        "capability:TextToSpeechCapabilities.unsupportedReason"
+      ],
+      "exemption": {
+        "id": "speech-capabilities",
+        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. This slice does not claim every speech flag or negative path is qualified.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.stateLoadFile",
+        "api:LlamaEngine.stateSaveFile",
+        "api:LlamaEngine.supportsStatePersistence",
+        "matrix:State persistence"
+      ],
+      "exemption": {
+        "id": "state-persistence",
+        "reason": "State round-trip, reload and unsupported-path contracts need a dedicated pack; generic lifecycle cases do not cover state persistence.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.createStructuredJson",
+        "capability:LlamaEngineCapabilities.supportsGrammar",
+        "capability:LlamaEngineCapabilities.supportsLazyGrammar",
+        "capability:LlamaEngineCapabilities.supportsStructuredOutput",
+        "matrix:Canonical JSON Schema tools",
+        "matrix:Lazy grammar",
+        "matrix:Strict responseFormat"
+      ],
+      "exemption": {
+        "id": "structured-output",
+        "reason": "Invalid-grammar guards do not qualify structured-output acceptance/rejection, schema reconstruction or tool/stream interactions. A dedicated structured-output pack remains required.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.detokenize",
+        "api:LlamaEngine.getTokenCount",
+        "api:LlamaEngine.tokenize"
+      ],
+      "exemption": {
+        "id": "tokenization",
+        "reason": "The decision tokenizer fixture does not cover general public tokenize/detokenize/count contracts. A dedicated tokenization pack remains.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.supportsVideo",
+        "matrix:Video"
+      ],
+      "exemption": {
+        "id": "video",
+        "reason": "Video is unsupported by the public runtime paths. Preserve typed rejection; no compatible video model/validation pack is claimed.",
+        "issue": "https://github.com/leehack/llamadart/issues/1162"
+      }
+    },
+    {
+      "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsStreamBatching"
+      ],
+      "pack": "batching"
+    },
+    {
+      "surfaces": [
+        "capability:DecisionCapabilities.backendName",
+        "capability:DecisionCapabilities.isSupported",
+        "capability:DecisionCapabilities.runtime",
+        "capability:DecisionCapabilities.unsupportedReason"
+      ],
+      "pack": "decision"
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.embed",
+        "api:LlamaEngine.embedBatch",
+        "api:LlamaEngine.embedContent",
+        "api:LlamaEngine.embedContentBatch",
+        "api:LlamaEngine.embeddingCapabilities",
+        "api:LlamaEngine.supportsEmbeddings",
+        "capability:LlamaEmbeddingCapabilities.audio",
+        "capability:LlamaEmbeddingCapabilities.image",
+        "capability:LlamaEmbeddingCapabilities.mediaUnsupportedReason",
+        "capability:LlamaEmbeddingCapabilities.supports",
+        "capability:LlamaEmbeddingCapabilities.text",
+        "capability:LlamaEngineCapabilities.supportsEmbeddings",
+        "matrix:Embeddings",
+        "matrix:Image/audio embeddings (embedContent)"
+      ],
+      "pack": "embeddings"
+    },
+    {
+      "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsMultiTurnChat",
+        "matrix:Multi-turn ChatSession"
+      ],
+      "pack": "history"
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.dispose",
+        "api:LlamaEngine.isDisposed",
+        "api:LlamaEngine.isReady",
+        "api:LlamaEngine.load",
+        "api:LlamaEngine.loadModel",
+        "api:LlamaEngine.loadModelFromUrl",
+        "api:LlamaEngine.loadModelSource",
+        "api:LlamaEngine.new",
+        "api:LlamaEngine.setModel",
+        "api:LlamaEngine.unloadModel",
+        "capability:LlamaEngineCapabilities.isSupported"
+      ],
+      "pack": "lifecycle"
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.cancelGeneration",
+        "matrix:Generation-limit reporting"
+      ],
+      "pack": "streaming"
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.complete",
+        "api:LlamaEngine.create",
+        "api:LlamaEngine.generate"
+      ],
+      "pack": "text"
+    },
+    {
+      "surfaces": [
+        "capability:LlamaEngineCapabilities.supportsToolCalling",
+        "matrix:Tool calling"
+      ],
+      "pack": "tools"
+    }
+  ]
+}

@@ -196,6 +196,10 @@ Future<String> describeClip(
 
 ## More
 
+- Media embeddings use `LlamaEmbeddingInput`, `embedContent` / `embedContentBatch`
+  and `await engine.embeddingCapabilities`, separately from chat capabilities.
+  Model/projector and backend requirements:
+  https://llamadart.leehack.com/docs/guides/embeddings
 - Multimodal guide: https://llamadart.leehack.com/docs/guides/multimodal
 - Speech to text: https://llamadart.leehack.com/docs/guides/speech-to-text
 - Support matrix: https://llamadart.leehack.com/docs/platforms/support-matrix

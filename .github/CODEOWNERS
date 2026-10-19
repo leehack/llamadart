@@ -88,3 +88,10 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 
 /tool/ci/check_genkit_package_score.py @leehack
 /test/ci/test_genkit_package_score.py @leehack
+
+# Public capability coverage and package-consumer release gates.
+/packages/llamadart_validation/assets/capability_coverage.json @leehack
+/test/unit/tooling/validation_coverage_test.dart @leehack
+/test/unit/tooling/support/validation_coverage.dart @leehack
+/test/ci/test_core_archive.py @leehack
+/test/unit/tooling/core_archive_test.dart @leehack
