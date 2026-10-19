@@ -83,7 +83,10 @@ class CoreArchiveTest(unittest.TestCase):
             with patch.object(archive.subprocess, 'run', return_value=failure):
                 with self.assertRaisesRegex(RuntimeError, 'pub dry-run failed'):
                     archive.check(root)
-            with patch.object(archive.subprocess, 'run', side_effect=[success, failure]):
+            # Keep every later command available: bypassing failure handling
+            # must fail assertRaises, not exhaust the mock's response list.
+            with patch.object(archive.subprocess, 'run',
+                              side_effect=[success, failure, failure, failure, failure]):
                 with self.assertRaisesRegex(RuntimeError, 'consumer failed'):
                     archive.check(root)
 
