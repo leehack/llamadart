@@ -12,8 +12,12 @@ For canonical full release notes, use:
 - Refresh media-embedding examples, migration links and upgrade guidance.
 - Keep the chat app and private validation harness together in repository checkouts, outside the core pub archive.
 - Require validation coverage or tracked exemptions for public capabilities, and run tooling checks for Markdown changes.
-- Aligned default WebGPU bridge assets to `v0.1.66` (unchanged from 0.15.2);
-  all native runtime pins are unchanged.
+- Aligned default WebGPU bridge assets to `v0.1.66` (unchanged from 0.15.2).
+  Runtime pins are unchanged: native `v0.7.0-1` uses upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM stays
+  `@litert-lm/core@0.18.0`.
+  Manifest SHA-256:
+  `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
 
 ## 0.15.2
 
