@@ -9,6 +9,7 @@ import 'package:llamadart/llamadart.dart';
 
 import 'case_catalog.dart';
 import 'embedding_backend.dart';
+import 'inflight_evidence.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 import 'runtime_environment.dart';
@@ -39,6 +40,7 @@ abstract interface class ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -50,7 +52,9 @@ abstract interface class ValidationEngine {
   /// Streams [first] and, at its first content or thinking delta, starts
   /// [second] without waiting for [first] to end. With [cancelFirst], that
   /// delta cancels [first] before [second] starts; otherwise [first] is
-  /// cancelled at its first delta after [second] ends. Errors are recorded.
+  /// cancelled at its first delta after [second] ends. [secondAfterMs] instead
+  /// schedules the second request from listen time, independent of visible output.
+  /// Errors are recorded and the timer is disarmed when the first stream ends.
   Future<Map<String, dynamic>> generateOverlapping(
     String first,
     String second,
@@ -58,6 +62,7 @@ abstract interface class ValidationEngine {
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   });
 }
 
@@ -152,6 +157,7 @@ class PublicValidationEngine
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -167,6 +173,7 @@ class PublicValidationEngine
     streamBatchBytes: streamBatchBytes,
     cancelAfterFirst: cancelAfterFirst,
     cancelOnListen: cancelOnListen,
+    cancelAfterMs: cancelAfterMs,
     history: history,
     stopSequences: stopSequences,
     enableThinking: enableThinking,
@@ -183,6 +190,7 @@ class PublicValidationEngine
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   }) async {
     final clock = Stopwatch()..start();
     double? ms(int? us) => us == null ? null : us / 1000;
@@ -191,6 +199,7 @@ class PublicValidationEngine
     int? secondEndedUs;
     int? firstCancelUs;
     int? firstEndedUs;
+    Timer? secondTimer;
     bool? firstEndedAtSecondIssue;
     var firstDeltasAfterSecondEnded = 0;
     Future<Map<String, dynamic>> capture(
@@ -207,28 +216,34 @@ class PublicValidationEngine
         'stream_completed': false,
       };
     });
-    void onFirstDelta() {
+    void issueSecond() {
+      if (secondRun != null || firstEndedUs != null) return;
       final now = clock.elapsedMicroseconds;
+      if (cancelFirst) {
+        firstCancelUs = now;
+        cancel();
+      }
+      firstEndedAtSecondIssue = firstEndedUs != null;
+      secondIssuedUs = clock.elapsedMicroseconds;
+      secondRun = capture(
+        _generate(
+          second,
+          profile,
+          raw: raw,
+          clock: clock,
+          collectMetrics: false,
+          onStreamEnd: () => secondEndedUs ??= clock.elapsedMicroseconds,
+        ),
+        () => secondEndedUs ??= clock.elapsedMicroseconds,
+      );
+    }
+
+    void onFirstDelta() {
       if (secondRun == null) {
-        if (cancelFirst) {
-          firstCancelUs = now;
-          cancel();
-        }
-        firstEndedAtSecondIssue = firstEndedUs != null;
-        secondIssuedUs = clock.elapsedMicroseconds;
-        secondRun = capture(
-          _generate(
-            second,
-            profile,
-            raw: raw,
-            clock: clock,
-            collectMetrics: false,
-            onStreamEnd: () => secondEndedUs ??= clock.elapsedMicroseconds,
-          ),
-          () => secondEndedUs ??= clock.elapsedMicroseconds,
-        );
+        if (secondAfterMs == null) issueSecond();
         return;
       }
+      final now = clock.elapsedMicroseconds;
       if (secondEndedUs == null) return;
       firstDeltasAfterSecondEnded++;
       if (!cancelFirst && firstCancelUs == null) {
@@ -246,7 +261,16 @@ class PublicValidationEngine
         clock: clock,
         collectMetrics: false,
         onDelta: onFirstDelta,
-        onStreamEnd: () => firstEndedUs ??= clock.elapsedMicroseconds,
+        onListen: secondAfterMs == null
+            ? null
+            : () => secondTimer = Timer(
+                Duration(milliseconds: secondAfterMs),
+                issueSecond,
+              ),
+        onStreamEnd: () {
+          secondTimer?.cancel();
+          firstEndedUs ??= clock.elapsedMicroseconds;
+        },
       ),
       () => firstEndedUs ??= clock.elapsedMicroseconds,
     );
@@ -255,6 +279,7 @@ class PublicValidationEngine
       'first': firstOutput,
       'second': ?secondOutput,
       'cancel_first': cancelFirst,
+      'second_after_ms': secondAfterMs,
       'second_issued': secondOutput != null,
       'first_ended_before_second_issued': firstEndedAtSecondIssue,
       'first_cancelled_before_second_issued':
@@ -280,6 +305,7 @@ class PublicValidationEngine
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -289,6 +315,7 @@ class PublicValidationEngine
     Stopwatch? clock,
     bool collectMetrics = true,
     void Function()? onDelta,
+    void Function()? onListen,
     void Function()? onStreamEnd,
   }) async {
     final text = StringBuffer();
@@ -298,6 +325,7 @@ class PublicValidationEngine
     var toolBytes = 0;
     var ordered = true;
     var chunks = 0;
+    Timer? cancelTimer;
     int? firstUs;
     int? cancelUs;
     int? chunksBeforeCancel;
@@ -313,25 +341,31 @@ class PublicValidationEngine
     final npuBefore = npu?.snapshot();
     final watch = Stopwatch()..start();
     void requestCancel() {
+      if (cancelUs != null) return;
       cancelUs = watch.elapsedMicroseconds;
       chunksBeforeCancel = chunks;
       cancel();
     }
 
-    Stream<T> listened<T>(Stream<T> source) => !cancelOnListen
-        ? source
-        : Stream<T>.multi((controller) {
-            final subscription = source.listen(
-              controller.addSync,
-              onError: controller.addErrorSync,
-              onDone: controller.closeSync,
-            );
-            controller
-              ..onPause = subscription.pause
-              ..onResume = subscription.resume
-              ..onCancel = subscription.cancel;
-            requestCancel();
-          });
+    Stream<T> listened<T>(Stream<T> source) => Stream<T>.multi((controller) {
+      final subscription = source.listen(
+        controller.addSync,
+        onError: controller.addErrorSync,
+        onDone: controller.closeSync,
+      );
+      controller
+        ..onPause = subscription.pause
+        ..onResume = subscription.resume
+        ..onCancel = subscription.cancel;
+      onListen?.call();
+      if (cancelOnListen) requestCancel();
+      if (cancelAfterMs != null) {
+        cancelTimer = Timer(
+          Duration(milliseconds: cancelAfterMs),
+          requestCancel,
+        );
+      }
+    });
 
     void delta() {
       firstDeltaClockUs ??= clock?.elapsedMicroseconds;
@@ -411,6 +445,7 @@ class PublicValidationEngine
         rethrow;
       }
     } finally {
+      cancelTimer?.cancel();
       endClockUs = clock?.elapsedMicroseconds;
       onStreamEnd?.call();
     }
@@ -453,6 +488,7 @@ class PublicValidationEngine
       'stream_batch_bytes': params.streamBatchByteThreshold,
       'cancel_requested': cancelUs != null,
       'cancel_on_listen': cancelOnListen,
+      'cancel_after_ms': cancelAfterMs,
       'chunks_before_cancel': chunksBeforeCancel,
       'cancel_abort_observed': cancellationAbort != null,
       'cancel_abort': ?cancellationAbort,
@@ -1128,24 +1164,37 @@ class ValidationRunner {
       };
     }
     final cancel = profile.fixtures['cancel'] as Map;
+    final prompt = profile.isChat
+        ? profile.fixtureText('cancel', 'chat_prompt')
+        : profile.fixtureText('raw', 'prompt');
+    Map<String, dynamic>? control;
+    if (!restart) {
+      _operationPhase = 'overlap_control';
+      control = await _checked(
+        () => engine.generate(
+          prompt,
+          profile,
+          raw: !profile.isChat,
+          maxTokens: cancel['max_tokens'] as int,
+        ),
+      );
+    }
     _operationPhase = restart ? 'cancel_then_restart' : 'overlap';
     final pair = await _checked(
       () => engine.generateOverlapping(
-        profile.isChat
-            ? profile.fixtureText('cancel', 'chat_prompt')
-            : profile.fixtureText('raw', 'prompt'),
+        prompt,
         _shortPrompt,
         profile,
         raw: !profile.isChat,
         firstMaxTokens: cancel['max_tokens'] as int,
         cancelFirst: restart,
+        secondAfterMs: restart ? null : _inflightDelay(control!),
       ),
     );
     final first = pair['first'] as Map<String, dynamic>;
     final second = pair['second'] as Map<String, dynamic>?;
     final timeline = pair['timeline_ms'] as Map;
     final firstEnded = timeline['first_ended'] as num?;
-    final secondEnded = timeline['second_ended'] as num?;
     final issuedWhileRunning =
         pair['second_issued'] == true &&
         pair['first_ended_before_second_issued'] == false;
@@ -1177,38 +1226,45 @@ class ValidationRunner {
               'the cancelled stream ended',
       };
     }
-    final precondition =
-        issuedWhileRunning &&
-        pair['first_cancelled_before_second_issued'] == false &&
-        firstEnded != null &&
-        secondEnded != null &&
-        secondEnded <= firstEnded;
     _partialCaseEvidence = pair;
     _operationPhase = 'overlap_recovery';
     final recovery = await _short();
-    return {
+    final evidence = <String, dynamic>{
       ...pair,
+      'uncancelled_control': control,
       'recovery': recovery,
       'expected':
-          'A request issued while another runs uncancelled fails with '
-          'LlamaStateException, the running generation continues, and a '
-          'later request completes',
+          'A timed request while native generation runs uncancelled fails with '
+          'LlamaStateException, the first stream continues and a later request completes',
+    };
+    final precondition = overlapWindowObserved(evidence);
+    return {
+      ...evidence,
       'status': !precondition
           ? 'NOT_RUN'
-          : second?['state_exception'] == true &&
-                second?['content'] == '' &&
-                (pair['first_deltas_after_second_ended'] as int) >= 1 &&
-                first['error_type'] == null &&
-                first['stream_completed'] == true &&
-                first['completion_order_valid'] == true &&
-                recovery['cancel_requested'] == false &&
-                _completedText(recovery)
+          : validInflightEvidence(
+              'C08.overlap',
+              evidence,
+              deadlineMs: cancel['deadline_ms'] as num,
+            )
           ? 'PASS'
           : 'FAIL',
       if (!precondition)
         'reason':
-            'The first generation ended before the overlapping request settled',
+            'The timed request did not settle before the first stream ended',
     };
+  }
+
+  int _inflightDelay(Map<String, dynamic> control) {
+    final wall = (control['metrics'] as Map?)?['wall_ms'] as num?;
+    if (wall == null || !wall.isFinite || wall <= 0) {
+      throw StateError(
+        'In-flight validation requires a measured control duration',
+      );
+    }
+    final fraction =
+        (profile.fixtures['inflight'] as Map)['control_fraction'] as num;
+    return math.max(1, (wall * fraction).floor());
   }
 
   Future<Map<String, dynamic>> _invalidGrammar() async {
@@ -1518,44 +1574,39 @@ class ValidationRunner {
             profile,
             raw: !profile.isChat,
             maxTokens: (profile.fixtures['cancel'] as Map)['max_tokens'] as int,
-            cancelAfterFirst: true,
+            cancelAfterFirst: profile.runtime != 'gguf' || engine.isWeb,
+            cancelAfterMs: profile.runtime == 'gguf' && !engine.isWeb
+                ? _inflightDelay(control)
+                : null,
           ),
         );
         final recovery = await _short();
-        final duration = output['cancel_to_done_ms'] as num?;
-        final fullTokens =
-            (control['metrics'] as Map?)?['native_decode_tokens'] as num?;
-        final cancelledTokens =
-            (output['metrics'] as Map?)?['native_decode_tokens'] as num?;
-        final prefixMatches =
-            (output['content'] as String).isNotEmpty &&
-            (control['content'] as String).startsWith(
-              output['content'] as String,
-            );
-        final nativeInterruption =
-            fullTokens != null &&
-            cancelledTokens != null &&
-            cancelledTokens > 0 &&
-            cancelledTokens < fullTokens;
-        final interrupted =
-            prefixMatches &&
-            (nativeInterruption || output['cancel_abort_observed'] == true);
-
-        return {
+        final evidence = <String, dynamic>{
           ...output,
           'recovery': recovery,
           'uncancelled_control': control,
+        };
+        final interrupted = cancellationObserved(
+          evidence,
+          allowAbort: engine.isWeb,
+        );
+        return {
+          ...evidence,
           'interruption_observed': interrupted,
           'status': output['cancel_requested'] != true || !interrupted
               ? 'NOT_RUN'
-              : duration != null &&
-                    duration <=
-                        (profile.fixtures['cancel'] as Map)['deadline_ms'] &&
-                    (recovery['content'] as String).trim().isNotEmpty
+              : validInflightEvidence(
+                  'C08.cancel',
+                  evidence,
+                  allowAbort: engine.isWeb,
+                  deadlineMs:
+                      (profile.fixtures['cancel'] as Map)['deadline_ms'] as num,
+                )
               ? 'PASS'
               : 'FAIL',
           'reason':
-              'requires fewer native decoded tokens or an explicit cancellation abort, matching the seeded control prefix, prompt recovery and bounded cancellation latency',
+              'requires fewer native decoded tokens or an explicit cancellation abort, '
+              'matching control prefix, ordered completion, recovery and bounded cancellation latency',
         };
       case 'C09.reload':
       case 'C09.reload.second':

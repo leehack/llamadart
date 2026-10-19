@@ -47,6 +47,12 @@ not inference or grammar-enforcement evidence. They do not qualify a model,
 backend or physical device. #1196's dedicated structured-output pack remains
 open, as do the other family cases under #740 and #741.
 
+Catalog 6 also tests native cancellation and overlap independently of visible
+output, including EOF-gated GPT-OSS streams. A measured control calibrates the
+trigger; native token reduction or an actual overlap rejection proves the
+in-flight condition. A missed condition stays NOT_RUN, and older journals keep
+their original results. See [the case contract](../../doc/cross_platform_validation.md#catalog-6-in-flight-cancellation-and-overlap).
+
 ## Running validation
 
 Start from the repository root:

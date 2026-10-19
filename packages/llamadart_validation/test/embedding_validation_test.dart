@@ -164,6 +164,18 @@ Map<String, dynamic> caseOf(ValidationReport r, String id) =>
     r.cases.singleWhere((c) => c['case_id'] == id);
 
 void main() {
+  test('catalog 5 embedding journals retain their qualification', () async {
+    final selected = profile();
+    final result = await runPack(FakeEmbeddingEngine());
+    final events = (jsonDecode(jsonEncode(result.events)) as List)
+        .cast<Map<String, dynamic>>();
+    events.first['catalog'] = selected.catalogForVersion(5);
+    events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+    final old = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+    expect(old.problems, isEmpty);
+    expect(old.qualified, result.report.qualified);
+  });
+
   test('embedding profiles select the complete embedding pack', () {
     for (final backend in ['cpu', 'metal']) {
       final profile = ValidationProfile.fromJson(
@@ -397,7 +409,7 @@ void main() {
         change(data);
         expect(() => ValidationProfile.fromJson(data), throwsFormatException);
       }
-      for (var v = 1; v < validationCatalogVersion; v++) {
+      for (var v = 1; v < 5; v++) {
         expect(() => profile().catalogForVersion(v), throwsFormatException);
       }
       final chat = ValidationProfile.fromJson(

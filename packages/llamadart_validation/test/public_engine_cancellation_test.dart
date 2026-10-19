@@ -10,6 +10,9 @@ import 'package:test/test.dart';
 /// backend's single running generation: a request issued after a cancel waits
 /// for the cancelled run, and one issued beside a running request fails.
 class ScriptedEngine implements LlamaEngine {
+  ScriptedEngine({this.eofGated = false});
+  final bool eofGated;
+  int decodedTokens = 0;
   final events = <String>[];
   final requests = <GenerationParams>[];
   var _epoch = 0;
@@ -52,10 +55,20 @@ class ScriptedEngine implements LlamaEngine {
           }
           if (running != null) await running.done.future;
           final run = _active = _Run();
+          final pending = StringBuffer();
+          decodedTokens = 0;
           for (var i = 0; i < params.maxTokens && !run.cancelled; i++) {
             await Future<void>.delayed(const Duration(milliseconds: 1));
-            if (!run.cancelled) controller.add('$prompt$i ');
+            if (!run.cancelled) {
+              decodedTokens++;
+              if (eofGated) {
+                pending.write('$prompt$i ');
+              } else {
+                controller.add('$prompt$i ');
+              }
+            }
           }
+          if (eofGated && !run.cancelled) controller.add(pending.toString());
           _active = null;
           events.add('end:$prompt');
           await controller.close();
@@ -163,6 +176,92 @@ void main() {
       lessThanOrEqualTo(timeline['first_cancel'] as num),
     );
     expect((pair['first'] as Map)['stream_completed'], true);
+  });
+
+  test(
+    'timed cancel interrupts EOF-gated work before any visible delta',
+    () async {
+      final engine = ScriptedEngine(eofGated: true);
+      final adapter = PublicValidationEngine(engineFactory: () => engine);
+      final cancelled = await adapter.generate(
+        'long',
+        profile,
+        raw: true,
+        maxTokens: 100,
+        cancelAfterMs: 30,
+      );
+      expect(engine.decodedTokens, inExclusiveRange(0, 100));
+      expect(cancelled['cancel_requested'], true);
+      expect(cancelled['chunks_before_cancel'], 0);
+      expect(cancelled['content'], '');
+      expect(cancelled['stream_completed'], true);
+      final recovery = await adapter.generate(
+        'short',
+        profile,
+        raw: true,
+        maxTokens: 2,
+      );
+      expect(recovery['content'], 'short0 short1 ');
+      expect(recovery['cancel_requested'], false);
+    },
+  );
+
+  test(
+    'timed overlap rejects before EOF and the first stream continues',
+    () async {
+      final engine = ScriptedEngine(eofGated: true);
+      final pair = await PublicValidationEngine(engineFactory: () => engine)
+          .generateOverlapping(
+            'long',
+            'short',
+            profile,
+            raw: true,
+            firstMaxTokens: 100,
+            cancelFirst: false,
+            secondAfterMs: 20,
+          );
+      expect((pair['second'] as Map)['state_exception'], true);
+      expect(pair['first_ended_before_second_issued'], false);
+      expect(pair['first_cancelled_before_second_issued'], false);
+      expect(pair['first_deltas_after_second_ended'], greaterThanOrEqualTo(1));
+      expect((pair['first'] as Map)['content'], startsWith('long0 '));
+      expect(
+        engine.events.indexOf('rejected:short'),
+        lessThan(engine.events.indexOf('end:long')),
+      );
+    },
+  );
+
+  test('completed streams disarm timers before recovery', () async {
+    final engine = ScriptedEngine(eofGated: true);
+    final adapter = PublicValidationEngine(engineFactory: () => engine);
+    final first = await adapter.generate(
+      'a',
+      profile,
+      raw: true,
+      maxTokens: 1,
+      cancelAfterMs: 30,
+    );
+    expect(first['cancel_requested'], false);
+    final pair = await adapter.generateOverlapping(
+      'b',
+      'missed',
+      profile,
+      raw: true,
+      firstMaxTokens: 1,
+      cancelFirst: false,
+      secondAfterMs: 30,
+    );
+    expect(pair['second_issued'], false);
+    final recovery = await adapter.generate(
+      'recovery',
+      profile,
+      raw: true,
+      maxTokens: 100,
+    );
+    expect(recovery['content'], endsWith('recovery99 '));
+    expect(engine.events, isNot(contains('cancel')));
+    expect(engine.events, isNot(contains('listen:missed')));
   });
 
   test('grammar reaches the generation parameters', () async {

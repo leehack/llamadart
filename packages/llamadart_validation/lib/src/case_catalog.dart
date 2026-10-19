@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 5;
+const int validationCatalogVersion = 6;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -69,6 +69,7 @@ const validationFixtures = <String, Map<String, Object>>{
     'max_tokens': 256,
     'deadline_ms': 5000,
   },
+  'inflight': {'control_fraction': 0.25},
   'batching': {'token_threshold': 1, 'byte_threshold': 1},
   'stop': {
     'prompt': 'Reply with exactly: alpha cedar17 omega',
@@ -143,7 +144,8 @@ const coreValidationCases = [
   ValidationCaseDefinition(
     'C08.cancel',
     ['streaming', 'lifecycle'],
-    ['cancel', 'raw', 'hello'],
+    ['cancel', 'raw', 'hello', 'inflight'],
+    version: 2,
   ),
   ValidationCaseDefinition(
     'C08.cancel.early',
@@ -158,7 +160,8 @@ const coreValidationCases = [
   ValidationCaseDefinition(
     'C08.overlap',
     ['streaming', 'lifecycle'],
-    ['cancel', 'raw', 'hello'],
+    ['cancel', 'raw', 'hello', 'inflight'],
+    version: 2,
   ),
   ValidationCaseDefinition('C09.reload', ['lifecycle'], ['raw', 'hello']),
   ValidationCaseDefinition(
@@ -248,13 +251,13 @@ const catalogFiveCaseIds = {
 };
 
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
-/// the current catalog, and only decision profiles select them.
+/// catalogs 5 and newer, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
     [
       ...decisionValidationCases,
       ...embeddingValidationCases,
     ].any((definition) => definition.id == id)
-    ? catalogVersion == validationCatalogVersion
+    ? catalogVersion >= 5
     : catalogVersion >= 5 || !catalogFiveCaseIds.contains(id);
 
 /// Finds a declared case; an unknown ID is a programming error.
@@ -267,6 +270,13 @@ ValidationCaseDefinition validationCase(
   }
   if (!catalogDeclaresCase(id, catalogVersion)) {
     throw FormatException('Catalog $catalogVersion does not declare $id');
+  }
+  if (catalogVersion < 6 && (id == 'C08.cancel' || id == 'C08.overlap')) {
+    return ValidationCaseDefinition(
+      id,
+      ['streaming', 'lifecycle'],
+      ['cancel', 'raw', 'hello'],
+    );
   }
   final current = catalogVersion < 5 && id == 'C07.tools'
       ? const ValidationCaseDefinition(

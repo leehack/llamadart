@@ -97,6 +97,7 @@ class FakeDecisionEngine implements ValidationEngine, DecisionValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -113,6 +114,7 @@ class FakeDecisionEngine implements ValidationEngine, DecisionValidationEngine {
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   }) => throw StateError('decision profiles do not generate text');
 
   Map<String, dynamic> _head() => {
@@ -325,8 +327,8 @@ void main() {
     expect((catalog['features'] as Map).containsKey('decision'), isFalse);
   });
 
-  test('decision cases require the current catalog version', () {
-    for (var version = 1; version < validationCatalogVersion; version++) {
+  test('decision cases require catalog 5 or newer', () {
+    for (var version = 1; version < 5; version++) {
       expect(
         () => _profile().catalogForVersion(version),
         throwsFormatException,
@@ -457,6 +459,18 @@ void main() {
       fixture['score_tolerance'],
       2 * (fixture['probability_tolerance'] as double),
     );
+  });
+
+  test('catalog 5 decision journals retain their qualification', () async {
+    final selected = _profile();
+    final result = await _run(FakeDecisionEngine());
+    final events = (jsonDecode(jsonEncode(result.events)) as List)
+        .cast<Map<String, dynamic>>();
+    events.first['catalog'] = selected.catalogForVersion(5);
+    events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+    final old = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+    expect(old.problems, isEmpty);
+    expect(old.qualified, result.report.qualified);
   });
 
   test('reference answers pass every decision case', () async {
@@ -960,6 +974,7 @@ class _LoadOnlyEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -976,6 +991,7 @@ class _LoadOnlyEngine implements ValidationEngine {
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   }) => _delegate.generateOverlapping(
     first,
     second,

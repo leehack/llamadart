@@ -84,6 +84,7 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     bool cancelOnListen = false,
+    int? cancelAfterMs,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
@@ -109,7 +110,7 @@ class NativeNpuReferenceEngine implements ValidationEngine {
         'Direct native control has no public worker batching',
       );
     }
-    if (raw || cancelAfterFirst || cancelOnListen) {
+    if (raw || cancelAfterFirst || cancelOnListen || cancelAfterMs != null) {
       throw UnsupportedError(
         'Native reference only covers blocking text conversations',
       );
@@ -130,6 +131,7 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     required bool raw,
     required int firstMaxTokens,
     required bool cancelFirst,
+    int? secondAfterMs,
   }) => throw UnsupportedError(
     'Native reference only covers blocking text conversations',
   );

@@ -1779,6 +1779,33 @@ Unicode generation, thinking on/off and tool choice/result controls. Thinking
 budgets, tool-bearing batching and model-specific qualification remain separate.
 
 
+### Catalog 6 in-flight cancellation and overlap
+
+Catalog 6 versions `C08.cancel` and `C08.overlap` to 2. Native GGUF runs
+measure an uncancelled control and arm a timer, after listening, at one quarter
+of its wall duration. This lets the harness exercise native work while a chat
+parser withholds protocol-framed output until EOF ([#1217](https://github.com/leehack/llamadart/issues/1217)).
+Timers are disarmed when their stream ends; a missed window stays NOT_RUN.
+
+Cancellation still needs fewer native decoded tokens than the same seeded
+control, with a positive cancelled token count, matching visible prefix,
+ordered completion, recovery and the 5 s deadline. Empty visible output is
+valid only with that native interruption proof. Merely firing the timer,
+shorter wall time, zero decoded tokens or unchanged native counters cannot
+qualify. Web GGUF and LiteRT retain the first-content trigger; the pinned
+WASM delegate's explicit cancellation abort remains Web-only evidence.
+
+Overlap must reject the second request with `LlamaStateException` before the
+first stream ends, deliver at least one later first-stream delta, preserve
+completion order and recover. A successful second request fails the case.
+The journal importer rechecks both version-2 success predicates. Catalogs 1–5
+keep their original fixture hashes, case versions and classifications;
+decision and embedding journals from catalog 5 remain readable.
+
+`C08.cancel.restart` keeps its version-1 contract below: it proves queueing
+and completion after cancelling a still-open public stream. With EOF-gated
+output it does not separately prove native decoding was interrupted.
+
 ### Catalog 5 cancellation, grammar and tool cases
 
 Catalog 5 adds these cases. Each records the precondition it needs and its

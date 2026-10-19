@@ -403,6 +403,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 6) resolved.remove('inflight');
     if (version < 5) resolved.remove('invalid_grammar');
     if (version < 4) {
       final tools = resolved['tools'] as Map;
@@ -455,9 +456,9 @@ class ValidationProfile {
   /// Reconstructs a supported historical catalog without inventing new evidence.
   Map<String, dynamic> catalogForVersion(int version) {
     validationCase('C11.batching', catalogVersion: version);
-    if ((isDecision || isEmbedding) && version != validationCatalogVersion) {
+    if ((isDecision || isEmbedding) && version < 5) {
       throw const FormatException(
-        'Decision cases require catalog version $validationCatalogVersion',
+        'Decision and embedding cases require catalog version 5 or newer',
       );
     }
     if (version == 1 &&
@@ -465,6 +466,12 @@ class ValidationProfile {
             (data['fixtures'] as Map?)?.containsKey('batching') == true)) {
       throw const FormatException(
         'Batching selection requires catalog version 2',
+      );
+    }
+    if (version < 6 &&
+        (data['fixtures'] as Map?)?.containsKey('inflight') == true) {
+      throw const FormatException(
+        'In-flight fixture requires catalog version 6',
       );
     }
     if (version < 5 &&

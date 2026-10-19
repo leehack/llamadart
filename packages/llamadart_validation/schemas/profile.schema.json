@@ -314,6 +314,11 @@
             }
           }
         },
+        "inflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
         "batching": {
           "type": "object",
           "additionalProperties": false,
