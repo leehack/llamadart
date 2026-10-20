@@ -467,14 +467,19 @@ List<String> _glmUntilAnyLiteralRules(
       .expand((marker) => marker)
       .toSet()
       .toList(growable: false);
-  final lines = <String>[
-    '$ruleBase-other ::= [^${alphabet.map(_escapeGlmCharacterClass).join()}]',
-  ];
+  String charClass(Iterable<String> characters) =>
+      characters.map(_escapeGlmCharacterClass).join();
+  final lines = <String>[];
   for (var state = 0; state < states.length; state++) {
-    final alternatives = <String>['$ruleBase-other $ruleBase-0'];
+    // llama.cpp keeps one grammar stack per alternative and checks every
+    // vocabulary token against each one, so characters are grouped by target
+    // state and every return to the start state shares the negated class.
+    final specific = <String>[];
+    final charactersByTarget = <int, List<String>>{};
     for (final character in alphabet) {
       final candidate = '${states[state]}$character';
       if (delimiters.any(candidate.endsWith)) {
+        specific.add(character);
         continue;
       }
       final nextState = states
@@ -485,10 +490,18 @@ List<String> _glmUntilAnyLiteralRules(
                 prefix.length > longest.length ? prefix : longest,
           );
       final next = stateIndexes[nextState]!;
-      alternatives.add(
-        '"${_escapeGlmLiteralCharacter(character)}" $ruleBase-$next',
-      );
+      if (next == 0) {
+        continue;
+      }
+      specific.add(character);
+      charactersByTarget.putIfAbsent(next, () => []).add(character);
     }
+    final alternatives = [
+      for (final MapEntry(key: next, value: characters)
+          in charactersByTarget.entries)
+        '[${charClass(characters)}] $ruleBase-$next',
+      '[^${charClass(specific)}] $ruleBase-0',
+    ];
     lines.add('$ruleBase-$state ::= (${alternatives.join(' | ')})?');
   }
   return lines;
@@ -502,10 +515,6 @@ String _escapeGlmCharacterClass(String character) {
     '^' => r'\^',
     _ => character,
   };
-}
-
-String _escapeGlmLiteralCharacter(String character) {
-  return character.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 }
 
 String _hideIncompleteToolCallBlock(String input) {

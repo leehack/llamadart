@@ -7,6 +7,7 @@
 - Keep Kimi K3 turn-end and think/response channel markers out of streamed answers and reasoning, and stream MiniMax M1 text after a leading tool call.
 - Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
+- Fix GLM 4.5/4.7 and Laguna tool calls stalling for minutes on native llama.cpp while generating string argument values.
 
 ## 0.15.4
 
