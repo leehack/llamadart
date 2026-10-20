@@ -836,6 +836,106 @@ void main() {
       },
     );
 
+    test('LFM2 and Kimi K2 gate tool calls in content and thoughts', () async {
+      for (final (format, call, opening) in [
+        (
+          ChatFormat.lfm2,
+          '<|tool_call_start|>[{"name":"weather",'
+              '"arguments":{"city":"Montréal 🌧"}}]<|tool_call_end|>',
+          '<|tool_call_start|>',
+        ),
+        (
+          ChatFormat.kimiK2,
+          '<|tool_calls_section_begin|><|tool_call_begin|>functions.weather:0'
+              '<|tool_call_argument_begin|>{"city":"Montréal 🌧"}'
+              '<|tool_call_end|><|tool_calls_section_end|>',
+          '<|tool_calls_section_begin|>',
+        ),
+      ]) {
+        for (final (output, forcedOpen) in [
+          ('Let me check.\n$call', false),
+          (call, false),
+          ('Let me check.\n$call\nDone.', false),
+          ('<think>Plan.</think>Let me check.\n$call', false),
+          ('<think>Plan $call more.</think>Answer.', false),
+          ('$call<think>After.</think>Done.', false),
+          ('<think>A $call</think>B<think>C</think>D', false),
+          (r'<think>Line\none and <|tool_c</think>Answer.', false),
+          ('Literal <|tool_call and text.', false),
+          ('Let me check.\n${call.substring(0, call.length ~/ 2)}', false),
+          ('Plan.</think>Let me check.\n$call', true),
+          ('Plan $call</think>Done.', true),
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              forcedOpen: forcedOpen,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+              openings: [opening, '</think>'],
+            );
+          }
+          // Raw streams without tools keep escaped newlines in reasoning
+          // (a separate issue), so this output is checked with tools only.
+          if (!forcedOpen && !output.contains(r'\n')) {
+            await _expectStreamMatchesParse(format, output, tools: false);
+          }
+        }
+      }
+    });
+
+    test('unclosed forced thoughts keep reasoning after a held call', () async {
+      for (final (format, call) in [
+        (
+          ChatFormat.lfm2,
+          '<|tool_call_start|>[{"name":"weather",'
+              '"arguments":{"city":"Paris"}}]<|tool_call_end|>',
+        ),
+        (
+          ChatFormat.kimiK2,
+          '<|tool_calls_section_begin|><|tool_call_begin|>functions.weather:0'
+              '<|tool_call_argument_begin|>{"city":"Paris"}'
+              '<|tool_call_end|><|tool_calls_section_end|>',
+        ),
+      ]) {
+        for (final output in [
+          '\nPlan. $call Then more thinking',
+          '\nPlan. ${call.substring(0, call.length - 30)}',
+        ]) {
+          final parsed = ChatTemplateEngine.parse(
+            format.index,
+            output,
+            thinkingForcedOpen: true,
+            tools: [_weatherTool],
+          );
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable([
+              for (var i = 0; i < output.length; i += 4)
+                output.substring(i, min(i + 4, output.length)),
+            ]),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: format.index,
+              thinkingForcedOpen: true,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: 'unclosed-thought',
+            tools: [_weatherTool],
+          ).toList();
+          expect(
+            chunks
+                .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                .join(),
+            parsed.reasoningContent!.trimLeft(),
+            reason: '${format.name} $output',
+          );
+        }
+      }
+    });
+
     test('Llama 3 builtin tools gate the python tag after prose', () async {
       const call = '<|python_tag|>code_interpreter.call(code="1+1")';
       for (final output in [
