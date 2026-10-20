@@ -24,6 +24,8 @@ import 'fixtures/image_warmup_comparison.dart';
 // LLAMADART_IMAGE_SPLIT_MODEL lists a split model's local files, comma
 // separated in any order, such as FLUX.1-schnell's transformer, ae, CLIP-L
 // and T5-XXL; the engine assigns their roles and generates 4 steps at 512.
+// LLAMADART_IMAGE_CHECKPOINT_FORMATS and LLAMADART_TAESD_FORMATS compare
+// comma-separated same-weight container variants on the CPU, baseline first.
 void main() {
   final sdxsPath = Platform.environment['LLAMADART_SDXS_MODEL'];
   final sdTurboPath = Platform.environment['LLAMADART_SD_TURBO_MODEL'];
@@ -87,6 +89,66 @@ void main() {
       lessThan(timings.second * 2 + const Duration(milliseconds: 250)),
     );
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
+  for (final (role, variable) in [
+    (ImageModelRole.checkpoint, 'LLAMADART_IMAGE_CHECKPOINT_FORMATS'),
+    (ImageModelRole.taesd, 'LLAMADART_TAESD_FORMATS'),
+  ]) {
+    test('${role.name} containers preserve CPU pixels', () async {
+      final paths = Platform.environment[variable]?.split(',');
+      if (paths == null || taesdPath == null || sdTurboPath == null) {
+        markTestSkipped(
+          'Set $variable, LLAMADART_SD_TURBO_MODEL and LLAMADART_TAESD',
+        );
+        return;
+      }
+      expect(paths.length, greaterThanOrEqualTo(2));
+      List<int>? baseline;
+      for (final (index, path) in paths.indexed) {
+        final checkpoint = role == ImageModelRole.checkpoint;
+        final engine = await ImageGenerationEngine.load(
+          ImageGenerationModel(
+            ModelSource.path(checkpoint ? path.trim() : sdTurboPath),
+            role: checkpoint && index > 0 ? role : null,
+            components: [
+              ImageModelComponent(
+                ModelSource.path(checkpoint ? taesdPath : path.trim()),
+                role: ImageModelRole.taesd,
+              ),
+            ],
+          ),
+          params: const ImageModelParams(device: ComputeDevice.cpu, threads: 4),
+        );
+        try {
+          expect((await engine.capabilities).backendName, 'CPU');
+          final result = await engine.generateImage(
+            const ImageGenerationRequest(
+              prompt: 'a red apple on a wooden table',
+              width: 128,
+              height: 128,
+              steps: 1,
+              guidanceScale: 1,
+              seed: 42,
+            ),
+          );
+          final image = result.images.single;
+          expect((image.width, image.height, image.channels), (128, 128, 3));
+          if (baseline == null) {
+            expect(image.pixels.toSet().length, greaterThan(64));
+            baseline = image.pixels;
+          } else {
+            expect(
+              image.pixels,
+              baseline,
+              reason: '$variable candidate $index',
+            );
+          }
+        } finally {
+          await engine.dispose();
+        }
+      }
+    });
+  }
 
   test('a rejected split checkpoint names the roles it lacks', () async {
     // SDXS is a single-file checkpoint; given the diffusionModel role it has

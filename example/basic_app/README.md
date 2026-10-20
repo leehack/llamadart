@@ -359,6 +359,25 @@ Set `LLAMADART_IMAGE_HF_CACHE` to a cache directory to also load SDXS
 from its pinned Hugging Face file through `ImageGenerationEngine.load` (683 MB on the first run) and
 check that the next load reuses the cache.
 
+To compare containers without downloading models, supply comma-separated local
+files with **identical tensor values**, baseline first:
+
+- `LLAMADART_IMAGE_CHECKPOINT_FORMATS`: a GGUF/Safetensors baseline followed
+  by compatible checkpoint variants. Candidates use an explicit checkpoint role.
+- `LLAMADART_TAESD_FORMATS`: a full TAESD baseline followed by compatible
+  Safetensors/PyTorch variants; every decoder uses the explicit `taesd` role.
+
+Set `LLAMADART_SD_TURBO_MODEL` and `LLAMADART_TAESD` as above, then run:
+
+```bash
+dart test --configuration test/image_generation_smoke.yaml -t local-only \
+  test/image_generation_e2e_test.dart --name 'containers preserve CPU pixels'
+```
+
+The checks compare exact 128x128 one-step CPU output and dispose between loads.
+Use trusted files; these tests never execute Python checkpoint code. Component
+success does not qualify a full checkpoint or other architectures/platforms.
+
 Another local-only test checks that a program ending with a llama.cpp or
 image model still loaded, by returning from `main` or by throwing, exits
 normally instead of aborting on macOS Metal:

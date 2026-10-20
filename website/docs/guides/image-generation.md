@@ -142,7 +142,7 @@ model formats; leave `ModelSource.format` unset for image files.
 | PyTorch checkpoint (`.ckpt`, `.pth`, `.pt`) | Explicit role required; forwarded to the native loader | Only compatible ZIP/legacy state-dict layouts; real-checkpoint qualification remains incomplete ([#1218](https://github.com/leehack/llamadart/issues/1218)) |
 | Separate component files | Each file resolves independently and gets a role; GGUF and Safetensors can be mixed | Supply the matching diffusion weights, encoders and decoder from the [recipes](#recipes) |
 | Diffusers directory or repository | No public directory/repository ingestion; local sources must be regular files | Pass compatible component files individually; selected directory layouts are tracked in [#1219](https://github.com/leehack/llamadart/issues/1219) |
-| Safetensors JSON index and shards | No managed shard-set loading | Downloading an index does not fetch its shards; an explicit local index path is unqualified ([#1219](https://github.com/leehack/llamadart/issues/1219)) |
+| Safetensors JSON index and shards | No managed shard-set loading | An explicit local index with its referenced file present passed the CPU check below; automatic shard downloads, integrity checks and whole-set memory accounting are not provided ([#1219](https://github.com/leehack/llamadart/issues/1219)) |
 
 GGUF magic bytes and Safetensors headers drive role detection, not their
 filename extensions. The header check assigns roles; it does not validate all
@@ -166,12 +166,36 @@ final model = ImageGenerationModel(
 ```
 
 An explicit role selects a native input; it does not convert the file or make
-an unsupported checkpoint compatible. The native reader handles a restricted
-state-dict representation without executing Python callables; arbitrary
+an unsupported checkpoint compatible. PyTorch component loading can work while
+larger full-checkpoint loading remains unqualified; do not generalize a small
+decoder's result to an entire diffusion model. The native reader handles a
+restricted state-dict representation without executing Python callables; arbitrary
 serialized modules, TorchScript and legacy TAR checkpoints are not supported.
 Use trusted model files. There is no public conversion API or load-time
 quantization/mmap option. Weights load eagerly; see the
 [memory check](#memory-check) before substituting larger unquantized files.
+
+#### Pinned-runtime format checks
+
+The following checks used `stable-diffusion-native v0.2.0-4` on macOS arm64,
+CPU, with SD Turbo and a full TAESD decoder. Container variants held identical
+tensor values; PyTorch files were written locally with `torch.save` 2.11.0,
+protocol 2. Each successful load generated a 128x128 image with one step and
+seed 42. The public Dart API and a direct native control agreed in every case:
+
+| Tested input | Result |
+| --- | --- |
+| Full F16 GGUF and Safetensors checkpoints | Passed; identical output pixels across containers |
+| TAESD ZIP `.pt`, nested `state_dict` ZIP `.ckpt`, and legacy `.pth` | Passed with an explicit `taesd` role; identical pixels to the Safetensors decoder |
+| Full 2.6 GB ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Neither completed within 45 seconds in Dart or the native control; cause remains unresolved |
+| Full 2.6 GB legacy `.pth` | Rejected by both; the pinned native pickle scanner truncates a remaining span above 2 GiB to a signed integer |
+| Local Safetensors index referencing one complete sibling weight file | Passed with an explicit `checkpoint` role; identical pixels to direct loading |
+
+These are container checks, not qualification of every model, dtype, device or
+multi-shard layout. In particular, the large PyTorch failures are also present
+without Dart; small component success does not remove those limits. The
+[basic example's local format checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
+can repeat same-weight comparisons without downloading models.
 
 ### Sources
 
