@@ -883,6 +883,34 @@ const _releasePrepChangelogs = <String>[
   'website/docs/changelog/recent-releases.md',
 ];
 
+final RegExp _unreleasedHeading = RegExp(r'^##\s+Unreleased\s*$');
+
+/// Problems with `## Unreleased` among [changelog]'s level-two [headings].
+///
+/// `main` keeps exactly one `## Unreleased`, above every released section,
+/// and release prep removes it. Union merges of the changelogs never conflict,
+/// so a rebase across a release can leave a stray copy without any warning.
+List<String> unreleasedHeadingProblems(
+  String changelog,
+  List<String> headings, {
+  required bool releasePrep,
+}) {
+  final positions = [
+    for (final (index, heading) in headings.indexed)
+      if (_unreleasedHeading.hasMatch(heading)) index,
+  ];
+  if (positions.isEmpty) return const [];
+  if (!releasePrep) {
+    return positions.length == 1 && positions.single == 0
+        ? const []
+        : [
+            '$changelog must have at most one `## Unreleased`, above every '
+                'released section.',
+          ];
+  }
+  return ['$changelog must not keep `## Unreleased` when publishing.'];
+}
+
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
   final unknown = arguments.where((argument) => argument != '--release-prep');
@@ -950,6 +978,18 @@ void main(List<String> arguments) {
         if (heading != expected) {
           errors.add('$changelog must start with $expected before publishing.');
         }
+      }
+    }
+    for (final changelog in _releasePrepChangelogs) {
+      final lines = _readLines(changelog, errors);
+      if (lines != null) {
+        errors.addAll(
+          unreleasedHeadingProblems(
+            changelog,
+            lines.where(RegExp(r'^##\s').hasMatch).toList(),
+            releasePrep: releasePrep,
+          ),
+        );
       }
     }
     final coreVersion = _parseCoreVersion(versions['llamadart']!, errors);

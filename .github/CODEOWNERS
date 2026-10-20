@@ -12,6 +12,7 @@ scripts/verify_chat_app_web_deployment.sh @leehack
 # Version, release, and native-runtime publication surfaces.
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
+/.gitattributes @leehack
 doc/testing_matrix.md @leehack
 doc/pr_branch_writer_inventory.md @leehack
 doc/high_risk_pre_merge_readiness.md @leehack

@@ -133,9 +133,13 @@ version alignment:
 - Before any tag is pushed, `tool/release/companion_pub_preflight.dart` also
   fails when a companion's checked-out version is already on pub.dev with a
   different `llamadart` constraint; bump that companion's version.
-- Move accumulated `Unreleased` entries into the new version section; remove
-  the `Unreleased` heading when it would otherwise be empty. Add it back only
-  when the next unreleased change is documented.
+- Move accumulated `Unreleased` entries in `CHANGELOG.md` and
+  `website/docs/changelog/recent-releases.md` into the new version section and
+  remove the heading. `--release-prep` fails while either keeps
+  `## Unreleased`; after the release, `docs_version_cut.yml` puts an empty one
+  back on `main`, so the next change only adds a bullet.
+- Both core changelogs union-merge (see [Changelog merges](#changelog-merges)).
+  Turn union off before rebasing or merging the release-prep branch.
 - Update `MIGRATION.md` if breaking behavior changed.
 - Keep docs pages aligned with new defaults/options.
 - Keep local SwiftPM artifact caches out of pub archives. Apple SPM binary
@@ -270,9 +274,11 @@ rsync -a --delete \
   archives. CI's companion publish dry-run points the same override at the
   checkout; the real publish drops it.
 
-- `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags and
+- `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags,
+  restores an empty `## Unreleased` heading in both core changelogs with
+  `tool/release/reopen_unreleased_changelog.dart` in the same commit, and
   pushes it to `main` with `GITHUB_TOKEN`, so that commit starts no CI or demo
-  deploy run.
+  deploy run. Genkit and companion tags do not match `v*`.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
 - `ci.yml` (`deploy-chat-app`) and `laya_tetris_hf_static_deploy.yml`: the
@@ -326,7 +332,41 @@ If `docs_version_cut.yml` cannot push directly to `main` (for example due to
 branch protections), run the version cut locally and open a PR:
 
 ```bash
+dart tool/release/reopen_unreleased_changelog.dart
 cd website
 dart pub get
 dart run tool/cut_version.dart <release-version>
 ```
+
+## Changelog merges
+
+`.gitattributes` sets `merge=union` on `CHANGELOG.md` and
+`website/docs/changelog/recent-releases.md`. When two branches add bullets
+under `## Unreleased`, a local rebase or merge keeps both instead of
+conflicting. GitHub may still report the conflict; rebase locally and update
+the PR branch with `tool/git/safe_pr_head_update.dart`.
+
+Union never conflicts: it keeps both sides of any edit, so it cannot tell
+a new bullet from a heading rename. A branch that added a bullet before a
+release and is rebased after it can end up with that bullet, and stale copies
+of the released bullets, inside the new `## X.Y.Z` section. After any rebase
+across a release, check that `git diff origin/main -- CHANGELOG.md
+website/docs/changelog/recent-releases.md` adds only lines under
+`## Unreleased`.
+
+Turn union off for release prep, which renames `## Unreleased` and rewrites
+its bullets, and for any rebase across a release-prep commit whose result you
+would rather resolve by hand. `.git/info/attributes` overrides `.gitattributes`
+for every worktree of the clone:
+
+```bash
+attributes="$(git rev-parse --git-path info/attributes)"
+printf '%s\n' '/CHANGELOG.md merge=text' \
+  '/website/docs/changelog/recent-releases.md merge=text' >> "$attributes"
+# ... rebase or merge, resolving conflicts by hand ...
+# then remove those two lines from "$attributes".
+```
+
+`verify_release_docs_versions.dart` fails when `## Unreleased` appears twice
+or below a released section, and with `--release-prep` whenever it remains,
+which catches the stray headings union can leave.

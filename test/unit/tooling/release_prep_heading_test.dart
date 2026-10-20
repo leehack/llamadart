@@ -96,6 +96,51 @@ void main() {
     final result = verify('## Unreleased\n\n## 0.14.0\n', releasePrep: false);
     expect(result.stderr, isNot(contains(diagnostic)));
     expect(result.stderr, isNot(contains(docsDiagnostic)));
+    expect(result.stderr, isNot(contains('`## Unreleased`')));
     expect(result.stderr, contains('README.md does not exist'));
   });
+
+  test('normal verification counts only level-two headings', () {
+    final result = verify(
+      '### Notes\n\n## Unreleased\n\n### Fixes\n\n## 0.14.0\n',
+      releasePrep: false,
+    );
+    expect(result.stderr, isNot(contains('`## Unreleased`')));
+    expect(result.stderr, contains('README.md does not exist'));
+  });
+
+  test('release prep rejects an Unreleased section below the version', () {
+    final result = verify(
+      '## 0.14.0\n\n## Unreleased\n\n- Stray.\n\n## 0.13.2\n',
+      docsChangelog: '## 0.14.0\n\n## 0.13.2\n',
+    );
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      contains('CHANGELOG.md must not keep `## Unreleased` when publishing.'),
+    );
+    expect(result.stderr, isNot(contains(docsDiagnostic)));
+  });
+
+  for (final entry in <String, String>{
+    'below a released section': '## 0.14.0\n\n## Unreleased\n\n- Stray.\n',
+    'twice': '## Unreleased\n\n- A.\n\n## Unreleased\n\n## 0.14.0\n',
+  }.entries) {
+    test('normal verification rejects Unreleased ${entry.key}', () {
+      final result = verify(
+        '## Unreleased\n\n## 0.14.0\n',
+        docsChangelog: '---\ntitle: Recent releases\n---\n\n${entry.value}',
+        releasePrep: false,
+      );
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        contains(
+          'website/docs/changelog/recent-releases.md must have at most one '
+          '`## Unreleased`, above every released section.',
+        ),
+      );
+      expect(result.stderr, isNot(contains('CHANGELOG.md must have')));
+    });
+  }
 }
