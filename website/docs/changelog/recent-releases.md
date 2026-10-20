@@ -9,11 +9,12 @@ For canonical full release notes, use:
 
 ## 0.15.5
 
-- Keep tool calls out of streamed answer text and reasoning for Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma, Gemma, LFM2 and Kimi K2, and drop the Functionary v3.2 `all` header when a malformed call falls back to raw text.
+- Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
+- Stream literal thought tags as answer text for FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma, matching the final reply, and drop the Functionary v3.2 `all` header when a malformed call falls back to raw text.
 - Keep partial thought end tags out of streamed reasoning when thinking starts open, such as for GLM 4.5, Laguna and DeepSeek V3.2/V4.
 - Stream GPT-OSS `final` and `analysis` frame text as it arrives instead of at the end of the reply.
 - Keep Kimi K3 turn-end and think/response channel markers out of streamed answers and reasoning, and stream MiniMax M1 text after a leading tool call.
-- Fix GLM 4.5/4.7 and Laguna tool calls stalling for minutes while generating string arguments, and repeating or garbling arguments because the grammar required newlines between tags.
+- Fix GLM 4.5/4.7 and Laguna tool calls stalling for minutes on native llama.cpp while generating string arguments, and GLM 4.7 and Laguna tool calls repeating or garbling arguments because the grammar required newlines between tags.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 - Aligned default WebGPU bridge assets to `v0.1.66` (unchanged from 0.15.4).
   Runtime pins are unchanged: native `v0.7.0-1` uses upstream
