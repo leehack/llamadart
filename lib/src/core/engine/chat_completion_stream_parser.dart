@@ -18,6 +18,8 @@ import '../template/handlers/granite_handler.dart';
 import '../template/handlers/gpt_oss_handler.dart';
 import '../template/handlers/hermes_handler.dart';
 import '../template/handlers/hunyuan_v3_handler.dart';
+import '../template/handlers/kimi_k2_handler.dart';
+import '../template/handlers/lfm2_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/handlers/magistral_handler.dart';
 import '../template/handlers/mistral_handler.dart';
@@ -137,6 +139,9 @@ class ChatCompletionStreamParser {
     final reasoningGate = _ReasoningGate(
       forcedOpen: templateResult.thinkingForcedOpen,
       forcedThoughtOpening: isQwen3CoderXml ? toolCallOpening : null,
+      thoughtCallOpening: _parsesCallsInsideThoughts(templateResult.format)
+          ? toolCallOpening
+          : null,
       unescapes: toolCallOpening != null && !isQwen3CoderXml,
       trimsLeading: !pegParsedWithoutTools,
     );
@@ -566,6 +571,8 @@ class ChatCompletionStreamParser {
       ChatFormat.cohere2Moe => CommandR7BHandler.toolCallOpening,
       ChatFormat.granite => GraniteHandler.toolCallOpening,
       ChatFormat.gptOss => GptOssHandler.toolCallOpening,
+      ChatFormat.lfm2 => Lfm2Handler.toolCallOpening,
+      ChatFormat.kimiK2 => KimiK2Handler.toolCallOpening,
       ChatFormat.nemotronV2 => NemotronV2Handler.toolCallOpening,
       ChatFormat.apertus => ApertusHandler.toolCallOpening,
       ChatFormat.hunyuanV3 => HunyuanV3Handler.toolCallOpening,
@@ -592,6 +599,12 @@ class ChatCompletionStreamParser {
         pegParseFormat(ChatFormat.values[format], templateResult.parser) !=
             null;
   }
+
+  /// Formats whose parse extracts tool calls before thinking, so a call
+  /// inside a thought leaves the reasoning.
+  static bool _parsesCallsInsideThoughts(int formatIndex) =>
+      formatIndex == ChatFormat.lfm2.index ||
+      formatIndex == ChatFormat.kimiK2.index;
 
   static bool _mayEmbedToolEnvelopeAfterContent(int formatIndex) =>
       formatIndex == ChatFormat.kimiK3.index ||
@@ -1163,18 +1176,26 @@ class _ContentGate {
 /// forced-open thought, as the Qwen3-Coder XML parse does when the output has
 /// no thinking tag. Text from a possible opening on waits: `</think>` releases
 /// it, and at the end of the stream the final parse supplies the rest.
+///
+/// With a thought call opening, the parse removes tool calls from any thought.
+/// Text from a possible opening on waits, and a thought that ends while held
+/// stops all later release, so the final parse supplies the rest.
 class _ReasoningGate {
   _ReasoningGate({
     required bool forcedOpen,
     required this.unescapes,
     required this.trimsLeading,
     int Function(String text, int from)? forcedThoughtOpening,
+    int Function(String text, int from)? thoughtCallOpening,
   }) : _inForcedThought = forcedOpen,
-       _forcedThoughtOpening = forcedThoughtOpening;
+       _forcedThoughtOpening = forcedThoughtOpening,
+       _thoughtCallOpening = thoughtCallOpening;
 
   final bool unescapes;
   final bool trimsLeading;
   final int Function(String text, int from)? _forcedThoughtOpening;
+  final int Function(String text, int from)? _thoughtCallOpening;
+  var _sealed = false;
   var _pending = '';
   var _started = false;
   var _separate = false;
@@ -1188,8 +1209,13 @@ class _ReasoningGate {
 
   /// Adds [reasoning] of the current thought and returns the released text.
   String add(String reasoning) {
+    if (_sealed) {
+      return '';
+    }
     _pending += reasoning;
-    final opening = _inForcedThought ? _forcedThoughtOpening : null;
+    final opening =
+        _thoughtCallOpening ??
+        (_inForcedThought ? _forcedThoughtOpening : null);
     final openingAt = opening == null ? _pending.length : opening(_pending, 0);
     _heldAtOpening = openingAt < _pending.length;
     final head = _pending.substring(0, openingAt);
@@ -1208,6 +1234,11 @@ class _ReasoningGate {
 
   /// Ends the current thought and returns the released text.
   String end() {
+    if (_sealed || (_thoughtCallOpening != null && _heldAtOpening)) {
+      _sealed = true;
+      _pending = '';
+      return '';
+    }
     final released = _release(_unescape(_pending).trimRight());
     _pending = '';
     _separate = _separate || _started || _inForcedThought;

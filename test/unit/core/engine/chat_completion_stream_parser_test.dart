@@ -667,6 +667,55 @@ void main() {
       }
     });
 
+    test('LFM2 and Kimi K2 gate tool calls in content and thoughts', () async {
+      for (final (format, call, opening) in [
+        (
+          ChatFormat.lfm2,
+          '<|tool_call_start|>[{"name":"weather",'
+              '"arguments":{"city":"Montréal 🌧"}}]<|tool_call_end|>',
+          '<|tool_call_start|>',
+        ),
+        (
+          ChatFormat.kimiK2,
+          '<|tool_calls_section_begin|><|tool_call_begin|>functions.weather:0'
+              '<|tool_call_argument_begin|>{"city":"Montréal 🌧"}'
+              '<|tool_call_end|><|tool_calls_section_end|>',
+          '<|tool_calls_section_begin|>',
+        ),
+      ]) {
+        for (final (output, forcedOpen) in [
+          ('Let me check.\n$call', false),
+          (call, false),
+          ('Let me check.\n$call\nDone.', false),
+          ('<think>Plan.</think>Let me check.\n$call', false),
+          ('<think>Plan $call more.</think>Answer.', false),
+          ('$call<think>After.</think>Done.', false),
+          ('<think>A $call</think>B<think>C</think>D', false),
+          (r'<think>Line\none and <|tool_c</think>Answer.', false),
+          ('Literal <|tool_call and text.', false),
+          ('Let me check.\n${call.substring(0, call.length ~/ 2)}', false),
+          ('Plan.</think>Let me check.\n$call', true),
+          ('Plan $call</think>Done.', true),
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              forcedOpen: forcedOpen,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+              openings: [opening, '</think>'],
+            );
+          }
+          // Raw streams without tools keep escaped newlines in reasoning
+          // (a separate issue), so this output is checked with tools only.
+          if (!forcedOpen && !output.contains(r'\n')) {
+            await _expectStreamMatchesParse(format, output, tools: false);
+          }
+        }
+      }
+    });
+
     test('Llama 3 builtin tools gate the python tag after prose', () async {
       const call = '<|python_tag|>code_interpreter.call(code="1+1")';
       for (final output in [

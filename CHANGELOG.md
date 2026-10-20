@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Keep LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
 - Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 
