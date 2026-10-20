@@ -1,9 +1,15 @@
-## Unreleased
+## 0.15.4
 
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 - Keep GPT-OSS reasoning and tool frames out of answer text, including native header continuations.
 - Keep GPT-OSS automatic tool choice optional for ordinary text replies.
 - Preserve Gemma 4 answer text after tool calls across split token delivery.
+* Aligned the default WebGPU bridge assets to `v0.1.66` (unchanged from 0.15.3).
+  Runtime pins are unchanged: native `v0.7.0-1` uses upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM stays
+  `@litert-lm/core@0.18.0`.
+  Manifest SHA-256:
+  `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
 
 ## 0.15.3
 
