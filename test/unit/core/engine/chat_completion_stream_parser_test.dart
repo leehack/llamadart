@@ -760,6 +760,11 @@ void main() {
           (ChatFormat.functionaryV32, 'weather\n{"city":"Paris"}B>>>all\nmore'),
           (
             ChatFormat.functionaryV32,
+            'all\nA\n>>>weather\n{"city":"P"}\nB\n>>>weather\n{"city":"Q"}\nC'
+                '\n>>>weather\n{"city":"Pa',
+          ),
+          (
+            ChatFormat.functionaryV32,
             '>>> x = 2\n>>> print(x)\n2\nThat is it.',
           ),
           (ChatFormat.functionaryV31Llama31, 'Hi <|python_tag|>print(1)'),
