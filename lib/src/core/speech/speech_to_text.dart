@@ -1227,7 +1227,9 @@ class SpeechToTextEngine {
     } finally {
       await subscription.cancel();
       if (!task._eventsController.isClosed) {
-        await task._eventsController.close();
+        // close() completes only after a listener drains the stream, and
+        // callers that await only `result` never listen.
+        unawaited(task._eventsController.close());
       }
       if (identical(_activeTask, task)) {
         _activeTask = null;
