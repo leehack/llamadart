@@ -690,6 +690,7 @@ void main() {
           'Plan.\n</think>\n\nLet me check.',
           'Plan with a literal </thi and more.\n</think>Done.',
           'Plan ends at </th',
+          '<think>Plan.</think>Answer.',
         ]) {
           for (final ending in ['natural', 'length', 'cancel']) {
             await _expectStreamMatchesParse(
@@ -698,7 +699,7 @@ void main() {
               forcedOpen: true,
               atLimit: ending == 'length',
               cancelled: ending == 'cancel',
-              openings: ['</think>'],
+              openings: ['<think>', '</think>'],
             );
           }
         }
