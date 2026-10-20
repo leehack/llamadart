@@ -231,7 +231,14 @@ class Llama3Handler extends ChatTemplateHandler {
     }
 
     return ChatParseResult(
-      content: trimmed.substring(contentStart),
+      content: trimmed.substring(
+        contentStart,
+        isPartial
+            ? ToolCallParsingUtils.literalOpening(trimmed, const [
+                _pythonTag,
+              ], contentStart)
+            : trimmed.length,
+      ),
       reasoningContent: thinking.reasoning,
       toolCalls: [
         ToolCallParsingUtils.createFunctionToolCall(
@@ -331,7 +338,9 @@ class Llama3Handler extends ChatTemplateHandler {
     bool matchesPrefix(List<String?> parts) {
       var i = 0;
       for (final part in parts) {
-        while (i < text.length && text.codeUnitAt(i) <= 0x20) {
+        // Matches the `\s` of [_llama31FunctionPrefix], including Unicode
+        // whitespace.
+        while (i < text.length && text[i].trim().isEmpty) {
           i++;
         }
         if (i >= text.length) return true;

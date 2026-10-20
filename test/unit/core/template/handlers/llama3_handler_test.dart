@@ -180,6 +180,7 @@ void main() {
         'Let me check.\n',
       ),
       ('Hi <|python_tag|>print(1)', 'Hi '),
+      ('{"name":\u00a0"weather","param', ''),
     ]) {
       final parsed = handler.parse(output, isPartial: true);
       expect(parsed.content, content, reason: output);
