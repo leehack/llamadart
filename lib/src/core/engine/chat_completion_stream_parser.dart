@@ -122,10 +122,14 @@ class ChatCompletionStreamParser {
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
     final isFunctionaryV32 =
         templateResult.format == ChatFormat.functionaryV32.index;
+    // Functionary v3.2 and MiniMax M1 stream through their partial parse
+    // with tools.
     final keepsThoughtTagsAsContent =
         isGptOss ||
         _keepsThoughtTagsAsContent(templateResult.format) ||
-        (isFunctionaryV32 && !parseToolCallsEnabled);
+        ((isFunctionaryV32 ||
+                templateResult.format == ChatFormat.minimaxM1.index) &&
+            !parseToolCallsEnabled);
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -158,9 +162,12 @@ class ChatCompletionStreamParser {
     final thoughtTags = gatedOpening != null ? _ThoughtTagState() : null;
     var atForcedThoughtStart =
         thoughtTags != null && templateResult.thinkingForcedOpen;
+    // Kimi K3 frames its response in protocol channels that only its parse
+    // strips, with or without tools.
     final rawWithoutTools =
         !parseToolCallsEnabled &&
-        templateResult.format != ChatFormat.gemma4.index;
+        templateResult.format != ChatFormat.gemma4.index &&
+        templateResult.format != ChatFormat.kimiK3.index;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
     // never streamed as reasoning before the final structured parse. Gated
@@ -461,8 +468,10 @@ class ChatCompletionStreamParser {
 
     final suppressFinalToolEnvelopeContent =
         toolCallOpening == null &&
-        // Gemma 4 sanitizes its envelopes and retains post-call text.
+        // Gemma 4 and MiniMax M1 sanitize their envelopes and retain
+        // post-call text.
         templateResult.format != ChatFormat.gemma4.index &&
+        templateResult.format != ChatFormat.minimaxM1.index &&
         parsed.hasToolCalls &&
         _isToolCallEnvelopeBuffer(
           fullOutput,

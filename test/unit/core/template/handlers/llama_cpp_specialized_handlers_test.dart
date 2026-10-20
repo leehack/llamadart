@@ -199,6 +199,73 @@ void main() {
       expect(parsed.content, contains('<|open|>tools<|sep|>'));
       expect(parsed.content, contains('On it.'));
     });
+
+    test('keeps protocol channel markers out of content and reasoning', () {
+      final handler = KimiK3Handler();
+      final thought = handler.parse(
+        '<|open|>think<|sep|>Plan.<|close|>think<|sep|>Answer.',
+      );
+      expect(thought.reasoningContent, 'Plan.');
+      expect(thought.content, 'Answer.');
+
+      final unclosed = handler.parse('<|open|>think<|sep|>Still planning');
+      expect(unclosed.reasoningContent, 'Still planning');
+      expect(unclosed.content, isEmpty);
+
+      expect(
+        handler.parse('Hi <|open|>response<|sep|>unterminated').content,
+        'Hi unterminated',
+      );
+      expect(
+        handler
+            .parse('<|open|>response<|sep|>Body<|close|>mess', isPartial: true)
+            .content,
+        'Body',
+      );
+      expect(
+        handler
+            .parse('<|open|>response<|sep|>Body<|close|>message<|sep|>')
+            .content,
+        'Body',
+      );
+      expect(
+        handler.parse('\n<|open|>think<|sep|>Plan.').reasoningContent,
+        'Plan.',
+      );
+    });
+
+    test('ends an unclosed thought at a tool block', () {
+      const call =
+          '<|open|>tools<|sep|><|open|>call tool="weather" index="1"<|sep|>'
+          '<|open|>argument key="city" type="string"<|sep|>Paris'
+          '<|close|>argument<|sep|><|close|>call<|sep|><|close|>tools<|sep|>';
+      for (final (output, forcedOpen) in [
+        ('<|open|>think<|sep|>Plan.$call', false),
+        ('Plan.$call', true),
+      ]) {
+        final parsed = KimiK3Handler().parseWithTools(
+          output,
+          tools: [_weatherWithCityTool],
+          thinkingForcedOpen: forcedOpen,
+        );
+        expect(parsed.reasoningContent, 'Plan.');
+        expect(parsed.content, isEmpty);
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+      }
+      final withoutTools = KimiK3Handler().parse(
+        'Plan.$call',
+        parseToolCalls: false,
+        thinkingForcedOpen: true,
+      );
+      expect(withoutTools.reasoningContent, 'Plan.$call');
+      final beforeResponse = KimiK3Handler().parseWithTools(
+        'Plan.$call<|open|>response<|sep|>Done.<|close|>response<|sep|>',
+        tools: [_weatherWithCityTool],
+        thinkingForcedOpen: true,
+      );
+      expect(beforeResponse.reasoningContent, 'Plan.$call');
+      expect(beforeResponse.content, 'Done.');
+    });
   });
 
   group('MiniMax M1', () {
