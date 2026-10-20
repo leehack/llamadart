@@ -14,6 +14,10 @@ import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/deepseek_r1_handler.dart';
 import '../template/handlers/deepseek_v3_handler.dart';
 import '../template/handlers/exaone_moe_handler.dart';
+import '../template/handlers/firefunction_v2_handler.dart';
+import '../template/handlers/function_gemma_handler.dart';
+import '../template/handlers/functionary_v31_llama31_handler.dart';
+import '../template/handlers/gemma_handler.dart';
 import '../template/handlers/granite_handler.dart';
 import '../template/handlers/gpt_oss_handler.dart';
 import '../template/handlers/hermes_handler.dart';
@@ -114,6 +118,12 @@ class ChatCompletionStreamParser {
     final gatedOpening = _toolCallOpeningFor(templateResult);
     final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
+    final isFunctionaryV32 =
+        templateResult.format == ChatFormat.functionaryV32.index;
+    final keepsThoughtTagsAsContent =
+        isGptOss ||
+        _keepsThoughtTagsAsContent(templateResult.format) ||
+        (isFunctionaryV32 && !parseToolCallsEnabled);
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -155,6 +165,7 @@ class ChatCompletionStreamParser {
     var streamingMode = rawWithoutTools || toolCallOpening != null
         ? _ToolStreamingMode.raw
         : templateResult.thinkingForcedOpen ||
+              isFunctionaryV32 ||
               _usesPegParser(templateResult) ||
               _mayEmbedToolEnvelopeAfterContent(templateResult.format)
         ? _ToolStreamingMode.parsed
@@ -171,9 +182,10 @@ class ChatCompletionStreamParser {
     await for (final token in tokenStream) {
       buffer.write(token);
 
-      // GPT-OSS reasoning uses assistant channel frames. Generic thought tags
-      // are literal text, including when they occur inside tool arguments.
-      if (isGptOss) {
+      // GPT-OSS reasoning uses assistant channel frames, and the other formats
+      // here extract no reasoning. Generic thought tags are literal text,
+      // including when they occur inside tool arguments.
+      if (keepsThoughtTagsAsContent) {
         final text = contentGate.add(token);
         if (text.isNotEmpty) {
           streamedContent += text;
@@ -570,6 +582,11 @@ class ChatCompletionStreamParser {
       ChatFormat.cohere2Moe => CommandR7BHandler.toolCallOpening,
       ChatFormat.granite => GraniteHandler.toolCallOpening,
       ChatFormat.gptOss => GptOssHandler.toolCallOpening,
+      ChatFormat.firefunctionV2 => FirefunctionV2Handler.toolCallOpening,
+      ChatFormat.functionaryV31Llama31 =>
+        FunctionaryV31Llama31Handler.toolCallOpening,
+      ChatFormat.functionGemma => FunctionGemmaHandler.toolCallOpening,
+      ChatFormat.gemma => GemmaHandler.toolCallOpening,
       ChatFormat.nemotronV2 => NemotronV2Handler.toolCallOpening,
       ChatFormat.apertus => ApertusHandler.toolCallOpening,
       ChatFormat.hunyuanV3 => HunyuanV3Handler.toolCallOpening,
@@ -596,6 +613,14 @@ class ChatCompletionStreamParser {
         pegParseFormat(ChatFormat.values[format], templateResult.parser) !=
             null;
   }
+
+  /// Formats whose parse extracts no reasoning, so thought tags stay in
+  /// content. Functionary v3.2 streams through its partial parse instead.
+  static bool _keepsThoughtTagsAsContent(int formatIndex) =>
+      formatIndex == ChatFormat.firefunctionV2.index ||
+      formatIndex == ChatFormat.functionaryV31Llama31.index ||
+      formatIndex == ChatFormat.functionGemma.index ||
+      formatIndex == ChatFormat.gemma.index;
 
   static bool _mayEmbedToolEnvelopeAfterContent(int formatIndex) =>
       formatIndex == ChatFormat.kimiK3.index ||

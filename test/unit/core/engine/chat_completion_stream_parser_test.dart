@@ -706,6 +706,136 @@ void main() {
       }
     });
 
+    test(
+      'formats without reasoning keep thought tags and gate text-first calls',
+      () async {
+        for (final (format, call, openings) in [
+          (
+            ChatFormat.firefunctionV2,
+            ' functools[{"name":"weather","arguments":{"city":"Montréal 🌧"}}]',
+            [' functools['],
+          ),
+          (
+            ChatFormat.functionaryV31Llama31,
+            '<function=weather>{"city":"Montréal 🌧"}</function>',
+            ['<function=', '<|python_tag|>'],
+          ),
+          (
+            ChatFormat.functionGemma,
+            '<start_function_call>call:weather{city:<escape>Paris<escape>}'
+                '<end_function_call>',
+            ['<start_function_call>'],
+          ),
+          (
+            ChatFormat.gemma,
+            '{"tool_call":{"name":"weather","arguments":{"city":"Paris"}}}',
+            ['{"tool_call"'],
+          ),
+          (
+            ChatFormat.functionaryV32,
+            '>>>weather\n{"city":"Montréal 🌧"}',
+            ['>>>', 'all\n'],
+          ),
+        ]) {
+          for (final output in [
+            'Let me check.\n$call',
+            call.trimLeft(),
+            'Let me check.\n$call\nDone.',
+            '<think>Plan.</think>Let me check.\n$call',
+            'Hi <think>literal</think> there',
+            'Plain answer with a { brace } and <tag> text.',
+            'Literal <start_func, <function=oops, functools[0] and a >>> b.',
+          ]) {
+            for (final ending in ['natural', 'length', 'cancel']) {
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                atLimit: ending == 'length',
+                cancelled: ending == 'cancel',
+                openings: openings,
+              );
+            }
+            await _expectStreamMatchesParse(format, output, tools: false);
+          }
+        }
+        for (final output in [
+          'all\nHello there.',
+          'all\nHello.\n>>>weather\n{"city":"Paris"}\n>>>weather\n{"city":"Oslo"}',
+          '>>>all\nHello.>>>weather\n{"city":"Paris"}',
+          'weather\n{"city":"Paris"}',
+          '>>>python\nprint(1)',
+          'weather\n{"city":',
+          'Hello',
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.functionaryV32,
+            output,
+            openings: ['>>>', '\n{'],
+          );
+        }
+        for (final output in [
+          '{"a":1} and then '
+              '{"tool_call":{"name":"weather","arguments":{"city":"Paris"}}}',
+          'Here is JSON: {"a": {"b": 1}} done.',
+          'Text with "tool_call" literal and {x}.',
+        ]) {
+          await _expectStreamMatchesParse(ChatFormat.gemma, output);
+        }
+        for (final (format, output) in [
+          (
+            ChatFormat.functionaryV32,
+            'all\nLet me check. >>>weather\n{"city":"Par',
+          ),
+          (ChatFormat.functionaryV32, 'all\nHi >>>all\nmore'),
+          (
+            ChatFormat.functionaryV32,
+            'all\nA\n>>>weather\n{"city":"Paris"}\nB\n>>>weather\n{"city":"Pa',
+          ),
+          (
+            ChatFormat.functionaryV32,
+            'all\nLet me check.\n>>>weather\n{"city":"Paris"}\nIt is sunny.'
+                '\n>>>all\nDone.',
+          ),
+          (ChatFormat.functionaryV32, 'weather\n{"city":"Paris"}B>>>all\nmore'),
+          (
+            ChatFormat.functionaryV32,
+            'all\nA\n>>>weather\n{"city":"P"}\nB\n>>>weather\n{"city":"Q"}\nC'
+                '\n>>>weather\n{"city":"Pa',
+          ),
+          (
+            ChatFormat.functionaryV32,
+            '>>> x = 2\n>>> print(x)\n2\nThat is it.',
+          ),
+          (ChatFormat.functionaryV31Llama31, 'Hi <|python_tag|>print(1)'),
+          (
+            ChatFormat.gemma,
+            '{ "tool_call" : {"name":"weather","arguments":{"city":"Paris"}}}',
+          ),
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+            );
+          }
+        }
+        await _expectContentAfterEachToken(ChatFormat.gemma, [
+          ('int add(int a) {', 'int add(int a)'),
+          ('\n  return a;\n}\n', 'int add(int a) {\n  return a;\n}'),
+          ('This adds.', 'int add(int a) {\n  return a;\n}\nThis adds.'),
+          (' {"tool_', 'int add(int a) {\n  return a;\n}\nThis adds.'),
+        ]);
+
+        await _expectContentAfterEachToken(ChatFormat.functionGemma, [
+          ('Let me ', 'Let me'),
+          ('check. <start_func', 'Let me check.'),
+          ('tion_call>call:weather{', 'Let me check.'),
+        ]);
+      },
+    );
+
     test('Llama 3 builtin tools gate the python tag after prose', () async {
       const call = '<|python_tag|>code_interpreter.call(code="1+1")';
       for (final output in [

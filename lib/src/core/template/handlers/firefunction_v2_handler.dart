@@ -19,6 +19,10 @@ import '../tool_call_grammar_utils.dart';
 /// `functools[{"name":"tool","arguments":{...}}]`.
 class FirefunctionV2Handler extends ChatTemplateHandler {
   static const String _prefix = ' functools[';
+
+  /// Finds a possible `functools` call list for the stream's content gate.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [_prefix], from);
   static const List<String> _firefunctionPreservedTokens = <String>[
     ' functools[',
   ];
