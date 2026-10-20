@@ -71,6 +71,15 @@ prevent GPU watchdog resets or replace the newer native guard.
   model's family and device, and unsupported once disposed; it never throws.
   It changes only on `dispose()`, so read it once after `load` and keep it in
   the widget state instead of awaiting it in `build`.
+- Formats: compatible GGUF and Safetensors load directly, including mixed
+  components; do not convert Safetensors merely to satisfy the image API.
+  Detection uses headers, not filename extensions. Compatible PyTorch
+  `.ckpt`/`.pth`/`.pt` state-dict files need explicit roles; real-checkpoint
+  qualification is incomplete. An explicit role is not conversion or proof
+  of architecture/dtype support. Leave `ModelSource.format` unset. Local
+  directories and managed Safetensors shard sets have no public loading
+  contract; resolve compatible component files individually. The guide's
+  **Weight formats and layouts** section gives the limits.
 - Models: `ImageGenerationModel(mainSource, components: [...])`. Every file
   is a `ModelSource` (`ModelSource.path`, an HTTP(S) URL or `hf://owner/repo@
   sha/file`); pin a commit. The library has no presets: the app owns each

@@ -7,6 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
+
 ## 0.15.4
 
 - Keep GPT-OSS reasoning and tool frames out of answer text, including native header continuations.

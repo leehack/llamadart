@@ -128,6 +128,77 @@ when its `stable_diffusion.framework` has no manifest.
 
 ## Get a model
 
+### Weight formats and layouts
+
+`ImageGenerationEngine` loads **GGUF and Safetensors directly**. Safetensors
+does not need conversion to GGUF, and a model can mix containers across its
+components. These image-loading rules are separate from `LlamaEngine`'s text
+model formats; leave `ModelSource.format` unset for image files.
+
+| Input | Public image API | Qualification / limits |
+| --- | --- | --- |
+| GGUF file (`.gguf`) | Direct loading; automatic role detection from metadata and tensor names | Use a compatible image checkpoint or component, not an arbitrary LLM GGUF |
+| Safetensors file (`.safetensors`) | Direct loading; automatic role detection from tensor names and shapes | Existing recipes include an SDXL-Lightning checkpoint and VAE/TAESD components |
+| PyTorch checkpoint (`.ckpt`, `.pth`, `.pt`) | Explicit role required; forwarded to the native loader | Only compatible ZIP/legacy state-dict layouts; real-checkpoint qualification remains incomplete ([#1218](https://github.com/leehack/llamadart/issues/1218)) |
+| Separate component files | Each file resolves independently and gets a role; GGUF and Safetensors can be mixed | Supply the matching diffusion weights, encoders and decoder from the [recipes](#recipes) |
+| Diffusers directory or repository | No public directory/repository ingestion; local sources must be regular files | Pass compatible component files individually; selected directory layouts are tracked in [#1219](https://github.com/leehack/llamadart/issues/1219) |
+| Safetensors JSON index and shards | No managed shard-set loading | An explicit local index with its referenced file present passed the CPU check below; automatic shard downloads, integrity checks and whole-set memory accounting are not provided ([#1219](https://github.com/leehack/llamadart/issues/1219)) |
+
+GGUF magic bytes and Safetensors headers drive role detection, not their
+filename extensions. The header check assigns roles; it does not validate all
+weight data or prove the architecture, dtype or quantization runs on the active
+backend. F16/F32/BF16 Safetensors and GGUF quantization still need compatible
+tensors and kernels. Do not assume arbitrary FP8/INT8 variants work; newer
+upstream and FP8 CPU qualification are tracked in
+[stable-diffusion-native#20](https://github.com/leehack/stable-diffusion-native/issues/20).
+`checkRuntime()` reports runtime/device availability, not support for every
+model. Use [Support](#support) and the recipe's platform evidence separately.
+The public model roles do not include LoRA, ControlNet, upscaler or external
+tokenizer inputs.
+
+For a trusted PyTorch checkpoint whose native layout is compatible:
+
+```dart
+final model = ImageGenerationModel(
+  ModelSource.path('model.ckpt'),
+  role: ImageModelRole.checkpoint,
+);
+```
+
+An explicit role selects a native input; it does not convert the file or make
+an unsupported checkpoint compatible. PyTorch component loading can work while
+larger full-checkpoint loading remains unqualified; do not generalize a small
+decoder's result to an entire diffusion model. The native reader handles a
+restricted state-dict representation without executing Python callables; arbitrary
+serialized modules, TorchScript and legacy TAR checkpoints are not supported.
+Use trusted model files. There is no public conversion API or load-time
+quantization/mmap option. Weights load eagerly; see the
+[memory check](#memory-check) before substituting larger unquantized files.
+
+#### Pinned-runtime format checks
+
+The following checks used `stable-diffusion-native v0.2.0-4` on macOS arm64,
+CPU, with SD Turbo and a full TAESD decoder. Container variants held identical
+tensor values; PyTorch files were written locally with `torch.save` 2.11.0,
+protocol 2. Each successful load generated a 128x128 image with one step and
+seed 42. The public Dart API and a direct native control agreed in every case:
+
+| Tested input | Result |
+| --- | --- |
+| Full F16 GGUF and Safetensors checkpoints | Passed; identical output pixels across containers |
+| TAESD ZIP `.pt`, nested `state_dict` ZIP `.ckpt`, and legacy `.pth` | Passed with an explicit `taesd` role; identical pixels to the Safetensors decoder |
+| Full 2.6 GB ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Neither completed within 45 seconds in Dart or the native control; cause remains unresolved |
+| Full 2.6 GB legacy `.pth` | Rejected by both; the pinned native pickle scanner truncates a remaining span above 2 GiB to a signed integer |
+| Local Safetensors index referencing one complete sibling weight file | Passed with an explicit `checkpoint` role; identical pixels to direct loading |
+
+These are container checks, not qualification of every model, dtype, device or
+multi-shard layout. In particular, the large PyTorch failures are also present
+without Dart; small component success does not remove those limits. The
+[basic example's local format checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
+can repeat same-weight comparisons without downloading models.
+
+### Sources
+
 A model is its main file and the other files it needs, each a
 `ModelSource`: a local file (`ModelSource.path`), an HTTP(S) URL or a
 Hugging Face file. `ImageGenerationEngine.load` downloads what is not local
@@ -206,7 +277,7 @@ wrong file costs its download; it stays in the cache.
   anything downloads from a second host.
   `ModelLoadOptions.sha256` verifies a single-file model; with components
   it throws `LlamaUnsupportedException`, since it cannot name one of
-  several files.
+  several files. Verify each component independently before loading it.
 - A cancelled load throws `LlamaStateException`. Cancelling stops a
   download at once; the native load cannot be interrupted, so a cancel
   during it takes effect when it returns, and the model it loaded is freed.
