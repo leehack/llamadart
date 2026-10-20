@@ -10,6 +10,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_w
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../support/fake_stable_diffusion_runtime.dart';
@@ -43,7 +44,7 @@ void main() {
   });
 
   Future<ModelSource> file(String name, List<int> bytes) async {
-    final target = File('${directory.path}/$name');
+    final target = File(p.join(directory.path, name));
     await target.writeAsBytes(bytes);
     return ModelSource.path(target.path);
   }
