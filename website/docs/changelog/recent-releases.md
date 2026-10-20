@@ -12,6 +12,7 @@ For canonical full release notes, use:
 - Keep partial thought end tags out of streamed reasoning when thinking starts open, such as for GLM 4.5, Laguna and DeepSeek V3.2/V4.
 - Keep FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, keep their literal thought tags as content, and drop the Functionary v3.2 `all` header when a malformed call falls back to raw text.
 - Keep LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
+- Stream GPT-OSS `final` and `analysis` frame text as it arrives instead of at the end of the reply.
 - Keep Kimi K3 turn-end and think/response channel markers out of streamed answers and reasoning, and stream MiniMax M1 text after a leading tool call.
 - Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
