@@ -174,7 +174,7 @@ experimental and may change, and the runtime is opt-in.
 Image models can be GGUF or Safetensors files, including mixed-format
 components; Safetensors does not need conversion to GGUF. Compatible PyTorch
 checkpoints need an explicit role and remain less qualified. See the
-[format and layout limits](https://llamadart.leehack.com/docs/guides/image-generation#weight-formats-and-layouts)
+[format and layout limits](https://llamadart.leehack.com/docs/next/guides/image-generation#weight-formats-and-layouts)
 before choosing files: a supported container does not imply every model works.
 
 - **Opt in** to the runtime (about 40 to 70 MB per target) in the app's
