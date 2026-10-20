@@ -689,6 +689,8 @@ void main() {
               'Plain answer.<|end_of_msg|>',
               'Plain answer.',
               'Literal <|close|>mess and more.',
+              'Let me check.\n${k3.replaceFirst('weather', 'nope')}\n'
+                  'Done.$turnEnd',
             ],
             [turnEnd, '<|open|>tools<|sep|>', '<|end_of_msg|>'],
           ),
