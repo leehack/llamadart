@@ -172,7 +172,7 @@ class KimiK3Handler extends _DirectJinjaHandler
     if (remaining.startsWith(thinkingStartTag)) {
       remaining = remaining.substring(thinkingStartTag.length);
       inThought = true;
-    } else if (isPartial && _endsWithMarkerPrefix(remaining)) {
+    } else if (isPartial && _isMarkerPrefix(remaining)) {
       return const ChatParseResult(content: '');
     }
     final thinkEnd = remaining.indexOf(_thinkClose);
@@ -180,7 +180,14 @@ class KimiK3Handler extends _DirectJinjaHandler
       reasoning = remaining.substring(0, thinkEnd).trim();
       remaining = remaining.substring(thinkEnd + _thinkClose.length);
     } else if (inThought) {
-      final responseIndex = remaining.indexOf(_responseStart);
+      // A thought without a closer ends at the response or, with tools, at
+      // a tool block, so the call is not lost in reasoning.
+      var responseIndex = remaining.indexOf(_responseStart);
+      final toolsIndex = parseToolCalls ? remaining.indexOf(_toolsStart) : -1;
+      if (toolsIndex >= 0 &&
+          (responseIndex < 0 || toolsIndex < responseIndex)) {
+        responseIndex = toolsIndex;
+      }
       if (responseIndex < 0) {
         return ChatParseResult(
           content: '',
@@ -385,8 +392,6 @@ class KimiK3Handler extends _DirectJinjaHandler
       '$_close'
       'message$_sep';
 
-  /// [input] without turn-end markers, and on a partial parse without one
-  /// that is still arriving.
   static const _markers = [
     '$_open'
         'think$_sep',
@@ -399,7 +404,7 @@ class KimiK3Handler extends _DirectJinjaHandler
   ];
 
   /// Whether [text] is a proper prefix of a protocol marker.
-  static bool _endsWithMarkerPrefix(String text) =>
+  static bool _isMarkerPrefix(String text) =>
       text.isNotEmpty &&
       _markers.any(
         (marker) => marker.length > text.length && marker.startsWith(text),
@@ -420,6 +425,8 @@ class KimiK3Handler extends _DirectJinjaHandler
     return text.substring(0, text.length - hidden);
   }
 
+  /// [input] without turn-end markers, and on a partial parse without one
+  /// that is still arriving.
   String _stripKimiTurnEnd(String input, {bool isPartial = false}) {
     var text = input.replaceAll(_turnEnd, '').replaceAll('<|end_of_msg|>', '');
     if (isPartial) {

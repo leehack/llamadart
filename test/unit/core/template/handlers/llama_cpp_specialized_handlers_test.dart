@@ -222,6 +222,36 @@ void main() {
             .content,
         'Body',
       );
+      expect(
+        handler
+            .parse('<|open|>response<|sep|>Body<|close|>message<|sep|>')
+            .content,
+        'Body',
+      );
+      expect(
+        handler.parse('\n<|open|>think<|sep|>Plan.').reasoningContent,
+        'Plan.',
+      );
+    });
+
+    test('ends an unclosed thought at a tool block', () {
+      const call =
+          '<|open|>tools<|sep|><|open|>call tool="weather" index="1"<|sep|>'
+          '<|open|>argument key="city" type="string"<|sep|>Paris'
+          '<|close|>argument<|sep|><|close|>call<|sep|><|close|>tools<|sep|>';
+      for (final (output, forcedOpen) in [
+        ('<|open|>think<|sep|>Plan.$call', false),
+        ('Plan.$call', true),
+      ]) {
+        final parsed = KimiK3Handler().parseWithTools(
+          output,
+          tools: [_weatherWithCityTool],
+          thinkingForcedOpen: forcedOpen,
+        );
+        expect(parsed.reasoningContent, 'Plan.');
+        expect(parsed.content, isEmpty);
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+      }
     });
   });
 
