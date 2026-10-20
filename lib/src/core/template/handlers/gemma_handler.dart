@@ -20,6 +20,24 @@ import '../tool_call_grammar_utils.dart';
 /// Gemma 3n also supports multimodal content via `<audio_soft_token>` and
 /// `<image_soft_token>` markers in the template.
 class GemmaHandler extends ChatTemplateHandler {
+  /// Finds a `{` that may still open a `{..."tool_call": ...}` envelope,
+  /// for the stream's content gate.
+  ///
+  /// The parse matches `{`, then text without another `{`, then
+  /// `"tool_call"`, so a `{` followed by a later `{` without `"tool_call"`
+  /// in between can no longer open an envelope.
+  static int toolCallOpening(String text, [int from = 0]) {
+    var brace = text.indexOf('{', from);
+    while (brace >= 0) {
+      final next = text.indexOf('{', brace + 1);
+      if (next < 0 || text.substring(brace, next).contains('"tool_call"')) {
+        return brace;
+      }
+      brace = next;
+    }
+    return text.length;
+  }
+
   @override
   ChatFormat get format => ChatFormat.gemma;
 

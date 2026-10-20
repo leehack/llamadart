@@ -21,6 +21,7 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
   static final RegExp _functionRegexStartOnly = RegExp(
     r'([A-Za-z0-9_]+\n\{|python\n|all\n)',
   );
+  static final RegExp _possibleStartCall = RegExp(r'^[A-Za-z0-9_]*\n?$');
   static final RegExp _functionRegex = RegExp(
     r'>>>([A-Za-z0-9_]+\n\{|python\n|all\n)',
   );
@@ -168,7 +169,10 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
       if (atJsonStart || !allowRawPython) {
         final jsonRange = _extractJsonObjectRange(output, cursor);
         if (jsonRange == null) {
-          if (!isPartial) {
+          if (isPartial) {
+            // The arguments may still be arriving.
+            cursor = output.length;
+          } else {
             parseFailed = true;
           }
           break;
@@ -213,10 +217,19 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
       content.write(output.substring(cursor));
     }
 
-    return ChatParseResult(
-      content: content.toString().trim(),
-      toolCalls: toolCalls,
-    );
+    var text = content.toString();
+    if (isPartial) {
+      // Output that is still a bare start-of-output function name, and a
+      // `>>>` marker, may yet become a call.
+      text = _possibleStartCall.hasMatch(output)
+          ? ''
+          : text.substring(
+              0,
+              ToolCallParsingUtils.literalOpening(text, const ['>>>']),
+            );
+    }
+
+    return ChatParseResult(content: text.trim(), toolCalls: toolCalls);
   }
 
   _FunctionMarker? _findNextFunctionMarker(String text, int from) {
