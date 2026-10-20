@@ -21,6 +21,12 @@ import '../tool_call_parsing_utils.dart';
 ///
 /// Tool declarations use `<start_function_declaration>` / `<end_function_declaration>`.
 class FunctionGemmaHandler extends ChatTemplateHandler {
+  /// Finds a possible function call for the stream's content gate.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [
+        '<start_function_call>',
+      ], from);
+
   @override
   ChatFormat get format => ChatFormat.functionGemma;
 

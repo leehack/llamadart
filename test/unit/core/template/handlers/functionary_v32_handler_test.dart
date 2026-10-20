@@ -62,7 +62,7 @@ void main() {
     });
 
     test(
-      'keeps leading all-channel content when later tool call is malformed',
+      'keeps content but drops the all header when a later call is malformed',
       () {
         final handler = FunctionaryV32Handler();
         const output = '>>>all\nhello\n>>>weather\n{"city":"Seoul"';
@@ -70,8 +70,16 @@ void main() {
         final parsed = handler.parse(output);
 
         expect(parsed.toolCalls, isEmpty);
-        expect(parsed.content, equals(output));
+        expect(parsed.content, equals(output.substring('>>>all\n'.length)));
       },
     );
+
+    test('partial parse keeps a closing angle bracket before a marker', () {
+      final parsed = FunctionaryV32Handler().parse(
+        'See <b>x</b>>>>weather\n{"city":5',
+        isPartial: true,
+      );
+      expect(parsed.content, 'See <b>x</b>');
+    });
   });
 }

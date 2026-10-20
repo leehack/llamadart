@@ -20,6 +20,14 @@ import '../tool_call_parsing_utils.dart';
 class FunctionaryV31Llama31Handler extends ChatTemplateHandler {
   static const String _pythonTag = '<|python_tag|>';
 
+  /// Finds a possible function tag or python call for the stream's content
+  /// gate.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [
+        '<function=',
+        _pythonTag,
+      ], from);
+
   @override
   ChatFormat get format => ChatFormat.functionaryV31Llama31;
 
