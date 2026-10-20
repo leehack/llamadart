@@ -20,7 +20,7 @@ including `0.9.x`, ignore it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.4
+  llamadart: ^0.15.5
   llamadart_stable_diffusion_flutter: ^0.15.2
 ```
 

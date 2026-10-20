@@ -7,17 +7,20 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.15.5
 
+- Keep tool calls out of streamed answer text and reasoning for Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma, Gemma, LFM2 and Kimi K2, and drop the Functionary v3.2 `all` header when a malformed call falls back to raw text.
 - Keep partial thought end tags out of streamed reasoning when thinking starts open, such as for GLM 4.5, Laguna and DeepSeek V3.2/V4.
-- Keep FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, keep their literal thought tags as content, and drop the Functionary v3.2 `all` header when a malformed call falls back to raw text.
-- Keep LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
 - Stream GPT-OSS `final` and `analysis` frame text as it arrives instead of at the end of the reply.
 - Keep Kimi K3 turn-end and think/response channel markers out of streamed answers and reasoning, and stream MiniMax M1 text after a leading tool call.
-- Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
+- Fix GLM 4.5/4.7 and Laguna tool calls stalling for minutes while generating string arguments, and repeating or garbling arguments because the grammar required newlines between tags.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
-- Fix GLM 4.5/4.7 and Laguna tool calls stalling for minutes on native llama.cpp while generating string argument values.
-- Fix GLM 4.7 and Laguna tool calls repeating or garbling arguments because the tool-call grammar required newlines between tags.
+- Aligned default WebGPU bridge assets to `v0.1.66` (unchanged from 0.15.4).
+  Runtime pins are unchanged: native `v0.7.0-1` uses upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM stays
+  `@litert-lm/core@0.18.0`.
+  Manifest SHA-256:
+  `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`.
 
 ## 0.15.4
 
