@@ -19,6 +19,7 @@ import '../template/handlers/gpt_oss_handler.dart';
 import '../template/handlers/hermes_handler.dart';
 import '../template/handlers/hunyuan_v3_handler.dart';
 import '../template/handlers/llama3_handler.dart';
+import '../template/handlers/llama_cpp_specialized_handlers.dart';
 import '../template/handlers/magistral_handler.dart';
 import '../template/handlers/mistral_handler.dart';
 import '../template/handlers/nemotron_v2_handler.dart';
@@ -114,6 +115,18 @@ class ChatCompletionStreamParser {
     final gatedOpening = _toolCallOpeningFor(templateResult);
     final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
+    // MiniMax M1 extracts no reasoning; with tools it streams through its
+    // partial parse.
+    final keepsThoughtTagsAsContent =
+        isGptOss ||
+        (templateResult.format == ChatFormat.minimaxM1.index &&
+            !parseToolCallsEnabled);
+    // Kimi K3 ends turns with a marker that its parse strips.
+    final turnEndOpening =
+        templateResult.format == ChatFormat.kimiK3.index &&
+            !parseToolCallsEnabled
+        ? KimiK3Handler.turnEndOpening
+        : null;
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -131,6 +144,7 @@ class ChatCompletionStreamParser {
     final contentGate = _ContentGate(
       (isGptOss ? gatedOpening : toolCallOpening) ??
           builtinOpening ??
+          turnEndOpening ??
           _noOpening,
       trimsLeading: !pegParsedWithoutTools,
     );
@@ -173,7 +187,7 @@ class ChatCompletionStreamParser {
 
       // GPT-OSS reasoning uses assistant channel frames. Generic thought tags
       // are literal text, including when they occur inside tool arguments.
-      if (isGptOss) {
+      if (keepsThoughtTagsAsContent) {
         final text = contentGate.add(token);
         if (text.isNotEmpty) {
           streamedContent += text;
@@ -440,8 +454,10 @@ class ChatCompletionStreamParser {
 
     final suppressFinalToolEnvelopeContent =
         toolCallOpening == null &&
-        // Gemma 4 sanitizes its envelopes and retains post-call text.
+        // Gemma 4 and MiniMax M1 sanitize their envelopes and retain
+        // post-call text.
         templateResult.format != ChatFormat.gemma4.index &&
+        templateResult.format != ChatFormat.minimaxM1.index &&
         parsed.hasToolCalls &&
         _isToolCallEnvelopeBuffer(
           fullOutput,

@@ -207,7 +207,8 @@ class KimiK3Handler extends _DirectJinjaHandler
 
     if (!parseToolCalls) {
       return ChatParseResult(
-        content: '$content${_stripKimiTurnEnd(remaining)}'.trim(),
+        content: '$content${_stripKimiTurnEnd(remaining, isPartial: isPartial)}'
+            .trim(),
         reasoningContent: _nullIfEmpty(reasoning),
       );
     }
@@ -218,7 +219,9 @@ class KimiK3Handler extends _DirectJinjaHandler
       schemas: toolSchemas(tools),
     );
     if (!parsed.success) {
-      final preserved = '$content${_stripKimiTurnEnd(remaining)}'.trim();
+      final preserved =
+          '$content${_stripKimiTurnEnd(remaining, isPartial: isPartial)}'
+              .trim();
       return ChatParseResult(
         content: preserved,
         reasoningContent: _nullIfEmpty(reasoning),
@@ -242,6 +245,7 @@ class KimiK3Handler extends _DirectJinjaHandler
         calls: const [],
         remaining: _stripKimiTurnEnd(
           isPartial ? _hideIncompleteProtocolSuffix(input, _toolsStart) : input,
+          isPartial: isPartial,
         ),
       );
     }
@@ -290,7 +294,10 @@ class KimiK3Handler extends _DirectJinjaHandler
 
     final removeEnd = scopeEnd + _toolsEnd.length;
     final remaining = input.replaceRange(scopeStart, removeEnd, '');
-    return _ParsedCalls(calls: calls, remaining: _stripKimiTurnEnd(remaining));
+    return _ParsedCalls(
+      calls: calls,
+      remaining: _stripKimiTurnEnd(remaining, isPartial: isPartial),
+    );
   }
 
   Map<String, dynamic>? _parseKimiArguments(
@@ -360,14 +367,27 @@ class KimiK3Handler extends _DirectJinjaHandler
     return result;
   }
 
-  String _stripKimiTurnEnd(String input) => input
-      .replaceAll(
-        '$_close'
-            'message$_sep',
-        '',
-      )
-      .replaceAll('<|end_of_msg|>', '')
-      .trim();
+  static const _turnEnd =
+      '$_close'
+      'message$_sep';
+
+  /// Finds a possible turn-end marker for the stream's content gate.
+  static int turnEndOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [
+        _turnEnd,
+        '<|end_of_msg|>',
+      ], from);
+
+  /// [input] without turn-end markers, and on a partial parse without one
+  /// that is still arriving.
+  String _stripKimiTurnEnd(String input, {bool isPartial = false}) {
+    var text = input.replaceAll(_turnEnd, '').replaceAll('<|end_of_msg|>', '');
+    if (isPartial) {
+      text = _hideIncompleteProtocolSuffix(text.trimRight(), _turnEnd);
+      text = _hideIncompleteProtocolSuffix(text, '<|end_of_msg|>');
+    }
+    return text.trim();
+  }
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {

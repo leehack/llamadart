@@ -667,6 +667,61 @@ void main() {
       }
     });
 
+    test(
+      'Kimi K3 and MiniMax M1 match final turn-end and post-call text',
+      () async {
+        const k3 =
+            '<|open|>tools<|sep|><|open|>call tool="weather" index="1"<|sep|>'
+            '<|open|>argument key="city" type="string"<|sep|>Montréal 🌧'
+            '<|close|>argument<|sep|><|close|>call<|sep|><|close|>tools<|sep|>';
+        const turnEnd = '<|close|>message<|sep|>';
+        const m1 =
+            '<tool_calls>\n{"name":"weather","arguments":{"city":"Paris"}}\n'
+            '</tool_calls>';
+        for (final (format, outputs, openings) in [
+          (
+            ChatFormat.kimiK3,
+            [
+              'Let me check.\n$k3$turnEnd',
+              'Let me check.\n$k3',
+              '${k3}Done.',
+              'Plain answer.$turnEnd',
+              'Plain answer.<|end_of_msg|>',
+              'Plain answer.',
+              'Literal <|close|>mess and more.',
+            ],
+            [turnEnd, '<|open|>tools<|sep|>', '<|end_of_msg|>'],
+          ),
+          (
+            ChatFormat.minimaxM1,
+            [
+              '$m1\nDone.',
+              'Let me check.\n$m1',
+              'Let me check.\n$m1\nDone.',
+              m1,
+              'Plain answer.',
+              '<think>Plan.</think>$m1\nDone.',
+              'Literal <tool_ca and more.',
+            ],
+            ['<tool_calls>', '</tool_calls>', '</think>'],
+          ),
+        ]) {
+          for (final output in outputs) {
+            for (final ending in ['natural', 'length', 'cancel']) {
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                atLimit: ending == 'length',
+                cancelled: ending == 'cancel',
+                openings: openings,
+              );
+            }
+            await _expectStreamMatchesParse(format, output, tools: false);
+          }
+        }
+      },
+    );
+
     test('Llama 3 builtin tools gate the python tag after prose', () async {
       const call = '<|python_tag|>code_interpreter.call(code="1+1")';
       for (final output in [
