@@ -774,6 +774,38 @@ void main() {
       await engine.dispose();
     });
 
+    test('an engine downloads stacked adapters for an extensionless file '
+        'with an unrecognized header', () async {
+      final path = await writeModel('unknown', 'fake');
+      final adapter = ModelSource.url(
+        Uri.parse('https://example.test/adapter.gguf'),
+      );
+      final manager = _FakeModelDownloadManager(
+        ModelCacheEntry(
+          sourceCanonicalKey: adapter.metadataSourceKey,
+          cacheKey: adapter.cacheKey,
+          fileName: adapter.fileName,
+          filePath: '${tempDir.path}/adapter.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      );
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await engine.loadModel(
+        path,
+        modelParams: ModelParams(
+          loras: [
+            LoraAdapterConfig.source(adapter, scale: 0.5),
+            LoraAdapterConfig.source(adapter),
+          ],
+        ),
+      );
+      expect(manager.ensureModelCalls, 2);
+      expect(llama.loadedPaths, [path]);
+      await engine.dispose();
+    });
+
     test('rejects URL loads with an explicit format', () {
       expect(
         () => backend.modelLoadFromUrlAs(
