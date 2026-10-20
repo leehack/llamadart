@@ -30,8 +30,7 @@ class GptOssHandler extends ChatTemplateHandler {
     '<|end|>',
   ];
 
-  /// Finds a possible assistant frame for the stream's content gate.
-  /// Frames wait for final parsing to classify content, reasoning and calls.
+  /// Finds a possible assistant frame.
   static int toolCallOpening(String text, [int from = 0]) =>
       ToolCallParsingUtils.literalOpening(text, const [
         _assistantStart,
