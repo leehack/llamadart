@@ -1094,6 +1094,15 @@ class ChatCompletionStreamParser {
     required String finalValue,
     required String channel,
   }) {
+    if (!finalValue.startsWith(streamedValue)) {
+      // Streams trim leading whitespace that a final parse may keep, for
+      // example in a forced-open thought that never closes.
+      final trimmed = finalValue.trimLeft();
+      if (streamedValue.isNotEmpty && trimmed.startsWith(streamedValue)) {
+        finalValue = trimmed;
+      }
+    }
+
     if (finalValue.length <= streamedValue.length) {
       return null;
     }

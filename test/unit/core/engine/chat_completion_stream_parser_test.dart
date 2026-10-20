@@ -716,6 +716,57 @@ void main() {
       }
     });
 
+    test('unclosed forced thoughts keep reasoning after a held call', () async {
+      for (final (format, call) in [
+        (
+          ChatFormat.lfm2,
+          '<|tool_call_start|>[{"name":"weather",'
+              '"arguments":{"city":"Paris"}}]<|tool_call_end|>',
+        ),
+        (
+          ChatFormat.kimiK2,
+          '<|tool_calls_section_begin|><|tool_call_begin|>functions.weather:0'
+              '<|tool_call_argument_begin|>{"city":"Paris"}'
+              '<|tool_call_end|><|tool_calls_section_end|>',
+        ),
+      ]) {
+        for (final output in [
+          '\nPlan. $call Then more thinking',
+          '\nPlan. ${call.substring(0, call.length - 30)}',
+        ]) {
+          final parsed = ChatTemplateEngine.parse(
+            format.index,
+            output,
+            thinkingForcedOpen: true,
+            tools: [_weatherTool],
+          );
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable([
+              for (var i = 0; i < output.length; i += 4)
+                output.substring(i, min(i + 4, output.length)),
+            ]),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: format.index,
+              thinkingForcedOpen: true,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: 'unclosed-thought',
+            tools: [_weatherTool],
+          ).toList();
+          expect(
+            chunks
+                .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                .join(),
+            parsed.reasoningContent!.trimLeft(),
+            reason: '${format.name} $output',
+          );
+        }
+      }
+    });
+
     test('Llama 3 builtin tools gate the python tag after prose', () async {
       const call = '<|python_tag|>code_interpreter.call(code="1+1")';
       for (final output in [
