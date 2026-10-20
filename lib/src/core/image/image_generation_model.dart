@@ -51,6 +51,16 @@ class ImageModelComponent {
 
 /// An image-generation model: a main file and the other files it needs.
 ///
+/// Compatible GGUF and Safetensors files load directly and can be mixed;
+/// Safetensors does not need conversion to GGUF. Detection reads contents,
+/// not filename extensions. A compatible PyTorch `.ckpt`, `.pth` or `.pt`
+/// state-dict file needs an explicit [role] (or a component's role); this
+/// forwards it to the native loader, not a conversion or compatibility check.
+/// Real PyTorch checkpoint qualification remains incomplete. Local sources
+/// must be regular files; directories and managed shard sets are unsupported.
+/// Leave [ModelSource.format] unset for image files. A recognized container
+/// and role do not establish architecture, dtype or device compatibility.
+///
 /// Each file is a `ModelSource` (local path, HTTP(S) URL or Hugging Face
 /// file) that `ImageGenerationEngine.load` downloads if needed and then
 /// assigns to its runtime role from its header, so files can be listed in

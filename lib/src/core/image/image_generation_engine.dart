@@ -294,6 +294,10 @@ class ImageGenerationEngine {
   /// diffusion model, at most one file per role, and a VAE or tiny
   /// autoencoder that decodes the diffusion model's latent channels.
   ///
+  /// GGUF and Safetensors load directly, including mixed components. See
+  /// [ImageGenerationModel] for explicit PyTorch roles and layout limits;
+  /// detecting a role does not qualify a model or its dtype for this device.
+  ///
   /// [onProgress] reports the files together: `receivedBytes` counts every
   /// file resolved so far, including cached and local ones, plus the bytes
   /// of the current download; `totalBytes` is the combined size of all files

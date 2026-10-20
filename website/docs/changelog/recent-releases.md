@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 - Keep GPT-OSS reasoning and tool frames out of answer text, including native header continuations.
 - Keep GPT-OSS automatic tool choice optional for ordinary text replies.
 - Preserve Gemma 4 answer text after tool calls across split token delivery.

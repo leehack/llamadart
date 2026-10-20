@@ -46,6 +46,12 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 [Text to speech](../guides/text-to-speech) and
 [Decision models](../guides/decision-models).
 
+Image generation accepts compatible GGUF and Safetensors files directly,
+including mixed-format components. PyTorch checkpoints need explicit roles
+and remain less qualified; directories and managed shard sets have no public
+loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
+Container support does not extend the model/device qualification above.
+
 ## Compute device
 
 `ModelParams.device` (`ComputeDevice`) applies to every runtime. `auto` keeps

@@ -48,7 +48,17 @@ const _lastError = _logState + 64;
 const _lastErrorBytes = 1024;
 const _modelPath = _lastError + _lastErrorBytes;
 const _modelPathBytes = 512;
-const _logSlots = _modelPath + _modelPathBytes;
+const _fileRoles = [
+  'model',
+  'diffusionModel',
+  'vae',
+  'taesd',
+  'clipL',
+  'clipG',
+  't5xxl',
+  'llm',
+];
+const _logSlots = _modelPath + _modelPathBytes * 8;
 const _logSlotCount = 256;
 const _logSlotBytes = 512;
 // One GPU: status and type as Int32, then total and free as Int64.
@@ -179,6 +189,16 @@ final class FakeStableDiffusionRuntime {
   /// empty string when they had none.
   String get loadedModelPath =>
       Pointer<Utf8>.fromAddress(_state.address + _modelPath).toDartString();
+
+  /// Non-null file paths read from the last load's native parameters.
+  Map<String, String> get loadedFiles => {
+    for (final (index, role) in _fileRoles.indexed)
+      if (Pointer<Utf8>.fromAddress(
+            _state.address + _modelPath + index * _modelPathBytes,
+          ).toDartString()
+          case final path when path.isNotEmpty)
+        role: path,
+  };
 
   /// Records [bytes] as a log message at `sd_log_level_t` [level], as a
   /// thread of the runtime does.
@@ -445,9 +465,28 @@ final class _FakeCalls {
     final modelPath = params.ref.model_path == nullptr
         ? ''
         : params.ref.model_path.cast<Utf8>().toDartString();
-    (_state + _modelPath).asTypedList(_modelPathBytes)
-      ..fillRange(0, _modelPathBytes, 0)
-      ..setAll(0, utf8.encode(modelPath));
+    final paths = [
+      params.ref.model_path,
+      params.ref.diffusion_model_path,
+      params.ref.vae_path,
+      params.ref.taesd_path,
+      params.ref.clip_l_path,
+      params.ref.clip_g_path,
+      params.ref.t5xxl_path,
+      params.ref.llm_path,
+    ];
+    for (final (index, path) in paths.indexed) {
+      (_state + _modelPath + index * _modelPathBytes).asTypedList(
+          _modelPathBytes,
+        )
+        ..fillRange(0, _modelPathBytes, 0)
+        ..setAll(
+          0,
+          path == nullptr
+              ? const <int>[]
+              : utf8.encode(path.cast<Utf8>().toDartString()),
+        );
+    }
     _ints[_lastErrorLength ~/ 4] = 0;
     _logText(
       _sdLogInfo,
