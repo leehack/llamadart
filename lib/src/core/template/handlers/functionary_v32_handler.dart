@@ -148,6 +148,7 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
     var searchFrom = 0;
     var first = true;
     var parseFailed = false;
+    int? contentBeforeFirstCall;
 
     while (true) {
       _FunctionMarker? marker;
@@ -206,6 +207,7 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
         }
 
         final jsonText = output.substring(cursor, jsonRange.end);
+        contentBeforeFirstCall ??= content.length;
         toolCalls.add(
           ToolCallParsingUtils.createFunctionToolCall(
             index: toolCalls.length,
@@ -224,6 +226,7 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
       }
 
       final rawCode = output.substring(cursor);
+      contentBeforeFirstCall ??= content.length;
       toolCalls.add(
         ToolCallParsingUtils.createFunctionToolCall(
           index: toolCalls.length,
@@ -244,7 +247,8 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
       );
     }
 
-    if (cursor < output.length) {
+    final endsAtOutput = cursor < output.length;
+    if (endsAtOutput) {
       content.write(output.substring(cursor));
     }
 
@@ -252,9 +256,17 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
     if (isPartial) {
       // Output that is still a bare start-of-output function name, and a
       // `>>>` marker, may yet become a call.
-      text = _possibleStartCall.hasMatch(output)
-          ? ''
-          : text.substring(0, _possibleMarker(text));
+      if (_possibleStartCall.hasMatch(output)) {
+        text = '';
+      } else if (endsAtOutput) {
+        text = text.substring(0, _possibleMarker(text));
+      }
+      // A later malformed call makes the final parse fall back to the raw
+      // output, so only text before the first call is safe to stream.
+      if (contentBeforeFirstCall != null &&
+          contentBeforeFirstCall < text.length) {
+        text = text.substring(0, contentBeforeFirstCall);
+      }
     }
 
     return ChatParseResult(content: text.trim(), toolCalls: toolCalls);
