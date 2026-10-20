@@ -22,6 +22,10 @@ class KimiK2Handler extends ChatTemplateHandler {
   static const String _argStart = '<|tool_call_argument_begin|>';
   static const String _callEnd = '<|tool_call_end|>';
 
+  /// Finds a possible tool-call section for the stream's content gate.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [_scopeStart], from);
+
   @override
   ChatFormat get format => ChatFormat.kimiK2;
 

@@ -21,6 +21,12 @@ import '../tool_call_grammar_utils.dart';
 /// calls. LFM2 templates wrap tool definitions in `<|tool_list_start|>` /
 /// `<|tool_list_end|>`; LFM2.5 templates write a plain list.
 class Lfm2Handler extends ChatTemplateHandler {
+  /// Finds a possible tool-call list for the stream's content gate.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [
+        '<|tool_call_start|>',
+      ], from);
+
   static final RegExp _forceJsonSchemaLineMarker = RegExp(
     r'force json schema\.\n',
     caseSensitive: false,
