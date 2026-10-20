@@ -667,6 +667,45 @@ void main() {
       }
     });
 
+    test('forced-open thoughts never stream a partial end tag', () async {
+      const xml =
+          '<tool_call>weather\n<arg_key>city</arg_key>\n'
+          '<arg_value>Paris</arg_value>\n</tool_call>';
+      const dsml =
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">Paris</｜DSML｜parameter>\n'
+          '</｜DSML｜invoke>\n';
+      for (final (format, call) in [
+        (ChatFormat.glm45, xml),
+        (ChatFormat.laguna, xml),
+        (ChatFormat.deepseekV4, '<｜DSML｜tool_calls>\n$dsml</｜DSML｜tool_calls>'),
+        (
+          ChatFormat.deepseekV32,
+          '<｜DSML｜function_calls>\n$dsml</｜DSML｜function_calls>',
+        ),
+        (ChatFormat.llama3, '{"name":"weather","parameters":{"city":"Paris"}}'),
+      ]) {
+        for (final output in [
+          'Plan.\n</think>\n\nLet me check.\n$call',
+          'Plan.\n</think>\n\nLet me check.',
+          'Plan with a literal </thi and more.\n</think>Done.',
+          'Plan ends at </th',
+          '<think>Plan.</think>Answer.',
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              forcedOpen: true,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+              openings: ['<think>', '</think>'],
+            );
+          }
+        }
+      }
+    });
+
     test('Llama 3 builtin tools gate the python tag after prose', () async {
       const call = '<|python_tag|>code_interpreter.call(code="1+1")';
       for (final output in [

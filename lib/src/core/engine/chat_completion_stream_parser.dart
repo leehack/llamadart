@@ -313,8 +313,12 @@ class ChatCompletionStreamParser {
           tools: tools,
         );
 
-        final partialReasoning = (partialParsed.reasoningContent ?? '')
-            .trimRight();
+        // A partial parse keeps a thought tag that is still arriving as
+        // reasoning text; the final parse drops the whole tag.
+        final partialReasoning = _withoutTrailingTagPrefix(
+          partialParsed.reasoningContent ?? '',
+          [startTag, endTag],
+        ).trimRight();
         final partialContent = partialParsed.content.trimRight();
         if (partialReasoning.length > streamedReasoning.length) {
           final delta = partialReasoning.substring(streamedReasoning.length);
@@ -605,6 +609,22 @@ class ChatCompletionStreamParser {
       formatIndex == ChatFormat.gemma4.index;
 
   static int _noOpening(String text, int from) => text.length;
+
+  /// [text] without a trailing proper prefix of any of [tags].
+  static String _withoutTrailingTagPrefix(String text, List<String> tags) {
+    var end = text.length;
+    for (final tag in tags) {
+      for (var length = tag.length - 1; length > 0; length--) {
+        if (length <= text.length &&
+            text.endsWith(tag.substring(0, length)) &&
+            text.length - length < end) {
+          end = text.length - length;
+          break;
+        }
+      }
+    }
+    return text.substring(0, end);
+  }
 
   static int? _firstNonWhitespaceIndex(String value) {
     for (var i = 0; i < value.length; i++) {
