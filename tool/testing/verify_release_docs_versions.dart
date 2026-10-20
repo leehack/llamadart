@@ -876,6 +876,13 @@ Map<String, String> installDocVersions(
   return result;
 }
 
+/// Changelogs whose first release heading must name the version being
+/// published.
+const _releasePrepChangelogs = <String>[
+  'CHANGELOG.md',
+  'website/docs/changelog/recent-releases.md',
+];
+
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
   final unknown = arguments.where((argument) => argument != '--release-prep');
@@ -931,16 +938,18 @@ void main(List<String> arguments) {
       errors.addAll(pending.map((bump) => bump.toString()));
     }
     if (releasePrep) {
-      final heading = _matchInFile(
-        Directory.current,
-        'CHANGELOG.md',
-        RegExp(r'^(## .*)$', multiLine: true),
-        'first release heading',
-        errors,
-      );
       final expected = '## ${versions['llamadart']}';
-      if (heading != expected) {
-        errors.add('CHANGELOG.md must start with $expected before publishing.');
+      for (final changelog in _releasePrepChangelogs) {
+        final heading = _matchInFile(
+          Directory.current,
+          changelog,
+          RegExp(r'^(## .*)$', multiLine: true),
+          'first release heading',
+          errors,
+        );
+        if (heading != expected) {
+          errors.add('$changelog must start with $expected before publishing.');
+        }
       }
     }
     final coreVersion = _parseCoreVersion(versions['llamadart']!, errors);
