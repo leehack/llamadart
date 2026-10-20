@@ -231,14 +231,9 @@ class Llama3Handler extends ChatTemplateHandler {
     }
 
     return ChatParseResult(
-      content: trimmed.substring(
-        contentStart,
-        isPartial
-            ? ToolCallParsingUtils.literalOpening(trimmed, const [
-                _pythonTag,
-              ], contentStart)
-            : trimmed.length,
-      ),
+      // A later builtin tag makes the final content start at the JSON call,
+      // so text after the call waits for the final parse.
+      content: isPartial ? '' : trimmed.substring(contentStart),
       reasoningContent: thinking.reasoning,
       toolCalls: [
         ToolCallParsingUtils.createFunctionToolCall(

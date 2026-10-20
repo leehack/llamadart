@@ -676,6 +676,8 @@ void main() {
         'Let me check.\n<|python_tag|>code_interpreter.call(code=',
         'Literal <|python and more text.',
         '{"name":"weather","parameters":{"city":"Paris"}}$call',
+        '{"name":"weather","parameters":{"city":"Paris"}} ok $call',
+        '{"name":"weather","parameters":{"city":"Paris"}} ok <|python_tag|>\n',
       ]) {
         for (final ending in ['natural', 'length', 'cancel']) {
           await _expectStreamMatchesParse(
