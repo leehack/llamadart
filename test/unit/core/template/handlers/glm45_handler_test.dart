@@ -282,6 +282,38 @@ void main() {
     }
   });
 
+  test('GLM raw string states return to the start state once', () {
+    // One grammar alternative per character made llama.cpp keep ~18 stacks
+    // per value position: about 4 s per sampled token on a 155k vocabulary.
+    final grammar = Glm45Handler().buildGrammar([
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ])!;
+    final rawRules = grammar
+        .split('\n')
+        .where((line) => line.startsWith('glm-string-raw-'))
+        .toList();
+
+    expect(
+      rawRules,
+      contains(
+        'glm-string-raw-0 ::= ([<] glm-string-raw-1 | [^<] glm-string-raw-0)?',
+      ),
+    );
+    for (final rule in rawRules) {
+      final body = rule.substring(rule.indexOf('::='));
+      expect(
+        RegExp(r'glm-string-raw-0(?!\d)').allMatches(body),
+        hasLength(1),
+        reason: rule,
+      );
+    }
+  });
+
   test('hides incomplete GLM tool markup only while streaming', () {
     const output =
         'Visible answer.\n'
