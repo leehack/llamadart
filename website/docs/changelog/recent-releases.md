@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Keep partial thought end tags out of streamed reasoning when thinking starts open, such as for GLM 4.5, Laguna and DeepSeek V3.2/V4.
 - Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 
