@@ -2853,6 +2853,45 @@ void main() {
       expect(jsonDecode(toolCall.function!.arguments!), {'city': 'Seoul'});
     });
 
+    test('streams compact and newline GLM layouts like parse', () async {
+      const compact =
+          '<tool_call>weather<arg_key>city</arg_key>'
+          '<arg_value>Paris</arg_value></tool_call>';
+      const newline =
+          '<tool_call>weather\n<arg_key>city</arg_key>\n'
+          '<arg_value>Paris</arg_value>\n</tool_call>\n';
+      for (final format in [ChatFormat.glm45, ChatFormat.laguna]) {
+        for (final call in [compact, newline]) {
+          final parsed = ChatTemplateEngine.parse(
+            format.index,
+            call,
+            tools: [_weatherTool],
+          );
+          expect(parsed.content, isEmpty, reason: '${format.name} $call');
+          expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+            'city': 'Paris',
+          });
+          for (final (output, forcedOpen) in [
+            (call, false),
+            ('Let me check.$call', false),
+            ('$call$call', false),
+            ('Plan.</think>$call', true),
+          ]) {
+            for (final ending in ['natural', 'length', 'cancel']) {
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                forcedOpen: forcedOpen,
+                atLimit: ending == 'length',
+                cancelled: ending == 'cancel',
+                openings: ['<tool_call>', '<arg_key>', '</arg_value>'],
+              );
+            }
+          }
+        }
+      }
+    });
+
     test('does not stream partial Muse routing markup as content', () async {
       const atem =
           '<atem:function_calls><atem:invoke name="weather">'
