@@ -160,6 +160,59 @@ void main() {
       equals({'code': 'print(1)', 'retries': 2}),
     );
   });
+
+  test('partial parses withhold possible calls and release other text', () {
+    final handler = Llama3Handler();
+    for (final (output, content) in [
+      ('{', ''),
+      ('{"na', ''),
+      ('{"name": "weather", "param', ''),
+      ('{"type":"function","name":"weather"', ''),
+      ('{"name":"weather","parameters":{"city":"Par', ''),
+      ('{"name":"weather","parameters":{"city":"Paris"}', ''),
+      ('{"name":"Bob","age":3', '{"name":"Bob","age":3'),
+      ('{"type":"text"', '{"type":"text"'),
+      ('{"name":""', '{"name":""'),
+      ('Let me check. {"name":"weather"', 'Let me check. {"name":"weather"'),
+      ('Let me check.\n<|python_', 'Let me check.\n'),
+      (
+        'Let me check.\n<|python_tag|>code_interpreter.call(',
+        'Let me check.\n',
+      ),
+      ('Hi <|python_tag|>print(1)', 'Hi '),
+      ('{"name":\u00a0"weather","param', ''),
+    ]) {
+      final parsed = handler.parse(output, isPartial: true);
+      expect(parsed.content, content, reason: output);
+      expect(parsed.toolCalls, isEmpty, reason: output);
+    }
+  });
+
+  test('final parses keep unfinished calls as content', () {
+    final handler = Llama3Handler();
+    for (final output in [
+      '{"name":"weather","parameters":{"city":"Par',
+      '{"name":"weather","parameters":{"city":"Paris"}',
+      'Hi <|python_tag|>print(1)',
+      'Let me check.\n<|python_',
+    ]) {
+      final parsed = handler.parse(output);
+      expect(parsed.content, output, reason: output);
+      expect(parsed.toolCalls, isEmpty, reason: output);
+    }
+  });
+
+  test('parses typed function envelopes', () {
+    final parsed = Llama3Handler().parse(
+      '{"type":"function","name":"weather","parameters":{"city":"Paris"}}\n'
+      'Done.',
+    );
+    expect(parsed.content, 'Done.');
+    expect(parsed.toolCalls.single.function?.name, 'weather');
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': 'Paris',
+    });
+  });
 }
 
 Future<Object?> _noopHandler(_) async {

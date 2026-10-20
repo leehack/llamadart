@@ -632,6 +632,75 @@ void main() {
       }
     });
 
+    test('Llama 3 withholds leading JSON calls from streamed content', () async {
+      const call = '{"name":"weather","parameters":{"city":"Montréal 🌧"}}';
+      const typed =
+          '{"type":"function","name":"weather","parameters":{"city":"Paris"}}';
+      for (final format in [ChatFormat.llama3, ChatFormat.llama3BuiltinTools]) {
+        for (final output in [
+          call,
+          '$call\nDone.',
+          '  \n$call',
+          '{ "name" : "weather" , "parameters" : {"city":"Paris"} }',
+          typed,
+          '$typed\nDone.',
+          '<think>Plan.</think>$call\nDone.',
+          // Not calls: these stay content.
+          '{"name":"Bob","age":3}',
+          '{"type":"text","value":1}',
+          'Let me check. $call\n',
+          '{"name":"weather","parameters":{"city":"Paris"} }',
+          '{"name":"weather","parameters":',
+          '{"name":\u00a0"weather","parameters":{"city":"Paris"}}',
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+              openings: ['"parameters"', '"function"'],
+            );
+          }
+          await _expectStreamMatchesParse(format, output, tools: false);
+        }
+      }
+    });
+
+    test('Llama 3 builtin tools gate the python tag after prose', () async {
+      const call = '<|python_tag|>code_interpreter.call(code="1+1")';
+      for (final output in [
+        'Let me check.\n$call',
+        call,
+        'Hi <|python_tag|>print(1)',
+        'Let me check.\n<|python_tag|>code_interpreter.call(code=',
+        'Literal <|python and more text.',
+        '{"name":"weather","parameters":{"city":"Paris"}}$call',
+        '{"name":"weather","parameters":{"city":"Paris"}} ok $call',
+        '{"name":"weather","parameters":{"city":"Paris"}} ok <|python_tag|>\n',
+      ]) {
+        for (final ending in ['natural', 'length', 'cancel']) {
+          await _expectStreamMatchesParse(
+            ChatFormat.llama3BuiltinTools,
+            output,
+            atLimit: ending == 'length',
+            cancelled: ending == 'cancel',
+            openings: ['<|python_tag|>'],
+          );
+        }
+        await _expectStreamMatchesParse(
+          ChatFormat.llama3BuiltinTools,
+          output,
+          tools: false,
+        );
+      }
+      await _expectContentAfterEachToken(ChatFormat.llama3BuiltinTools, [
+        ('Let me ', 'Let me'),
+        ('check.\n<|python', 'Let me check.'),
+        ('_tag|>code_interpreter.call(', 'Let me check.'),
+      ]);
+    });
+
     test('GPT-OSS gates split frames without swallowing ordinary text', () async {
       const call =
           '<|start|>assistant to=functions.weather<|channel|>commentary'

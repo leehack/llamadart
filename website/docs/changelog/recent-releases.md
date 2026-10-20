@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 
 ## 0.15.4

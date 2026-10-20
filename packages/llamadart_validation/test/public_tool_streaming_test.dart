@@ -89,6 +89,19 @@ void main() {
       content: '',
     ),
     (
+      family: 'Llama 3',
+      marker: '<|start_header_id|>ipython<|end_header_id|>',
+      output: '{"name":"weather","parameters":{"city":"Paris"}}',
+      content: '',
+    ),
+    (
+      family: 'Llama 3 typed envelope',
+      marker: '<|start_header_id|>ipython<|end_header_id|>',
+      output:
+          '{"type":"function","name":"weather","parameters":{"city":"Paris"}}\nDone.',
+      content: 'Done.',
+    ),
+    (
       family: 'Gemma 4',
       marker: '<|turn><turn|>',
       output:
@@ -178,4 +191,51 @@ void main() {
       );
     }
   }
+
+  test(
+    'Llama 3 builtin public tool stream keeps prose before the tag',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'tool-stream-replay-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final model = File('${directory.path}/fixture.gguf')
+        ..writeAsBytesSync([0, 0, 0, 0]);
+      const output =
+          'Let me check.\n<|python_tag|>code_interpreter.call(code="1+1")';
+      final backend = _ReplayBackend(
+        '<|start_header_id|>ipython<|end_header_id|><|python_tag|>',
+      )..output = output;
+      final adapter = PublicValidationEngine(
+        engineFactory: () => LlamaEngine(backend),
+      );
+      addTearDown(adapter.dispose);
+      await adapter.load(model.path, profile);
+      final builtin = ToolDefinition(
+        name: 'code_interpreter',
+        description: 'Run code.',
+        parameters: [ToolParam.string('code', required: true)],
+      );
+      for (final mode in [ToolChoice.auto, ToolChoice.required]) {
+        for (final size in [1, 2, 7, utf8.encode(output).length]) {
+          backend.chunkSize = size;
+          final result = await adapter.generate(
+            'Compute 1+1',
+            profile,
+            tools: [builtin],
+            toolChoice: mode,
+            enableThinking: false,
+          );
+          final reason = '${mode.name} chunk size $size';
+          expect(result['content'], 'Let me check.\n', reason: reason);
+          expect(result['finish_reasons'], ['tool_calls'], reason: reason);
+          final call = (result['tool_call_deltas'] as List).single as Map;
+          expect((call['function'] as Map)['name'], 'code_interpreter');
+          expect(jsonDecode((call['function'] as Map)['arguments'] as String), {
+            'code': '1+1',
+          });
+        }
+      }
+    },
+  );
 }
