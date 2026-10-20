@@ -24,6 +24,7 @@ import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
 import 'package:llamadart/src/core/template/handlers/gpt_oss_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/llama3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
@@ -483,6 +484,24 @@ void main() {
         call
             .replaceFirst('<|start|>assistant', '')
             .replaceFirst('{"city":"Paris"}', '{"city":7}'),
+      ],
+    );
+  });
+
+  test('Llama 3 grammar accepts one call and rejects invalid envelopes', () {
+    final grammar = Llama3Handler().buildGrammar([_weatherWithCityTool])!;
+    const call = '{"name": "weather", "parameters": {"city": "Paris"}}';
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [call],
+      invalid: [
+        'Let me check.\n$call',
+        call.replaceFirst('weather', 'unknown'),
+        call.replaceFirst('{"city": "Paris"}', '{}'),
+        call.replaceFirst('"Paris"', '7'),
+        call.replaceFirst('"parameters"', '"arguments"'),
+        call.substring(0, call.length - 1),
       ],
     );
   });

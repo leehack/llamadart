@@ -33,6 +33,12 @@ class Llama3Handler extends ChatTemplateHandler {
     dotAll: true,
   );
 
+  static const String _pythonTag = '<|python_tag|>';
+
+  /// Finds a possible builtin-tool call opening for the stream's content gate.
+  static int builtinCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [_pythonTag], from);
+
   static const Set<String> _builtinToolNames = {
     'wolfram_alpha',
     'web_search',
@@ -83,7 +89,7 @@ class Llama3Handler extends ChatTemplateHandler {
     final hasTools = tools != null && tools.isNotEmpty;
     final hasBuiltinTools =
         hasTools && tools.any((tool) => _builtinToolNames.contains(tool.name));
-    final supportsPythonTagBuiltins = templateSource.contains('<|python_tag|>');
+    final supportsPythonTagBuiltins = templateSource.contains(_pythonTag);
     final resolvedFormat = hasTools
         ? (hasBuiltinTools && supportsPythonTagBuiltins
               ? ChatFormat.llama3BuiltinTools
@@ -100,7 +106,7 @@ class Llama3Handler extends ChatTemplateHandler {
         ),
       );
       if (resolvedFormat == ChatFormat.llama3BuiltinTools) {
-        triggers.add(const GrammarTrigger(type: 0, value: '<|python_tag|>'));
+        triggers.add(const GrammarTrigger(type: 0, value: _pythonTag));
       }
     }
 
@@ -119,7 +125,7 @@ class Llama3Handler extends ChatTemplateHandler {
       ),
       grammarTriggers: triggers,
       preservedTokens: resolvedFormat == ChatFormat.llama3BuiltinTools
-          ? const ['<|python_tag|>']
+          ? const [_pythonTag]
           : const [],
     );
   }
@@ -149,7 +155,10 @@ class Llama3Handler extends ChatTemplateHandler {
       if (builtinResult.function == null ||
           (isPartial && !builtinResult.valid)) {
         return ChatParseResult(
-          content: trimmed,
+          // An unfinished builtin call may still complete.
+          content: isPartial
+              ? trimmed.substring(0, trimmed.indexOf(_pythonTag))
+              : trimmed,
           reasoningContent: thinking.reasoning,
         );
       }
@@ -169,8 +178,21 @@ class Llama3Handler extends ChatTemplateHandler {
 
     final prefix = _llama31FunctionPrefix.firstMatch(trimmed);
     if (prefix == null) {
+      if (isPartial && _mayStartFunctionCall(trimmed)) {
+        return ChatParseResult(
+          content: '',
+          reasoningContent: thinking.reasoning,
+        );
+      }
       return ChatParseResult(
-        content: trimmed,
+        content: isPartial
+            ? trimmed.substring(
+                0,
+                ToolCallParsingUtils.literalOpening(trimmed, const [
+                  _pythonTag,
+                ]),
+              )
+            : trimmed,
         reasoningContent: thinking.reasoning,
       );
     }
@@ -189,7 +211,7 @@ class Llama3Handler extends ChatTemplateHandler {
     );
     if (argsValue == null) {
       return ChatParseResult(
-        content: trimmed,
+        content: isPartial ? '' : trimmed,
         reasoningContent: thinking.reasoning,
       );
     }
@@ -197,7 +219,7 @@ class Llama3Handler extends ChatTemplateHandler {
     final close = _llama31CloseRegex.matchAsPrefix(trimmed, argsValue.end);
     if (close == null) {
       return ChatParseResult(
-        content: trimmed,
+        content: isPartial && argsValue.end >= trimmed.length ? '' : trimmed,
         reasoningContent: thinking.reasoning,
       );
     }
@@ -222,13 +244,13 @@ class Llama3Handler extends ChatTemplateHandler {
   }
 
   _BuiltinParseResult _tryParseBuiltinPythonTag(String output) {
-    final pythonTagIndex = output.indexOf('<|python_tag|>');
+    final pythonTagIndex = output.indexOf(_pythonTag);
     if (pythonTagIndex < 0) {
       return const _BuiltinParseResult(foundTag: false, valid: true);
     }
 
     final contentPrefix = output.substring(0, pythonTagIndex);
-    final afterTag = output.substring(pythonTagIndex + '<|python_tag|>'.length);
+    final afterTag = output.substring(pythonTagIndex + _pythonTag.length);
     final functionPrefix = _builtinFunctionPrefix.matchAsPrefix(afterTag);
     if (functionPrefix == null) {
       return const _BuiltinParseResult(foundTag: true, valid: false);
@@ -301,6 +323,38 @@ class Llama3Handler extends ChatTemplateHandler {
         arguments: ToolCallParsingUtils.encodeArguments(arguments),
       ),
     );
+  }
+
+  /// Whether [text] is a prefix of a call that [_llama31FunctionPrefix]
+  /// would match once more output arrives.
+  static bool _mayStartFunctionCall(String text) {
+    bool matchesPrefix(List<String?> parts) {
+      var i = 0;
+      for (final part in parts) {
+        while (i < text.length && text.codeUnitAt(i) <= 0x20) {
+          i++;
+        }
+        if (i >= text.length) return true;
+        if (part == null) {
+          if (text.codeUnitAt(i) != 0x22) return false;
+          i++;
+          final close = text.indexOf('"', i);
+          if (close < 0) return true;
+          if (close == i) return false;
+          i = close + 1;
+          continue;
+        }
+        final rest = text.substring(i);
+        if (rest.length < part.length) return part.startsWith(rest);
+        if (!rest.startsWith(part)) return false;
+        i += part.length;
+      }
+      return false;
+    }
+
+    const call = <String?>['"name"', ':', null, ',', '"parameters"', ':'];
+    return matchesPrefix(['{', ...call]) ||
+        matchesPrefix(['{', '"type"', ':', '"function"', ',', ...call]);
   }
 
   String _formatDateString(DateTime value) {

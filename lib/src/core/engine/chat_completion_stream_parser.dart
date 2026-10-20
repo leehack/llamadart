@@ -18,6 +18,7 @@ import '../template/handlers/granite_handler.dart';
 import '../template/handlers/gpt_oss_handler.dart';
 import '../template/handlers/hermes_handler.dart';
 import '../template/handlers/hunyuan_v3_handler.dart';
+import '../template/handlers/llama3_handler.dart';
 import '../template/handlers/magistral_handler.dart';
 import '../template/handlers/mistral_handler.dart';
 import '../template/handlers/nemotron_v2_handler.dart';
@@ -113,12 +114,24 @@ class ChatCompletionStreamParser {
     final gatedOpening = _toolCallOpeningFor(templateResult);
     final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
+    final isLlama3 =
+        templateResult.format == ChatFormat.llama3.index ||
+        templateResult.format == ChatFormat.llama3BuiltinTools.index;
+    // Builtin calls may follow prose, while JSON calls must start the output,
+    // so only the content gate waits at the builtin opening.
+    final builtinOpening =
+        parseToolCallsEnabled &&
+            templateResult.format == ChatFormat.llama3BuiltinTools.index
+        ? Llama3Handler.builtinCallOpening
+        : null;
     final isQwen3CoderXml =
         templateResult.format == ChatFormat.qwen3CoderXml.index;
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
-      (isGptOss ? gatedOpening : toolCallOpening) ?? _noOpening,
+      (isGptOss ? gatedOpening : toolCallOpening) ??
+          builtinOpening ??
+          _noOpening,
       trimsLeading: !pegParsedWithoutTools,
     );
     final reasoningGate = _ReasoningGate(
@@ -183,7 +196,10 @@ class ChatCompletionStreamParser {
         if (decisionPrefix == null) {
           continue;
         }
-        final mode = _decideToolStreamingMode(decisionPrefix);
+        final mode = _decideToolStreamingMode(
+          decisionPrefix,
+          typedEnvelopes: isLlama3,
+        );
         if (mode == _ToolStreamingMode.undecided) {
           continue;
         }
@@ -599,7 +615,10 @@ class ChatCompletionStreamParser {
     return null;
   }
 
-  static _ToolStreamingMode _decideToolStreamingMode(String value) {
+  static _ToolStreamingMode _decideToolStreamingMode(
+    String value, {
+    required bool typedEnvelopes,
+  }) {
     const maxProbeChars = 256;
     final start = _firstNonWhitespaceIndex(value);
     if (start == null) {
@@ -614,7 +633,7 @@ class ChatCompletionStreamParser {
     final first = trimmed.codeUnitAt(0);
     _ToolStreamingMode mode;
     if (first == 0x7B) {
-      mode = _decideJsonEnvelopeMode(trimmed);
+      mode = _decideJsonEnvelopeMode(trimmed, typedEnvelopes: typedEnvelopes);
     } else if (first == 0x3C) {
       mode = _decideXmlEnvelopeMode(trimmed);
     } else if (first == 0x5B) {
@@ -668,7 +687,10 @@ class ChatCompletionStreamParser {
     }
   }
 
-  static _ToolStreamingMode _decideJsonEnvelopeMode(String text) {
+  static _ToolStreamingMode _decideJsonEnvelopeMode(
+    String text, {
+    required bool typedEnvelopes,
+  }) {
     var i = 1;
     while (i < text.length && _isWhitespaceCodeUnit(text.codeUnitAt(i))) {
       i++;
@@ -688,7 +710,7 @@ class ChatCompletionStreamParser {
       final ch = text.codeUnitAt(i);
       if (ch == 0x22) {
         final key = text.substring(keyStart, i);
-        return _isGenericEnvelopeKey(key)
+        return _isGenericEnvelopeKey(key) || (typedEnvelopes && key == 'type')
             ? _ToolStreamingMode.parsed
             : _ToolStreamingMode.raw;
       }
