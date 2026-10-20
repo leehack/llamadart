@@ -9,6 +9,7 @@ import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/chat_template_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -311,6 +312,79 @@ void main() {
         hasLength(1),
         reason: rule,
       );
+    }
+  });
+
+  test('GLM grammar leaves layout newlines optional', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [
+          ToolParam.string('city', required: true),
+          ToolParam.integer('days'),
+        ],
+        handler: _noop,
+      ),
+    ];
+    final grammar = Glm45Handler().buildGrammar(tools)!.split('\n');
+
+    expect(grammar, LagunaHandler().buildGrammar(tools)!.split('\n'));
+    expect(
+      grammar,
+      containsAll([
+        'tool-call ::= "\\n"? "<tool_call>" glm-space tool-choice glm-space '
+            '"</tool_call>" glm-space',
+        'get-u5f-weather-call ::= "get_weather" glm-space get-u5f-weather-arg-city '
+            '(glm-space get-u5f-weather-arg-days)?',
+        'get-u5f-weather-arg-city ::= "<arg_key>city</arg_key>" "\\n"? '
+            '"<arg_value>" get-u5f-weather-arg-city-value "</arg_value>"',
+        'glm-space ::= | " " | "\\n"{1,2} [ \\t]{0,20}',
+      ]),
+    );
+  });
+
+  test('GLM and Laguna parse compact and newline layouts alike', () {
+    const compact =
+        '<tool_call>weather<arg_key>city</arg_key><arg_value>Seoul</arg_value>'
+        '<arg_key>days</arg_key><arg_value>2</arg_value></tool_call>';
+    const newline =
+        '<tool_call>weather\n<arg_key>city</arg_key>\n'
+        '<arg_value>Seoul</arg_value>\n<arg_key>days</arg_key>\n'
+        '<arg_value>2</arg_value>\n</tool_call>\n';
+    final tools = [
+      ToolDefinition(
+        name: 'weather',
+        description: 'Weather',
+        parameters: [
+          ToolParam.string('city', required: true),
+          ToolParam.integer('days'),
+        ],
+        handler: _noop,
+      ),
+    ];
+    for (final ToolSchemaAwareChatTemplateHandler handler in [
+      Glm45Handler(),
+      LagunaHandler(),
+    ]) {
+      for (final call in [compact, newline]) {
+        final parsed = handler.parseWithTools('Checking.$call', tools: tools);
+        expect(parsed.content, 'Checking.', reason: call);
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+        expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+          'city': 'Seoul',
+          'days': 2,
+        });
+
+        final cut = call.indexOf('Seoul') + 3;
+        final partial = handler.parseWithTools(
+          'Checking.${call.substring(0, cut)}',
+          tools: tools,
+          isPartial: true,
+        );
+        expect(partial.content, 'Checking.', reason: call);
+        expect(partial.toolCalls, isEmpty);
+      }
     }
   });
 

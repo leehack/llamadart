@@ -222,18 +222,18 @@ class Glm45Handler extends ChatTemplateHandler
 
         toolRules.addAll(valueRules);
         toolRules.add(
-          '$paramRuleName ::= "<arg_key>${_escapeLiteral(parameter.key)}</arg_key>\\n<arg_value>" $valueRuleName "</arg_value>\\n"',
+          '$paramRuleName ::= "<arg_key>${_escapeLiteral(parameter.key)}</arg_key>" "\\n"? "<arg_value>" $valueRuleName "</arg_value>"',
         );
         argParts.add(
           required.contains(parameter.key)
-              ? paramRuleName
-              : '($paramRuleName)?',
+              ? 'glm-space $paramRuleName'
+              : '(glm-space $paramRuleName)?',
         );
       }
 
       final argsRule = argParts.join(' ');
       toolRules.add(
-        '$toolRuleName ::= "${_escapeLiteral(tool.name)}\\n" $argsRule',
+        '$toolRuleName ::= "${_escapeLiteral(tool.name)}" $argsRule',
       );
     }
 
@@ -241,10 +241,13 @@ class Glm45Handler extends ChatTemplateHandler
 
     return [
       'root ::= tool-call+',
-      'tool-call ::= "\\n"? "<tool_call>" tool-choice "</tool_call>\\n"',
+      'tool-call ::= "\\n"? "<tool_call>" glm-space tool-choice glm-space "</tool_call>" glm-space',
       toolChoiceRule,
       ...toolRules,
       ..._glmUntilAnyLiteralRules('glm-string-raw', _glmProtocolMarkers),
+      // GLM-4.6 and Laguna XS put newlines between tags; GLM-4.7 and Laguna
+      // S 2.1 put none. Same whitespace rule as llama.cpp's generated parser.
+      'glm-space ::= | " " | "\\n"{1,2} [ \\t]{0,20}',
       'space ::= " "?',
       'string ::= "\\"" ([^"\\\\] | "\\\\" .)* "\\""',
       'integer ::= "-"? ("0" | [1-9] [0-9]*)',

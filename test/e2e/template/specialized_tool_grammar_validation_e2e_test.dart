@@ -863,6 +863,55 @@ void main() {
     },
   );
 
+  test('GLM grammars accept compact GLM-4.7 and newline GLM-4.6 layouts', () {
+    const compact =
+        '<tool_call>weather'
+        '<arg_key>city</arg_key><arg_value>Paris, France</arg_value>'
+        '<arg_key>days</arg_key><arg_value>3</arg_value>'
+        '</tool_call>';
+    const newline =
+        '<tool_call>weather\n'
+        '<arg_key>city</arg_key>\n<arg_value>Paris, France</arg_value>\n'
+        '<arg_key>days</arg_key>\n<arg_value>3</arg_value>\n'
+        '</tool_call>\n';
+    _expectGrammar(
+      validator,
+      Glm45Handler().buildGrammar([_glmLayoutTool])!,
+      valid: [
+        compact,
+        newline,
+        '\n$newline',
+        '$compact$compact',
+        '$newline$compact',
+        '<tool_call>weather<arg_key>city</arg_key>'
+            '<arg_value>Paris</arg_value></tool_call>',
+      ],
+      invalid: [
+        compact.replaceFirst('</arg_key><arg_value>', '</arg_key> <arg_value>'),
+        newline.replaceFirst('</arg_key>\n', '</arg_key>\n\n'),
+        '<tool_call>weather</tool_call>',
+        '${compact}Done.',
+        compact.replaceFirst('>3<', '>3.5<'),
+        '<tool_call>weather<arg_key>unit</arg_key>'
+            '<arg_value>C</arg_value></tool_call>',
+      ],
+    );
+
+    const lagunaCall =
+        '<tool_call>weather'
+        '<arg_key>city</arg_key><arg_value>Seoul</arg_value>'
+        '</tool_call>';
+    _expectGrammar(
+      validator,
+      LagunaHandler().buildRequiredGrammar([_weatherWithCityTool])!,
+      valid: [
+        'reasoning</think>$lagunaCall',
+        'reasoning</think>Let me check.$lagunaCall',
+      ],
+      invalid: ['reasoning</think>$lagunaCall Done.'],
+    );
+  });
+
   test('XML attribute grammars round-trip escaped schema identities', () {
     const namespace = MinimaxM3Handler.namespace;
     _expectGrammar(
@@ -2059,6 +2108,16 @@ final _weatherWithCityTool = ToolDefinition(
   name: 'weather',
   description: 'Weather',
   parameters: [ToolParam.string('city', required: true)],
+  handler: (_) async => null,
+);
+
+final _glmLayoutTool = ToolDefinition(
+  name: 'weather',
+  description: 'Weather',
+  parameters: [
+    ToolParam.string('city', required: true),
+    ToolParam.integer('days'),
+  ],
   handler: (_) async => null,
 );
 
