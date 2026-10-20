@@ -1091,6 +1091,12 @@ void main() {
         '<|start|>assistant<|channel|>final<|message|>  <|end|>Text.',
         '$answer<|start|>assistant<|channel|>commentary<|message|>Note.<|end|>',
         'Literal <|end|> and <|message|> outside frames.',
+        '<|start|>assistant to=functions.weather<|channel|>commentary'
+            '<|message|>{"city":"P"}<|end|>$answer',
+        '<|start|>assistant to=functions.<|channel|>commentary'
+            '<|message|>{}<|end|>$answer',
+        '<|start|>assistant<|channel|>analysis<|channel|>final'
+            '<|message|>Which?<|end|>',
       ]) {
         for (final tools in [true, false]) {
           for (final enableThinking in [true, false]) {
@@ -1112,6 +1118,35 @@ void main() {
             }
           }
         }
+      }
+      final tokens = StreamController<String>();
+      final thinking = StringBuffer();
+      final subscription =
+          ChatCompletionStreamParser.parse(
+            tokenStream: tokens.stream,
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: ChatFormat.gptOss.index,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: 'analysis-latency',
+            tools: [_weatherTool],
+          ).listen(
+            (chunk) =>
+                thinking.write(chunk.choices.single.delta.thinking ?? ''),
+          );
+      addTearDown(subscription.cancel);
+      addTearDown(tokens.close);
+      for (final (token, streamed) in [
+        ('<|channel|>analysis<|message|>We', 'We'),
+        (' need', 'We need'),
+        (' weather.<|end|>', 'We need weather.'),
+      ]) {
+        tokens.add(token);
+        await pumpEventQueue();
+        expect(thinking.toString(), streamed, reason: token);
       }
       await _expectContentAfterEachToken(ChatFormat.gptOss, [
         ('<|start|>assistant<|channel|>final<|message|>Hello', 'Hello'),
