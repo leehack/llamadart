@@ -22,6 +22,33 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
     r'([A-Za-z0-9_]+\n\{|python\n|all\n)',
   );
   static final RegExp _possibleStartCall = RegExp(r'^[A-Za-z0-9_]*\n?$');
+  static final RegExp _leadingContentChannel = RegExp(r'^(?:>>>)?all\n');
+  static final RegExp _possibleMarkerRest = RegExp(r'^[A-Za-z0-9_]*\n?$');
+
+  /// The start of a trailing `>>>` marker in [text] that may still become a
+  /// function marker, or `text.length`.
+  static int _possibleMarker(String text) {
+    // A marker still arriving has no whitespace before a final newline, so
+    // it starts within the trailing token.
+    final body = text.endsWith('\n')
+        ? text.substring(0, text.length - 1)
+        : text;
+    var tokenStart = body.length;
+    while (tokenStart > 0 && body[tokenStart - 1].trim().isNotEmpty) {
+      tokenStart--;
+    }
+    for (var start = tokenStart; start < text.length; start++) {
+      final rest = text.substring(start);
+      if (rest.length < 3) {
+        if ('>>>'.startsWith(rest)) return start;
+      } else if (rest.startsWith('>>>') &&
+          _possibleMarkerRest.hasMatch(rest.substring(3))) {
+        return start;
+      }
+    }
+    return text.length;
+  }
+
   static final RegExp _functionRegex = RegExp(
     r'>>>([A-Za-z0-9_]+\n\{|python\n|all\n)',
   );
@@ -210,7 +237,11 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
     }
 
     if (parseFailed && !isPartial) {
-      return ChatParseResult(content: output.trim(), toolCalls: const []);
+      // The leading `all` channel header is never content.
+      return ChatParseResult(
+        content: output.replaceFirst(_leadingContentChannel, '').trim(),
+        toolCalls: const [],
+      );
     }
 
     if (cursor < output.length) {
@@ -223,10 +254,7 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
       // `>>>` marker, may yet become a call.
       text = _possibleStartCall.hasMatch(output)
           ? ''
-          : text.substring(
-              0,
-              ToolCallParsingUtils.literalOpening(text, const ['>>>']),
-            );
+          : text.substring(0, _possibleMarker(text));
     }
 
     return ChatParseResult(content: text.trim(), toolCalls: toolCalls);

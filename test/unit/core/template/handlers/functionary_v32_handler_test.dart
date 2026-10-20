@@ -70,7 +70,7 @@ void main() {
         final parsed = handler.parse(output);
 
         expect(parsed.toolCalls, isEmpty);
-        expect(parsed.content, equals(output));
+        expect(parsed.content, equals(output.substring('>>>all\n'.length)));
       },
     );
   });

@@ -742,6 +742,38 @@ void main() {
         ]) {
           await _expectStreamMatchesParse(ChatFormat.gemma, output);
         }
+        for (final (format, output) in [
+          (
+            ChatFormat.functionaryV32,
+            'all\nLet me check. >>>weather\n{"city":"Par',
+          ),
+          (ChatFormat.functionaryV32, 'all\nHi >>>all\nmore'),
+          (
+            ChatFormat.functionaryV32,
+            '>>> x = 2\n>>> print(x)\n2\nThat is it.',
+          ),
+          (ChatFormat.functionaryV31Llama31, 'Hi <|python_tag|>print(1)'),
+          (
+            ChatFormat.gemma,
+            '{ "tool_call" : {"name":"weather","arguments":{"city":"Paris"}}}',
+          ),
+        ]) {
+          for (final ending in ['natural', 'length', 'cancel']) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              atLimit: ending == 'length',
+              cancelled: ending == 'cancel',
+            );
+          }
+        }
+        await _expectContentAfterEachToken(ChatFormat.gemma, [
+          ('int add(int a) {', 'int add(int a)'),
+          ('\n  return a;\n}\n', 'int add(int a) {\n  return a;\n}'),
+          ('This adds.', 'int add(int a) {\n  return a;\n}\nThis adds.'),
+          (' {"tool_', 'int add(int a) {\n  return a;\n}\nThis adds.'),
+        ]);
+
         await _expectContentAfterEachToken(ChatFormat.functionGemma, [
           ('Let me ', 'Let me'),
           ('check. <start_func', 'Let me check.'),
