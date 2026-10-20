@@ -125,7 +125,6 @@ class ChatCompletionStreamParser {
     // Functionary v3.2 and MiniMax M1 stream through their partial parse
     // with tools.
     final keepsThoughtTagsAsContent =
-        isGptOss ||
         _keepsThoughtTagsAsContent(templateResult.format) ||
         ((isFunctionaryV32 ||
                 templateResult.format == ChatFormat.minimaxM1.index) &&
@@ -145,9 +144,7 @@ class ChatCompletionStreamParser {
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
-      (isGptOss ? gatedOpening : toolCallOpening) ??
-          builtinOpening ??
-          _noOpening,
+      toolCallOpening ?? builtinOpening ?? _noOpening,
       trimsLeading: !pegParsedWithoutTools,
     );
     final reasoningGate = _ReasoningGate(
@@ -1272,7 +1269,7 @@ class _GptOssFrameStream {
   final _content = _JoinedParts();
   final _reasoning = _JoinedParts();
   var _pending = '';
-  var _header = '';
+  var _headerScanFrom = 0;
   var _atOutputStart = true;
   var _inHeader = false;
   var _inBody = false;
@@ -1308,12 +1305,15 @@ class _GptOssFrameStream {
         _atOutputStart = false;
       }
       if (_inHeader) {
-        final message = _pending.indexOf(_messageTag);
-        if (message < 0) break;
-        _header += _pending.substring(0, message);
+        final message = _pending.indexOf(_messageTag, _headerScanFrom);
+        if (message < 0) {
+          _headerScanFrom = _pending.length - _messageTag.length + 1;
+          if (_headerScanFrom < 0) _headerScanFrom = 0;
+          break;
+        }
+        _body = _bodyChannel(_pending.substring(0, message));
         _pending = _pending.substring(message + _messageTag.length);
-        _body = _bodyChannel(_header);
-        _header = '';
+        _headerScanFrom = 0;
         _inHeader = false;
         _inBody = true;
         continue;
