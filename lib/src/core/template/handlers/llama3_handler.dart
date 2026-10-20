@@ -353,9 +353,10 @@ class Llama3Handler extends ChatTemplateHandler {
           i = close + 1;
           continue;
         }
-        final rest = text.substring(i);
-        if (rest.length < part.length) return part.startsWith(rest);
-        if (!rest.startsWith(part)) return false;
+        if (text.length - i < part.length) {
+          return part.startsWith(text.substring(i));
+        }
+        if (!text.startsWith(part, i)) return false;
         i += part.length;
       }
       return false;
