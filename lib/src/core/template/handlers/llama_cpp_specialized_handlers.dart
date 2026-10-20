@@ -166,18 +166,27 @@ class KimiK3Handler extends _DirectJinjaHandler
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    var remaining = output;
+    var remaining = output.trimLeft();
     String? reasoning;
+    var inThought = thinkingForcedOpen;
+    if (remaining.startsWith(thinkingStartTag)) {
+      remaining = remaining.substring(thinkingStartTag.length);
+      inThought = true;
+    } else if (isPartial && _endsWithMarkerPrefix(remaining)) {
+      return const ChatParseResult(content: '');
+    }
     final thinkEnd = remaining.indexOf(_thinkClose);
     if (thinkEnd >= 0) {
       reasoning = remaining.substring(0, thinkEnd).trim();
       remaining = remaining.substring(thinkEnd + _thinkClose.length);
-    } else if (thinkingForcedOpen) {
+    } else if (inThought) {
       final responseIndex = remaining.indexOf(_responseStart);
       if (responseIndex < 0) {
         return ChatParseResult(
           content: '',
-          reasoningContent: remaining.trim().isEmpty ? null : remaining.trim(),
+          reasoningContent: _nullIfEmpty(
+            isPartial ? _hideMarkerSuffix(remaining) : remaining,
+          ),
         );
       }
       reasoning = remaining.substring(0, responseIndex).trim();
@@ -189,20 +198,22 @@ class KimiK3Handler extends _DirectJinjaHandler
     if (responseStart >= 0) {
       final bodyStart = responseStart + _responseStart.length;
       final responseEnd = remaining.indexOf(_responseEnd, bodyStart);
+      content = remaining.substring(0, responseStart);
       if (responseEnd < 0) {
-        if (isPartial) {
-          return ChatParseResult(
-            content: remaining.substring(bodyStart),
-            reasoningContent: _nullIfEmpty(reasoning),
-          );
-        }
+        final body = _stripKimiTurnEnd(
+          remaining.substring(bodyStart),
+          isPartial: isPartial,
+        );
         return ChatParseResult(
-          content: output.trim(),
+          content: '$content${isPartial ? _hideMarkerSuffix(body) : body}'
+              .trim(),
           reasoningContent: _nullIfEmpty(reasoning),
         );
       }
-      content = remaining.substring(bodyStart, responseEnd);
+      content += remaining.substring(bodyStart, responseEnd);
       remaining = remaining.substring(responseEnd + _responseEnd.length);
+    } else if (isPartial) {
+      remaining = _hideMarkerSuffix(remaining);
     }
 
     if (!parseToolCalls) {
@@ -255,7 +266,10 @@ class KimiK3Handler extends _DirectJinjaHandler
       return isPartial
           ? _ParsedCalls(
               calls: const [],
-              remaining: input.substring(0, scopeStart),
+              remaining: _stripKimiTurnEnd(
+                input.substring(0, scopeStart),
+                isPartial: true,
+              ),
             )
           : _ParsedCalls.failure();
     }
@@ -371,15 +385,41 @@ class KimiK3Handler extends _DirectJinjaHandler
       '$_close'
       'message$_sep';
 
-  /// Finds a possible turn-end marker for the stream's content gate.
-  static int turnEndOpening(String text, [int from = 0]) =>
-      ToolCallParsingUtils.literalOpening(text, const [
-        _turnEnd,
-        '<|end_of_msg|>',
-      ], from);
-
   /// [input] without turn-end markers, and on a partial parse without one
   /// that is still arriving.
+  static const _markers = [
+    '$_open'
+        'think$_sep',
+    _thinkClose,
+    _responseStart,
+    _responseEnd,
+    _toolsStart,
+    _turnEnd,
+    '<|end_of_msg|>',
+  ];
+
+  /// Whether [text] is a proper prefix of a protocol marker.
+  static bool _endsWithMarkerPrefix(String text) =>
+      text.isNotEmpty &&
+      _markers.any(
+        (marker) => marker.length > text.length && marker.startsWith(text),
+      );
+
+  /// [text] without a trailing proper prefix of a protocol marker, which a
+  /// partial parse cannot yet tell from text.
+  static String _hideMarkerSuffix(String text) {
+    var hidden = 0;
+    for (final marker in _markers) {
+      for (var length = marker.length - 1; length > hidden; length--) {
+        if (text.endsWith(marker.substring(0, length))) {
+          hidden = length;
+          break;
+        }
+      }
+    }
+    return text.substring(0, text.length - hidden);
+  }
+
   String _stripKimiTurnEnd(String input, {bool isPartial = false}) {
     var text = input.replaceAll(_turnEnd, '').replaceAll('<|end_of_msg|>', '');
     if (isPartial) {

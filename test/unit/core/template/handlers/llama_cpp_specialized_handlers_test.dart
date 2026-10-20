@@ -199,6 +199,30 @@ void main() {
       expect(parsed.content, contains('<|open|>tools<|sep|>'));
       expect(parsed.content, contains('On it.'));
     });
+
+    test('keeps protocol channel markers out of content and reasoning', () {
+      final handler = KimiK3Handler();
+      final thought = handler.parse(
+        '<|open|>think<|sep|>Plan.<|close|>think<|sep|>Answer.',
+      );
+      expect(thought.reasoningContent, 'Plan.');
+      expect(thought.content, 'Answer.');
+
+      final unclosed = handler.parse('<|open|>think<|sep|>Still planning');
+      expect(unclosed.reasoningContent, 'Still planning');
+      expect(unclosed.content, isEmpty);
+
+      expect(
+        handler.parse('Hi <|open|>response<|sep|>unterminated').content,
+        'Hi unterminated',
+      );
+      expect(
+        handler
+            .parse('<|open|>response<|sep|>Body<|close|>mess', isPartial: true)
+            .content,
+        'Body',
+      );
+    });
   });
 
   group('MiniMax M1', () {

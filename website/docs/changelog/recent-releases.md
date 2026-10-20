@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Keep Kimi K3 turn-end markers out of streamed answer text, and stream MiniMax M1 text after a leading tool call.
+- Keep Kimi K3 turn-end and think/response channel markers out of streamed answers and reasoning, and stream MiniMax M1 text after a leading tool call.
 - Keep Llama 3 JSON and builtin `<|python_tag|>` tool calls out of streamed answer text.
 - Clarify image weight formats, explicit PyTorch roles and directory/shard loading limits.
 

@@ -19,7 +19,6 @@ import '../template/handlers/gpt_oss_handler.dart';
 import '../template/handlers/hermes_handler.dart';
 import '../template/handlers/hunyuan_v3_handler.dart';
 import '../template/handlers/llama3_handler.dart';
-import '../template/handlers/llama_cpp_specialized_handlers.dart';
 import '../template/handlers/magistral_handler.dart';
 import '../template/handlers/mistral_handler.dart';
 import '../template/handlers/nemotron_v2_handler.dart';
@@ -121,12 +120,6 @@ class ChatCompletionStreamParser {
         isGptOss ||
         (templateResult.format == ChatFormat.minimaxM1.index &&
             !parseToolCallsEnabled);
-    // Kimi K3 ends turns with a marker that its parse strips.
-    final turnEndOpening =
-        templateResult.format == ChatFormat.kimiK3.index &&
-            !parseToolCallsEnabled
-        ? KimiK3Handler.turnEndOpening
-        : null;
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -144,7 +137,6 @@ class ChatCompletionStreamParser {
     final contentGate = _ContentGate(
       (isGptOss ? gatedOpening : toolCallOpening) ??
           builtinOpening ??
-          turnEndOpening ??
           _noOpening,
       trimsLeading: !pegParsedWithoutTools,
     );
@@ -157,9 +149,12 @@ class ChatCompletionStreamParser {
     final thoughtTags = gatedOpening != null ? _ThoughtTagState() : null;
     var atForcedThoughtStart =
         thoughtTags != null && templateResult.thinkingForcedOpen;
+    // Kimi K3 frames its response in protocol channels that only its parse
+    // strips, with or without tools.
     final rawWithoutTools =
         !parseToolCallsEnabled &&
-        templateResult.format != ChatFormat.gemma4.index;
+        templateResult.format != ChatFormat.gemma4.index &&
+        templateResult.format != ChatFormat.kimiK3.index;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
     // never streamed as reasoning before the final structured parse. Gated

@@ -675,6 +675,9 @@ void main() {
             '<|open|>argument key="city" type="string"<|sep|>Montréal 🌧'
             '<|close|>argument<|sep|><|close|>call<|sep|><|close|>tools<|sep|>';
         const turnEnd = '<|close|>message<|sep|>';
+        const think = '<|open|>think<|sep|>Plan ünï.<|close|>think<|sep|>';
+        const response =
+            '<|open|>response<|sep|>Body 🌧.<|close|>response<|sep|>';
         const m1 =
             '<tool_calls>\n{"name":"weather","arguments":{"city":"Paris"}}\n'
             '</tool_calls>';
@@ -691,8 +694,21 @@ void main() {
               'Literal <|close|>mess and more.',
               'Let me check.\n${k3.replaceFirst('weather', 'nope')}\n'
                   'Done.$turnEnd',
+              'x$turnEnd$k3',
+              response,
+              '$think$response$turnEnd',
+              '$think${response}Then.$k3',
+              '<|open|>response<|sep|>unterminated body',
+              '<|open|>think<|sep|>unterminated thought',
             ],
-            [turnEnd, '<|open|>tools<|sep|>', '<|end_of_msg|>'],
+            [
+              turnEnd,
+              '<|open|>tools<|sep|>',
+              '<|end_of_msg|>',
+              '<|close|>think<|sep|>',
+              '<|open|>response<|sep|>',
+              '<|close|>response<|sep|>',
+            ],
           ),
           (
             ChatFormat.minimaxM1,
@@ -719,6 +735,30 @@ void main() {
               );
             }
             await _expectStreamMatchesParse(format, output, tools: false);
+          }
+        }
+        for (final output in [
+          'Plan ünï.<|close|>think<|sep|>$response',
+          'a\nb<|close|>think<|sep|>Hi.',
+          'Plan.<|open|>response<|sep|>Body.',
+          'Plan only.',
+        ]) {
+          for (final tools in [true, false]) {
+            for (final ending in ['natural', 'length', 'cancel']) {
+              await _expectStreamMatchesParse(
+                ChatFormat.kimiK3,
+                output,
+                forcedOpen: true,
+                tools: tools,
+                atLimit: ending == 'length',
+                cancelled: ending == 'cancel',
+                openings: [
+                  '<|close|>think<|sep|>',
+                  '<|open|>response<|sep|>',
+                  '<|close|>response<|sep|>',
+                ],
+              );
+            }
           }
         }
       },
