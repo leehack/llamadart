@@ -31,7 +31,7 @@ also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.4
+  llamadart: ^0.15.5
   llamadart_litert_lm_flutter: ^0.15.1
 ```
 
