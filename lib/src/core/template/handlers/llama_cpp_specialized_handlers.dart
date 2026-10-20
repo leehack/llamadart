@@ -180,13 +180,11 @@ class KimiK3Handler extends _DirectJinjaHandler
       reasoning = remaining.substring(0, thinkEnd).trim();
       remaining = remaining.substring(thinkEnd + _thinkClose.length);
     } else if (inThought) {
-      // A thought without a closer ends at the response or, with tools, at
-      // a tool block, so the call is not lost in reasoning.
+      // A thought without a closer ends at the response or, with tools and
+      // no response, at a tool block, so the call is not lost in reasoning.
       var responseIndex = remaining.indexOf(_responseStart);
-      final toolsIndex = parseToolCalls ? remaining.indexOf(_toolsStart) : -1;
-      if (toolsIndex >= 0 &&
-          (responseIndex < 0 || toolsIndex < responseIndex)) {
-        responseIndex = toolsIndex;
+      if (responseIndex < 0 && parseToolCalls) {
+        responseIndex = remaining.indexOf(_toolsStart);
       }
       if (responseIndex < 0) {
         return ChatParseResult(

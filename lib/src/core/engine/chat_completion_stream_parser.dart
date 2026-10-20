@@ -150,11 +150,7 @@ class ChatCompletionStreamParser {
     var atForcedThoughtStart =
         thoughtTags != null && templateResult.thinkingForcedOpen;
     // Kimi K3 frames its response in protocol channels that only its parse
-    // strips, with or without tools. Without tools that partial parse
-    // replaces the raw stream, so it runs on every token to keep raw latency.
-    final parsesEveryToken =
-        templateResult.format == ChatFormat.kimiK3.index &&
-        !parseToolCallsEnabled;
+    // strips, with or without tools.
     final rawWithoutTools =
         !parseToolCallsEnabled &&
         templateResult.format != ChatFormat.gemma4.index &&
@@ -307,10 +303,7 @@ class ChatCompletionStreamParser {
           (!sawStructuredOutputSignal &&
               tokensSincePartialParse >= plainPartialParseProbeInterval);
       final shouldRunPartialParse =
-          !didInitialPartialParse ||
-          signalParseReady ||
-          periodicParseReady ||
-          parsesEveryToken;
+          !didInitialPartialParse || signalParseReady || periodicParseReady;
       if (!shouldRunPartialParse) {
         continue;
       }

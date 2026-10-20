@@ -738,12 +738,6 @@ void main() {
             await _expectStreamMatchesParse(format, output, tools: false);
           }
         }
-        await _expectContentAfterEachToken(ChatFormat.kimiK3, tools: false, [
-          ('<|open|>response<|sep|>Hello', 'Hello'),
-          (' there', 'Hello there'),
-          (' friend<|close|>resp', 'Hello there friend'),
-          ('onse<|sep|>', 'Hello there friend'),
-        ]);
         for (final output in [
           'Plan ünï.<|close|>think<|sep|>$response',
           'a\nb<|close|>think<|sep|>Hi.',
@@ -3080,9 +3074,8 @@ Future<void> _expectStreamMatchesParse(
 /// Feeds each token of [steps] and expects the content streamed so far.
 Future<void> _expectContentAfterEachToken(
   ChatFormat format,
-  List<(String token, String streamed)> steps, {
-  bool tools = true,
-}) async {
+  List<(String token, String streamed)> steps,
+) async {
   final tokens = StreamController<String>();
   final content = StringBuffer();
   final subscription = ChatCompletionStreamParser.parse(
@@ -3091,11 +3084,11 @@ Future<void> _expectContentAfterEachToken(
       prompt: 'prompt',
       format: format.index,
     ),
-    parseToolCallsEnabled: tools,
+    parseToolCallsEnabled: true,
     enableThinking: true,
     modelName: 'test-model',
     completionId: 'latency',
-    tools: tools ? [_weatherTool] : null,
+    tools: [_weatherTool],
   ).listen((chunk) => content.write(chunk.choices.single.delta.content ?? ''));
   addTearDown(subscription.cancel);
   addTearDown(tokens.close);

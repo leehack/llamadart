@@ -252,6 +252,19 @@ void main() {
         expect(parsed.content, isEmpty);
         expect(parsed.toolCalls.single.function?.name, 'weather');
       }
+      final withoutTools = KimiK3Handler().parse(
+        'Plan.$call',
+        parseToolCalls: false,
+        thinkingForcedOpen: true,
+      );
+      expect(withoutTools.reasoningContent, 'Plan.$call');
+      final beforeResponse = KimiK3Handler().parseWithTools(
+        'Plan.$call<|open|>response<|sep|>Done.<|close|>response<|sep|>',
+        tools: [_weatherWithCityTool],
+        thinkingForcedOpen: true,
+      );
+      expect(beforeResponse.reasoningContent, 'Plan.$call');
+      expect(beforeResponse.content, 'Done.');
     });
   });
 
