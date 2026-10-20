@@ -1068,6 +1068,59 @@ void main() {
       ]);
     });
 
+    test('GPT-OSS streams frame bodies as they arrive', () async {
+      const call =
+          '<|start|>assistant to=functions.weather<|channel|>commentary'
+          '<|message|>{"city":"Paris"}<|end|>';
+      const analysis =
+          '<|start|>assistant<|channel|>analysis<|message|>Plan  it.<|end|>';
+      const answer =
+          '<|start|>assistant<|channel|>final<|message|> Done 🌧. <|end|>';
+      for (final output in [
+        '$analysis$answer',
+        '$analysis$call',
+        'Intro. $analysis Middle. $answer Tail. ',
+        '$analysis<|start|>assistant<|channel|>analysis<|message|>More.<|end|>'
+            '$answer',
+        '<|channel|>analysis<|message|>Plan.<|end|>$answer',
+        ' to=functions.weather<|channel|>commentary<|message|>{"city":"P"}'
+            '<|end|>',
+        '<|start|>assistant<|channel|>final<|message|>Unterminated <|en',
+        '<|start|>assistant<|channel|>analysis<|message|>Half',
+        '<|start|>assistant<|channel|>final',
+        '<|start|>assistant<|channel|>final<|message|>  <|end|>Text.',
+        '$answer<|start|>assistant<|channel|>commentary<|message|>Note.<|end|>',
+        'Literal <|end|> and <|message|> outside frames.',
+      ]) {
+        for (final tools in [true, false]) {
+          for (final enableThinking in [true, false]) {
+            for (final ending in ['natural', 'length', 'cancel']) {
+              await _expectStreamMatchesParse(
+                ChatFormat.gptOss,
+                output,
+                tools: tools,
+                enableThinking: enableThinking,
+                atLimit: ending == 'length',
+                cancelled: ending == 'cancel',
+                openings: [
+                  '<|start|>assistant',
+                  '<|channel|>',
+                  '<|message|>',
+                  '<|end|>',
+                ],
+              );
+            }
+          }
+        }
+      }
+      await _expectContentAfterEachToken(ChatFormat.gptOss, [
+        ('<|start|>assistant<|channel|>final<|message|>Hello', 'Hello'),
+        (' there', 'Hello there'),
+        (' friend<|en', 'Hello there friend'),
+        ('d|>', 'Hello there friend'),
+      ]);
+    });
+
     test('GPT-OSS gates split frames without swallowing ordinary text', () async {
       const call =
           '<|start|>assistant to=functions.weather<|channel|>commentary'

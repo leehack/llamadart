@@ -159,6 +159,9 @@ class ChatCompletionStreamParser {
       unescapes: toolCallOpening != null && !isQwen3CoderXml,
       trimsLeading: !pegParsedWithoutTools,
     );
+    final gptOssFrames = _GptOssFrameStream(
+      parseToolCalls: parseToolCallsEnabled,
+    );
     final thoughtTags = gatedOpening != null ? _ThoughtTagState() : null;
     var atForcedThoughtStart =
         thoughtTags != null && templateResult.thinkingForcedOpen;
@@ -197,6 +200,28 @@ class ChatCompletionStreamParser {
       // GPT-OSS reasoning uses assistant channel frames, and the other formats
       // here extract no reasoning. Generic thought tags are literal text,
       // including when they occur inside tool arguments.
+      if (isGptOss) {
+        final (:content, :reasoning) = gptOssFrames.add(token);
+        if (reasoning.isNotEmpty) {
+          streamedReasoning += reasoning;
+          if (enableThinking) {
+            yield _chunk(
+              completionId: completionId,
+              modelName: modelName,
+              delta: LlamaCompletionChunkDelta(thinking: reasoning),
+            );
+          }
+        }
+        if (content.isNotEmpty) {
+          streamedContent += content;
+          yield _chunk(
+            completionId: completionId,
+            modelName: modelName,
+            delta: LlamaCompletionChunkDelta(content: content),
+          );
+        }
+        continue;
+      }
       if (keepsThoughtTagsAsContent) {
         final text = contentGate.add(token);
         if (text.isNotEmpty) {
@@ -1224,6 +1249,149 @@ class _ContentGate {
 
   static bool _isTrimmed(int codeUnit) =>
       String.fromCharCode(codeUnit).trim().isEmpty;
+}
+
+/// Releases GPT-OSS output as its parse classifies it.
+///
+/// Text outside assistant frames and the bodies of `final`, `commentary` and
+/// other non-call frames are content, `analysis` bodies are reasoning, and
+/// tool-call bodies wait for the final parse. A frame header waits for
+/// `<|message|>`, since the parse drops a header that never completes. The
+/// parse trims each part and joins a channel's non-empty parts with a
+/// newline, so leading whitespace of a part is dropped and trailing
+/// whitespace waits for more text.
+class _GptOssFrameStream {
+  _GptOssFrameStream({required this.parseToolCalls});
+
+  static const _assistantStart = '<|start|>assistant';
+  static const _messageTag = '<|message|>';
+  static const _endTag = '<|end|>';
+  static const _continuations = ['<|channel|>', 'to=functions.'];
+
+  final bool parseToolCalls;
+  final _content = _JoinedParts();
+  final _reasoning = _JoinedParts();
+  var _pending = '';
+  var _header = '';
+  var _atOutputStart = true;
+  var _inHeader = false;
+  var _inBody = false;
+  _JoinedParts? _body;
+
+  /// Adds [text] and returns the newly released content and reasoning.
+  ({String content, String reasoning}) add(String text) {
+    _pending += text;
+    final content = StringBuffer();
+    final reasoning = StringBuffer();
+    void release(_JoinedParts? channel, String text) {
+      if (identical(channel, _content)) {
+        content.write(_content.add(text));
+      } else if (identical(channel, _reasoning)) {
+        reasoning.write(_reasoning.add(text));
+      }
+    }
+
+    while (true) {
+      if (_atOutputStart) {
+        final leading = _pending.trimLeft();
+        if (leading.isEmpty) break;
+        if (_continuations.any(leading.startsWith)) {
+          // The prompt already ended with an assistant header.
+          _pending = leading;
+          _atOutputStart = false;
+          _inHeader = true;
+          continue;
+        }
+        if (_continuations.any((literal) => literal.startsWith(leading))) {
+          break;
+        }
+        _atOutputStart = false;
+      }
+      if (_inHeader) {
+        final message = _pending.indexOf(_messageTag);
+        if (message < 0) break;
+        _header += _pending.substring(0, message);
+        _pending = _pending.substring(message + _messageTag.length);
+        _body = _bodyChannel(_header);
+        _header = '';
+        _inHeader = false;
+        _inBody = true;
+        continue;
+      }
+      if (_inBody) {
+        final end = _pending.indexOf(_endTag);
+        if (end < 0) {
+          final hold = _trailingPrefixLength(_pending, _endTag);
+          release(_body, _pending.substring(0, _pending.length - hold));
+          _pending = _pending.substring(_pending.length - hold);
+          break;
+        }
+        release(_body, _pending.substring(0, end));
+        _body?.endPart();
+        _pending = _pending.substring(end + _endTag.length);
+        _inBody = false;
+        continue;
+      }
+      final start = _pending.indexOf(_assistantStart);
+      if (start < 0) {
+        final hold = _trailingPrefixLength(_pending, _assistantStart);
+        release(_content, _pending.substring(0, _pending.length - hold));
+        _pending = _pending.substring(_pending.length - hold);
+        break;
+      }
+      release(_content, _pending.substring(0, start));
+      _content.endPart();
+      _pending = _pending.substring(start + _assistantStart.length);
+      _inHeader = true;
+    }
+    return (content: content.toString(), reasoning: reasoning.toString());
+  }
+
+  _JoinedParts? _bodyChannel(String header) {
+    if (parseToolCalls && header.contains(RegExp(r'to=functions\.[^<\s]'))) {
+      return null;
+    }
+    final channel = RegExp(
+      r'<\|channel\|>([a-zA-Z0-9_-]+)',
+    ).firstMatch(header)?.group(1);
+    return channel == 'analysis' ? _reasoning : _content;
+  }
+
+  static int _trailingPrefixLength(String text, String literal) {
+    for (var length = literal.length - 1; length > 0; length--) {
+      if (text.endsWith(literal.substring(0, length))) return length;
+    }
+    return 0;
+  }
+}
+
+/// A channel whose trimmed, non-empty parts are joined with a newline.
+class _JoinedParts {
+  var _hasParts = false;
+  var _inPart = false;
+  var _whitespace = '';
+
+  /// Adds [text] to the current part and returns the released text.
+  String add(String text) {
+    if (!_inPart) {
+      text = text.trimLeft();
+      if (text.isEmpty) return '';
+      _inPart = true;
+      text = '${_hasParts ? '\n' : ''}$text';
+      _hasParts = true;
+    } else {
+      text = '$_whitespace$text';
+    }
+    final body = text.trimRight();
+    _whitespace = text.substring(body.length);
+    return body;
+  }
+
+  /// Ends the current part, dropping its trailing whitespace.
+  void endPart() {
+    _inPart = false;
+    _whitespace = '';
+  }
 }
 
 /// Releases raw reasoning that the final parse keeps.
