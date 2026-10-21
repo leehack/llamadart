@@ -1524,6 +1524,16 @@ void main() {
       expect((await recognizer.capabilities).isSupported, isFalse);
     });
 
+    test('clip.projector_type takes precedence when it comes last', () async {
+      await loadWithProjector({
+        'general.architecture': 'clip',
+        'clip.audio.projector_type': 'qwen3tts_spkenc',
+        'clip.projector_type': 'qwen3a',
+      });
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+    });
+
     test('a projector without a projector type stays supported and the '
         'empty-transcript error names a possible mismatch', () async {
       await loadWithProjector({
