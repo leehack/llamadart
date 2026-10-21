@@ -374,6 +374,15 @@ abstract class BackendModelFormatRouting {
   });
 }
 
+/// Internal backend probe for the format a [BackendModelFormatRouting]
+/// backend detects in a local model file, where the file rather than its
+/// name or a declared format picks the runtime.
+abstract class BackendModelFormatDetection {
+  /// The format read from the local model file at [path], or null when the
+  /// file cannot be read or matches no [ModelFormat].
+  Future<ModelFormat?> detectModelFormat(String path);
+}
+
 /// Internal backend probe for the usage of a finished generation stream.
 abstract class BackendGenerationUsageReporting {
   /// The usage of [generation], a stream this backend returned from
