@@ -1,7 +1,6 @@
 ## Unreleased
 
 - Report `stop` instead of `length` when a llama.cpp speculative-decoding reply ends exactly at `maxTokens`, as without speculative decoding, so `completeWithTools` no longer rolls it back as truncated.
-- Match a local LoRA path in `removeLoraSource` however it is spelled, so `/a/./b.gguf` removes an adapter applied from `/a/b.gguf` instead of silently leaving it applied.
 
 ## 0.15.5
 
