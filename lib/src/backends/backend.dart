@@ -303,7 +303,13 @@ abstract class BackendGenerationLimitReporting {
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation);
 }
 
-/// Internal backend probe for the runtime that runs the loaded model.
+/// Optional backend capability for naming the runtime that runs the loaded
+/// model.
+///
+/// `LlamaEngine.runtime` reports [runtime], and the engine applies that
+/// runtime's rules: a backend that reports [LlamaRuntime.liteRtLm] is held to
+/// LiteRT-LM limits such as having no external speculative draft model. A
+/// backend without this interface reports no runtime.
 abstract class BackendRuntimeIdentity {
   /// The runtime that runs this backend's model, or null when the backend
   /// cannot tell, as for an auto backend with no model loaded.
@@ -338,8 +344,11 @@ abstract class BackendChatPromptGeneration {
   });
 }
 
-/// Internal backend probe for media the loaded model takes directly, without
-/// a multimodal projector.
+/// Optional backend capability for media the loaded model takes directly,
+/// without a multimodal projector.
+///
+/// `LlamaEngine.capabilities` reports vision or audio support when either
+/// this interface or the loaded projector does.
 abstract class BackendDirectMediaInput {
   /// Whether the loaded model takes image and audio content parts directly.
   ///
@@ -347,9 +356,11 @@ abstract class BackendDirectMediaInput {
   Future<({bool vision, bool audio})> directMediaInput();
 }
 
-/// Internal backend probe for how much of a chat request the loaded runtime
-/// passes to the model. A backend that does not implement this passes all of
-/// it.
+/// Optional backend capability for how much of a chat request the loaded
+/// runtime passes to the model. A backend that does not implement this passes
+/// all of it.
+///
+/// `LlamaEngine.capabilities` reports these values.
 abstract class BackendChatScope {
   /// Whether the model sees the whole conversation, not only the latest
   /// message.
@@ -359,8 +370,13 @@ abstract class BackendChatScope {
   bool get supportsToolCalling;
 }
 
-/// Internal backend capability for loading a model in an explicitly chosen
+/// Optional backend capability for loading a model in an explicitly chosen
 /// [ModelFormat] instead of the format the backend would detect.
+///
+/// The engine calls these methods to load a source whose `ModelSource.format`
+/// is set. A backend without this interface loads only the format of the
+/// runtime that [BackendRuntimeIdentity] reports; any other format throws
+/// [LlamaUnsupportedException].
 abstract class BackendModelFormatRouting {
   /// Loads the local model at [path] as [format].
   Future<int> modelLoadAs(String path, ModelParams params, ModelFormat format);
