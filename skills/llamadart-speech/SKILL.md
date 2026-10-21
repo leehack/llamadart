@@ -74,7 +74,11 @@ description: >-
 - After `attach`, `await recognizer.capabilities` /
   `synthesizer.capabilities` and gate on `isSupported`, showing
   `unsupportedReason`. A loaded projector does not prove audio support or a
-  matching model. A chat-model LiteRT-LM engine reports unsupported for STT.
+  matching model. With `Qwen3AsrAdapter`, native `capabilities` reads the
+  projector's GGUF header and reports a non-`qwen3a` audio projector, such as
+  Qwen3-TTS's `qwen3tts_spkenc`, as unsupported; an unreadable type (Web, or
+  none in the file) stays supported. A chat-model LiteRT-LM engine reports
+  unsupported for STT.
 - Use the capability fields instead of assuming: `inputKinds`,
   `encodedAudioFormats`, `supportsPartialResults`, `supportsStreamingInput`
   (STT); `sampleRateHz`, `supportedLanguages`, `supportsSpeakerReference`,
@@ -116,7 +120,8 @@ description: >-
     the exact cause from token counts. Older assets without a termination
     signal retain their existing completion behavior.
   - An empty transcript (for example silence) fails with
-    `LlamaSpeechException`.
+    `LlamaSpeechException`. Its `details` say the model may not match the
+    adapter unless the projector was verified as the adapter's.
   - A nonempty `languageHint` throws `LlamaUnsupportedException`; use
     `contextPrompt` for vocabulary. LiteRT-LM rejects `contextPrompt`.
 - Results carry no timestamps, confidence or diarization. Qwen3-ASR returns

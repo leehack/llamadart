@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -221,6 +222,7 @@ class _GamePageState extends State<GamePage>
               : 'Tetris-tuned head failed: ${models.tunedError}\n'
                     '${store.tunedHeadHelp(setup.tunedHead!)}';
         });
+        unawaited(store.removeSupersededDownloads());
       } catch (e) {
         update(() {
           _progress = null;

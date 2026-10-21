@@ -102,6 +102,13 @@ try {
 `LlamaUnsupportedException` with the reason when they cannot recognize speech.
 Projector load success alone does not prove audio support.
 
+With `Qwen3AsrAdapter` on native platforms, `capabilities` also reads the
+projector's GGUF header and reports unsupported when its audio projector type
+is not Qwen3-ASR's `qwen3a`, such as the `qwen3tts_spkenc` projector of a
+Qwen3-TTS model. When the type cannot be read, on Web or for a projector file
+without one, the model stays supported, and an empty transcript's
+`LlamaSpeechException.details` says the model may not match the adapter.
+
 `load` rethrows what the projector load throws. On native llama.cpp that is
 `LlamaModelException` for a projector the runtime rejects, such as the
 Qwen3-TTS projector with the Qwen3-ASR model, and `LlamaUnsupportedException`
@@ -203,7 +210,8 @@ defaults to true; `supportsLanguageDetection` defaults to false and says
 whether `parseTranscript` reports `SpeechToTextTranscript.language`.
 `capabilities` reports these flags. The recognizer checks only that the loaded
 projector supports audio; whether the prompt suits the model is the adapter's
-responsibility.
+responsibility. An empty transcript's `LlamaSpeechException.details` says the
+model may not match the adapter.
 
 ## Stream live audio with LiteRT-LM
 
