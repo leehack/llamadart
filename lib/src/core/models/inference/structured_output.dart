@@ -283,7 +283,7 @@ bool _schemaRequiresJsonObject(
 
   final allOf = schema['allOf'];
   if (allOf is List) {
-    return allOf.every(
+    return allOf.any(
       (value) => _schemaRequiresJsonObject(
         responseSchemaMap(value, r'$.allOf'),
         rootSchema,

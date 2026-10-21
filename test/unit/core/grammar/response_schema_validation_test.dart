@@ -228,6 +228,97 @@ void main() {
     );
   });
 
+  test('allOf merges skip annotation-only components like upstream', () {
+    const object = {
+      'type': 'object',
+      'properties': {
+        'ok': {'type': 'boolean'},
+      },
+    };
+    final grammar = render({
+      'allOf': [object],
+    });
+    for (final neutral in <Map<String, dynamic>>[
+      {'description': 'Base'},
+      {
+        'x-vendor': {'minimum': 1},
+      },
+      {},
+    ]) {
+      for (final schema in <Map<String, dynamic>>[
+        {
+          'allOf': [neutral, object],
+        },
+        {
+          'type': 'object',
+          r'$defs': {'neutral': neutral},
+          'allOf': [
+            object,
+            {r'$ref': r'#/$defs/neutral'},
+          ],
+        },
+      ]) {
+        expect(render(schema), grammar, reason: '$schema');
+        final output = LlamaStructuredOutput<Map<String, dynamic>>.jsonSchema(
+          schema: schema,
+          decoder: (json) => json,
+        );
+        expect(output.parse('{"ok":true}'), {'ok': true});
+        for (final invalid in ['{"ok":1}', 'true', '[]']) {
+          expect(
+            () => output.parse(invalid),
+            throwsA(isA<LlamaInferenceException>()),
+            reason: invalid,
+          );
+        }
+      }
+    }
+  });
+
+  test('allOf without an object merge rejects annotation-only components', () {
+    for (final schema in <Map<String, dynamic>>[
+      {
+        'allOf': [
+          {'description': 'Base'},
+        ],
+      },
+      {
+        'allOf': [
+          {'description': 'Base'},
+          {
+            'enum': ['a', 'b'],
+          },
+        ],
+      },
+      {
+        'type': 'string',
+        'allOf': [
+          {
+            'enum': ['a'],
+          },
+          {'title': 'Base'},
+        ],
+      },
+    ]) {
+      final error = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('beside annotation-only components'),
+        ),
+      );
+      expect(() => render(schema), error, reason: '$schema');
+      expect(
+        () => LlamaStructuredOutput<Object?>.jsonValueSchema(
+          schema: schema,
+          decoder: (value) => value,
+        ),
+        error,
+        reason: '$schema',
+      );
+    }
+  });
+
   test('compiled patterns agree with typed final validation', () {
     for (final schema in <Map<String, dynamic>>[
       {'type': 'string', 'pattern': r'^[a-z]{2,4}$'},
