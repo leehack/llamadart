@@ -264,8 +264,9 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// [LlamaToolLoopResult.rolledBack]. A class that implements
   /// [ChatSession] without extending it is rolled back by calling
   /// [ChatSession.reset] and adding the remaining messages again. If its
-  /// [ChatSession.history] returns new copies on each read, the turn's
-  /// messages are matched by role and content rather than identity.
+  /// [ChatSession.history] returns different instances for the same message
+  /// on two consecutive reads, the turn's messages are matched by role and
+  /// content rather than identity.
   ///
   /// A cancel that a backend reports as a stream error, as WebGPU does,
   /// also stops the loop with [LlamaToolLoopStopReason.cancelled]. An error
