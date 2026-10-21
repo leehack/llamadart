@@ -102,6 +102,9 @@ class JsonSchemaConverter {
   final Set<String> _refsBeingResolved = {};
   int _keyTrieGrammarLength = 0;
 
+  /// Rule name of each declared-key escape rule, by rule text.
+  final Map<String, String> _escapeRuleNames = {};
+
   /// Whether a pattern can be enforced by the compiled regex subset.
   static bool supportsPattern(String pattern) =>
       _PatternGrammarBuilder((name, rule) => name, 'pattern').build(pattern) !=
@@ -641,21 +644,26 @@ class JsonSchemaConverter {
       node.isEnd = true;
     }
 
-    String build(String Function(String name, String rule) emit, String char) {
+    String build(
+      String Function(String name, String rule) emit,
+      String char,
+      Map<String, String> escapeRules,
+    ) {
       var index = 0;
-      final escapeRules = <String, String>{};
+      var newEscapeRules = 0;
 
+      // Every key trie in the grammar shares one short-named rule per set.
       String escapeExcluding(List<int> runes) {
         final units = {
           for (final rune in runes)
             rune > 0xFFFF ? 0xD800 + ((rune - 0x10000) >> 10) : rune,
         }.toList()..sort();
-        final key = units.map(_hexCodeUnit).join('-');
-        // Named by the excluded set, so every key trie in the grammar shares
-        // one rule per set and references stay short.
-        return escapeRules[key] ??= emit(
-          'esc-$key',
-          '[\\\\] (["\\\\bfnrt] | "u" (${_hexExcluding(units, 0)!}))',
+        final rule =
+            '[\\\\] (["\\\\bfnrt] | "u" (${_hexExcluding(units, 0)!}))';
+        return escapeRules[rule] ??= emit(
+          _escapeRuleNames[rule] ??
+              'esc-${_escapeRuleNames.length + newEscapeRules++}',
+          rule,
         );
       }
 
@@ -711,13 +719,26 @@ class JsonSchemaConverter {
     }
 
     var length = 0;
-    build((name, rule) {
-      length += name.length + rule.length;
-      return name;
-    }, 'char');
+    build(
+      (name, rule) {
+        // Escape rules shared with an earlier key trie are already in the
+        // grammar, so `_addRule` will not add them again.
+        if (_rules[name] != rule) length += name.length + rule.length;
+        return name;
+      },
+      'char',
+      {},
+    );
     if (_keyTrieGrammarLength + length > _maxKeyTrieGrammarLength) return null;
     _keyTrieGrammarLength += length;
-    return build(_addRule, _addPrimitive('char', _primitiveRules['char']!));
+    final escapeRules = <String, String>{};
+    final keyRule = build(
+      _addRule,
+      _addPrimitive('char', _primitiveRules['char']!),
+      escapeRules,
+    );
+    _escapeRuleNames.addAll(escapeRules);
+    return keyRule;
   }
 
   /// Matches four hex digits, in either case, spelling none of the sorted
@@ -869,10 +890,6 @@ List<String> _wireTokens(String wire) {
   }
   return tokens;
 }
-
-/// Returns [unit] as four uppercase hex digits.
-String _hexCodeUnit(int unit) =>
-    unit.toRadixString(16).toUpperCase().padLeft(4, '0');
 
 /// Returns a GBNF class matching the ascending hex [digits] in either case.
 String _hexClass(List<int> digits) {

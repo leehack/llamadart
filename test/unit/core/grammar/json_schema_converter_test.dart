@@ -113,6 +113,33 @@ void main() {
       });
     }
 
+    for (final label in ['21 distinct 20-character names', '1023 properties']) {
+      test('three open objects with $label each keep a key rule', () {
+        final names = largeKeySets[label]!;
+        final grammar = JsonSchemaConverter.convert({
+          'type': 'object',
+          'properties': {
+            for (var i = 0; i < 3; i++)
+              'o$i': {
+                'type': 'object',
+                'properties': {
+                  for (final name in names) name: {'type': 'integer'},
+                },
+                'additionalProperties': true,
+              },
+          },
+        });
+        for (var i = 0; i < 3; i++) {
+          expect(
+            grammar,
+            contains('root-o$i-additional-kv ::= root-o$i-additional-k '),
+            reason: 'o$i',
+          );
+        }
+        expect(llamaCppRepetitionRejection(grammar), isNull);
+      });
+    }
+
     test('objects with 1023 closed optional properties load', () {
       final grammar = JsonSchemaConverter.convert({
         'type': 'object',
@@ -799,6 +826,8 @@ void main() {
           r'"\u0000"',
           r'"\n"',
           r'"\u00e8"',
+          r'"\u00E8"',
+          r'"\u006E"',
           '"😁"',
         ]) {
           expect(key.hasMatch(spelling), isTrue, reason: spelling);
