@@ -18,8 +18,19 @@ from types import SimpleNamespace
 
 
 HOST = Path(__file__).resolve().parents[3] / 'tool/testing/validation/process_host.py'
+WAITID_NAMES = ('waitid', 'P_PID', 'WEXITED', 'WNOHANG', 'WNOWAIT',
+                'CLD_EXITED', 'CLD_KILLED', 'CLD_DUMPED')
+
+
+def load_host(name):
+    spec = importlib.util.spec_from_file_location(name, HOST)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 # macOS gains os.waitid in Python 3.13; older hosts use the unheld fallback.
-HELD_CHILD = all(hasattr(os, name) for name in ('waitid', 'WNOWAIT', 'CLD_EXITED'))
+HELD_CHILD = load_host('held_child_probe').posix_waitid_available()
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX owned-group source fixtures')
@@ -54,15 +65,23 @@ class ProcessHostTest(unittest.TestCase):
 
     def launch(self, mode, child_source):
         script = '''
-import importlib.util, json, os, pathlib, sys, time
+import importlib.util, json, os, pathlib, signal, subprocess, sys, time
 spec = importlib.util.spec_from_file_location('owned_host', sys.argv[1])
 host = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(host)
 root = pathlib.Path(sys.argv[2])
 mode = sys.argv[3]
 source = sys.argv[4]
-if mode == 'unheld-fallback':
-    host.posix_waitid_available = lambda: False
+if mode == 'unheld-fallback' or mode.startswith(('missing:', 'denied-')):
+    # Remove the name itself, as on a Python without it, not the host's gate.
+    name = mode.partition(':')[2] or 'waitid'
+    if hasattr(host.os, name):
+        delattr(host.os, name)
+if mode.startswith('denied-'):
+    # macOS denies killpg on a group whose members are all unreaped zombies.
+    def denied(group, sig):
+        raise PermissionError()
+    host.os.killpg = denied
 if mode == 'exited-leader-inherited-pipe':
     original_waitid = host.os.waitid
     def observed_completion(kind, pid, flags):
@@ -74,10 +93,28 @@ if mode == 'exited-leader-inherited-pipe':
                 stream.flush()
         return result
     host.os.waitid = observed_completion
+def wait_for_zombie(pid):
+    for _ in range(500):
+        state = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)],
+                               capture_output=True, text=True).stdout
+        if state.strip().startswith('Z'):
+            return
+        time.sleep(0.01)
+    raise RuntimeError('fixture child did not exit')
+setup_done = []
+stop_requests = []
 def receipt(pid):
     data = {'pid': pid, 'pgid': os.getpgid(pid)}
     (root / 'observed.json').write_text(json.dumps(data))
-    if mode == 'publication-failure':
+    if mode in ('exited-slow-receipt', 'stopped-receipt', 'denied-exited-setup'):
+        wait_for_zombie(pid)
+    if mode == 'stopped-receipt':
+        host_stop = signal.getsignal(signal.SIGTERM)
+        def observed_stop(signum, frame):
+            host_stop(signum, frame)
+            stop_requests.append(signum)
+        signal.signal(signal.SIGTERM, observed_stop)
+    if mode in ('publication-failure', 'denied-exited-setup'):
         with (root / 'occupied').open('x') as stream:
             stream.write(json.dumps({'pid': pid}))
     else:
@@ -88,19 +125,30 @@ def receipt(pid):
         def reject_start(self):
             raise RuntimeError('fixture reader setup failure')
         host.threading.Thread.start = reject_start
-    if mode in ('slow-receipt', 'exited-slow-receipt', 'stopped-receipt'):
-        time.sleep(1.5 if mode == 'slow-receipt' else 0.15)
+    if mode == 'slow-receipt':
+        time.sleep(2.5)
+        setup_done.append(time.monotonic())
+    if mode == 'exited-slow-receipt':
+        time.sleep(0.15)
+    if mode == 'stopped-receipt':
+        for _ in range(500):
+            if stop_requests:
+                break
+            time.sleep(0.01)
     if mode in ('exited-slow-receipt', 'stopped-receipt'):
         # Deterministically reach the terminal predicate after the empty-output
         # child exits; do not depend on reader-thread scheduling for this case.
         host.threading.Thread.start = lambda thread: thread.run()
-seconds = {'slow-receipt': '1.0', 'exited-slow-receipt': '0.1'}.get(mode, '4')
+seconds = {'slow-receipt': '2.0', 'exited-slow-receipt': '0.1'}.get(mode, '4')
 sys.argv = [str(spec.origin), seconds, sys.executable, '-c', source]
 try:
-    sys.exit(host.main(None if mode == 'default' else receipt))
+    sys.exit(host.main(None if mode == 'default' or mode.startswith('missing:') else receipt))
 except Exception as error:
     print('Subprocess host failed (' + type(error).__name__ + ')', file=sys.stderr)
     sys.exit(125)
+finally:
+    if setup_done:
+        (root / 'after-setup.json').write_text(json.dumps(time.monotonic() - setup_done[0]))
 '''
         self.host = subprocess.Popen(
             [sys.executable, '-c', script, str(HOST), str(self.root), mode, child_source],
@@ -168,12 +216,12 @@ except Exception as error:
         self.assert_child_retired()
 
     def test_receipt_setup_time_is_charged_to_deadline(self):
-        # A 1.0 s deadline, a 1.5 s receipt and a marker at 1.8 s: charging
-        # setup stops the child about 0.3 s early, and not charging it would
-        # stop it 0.7 s late. Wide enough for a loaded host either way.
-        self.launch('slow-receipt', self.sleeping_child().replace('sleep(0.7)', 'sleep(1.8)'))
+        # A 2.5 s receipt overruns the 2.0 s deadline. Charged setup stops the
+        # child at once; uncharged setup would wait at least another 2.0 s.
+        self.launch('slow-receipt', self.sleeping_child().replace('sleep(0.7)', 'sleep(30)'))
         status, output, error = self.complete()
         self.assertEqual((status, output, error), (124, b'', b''))
+        self.assertLess(json.loads((self.root / 'after-setup.json').read_text()), 1.5)
         self.assert_child_retired()
 
     def test_exited_child_does_not_bypass_setup_deadline(self):
@@ -184,6 +232,7 @@ except Exception as error:
             os.kill(self.child['pid'], 0)
 
     def test_exited_child_does_not_bypass_stop_during_setup(self):
+        # The receipt waits for this SIGTERM, so it always lands during setup.
         self.launch('stopped-receipt', 'pass')
         for _ in range(400):
             if (self.root / 'receipt.json').exists():
@@ -226,6 +275,31 @@ except Exception as error:
         self.assertEqual((status, output, error), (17, b'leader\n', b''))
         self.assert_child_retired()
 
+    def test_each_missing_waitid_name_uses_unheld_fallback(self):
+        # A signal-killed child makes the held path read every name.
+        child = 'import os, signal; print("leader", flush=True); os.kill(os.getpid(), signal.SIGKILL)'
+        for name in WAITID_NAMES:
+            with self.subTest(name=name):
+                self.launch('missing:' + name, child)
+                status, output, error = self.complete()
+                self.assertEqual((status, output, error),
+                                 (-signal.SIGKILL & 0xFF, b'leader\n', b''))
+
+    def test_denied_zombie_group_keeps_setup_error(self):
+        (self.root / 'occupied').write_bytes(b'prior receipt')
+        self.launch('denied-exited-setup', 'pass')
+        status, output, error = self.complete()
+        self.assertEqual((status, output, error),
+                         (125, b'', b'Subprocess host failed (FileExistsError)\n'))
+        with self.assertRaises(ProcessLookupError):
+            os.kill(self.child['pid'], 0)
+
+    def test_denied_group_without_setup_error_stays_failure(self):
+        self.launch('denied-exit', 'import sys; sys.exit(17)')
+        status, output, error = self.complete()
+        self.assertEqual((status, output, error),
+                         (125, b'', b'Subprocess host failed (PermissionError)\n'))
+
     @unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
     def test_exited_leader_with_inherited_pipe_stays_reserved_until_stop(self):
         descendant = (
@@ -260,9 +334,7 @@ except Exception as error:
 @unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
 class PosixReservationTest(unittest.TestCase):
     def setUp(self):
-        spec = importlib.util.spec_from_file_location('reservation_host', HOST)
-        self.module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.module)
+        self.module = load_host('reservation_host')
         self.events = []
         self.child = SimpleNamespace(pid=42, returncode=None)
         def reap(timeout):

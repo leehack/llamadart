@@ -2057,15 +2057,13 @@ void main() {
   test(
     'command host source fixtures preserve receipts and failure cleanup',
     () async {
-      if (Platform.isWindows) {
-        return;
-      }
       final result = await executeCommand('python3', <String>[
         'test/unit/tooling/validation_process_host_test.py',
       ], timeout: const Duration(seconds: 30));
       expect(result.code, 0, reason: result.error);
       expect(result.error, contains('OK'));
     },
+    skip: Platform.isWindows ? 'The host fixtures are POSIX-only.' : false,
   );
 
   test('optional command receipt records only the returned host ID', () async {
@@ -2096,7 +2094,22 @@ void main() {
       throwsA(same(failure)),
     );
     expect(hostId, greaterThan(0));
-    if (!Platform.isWindows) {
+    if (Platform.isWindows) {
+      Future<String> tasks(int processId) async {
+        final observed = await Process.run('tasklist', <String>[
+          '/FI',
+          'PID eq $processId',
+          '/FO',
+          'CSV',
+          '/NH',
+        ]);
+        expect(observed.exitCode, 0);
+        return observed.stdout.toString();
+      }
+
+      expect(await tasks(pid), contains('"$pid"'));
+      expect(await tasks(hostId!), isNot(contains('"$hostId"')));
+    } else {
       final observed = await Process.run('ps', <String>[
         '-p',
         '$hostId',
@@ -2106,6 +2119,97 @@ void main() {
       expect(observed.stdout.toString().trim(), isEmpty);
       expect(observed.exitCode, 1);
     }
+  });
+
+  test('a failed command receipt releases the command pipes', () async {
+    final result = await _runDartFixture(scratch, r'''
+Future<void> main() async {
+  Future<void> failReceipt() async {
+    try {
+      await executeCommand(
+        'python3',
+        const <String>['-c', 'print("pipe fixture")'],
+        onProcessStarted: (_) => throw const FormatException('receipt'),
+      );
+    } on FormatException {
+      return;
+    }
+    throw StateError('Receipt failure was not reported');
+  }
+
+  int openDescriptors() => Platform.isLinux
+      ? Directory('/proc/self/fd').listSync(followLinks: false).length
+      : (Process.runSync('lsof', <String>['-p', '$pid']).stdout as String)
+            .split('\n')
+            .length;
+
+  await failReceipt();
+  final before = openDescriptors();
+  for (var i = 0; i < 10; i++) {
+    await failReceipt();
+  }
+  print(openDescriptors() - before);
+}
+''');
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    // Each unreleased command leaves its stdout and stderr pipes open.
+    expect(int.parse(result.stdout.toString().trim()), lessThan(10));
+  }, skip: Platform.isWindows ? 'Counts POSIX file descriptors.' : false);
+
+  test(
+    'a receipt that outlasts the command deadline fails a clean exit',
+    () async {
+      final host = File(p.join(scratch.path, 'clean-host.py'))
+        ..writeAsStringSync('print("clean")\n');
+      await expectLater(
+        runZoned(
+          () => executeCommand(
+            Platform.isWindows ? 'python' : 'python3',
+            const <String>[],
+            // The Dart deadline is this timeout plus ten seconds: 100 ms.
+            timeout: const Duration(milliseconds: -9900),
+            processHostEntryPath: host.path,
+            onProcessStarted: (_) => sleep(const Duration(milliseconds: 300)),
+          ),
+          zoneSpecification: ZoneSpecification(
+            // Hold back the timeout timer so the clean exit is observed first;
+            // zero-duration timers schedule I/O events.
+            createTimer: (self, parent, zone, duration, callback) =>
+                parent.createTimer(
+                  zone,
+                  duration > Duration.zero ? const Duration(days: 1) : duration,
+                  callback,
+                ),
+          ),
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+    },
+  );
+
+  test('a literal host entry needs no checked-in host', () async {
+    final result = await _runDartFixture(
+      scratch,
+      '''
+Future<void> main(List<String> arguments) async {
+  final result = await executeCommand(
+    arguments[0],
+    const <String>['-c', 'print("literal host")'],
+    timeout: const Duration(seconds: 5),
+    processHostEntryPath: arguments[1],
+  );
+  stdout.write(result.output);
+  exitCode = result.code;
+}
+''',
+      arguments: <String>[
+        Platform.isWindows ? 'python' : 'python3',
+        File('tool/testing/validation/process_host.py').absolute.path,
+      ],
+      workingDirectory: scratch.path,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(result.stdout.toString().trim(), 'literal host');
   });
 
   test('default command host retains output and exit status', () async {
@@ -2188,9 +2292,6 @@ void main() {
   test(
     'private host receipt failure stays failed and retires its child',
     () async {
-      if (Platform.isWindows) {
-        return;
-      }
       final wrapper = File(p.join(scratch.path, 'failing-private-host.py'));
       final observed = File(p.join(scratch.path, 'observed-child.json'));
       final occupied = File(p.join(scratch.path, 'occupied-receipt.json'))
@@ -2230,12 +2331,10 @@ void main() {
         expect(remaining.exitCode, 1);
       }
     },
+    skip: Platform.isWindows ? 'Probes POSIX process IDs with ps.' : false,
   );
 
   test('SIGTERM on the command host terminates owned descendants', () async {
-    if (Platform.isWindows) {
-      return;
-    }
     final ready = File(p.join(scratch.path, 'ready'));
     final leaked = File(p.join(scratch.path, 'leaked'));
     final script =
@@ -2264,7 +2363,7 @@ void main() {
     } finally {
       host.kill(ProcessSignal.sigkill);
     }
-  });
+  }, skip: Platform.isWindows ? 'Windows has no SIGTERM delivery.' : false);
 
   test(
     'successful lifecycle requires provider, suite, retrieval and cleanup',
@@ -2759,7 +2858,6 @@ void main() {
   test(
     'total process deadline includes inherited pipes and kills descendants',
     () async {
-      if (Platform.isWindows) return; // Windows job behavior runs in bundle CI.
       final marker = p.join(scratch.path, 'should-not-exist');
       final code =
           'import subprocess,sys; subprocess.Popen([sys.executable,"-c",${jsonEncode('import time; from pathlib import Path; time.sleep(1); Path(${jsonEncode(marker)}).write_text("leaked")')}])';
@@ -2775,7 +2873,30 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 1200));
       expect(File(marker).existsSync(), false);
     },
+    skip: Platform.isWindows
+        ? 'Windows job containment runs in validation bundle CI.'
+        : false,
   );
+}
+
+Future<ProcessResult> _runDartFixture(
+  Directory scratch,
+  String source, {
+  List<String> arguments = const <String>[],
+  String? workingDirectory,
+}) {
+  final script = File(p.join(scratch.path, 'command_fixture.dart'))
+    ..writeAsStringSync('''
+import 'dart:io';
+
+import '${File('tool/testing/validation/process.dart').absolute.uri}';
+
+$source''');
+  return Process.run(Platform.resolvedExecutable, <String>[
+    '--packages=${File('.dart_tool/package_config.json').absolute.path}',
+    script.path,
+    ...arguments,
+  ], workingDirectory: workingDirectory);
 }
 
 void _writeReceiptHostEntry(

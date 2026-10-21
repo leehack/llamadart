@@ -41,22 +41,11 @@ Future<CommandResult> executeCommand(
   void Function(int processId)? onProcessStarted,
   String? processHostEntryPath,
 }) async {
-  // Find the checked-in host from the current repository, including package cwd.
-  var root = Directory.current.absolute;
-  while (!File(
-    p.join(root.path, 'tool/testing/validation/process_host.py'),
-  ).existsSync()) {
-    if (root.parent.path == root.path) {
-      throw StateError('Cannot locate subprocess host');
-    }
-    root = root.parent;
-  }
   final duration = timeout ?? const Duration(minutes: 5);
   final process = await Process.start(
     Platform.isWindows ? 'python' : 'python3',
     [
-      processHostEntryPath ??
-          p.join(root.path, 'tool/testing/validation/process_host.py'),
+      processHostEntryPath ?? _checkedInProcessHostEntry(),
       (duration.inMilliseconds / 1000).toString(),
       executable,
       ...arguments,
@@ -71,7 +60,6 @@ Future<CommandResult> executeCommand(
   final streams = <StreamSubscription<String>>[];
   final drains = <Future<void>>[];
   try {
-    onProcessStarted?.call(process.pid);
     for (final pair in [(process.stdout, output), (process.stderr, error)]) {
       final done = Completer<void>();
       streams.add(
@@ -85,15 +73,12 @@ Future<CommandResult> executeCommand(
       );
       drains.add(done.future);
     }
-    final remaining = deadline - elapsed.elapsed;
-    if (remaining <= Duration.zero) {
-      throw TimeoutException('Subprocess deadline exceeded', duration);
-    }
+    onProcessStarted?.call(process.pid);
     final code = await (() async {
       final code = await process.exitCode;
       await Future.wait(drains);
       return code;
-    })().timeout(remaining);
+    })().timeout(deadline - elapsed.elapsed);
     if (elapsed.elapsed >= deadline) {
       throw TimeoutException('Subprocess deadline exceeded', duration);
     }
@@ -115,6 +100,20 @@ Future<CommandResult> executeCommand(
       await stream.cancel();
     }
   }
+}
+
+String _checkedInProcessHostEntry() {
+  // Find the checked-in host from the current repository, including package cwd.
+  var root = Directory.current.absolute;
+  while (!File(
+    p.join(root.path, 'tool/testing/validation/process_host.py'),
+  ).existsSync()) {
+    if (root.parent.path == root.path) {
+      throw StateError('Cannot locate subprocess host');
+    }
+    root = root.parent;
+  }
+  return p.join(root.path, 'tool/testing/validation/process_host.py');
 }
 
 /// Validates a successful JSON response without logging credentials/errors.
