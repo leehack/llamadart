@@ -531,8 +531,11 @@ guide.
   the ggml head on a tiny synthetic head against a pure-Dart reference, and
   through a recording ggml function table that checks every create has its
   free, the teardown order, the thread count and the scheduler's backend
-  order; the service's load-time check helpers, head device choice, sequence
-  validation, and run order through a substituted encoder; worker,
+  order; the service's load-time check helpers, head device choice, the
+  scheduler's `op_offload` for CPU, GPU, GPU-backend-without-device and
+  conservative Android Vulkan loads through a recording ggml function table,
+  the encoder context freed after a failed head init (exit-teardown suite),
+  sequence validation, and run order through a substituted encoder; worker,
   backend-client and router routing with fakes; engine hooks and facade with a
   fake backend, including `load` (downloads before loading, encoder params,
   combined progress, ownership, atomic failure at each step, cancellation,
@@ -568,9 +571,8 @@ guide.
   Runner scenario `decision-model-smoke` (`--model-path`, `--head-path`,
   optional `--config-path` and `--backend`) and test-matrix row of the same
   id.
-- No test reaches the service's `llama_free` of the encoder context after a
-  failed head load, its `op_offload` choice, or its order of head and context
-  teardown; that needs fault injection or a GPU device.
+- No test reaches the service's order of head and context teardown; that
+  needs fault injection or a GPU device.
 
 Fixture: `packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json`,
 produced by the scripts in `test/fixtures/decision/` from the pinned official
