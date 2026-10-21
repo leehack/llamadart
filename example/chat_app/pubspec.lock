@@ -421,21 +421,21 @@ packages:
       path: "../.."
       relative: true
     source: path
-    version: "0.15.5"
+    version: "0.15.6"
   llamadart_litert_lm_flutter:
     dependency: "direct main"
     description:
       path: "../../packages/llamadart_litert_lm_flutter"
       relative: true
     source: path
-    version: "0.15.1"
+    version: "0.15.2"
   llamadart_llama_cpp_flutter:
     dependency: "direct main"
     description:
       path: "../../packages/llamadart_llama_cpp_flutter"
       relative: true
     source: path
-    version: "0.15.1"
+    version: "0.15.2"
   llamadart_stable_diffusion_flutter:
     dependency: "direct main"
     description:

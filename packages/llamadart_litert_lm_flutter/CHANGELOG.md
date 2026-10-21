@@ -1,6 +1,8 @@
-## Unreleased
+## 0.15.2
 
-* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.18.0-3`.
+- Update Apple SwiftPM to `leehack/litert-lm-native@v0.18.0-3`, which loads
+  dedicated ASR `.litertlm` containers such as Whisper tiny; require core
+  `>=0.15.6 <0.16.0`.
 
 ## 0.15.1
 

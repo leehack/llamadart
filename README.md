@@ -279,13 +279,15 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.5
+  llamadart: ^0.15.6
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Pair companion `0.15.0` with core `0.15.x` for llama.cpp `v0.7.0-1`.
+Use companion `0.15.2` with core `>=0.15.6 <0.16.0` for llama.cpp `v0.7.0-2`.
+Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with core `0.15.6`
+with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
 Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
 Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
 for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
@@ -307,9 +309,9 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.5
-  llamadart_llama_cpp_flutter: ^0.15.1 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.15.1 # Apple .litertlm / LiteRT-LM targets
+  llamadart: ^0.15.6
+  llamadart_llama_cpp_flutter: ^0.15.2 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.15.2 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.15.2 # Apple image generation, opt-in
 ```
 
@@ -324,10 +326,13 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Pair LiteRT-LM companion `0.15.0` with core `0.15.x` (or `0.14.0` with core `0.14.x`)
-for native `v0.18.0-2`,
-which reduces duplicated words at untimed ASR window boundaries with the
-default overlap. Other boundary and recognition errors can remain.
+Use LiteRT-LM companion `0.15.2` with core `>=0.15.6 <0.16.0` for native
+`v0.18.0-3`, which also loads dedicated ASR `.litertlm` containers such as
+Whisper tiny. Locked `0.15.0`/`0.15.1` companions keep `v0.18.0-2` and work
+with core `0.15.6` with a macOS upgrade warning; pair `0.14.0` with core
+`0.14.x`. From `v0.18.0-2`, the runtime reduces duplicated words at untimed ASR
+window boundaries with the default overlap. Other boundary and recognition
+errors can remain.
 
 The LiteRT-LM companion manifest links the complete iOS and macOS SwiftPM
 runtime, including the macOS WebGPU accelerator, so a sandboxed or distributed

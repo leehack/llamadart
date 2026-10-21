@@ -1,6 +1,7 @@
-## Unreleased
+## 0.15.2
 
-* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.7.0-2`.
+- Update Apple SwiftPM to `leehack/llamadart-native@v0.7.0-2`, which seeds
+  every Qwen3-TTS codebook from the request; require core `>=0.15.6 <0.16.0`.
 
 ## 0.15.1
 
