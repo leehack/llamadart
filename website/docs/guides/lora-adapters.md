@@ -135,7 +135,8 @@ await engine.setLoraSource(style, scale: 0.35);
 await engine.setLoraSource(domain, scale: 0.70);
 ```
 
-- Calling `setLoraSource(...)` again with the same source updates scale. When
+- Calling `setLoraSource(...)` again with the same source, including another spelling of the same
+  local path such as `./a.gguf` for `a.gguf`, updates scale. When
   its options resolve the source to another file, such as another
   `cacheDirectory`, that file replaces the adapter applied from the source.
 - Use `removeLoraSource(source)` to disable one adapter.

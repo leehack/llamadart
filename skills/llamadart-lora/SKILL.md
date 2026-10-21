@@ -29,8 +29,9 @@ llamadart applies LoRA adapters at inference time; it does not train them.
 - Runtime API on `LlamaEngine`, all `Future<void>`, all needing a loaded model
   (otherwise `LlamaContextException`):
   - `setLoraSource(source, scale: 1.0)` loads the adapter on first use and
-    activates it; calling it again with the same source only changes the
-    scale.
+    activates it; calling it again with the same source (equivalent path
+    spellings such as `./a.gguf` and `a.gguf` count as the same) only changes
+    the scale.
   - `removeLoraSource(source)` deactivates one adapter.
   - `clearLoras()` returns to base-model behavior.
 - An adapter is a `ModelSource`: `ModelSource.path` for a local file, or an
