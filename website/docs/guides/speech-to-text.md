@@ -288,6 +288,10 @@ stream and releases the native recognizer; a session has no single `result`. Can
 throttles native inference; LiteRT-LM producers must await `addPcm` for input
 backpressure.
 
+If an attached `LlamaEngine` is disposed, `capabilities` reports unsupported
+with a reason telling you to create a new engine and attach a new recognizer,
+and `transcribe` and `startStream` throw `LlamaUnsupportedException`.
+
 `dispose()` cancels a running task or stream, waits for it to stop, and
 disposes the engine that `load` created. Calling it again is safe, and
 `isDisposed` reports it. After `dispose()`, `transcribe` and `startStream`
