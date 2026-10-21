@@ -5,6 +5,33 @@ import 'package:laya_tetris_example/laya/models.dart';
 import 'package:laya_tetris_example/laya/store.dart';
 import 'package:llamadart/llamadart.dart';
 
+class _FakeDownloads implements ModelDownloadManager {
+  _FakeDownloads(this.entries);
+
+  final List<ModelCacheEntry> entries;
+
+  @override
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async =>
+      List.of(entries);
+
+  @override
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async =>
+      entries.removeWhere((e) => e.cacheKey == cacheKey);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
+ModelCacheEntry _entry(String cacheKey) => ModelCacheEntry(
+  sourceCanonicalKey: 'hf://test/$cacheKey',
+  cacheKey: cacheKey,
+  fileName: 'model.bin',
+  filePath: '/cache/$cacheKey/model.bin',
+  createdAt: DateTime.utc(2026),
+  updatedAt: DateTime.utc(2026),
+);
+
 void main() {
   late Directory dir;
 
@@ -107,6 +134,40 @@ void main() {
     expect(setup.backend, GpuBackend.cpu);
     expect(setup.threads, 3);
   });
+
+  test(
+    'ModelStore.removeSupersededDownloads drops only stale entries',
+    () async {
+      final stale = ModelSource.huggingFace(
+        repoId: tunedHeadRepoId,
+        revision: '83794e0b',
+        filePath: tunedHeadFile,
+      );
+      final pinned = [
+        layaSource(LayaBackbone.q8.fileName),
+        layaSource(LayaBackbone.f16.fileName),
+        layaSource(baseHeadFile),
+        publishedTunedHead,
+      ];
+      final downloads = _FakeDownloads([
+        _entry(stale.cacheKey),
+        for (final source in pinned) _entry(source.cacheKey),
+      ]);
+      final store = ModelStore(
+        dir.path,
+        tunedHeadUrl: '',
+        downloadManager: downloads,
+      );
+      final userFile = File(store.tunedHeadPath!)..writeAsBytesSync([0]);
+
+      await store.removeSupersededDownloads();
+
+      expect(downloads.entries.map((e) => e.cacheKey), [
+        for (final source in pinned) source.cacheKey,
+      ]);
+      expect(userFile.existsSync(), isTrue);
+    },
+  );
 
   group('LayaSetup.params', () {
     LayaSetup setup(GpuBackend backend) => LayaSetup(

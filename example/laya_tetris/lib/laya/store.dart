@@ -12,10 +12,17 @@ const String tunedHeadUrlDefine = String.fromEnvironment('LAYA_TUNED_HEAD_URL');
 class ModelStore {
   /// Creates a store rooted at [directory], or without a folder when it is
   /// null.
-  ModelStore(this.directory, {this.tunedHeadUrl = tunedHeadUrlDefine})
-    : downloads = directory == null
-          ? null
-          : DefaultModelDownloadManager.appPrivate(cacheDirectory: directory);
+  ModelStore(
+    this.directory, {
+    this.tunedHeadUrl = tunedHeadUrlDefine,
+    ModelDownloadManager? downloadManager,
+  }) : downloads =
+           downloadManager ??
+           (directory == null
+               ? null
+               : DefaultModelDownloadManager.appPrivate(
+                   cacheDirectory: directory,
+                 ));
 
   /// Opens the folder from [openModelDirectory]; in a browser, a store
   /// without one.
@@ -79,4 +86,27 @@ class ModelStore {
     backend: backend,
     threads: threads,
   );
+
+  /// Removes cached downloads whose source no pinned file uses, such as the
+  /// previous revision after a pin bump. Files placed directly in
+  /// [directory] are not cache entries and stay. Failures are ignored: the
+  /// leftover only costs disk space.
+  Future<void> removeSupersededDownloads() async {
+    final manager = downloads;
+    if (manager == null) return;
+    final pinned = <String>{
+      for (final backbone in LayaBackbone.values)
+        layaSource(backbone.fileName).cacheKey,
+      layaSource(baseHeadFile).cacheKey,
+      publishedTunedHead.cacheKey,
+      tunedHead().cacheKey,
+    };
+    try {
+      for (final entry in await manager.list()) {
+        if (!pinned.contains(entry.cacheKey)) {
+          await manager.remove(entry.cacheKey);
+        }
+      }
+    } catch (_) {}
+  }
 }
