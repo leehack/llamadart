@@ -31,7 +31,8 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   - `setLoraSource(source, scale: 1.0)` loads the adapter on first use and
     activates it; calling it again with the same source only changes the
     scale.
-  - `removeLoraSource(source)` deactivates one adapter.
+  - `removeLoraSource(source)` deactivates one adapter; a local path
+    matches however it is spelled (`/a/./b.gguf` is `/a/b.gguf`).
   - `clearLoras()` returns to base-model behavior.
 - An adapter is a `ModelSource`: `ModelSource.path` for a local file, or an
   HTTP(S) URL or `hf://owner/repo/file.gguf` through `ModelSource.parse`. On

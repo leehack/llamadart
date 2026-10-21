@@ -143,6 +143,57 @@ void main() {
       );
     });
 
+    test('removeLoraSource reports a backend without a LoRA API that applied '
+        'a path adapter at load under another spelling', () async {
+      final engine = LlamaEngine(
+        _NoLoraBackend(),
+        modelDownloadManager: _CacheManager({}),
+      );
+      await engine.loadModel(
+        '/models/model.litertlm',
+        modelParams: ModelParams(
+          loras: [LoraAdapterConfig.source(localAdapter)],
+        ),
+      );
+
+      await expectLater(
+        engine.removeLoraSource(
+          ModelSource.path('/models/./local-adapter.gguf'),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
+    test('removeLoraSource removes an adapter set under another spelling of '
+        'its path', () async {
+      final backend = _RecordingBackend();
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _CacheManager({}),
+      );
+      await engine.loadModel(
+        '/models/model.gguf',
+        modelParams: const ModelParams(
+          loras: [
+            LoraAdapterConfig(path: '/models/adapters/../local-adapter.gguf'),
+          ],
+        ),
+      );
+      await engine.setLoraSource(
+        ModelSource.path('/models/other-adapter.gguf'),
+      );
+
+      await engine.removeLoraSource(localAdapter);
+      await engine.removeLoraSource(
+        ModelSource.path('/models/./other-adapter.gguf'),
+      );
+
+      expect(backend.removedLoraPaths, [
+        '/models/adapters/../local-adapter.gguf',
+        '/models/other-adapter.gguf',
+      ]);
+    });
+
     test('setLoraSource stops at a cancelled download token', () async {
       final backend = _RecordingBackend();
       final manager = _CacheManager({hfAdapter: '/cache/a.gguf'});
