@@ -857,9 +857,10 @@ final RegExp _gitObjectSha = RegExp(r'^[0-9a-f]{40}$');
 /// The manifest bytes alone do not identify the release: an unpinned or
 /// mutable release could be re-tagged or re-published with the same bytes.
 /// Any missing field, unexpected shape or API failure is a problem, never a
-/// pass. `GITHUB_TOKEN` (or `GH_TOKEN`) in [environment] authenticates the
-/// requests; it is sent only as a header and redirects are not followed, so it
-/// cannot reach another host or appear in a message.
+/// pass. `GH_TOKEN` (or `GITHUB_TOKEN`, matching `gh`'s precedence) in
+/// [environment] authenticates the requests; it is sent only as a header and
+/// redirects are not followed, so it cannot reach another host or appear in a
+/// message. A token that is not a valid bearer token sends no request.
 Future<List<String>> verifyPublishedRelease({
   required String expectedTag,
   required String expectedReleaseId,
@@ -874,8 +875,26 @@ Future<List<String>> verifyPublishedRelease({
   Uri api(String path) =>
       base.replace(path: '/repos/$bridgeAssetsRepository/$path');
 
+  final headers = <String, String>{
+    HttpHeaders.acceptHeader: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (fetcher == null) {
+    final (name, token) = _gitHubToken(environment ?? Platform.environment);
+    if (token != null) {
+      // HttpHeaders quotes an invalid value in its exception, which would
+      // print the token.
+      if (!_bearerToken.hasMatch(token)) {
+        return <String>[
+          '$name is not a valid bearer token, so no GitHub API request was '
+              'sent; its value is not shown',
+        ];
+      }
+      headers[HttpHeaders.authorizationHeader] = 'Bearer $token';
+    }
+  }
+
   final client = fetcher == null ? HttpClient() : null;
-  final headers = _gitHubApiHeaders(environment ?? Platform.environment);
   final fetch =
       fetcher ??
       (Uri url) => _fetchManifest(
@@ -898,8 +917,8 @@ Future<List<String>> verifyPublishedRelease({
     }
     if (response.statusCode != HttpStatus.ok) {
       final hint = const <int>{401, 403, 429}.contains(response.statusCode)
-          ? '; unauthenticated requests are rate limited, so set GITHUB_TOKEN '
-                'or GH_TOKEN, or check the one that is set'
+          ? '; unauthenticated requests are rate limited, so set GH_TOKEN '
+                'or GITHUB_TOKEN, or check the one that is set'
           : '';
       return '$url returned HTTP ${response.statusCode}$hint';
     }
@@ -1007,15 +1026,15 @@ Future<List<String>> verifyPublishedRelease({
   }
 }
 
-Map<String, String> _gitHubApiHeaders(Map<String, String> environment) {
-  final token = <String?>[environment['GITHUB_TOKEN'], environment['GH_TOKEN']]
-      .map((value) => value?.trim() ?? '')
-      .firstWhere((value) => value.isNotEmpty, orElse: () => '');
-  return <String, String>{
-    HttpHeaders.acceptHeader: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    if (token.isNotEmpty) HttpHeaders.authorizationHeader: 'Bearer $token',
-  };
+/// RFC 6750 `b64token`, which every GitHub token format satisfies.
+final RegExp _bearerToken = RegExp(r'^[A-Za-z0-9\-._~+/]+=*$');
+
+(String, String?) _gitHubToken(Map<String, String> environment) {
+  for (final name in const <String>['GH_TOKEN', 'GITHUB_TOKEN']) {
+    final value = environment[name]?.trim() ?? '';
+    if (value.isNotEmpty) return (name, value);
+  }
+  return ('', null);
 }
 
 /// Machine-readable ways of writing a pin, whatever value it holds.
@@ -1159,6 +1178,7 @@ Future<List<String>> findBridgeProblems(
   bool verifyPublishedManifest = false,
   ManifestFetcher? manifestFetcher,
   GitHubApiFetcher? releaseFetcher,
+  Map<String, String>? environment,
 }) async => <String>[
   ...findBridgeTagDrift(repoRoot, expectedTag),
   ...findUnregisteredTagSites(repoRoot, expectedTag),
@@ -1170,6 +1190,7 @@ Future<List<String>> findBridgeProblems(
       expectedReleaseId: bridgeAssetsReleaseId,
       expectedTagCommit: bridgeAssetsTagCommit,
       fetcher: releaseFetcher,
+      environment: environment,
     ),
   if (verifyPublishedManifest)
     ...await verifyManifest(

@@ -1321,7 +1321,10 @@ void main() {
       final limited = _FakeGitHub.pinned()
         ..respond('git/ref/tags/$tag', null, status: HttpStatus.forbidden);
       expect(await _verifyRelease(limited), <Matcher>[
-        allOf(contains('returned HTTP 403'), contains('GITHUB_TOKEN')),
+        allOf(
+          contains('returned HTTP 403'),
+          contains('set GH_TOKEN or GITHUB_TOKEN'),
+        ),
       ]);
 
       final invalid = _FakeGitHub.pinned();
@@ -1429,23 +1432,90 @@ void main() {
               environment: environment,
             );
 
-        final errors = await run(<String, String>{'GITHUB_TOKEN': token});
+        final errors = await run(<String, String>{'GH_TOKEN': token});
         expect(errors, <Matcher>[endsWith('returned HTTP 302')]);
         expect(errors.join('\n'), isNot(contains(token)));
         expect(seen.keys, isNot(contains('/redirected')));
         expect(seen, hasLength(2));
         expect(seen.values.toSet(), <String?>{'Bearer $token'});
 
+        // gh's precedence: GH_TOKEN wins, and a blank one is unset.
         seen.clear();
-        await run(<String, String>{'GITHUB_TOKEN': ' ', 'GH_TOKEN': token});
+        await run(<String, String>{
+          'GH_TOKEN': token,
+          'GITHUB_TOKEN': 'other-token',
+        });
+        expect(seen.values.toSet(), <String?>{'Bearer $token'});
+
+        seen.clear();
+        await run(<String, String>{'GH_TOKEN': ' ', 'GITHUB_TOKEN': token});
         expect(seen.values.toSet(), <String?>{'Bearer $token'});
 
         seen.clear();
         await run(const <String, String>{});
         expect(seen, hasLength(2));
         expect(seen.values.toSet(), <String?>{null});
+
+        // An invalid GH_TOKEN fails closed rather than falling back.
+        seen.clear();
+        expect(
+          await run(<String, String>{
+            'GH_TOKEN': 'bad\ntoken',
+            'GITHUB_TOKEN': token,
+          }),
+          <Matcher>[startsWith('GH_TOKEN is not a valid bearer token')],
+        );
+        expect(seen, isEmpty);
       },
     );
+
+    test('an invalid token fails closed without being printed', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        await request.response.close();
+      });
+      final repoRoot = Directory.current;
+      final manifest = utf8.encode(_approvedManifestJson);
+
+      for (final secret in const <String>[
+        'bogus-audit\nsecretpart',
+        'bogus-audit\r\nX-Injected: secretpart',
+        'bogus-audit\u0000secretpart',
+        'bogus-audit secretpart',
+        'bogus-auditésecretpart',
+      ]) {
+        for (final name in const <String>['GH_TOKEN', 'GITHUB_TOKEN']) {
+          final environment = <String, String>{name: secret};
+          final direct = await verifyPublishedRelease(
+            expectedTag: readPinnedBridgeTag(repoRoot),
+            expectedReleaseId: bridgeAssetsReleaseId,
+            expectedTagCommit: bridgeAssetsTagCommit,
+            apiBase: Uri.parse('http://127.0.0.1:${server.port}'),
+            environment: environment,
+          );
+          final aggregate = await findBridgeProblems(
+            repoRoot,
+            readPinnedBridgeTag(repoRoot),
+            verifyPublishedManifest: true,
+            manifestFetcher: (_) async =>
+                ManifestResponse(HttpStatus.ok, manifest),
+            environment: environment,
+          );
+
+          for (final problems in <List<String>>[direct, aggregate]) {
+            expect(problems, <String>[
+              '$name is not a valid bearer token, so no GitHub API request '
+                  'was sent; its value is not shown',
+            ], reason: '${jsonEncode(secret)} in $name');
+            expect(problems.join('\n'), isNot(contains('secretpart')));
+          }
+        }
+      }
+      expect(requests, 0);
+    });
   });
 }
 

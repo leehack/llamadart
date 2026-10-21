@@ -381,8 +381,9 @@ dart run tool/testing/check_webgpu_bridge_tag.dart --verify-manifest
 It fails unless GitHub reports the pinned release id for the tag, the release
 is immutable and not a draft, the tag (peeled through any annotated tags)
 points at the pinned commit, and the CDN manifest bytes and provenance match.
-Unauthenticated GitHub API calls are rate limited; set `GITHUB_TOKEN` or
-`GH_TOKEN` to authenticate. The token is sent only as a request header.
+Unauthenticated GitHub API calls are rate limited; set `GH_TOKEN` or
+`GITHUB_TOKEN` to authenticate (`GH_TOKEN` wins when both are set, as in `gh`).
+The token is sent only as a request header and never printed.
 
 ## Validation after sync
 
