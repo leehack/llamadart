@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 
@@ -402,8 +403,8 @@ Map<String, dynamic> _inspectLiteRtGpu(
 
   // One window per engine load, opened by its adapter selection. The main
   // model's signature record is the last one before that selection and
-  // declares more signatures than any other; the embedding models' records
-  // follow the main model's delegate kernels.
+  // declares more signatures than any other record in the log; the embedding
+  // models' records follow the main model's delegate kernels.
   final adapters = <RegExpMatch>[];
   final signatures = <int?>[];
   final environments = <int>[];
@@ -411,7 +412,7 @@ Map<String, dynamic> _inspectLiteRtGpu(
   var adapterMentions = 0;
   var beforeFirstLoad = 0;
   var unusable = 0;
-  var mostSignatures = 0;
+  var mostOtherSignatures = 0;
   int? pendingSignatures;
   for (final line in const LineSplitter().convert(log)) {
     final tag = _logcatTag.firstMatch(line)?[1];
@@ -438,8 +439,11 @@ Map<String, dynamic> _inspectLiteRtGpu(
       }
     }
     if (count != null) {
+      mostOtherSignatures = math.max(
+        mostOtherSignatures,
+        pendingSignatures ?? 0,
+      );
       pendingSignatures = count;
-      if (count > mostSignatures) mostSignatures = count;
     }
     if (adapters.isEmpty) {
       beforeFirstLoad += initialized + ready;
@@ -448,6 +452,7 @@ Map<String, dynamic> _inspectLiteRtGpu(
       environments.last += ready;
     }
   }
+  mostOtherSignatures = math.max(mostOtherSignatures, pendingSignatures ?? 0);
   final identities = {for (final match in adapters) match[1]!};
   final details = <String, dynamic>{
     'expected_loads': expectedLoads,
@@ -497,7 +502,7 @@ Map<String, dynamic> _inspectLiteRtGpu(
   if (beforeFirstLoad != 0 ||
       perLoad == null ||
       perLoad < 1 ||
-      perLoad != mostSignatures ||
+      perLoad <= mostOtherSignatures ||
       signatures.any((count) => count != perLoad) ||
       environments.any((count) => count != 1) ||
       kernels.any((count) => count != perLoad)) {
