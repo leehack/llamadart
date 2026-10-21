@@ -1,3 +1,7 @@
+## Unreleased
+
+- Include the native LiteRT-LM error message and status code in errors from failed engine creation, conversation creation and message sends, on runtimes that report them (`v0.18.0` and later).
+
 ## 0.15.5
 
 - Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.

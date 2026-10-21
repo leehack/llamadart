@@ -80,6 +80,7 @@ void main() {
               contains('ComputeDevice.gpu'),
               contains('could not create a gpu engine'),
               contains('engine creation failed for backend "gpu"'),
+              contains(_nativeError),
               contains('ComputeDevice.cpu'),
             ),
           ),
@@ -111,6 +112,7 @@ void main() {
           'message',
           allOf(
             contains('engine creation failed for backend "gpu"'),
+            contains(_nativeError),
             contains('try backend "cpu"'),
           ),
         ),
@@ -141,6 +143,8 @@ void main() {
   });
 }
 
+const _nativeError = 'LiteRT-LM reported INTERNAL (13): no GPU device.';
+
 class _NoEngineClient extends LiteRtLmRuntimeClient {
   String? backend;
   int conversations = 0;
@@ -165,7 +169,12 @@ class _NoEngineClient extends LiteRtLmRuntimeClient {
     int? numberOfThreads,
   }) async {
     this.backend = backend;
-    liteRtLmCheckEngineCreated(0, backend: backend, modelPath: modelPath);
+    liteRtLmCheckEngineCreated(
+      0,
+      backend: backend,
+      modelPath: modelPath,
+      nativeError: _nativeError,
+    );
   }
 
   @override
