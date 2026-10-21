@@ -7,6 +7,8 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
 ## 0.15.6
 
 - Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.7.0-2`: a fixed `TextToSpeechRequest.seed` gives the same Qwen3-TTS audio on every synthesis of a loaded engine, including after a cancelled one ([#632](https://github.com/leehack/llamadart/issues/632)), and Windows arm64 bundles no longer ship `libomp140.aarch64.dll`, a Visual Studio debug DLL that apps may not redistribute. Apple apps get it with `llamadart_llama_cpp_flutter` `0.15.2`; companions `0.15.0` and `0.15.1` keep building with an upgrade warning.
