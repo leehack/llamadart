@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
+import 'dart:math';
 
 import '../../backends/backend.dart';
 import 'chat_session.dart';
@@ -462,7 +464,7 @@ class _ToolLoopTurn {
     required bool continuesTurn,
   }) {
     if (continuesTurn) {
-      final history = _session.history;
+      final history = _storedHistory;
       messages.addAll(history.skip(_openTurnStart(history)));
     }
   }
@@ -485,24 +487,40 @@ class _ToolLoopTurn {
 
   /// Adds [message] with [ChatSession.addMessage] and reports it.
   ///
-  /// Every instance the call appended to the stored history is also
-  /// removed on a rollback, since an override may store a copy or append
-  /// more messages.
+  /// The instances the call put into the stored history are also removed on
+  /// a rollback, since an override may store a copy, store [message] twice
+  /// or append more messages. Instances it only moved stay, and at most as
+  /// many are taken as the history grew, so an override that stores copies
+  /// of earlier messages does not lose earlier turns.
   void add(LlamaChatMessage message) {
-    List<LlamaChatMessage> stored() =>
-        mutableChatSessionHistory(_session) ?? _session.history;
-    final countBefore = stored().length;
+    final before = HashMap<LlamaChatMessage, int>.identity();
+    final countBefore = _storedHistory.length;
+    for (final stored in _storedHistory) {
+      before.update(stored, (count) => count + 1, ifAbsent: () => 1);
+    }
     _session.addMessage(message);
-    final after = stored();
-    if (after.length > countBefore) {
-      _appended.addAll(
-        after
-            .sublist(countBefore)
-            .where((stored) => !identical(stored, message)),
-      );
+    final after = _storedHistory;
+    final added = <LlamaChatMessage>[];
+    for (final stored in after) {
+      final count = before[stored] ?? 0;
+      if (count > 0) {
+        before[stored] = count - 1;
+      } else {
+        added.add(stored);
+      }
+    }
+    final grown = after.length - countBefore;
+    if (grown > 0) {
+      final appended = added.sublist(max(0, added.length - grown));
+      final own = appended.indexWhere((stored) => identical(stored, message));
+      if (own >= 0) appended.removeAt(own);
+      _appended.addAll(appended);
     }
     report(message);
   }
+
+  List<LlamaChatMessage> get _storedHistory =>
+      mutableChatSessionHistory(_session) ?? _session.history;
 
   void report(LlamaChatMessage message) {
     messages.add(message);

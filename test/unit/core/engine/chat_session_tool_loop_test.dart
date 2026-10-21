@@ -100,6 +100,51 @@ class _WindowSession extends ChatSession {
   }
 }
 
+/// A [ChatSession] subclass that keeps an app-owned note last by moving it
+/// behind each added message.
+class _PinningSession extends ChatSession {
+  _PinningSession(super.engine) : super(maxContextTokens: 0);
+
+  final LlamaChatMessage pinned = _text(LlamaChatRole.system, 'Pinned');
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    final kept = [
+      for (final stored in history)
+        if (!identical(stored, pinned)) stored,
+    ];
+    reset();
+    kept.forEach(super.addMessage);
+    super.addMessage(message);
+    if (!identical(message, pinned)) super.addMessage(pinned);
+  }
+}
+
+/// A [ChatSession] subclass that stores copies of every message, earlier
+/// ones included, on each add.
+class _RewritingSession extends ChatSession {
+  _RewritingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    final copies = history.map(_copyOf).toList();
+    reset();
+    copies.forEach(super.addMessage);
+    super.addMessage(_copyOf(message));
+  }
+}
+
+/// A [ChatSession] subclass that stores each tool result twice.
+class _DoublingSession extends ChatSession {
+  _DoublingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    super.addMessage(message);
+    if (message.role == LlamaChatRole.tool) super.addMessage(message);
+  }
+}
+
 /// A `ChatSession` that only forwards its public members, and whose [reset]
 /// drops the system prompt unless told otherwise.
 class _DelegatingSession implements ChatSession {
@@ -1316,6 +1361,83 @@ void main() {
       expect(result.rolledBack, isTrue);
       expect(noting.history, isEmpty);
       expect(noting.notes, hasLength(1));
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    test('whose addMessage moves an earlier message keeps it', () async {
+      final pinning = _PinningSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(pinning.addMessage);
+
+      final result = await stopAtMaxRounds(pinning);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in pinning.history) message.content],
+        ['Hi', 'Hello', 'Pinned'],
+      );
+      expect(pinning.history.last, same(pinning.pinned));
+    });
+
+    test('whose addMessage copies earlier messages keeps them', () async {
+      final rewriting = _RewritingSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(rewriting.addMessage);
+
+      final result = await stopAtMaxRounds(rewriting);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in rewriting.history.take(2)) message.content],
+        ['Hi', 'Hello'],
+      );
+      expect(_toolResults(rewriting), isEmpty);
+    });
+
+    test('whose addMessage stores a result twice removes both', () async {
+      final doubling = _DoublingSession(engine);
+
+      final result = await stopAtMaxRounds(doubling);
+
+      expect(result.rolledBack, isTrue);
+      expect(doubling.history, isEmpty);
+    });
+
+    test('whose history returns copies rolls back a continued turn', () async {
+      final viewing = _CopyingViewSession(engine);
+      final call = LlamaToolCallContent(
+        id: '1',
+        name: 'approve',
+        arguments: const {},
+        rawJson: '{}',
+      );
+      [
+        _text(LlamaChatRole.user, 'Delete it'),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [call],
+        ),
+        _result(call, 'approved'),
+      ].forEach(viewing.addMessage);
+      engine.replies.add(scriptedCalls([('2', 'weather', '{}')]));
+
+      final result = await viewing.completeWithTools(
+        const [],
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 0,
+      );
+
+      expect(result.rolledBack, isTrue);
+      expect(viewing.history, isEmpty);
       expect(_roles(result.messages), [
         LlamaChatRole.user,
         LlamaChatRole.assistant,
