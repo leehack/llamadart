@@ -91,7 +91,9 @@ description: >-
 - Always cap the number of tool rounds (`maxRounds`, default 5); a model can
   call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call
-  and `ToolChoice.none` disables tools for one request.
+  and `ToolChoice.none` disables tools for one request. With Hermes templates
+  that open reasoning in the prompt (such as QwQ), a required call follows the
+  model's closed `</think>` reasoning, which streams as `chunk.thinking`.
 - Tool quality depends on the model and its template. Templates without a
   native tool format use a generic JSON fallback that constrains the output
   shape but does not guarantee the right tool or arguments. If calls look

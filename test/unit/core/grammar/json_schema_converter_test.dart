@@ -113,6 +113,33 @@ void main() {
       });
     }
 
+    for (final label in ['21 distinct 20-character names', '1023 properties']) {
+      test('three open objects with $label each keep a key rule', () {
+        final names = largeKeySets[label]!;
+        final grammar = JsonSchemaConverter.convert({
+          'type': 'object',
+          'properties': {
+            for (var i = 0; i < 3; i++)
+              'o$i': {
+                'type': 'object',
+                'properties': {
+                  for (final name in names) name: {'type': 'integer'},
+                },
+                'additionalProperties': true,
+              },
+          },
+        });
+        for (var i = 0; i < 3; i++) {
+          expect(
+            grammar,
+            contains('root-o$i-additional-kv ::= root-o$i-additional-k '),
+            reason: 'o$i',
+          );
+        }
+        expect(llamaCppRepetitionRejection(grammar), isNull);
+      });
+    }
+
     test('objects with 1023 closed optional properties load', () {
       final grammar = JsonSchemaConverter.convert({
         'type': 'object',
@@ -761,6 +788,50 @@ void main() {
         }
         expect(key.hasMatch(r'"\"'), isFalse, reason: 'unterminated');
         expect(key.hasMatch('"a\u0001"'), isFalse, reason: 'control');
+      });
+
+      test('exclude escaped spellings of declared keys', () {
+        final key = _ruleRegExp(
+          JsonSchemaConverter.convert({
+            ...schema,
+            'properties': {
+              ...schema['properties'] as Map<String, dynamic>,
+              '😀': {'type': 'null'},
+            },
+          }),
+          'root-additional-k',
+        );
+        for (final spelling in [
+          r'"\u0063ity"',
+          r'"ci\u0074y"',
+          r'"cit\u0079"',
+          r'"c\u0069"',
+          r'"\u0063\u0069"',
+          r'"co\u0075nt"',
+          r'"\u006dode"',
+          r'"\u006Dode"',
+          r'"\u00e9"',
+          r'"\u00E9"',
+          r'"\ud83d\ude00"',
+          r'"\uD83D\uDE00"',
+        ]) {
+          expect(key.hasMatch(spelling), isFalse, reason: spelling);
+        }
+        for (final spelling in [
+          r'"\u0043ity"',
+          r'"count\u0065r"',
+          r'"cityx\u0063"',
+          r'"\u0062"',
+          r'"x\u0063"',
+          r'"\u0000"',
+          r'"\n"',
+          r'"\u00e8"',
+          r'"\u00E8"',
+          r'"\u006E"',
+          '"😁"',
+        ]) {
+          expect(key.hasMatch(spelling), isTrue, reason: spelling);
+        }
       });
 
       test('exclude non-BMP keys as single characters', () {

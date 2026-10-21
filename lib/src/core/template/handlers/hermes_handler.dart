@@ -5,10 +5,12 @@ import 'package:dinja/dinja.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/chat/completion_chunk.dart';
+import '../../models/inference/tool_choice.dart';
 import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
@@ -191,10 +193,17 @@ class HermesHandler extends ChatTemplateHandler
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
+    final grammar = buildGrammar(tools);
+    final requiredAfterReasoning =
+        grammar != null &&
+        thinkingForcedOpen &&
+        metadata[internalToolChoiceMetadataKey] == ToolChoice.required.name;
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: buildGrammar(tools),
+      grammar: requiredAfterReasoning
+          ? _afterForcedOpenReasoning(grammar)
+          : grammar,
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
@@ -656,6 +665,34 @@ class HermesHandler extends ChatTemplateHandler
         return 'value';
     }
   }
+
+  /// Lets a required-call grammar start inside forced-open reasoning.
+  ///
+  /// The grammar applies from the first token, which is reasoning text when
+  /// the prompt ends with `<think>`. As in llama.cpp's reasoning parser, any
+  /// text without `</think>` may precede the calls; the close tag is required
+  /// because forced-open parsing treats unclosed output as reasoning.
+  static String _afterForcedOpenReasoning(String grammar) => [
+    for (final line in const LineSplitter().convert(grammar.trimRight()))
+      line.startsWith('root ::= ')
+          ? 'root ::= think-body "</think>" think-space '
+                '(${line.substring('root ::= '.length)})'
+          : line,
+    _reasoningBodyRules,
+  ].join('\n');
+
+  /// Matches text without `</think>`, as llama.cpp's `gbnf_excluding_grammar`
+  /// emits it for that delimiter.
+  static const _reasoningBodyRules = r'''
+think-body ::= | [<] think-body-1 | [^<] think-body
+think-body-1 ::= | [/] think-body-2 | [<] think-body-1 | [^/<] think-body
+think-body-2 ::= | [t] think-body-3 | [<] think-body-1 | [^t<] think-body
+think-body-3 ::= | [h] think-body-4 | [<] think-body-1 | [^h<] think-body
+think-body-4 ::= | [i] think-body-5 | [<] think-body-1 | [^i<] think-body
+think-body-5 ::= | [n] think-body-6 | [<] think-body-1 | [^n<] think-body
+think-body-6 ::= | [k] think-body-7 | [<] think-body-1 | [^k<] think-body
+think-body-7 ::= | [<] think-body-1 | [^><] think-body
+think-space ::= | " " | "\n"{1,2} [ \t]{0,20}''';
 
   String _commonGbnfRules() {
     return r'''
