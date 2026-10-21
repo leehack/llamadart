@@ -167,6 +167,39 @@ void main() {
     });
   });
 
+  test('scans string and escape state backward in a bare action array', () {
+    final handler = CommandR7BHandler();
+
+    final escapedQuote = handler.parse(
+      r'[{"tool_name":"a","parameters":{"x":"[[[\""}}]',
+    );
+    expect(escapedQuote.toolCalls, hasLength(1));
+    expect(escapedQuote.toolCalls.single.function?.name, equals('a'));
+    expect(jsonDecode(escapedQuote.toolCalls.single.function!.arguments!), {
+      'x': '[[["',
+    });
+
+    final bracketString = handler.parse(
+      '[{"tool_name":"a","parameters":{"x":"["}}]',
+    );
+    expect(bracketString.toolCalls, hasLength(1));
+    expect(bracketString.toolCalls.single.function?.name, equals('a'));
+    expect(jsonDecode(bracketString.toolCalls.single.function!.arguments!), {
+      'x': '[',
+    });
+
+    final leadingQuote = handler.parse(
+      'p " [{"tool_name":"a","parameters":{}}]',
+    );
+    expect(leadingQuote.content, equals('p "'));
+    expect(leadingQuote.toolCalls, hasLength(1));
+    expect(leadingQuote.toolCalls.single.function?.name, equals('a'));
+    expect(
+      jsonDecode(leadingQuote.toolCalls.single.function!.arguments!),
+      isEmpty,
+    );
+  });
+
   test('keeps trailing bracketed text that is not an action array', () {
     final handler = CommandR7BHandler();
     for (final input in const [
