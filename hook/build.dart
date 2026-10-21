@@ -252,11 +252,19 @@ void main(List<String> args) async {
                   runtime: nativeRuntimeLiteRtLm,
                 );
       if (explicitLiteRtLmSelection) {
+        final iOSSimulatorX64 =
+            code.targetOS == OS.iOS &&
+            code.targetArchitecture == Architecture.x64;
         throw Exception(
           macOsX64
               ? '$_liteRtLmMacOsX64Unavailable Remove litert_lm from the '
                     'macos-x86_64 entry of $nativeRuntimesUserDefineKey, or '
                     'build the app for arm64 only.'
+              : iOSSimulatorX64
+              ? 'LiteRT-LM runtime is not available for ${spec.bundle}. '
+                    'Exclude the x86_64 simulator from the app: add '
+                    '`EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386 x86_64` to '
+                    'ios/Flutter/Debug.xcconfig and Release.xcconfig.'
               : 'LiteRT-LM runtime is not available for ${spec.bundle}.',
         );
       }
