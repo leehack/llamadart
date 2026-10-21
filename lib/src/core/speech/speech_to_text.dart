@@ -6,6 +6,7 @@ import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../engine/engine.dart';
 import '../engine/engine_capabilities.dart';
 import '../exceptions.dart';
+import '../image/image_model_classifier.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
@@ -19,6 +20,8 @@ import '../models/model_target_file.dart';
 import 'litert_lm_speech_to_text_driver.dart';
 import 'litert_lm_speech_to_text_driver_stub.dart'
     if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
+import 'projector_file_reader_stub.dart'
+    if (dart.library.io) '../../platform/io/projector_file_reader_io.dart';
 import 'speech_engine_lease.dart';
 import 'speech_to_text_model.dart';
 import 'speech_platform_stub.dart'
@@ -576,6 +579,8 @@ class SpeechToTextEngine {
   SpeechToTextStreamingSession? _activeStream;
   SpeechToTextTask? _activeTask;
   Future<void>? _disposal;
+  LoadedMultimodalProjector? _checkedProjector;
+  Future<String?>? _checkedProjectorType;
 
   /// What drives the model: a [SpeechToTextPromptAdapter] or a
   /// [LiteRtLmAsrAdapter].
@@ -904,6 +909,14 @@ class SpeechToTextEngine {
 
   /// Discovers speech recognition support for the configured runtime and
   /// model; unsupported once disposed.
+  ///
+  /// With a [Qwen3AsrAdapter], it also reads the loaded projector's GGUF
+  /// header and reports a projector whose audio projector type is not
+  /// Qwen3-ASR's `qwen3a`, such as Qwen3-TTS's `qwen3tts_spkenc`, as
+  /// unsupported. When the type cannot be read (on the web, or for a file
+  /// that is unreadable or names no type) the model stays supported, and an
+  /// empty transcript's [LlamaSpeechException.details] names a possible
+  /// model mismatch.
   Future<SpeechToTextCapabilities> get capabilities async {
     if (_disposal != null) {
       return const SpeechToTextCapabilities(
@@ -1003,6 +1016,19 @@ class SpeechToTextEngine {
     }
 
     final promptAdapter = _promptAdapter;
+    if (promptAdapter is Qwen3AsrAdapter) {
+      final projectorType = await _loadedAudioProjectorType(engine);
+      if (projectorType != null && projectorType != _qwen3AsrProjectorType) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              "The loaded audio projector's type is '$projectorType', not "
+              "${promptAdapter.name}'s '$_qwen3AsrProjectorType'. Load a "
+              '${promptAdapter.name} model with its own projector.',
+          backendName: backendName,
+        );
+      }
+    }
     return SpeechToTextCapabilities(
       isSupported: true,
       backendName: backendName,
@@ -1181,6 +1207,49 @@ class SpeechToTextEngine {
   static const String _engineDisposedMessage =
       'The attached LlamaEngine is disposed. Create a new LlamaEngine and '
       'attach a new SpeechToTextEngine.';
+
+  static const String _qwen3AsrProjectorType = 'qwen3a';
+
+  // The synchronous parse runs on the caller's isolate, so it is capped far
+  // below the generic header limit; real projector metadata takes a few KiB.
+  static const int _projectorMetadataByteCap = 1 << 20;
+
+  /// The type llama.cpp gives the audio projector loaded on [engine], read
+  /// once per loaded projector. Null when none is loaded, its file cannot be
+  /// read here, or it names no type.
+  Future<String?> _loadedAudioProjectorType(LlamaEngine engine) {
+    final projector = loadedMultimodalProjector(engine);
+    if (projector == null) {
+      return Future<String?>.value();
+    }
+    if (!identical(projector, _checkedProjector)) {
+      _checkedProjector = projector;
+      _checkedProjectorType = _readAudioProjectorType(projector.location);
+    }
+    return _checkedProjectorType!;
+  }
+
+  /// The projector type in the GGUF header at [location], with llama.cpp's
+  /// precedence: `clip.projector_type`, else `clip.audio.projector_type`.
+  static Future<String?> _readAudioProjectorType(String location) async {
+    try {
+      final metadata = await readGgufMetadata(
+        // Synchronous reads keep the check to microtasks: an asynchronous
+        // read would put real event-loop turns between the capability check
+        // and the task it gates.
+        (offset, length) async =>
+            readProjectorFileRange(location, offset, length),
+        maxBytes: _projectorMetadataByteCap,
+        stopAt: 'clip.projector_type',
+      );
+      final type =
+          metadata['clip.projector_type'] ??
+          metadata['clip.audio.projector_type'];
+      return type is String ? type : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<SpeechToTextTask> _transcribeLiteRtLm(
     SpeechToTextRequest request,
@@ -1468,6 +1537,7 @@ class SpeechToTextEngine {
       if (normalized.text.isEmpty) {
         throw LlamaSpeechException(
           'Speech recognition produced an empty transcript.',
+          await _unverifiedModelHint(),
         );
       }
       final result = SpeechToTextResult(
@@ -1493,6 +1563,18 @@ class SpeechToTextEngine {
         _activeTask = null;
       }
     }
+  }
+
+  /// Null once the loaded projector is known to be the adapter's; otherwise
+  /// why an empty transcript may not mean silence.
+  Future<String?> _unverifiedModelHint() async {
+    final adapter = _promptAdapter;
+    if (adapter is Qwen3AsrAdapter &&
+        await _loadedAudioProjectorType(_engine!) == _qwen3AsrProjectorType) {
+      return null;
+    }
+    return 'The audio may be silent, or the loaded model may not be a '
+        '${adapter.name} model: its projector type could not be checked.';
   }
 
   void _completeCancelled(SpeechToTextTask task) {

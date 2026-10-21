@@ -350,6 +350,97 @@ void main() {
     });
   });
 
+  group('readGgufMetadata', () {
+    test('reads the key/value block without the tensor infos', () async {
+      final header = ggufHeader(
+        metadata: {'clip.audio.projector_type': 'qwen3a'},
+        tensors: [
+          ('a.weight', [4, 4]),
+        ],
+      );
+      final metadataOnly = Uint8List.sublistView(
+        header,
+        0,
+        header.length -
+            ggufHeader(
+              tensors: [
+                ('a.weight', [4, 4]),
+              ],
+            ).length +
+            24,
+      );
+      await expectLater(
+        readImageModelFileHeader(_reader(metadataOnly)),
+        throwsFormatException,
+      );
+
+      expect(await readGgufMetadata(_reader(metadataOnly), maxBytes: 1 << 20), {
+        'clip.audio.projector_type': 'qwen3a',
+      });
+    });
+
+    test('stops after the requested key', () async {
+      final header = ggufHeader(
+        metadata: {'clip.projector_type': 'qwen3a', 'later': 'value'},
+      );
+      final throughStopKey = Uint8List.sublistView(
+        header,
+        0,
+        header.length - ggufHeader(metadata: {'later': 'value'}).length + 24,
+      );
+
+      expect(
+        await readGgufMetadata(
+          _reader(throughStopKey),
+          maxBytes: 1 << 20,
+          stopAt: 'clip.projector_type',
+        ),
+        {'clip.projector_type': 'qwen3a'},
+      );
+    });
+
+    test('rejects metadata past maxBytes', () async {
+      final bytes = ggufHeader(
+        metadata: {
+          'padding': const GgufArray(0, 2 << 20, itemBytes: 2 << 20),
+          'clip.audio.projector_type': 'qwen3tts_spkenc',
+        },
+      );
+
+      expect(
+        (await readGgufMetadata(
+          _reader(bytes),
+          maxBytes: 64 << 20,
+        ))['clip.audio.projector_type'],
+        'qwen3tts_spkenc',
+      );
+      await expectLater(
+        readGgufMetadata(_reader(bytes), maxBytes: 1 << 20),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'Model file header is too large.',
+          ),
+        ),
+      );
+    });
+
+    test('rejects a file that is not GGUF', () async {
+      await expectLater(
+        readGgufMetadata(
+          _reader(
+            safetensorsHeader([
+              ('a', <int>[1]),
+            ]),
+          ),
+          maxBytes: 1 << 20,
+        ),
+        throwsFormatException,
+      );
+    });
+  });
+
   group('assignImageModelRoles', () {
     test('assigns roles whatever the order of the files', () async {
       final assignment = await _assign([

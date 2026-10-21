@@ -1435,6 +1435,273 @@ void main() {
       await llamaEngine.dispose();
     });
   });
+
+  group('Qwen3-ASR projector type', () {
+    late _SpeechBackend backend;
+    late LlamaEngine llamaEngine;
+    late SpeechToTextEngine recognizer;
+    late Directory directory;
+
+    setUp(() async {
+      backend = _SpeechBackend();
+      llamaEngine = LlamaEngine(backend);
+      recognizer = SpeechToTextEngine.attach(
+        llamaEngine,
+        adapter: const Qwen3AsrAdapter(),
+      );
+      directory = await Directory.systemTemp.createTemp('llamadart_stt_proj_');
+    });
+
+    tearDown(() async {
+      await llamaEngine.dispose();
+      await directory.delete(recursive: true);
+    });
+
+    Future<void> loadWithProjector(Map<String, Object> metadata) async {
+      final path = p.join(directory.path, 'mmproj.gguf');
+      await File(path).writeAsBytes(_ggufHeader(metadata));
+      await llamaEngine.loadModel('model.gguf');
+      await llamaEngine.loadMultimodalProjector(path);
+    }
+
+    Future<LlamaSpeechException> emptyTranscriptError() async {
+      backend.generationText = ' <asr_text> ';
+      final task = await recognizer.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      return (await task.done).error! as LlamaSpeechException;
+    }
+
+    test('a qwen3a audio projector is supported', () async {
+      await loadWithProjector({
+        'general.architecture': 'clip',
+        'clip.has_audio_encoder': true,
+        'clip.audio.projector_type': 'qwen3a',
+      });
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+      final error = await emptyTranscriptError();
+      expect(error.message, 'Speech recognition produced an empty transcript.');
+      expect(error.details, isNull);
+    });
+
+    test('a Qwen3-TTS speaker-encoder projector is unsupported', () async {
+      await loadWithProjector({
+        'general.architecture': 'clip',
+        'clip.has_audio_encoder': true,
+        'clip.audio.projector_type': 'qwen3tts_spkenc',
+        'clip.has_gen_audio_encoder': true,
+      });
+
+      final capabilities = await recognizer.capabilities;
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        "The loaded audio projector's type is 'qwen3tts_spkenc', not "
+        "Qwen3-ASR's 'qwen3a'. Load a Qwen3-ASR model with its own projector.",
+      );
+      await expectLater(
+        recognizer.transcribe(
+          const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            capabilities.unsupportedReason,
+          ),
+        ),
+      );
+    });
+
+    test('clip.projector_type takes precedence, as in llama.cpp', () async {
+      await loadWithProjector({
+        'general.architecture': 'clip',
+        'clip.projector_type': 'qwen3tts_spkenc',
+        'clip.audio.projector_type': 'qwen3a',
+      });
+
+      expect((await recognizer.capabilities).isSupported, isFalse);
+    });
+
+    test('clip.projector_type takes precedence when it comes last', () async {
+      await loadWithProjector({
+        'general.architecture': 'clip',
+        'clip.audio.projector_type': 'qwen3tts_spkenc',
+        'clip.projector_type': 'qwen3a',
+      });
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+    });
+
+    test('a projector without a projector type stays supported and the '
+        'empty-transcript error names a possible mismatch', () async {
+      await loadWithProjector({
+        'general.architecture': 'clip',
+        'clip.has_audio_encoder': true,
+      });
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+      final error = await emptyTranscriptError();
+      expect(error.message, 'Speech recognition produced an empty transcript.');
+      expect(
+        error.details,
+        'The audio may be silent, or the loaded model may not be a Qwen3-ASR '
+        'model: its projector type could not be checked.',
+      );
+    });
+
+    test('an unreadable projector file stays supported', () async {
+      await llamaEngine.loadModel('model.gguf');
+      await llamaEngine.loadMultimodalProjector(
+        p.join(directory.path, 'missing-mmproj.gguf'),
+      );
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+    });
+
+    test('checks the projector loaded now, not an earlier one', () async {
+      await loadWithProjector({'clip.audio.projector_type': 'qwen3a'});
+      expect((await recognizer.capabilities).isSupported, isTrue);
+
+      final ttsPath = p.join(directory.path, 'mmproj-tts.gguf');
+      await File(ttsPath).writeAsBytes(
+        _ggufHeader({'clip.audio.projector_type': 'qwen3tts_spkenc'}),
+      );
+      await llamaEngine.loadMultimodalProjector(ttsPath);
+      expect((await recognizer.capabilities).isSupported, isFalse);
+    });
+
+    test('reads the header without waiting on the event loop', () async {
+      await loadWithProjector({'clip.audio.projector_type': 'qwen3tts_spkenc'});
+
+      SpeechToTextCapabilities? capabilities;
+      unawaited(recognizer.capabilities.then((value) => capabilities = value));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(capabilities?.isSupported, isFalse);
+    });
+
+    test('a projector type past the 1 MiB metadata cap is unknown', () async {
+      await loadWithProjector({
+        'padding': Uint8List(1 << 20),
+        'clip.audio.projector_type': 'qwen3tts_spkenc',
+      });
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+      final error = await emptyTranscriptError();
+      expect(error.details, contains('could not be checked'));
+    });
+
+    test('reads the header once per loaded projector', () async {
+      final path = p.join(directory.path, 'mmproj.gguf');
+      await loadWithProjector({'clip.audio.projector_type': 'qwen3a'});
+      expect((await recognizer.capabilities).isSupported, isTrue);
+
+      await File(path).writeAsBytes(
+        _ggufHeader({'clip.audio.projector_type': 'qwen3tts_spkenc'}),
+      );
+      expect((await recognizer.capabilities).isSupported, isTrue);
+
+      await llamaEngine.loadMultimodalProjector(path);
+      expect((await recognizer.capabilities).isSupported, isFalse);
+    });
+
+    test(
+      'load refuses a Qwen3-TTS projector and disposes the engine',
+      () async {
+        final modelPath = p.join(directory.path, 'tts.gguf');
+        final projectorPath = p.join(directory.path, 'mmproj-tts.gguf');
+        await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+        await File(projectorPath).writeAsBytes(
+          _ggufHeader({'clip.audio.projector_type': 'qwen3tts_spkenc'}),
+        );
+
+        await expectLater(
+          SpeechToTextEngine.load(
+            SpeechToTextModel(
+              ModelSource.path(modelPath),
+              projector: ModelSource.path(projectorPath),
+              adapter: const Qwen3AsrAdapter(),
+            ),
+            backend: backend,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains("'qwen3tts_spkenc'"),
+            ),
+          ),
+        );
+        expect(backend.disposeCalls, 1);
+      },
+    );
+
+    test('other prompt adapters are not checked against qwen3a', () async {
+      final custom = SpeechToTextEngine.attach(
+        llamaEngine,
+        adapter: const _BracketLanguageAdapter(),
+      );
+      await loadWithProjector({'clip.audio.projector_type': 'qwen3tts_spkenc'});
+
+      expect((await custom.capabilities).isSupported, isTrue);
+      backend.generationText = '[en] ';
+      final task = await custom.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/a.wav'),
+          languageHint: 'en',
+        ),
+      );
+      final error = (await task.done).error! as LlamaSpeechException;
+      expect(
+        error.details,
+        'The audio may be silent, or the loaded model may not be a '
+        'Bracket-ASR model: its projector type could not be checked.',
+      );
+    });
+  });
+}
+
+/// A GGUF header with [metadata] (string, bool and `uint8` array values) and
+/// no tensors.
+Uint8List _ggufHeader(Map<String, Object> metadata) {
+  final bytes = BytesBuilder();
+  void u32(int value) => bytes.add(
+    (ByteData(4)..setUint32(0, value, Endian.little)).buffer.asUint8List(),
+  );
+  void u64(int value) => bytes.add(
+    (ByteData(8)..setUint64(0, value, Endian.little)).buffer.asUint8List(),
+  );
+  void string(String value) {
+    final encoded = utf8.encode(value);
+    u64(encoded.length);
+    bytes.add(encoded);
+  }
+
+  bytes.add(ascii.encode('GGUF'));
+  u32(3);
+  u64(0);
+  u64(metadata.length);
+  for (final MapEntry(:key, :value) in metadata.entries) {
+    string(key);
+    switch (value) {
+      case final String text:
+        u32(8);
+        string(text);
+      case final bool flag:
+        u32(7);
+        bytes.addByte(flag ? 1 : 0);
+      case final Uint8List items:
+        u32(9);
+        u32(0);
+        u64(items.length);
+        bytes.add(items);
+      default:
+        throw ArgumentError.value(value, key);
+    }
+  }
+  return bytes.takeBytes();
 }
 
 Future<void> _loadSpeechModel(LlamaEngine engine) async {

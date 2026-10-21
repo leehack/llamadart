@@ -158,11 +158,18 @@ void main() {
     expect(completion.result, isNull);
     expect(
       completion.error,
-      isA<LlamaSpeechException>().having(
-        (error) => error.message,
-        'message',
-        contains('empty transcript'),
-      ),
+      isA<LlamaSpeechException>()
+          .having(
+            (error) => error.message,
+            'message',
+            contains('empty transcript'),
+          )
+          .having(
+            (error) => error.details,
+            'details',
+            'The audio may be silent, or the loaded model may not be a '
+                'Qwen3-ASR model: its projector type could not be checked.',
+          ),
     );
     await expectLater(task.result, throwsA(same(completion.error)));
 
