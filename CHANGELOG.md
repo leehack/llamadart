@@ -7,6 +7,7 @@
 - Release a finished dedicated LiteRT-LM speech-to-text task when nobody listens to its events, as with `transcribeOnce`, instead of keeping it and its input audio until the next task.
 - Report a disposed `LlamaEngine` consistently: deprecated loaders disposed as they finish throw `LlamaStateException`, `dispose()` no longer waits for a projector download that ignores cancellation, and `loadDecisionHeadBackend` and attached speech engines throw `LlamaStateException` instead of `LlamaUnsupportedException`.
 - Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` moves or repeats messages, or whose `history` returns copies or hides messages when continuing a turn.
+- Fix tool-loop rollbacks on classes that implement `ChatSession` and whose `history` returns copies: the turn stayed in the history while `rolledBack` was `true` ([#1287](https://github.com/leehack/llamadart/issues/1287)).
 - Report `stop` instead of `length` when a llama.cpp speculative-decoding reply ends exactly at `maxTokens`, as without speculative decoding, so `completeWithTools` no longer rolls it back as truncated.
 - Report deeply nested tool-call output from PEG-parsed formats, such as Ministral, as `LlamaInferenceException` instead of a stack overflow.
 - Accept annotation-only `allOf` components, such as `{"description": "..."}`, in structured-output object merges, matching llama.cpp.
