@@ -658,7 +658,8 @@ class LlamaCppService {
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the calls that allocate and free
   /// token batches and prepared embedding resources, the read of the Vulkan
-  /// device facts, and the registered ggml devices a load selects from.
+  /// device facts, the registered ggml devices a load selects from, and the
+  /// allocator of the model path [loadModel] passes to llama.cpp.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -676,6 +677,7 @@ class LlamaCppService {
     void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
+    Allocator modelPathAllocator = malloc,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -690,7 +692,8 @@ class LlamaCppService {
        _embeddingBitmapFree = embeddingBitmapFree,
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
-       _registeredDevicesOverride = registeredDevices;
+       _registeredDevicesOverride = registeredDevices,
+       _modelPathAllocator = modelPathAllocator;
 
   final void Function() _backendInit;
   final Abi _abi;
@@ -710,6 +713,7 @@ class LlamaCppService {
       _objectCallsOverride ?? _resolveObjectCalls();
 
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
+  final Allocator _modelPathAllocator;
 
   // Reading the facts loads the system's GPU drivers into the process, so
   // they are read once, and only for a load that selects a registered
@@ -2035,7 +2039,6 @@ class LlamaCppService {
 
     _prepareBackendsForModelLoad(effectiveBackend);
 
-    final modelPathPtr = modelPath.toNativeUtf8();
     final mparams = llama_model_default_params();
     var preferredDevices = _createPreferredDeviceList(effectiveBackend);
     var gpuLayers = resolveGpuLayersForLoad(
@@ -2077,7 +2080,6 @@ class LlamaCppService {
         malloc.free(preferredDevices);
       }
       if (modelParams.device == ComputeDevice.gpu) {
-        malloc.free(modelPathPtr);
         throw LlamaUnsupportedException(
           'ComputeDevice.gpu is not available for llama.cpp on '
           '${Platform.operatingSystem}: ${vulkan.unsupported}. Use '
@@ -2106,8 +2108,14 @@ class LlamaCppService {
     if (preferredDevices != null) {
       mparams.devices = preferredDevices;
     }
+    // Without a device list llama.cpp offloads to every registered GPU,
+    // whichever backend was requested.
+    final reportedBackend = preferredDevices == null
+        ? GpuBackend.auto
+        : modelParams.preferredBackend;
 
     Pointer<llama_model> modelPtr = nullptr;
+    final modelPathPtr = modelPath.toNativeUtf8(allocator: _modelPathAllocator);
     try {
       modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
@@ -2116,7 +2124,7 @@ class LlamaCppService {
         modelPtr,
       );
     } finally {
-      malloc.free(modelPathPtr);
+      _modelPathAllocator.free(modelPathPtr);
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
@@ -2138,7 +2146,7 @@ class LlamaCppService {
     _loraAdapters[handle] = {};
     _modelToMtmdUseGpu[handle] = mtmdUseGpu;
     final resolvedBackend = _resolveBackendNameForLoad(
-      requestedBackend: modelParams.preferredBackend,
+      requestedBackend: reportedBackend,
       resolvedGpuLayers: gpuLayers,
       forcedCpuFallback: forcedCpuFallback,
     );

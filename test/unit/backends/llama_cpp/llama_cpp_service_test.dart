@@ -3232,6 +3232,8 @@ void main() {
 
       test('gpu throws when no device is a GPU or integrated GPU', () {
         final requested = <GpuBackend>[];
+        final pathAllocator = _RecordingAllocator();
+        addTearDown(pathAllocator.release);
         final service = LlamaCppService(
           deviceTypes: (backend) {
             requested.add(backend);
@@ -3240,6 +3242,7 @@ void main() {
               ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
             ];
           },
+          modelPathAllocator: pathAllocator,
         );
         addTearDown(service.dispose);
 
@@ -3261,6 +3264,7 @@ void main() {
         );
         expect(requested, [GpuBackend.auto]);
         expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+        expect(pathAllocator.live, isEmpty, reason: 'the model path leaked');
       });
 
       for (final type in [
@@ -3268,11 +3272,14 @@ void main() {
         ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU,
       ]) {
         test('gpu loads when a device is a ${type.name}', () {
+          final pathAllocator = _RecordingAllocator();
+          addTearDown(pathAllocator.release);
           final service = LlamaCppService(
             deviceTypes: (_) => [
               ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
               type.value,
             ],
+            modelPathAllocator: pathAllocator,
           );
           addTearDown(service.dispose);
 
@@ -3283,8 +3290,41 @@ void main() {
             ),
             isPositive,
           );
+          expect(pathAllocator.allocations, 1);
+          expect(pathAllocator.live, isEmpty);
         });
       }
+
+      test('an explicit backend with no device reports where llama.cpp '
+          'offloads instead', () {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        // As on the consolidated Apple runtime, which registers Metal and no
+        // Vulkan device and has no module directory to force a CPU fallback.
+        final service = _MetalReportingService(
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+          registeredDevices: () => const <GgmlDeviceEntry>[],
+        );
+        addTearDown(service.dispose);
+
+        service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.vulkan,
+            gpuLayers: 42,
+          ),
+        );
+        if (recorder.loadDevices.single != null) {
+          markTestSkipped('This process registered a Vulkan device.');
+          return;
+        }
+
+        expect(recorder.loadGpuLayers.single, 42);
+        expect(service.getActiveBackendName(), 'Metal');
+        expect(service.getResolvedGpuLayers(), 42);
+      });
 
       test('createContext applies the device of its own params', () {
         final service = LlamaCppService();
@@ -8118,6 +8158,32 @@ class _EmbeddingMetadataService extends LlamaCppService {
 }
 
 class _MetalReportingService extends LlamaCppService {
+  _MetalReportingService({super.objectCalls, super.registeredDevices});
+
   @override
   List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];
+}
+
+final class _RecordingAllocator implements Allocator {
+  final Set<Pointer<NativeType>> live = {};
+  int allocations = 0;
+
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
+    final pointer = malloc.allocate<T>(byteCount, alignment: alignment);
+    allocations++;
+    live.add(pointer);
+    return pointer;
+  }
+
+  @override
+  void free(Pointer<NativeType> pointer) {
+    expect(live.remove(pointer), isTrue, reason: 'No unowned or double frees.');
+    malloc.free(pointer);
+  }
+
+  void release() {
+    live.forEach(malloc.free);
+    live.clear();
+  }
 }

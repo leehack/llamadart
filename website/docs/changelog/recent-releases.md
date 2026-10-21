@@ -33,6 +33,7 @@ For canonical full release notes, use:
 - Parse Command R7B and Cohere2 MoE replies ending in deeply nested brackets in linear time instead of seconds.
 - Fix the Web chat app not retrying a microphone recording with its untrimmed audio when the trimmed capture returns no transcript.
 - Include the native LiteRT-LM error message and status code in errors from failed engine creation, conversation creation and message sends, on runtimes that report them (`v0.18.0` and later).
+- Report the backend a llama.cpp model runs on when an explicit `preferredBackend` has no device and llama.cpp offloads its layers to another GPU, such as `GpuBackend.vulkan` on Metal on Apple platforms; `getBackendName()` reported `CPU` ([#1281](https://github.com/leehack/llamadart/issues/1281)).
 
 ## 0.15.5
 
