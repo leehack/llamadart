@@ -1238,7 +1238,7 @@ class LiteRtLmService {
           'ComputeDevice.${device.name} was requested, but LiteRT-LM could '
           'not create a $backend engine on ${Platform.operatingSystem}. '
           'Either the $backend backend cannot start here or the model file '
-          'cannot be loaded; the runtime does not say which. '
+          'cannot be loaded, and the runtime may not say which. '
           '${error.message}$cacheHint Load with ComputeDevice.cpu to tell '
           'them apart.',
         ),

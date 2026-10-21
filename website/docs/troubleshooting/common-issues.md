@@ -112,7 +112,10 @@ module, use a browser with WebGPU, or load with `ComputeDevice.auto` to accept
 the runtime's default device. Native LiteRT-LM reports a GPU or NPU delegate
 that fails to start from the first generation or `tokenize`; a corrupt or
 truncated `.litertlm` file fails the same way, so if `ComputeDevice.cpu` also
-fails, replace the file. The deprecated
+fails, replace the file. With a native runtime from `v0.18.0`, the message
+also carries the runtime's own reason, such as
+`LiteRT-LM reported NOT_FOUND (5): ...`; older runtimes report none. The
+deprecated
 `liteRtLmBackend` still throws `LlamaModelException` for an unavailable
 backend; catch `LlamaException` to handle both.
 

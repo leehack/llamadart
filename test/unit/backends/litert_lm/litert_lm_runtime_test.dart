@@ -705,6 +705,17 @@ void main() {
       ),
       allOf(contains('GPU delegate'), contains('backend "cpu"')),
     );
+    expect(
+      liteRtLmEngineCreateFailureMessage(
+        backend: 'gpu',
+        modelPath: '/models/gemma-4-E2B-it.litertlm',
+        nativeError: 'LiteRT-LM reported INTERNAL (13): no OpenCL device.',
+      ),
+      'LiteRT-LM engine creation failed for backend "gpu" and model '
+      '"gemma-4-E2B-it.litertlm". LiteRT-LM reported INTERNAL (13): no '
+      'OpenCL device. The GPU delegate may not support this device, OS, '
+      'model, or bundle; try backend "cpu".',
+    );
   });
 
   test('a null engine from engine create throws LiteRtLmEngineCreateError', () {

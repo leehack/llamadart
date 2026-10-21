@@ -32,6 +32,7 @@ For canonical full release notes, use:
   `d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`.
 - Parse Command R7B and Cohere2 MoE replies ending in deeply nested brackets in linear time instead of seconds.
 - Fix the Web chat app not retrying a microphone recording with its untrimmed audio when the trimmed capture returns no transcript.
+- Include the native LiteRT-LM error message and status code in errors from failed engine creation, conversation creation and message sends, on runtimes that report them (`v0.18.0` and later).
 
 ## 0.15.5
 
