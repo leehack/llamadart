@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Report `stop` instead of `length` when a llama.cpp speculative-decoding reply ends exactly at `maxTokens`, as without speculative decoding, so `completeWithTools` no longer rolls it back as truncated.
+- Match a local LoRA path in `removeLoraSource` however it is spelled, so `/a/./b.gguf` removes an adapter applied from `/a/b.gguf` instead of silently leaving it applied.
+
 ## 0.15.5
 
 - Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
