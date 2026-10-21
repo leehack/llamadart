@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Reject `responseFormat` and structured-output integer bounds at -2^63 on native platforms with `LlamaUnsupportedException` naming the bound, as on Web, instead of an opaque converter error or a grammar beyond the supported range.
+- Reject `responseFormat` and structured-output integer bounds at -2^63 on native platforms with `LlamaUnsupportedException` naming the bound, as on Web; they could fail with an opaque converter error or silently apply a wrong constraint.
 
 ## 0.15.5
 
