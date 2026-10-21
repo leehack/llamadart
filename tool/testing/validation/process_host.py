@@ -129,11 +129,6 @@ def posix_waitid_available():
                 'CLD_EXITED', 'CLD_KILLED', 'CLD_DUMPED'))
 
 
-def require_posix_waitid():
-    if not posix_waitid_available():
-        raise RuntimeError('Unreaped POSIX child observation is unavailable')
-
-
 def main(on_child_started=None):
     """Optionally record the returned child PID; it is not a lineage proof.
 
@@ -243,6 +238,11 @@ def main(on_child_started=None):
                 os.killpg(child.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            except PermissionError as denied:
+                # macOS denies a group of unreaped zombies. Keep the setup
+                # error that left the child unreaped; denial alone still fails.
+                if denied.__context__ is None:
+                    raise
         elif child.poll() is None:
             child.kill()
         if reservation is None:

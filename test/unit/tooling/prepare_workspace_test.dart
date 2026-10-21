@@ -348,6 +348,43 @@ void main() {
     },
   );
 
+  test('a process that ignores SIGTERM is killed after five seconds', () async {
+    final root = _workspaceFixture();
+    final process = _TermIgnoringProcess();
+    final failure = FileSystemException('fixture publication failed');
+    final timers = <Duration>[];
+    await expectLater(
+      runZoned(
+        () => runWorkspaceCommand(
+          'fixture',
+          const <String>[],
+          root.path,
+          startProcess:
+              (
+                executable,
+                arguments, {
+                workingDirectory,
+                mode = ProcessStartMode.normal,
+                runInShell = false,
+              }) async => process,
+          onProcessStarted: (_) => throw failure,
+        ),
+        zoneSpecification: ZoneSpecification(
+          createTimer: (self, parent, zone, duration, callback) {
+            timers.add(duration);
+            return parent.createTimer(zone, Duration.zero, callback);
+          },
+        ),
+      ),
+      throwsA(same(failure)),
+    );
+    expect(timers, <Duration>[const Duration(seconds: 5)]);
+    expect(process.signals, <ProcessSignal>[
+      ProcessSignal.sigterm,
+      ProcessSignal.sigkill,
+    ]);
+  });
+
   test(
     'an awaited process error keeps the existing launch-error status',
     () async {
@@ -444,6 +481,19 @@ class _RecordedProcess implements Process {
 
   @override
   Stream<List<int>> get stderr => const Stream<List<int>>.empty();
+}
+
+class _TermIgnoringProcess extends _RecordedProcess {
+  _TermIgnoringProcess() : super(425);
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    signals.add(signal);
+    if (signal == ProcessSignal.sigkill) {
+      _exit.complete(-signal.signalNumber);
+    }
+    return true;
+  }
 }
 
 class _FailedExitProcess extends _RecordedProcess {
