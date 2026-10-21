@@ -31,9 +31,12 @@ description: >-
   after unanswered calls or tool results. For `completeWithTools(const [])`
   that includes the open turn's earlier messages, such as your tool results.
   Turns trimmed for context are not restored. Check `result.rolledBack` (a
-  rollback does not call `addMessage` or `reset`); `result.messages` keeps
-  the turn's messages, including results of tools that ran. To resume, add
-  them back, answer `pendingToolCalls` and call `completeWithTools(const [])`.
+  rollback does not call `addMessage` or `reset`, except on a class that
+  `implements ChatSession`, which it rebuilds through them, matching by
+  content when two consecutive `history` reads return different instances);
+  `result.messages` keeps the turn's messages, including results of tools that
+  ran. To resume, add them back, answer `pendingToolCalls` and call
+  `completeWithTools(const [])`.
   A cancel during the answer keeps the partial answer, on WebGPU too; a
   cancel before any reply content rolls back; empty terminal chunks are not
   an answer. A cancel that also reports a generation limit rolls back and

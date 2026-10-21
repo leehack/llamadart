@@ -263,7 +263,10 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// [ChatSession.reset], so a subclass that mirrors the history should use
   /// [LlamaToolLoopResult.rolledBack]. A class that implements
   /// [ChatSession] without extending it is rolled back by calling
-  /// [ChatSession.reset] and adding the remaining messages again.
+  /// [ChatSession.reset] and adding the remaining messages again. If its
+  /// [ChatSession.history] returns different instances for the same message
+  /// on two consecutive reads, the turn's messages are matched by role and
+  /// content rather than identity.
   ///
   /// A cancel that a backend reports as a stream error, as WebGPU does,
   /// also stops the loop with [LlamaToolLoopStopReason.cancelled]. An error
@@ -513,7 +516,8 @@ class _ToolLoopTurn {
     final grown = after.length - countBefore;
     if (grown > 0) {
       final appended = added.sublist(max(0, added.length - grown));
-      final own = appended.indexWhere((stored) => identical(stored, message));
+      final same = _sameMessage();
+      final own = appended.indexWhere((stored) => same(stored, message));
       if (own >= 0) appended.removeAt(own);
       _appended.addAll(appended);
     }
@@ -522,6 +526,20 @@ class _ToolLoopTurn {
 
   List<LlamaChatMessage> get _storedHistory =>
       mutableChatSessionHistory(_session) ?? _session.history;
+
+  /// How a turn message is found in [_storedHistory]: by identity, or by
+  /// content when a class that implements [ChatSession] returns new copies
+  /// from each [ChatSession.history] read, which identity can never match.
+  bool Function(LlamaChatMessage, LlamaChatMessage) _sameMessage() {
+    if (mutableChatSessionHistory(_session) == null) {
+      final first = _session.history;
+      final second = _session.history;
+      for (var index = 0; index < min(first.length, second.length); index++) {
+        if (!identical(first[index], second[index])) return _sameContent;
+      }
+    }
+    return identical;
+  }
 
   void report(LlamaChatMessage message) {
     messages.add(message);
@@ -546,27 +564,50 @@ class _ToolLoopTurn {
       _removeTurn(history, turn);
       return;
     }
+    final same = _sameMessage();
     final rebuilt = _session.history.toList();
-    _removeTurn(rebuilt, turn);
+    _removeTurn(rebuilt, turn, same);
     _session.reset(keepSystemPrompt: true);
     rebuilt.forEach(_session.addMessage);
   }
 }
 
-/// Removes [turn] from [history], matching each message by identity from
-/// the end, so an earlier turn that holds the same (for example `const`)
-/// instance keeps it.
-void _removeTurn(List<LlamaChatMessage> history, List<LlamaChatMessage> turn) {
+/// Removes [turn] from [history], matching each message with [same]
+/// (identity by default) from the end, so an earlier turn that holds the
+/// same (for example `const`) instance, or equal content, keeps it.
+void _removeTurn(
+  List<LlamaChatMessage> history,
+  List<LlamaChatMessage> turn, [
+  bool Function(LlamaChatMessage, LlamaChatMessage) same = identical,
+]) {
   final remaining = List.of(turn);
   for (var index = history.length - 1; index >= 0; index--) {
     if (remaining.isEmpty) return;
     final match = remaining.lastIndexWhere(
-      (message) => identical(message, history[index]),
+      (message) => same(message, history[index]),
     );
     if (match < 0) continue;
     remaining.removeAt(match);
     history.removeAt(index);
   }
+}
+
+bool _sameContent(LlamaChatMessage a, LlamaChatMessage b) {
+  if (identical(a, b)) return true;
+  if (a.role != b.role) return false;
+  final aParts = a.parts;
+  final bParts = b.parts;
+  if (aParts.length != bParts.length) return false;
+  for (var index = 0; index < aParts.length; index++) {
+    final aPart = aParts[index];
+    final bPart = bParts[index];
+    if (identical(aPart, bPart)) continue;
+    if (aPart.runtimeType != bPart.runtimeType ||
+        jsonEncode(aPart.toJson()) != jsonEncode(bPart.toJson())) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /// The index where the turn that ends [history] starts, or `history.length`

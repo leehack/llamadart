@@ -10,6 +10,7 @@ For canonical full release notes, use:
 ## Unreleased
 
 - `SpeechToTextEngine.capabilities` with `Qwen3AsrAdapter` reports a projector that is not Qwen3-ASR's, such as a Qwen3-TTS mmproj, as unsupported instead of failing later with an empty transcript; when the projector type cannot be read, an empty transcript's error details name a possible model mismatch ([#641](https://github.com/leehack/llamadart/issues/641)).
+- `setLoraSource` and `removeLoraSource` match a path adapter spelled with `./`, `../` or repeated separators, such as `/models/./a.gguf` for `/models/a.gguf`, instead of silently leaving it applied or applying it twice ([#907](https://github.com/leehack/llamadart/issues/907)).
 - Document that Windows x64 builds download the full native bundle, about 700 MiB with CUDA, even when CUDA is not selected, and how to avoid it with `llamadart_native_path`.
 - Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them. Host `flutter test` on macOS for such an app no longer loads the bundled llama.cpp or stable_diffusion library, because `flutter_tester` links no companion.
 - Reject `ModelParams.loras` that LiteRT-LM cannot take before any adapter downloads, also for extensionless native `.litertlm` files, on the Web and in embedding mode.
@@ -17,6 +18,7 @@ For canonical full release notes, use:
 - Release a finished dedicated LiteRT-LM speech-to-text task when nobody listens to its events, as with `transcribeOnce`, instead of keeping it and its input audio until the next task.
 - Report a disposed `LlamaEngine` consistently: deprecated loaders disposed as they finish throw `LlamaStateException`, `dispose()` no longer waits for a projector download that ignores cancellation, and `loadDecisionHeadBackend` and attached speech engines throw `LlamaStateException` instead of `LlamaUnsupportedException`.
 - Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` moves or repeats messages, or whose `history` returns copies or hides messages when continuing a turn.
+- Fix tool-loop rollbacks on classes that implement `ChatSession` and whose `history` returns copies: the turn stayed in the history while `rolledBack` was `true` ([#1287](https://github.com/leehack/llamadart/issues/1287)).
 - Report `stop` instead of `length` when a llama.cpp speculative-decoding reply ends exactly at `maxTokens`, as without speculative decoding, so `completeWithTools` no longer rolls it back as truncated.
 - Report deeply nested tool-call output from PEG-parsed formats, such as Ministral, as `LlamaInferenceException` instead of a stack overflow.
 - Accept annotation-only `allOf` components, such as `{"description": "..."}`, in structured-output object merges, matching llama.cpp.
