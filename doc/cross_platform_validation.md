@@ -1007,6 +1007,10 @@ when applicable credit cannot be verified.
   `libcublas.so.12`) that `libggml-cuda.so` links; without them the CUDA module
   fails to load and llama.cpp runs on CPU. The stock image also lacks
   `libgomp1`, which every llama.cpp load needs.
+- On the same image (g2-standard-4, L4), the NVIDIA Vulkan driver
+  (`libnvidia-gl-580-server`) also needs `libglvnd0 libgl1 libegl1 libglx0`.
+  Without them `vulkaninfo` finds no NVIDIA device and llama.cpp silently runs
+  on CPU.
 - Container link checks for the CUDA and HIP modules:
   `docker/validation/Dockerfile.cuda-linkcheck`,
   `docker/validation/Dockerfile.hip-linkcheck`, and
