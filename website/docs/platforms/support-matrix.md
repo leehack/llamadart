@@ -160,7 +160,10 @@ output and grammars, sampling controls and speculative decoding. Guides:
   not known. On an iOS simulator `auto` therefore runs llama.cpp on the CPU
   with 0 GPU layers. `GpuBackend.metal` and `ComputeDevice.gpu` still load on
   Metal there, and the load logs a warning: use them only to check a model
-  on the simulator's Metal device. The x86_64 simulator gets the same CPU
+  on the simulator's Metal device. Under `ComputeDevice.auto`, another
+  explicit GPU backend, such as `GpuBackend.vulkan`, also loads its GPU
+  layers on Metal and warns, since the Apple runtime has no other GPU
+  backend. The x86_64 simulator gets the same CPU
   default and has not been run. iOS devices and macOS are unchanged: `auto`
   uses Metal.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
