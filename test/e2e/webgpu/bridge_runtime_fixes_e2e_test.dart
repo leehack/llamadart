@@ -7,6 +7,9 @@
 /// - a missing state file throws `LlamaStateException` and leaves the runtime
 ///   usable instead of aborting it
 ///   ([#116](https://github.com/leehack/llama-web-bridge/issues/116));
+/// - a truncated state snapshot rejects and leaves the runtime usable instead
+///   of aborting it
+///   ([#169](https://github.com/leehack/llama-web-bridge/issues/169));
 /// - unloading, reloading and disposing a model still work now that bridge
 ///   teardown awaits the WebGPU shutdown
 ///   ([#150](https://github.com/leehack/llama-web-bridge/issues/150)). The
@@ -204,6 +207,58 @@ void main() {
         );
         expectRuntime('state round trip');
       });
+
+      test(
+        'a truncated state snapshot rejects and keeps the runtime',
+        () async {
+          await load('model');
+          final baseline = await generate();
+          final tokens = await engine.tokenize('Once upon a time');
+          final jsBridge = bridge as JSObject;
+
+          final saved = await jsBridge
+              .callMethod<JSPromise<JSUint8Array>>(
+                'stateSaveBytes'.toJS,
+                tokens.map((token) => token.toJS).toList().toJS,
+              )
+              .toDart;
+          final snapshot = saved.toDart;
+          expect(snapshot.length, greaterThan(64));
+
+          Future<void> loadBytes(Uint8List bytes) => jsBridge
+              .callMethod<JSPromise<JSAny?>>(
+                'stateLoadBytes'.toJS,
+                bytes.toJS,
+                512.toJS,
+              )
+              .toDart;
+
+          for (final length in [
+            12,
+            snapshot.length ~/ 2,
+            snapshot.length - 1,
+          ]) {
+            await expectLater(
+              loadBytes(Uint8List.sublistView(snapshot, 0, length)),
+              throwsA(anything),
+              reason: 'A snapshot cut to $length bytes must reject.',
+            );
+            expectRuntime('truncated state at $length bytes');
+          }
+
+          await loadBytes(snapshot);
+          expect(
+            await engine
+                .generate(
+                  'Once upon a time',
+                  params: _greedy.copyWith(reusePromptPrefix: false),
+                )
+                .join(),
+            baseline,
+          );
+          expectRuntime('state restore after truncated snapshots');
+        },
+      );
 
       test('an image URL relative to the document resolves', () async {
         final image = fixture('image');

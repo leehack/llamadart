@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.67`.
+Default pinned tag in the example is `v0.1.69`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.67 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.69 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,17 +81,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.67';
+  window.__llamadartBridgeAssetsTag = 'v0.1.69';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-1`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.67` differs from the native runtime tag
-`v0.7.0-1`. Provenance for this immutable consumer artifact: release `419092691`,
-tag commit `2657686bd3956c09ab60fe89ca7d6d660045b5e3`, bridge source
-`8992121b4b533a4444ad6de93d855ea3c99644c6`, and manifest SHA-256
-`d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`. The bridge
+even though the bridge asset tag `v0.1.69` differs from the native runtime tag
+`v0.7.0-1`. Provenance for this immutable consumer artifact: release `419562436`,
+tag commit `84ca5bfd436a778ea9371eb5f432c58a181a6052`, bridge source
+`31cbb98fc1821d85eecc99d20e30273fbcff9cb5`, and manifest SHA-256
+`994e798389d440a256f103f3789a1f56da2ab00dd6bb6e52f334ed4e58867c46`. The bridge
 assets were qualified against native `v0.7.0-1`, matching the current native pin.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
@@ -136,6 +136,8 @@ physical playback, intelligibility or speaker-reference fidelity.
 - `v0.1.67+`: a state file the core cannot open rejects instead of aborting
   the runtime; media URLs resolve against `document.baseURI` before reaching
   the worker; teardown awaits the WebGPU model free and shutdown.
+- `v0.1.69+`: loading a truncated or mismatched state snapshot rejects and
+  keeps the current context state instead of aborting the runtime.
 
 ### Media embeddings
 
@@ -357,7 +359,8 @@ tag:
 `test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks these
 gates against real assets and models; its header lists the setup.
 `test/e2e/webgpu/bridge_runtime_fixes_e2e_test.dart` (local-only) checks the
-`v0.1.67+` state-file, relative-URL and reload behavior in both runtimes.
+`v0.1.67+` state-file, relative-URL and reload behavior, and the `v0.1.69+`
+truncated-snapshot rejection, in both runtimes.
 
 ## Notes
 
