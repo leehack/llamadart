@@ -230,8 +230,8 @@ C08 compares the same prompt against an uncancelled control; the pinned WASM
 delegate's explicit cancellation AbortError is also recorded as interruption evidence. Merely calling cancel
 is not a pass; missing interruption evidence is NOT_RUN. Case timeouts are 60s;
 disposal has a 10s bound and unresolved work cannot report successful cleanup.
-A LiteRT CPU or GPU profile may set `engine_create_case_timeout_ms` (60000 to 180000),
-which replaces the 60s bound only for the cases that include an engine create:
+A LiteRT CPU or GPU profile may set `engine_create_case_timeout_ms`
+(60000 to 180000), which replaces the 60s bound only for the cases that include an engine create:
 the first case executed after C01.load (LiteRT defers creation to first use) and
 C09.reload, C09.reload.second, C12.guards and C12.recovery. A timeout there still
 records `case_timeout` with the applied `timeout_ms`. Only `qwen35-litert-gpu`

@@ -1862,7 +1862,7 @@ void main() {
     }
     final gguf =
         jsonDecode(
-                File('assets/profiles/chat-gguf-metal.json').readAsStringSync(),
+                File('assets/profiles/chat-gguf-cpu.json').readAsStringSync(),
               )
               as Map<String, dynamic>
           ..['engine_create_case_timeout_ms'] = 120000;
