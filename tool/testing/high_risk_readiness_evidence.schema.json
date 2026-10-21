@@ -169,7 +169,7 @@
     },
     "testPath": {
       "type": "string",
-      "pattern": "^(?![\\s\\S]*[\\u0000-\\u001F\\u007F])(?![\\s\\S]*[*?\\[\\]])(?!.*\\\\)(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))(?:packages/genkit_llamadart/)?test/(?:[^/]+/)*[^/]+_test\\.dart$"
+      "pattern": "^(?:(?![\\s\\S]*[\\u0000-\\u001F\\u007F])(?![\\s\\S]*[*?\\[\\]])(?!.*\\\\)(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))(?:packages/genkit_llamadart/)?test/(?:[^/]+/)*[^/]+_test\\.dart|tool/native/test_(?:native_header_archive|sync_native_headers_and_bindings|sync_native_release_pins|sync_stable_diffusion_bindings)\\.py)$"
     },
     "matrixRow": {
       "type": "object",

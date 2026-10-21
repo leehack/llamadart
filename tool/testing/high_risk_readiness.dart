@@ -596,6 +596,17 @@ class HighRiskReadinessEvaluator {
     'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_constrained_grammar_test.dart',
     'packages/genkit_llamadart/test/integration/genkit/plugin/real_model_rich_tool_schemas_test.dart',
   };
+  // Python suites CI runs directly, each bound to the one script it drives.
+  static const _nativeSyncPythonTests = <String, String>{
+    'tool/native/test_native_header_archive.py':
+        'tool/native/native_header_archive.py',
+    'tool/native/test_sync_native_headers_and_bindings.py':
+        'tool/native/sync_native_headers_and_bindings.sh',
+    'tool/native/test_sync_native_release_pins.py':
+        'tool/native/sync_native_release_pins.py',
+    'tool/native/test_sync_stable_diffusion_bindings.py':
+        'tool/native/sync_stable_diffusion_bindings.py',
+  };
 
   Future<HighRiskReadinessResult> evaluate({
     required Map<String, dynamic> evidence,
@@ -1279,6 +1290,17 @@ class HighRiskReadinessEvaluator {
       final referenced = refs
           .map((ref) => (ref as Map)['path'] as String)
           .toSet();
+      final pairedScript = _nativeSyncPythonTests[entry.key];
+      if (pairedScript != null) {
+        final command = proof['command'] as String;
+        final module = entry.key
+            .substring(0, entry.key.length - '.py'.length)
+            .replaceAll('/', '.');
+        if (!referenced.contains(pairedScript) ||
+            !(command.contains(entry.key) || command.contains(module))) {
+          return 'Python evidence must run its own suite and reference $pairedScript: ${entry.key}.';
+        }
+      }
       if (!await refsExist(refs) ||
           (changedProduction.isNotEmpty &&
               referenced.intersection(changedProduction).isEmpty)) {
@@ -1722,6 +1744,7 @@ class HighRiskReadinessEvaluator {
             .any((part) => part.isEmpty || part == '.' || part == '..')) {
       return false;
     }
+    if (_nativeSyncPythonTests.containsKey(path)) return true;
     return (path.startsWith('test/') ||
             path.startsWith('packages/genkit_llamadart/test/')) &&
         path.endsWith('_test.dart');
