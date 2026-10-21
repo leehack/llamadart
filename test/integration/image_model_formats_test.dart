@@ -232,15 +232,12 @@ final class _RecordingDriver implements ImageGenerationDriver {
   String get operatingSystem => Platform.operatingSystem;
 
   @override
-  StableDiffusionRuntimeStatus probe() =>
+  Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
         version: 'recording-runtime',
         commit: 'fixture',
         devices: parseStableDiffusionDeviceList('CPU\tRecording runtime\n'),
       );
-
-  @override
-  Future<StableDiffusionRuntimeStatus> probeInBackground() async => probe();
 
   @override
   int? fileSize(String path) => stableDiffusionFileSize(path);

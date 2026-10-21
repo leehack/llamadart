@@ -16,17 +16,15 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
   String get operatingSystem => 'web';
 
   @override
-  StableDiffusionRuntimeStatus probe() => probeStableDiffusionRuntime();
-
-  @override
-  Future<StableDiffusionRuntimeStatus> probeInBackground() async => probe();
+  Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
+      probeStableDiffusionRuntime();
 
   @override
   int? fileSize(String path) => null;
 
   @override
   Future<Uint8List> readFileRange(String path, int offset, int length) =>
-      Future.error(probe().unavailableReason!);
+      Future.error(probeStableDiffusionRuntime().unavailableReason!);
 
   @override
   Future<ImageGenerationMemoryLimits> memoryLimits(
@@ -36,5 +34,5 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>
-      Future.error(probe().unavailableReason!);
+      Future.error(probeStableDiffusionRuntime().unavailableReason!);
 }

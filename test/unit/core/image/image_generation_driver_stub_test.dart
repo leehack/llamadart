@@ -9,9 +9,10 @@ void main() {
     final driver = createImageGenerationDriver();
 
     expect(driver.operatingSystem, 'web');
-    expect(driver.probe().isAvailable, isFalse);
+    final status = await driver.probeInBackground();
+    expect(status.isAvailable, isFalse);
     expect(
-      (await driver.probeInBackground()).unavailableReason?.message,
+      status.unavailableReason?.message,
       contains('not available on the web'),
     );
     expect(driver.fileSize('/models/sdxs.gguf'), isNull);

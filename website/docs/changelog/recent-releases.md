@@ -14,6 +14,7 @@ For canonical full release notes, use:
 - Reject `ModelParams.loras` that LiteRT-LM cannot take before any adapter downloads, also for extensionless native `.litertlm` files, on the Web and in embedding mode.
 - `package:llamadart/backend.dart` exports `BackendRuntimeIdentity`, `BackendModelFormatRouting`, `BackendChatScope`, `BackendDirectMediaInput` and `BackendDeferredEngineCreation`, the interfaces `LiteRtLmBackend` implements, so custom backends can report their runtime and load an explicit `ModelSource.format` ([#917](https://github.com/leehack/llamadart/issues/917)).
 - Release a finished dedicated LiteRT-LM speech-to-text task when nobody listens to its events, as with `transcribeOnce`, instead of keeping it and its input audio until the next task.
+- Report a disposed `LlamaEngine` consistently: deprecated loaders disposed as they finish throw `LlamaStateException`, `dispose()` no longer waits for a projector download that ignores cancellation, and `loadDecisionHeadBackend` and attached speech engines throw `LlamaStateException` instead of `LlamaUnsupportedException`.
 
 ## 0.15.5
 

@@ -711,6 +711,7 @@ class LlamaEngine {
         await _loadModel(path, modelParams: modelParams, format: format);
         _throwIfDisposedDuringLoad();
         await _captureObservedModel(path);
+        _throwIfDisposedDuringLoad();
       }),
     );
   }
@@ -927,6 +928,7 @@ class LlamaEngine {
         );
         _throwIfDisposedDuringLoad();
         await _captureObservedModel(url);
+        _throwIfDisposedDuringLoad();
       }),
     );
   }
@@ -1281,11 +1283,13 @@ class LlamaEngine {
       }
       final String location;
       try {
-        location = await _resolveAuxiliarySource(
-          source,
-          options: resolveOptions,
-          onProgress: onProgress,
-          assetType: 'multimodal projector',
+        location = await _unlessDisposed(
+          _resolveAuxiliarySource(
+            source,
+            options: resolveOptions,
+            onProgress: onProgress,
+            assetType: 'multimodal projector',
+          ),
         );
       } on Object {
         if (abandoned()) throw _projectorModelChanged();
@@ -1424,9 +1428,9 @@ class LlamaEngine {
   /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A
   /// load running when this is called throws [LlamaStateException], and a
   /// model it loaded is unloaded. The downloads of a running [setModel],
-  /// [loadModelSource] or [loadMultimodalProjectorSource] stop. Resolution or
-  /// download work from [setModel] or [loadModelSource] does not hold this
-  /// call up, even when a custom resolver or manager ignores cancellation.
+  /// [loadModelSource] or [loadMultimodalProjectorSource] stop, and their
+  /// resolution or download work does not hold this call up, even when a
+  /// custom resolver or manager ignores cancellation.
   Future<void> dispose() {
     final existing = _disposal;
     if (existing != null) return existing;
@@ -3892,6 +3896,7 @@ extension LlamaEngineBackendHooks on LlamaEngine {
     String headPath, {
     String? configPath,
   }) async {
+    _throwIfDisposed();
     final decisionBackend = _decisionBackend();
     _ensureReady(requireContext: false);
     final epoch = _decisionHeadEpoch;

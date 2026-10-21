@@ -181,8 +181,9 @@ A cache directory that cannot be created throws `LlamaModelException` naming
 the directory. A TLS certificate or handshake failure throws
 `LlamaModelException` saying so, and is not retried.
 
-Disposing the engine also cancels package-managed downloads from `setModel`
-and the deprecated `loadModelSource`, including `ModelParams.loras` adapters.
+Disposing the engine also cancels package-managed downloads from `setModel`,
+`loadMultimodalProjectorSource` and the deprecated `loadModelSource`,
+including `ModelParams.loras` adapters.
 The load promptly throws `LlamaStateException`, even if a custom resolver or
 download manager ignores cancellation, and no late result loads a model.
 The manager receives a linked token; disposal leaves the caller's model and
