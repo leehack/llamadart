@@ -1490,7 +1490,10 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
           isA<Exception>().having(
             (error) => error.toString(),
             'message',
-            contains('LiteRT-LM runtime is not available for ios-x86_64-sim'),
+            allOf(
+              contains('LiteRT-LM runtime is not available for ios-x86_64-sim'),
+              contains('EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386 x86_64'),
+            ),
           ),
         ),
       );
@@ -1515,7 +1518,10 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
           isA<Exception>().having(
             (error) => error.toString(),
             'message',
-            contains('LiteRT-LM runtime is not available for ios-x86_64-sim'),
+            allOf(
+              contains('LiteRT-LM runtime is not available for ios-x86_64-sim'),
+              contains('EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386 x86_64'),
+            ),
           ),
         ),
       );
