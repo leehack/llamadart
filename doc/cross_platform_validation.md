@@ -840,9 +840,10 @@ only when the run has no `stderr.log` or `xcodebuild_output.log` at all: such a
 capture, bound or not, still decides alone and the device log never overrides
 or supplements it. Collection streams the single `logcat` under
 `remote-results` (at most 128 MiB) and writes the app process's lines from its
-test start record onward (at most 8 MiB) to `report/native.log`. A Dart VM
-service announcement, whose URL carries an auth code, is dropped wherever the
-process logs it. The log is bound to the journal only if all of these hold:
+test start record onward (at most 8 MiB, dropped lines included) to
+`report/native.log`, replacing any earlier one. A Dart VM service announcement,
+whose URL carries an auth code, is dropped wherever the process logs it. The
+log is bound to the journal only if all of these hold:
 
 - exactly one `flutter` record `00:00 +0: shared validation: <profile id>`
   exists, and every other mention of a shared validation test is that process
@@ -862,7 +863,9 @@ process logs it. The log is bound to the journal only if all of these hold:
 The device log never prints the run id, so the run id is bound by the time it
 encodes, not by a match. Device-log times have no year or zone, so the start
 record is placed on the epoch clock from the log alone: the first native epoch
-timestamp less the device-log time elapsed between the two records. Ten
+timestamp less the device-log time elapsed between the two records. The log
+cannot show a daylight saving change between them, so the run id may instead
+fall in the window moved by half an hour or an hour either way. Ten
 seconds leaves a slow cold start room and is far shorter than a run, whose
 cases alone took 68 and 48 seconds after `started_at`, so the device log of a
 later run cannot fall inside it.
@@ -870,8 +873,9 @@ later run cannot fall inside it.
 Two device logs, a second start record, another model directory, an earlier
 timestamp, the device log of a later run or of another device's run, a journal
 of another day, a run id outside its window, any other line of the process
-with a Dart VM service, DevTools or loopback URL, or an Android journal for any
-other runtime or backend leave no native log, and the report keeps
+with a Dart VM service or DevTools URL or a URL whose host is `localhost` or an
+IP literal in any spelling, or an Android journal for any other runtime or
+backend leave no native log, and the report keeps
 `accelerator_evidence_missing`. A journal of another run whose run id and start
 time both fall inside those windows is not told apart. Trimmed Pixel 9 Pro and
 Galaxy S24 Firebase logs in
