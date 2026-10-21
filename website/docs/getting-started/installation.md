@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.5
+  llamadart: ^0.15.6
 ```
 
 Then resolve packages:
@@ -54,9 +54,9 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.15.5
-  llamadart_llama_cpp_flutter: ^0.15.1 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.15.1 # Apple .litertlm / LiteRT-LM targets
+  llamadart: ^0.15.6
+  llamadart_llama_cpp_flutter: ^0.15.2 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.15.2 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.15.2 # Apple image generation, opt-in
 ```
 
@@ -84,15 +84,18 @@ dependency_overrides:
     git: https://github.com/leehack/llamadart.git
 ```
 
-Pair llama.cpp companion `0.15.0` with core `0.15.x` for native `v0.7.0-1`,
-`0.14.0` with core `0.14.x` for `v0.7.0`, `0.13.0` with core `0.13.x`, and `0.0.23` with
+Use llama.cpp companion `0.15.2` with core `>=0.15.6 <0.16.0` for native
+`v0.7.0-2`. Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with
+core `0.15.6` with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
+Pair `0.14.0` with core `0.14.x` for `v0.7.0`, `0.13.0` with core `0.13.x`, and `0.0.23` with
 core `0.12.2`;
 keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
 names the companion release of your core's minor to depend on, such as
-`^0.15.0` with core `0.15.x`. Core `0.15.x` requires the matching
-v0.7.0-1 companion; earlier companion pins are rejected. On macOS,
+`^0.15.2` with core `0.15.6`. Core `0.15.6` requires a `v0.7.0-2` companion
+or a `v0.7.0-1` one with the warning above; earlier companion pins are
+rejected. On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
 including the GPU accelerators. The build uses it only when the resolved
 companion's `Package.swift` is the one this core release expects; any other
@@ -100,11 +103,13 @@ companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
 Earlier maintained companions are the exception: `0.0.15` pins `v0.18.0`,
 and `0.0.16` pins `v0.18.0-1`. They still embed and load their
-complete macOS arm64 runtime and need no build phase. The build warns to
-upgrade the companion to `0.15.0` with core `0.15.x`, pinning `v0.18.0-2`.
-On iOS the build does not check the LiteRT-LM companion pin. `v0.18.0-2`
-keeps the arm64-only macOS XCFrameworks introduced in `v0.18.0-1` and reduces
-duplicated words at untimed ASR window boundaries with the default overlap;
+complete macOS arm64 runtime and need no build phase. So do companions
+`0.15.0` and `0.15.1`, which pin `v0.18.0-2`. The build warns to upgrade the
+companion to `0.15.2` with core `0.15.6`, pinning `v0.18.0-3`.
+On iOS the build does not check the LiteRT-LM companion pin. `v0.18.0-3`
+keeps the arm64-only macOS XCFrameworks introduced in `v0.18.0-1`, keeps the
+`v0.18.0-2` reduction of duplicated words at untimed ASR window boundaries
+with the default overlap, and loads dedicated ASR `.litertlm` containers;
 other boundary and recognition errors can remain.
 
 The companion's macOS XCFrameworks are published for arm64 only, so a

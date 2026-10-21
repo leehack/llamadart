@@ -53,8 +53,10 @@ does not establish embedding support. Check the
 For the SD native error guard, use core `0.15.2` and SD companion `0.15.2`
 together. The companion requires `>=0.15.2 <0.16.0`. Locked SD companions
 `0.15.0`/`0.15.1` retain their older native runtime with an upgrade warning;
-updating core alone does not replace that payload. The llama.cpp and LiteRT-LM
-companions remain `0.15.1`. See [Installation](../getting-started/installation)
+updating core alone does not replace that payload. Core `0.15.6` pairs with
+llama.cpp and LiteRT-LM companions `0.15.2`, which require
+`>=0.15.6 <0.16.0`; locked `0.15.0`/`0.15.1` companions keep their older
+native runtime with an upgrade warning. See [Installation](../getting-started/installation)
 for the current package combination and
 [Image generation](../guides/image-generation) for the physical-device limits.
 

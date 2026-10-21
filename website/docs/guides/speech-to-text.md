@@ -276,7 +276,7 @@ still requires a `tokenizer` file. Earlier runtimes fail engine creation for
 such a container with `tf_lite_prefill_decode not found`. Flutter iOS and
 macOS apps run the runtime that `llamadart_litert_lm_flutter` links, so
 companions `0.15.0` and `0.15.1` (`v0.18.0-2`) keep that behavior until the
-app upgrades the companion.
+app upgrades to companion `0.15.2` with core `0.15.6`.
 
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
