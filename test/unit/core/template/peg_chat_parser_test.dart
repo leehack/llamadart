@@ -178,6 +178,36 @@ void main() {
           expect(result.content, isEmpty);
         });
       }
+
+      test('reports deeply nested tool output as a typed error', () {
+        String arguments(int depth) => '{"city":${'[' * depth}0${']' * depth}}';
+        String call(int depth) =>
+            '[TOOL_CALLS]weather[ARGS]${arguments(depth)}';
+
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.ministral.index,
+          call(64),
+          parser: requiredParser(),
+        );
+        expect(parsed.toolCalls.single.function?.arguments, arguments(64));
+        for (final isPartial in [false, true]) {
+          expect(
+            () => ChatTemplateEngine.parse(
+              ChatFormat.ministral.index,
+              call(5000),
+              isPartial: isPartial,
+              parser: requiredParser(),
+            ),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (error) => error.message,
+                'message',
+                'The model output is nested too deeply to parse.',
+              ),
+            ),
+          );
+        }
+      });
     });
 
     test('rethrows parse failures for partial PEG parse', () {
