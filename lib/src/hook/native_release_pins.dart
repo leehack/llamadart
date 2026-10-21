@@ -24,12 +24,17 @@ const llamaCppAppleCompanionVersion = '0.15.2';
 ///
 /// Every entry must be a wrapper rebuild of the same upstream llama.cpp
 /// release as [llamaCppTag]: the same `vMAJOR.MINOR.PATCH` prefix, which the
-/// native release manifest binds to one upstream commit, with byte-identical
-/// headers and thin binaries, so its frameworks are ABI- and symbol-identical
-/// to the ones the Dart bindings expect. The build accepts such a companion
-/// with a warning. The native pin sync clears this map whenever it moves
-/// [llamaCppTag], because each entry is verified against one pin.
-const llamaCppCompatibleAppleCompanionTags = <String, String>{};
+/// native release manifest binds to one upstream commit, with the same header
+/// declarations and the same exported symbols on every framework slice, so
+/// its frameworks are ABI- and symbol-identical to the ones the Dart bindings
+/// expect. `test/fixtures/native/llama_cpp_apple_compatibility.json` records
+/// that comparison for the exact XCFramework checksums. The build accepts
+/// such a companion with a warning. The native pin sync clears this map
+/// whenever it moves [llamaCppTag], because each entry is verified against
+/// one pin.
+const llamaCppCompatibleAppleCompanionTags = <String, String>{
+  'v0.7.0-1': 'the fix that seeds every Qwen3-TTS codebook from the request',
+};
 
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
 /// archive, keyed by bundle.

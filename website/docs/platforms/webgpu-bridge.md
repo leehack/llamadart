@@ -316,14 +316,15 @@ The example currently pins bridge assets to `v0.1.69`, with local vendored asset
 identified as `v0.1.69-local-v0.7.0`.
 
 - The pinned `v0.1.69` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
-  (`v0.7.0-1`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+  (`v0.7.0-2`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
   even though the bridge asset tag `v0.1.69` differs from the native runtime tag
-  `v0.7.0-1`. Pinned artifact provenance: release `419562436`, tag commit
+  `v0.7.0-2`. Pinned artifact provenance: release `419562436`, tag commit
   `84ca5bfd436a778ea9371eb5f432c58a181a6052`, bridge source
   `31cbb98fc1821d85eecc99d20e30273fbcff9cb5`, manifest SHA-256
   `994e798389d440a256f103f3789a1f56da2ab00dd6bb6e52f334ed4e58867c46`. The
-  bridge assets were qualified against native `v0.7.0-1`, matching the current
-  native pin. They include the API-version-1 media embedding contract.
+  bridge manifest records native `v0.7.0-1`; native `v0.7.0-2` changes nothing
+  the bridge build reads
+  ([llama-web-bridge#171](https://github.com/leehack/llama-web-bridge/issues/171)). They include the API-version-1 media embedding contract.
   Extraction and state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:

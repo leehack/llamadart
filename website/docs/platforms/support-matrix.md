@@ -259,13 +259,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.7.0-2` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.18.0-2` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.18.0-3` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0-4`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.7.0-2` and
-`litert-lm-native` release `v0.18.0-2` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.18.0-3` (`lib/src/hook/native_release_pins.dart`).
 Apps can override the llama.cpp release with `llamadart_native_tag`, which
 takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
 `bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading

@@ -373,6 +373,25 @@ void main() {
       );
     });
 
+    test('accepts earlier LiteRT-LM rebuilds of the pinned release, as the '
+        'hook does', () {
+      expect(earlierLiteRtLmRebuilds('v0.18.0-3'), {
+        'v0.18.0',
+        'v0.18.0-1',
+        'v0.18.0-2',
+      });
+      expect(earlierLiteRtLmRebuilds('v0.18.0'), isEmpty);
+      expect(earlierLiteRtLmRebuilds('g0123456789ab-2'), isEmpty);
+      expect(
+        coreAcceptedCompanionPins()[_liteRtLm],
+        containsAll(earlierLiteRtLmRebuilds(liteRtLmReleaseTag)),
+      );
+      expect(
+        coreAcceptedCompanionPins()[_liteRtLm],
+        isNot(contains('v0.17.0')),
+      );
+    });
+
     test('defaults to the pins the checkout core accepts', () {
       expect(coreAcceptedCompanionPins().keys.toSet(), {
         for (final companion in companionSwiftPins) companion.package,

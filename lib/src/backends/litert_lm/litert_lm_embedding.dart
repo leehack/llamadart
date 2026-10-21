@@ -12,7 +12,7 @@ void ensureLiteRtLmNativeEmbeddingBackend(String backend) {
   if (backend != 'cpu') {
     throw LlamaUnsupportedException(
       backend == 'gpu'
-          ? 'LiteRT-LM native GPU embeddings are unavailable: pinned v0.18.0-2 has a WebGPU accelerator/absl ABI mismatch, fixed upstream after v0.18.0 in google-ai-edge/LiteRT@dd3db31236; a newer runtime is required. Select CPU.'
+          ? 'LiteRT-LM native GPU embeddings are unavailable: pinned v0.18.0-3 has a WebGPU accelerator/absl ABI mismatch, fixed upstream after v0.18.0 in google-ai-edge/LiteRT@dd3db31236; a newer runtime is required. Select CPU.'
           : 'LiteRT-LM native embeddings are qualified only on CPU; select ComputeDevice.cpu.',
     );
   }

@@ -15,8 +15,37 @@ void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
   test('llama.cpp pins the approved v0.7.0 wrapper rebuild', () {
-    expect(llamaCppTag, 'v0.7.0-1');
+    expect(llamaCppTag, 'v0.7.0-2');
   });
+
+  test(
+    'Apple llama.cpp compatibility is bound to the verified artifact pair',
+    () {
+      final proof =
+          jsonDecode(
+                File(
+                  'test/fixtures/native/llama_cpp_apple_compatibility.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final checksums = proof['xcframework_checksums'] as Map<String, dynamic>;
+      expect(proof['current_tag'], llamaCppTag);
+      expect(llamaCppCompatibleAppleCompanionTags.keys, [
+        proof['previous_tag'],
+      ]);
+      expect(checksums.keys, {proof['previous_tag'], llamaCppTag});
+      final swift = File(
+        'packages/llamadart_llama_cpp_flutter/darwin/'
+        'llamadart_llama_cpp_flutter/Package.swift',
+      ).readAsStringSync();
+      expect(swift, contains('checksum: "${checksums[llamaCppTag]}"'));
+      expect(proof['slices'], hasLength(5));
+      for (final row in proof['slices'] as List) {
+        expect(row['declarations_equal'], isTrue, reason: '$row');
+        expect(row['exported_symbols_equal'], isTrue, reason: '$row');
+      }
+    },
+  );
 
   test('llama.cpp tag follows the native release tag grammar', () {
     expect(isValidNativeReleaseTag(llamaCppTag), isTrue, reason: llamaCppTag);

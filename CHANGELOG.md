@@ -1,11 +1,8 @@
 ## Unreleased
 
-* Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@v0.7.0-2`, keeping the `v0.7.0` llama.cpp
-  ABI/bindings while picking up wrapper-only native fixes. Refreshed
-  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and
-  aligned current README/website native override docs.
-
+- Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.7.0-2`: a fixed `TextToSpeechRequest.seed` gives the same Qwen3-TTS audio on every synthesis of a loaded engine, including after a cancelled one ([#632](https://github.com/leehack/llamadart/issues/632)). Apple apps on `llamadart_llama_cpp_flutter` `0.15.0` or `0.15.1` keep building with a warning until they upgrade the companion.
+- Windows arm64 native bundles no longer ship `libomp140.aarch64.dll`, a Visual Studio debug DLL that apps may not redistribute; llama.cpp there uses its own CPU thread pool.
+- Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.18.0-3`: native speech-to-text loads dedicated ASR `.litertlm` containers such as Whisper tiny, which failed engine creation with `tf_lite_prefill_decode not found` ([litert-lm-native#77](https://github.com/leehack/litert-lm-native/issues/77)).
 - Document that Windows x64 builds download the full native bundle, about 700 MiB with CUDA, even when CUDA is not selected, and how to avoid it with `llamadart_native_path`.
 - Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them. Host `flutter test` on macOS for such an app no longer loads the bundled llama.cpp or stable_diffusion library, because `flutter_tester` links no companion.
 - Reject `ModelParams.loras` that LiteRT-LM cannot take before any adapter downloads, also for extensionless native `.litertlm` files, on the Web and in embedding mode.
@@ -19,14 +16,14 @@
 - Let Hermes templates that open reasoning in the prompt, such as QwQ, reason before a `ToolChoice.required` tool call; the call was previously parsed as reasoning and lost.
 - Reject `\u`-escaped spellings of declared property names (such as `\u0063ity`) as extra keys in open-object tool and response schema grammars.
 - Reject `responseFormat` and structured-output integer bounds at -2^63 on native platforms with `LlamaUnsupportedException` naming the bound, as on Web; they could fail with an opaque converter error or silently apply a wrong constraint.
-* Aligned the default WebGPU bridge assets to `v0.1.67`: loading a missing Web
-  state file throws `LlamaStateException` instead of aborting the runtime,
-  and chat image and audio URLs relative to the page load in worker mode.
-  Runtime pins are unchanged: native `v0.7.0-1` uses upstream
-  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM stays
-  `@litert-lm/core@0.18.0`.
+* Aligned the default WebGPU bridge assets to `v0.1.69`: loading a missing or
+  truncated Web state file throws `LlamaStateException` instead of aborting the
+  runtime, and chat image and audio URLs relative to the page load in worker
+  mode. Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches
+  native `v0.7.0-2`; the asset manifest records the byte-equivalent
+  `v0.7.0-1`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`.
   Manifest SHA-256:
-  `d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`.
+  `994e798389d440a256f103f3789a1f56da2ab00dd6bb6e52f334ed4e58867c46`.
 - Parse Command R7B and Cohere2 MoE replies ending in deeply nested brackets in linear time instead of seconds.
 - Fix the Web chat app not retrying a microphone recording with its untrimmed audio when the trimmed capture returns no transcript.
 - Include the native LiteRT-LM error message and status code in errors from failed engine creation, conversation creation and message sends, on runtimes that report them (`v0.18.0` and later).

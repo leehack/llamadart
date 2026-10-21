@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_release_tag.dart';
 import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
@@ -223,7 +224,12 @@ String _currentReleaseNotes(String path) {
 void main() {
   test('default assets include the qualified media embedding API', () {
     expect(readPinnedBridgeTag(Directory.current), 'v0.1.69');
-    expect(bridgeNativeReleaseTag, bridgeApprovedNativePin);
+    expect(bridgeNativeReleaseTag, 'v0.7.0-1');
+    expect(bridgeApprovedNativePin, 'v0.7.0-2');
+    expect(
+      normalizeNativeLlamaCppTag(bridgeApprovedNativePin),
+      bridgeLlamaCppTag,
+    );
   });
 
   test(
@@ -295,7 +301,7 @@ void main() {
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const liteRtLmReleaseTag = 'v0.18.0-2';"),
+        contains("const liteRtLmReleaseTag = 'v0.18.0-3';"),
       );
     },
   );
