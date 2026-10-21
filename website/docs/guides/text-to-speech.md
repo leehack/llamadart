@@ -67,7 +67,9 @@ the reason when they cannot synthesize speech with the adapter. Loading a
 projector alone does not prove that the active native or Web runtime exports
 the required TTS ABI or that the projector matches the model. `download:`
 takes `ModelLoadOptions` for every remote file, `onProgress:` reports both
-files together, `store:` takes a `ModelFileStore` with your own resolver or
+files together (on Web, where the browser fetches each file, only the model's
+fetch reports progress, up to 0.5, and progress reaches 1 once the projector
+has loaded), `store:` takes a `ModelFileStore` with your own resolver or
 download manager, and `backend:` the `LlamaBackend` (by default
 `LlamaBackend()`). Both files resolve, model first, before anything loads;
 a local file takes only the cancel token. The bearer token and headers are

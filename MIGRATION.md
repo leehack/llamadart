@@ -946,7 +946,9 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
 
    Remote sources download into the model cache. `download:` takes
    `ModelLoadOptions` for every remote file and `onProgress:` reports the
-   files together; a local file takes only the cancel token, and
+   files together (on Web, where the browser fetches each file, only the
+   model's fetch reports progress, up to 0.5 with a projector); a local file
+   takes only the cancel token, and
    `bearerToken` and `headers` go to one host only, so remote files on two
    hosts with them set throw `LlamaArgumentException`.
    `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since one
@@ -1031,9 +1033,11 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
    created. It is safe to call twice. Afterwards `transcribe`, `startStream`
    and `synthesize` throw `LlamaStateException`, and `capabilities` reports
    unsupported. Code that used the deprecated constructors and disposed the
-   `LlamaEngine` itself keeps working. A class that `implements` `SpeechToTextEngine` or
-   `TextToSpeechEngine`, such as a test fake, must add `dispose()`,
-   `isDisposed`, `adapter` and `transcribeOnce` or `synthesizeOnce`.
+   `LlamaEngine` itself keeps working. A class that `implements`
+   `SpeechToTextEngine` or `TextToSpeechEngine`, such as a test fake, must
+   add `dispose()`, `isDisposed`, `adapter` and `transcribeOnce` or
+   `synthesizeOnce`.
+
 ## `0.10.x` -> `0.11.0`: `ModelSource` for LoRA adapters, draft models and speech files
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
