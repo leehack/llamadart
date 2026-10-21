@@ -667,6 +667,7 @@ void _validateAllOf(
   String? kind;
   final names = <String>{};
   Set<String>? intersection;
+  var hasUnconstrained = false;
   for (var i = 0; i < components.length; i++) {
     var component = responseSchemaMap(components[i], '$path.allOf[$i]');
     final visited = <String>{};
@@ -677,6 +678,13 @@ void _validateAllOf(
       }
       final target = JsonSchemaConverter.resolvePointer(root, ref);
       component = responseSchemaMap(target, '$path.allOf[$i].\$ref');
+    }
+    // Upstream's merge skips components without properties or enum values,
+    // which is exact only for an object merge: its enum intersection still
+    // counts the skipped component.
+    if (component.keys.every(_isMetadata)) {
+      hasUnconstrained = true;
+      continue;
     }
     final componentKind = component.containsKey('enum') ? 'enum' : 'object';
     kind ??= componentKind;
@@ -728,5 +736,11 @@ void _validateAllOf(
   }
   if (intersection != null && intersection.isEmpty) {
     _unsupported('$path.allOf', 'has an empty enum intersection');
+  }
+  if (hasUnconstrained && kind != 'object') {
+    _unsupported(
+      '$path.allOf',
+      'needs an object properties component beside annotation-only components',
+    );
   }
 }
