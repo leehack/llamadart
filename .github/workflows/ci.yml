@@ -145,6 +145,9 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The released-changelog check diffs against the merge base.
+          fetch-depth: 0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -178,6 +181,9 @@ jobs:
 
       - name: Verify release docs versions
         run: dart run tool/testing/verify_release_docs_versions.dart
+
+      - name: Check released changelog sections
+        run: dart run tool/testing/check_released_changelog_sections.dart
 
       - name: Check WebGPU bridge asset tag
         run: dart run tool/testing/check_webgpu_bridge_tag.dart
@@ -813,6 +819,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The released-changelog check diffs against the merge base.
+          fetch-depth: 0
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.1
@@ -820,6 +829,7 @@ jobs:
           cache: true
       - run: dart pub get
       - run: dart run tool/testing/verify_release_docs_versions.dart
+      - run: dart run tool/testing/check_released_changelog_sections.dart
       - run: dart run tool/testing/check_webgpu_bridge_tag.dart
 
   validation-integration:

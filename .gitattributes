@@ -1,3 +1,9 @@
 # Catalog SHA256 locks require exact bytes; -text retains JSON text diffs.
 packages/llamadart_validation/assets/embeddings/v1/** -text
 packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json -text
+
+# Keep both sides' `## Unreleased` bullets in local merges and rebases. Union
+# keeps both sides of any conflicting edit too, so resolve release-prep edits
+# by hand (see website/docs/maintainers/release-workflow.md).
+/CHANGELOG.md merge=union
+/website/docs/changelog/recent-releases.md merge=union
