@@ -434,8 +434,9 @@ Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
 
 In a pub workspace, pub passes the hook the root `pubspec.yaml`. A root that
-is itself a Flutter app decides from its own pubspec, and member companions
-are not consulted. Otherwise the hook reads the companions from the member
+is itself a Flutter app is the app: its companions are the ones its
+`dependencies` reach, as above, including through members it depends on, and
+other members are not consulted. Otherwise the hook reads the companions from the member
 app: the member that reaches llamadart through its dependencies or dev
 dependencies and that no other member lists under `dependencies`, found
 through the root `.dart_tool/package_graph.json`. A `dev_dependencies` entry

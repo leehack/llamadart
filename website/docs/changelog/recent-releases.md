@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them.
+- Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them. Host `flutter test` on macOS for such an app no longer loads the bundled llama.cpp or stable_diffusion library, because `flutter_tester` links no companion.
 
 ## 0.15.5
 

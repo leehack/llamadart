@@ -1592,6 +1592,38 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         ),
       );
     });
+
+    for (final (scenario, edit) in [
+      ('a missing', (File graph) => graph.deleteSync()),
+      ('a malformed', (File graph) => graph.writeAsStringSync('{"roots": 1}')),
+    ]) {
+      test('Apple counts direct dependencies only with $scenario package '
+          'graph', () async {
+        final defines = await appWithCore(companionTag: 'v0.5.0');
+        edit(
+          File(
+            path.join(
+              File.fromUri(defines.workspacePubspec!.basePath).parent.path,
+              _dartToolDir,
+              'package_graph.json',
+            ),
+          ),
+        );
+        await testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, output) => expect(
+            output.assets.encodedAssets.map(
+              (asset) => asset.asCodeAsset.linkMode,
+            ),
+            everyElement(isA<DynamicLoadingBundled>()),
+          ),
+        );
+      });
+    }
   });
 
   group('pub workspace', () {
