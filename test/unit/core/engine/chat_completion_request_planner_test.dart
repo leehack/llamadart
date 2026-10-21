@@ -231,12 +231,17 @@ void main() {
         List<ToolDefinition>? tools,
         GenerationParams? params,
         Map<String, dynamic>? responseFormat,
+        bool lazy = false,
       }) => ChatCompletionRequestPlanner.build(
         backend: backend,
         templateResult: LlamaChatTemplateResult(
           prompt: 'prompt',
           format: ChatFormat.hermes.index,
           grammar: grammar,
+          grammarLazy: lazy,
+          grammarTriggers: [
+            if (lazy) GrammarTrigger(type: 0, value: '<tool_call>'),
+          ],
         ),
         messages: const [
           LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
@@ -261,20 +266,24 @@ void main() {
 
       test('rejects Hermes grammars over the llama.cpp repetition limit', () {
         final tools = schemaTools(1998);
-        expect(
-          () => plan(
-            _BaseBackend(),
-            HermesHandler().buildGrammar(tools)!,
-            tools: tools,
-          ),
-          throwsA(
-            isA<LlamaUnsupportedException>().having(
-              (error) => error.message,
-              'message',
-              contains('exceeds llama.cpp grammar limits (rule root repeats'),
+        for (final lazy in [false, true]) {
+          expect(
+            () => plan(
+              _BaseBackend(),
+              HermesHandler().buildGrammar(tools)!,
+              tools: tools,
+              lazy: lazy,
             ),
-          ),
-        );
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('exceeds llama.cpp grammar limits (rule root repeats'),
+              ),
+            ),
+            reason: 'lazy: $lazy',
+          );
+        }
       });
 
       test('applies bounds llama.cpp drops with a warning', () {
@@ -315,6 +324,15 @@ void main() {
             _NoGrammarBackend(),
             grammar,
             tools: [_weatherTool],
+          ).generationParams.grammar,
+          isNull,
+        );
+        expect(
+          plan(
+            _EagerGrammarBackend(),
+            grammar,
+            tools: [_weatherTool],
+            lazy: true,
           ).generationParams.grammar,
           isNull,
         );

@@ -32,8 +32,13 @@ void main() {
         _writeExecutable(
           p.join(testing.path, 'prepare_llama_cpp_source.sh'),
           '#!/usr/bin/env bash\n'
-          'echo "prepare \$LLAMA_CPP_REF" >> "${log.path}"\n',
+          'echo "prepare \$LLAMA_CPP_REF" >> "${log.path}"\n'
+          'if [[ -n "\${GITHUB_OUTPUT:-}" ]]; then\n'
+          '  echo "llama_cpp_ref=\$LLAMA_CPP_REF" >> "\$GITHUB_OUTPUT"\n'
+          'fi\n',
         );
+        final stepOutput = File(p.join(root.path, 'github_output'))
+          ..writeAsStringSync('llama_cpp_ref=b10549\n');
         final bin = Directory(p.join(root.path, 'bin'))..createSync();
         _writeExecutable(
           p.join(bin.path, 'cmake'),
@@ -47,6 +52,7 @@ void main() {
             'PATH': '${bin.path}:${Platform.environment['PATH']}',
             'LLAMA_CPP_REF': '',
             'LLAMA_CPP_RUNTIME_BUILD_DIR': p.join(root.path, 'build'),
+            'GITHUB_OUTPUT': stepOutput.path,
           },
         );
 
@@ -58,6 +64,7 @@ void main() {
         final calls = log.readAsLinesSync();
         expect(calls.first, 'prepare $upstreamRef');
         expect(calls.last, contains('--target test-gbnf-validator'));
+        expect(stepOutput.readAsStringSync(), 'llama_cpp_ref=b10549\n');
       },
       skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false,
     );
