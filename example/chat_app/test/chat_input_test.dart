@@ -18,6 +18,14 @@ import 'package:provider/provider.dart';
 
 import 'mocks.dart';
 
+// Web transcription rejects encoded bytes without a declared format.
+SpeechAudioBytesInput _wavBytes(List<int> bytes) => SpeechAudioBytesInput(
+  Uint8List.fromList(bytes),
+  format: const SpeechAudioFormat(encoding: 'wav', mimeType: 'audio/wav'),
+);
+
+// Live dictation, Ask with voice and speaker-reference recording are native
+// only (ChatProvider turns them off on Web), so their tests skip there.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -118,7 +126,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.text, 'existing draft hello from live speech');
     expect(provider.isLiveTranscribing, isFalse);
-  });
+  }, skip: kIsWeb);
 
   testWidgets('live dictation preference hides composer controls', (
     tester,
@@ -171,7 +179,7 @@ void main() {
     expect(settingsService.liveSpeechEnabled, isTrue);
     expect(find.byTooltip('Live transcription'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 300));
-  });
+  }, skip: kIsWeb);
 
   test('disabling live dictation cancels an active capture', () async {
     final liveTask = _FakeLiveSpeechTranscriptionTask(finalText: 'unused');
@@ -197,7 +205,7 @@ void main() {
     expect(provider.isLiveTranscribing, isFalse);
     expect(provider.supportsLiveSpeechTranscription, isFalse);
     expect(settingsService.liveSpeechEnabled, isFalse);
-  });
+  }, skip: kIsWeb);
 
   testWidgets('live transcription controls fit a narrow mobile composer', (
     tester,
@@ -265,7 +273,7 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
-  });
+  }, skip: kIsWeb);
 
   test('first live transcription use installs both sidecar assets', () async {
     final modelService = _FakeLiveSpeechModelService(installed: false);
@@ -290,7 +298,7 @@ void main() {
     expect(provider.isLiveSpeechModelReady, isTrue);
     expect(liveService.startCalls, 1);
     await provider.cancelLiveSpeechTranscription();
-  });
+  }, skip: kIsWeb);
 
   testWidgets(
     'live dictation selector shows model size and explicit download progress',
@@ -377,6 +385,7 @@ void main() {
       expect(provider.isLiveSpeechModelReady, isTrue);
       expect(find.text('615 MB · English · Installed'), findsOneWidget);
     },
+    skip: kIsWeb,
   );
 
   testWidgets('live model setup and download controls fit a narrow composer', (
@@ -428,7 +437,7 @@ void main() {
     );
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(milliseconds: 250));
-  });
+  }, skip: kIsWeb);
 
   testWidgets('live model download can be cancelled from its progress row', (
     tester,
@@ -491,7 +500,7 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(const Duration(milliseconds: 250));
-  });
+  }, skip: kIsWeb);
 
   testWidgets('failed live model download can retry or switch models', (
     tester,
@@ -556,7 +565,7 @@ void main() {
     expect(provider.liveSpeechError, isNull);
     expect(find.text('615 MB · English'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 250));
-  });
+  }, skip: kIsWeb);
 
   test(
     'live startup cancellation settles before another task can start',
@@ -591,6 +600,7 @@ void main() {
       expect(provider.isLiveTranscribing, isFalse);
       expect(provider.canStartLiveSpeechTranscription, isTrue);
     },
+    skip: kIsWeb,
   );
 
   test(
@@ -625,6 +635,7 @@ void main() {
       await cancel;
       expect(provider.canStartLiveSpeechTranscription, isTrue);
     },
+    skip: kIsWeb,
   );
 
   test('live transcription automatically finalizes at five minutes', () async {
@@ -660,7 +671,7 @@ void main() {
     expect(provider.isLiveTranscribing, isFalse);
     expect(provider.liveSpeechDisplayText, 'final words');
     expect(provider.hasPendingLiveSpeechDraft, isTrue);
-  });
+  }, skip: kIsWeb);
 
   testWidgets('dedicated TTS mode synthesizes typed text', (tester) async {
     final provider = _ReadyTextToSpeechProvider();
@@ -855,7 +866,7 @@ void main() {
     expect(provider.textToSpeechResult, isNotNull);
     expect(controller.text, isEmpty);
     expect(playback.playCalls, 1);
-  });
+  }, skip: kIsWeb);
 
   test(
     'speaker-reference read failure still deletes the temporary WAV',
@@ -887,6 +898,7 @@ void main() {
       expect(provider.recordedSpeakerReference, isNull);
       expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
     },
+    skip: kIsWeb,
   );
 
   testWidgets('keeps a supported microphone action visible while busy', (
@@ -1019,7 +1031,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.bySemanticsLabel('Start live transcription.'), findsOneWidget);
-  });
+  }, skip: kIsWeb);
 
   testWidgets('microphone controls stop and ask from the composer', (
     tester,
@@ -1108,7 +1120,7 @@ void main() {
     expect(audio.bytes, recorder.recordedBytes);
     provider.stopGeneration();
     await tester.pumpAndSettle();
-  });
+  }, skip: kIsWeb);
 
   testWidgets('shows supported ASR recording controls', (tester) async {
     final engine = _SpeechMockLlamaEngine();
@@ -1348,6 +1360,7 @@ void main() {
         contains('solve that request'),
       );
     },
+    skip: kIsWeb,
   );
 
   test(
@@ -1425,6 +1438,7 @@ void main() {
         'max_thinking_tokens': 64,
       });
     },
+    skip: kIsWeb,
   );
 
   test('external-projector audio can answer a recorded question', () async {
@@ -1472,7 +1486,7 @@ void main() {
     provider.updateMmprojPath('replacement-mmproj.gguf');
     expect(provider.canAskWithVoice, isFalse);
     expect(provider.supportsMicrophoneRecording, isFalse);
-  });
+  }, skip: kIsWeb);
 
   test('external-projector voice requires a configured projector', () async {
     final provider = ChatProvider(
@@ -1570,7 +1584,7 @@ void main() {
       provider.messages.last.text,
       'The test recording could not be read.',
     );
-  });
+  }, skip: kIsWeb);
 
   test('reports microphone permission denial without starting STT', () async {
     final engine = _SpeechMockLlamaEngine();
@@ -1795,7 +1809,7 @@ void main() {
     );
     provider.stopGeneration();
     await tester.pumpAndSettle();
-  });
+  }, skip: kIsWeb);
 
   test('stop failure resets capture and reports an actionable error', () async {
     final engine = _SpeechMockLlamaEngine();
@@ -1951,7 +1965,7 @@ void main() {
     expect(provider.messages.map((message) => message.text), <String>[
       'Conversation cleared. Ready for a new topic!',
     ]);
-  });
+  }, skip: kIsWeb);
 
   for (final contextChange
       in <({String name, void Function(ChatProvider) run})>[
@@ -2000,6 +2014,7 @@ void main() {
         expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
         expect(provider.isGenerating, isFalse);
       },
+      skip: kIsWeb,
     );
   }
 
@@ -2043,7 +2058,7 @@ void main() {
     engine.releaseGeneration();
     await freshTurn;
     expect(provider.isGenerating, isFalse);
-  });
+  }, skip: kIsWeb);
 
   for (final transition in <String>['clear', 'switch']) {
     test(
@@ -2103,6 +2118,7 @@ void main() {
         expect(provider.isGenerating, isFalse);
         expect(provider.messages.last.text, 'Fresh answer');
       },
+      skip: kIsWeb,
     );
   }
 
@@ -2125,7 +2141,7 @@ void main() {
     await provider.loadModel();
 
     await provider.transcribeAudio(
-      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      _wavBytes(const <int>[1, 2, 3]),
       displayName: 'fixture.wav',
     );
 
@@ -2140,6 +2156,37 @@ void main() {
     expect(provider.messages.last.generatedTokenCount, 5);
     expect(provider.currentTokens, 5);
     expect(provider.canRegenerateLastResponse, isFalse);
+  });
+
+  test('an empty transcript retries once with the fallback audio', () async {
+    final engine = _SequencedSpeechMockLlamaEngine(const <List<String>>[
+      <String>[],
+      <String>['language English<asr_text>Recovered speech.'],
+    ]);
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    await provider.transcribeAudio(
+      _wavBytes(const <int>[1, 2, 3]),
+      displayName: 'trimmed.wav',
+      fallbackAudio: _wavBytes(const <int>[1, 2, 3, 4]),
+    );
+
+    expect(engine.generatedAudioBytes, <Uint8List>[
+      Uint8List.fromList(const <int>[1, 2, 3]),
+      Uint8List.fromList(const <int>[1, 2, 3, 4]),
+    ]);
+    expect(provider.messages.last.text, 'Recovered speech.');
+    expect(provider.isTranscribing, isFalse);
   });
 
   test('Web treats an extensionless selected speech file as WAV', () async {
@@ -2315,7 +2362,7 @@ void main() {
     await provider.loadModel();
 
     final first = provider.transcribeAudio(
-      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      _wavBytes(const <int>[1, 2, 3]),
       displayName: 'first.wav',
     );
     await engine.createStarted.future;
@@ -2324,7 +2371,7 @@ void main() {
     expect(provider.isTranscribing, isTrue);
     expect(provider.canTranscribeAudio, isFalse);
     await provider.transcribeAudio(
-      SpeechAudioBytesInput(Uint8List.fromList(const <int>[4, 5, 6])),
+      _wavBytes(const <int>[4, 5, 6]),
       displayName: 'second.wav',
     );
     expect(engine.createCalls, 1);
@@ -2384,7 +2431,7 @@ void main() {
     await provider.loadModel();
 
     final transcription = provider.transcribeAudio(
-      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      _wavBytes(const <int>[1, 2, 3]),
       displayName: 'fixture.wav',
     );
     await engine.createStarted.future;
@@ -2607,6 +2654,43 @@ class _SequencedSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
     for (final content in responses[responseIndex]) {
       yield content;
     }
+  }
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    generatedAudioBytes.add(
+      messages
+          .expand((message) => message.parts)
+          .whereType<LlamaAudioContent>()
+          .single
+          .bytes!,
+    );
+    createChunkContents = responses[createCalls];
+    return super.create(
+      messages,
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
+    );
   }
 }
 

@@ -22,6 +22,7 @@
   Manifest SHA-256:
   `d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`.
 - Parse Command R7B and Cohere2 MoE replies ending in deeply nested brackets in linear time instead of seconds.
+- Fix the Web chat app not retrying a microphone recording with its untrimmed audio when the trimmed capture returns no transcript.
 
 ## 0.15.5
 

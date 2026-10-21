@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart'
@@ -182,6 +183,21 @@ void main() {
             tester.widget<ManageModelsScreen>(screen).focusModelFilename ==
                 activeModel.filename;
       });
+      // Catalog cards above the section can leave it unbuilt in the lazy list.
+      await tester.scrollUntilVisible(
+        find.text('Model parameters'),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byType(ManageModelsScreen),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Scrollable &&
+                    widget.axisDirection == AxisDirection.down,
+              ),
+            )
+            .first,
+      );
       expect(find.text('Model parameters'), findsOneWidget);
       final settings = tester.widget<ManageModelsScreen>(
         find.byType(ManageModelsScreen),
@@ -293,7 +309,7 @@ void main() {
         findsOneWidget,
       );
       await tester.pump(const Duration(milliseconds: 300));
-    });
+    }, skip: kIsWeb);
 
     testWidgets('disables llama.cpp batch controls for LiteRT-LM models', (
       tester,
@@ -439,9 +455,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.bySemanticsLabel('Open navigation menu'), findsOneWidget);
-      expect(find.bySemanticsLabel('Open Lab'), findsOneWidget);
-      expect(find.bySemanticsLabel('Send message'), findsOneWidget);
+      // Web leaves these icons unlabeled so screen readers announce the
+      // tooltip once; the tooltip is the accessible name there.
+      FinderBase<Object> accessibleName(String name) => kIsWeb
+          ? find.semantics.byPredicate((node) => node.tooltip == name)
+          : find.bySemanticsLabel(name);
+      expect(accessibleName('Open navigation menu'), findsOne);
+      expect(accessibleName('Open Lab'), findsOne);
+      expect(accessibleName('Send message'), findsOne);
       semantics.dispose();
     });
 

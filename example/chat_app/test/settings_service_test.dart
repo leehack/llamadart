@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -179,6 +180,7 @@ void main() {
         expect(settings.modelSupportsAudio, isTrue);
         expect(settings.directMediaInput, isTrue);
       },
+      skip: kIsWeb,
     );
 
     test('migrates the catalog Qwen3-ASR filename to typed STT', () async {
