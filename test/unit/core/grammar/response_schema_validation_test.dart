@@ -355,6 +355,85 @@ void main() {
     }
   });
 
+  // Raw JSON text, because the VM decodes int64 extremes to exact ints while
+  // Web rounds them to the nearest double.
+  for (final (keyword, bound) in [
+    ('minimum', '-9223372036854775808'),
+    ('exclusiveMinimum', '-9223372036854775808'),
+    ('maximum', '-9223372036854775808'),
+    ('exclusiveMaximum', '-9223372036854775808'),
+    ('minimum', '9223372036854775807'),
+    ('maximum', '9223372036854775807'),
+    ('minimum', '-9223372036854775809'),
+    ('maximum', '9223372036854775808'),
+    ('minimum', '-9.3e18'),
+    ('minimum', '-9007199254740992'),
+    ('maximum', '9007199254740992'),
+  ]) {
+    final partner = keyword.endsWith('inimum') ? 'maximum' : 'minimum';
+    for (final other in ['', ', "$partner": 0']) {
+      final raw = '{"type": "integer", "$keyword": $bound$other}';
+      test('raw and typed reject inexact integer bound $raw', () {
+        final schema = <String, dynamic>{
+          'type': 'object',
+          'properties': {'value': jsonDecode(raw)},
+        };
+        final error = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'bound path',
+            contains(
+              '\$.properties.value.$keyword must be a number within the '
+              'exact VM/Web integer range',
+            ),
+          ),
+        );
+        expect(() => render(schema), error);
+        expect(
+          () => LlamaStructuredOutput<Object?>.jsonValueSchema(
+            schema: schema,
+            decoder: (v) => v,
+          ),
+          error,
+        );
+      });
+    }
+  }
+
+  test('integer bounds at the exact VM/Web range limits are enforced', () {
+    for (final schema in <Map<String, dynamic>>[
+      {
+        'type': 'integer',
+        'minimum': -9007199254740991,
+        'maximum': 9007199254740991,
+      },
+      {
+        'type': 'integer',
+        'exclusiveMinimum': -9007199254740991,
+        'exclusiveMaximum': 9007199254740991,
+      },
+    ]) {
+      final exclusive = schema.containsKey('exclusiveMinimum');
+      final low = exclusive ? -9007199254740990 : -9007199254740991;
+      final high = exclusive ? 9007199254740990 : 9007199254740991;
+      expect(render(schema), isNotEmpty);
+      final output = LlamaStructuredOutput<Object?>.jsonValueSchema(
+        schema: schema,
+        decoder: (v) => v,
+      );
+      for (final value in [low, 0, high]) {
+        expect(output.parse('$value'), value);
+      }
+      for (final value in ['${low - 1}', '${high + 1}']) {
+        expect(
+          () => output.parse(value),
+          throwsA(isA<LlamaInferenceException>()),
+          reason: value,
+        );
+      }
+    }
+  });
+
   test('annotation-only tool properties preserve arbitrary values', () {
     final tool = ToolDefinition.fromJsonSchema(
       name: 'inspect',

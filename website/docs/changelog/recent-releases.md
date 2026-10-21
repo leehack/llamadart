@@ -7,6 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Reject `responseFormat` and structured-output integer bounds at -2^63 on native platforms with `LlamaUnsupportedException` naming the bound, as on Web, instead of an opaque converter error or a grammar beyond the supported range.
+
 ## 0.15.5
 
 - Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
