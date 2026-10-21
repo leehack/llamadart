@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_last_error.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 int _code = 0;
@@ -225,24 +226,56 @@ void main() {
       }
     });
 
-    test('cuts the resolved path of a symbolic link', () async {
+    test('cuts the resolved path of a symbolic link with either '
+        'separator', () async {
       final root = await Directory.systemTemp.createTemp('litert_last_error_');
       addTearDown(() => root.delete(recursive: true));
-      final real = await Directory('${root.path}/secret_real').create();
-      final link = await Link('${root.path}/secret_link').create(real.path);
+      final real = await Directory(
+        path.join(root.path, 'secret_real'),
+      ).create();
+      final link = await Link(
+        path.join(root.path, 'secret_link'),
+      ).create(real.path);
       final resolved = real.resolveSymbolicLinksSync();
-      File('$resolved/present.litertlm').writeAsStringSync('x');
+      File(path.join(resolved, 'present.litertlm')).writeAsStringSync('x');
 
       for (final model in <String>['present.litertlm', 'missing.litertlm']) {
+        for (final directory in <String>{
+          resolved,
+          resolved.replaceAll(r'\', '/'),
+        }) {
+          final separator = directory == resolved ? path.separator : '/';
+          final detail = liteRtLmNativeErrorDetail(
+            code: 5,
+            message:
+                'open $directory$separator$model and '
+                '$directory${separator}other.bin failed',
+            paths: <String>[path.join(link.path, model)],
+          );
+          expect(
+            detail,
+            'LiteRT-LM reported NOT_FOUND (5): open $model and '
+            'secret_link${separator}other.bin failed.',
+            reason: '$model in $directory',
+          );
+        }
+      }
+    });
+
+    test('cuts a path containing whitespace runs before collapsing them', () {
+      for (final model in <String>[
+        '/Users/alice/My  Models/secret_dir/gemma.litertlm',
+        '/srv/a\tb/secret_dir/gemma.litertlm',
+        '/srv/a \n b/secret_dir/gemma.litertlm',
+      ]) {
         final detail = liteRtLmNativeErrorDetail(
           code: 5,
-          message: 'open $resolved/$model and $resolved/other.bin failed',
-          paths: <String>['${link.path}/$model'],
+          message: 'open $model  failed\n',
+          paths: <String>[model],
         );
         expect(
           detail,
-          'LiteRT-LM reported NOT_FOUND (5): open $model and '
-          'secret_link/other.bin failed.',
+          'LiteRT-LM reported NOT_FOUND (5): open gemma.litertlm failed.',
           reason: model,
         );
       }

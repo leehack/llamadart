@@ -121,20 +121,15 @@ final class LiteRtLmLastError {
 ///
 /// Each of [paths], typically the model, cache and adapter paths of the
 /// failing call, and its directory are cut to their base names wherever
-/// [message] contains them, as given, with either separator or resolved
-/// through symbolic links, and URL credentials are redacted, so that the
-/// error carries no directory or signed-URL secrets. Whitespace runs become
+/// [message] contains them, as given or resolved through symbolic links, with
+/// either separator, and URL credentials are redacted, so that the error
+/// carries no directory or signed-URL secrets. Whitespace runs then become
 /// single spaces.
 String liteRtLmNativeErrorDetail({
   required int code,
   required String message,
   Iterable<String?> paths = const <String?>[],
 }) {
-  final name = _statusNames[code];
-  var text = message.replaceAll(_whitespace, ' ').trim();
-  if (name != null && text.startsWith('$name: ')) {
-    text = text.substring(name.length + 2).trim();
-  }
   final baseNames = <String, String>{};
   for (final value in paths.whereType<String>()) {
     for (final known in <String>[value, path.dirname(value)]) {
@@ -142,22 +137,34 @@ String liteRtLmNativeErrorDetail({
       if (baseName.isEmpty || baseName == known) {
         continue;
       }
-      for (final spelling in <String?>[
-        known,
-        known.replaceAll(r'\', '/'),
-        known.replaceAll('/', r'\'),
-        _realPath(known),
-      ]) {
-        if (spelling != null && spelling != baseName) {
-          baseNames.putIfAbsent(spelling, () => baseName);
+      for (final resolved in <String?>[known, _realPath(known)]) {
+        if (resolved == null) {
+          continue;
+        }
+        for (final spelling in <String>[
+          resolved,
+          resolved.replaceAll(r'\', '/'),
+          resolved.replaceAll('/', r'\'),
+        ]) {
+          if (spelling != baseName) {
+            baseNames.putIfAbsent(spelling, () => baseName);
+          }
         }
       }
     }
   }
+  // Paths are cut before whitespace is collapsed, so that a path with a
+  // whitespace run still matches.
+  var text = message;
   for (final spelling
       in baseNames.keys.toList()
         ..sort((a, b) => b.length.compareTo(a.length))) {
     text = text.replaceAll(spelling, baseNames[spelling]!);
+  }
+  final name = _statusNames[code];
+  text = text.replaceAll(_whitespace, ' ').trim();
+  if (name != null && text.startsWith('$name: ')) {
+    text = text.substring(name.length + 2).trim();
   }
   text = redactUrlSecrets(text).replaceFirst(_trailingSeparators, '');
   final status = switch (code) {

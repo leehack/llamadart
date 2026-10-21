@@ -79,7 +79,17 @@ void* litert_lm_engine_settings_create(const char* m, const char* b, const char*
   return fails(OP_SETTINGS) ? NULL : (void*)1;
 }
 void litert_lm_engine_settings_set_max_num_tokens(void* p, int n) {}
-void litert_lm_engine_settings_enable_benchmark(void* p) {}
+// In stale mode a call between engine settings creation and engine creation
+// records an error, so a stale error is on the thread that creates the engine
+// even when that thread already cleared it for engine settings creation.
+void litert_lm_engine_settings_enable_benchmark(void* p) {
+  if (stale_errors) {
+    error_state* error = current_error();
+    error->code = 13;
+    error->has_message = true;
+    strcpy(error->message, "stale error");
+  }
+}
 void litert_lm_engine_settings_set_enable_speculative_decoding(void* p, bool b) {}
 void litert_lm_engine_settings_set_cache_dir(void* p, const char* d) {}
 void litert_lm_engine_settings_delete(void* p) {}
