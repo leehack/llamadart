@@ -152,6 +152,92 @@ void main() {
     });
   });
 
+  test('parses a trailing action array whose strings hold brackets', () {
+    final handler = CommandR7BHandler();
+    final parsed = handler.parse(
+      'See [1] "quoted [" here.'
+      r'[{"tool_name":"echo","parameters":{"text":"a [\"b\"] \\ ]["}}]',
+    );
+
+    expect(parsed.content, equals('See [1] "quoted [" here.'));
+    expect(parsed.toolCalls, hasLength(1));
+    expect(parsed.toolCalls.single.function?.name, equals('echo'));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'text': r'a ["b"] \ ][',
+    });
+  });
+
+  test('scans string and escape state backward in a bare action array', () {
+    final handler = CommandR7BHandler();
+
+    final escapedQuote = handler.parse(
+      r'[{"tool_name":"a","parameters":{"x":"[[[\""}}]',
+    );
+    expect(escapedQuote.toolCalls, hasLength(1));
+    expect(escapedQuote.toolCalls.single.function?.name, equals('a'));
+    expect(jsonDecode(escapedQuote.toolCalls.single.function!.arguments!), {
+      'x': '[[["',
+    });
+
+    final bracketString = handler.parse(
+      '[{"tool_name":"a","parameters":{"x":"["}}]',
+    );
+    expect(bracketString.toolCalls, hasLength(1));
+    expect(bracketString.toolCalls.single.function?.name, equals('a'));
+    expect(jsonDecode(bracketString.toolCalls.single.function!.arguments!), {
+      'x': '[',
+    });
+
+    final leadingQuote = handler.parse(
+      'p " [{"tool_name":"a","parameters":{}}]',
+    );
+    expect(leadingQuote.content, equals('p "'));
+    expect(leadingQuote.toolCalls, hasLength(1));
+    expect(leadingQuote.toolCalls.single.function?.name, equals('a'));
+    expect(
+      jsonDecode(leadingQuote.toolCalls.single.function!.arguments!),
+      isEmpty,
+    );
+  });
+
+  test('keeps trailing bracketed text that is not an action array', () {
+    final handler = CommandR7BHandler();
+    for (final input in const [
+      '[{"tool_name":"echo","parameters":{}}] then [1]',
+      '[{"tool_name":"echo","parameters":{}}] then []',
+      '[{"tool_name":"echo","parameters":{}}]]',
+      '[{"tool_name":"echo","parameters":{"text":"]"}]',
+      '"[{"tool_name":"echo","parameters":{}}]"',
+    ]) {
+      final parsed = handler.parse(input);
+
+      expect(parsed.toolCalls, isEmpty, reason: input);
+      expect(parsed.content, equals(input), reason: input);
+    }
+  });
+
+  test('scans deeply nested bracket output in linear time', () {
+    // Rescanning from every bracket took about 30 s per input at this depth;
+    // one pass takes milliseconds, so the bound leaves a wide margin both ways.
+    // A test timeout cannot interrupt synchronous parsing, hence the stopwatch.
+    const depth = 40000;
+    final handler = CommandR7BHandler();
+    final stopwatch = Stopwatch()..start();
+    for (final input in [
+      '${'[' * depth}${']' * depth}',
+      '${'[' * depth}${']' * depth} done',
+      '[{"tool_name":"echo","parameters":{}}] ${'[' * depth}${']' * depth}',
+    ]) {
+      final parsed = handler.parse(input);
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, equals(input));
+    }
+    stopwatch.stop();
+
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+  });
+
   test('keeps bare single-object action-like JSON as content', () {
     final handler = CommandR7BHandler();
     const input =

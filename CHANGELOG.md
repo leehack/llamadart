@@ -21,6 +21,7 @@
   `@litert-lm/core@0.18.0`.
   Manifest SHA-256:
   `d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`.
+- Parse Command R7B and Cohere2 MoE replies ending in deeply nested brackets in linear time instead of seconds.
 
 ## 0.15.5
 
