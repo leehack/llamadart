@@ -13,6 +13,7 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
+import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/load_device_selection.dart';
@@ -2224,6 +2225,109 @@ void main() {
           gpu,
         );
       });
+
+      // On a CPU-only host the model's GPU placement is written into the
+      // service, and the GPU device a load selects is the CPU device, so the
+      // head runs on the CPU while its scheduler still gets the GPU choice.
+      for (final (name, :android, :onGpu, :gpuDevice, :opOffload) in [
+        (
+          'CPU',
+          android: false,
+          onGpu: false,
+          gpuDevice: true,
+          opOffload: false,
+        ),
+        ('GPU', android: false, onGpu: true, gpuDevice: true, opOffload: true),
+        (
+          'GPU backend without a device',
+          android: false,
+          onGpu: true,
+          gpuDevice: false,
+          opOffload: false,
+        ),
+        (
+          'conservative Android Vulkan',
+          android: true,
+          onGpu: true,
+          gpuDevice: true,
+          opOffload: false,
+        ),
+      ]) {
+        test('passes the $name op offload choice to the head scheduler', () {
+          final cpu = GgmlGraphApi.current.devByType(
+            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+          );
+          final schedulerOpOffload = <bool>[];
+          service = LlamaCppService(
+            isAndroid: android,
+            decisionHeadGraphApi: _withGgmlOverrides(GgmlGraphApi.current, {
+              #schedNew:
+                  (
+                    Pointer<ggml_backend_t> backends,
+                    Pointer<ggml_backend_buffer_type_t> types,
+                    int count,
+                    int graphSize,
+                    bool parallel,
+                    bool opOffload,
+                  ) {
+                    schedulerOpOffload.add(opOffload);
+                    return GgmlGraphApi.current.schedNew(
+                      backends,
+                      types,
+                      count,
+                      graphSize,
+                      parallel,
+                      opOffload,
+                    );
+                  },
+            }),
+            registeredDevices: () => [
+              if (gpuDevice)
+                GgmlDeviceEntry(
+                  name: 'Vulkan0',
+                  registry: 'Vulkan',
+                  type:
+                      ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
+                  device: cpu,
+                ),
+            ],
+          );
+          final encoderPath = path.join(tempDir.path, 'encoder.gguf');
+          final headPath = path.join(tempDir.path, 'head.safetensors');
+          final configPath = path.join(tempDir.path, 'config.json');
+          writeSyntheticModernBertGguf(encoderPath, decisionTokens: true);
+          SyntheticDecisionHead(d: 16, layers: 1, seed: 1).write(headPath);
+          File(
+            configPath,
+          ).writeAsStringSync('{"max_len": 64, "head_layers": 1}');
+          final model = service.loadModel(
+            encoderPath,
+            const ModelParams(gpuLayers: 0, contextSize: 64),
+          );
+          if (onGpu) {
+            _readPrivateForTesting<Map<int, String>>(
+              service,
+              '_modelBackendNames',
+            )[model] = 'Vulkan';
+            _readPrivateForTesting<Map<int, int>>(
+              service,
+              '_modelResolvedGpuLayers',
+            )[model] = 99;
+            _readPrivateForTesting<Map<int, ModelParams>>(
+              service,
+              '_modelLoadParams',
+            )[model] = const ModelParams(
+              gpuLayers: 99,
+              contextSize: 64,
+              preferredBackend: GpuBackend.vulkan,
+            );
+          }
+
+          service.loadDecisionHead(model, headPath, configPath);
+
+          expect(schedulerOpOffload, [opOffload]);
+        });
+      }
 
       DecisionHeadRuntime tinyRuntime() {
         final headPath = path.join(
@@ -8102,6 +8206,28 @@ T _invokePrivateForTesting<T>(
           )
           .reflectee
       as T;
+}
+
+/// [base] with the functions in [overrides], by field name.
+GgmlGraphApi _withGgmlOverrides(
+  GgmlGraphApi base,
+  Map<Symbol, Function> overrides,
+) {
+  final type = reflectClass(GgmlGraphApi);
+  final instance = reflect(base);
+  return type.newInstance(
+        MirrorSystem.getSymbol('_', type.owner as LibraryMirror),
+        const [],
+        {
+          for (final field
+              in type.declarations.values.whereType<VariableMirror>())
+            if (!field.isStatic)
+              field.simpleName:
+                  overrides[field.simpleName] ??
+                  instance.getField(field.simpleName).reflectee,
+        },
+      ).reflectee
+      as GgmlGraphApi;
 }
 
 T _readPrivateForTesting<T>(LlamaCppService service, String field) {
