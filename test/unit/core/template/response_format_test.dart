@@ -221,6 +221,26 @@ void main() {
       }
     });
 
+    test('reports a converter exception as unsupported', () {
+      // Negating the VM's minimum int overflows, so the integer range
+      // builder parses "-" as a digit and throws a FormatException.
+      const schema = {
+        'type': 'integer',
+        'minimum': -9223372036854775808,
+        'maximum': 0,
+      };
+      expect(
+        () => responseFormatGrammar(schema),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('FormatException'),
+          ),
+        ),
+      );
+    }, testOn: 'vm');
+
     test('reports a stack overflow from a long reference chain', () {
       const links = 20000;
       final schema = <String, dynamic>{

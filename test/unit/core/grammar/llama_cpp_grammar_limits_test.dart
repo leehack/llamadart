@@ -29,7 +29,7 @@ void main() {
 
   group('checkTemplateGrammarLimits', () {
     // Each grammar was checked against the test-gbnf-validator of the shipped
-    // runtime (upstream v0.6.0), built by
+    // runtime (upstream v0.7.0), built by
     // tool/testing/build_llama_cpp_runtime_gbnf_validator.sh.
     test('accepts grammars llama.cpp loads with every bound kept', () {
       for (final grammar in [
@@ -43,6 +43,12 @@ void main() {
         'root ::= ( "a"\r\n b{ 0 , 1998 } )?\r\nb ::= "b"',
         'root ::= ( "a" # comment ( unbalanced\n  b{ 2 , 3 } )\r\nb ::= [x] | "y"',
         'root ::= "(" ( "a" | "b" )+ ")" | "\\"" [^"\\\\]* "\\""',
+        'root ::= "a"{40} .{60}',
+        'root ::= ("a" root){0,1001}',
+        'root ::= ("a"* "b"{0,1998})?',
+        'root ::= ("a"* "b"{0,1998})*',
+        'root ::= ("a"* "b"{0,1998}){0} "c"',
+        'root ::= "a"{10}{10}{20}',
       ]) {
         expect(() => checkTemplateGrammarLimits(grammar), returnsNormally);
         expect(llamaCppRepetitionRejection(grammar), isNull, reason: grammar);
@@ -57,6 +63,11 @@ void main() {
         'root ::= ( "a" b{0,999} ){2,}\nb ::= "b"',
         'root ::= ( "a"\r\n b{ 0 , 1999 } )?\r\nb ::= "b"',
         'root ::= # comment\n("a" "b"{0,2000})?',
+        'root ::= "a"{40}{60}',
+        'root ::= ("a"* "b"{0,1999})?',
+        'root ::= ("a"* "b"{0,1999})*',
+        'root ::= ("a"* "b"{0,1999}){0} "c"',
+        'root ::= "a"{10}{10}{21}',
         'root ::= ( ${[for (var i = 0; i < 2000; i++) 'r$i'].join(' | ')} )+',
       ]) {
         expect(

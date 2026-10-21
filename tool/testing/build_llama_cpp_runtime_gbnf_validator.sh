@@ -22,7 +22,10 @@ if [[ ! "${build_jobs}" =~ ^[1-9][0-9]*$ ]]; then
   exit 64
 fi
 
-LLAMA_CPP_SOURCE_DIR="${src_dir}" LLAMA_CPP_REF="${upstream_ref}" \
+# An empty GITHUB_OUTPUT keeps the runtime ref from overwriting the template
+# parity ref that callers publish as a step output.
+GITHUB_OUTPUT="" LLAMA_CPP_SOURCE_DIR="${src_dir}" \
+  LLAMA_CPP_REF="${upstream_ref}" \
   "${repo_root}/tool/testing/prepare_llama_cpp_source.sh" >&2
 
 echo "[runtime-gbnf] ${native_tag} -> upstream ${upstream_ref}: ${build_dir}" >&2
