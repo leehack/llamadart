@@ -76,36 +76,22 @@ void main() {
     expect(driver.fileSize('${directory.path}/missing.gguf'), isNull);
   });
 
-  test('probes the host runtime, which the root package does not bundle', () {
-    final status = createImageGenerationDriver().probe();
+  test(
+    'probes the host runtime, which the root package does not bundle',
+    () async {
+      final status = await createImageGenerationDriver().probeInBackground();
 
-    expect(status.isAvailable, isFalse);
-    expect(status.unavailableReason?.message, contains('stable_diffusion'));
-  });
+      expect(status.isAvailable, isFalse);
+      expect(status.unavailableReason?.message, contains('stable_diffusion'));
+    },
+  );
 
-  test('probes in a background isolate with the same result', () async {
-    final driver = createImageGenerationDriver();
-
-    final status = await driver.probeInBackground();
-
-    expect(status.isAvailable, isFalse);
-    expect(
-      status.unavailableReason?.message,
-      driver.probe().unavailableReason?.message,
-    );
-  });
-
-  test('the background probe runs in another isolate, and probe on the '
-      'calling one', () async {
+  test('the probe runs in another isolate', () async {
     final driver = createImageGenerationDriver(probe: _probeNamingItsIsolate);
 
     expect(
       (await driver.probeInBackground()).unavailableReason?.message,
       startsWith('spawned isolate'),
-    );
-    expect(
-      driver.probe().unavailableReason?.message,
-      startsWith('calling isolate'),
     );
   });
 
@@ -130,11 +116,6 @@ void main() {
       expect(imageRuntimeLogLevel(), expected, reason: reason);
       expect(
         (await driver.probeInBackground()).unavailableReason?.message,
-        endsWith('log level ${expected.name}'),
-        reason: reason,
-      );
-      expect(
-        driver.probe().unavailableReason?.message,
         endsWith('log level ${expected.name}'),
         reason: reason,
       );

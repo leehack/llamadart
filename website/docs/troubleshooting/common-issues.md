@@ -311,6 +311,18 @@ unload finished, for example
 `Cannot set a model while another model lifecycle operation is in progress.`
 Await each lifecycle call before starting the next.
 
+### `The LlamaEngine is disposed. Create a new LlamaEngine.`
+
+`LlamaStateException`: the engine's `dispose()` was called, and disposal is
+permanent. Loads, requests and backend queries throw this. A load still
+running when `dispose()` was called throws
+`The LlamaEngine was disposed while loading, so the load was undone.`, and a
+`SpeechToTextEngine` or `TextToSpeechEngine` attached to the engine throws
+`The attached LlamaEngine is disposed. ...`. To switch models, keep the
+engine and call `setModel`. After `dispose()`, create a new `LlamaEngine` and
+attach new speech engines to it; in Flutter, check that the owner that
+disposed the engine is not still sending it requests.
+
 ### Embedding input exceeds `n_ubatch`
 
 `LlamaInferenceException`:

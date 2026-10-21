@@ -49,10 +49,6 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
   String get operatingSystem => stableDiffusionHostOperatingSystem();
 
   @override
-  StableDiffusionRuntimeStatus probe() =>
-      _probe(logLevel: imageRuntimeLogLevel());
-
-  @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() {
     final probe = _probe;
     final logLevel = imageRuntimeLogLevel();
