@@ -2451,6 +2451,23 @@ void main() {
           }
         });
 
+        test('the end of the stream releases a held backslash', () async {
+          // The EXAONE MoE parse returns an unended thought as content, so
+          // only the stream's own end releases the backslash as reasoning.
+          for (final tokens in const [
+            ['Plan', r' \'],
+            ['Plan ', r'\'],
+            [r'\'],
+          ]) {
+            final reasoning = await _reasoningBeforeEndTag(
+              ChatFormat.exaoneMoe,
+              tokens,
+              tokens.join(),
+            );
+            expect(reasoning, tokens.join(), reason: tokens.join('|'));
+          }
+        });
+
         test('reasoning streams as each token arrives', () async {
           await _expectStreamedAfterEachToken(
             ChatFormat.hermes,
