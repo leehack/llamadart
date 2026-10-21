@@ -572,8 +572,8 @@ class ChatTemplateEngine {
   /// A leading unterminated Ministral `[THINK]` block without `[TOOL_CALLS]`
   /// remains reasoning at EOF if the final parser accepts a reply without calls.
   ///
-  /// Output that a PEG [parser] cannot parse throws
-  /// [LlamaInferenceException].
+  /// Output that a PEG [parser] cannot parse, or that is nested too deeply to
+  /// parse, throws [LlamaInferenceException].
   static ChatParseResult parse(
     int formatIndex,
     String output, {
@@ -584,16 +584,27 @@ class ChatTemplateEngine {
     String? parser,
     List<ToolDefinition>? tools,
   }) {
-    final result = _parse(
-      formatIndex,
-      output,
-      isPartial: isPartial,
-      cancelled: cancelled,
-      parseToolCalls: parseToolCalls,
-      thinkingForcedOpen: thinkingForcedOpen,
-      parser: parser,
-      tools: tools,
-    );
+    final ChatParseResult result;
+    try {
+      result = _parse(
+        formatIndex,
+        output,
+        isPartial: isPartial,
+        cancelled: cancelled,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+        parser: parser,
+        tools: tools,
+      );
+    } on StackOverflowError catch (_, stackTrace) {
+      // PEG rules recurse once per nesting level of model-controlled output.
+      Error.throwWithStackTrace(
+        LlamaInferenceException(
+          'The model output is nested too deeply to parse.',
+        ),
+        stackTrace,
+      );
+    }
     return isPartial ? result : _withTrailingWhitespace(result, output);
   }
 
