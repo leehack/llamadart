@@ -1811,6 +1811,101 @@ void main() {
     );
 
     test(
+      'native-sync Python suites bind to their paired script and command',
+      () async {
+        const source = 'tool/native/sync_native_release_pins.py';
+        const target = 'tool/native/test_sync_native_release_pins.py';
+        const otherSource = 'tool/native/native_header_archive.py';
+        const otherTarget = 'tool/native/test_native_header_archive.py';
+        final evidence =
+            jsonDecode(
+                  jsonEncode(backendEvidence())
+                      .replaceAll(backendSource, source)
+                      .replaceAll(backendTest, target),
+                )
+                as Map<String, dynamic>;
+        evidence['surfaces'] = ['artifactConsumer'];
+        final proof = evidence['test_evidence'][target] as Map<String, dynamic>;
+        var changes = const [
+          RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+        ];
+        var existingPaths = {source, target, otherSource, otherTarget};
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          changes,
+          existingPaths: existingPaths,
+        ).evaluate(evidence: evidence, context: context);
+
+        for (final command in [
+          'python3 $target',
+          'python3 -m unittest '
+              'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest',
+        ]) {
+          proof['command'] = command;
+          expect(
+            (await evaluate()).decision,
+            ReadinessDecision.unverifiedPrerequisites,
+            reason: command,
+          );
+        }
+
+        proof['command'] = 'python3 $otherTarget';
+        var result = await evaluate();
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains(target));
+
+        proof['command'] = 'python3 $target';
+        proof['control_result'] = 'pass';
+        expect((await evaluate()).decision, ReadinessDecision.rejected);
+        proof['control_result'] = 'fail';
+
+        existingPaths = {source, otherSource, otherTarget};
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingTestPath,
+        );
+        existingPaths = {source, target, otherSource, otherTarget};
+
+        changes = const [
+          RepositoryChange(
+            path: otherSource,
+            kind: RepositoryChangeKind.modified,
+          ),
+        ];
+        proof['production_refs'] = productionRefs(otherSource);
+        result = await evaluate();
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains(target));
+      },
+    );
+
+    test('rejects Python paths outside the native-sync suites', () async {
+      for (final path in [
+        'tool/native/sync_native_release_pins.py',
+        'tool/native/test_unlisted_suite.py',
+        'tool/native/fixtures/test_sync_native_release_pins.py',
+        'tool/testing/validation/test_npu_apk.py',
+        'test/ci/test_workflow.py',
+        'test/unit/tooling/sync_native_release_pins_test.py',
+      ]) {
+        final evidence = backendEvidence()..['affected_test_paths'] = [path];
+        evidence['test_evidence'] = {path: testProof(backendSource)};
+        expectFailure(
+          await evaluatorFor(
+            [backendChanges.first],
+            existingPaths: {backendSource, path},
+          ).evaluate(evidence: evidence, context: context),
+          ReadinessFailureClassification.nonTestPathCited,
+        );
+      }
+    });
+
+    test(
       'rejects traversal, absolute, non-test, and tool script paths',
       () async {
         for (final path in [
@@ -2276,9 +2371,21 @@ void main() {
         isTrue,
       );
       for (final path in [
+        'tool/native/test_native_header_archive.py',
+        'tool/native/test_sync_native_headers_and_bindings.py',
+        'tool/native/test_sync_native_release_pins.py',
+        'tool/native/test_sync_stable_diffusion_bindings.py',
+      ]) {
+        expect(testPathPattern.hasMatch(path), isTrue, reason: path);
+      }
+      for (final path in [
         'packages/other/test/reuse_test.dart',
         'packages/genkit_llamadart/test/../lib/reuse_test.dart',
         'packages/genkit_llamadart/test/unit/*_test.dart',
+        'tool/native/sync_native_release_pins.py',
+        'tool/native/test_unlisted_suite.py',
+        'tool/testing/validation/test_npu_apk.py',
+        'test/unit/tooling/sync_native_release_pins_test.py',
       ]) {
         expect(testPathPattern.hasMatch(path), isFalse, reason: path);
       }
