@@ -401,6 +401,12 @@ companion package is a dependency:
 - `llamadart_stable_diffusion_flutter` links the stable-diffusion.cpp
   XCFramework for [image generation](../guides/image-generation).
 
+A companion counts when the app's `dependencies` reach it, directly or
+through another package such as a shared app package, because Flutter links
+it either way. One reached only through `dev_dependencies` does not count, and
+without a readable `.dart_tool/package_graph.json` only direct dependencies
+do.
+
 When the llama.cpp or LiteRT-LM companion is present, the installed companions
 choose the Apple `llama_cpp` and `litert_lm` families and the rest of
 `llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
@@ -433,20 +439,30 @@ Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
 
 In a pub workspace, pub passes the hook the root `pubspec.yaml`. A root that
-is itself a Flutter app decides from its own pubspec, and member companions
-are not consulted. Otherwise the hook reads the companions from the member
+is itself a Flutter app is the app: its companions are the ones its
+`dependencies` reach, as above, including through members it depends on, and
+other members are not consulted. Otherwise the hook reads the companions from the member
 app: the member that reaches llamadart through its dependencies or dev
-dependencies and that no other member depends on, found through the root
-`.dart_tool/package_graph.json`. Debug and profile builds include the app's
-dev dependencies, so those count on every target; only Flutter builds target
-iOS, so for iOS the hook ignores non-Flutter members. Every member shares the
-hook's output, so when several such members exist they must be Flutter apps
-declaring the same companions. Otherwise, or when the graph cannot be read,
-the build writes a `warning: llamadart:` line and bundles the hook's Apple
-assets without checking or linking any companion; give the apps the same
-companions or move them into separate workspaces. `flutter build ios` does
-not show hook warnings; Xcode and `xcodebuild` do. A workspace with no
-Flutter member that uses llamadart bundles the hook's assets.
+dependencies and that no other member lists under `dependencies`, found
+through the root `.dart_tool/package_graph.json`. A `dev_dependencies` entry
+on another member does not make a member a library. Debug and profile builds
+include the app's dev dependencies, so those count on every target; only
+Flutter builds target iOS, so for iOS the hook ignores non-Flutter members.
+The app's companions are the ones its `dependencies` reach, as above,
+including through other members. Every member shares the hook's output, so
+when several such members exist they must be Flutter apps reaching the same
+companions. Otherwise, or when the graph cannot be read, the build writes a
+`warning: llamadart:` line and bundles the hook's Apple assets without
+checking or linking any companion; give the apps the same companions or move
+them into separate workspaces. `flutter build ios` does not show hook
+warnings; Xcode and `xcodebuild` do. A workspace with no Flutter member that
+uses llamadart bundles the hook's assets.
+
+Host `flutter test` on macOS runs in `flutter_tester`, which links no
+companion. A test that loads llama.cpp or stable_diffusion where a companion
+provides it cannot resolve the runtime's symbols; macOS LiteRT-LM falls back to
+the hook cache. In a pub workspace this covers the host tests of every member,
+library members included, because they share the app's hook output.
 
 Standalone Dart on macOS keeps LiteRT-LM libraries in the hook cache. A custom
 launcher can set `LLAMADART_LITERT_LM_LIB_DIR` to the extracted LiteRT-LM

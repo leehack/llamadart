@@ -676,7 +676,7 @@ _AppleCompanions? _flutterAppleCompanions({
   var consumer = 'Flutter package ${consumerRoot.path}';
   final Set<String> dependencies;
   if (_pubspecDeclaresFlutter(pubspecSource)) {
-    dependencies = _pubspecDependencyNames(pubspecSource);
+    dependencies = _flutterAppDependencies(consumerRoot, pubspecSource, output);
   } else if (_pubspecDeclaresWorkspace(pubspecSource)) {
     final app = _workspaceFlutterApp(
       consumerRoot,
@@ -743,17 +743,19 @@ _AppleCompanions? _flutterAppleCompanions({
   );
 }
 
-/// The Flutter app of the pub workspace rooted at [workspaceRoot] whose
-/// pubspec `dependencies` choose the Apple companions, or `null` to keep the
-/// bundled Apple native assets.
+/// The Flutter app of the pub workspace rooted at [workspaceRoot] with every
+/// package its regular dependencies reach, directly or not, or `null` to keep
+/// the bundled Apple native assets. Flutter links each plugin among those
+/// packages, so they choose the Apple companions.
 ///
 /// pub passes the workspace root pubspec, which holds the user-defines, and
 /// the build does not tell the hook which member it builds, so the hook reads
 /// `.dart_tool/package_graph.json`. A member builds llamadart into an app when
 /// its dependencies or dev dependencies reach [_packageName] and no other
-/// member depends on it. Every member shares this hook output, so when those
-/// members do not all declare the same companions, or mix Flutter apps with
-/// other packages, the build warns and keeps the bundled assets.
+/// member lists it under regular dependencies. Every member shares this hook
+/// output, so when those members do not all reach the same companions, or mix
+/// Flutter apps with other packages, the build warns and keeps the bundled
+/// assets.
 ///
 /// Only a Flutter build targets iOS, so for [ios] non-Flutter members are not
 /// considered; `flutter build ios` also hides hook warnings, which would leave
@@ -783,31 +785,11 @@ _AppleCompanions? _flutterAppleCompanions({
   final Map<String, List<String>> devDependencies;
   final Map<String, Uri> roots;
   try {
-    final graph = jsonDecode(graphFile.readAsStringSync());
+    final graph = _decodePackageGraph(jsonDecode(graphFile.readAsStringSync()));
     final config = jsonDecode(configFile.readAsStringSync());
-    if (graph case {
-      'roots': final List<Object?> graphRoots,
-      'packages': final List<Object?> packages,
-    } when graphRoots.every((root) => root is String)) {
-      members = [...graphRoots.cast<String>()]..sort();
-      dependencies = {};
-      devDependencies = {};
-      for (final package in packages) {
-        if (package case {
-          'name': final String name,
-          'dependencies': final List<Object?> direct,
-        }) {
-          dependencies[name] = direct.whereType<String>().toList();
-          if (package['devDependencies'] case final List<Object?> dev) {
-            devDependencies[name] = dev.whereType<String>().toList();
-          }
-        } else {
-          throw const FormatException();
-        }
-      }
-    } else {
-      throw const FormatException();
-    }
+    members = [...graph.roots]..sort();
+    dependencies = graph.dependencies;
+    devDependencies = graph.devDependencies;
     if (config case {'packages': final List<Object?> entries}) {
       roots = {
         for (final entry in entries)
@@ -842,16 +824,10 @@ _AppleCompanions? _flutterAppleCompanions({
   final libraries = {
     for (final member in members) ...?dependencies[member],
   }.intersection(members.toSet());
-  bool reachesCore(String member) {
-    final reached = <String>{};
-    final pending = [member, ...?devDependencies[member]];
-    while (pending.isNotEmpty) {
-      final name = pending.removeLast();
-      if (name == _packageName) return true;
-      if (reached.add(name)) pending.addAll(dependencies[name] ?? const []);
-    }
-    return false;
-  }
+  bool reachesCore(String member) => _reachedThrough(dependencies, [
+    member,
+    ...?devDependencies[member],
+  ]).contains(_packageName);
 
   const companions = {
     _llamaCppFlutterPackageName,
@@ -890,11 +866,14 @@ _AppleCompanions? _flutterAppleCompanions({
       }
       continue;
     }
-    final declared = _pubspecDependencyNames(source);
-    final selected = companions.where(declared.contains).toList()..sort();
+    final reached = _reachedThrough(dependencies, {
+      ..._pubspecDependencyNames(source),
+      ...?dependencies[member],
+    });
+    final selected = companions.where(reached.contains).toList()..sort();
     apps.add((
       name: member,
-      dependencies: declared,
+      dependencies: reached,
       setup: selected.isEmpty
           ? 'Flutter, no Apple companion'
           : 'Flutter, ${selected.join(', ')}',
@@ -922,6 +901,81 @@ _AppleCompanions? _flutterAppleCompanions({
     return null;
   }
   return (name: app.name, dependencies: appDependencies);
+}
+
+/// Every package the regular dependencies of the Flutter app with pubspec
+/// [source] at [appRoot] reach, as Flutter links each plugin among them.
+/// Without a readable `.dart_tool/package_graph.json`, which
+/// [selectConsumerNativeRuntimes] warns about, only the direct dependencies
+/// count.
+Set<String> _flutterAppDependencies(
+  Directory appRoot,
+  String source,
+  BuildOutputBuilder output,
+) {
+  final direct = _pubspecDependencyNames(source);
+  final graphFile = File(
+    path.join(appRoot.path, _dartToolDir, 'package_graph.json'),
+  );
+  output.dependencies.add(graphFile.uri);
+  try {
+    final graph = _decodePackageGraph(jsonDecode(graphFile.readAsStringSync()));
+    return _reachedThrough(graph.dependencies, direct);
+  } on FileSystemException {
+    return direct;
+  } on FormatException {
+    return direct;
+  }
+}
+
+/// The roots of the decoded `package_graph.json` [graph] and each package's
+/// regular and dev dependencies. Throws [FormatException] on another shape.
+({
+  List<String> roots,
+  Map<String, List<String>> dependencies,
+  Map<String, List<String>> devDependencies,
+})
+_decodePackageGraph(Object? graph) {
+  if (graph case {
+    'roots': final List<Object?> roots,
+    'packages': final List<Object?> packages,
+  } when roots.every((root) => root is String)) {
+    final dependencies = <String, List<String>>{};
+    final devDependencies = <String, List<String>>{};
+    for (final package in packages) {
+      if (package case {
+        'name': final String name,
+        'dependencies': final List<Object?> direct,
+      }) {
+        dependencies[name] = direct.whereType<String>().toList();
+        if (package['devDependencies'] case final List<Object?> dev) {
+          devDependencies[name] = dev.whereType<String>().toList();
+        }
+      } else {
+        throw const FormatException();
+      }
+    }
+    return (
+      roots: roots.cast<String>(),
+      dependencies: dependencies,
+      devDependencies: devDependencies,
+    );
+  }
+  throw const FormatException();
+}
+
+/// [packages] with every package their regular [dependencies] reach.
+Set<String> _reachedThrough(
+  Map<String, List<String>> dependencies,
+  Iterable<String> packages,
+) {
+  final reached = <String>{};
+  final pending = [...packages];
+  while (pending.isNotEmpty) {
+    final name = pending.removeLast();
+    if (reached.add(name)) pending.addAll(dependencies[name] ?? const []);
+  }
+  return reached;
 }
 
 /// What a resolved Flutter Apple companion must match before the hook trusts
