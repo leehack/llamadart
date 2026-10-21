@@ -505,6 +505,88 @@ void main() {
     await engine.dispose();
   });
 
+  group('a task nobody listens to', () {
+    Future<SpeechToTextTask> start(SpeechToTextEngine engine) =>
+        engine.transcribe(_oneSecondRequest());
+
+    test('is released once it completes', () async {
+      final engine = await load();
+
+      final reference = await _finishUnobservedTask(engine);
+
+      expect(await _isCollected(reference), isTrue);
+      await engine.dispose();
+    });
+
+    test('keeps its events for a late subscriber', () async {
+      final engine = await load();
+      final task = await start(engine);
+
+      final result = await task.result;
+      final events = await task.events.toList();
+
+      expect(events.whereType<SpeechToTextPartialEvent>(), hasLength(1));
+      expect((events.last as SpeechToTextFinalEvent).result, same(result));
+      await engine.dispose();
+    });
+
+    test('leaves the engine reusable', () async {
+      final engine = await load();
+      await (await start(engine)).result;
+
+      final next = await engine.transcribeOnce(_oneSecondRequest());
+      final session = await engine.startStream();
+      await session.cancel();
+
+      expect(next.text, 'hello world');
+      expect(driver.startCalls, 3);
+      await engine.dispose();
+    });
+
+    test('blocks a concurrent task until it completes', () async {
+      final engine = await load();
+      driver.blockWorkerPush = true;
+      final first = await start(engine);
+
+      await expectLater(start(engine), throwsA(isA<LlamaStateException>()));
+      driver.blockWorkerPush = false;
+      driver.worker.releasePushes();
+      expect((await first.result).text, 'hello world');
+
+      expect((await (await start(engine)).result).text, 'hello world');
+      expect(driver.startCalls, 2);
+      await engine.dispose();
+    });
+
+    test('is cancelled by dispose while it runs', () async {
+      final engine = await load();
+      driver.blockWorkerPush = true;
+      final task = await start(engine);
+      await Future<void>.delayed(Duration.zero);
+
+      await engine.dispose();
+
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+      await expectLater(task.result, throwsA(isA<LlamaStateException>()));
+      await task.events.drain<void>();
+      expect(driver.worker.cancelCalls, isPositive);
+      expect(driver.worker.disposed, isTrue);
+    });
+
+    test('is not cancelled by a later dispose', () async {
+      final engine = await load();
+      final task = await start(engine);
+      await task.result;
+
+      await engine.dispose();
+
+      expect((await task.done).state, SpeechToTextCompletionState.completed);
+      expect(driver.worker.cancelCalls, 0);
+      expect(driver.worker.disposeCalls, 1);
+      expect(engine.isDisposed, isTrue);
+    });
+  });
+
   group('deprecated liteRtLm constructor', () {
     test('reports a version-skewed native runtime as unsupported', () async {
       driver.support = const LiteRtLmSpeechToTextSupport(
@@ -989,4 +1071,24 @@ class _DisposeCountingBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+SpeechToTextRequest _oneSecondRequest() =>
+    SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000)));
+
+Future<WeakReference<SpeechToTextTask>> _finishUnobservedTask(
+  SpeechToTextEngine engine,
+) async {
+  final task = await engine.transcribe(_oneSecondRequest());
+  await task.result;
+  return WeakReference<SpeechToTextTask>(task);
+}
+
+/// Allocates old-space garbage until [reference] clears or a bound passes.
+Future<bool> _isCollected(WeakReference<Object> reference) async {
+  for (var i = 0; i < 200 && reference.target != null; i++) {
+    List<Uint8List>.generate(16, (_) => Uint8List(1 << 20));
+    await Future<void>.delayed(Duration.zero);
+  }
+  return reference.target == null;
 }
