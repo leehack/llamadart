@@ -326,50 +326,65 @@ class CommandR7BHandler extends ChatTemplateHandler {
   }
 
   _CommandBareActionPayload? _parseBareActionPayload(String text) {
-    if (text.isEmpty) {
+    final markerStart = _trailingJsonArrayStart(text);
+    if (markerStart == null) {
       return null;
     }
 
-    var searchEnd = text.length;
-    while (searchEnd > 0) {
-      final markerStart = text.lastIndexOf('[', searchEnd - 1);
-      if (markerStart == -1) {
-        break;
-      }
-
-      final jsonSlice = ToolCallParsingUtils.extractLeadingJsonValue(
-        text,
-        markerStart,
-      );
-      searchEnd = markerStart;
-      if (jsonSlice == null) {
-        continue;
-      }
-
-      if (text.substring(jsonSlice.end).trim().isNotEmpty) {
-        continue;
-      }
-
-      final decodedCalls = jsonSlice.value is List
-          ? jsonSlice.value
-          : <Object?>[jsonSlice.value];
-      final calls = ToolCallParsingUtils.parseToolCallArray(
-        decodedCalls,
-        nameKeys: const <String>['tool_name'],
-        argumentKeys: const <String>['parameters'],
-        idKeys: const <String>['tool_call_id'],
-        assignFallbackIds: false,
-      );
-      if (calls != null && calls.isNotEmpty) {
-        return _CommandBareActionPayload(
-          content: text.substring(0, markerStart).trim(),
-          toolCalls: calls,
-        );
-      }
-
-      searchEnd = markerStart;
+    final calls = ToolCallParsingUtils.parseToolCallArray(
+      ToolCallParsingUtils.decodeJsonValue(text.substring(markerStart)),
+      nameKeys: const <String>['tool_name'],
+      argumentKeys: const <String>['parameters'],
+      idKeys: const <String>['tool_call_id'],
+      assignFallbackIds: false,
+    );
+    if (calls == null || calls.isEmpty) {
+      return null;
     }
 
+    return _CommandBareActionPayload(
+      content: text.substring(0, markerStart).trim(),
+      toolCalls: calls,
+    );
+  }
+
+  /// Returns where a JSON array ending the trimmed [text] would start.
+  ///
+  /// At most one suffix of [text] is a JSON array: a later `[` is either
+  /// structural in the earlier array, so it closes before the end, or inside
+  /// one of its strings, which leaves the two parses in opposite string states
+  /// through the end. Within a valid suffix the backslashes before each quote
+  /// say whether it delimits a string, so one backward pass tracks strings and
+  /// depth exactly. The caller still decodes the suffix to validate it.
+  static int? _trailingJsonArrayStart(String text) {
+    if (!text.endsWith(']')) {
+      return null;
+    }
+
+    var depth = 0;
+    var inString = false;
+    for (var index = text.length - 1; index >= 0; index--) {
+      final codeUnit = text.codeUnitAt(index);
+      if (codeUnit == 0x22) {
+        var backslashes = 0;
+        while (index > backslashes &&
+            text.codeUnitAt(index - backslashes - 1) == 0x5C) {
+          backslashes++;
+        }
+        if (backslashes.isEven) {
+          inString = !inString;
+        }
+      } else if (inString) {
+        continue;
+      } else if (codeUnit == 0x5D || codeUnit == 0x7D) {
+        depth++;
+      } else if (codeUnit == 0x5B || codeUnit == 0x7B) {
+        depth--;
+        if (depth == 0) {
+          return codeUnit == 0x5B ? index : null;
+        }
+      }
+    }
     return null;
   }
 
