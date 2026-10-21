@@ -31,7 +31,9 @@ description: >-
     owned and disposed with the engine.
   - `SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter())` and
     `TextToSpeechEngine.attach(engine, adapter: const Qwen3TtsAdapter())`
-    borrow a `LlamaEngine` you loaded; check `capabilities` yourself.
+    borrow a `LlamaEngine` you loaded; check `capabilities` yourself. Once
+    that `LlamaEngine` is disposed, requests throw `LlamaStateException`:
+    attach a new speech engine to a new `LlamaEngine`.
   - Always `await dispose()`. It cancels a running task or stream and
     disposes the engine `load` created; an attached engine stays loaded.
   - The `SpeechToTextEngine(engine, modelProfile:)`,

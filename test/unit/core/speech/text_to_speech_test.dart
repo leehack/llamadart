@@ -337,6 +337,49 @@ void main() {
     });
 
     test(
+      'a disposed attached LlamaEngine rejects synthesis as disposed',
+      () async {
+        await _loadTextToSpeechModel(llamaEngine);
+        await llamaEngine.dispose();
+
+        final capabilities = await speechEngine.capabilities;
+        expect(capabilities.isSupported, isFalse);
+        expect(
+          capabilities.unsupportedReason,
+          'The attached LlamaEngine is disposed. Create a new LlamaEngine and '
+          'attach a new TextToSpeechEngine.',
+        );
+        await expectLater(
+          speechEngine.synthesize(const TextToSpeechRequest(text: 'Hello.')),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('The attached LlamaEngine is disposed.'),
+            ),
+          ),
+        );
+        expect(backend.synthesisStarted.isCompleted, isFalse);
+      },
+    );
+
+    test('a LlamaEngine disposed during preflight starts no task', () async {
+      await _loadTextToSpeechModel(llamaEngine);
+      backend.blockCapabilities = true;
+
+      final pending = speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'Hello.'),
+      );
+      await backend.capabilityProbeStarted.future;
+      final disposal = llamaEngine.dispose();
+      backend.releaseCapabilities();
+
+      await expectLater(pending, throwsA(isA<LlamaStateException>()));
+      await disposal;
+      expect(backend.synthesisStarted.isCompleted, isFalse);
+    });
+
+    test(
       'a disposed synthesizer rejects a request before validating it',
       () async {
         await _loadTextToSpeechModel(llamaEngine);

@@ -573,6 +573,12 @@ class TextToSpeechEngine {
         unsupportedReason: 'The TextToSpeechEngine is disposed.',
       );
     }
+    if (_engine.isDisposed) {
+      return const TextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: _engineDisposedMessage,
+      );
+    }
     String? backendName;
     try {
       backendName = await _engine.getBackendName();
@@ -643,7 +649,8 @@ class TextToSpeechEngine {
   /// Invalid input and unsupported preflight checks throw before the task is
   /// returned. Failures after backend startup are reported by
   /// [TextToSpeechTask.done] and [TextToSpeechTask.result]. Throws
-  /// [LlamaStateException] after [dispose]; [dispose],
+  /// [LlamaStateException] after [dispose] and after [LlamaEngine.dispose]
+  /// of an attached engine; [dispose],
   /// [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel a running
   /// task.
   Future<TextToSpeechTask> synthesize(TextToSpeechRequest request) async {
@@ -659,6 +666,9 @@ class TextToSpeechEngine {
     try {
       final currentCapabilities = await capabilities;
       _throwIfDisposed();
+      if (_engine.isDisposed) {
+        throw LlamaStateException(_engineDisposedMessage);
+      }
       if (!currentCapabilities.isSupported) {
         throw LlamaUnsupportedException(
           currentCapabilities.unsupportedReason ??
@@ -724,6 +734,10 @@ class TextToSpeechEngine {
       throw LlamaStateException('The TextToSpeechEngine is disposed.');
     }
   }
+
+  static const String _engineDisposedMessage =
+      'The attached LlamaEngine is disposed. Create a new LlamaEngine and '
+      'attach a new TextToSpeechEngine.';
 
   void _validateRequest(TextToSpeechRequest request) {
     if (request.text.trim().isEmpty) {

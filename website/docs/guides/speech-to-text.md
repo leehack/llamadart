@@ -36,7 +36,10 @@ advertised as ASR merely because it accepts audio.
 loads the model, and returns a recognizer that owns what it loaded.
 `dispose()` releases it. `SpeechToTextEngine.attach` borrows a `LlamaEngine`
 you loaded yourself, for example to chat with the same model, and its
-`dispose()` leaves that engine loaded.
+`dispose()` leaves that engine loaded. Once that `LlamaEngine` is disposed,
+`capabilities` reports unsupported with that reason and `transcribe` throws
+`LlamaStateException`: create a new `LlamaEngine` and attach a new recognizer
+([The LlamaEngine is disposed](../troubleshooting/common-issues#the-llamaengine-is-disposed-create-a-new-llamaengine)).
 
 | | `load(model, ...)` | `attach(engine, adapter: ...)` |
 | --- | --- | --- |

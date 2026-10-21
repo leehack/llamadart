@@ -1602,7 +1602,10 @@ await engine.loadModel(path);
 ## 4) Model reload lifecycle
 
 - `loadModel(...)` now throws if a model is already loaded.
-- Call `await engine.unloadModel()` (or `dispose()`) before loading another model.
+- Call `await engine.unloadModel()` before loading another model into the same
+  engine. `dispose()` is terminal: a disposed engine cannot load again, so
+  create a new `LlamaEngine` after it. Current releases replace the loaded
+  model with `setModel` instead.
 
 ## 5) Public exports tightened
 

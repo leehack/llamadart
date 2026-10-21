@@ -94,6 +94,11 @@ if (!capabilities.isSupported) {
 }
 ```
 
+Once the attached `LlamaEngine` is disposed, `capabilities` reports
+unsupported with that reason and `synthesize` throws `LlamaStateException`: create a new
+`LlamaEngine` and attach a new synthesizer
+([The LlamaEngine is disposed](../troubleshooting/common-issues#the-llamaengine-is-disposed-create-a-new-llamaengine)).
+
 The runtime generates the audio itself and reports which audio-generation
 model it loaded, so an adapter can target only a model the runtime supports.
 `Qwen3TtsAdapter` accepts Qwen3-TTS and maps request languages to its codes.

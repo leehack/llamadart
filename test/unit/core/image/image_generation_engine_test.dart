@@ -88,7 +88,6 @@ void main() {
       final capabilities = await ImageGenerationEngine.checkRuntime();
 
       expect(driver.backgroundProbes, 1);
-      expect(driver.syncProbes, 0);
       expect(capabilities.isSupported, isTrue);
       expect(capabilities.unsupportedReason, isNull);
       expect(capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
@@ -167,7 +166,6 @@ void main() {
       final engine = await loading;
 
       expect(driver.backgroundProbes, 1);
-      expect(driver.syncProbes, 0);
       expect((await engine.capabilities).deviceNames, ['MTL0', 'BLAS', 'CPU']);
     });
 
@@ -737,7 +735,12 @@ void main() {
 
       expect(engine.isDisposed, isTrue);
       expect(driver.session.disposeCalls, 1);
-      expect((await engine.capabilities).isSupported, isFalse);
+      final capabilities = await engine.capabilities;
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        'The ImageGenerationEngine is disposed.',
+      );
     });
   });
 
@@ -1968,14 +1971,7 @@ final class _FakeDriver implements ImageGenerationDriver {
   _FakeSession session = _FakeSession();
   Completer<void>? probeGate;
   Object? probeError;
-  int syncProbes = 0;
   int backgroundProbes = 0;
-
-  @override
-  StableDiffusionRuntimeStatus probe() {
-    syncProbes++;
-    return status;
-  }
 
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async {
