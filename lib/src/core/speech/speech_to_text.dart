@@ -579,6 +579,8 @@ class SpeechToTextEngine {
   SpeechToTextStreamingSession? _activeStream;
   SpeechToTextTask? _activeTask;
   Future<void>? _disposal;
+  LoadedMultimodalProjector? _checkedProjector;
+  Future<String?>? _checkedProjectorType;
 
   /// What drives the model: a [SpeechToTextPromptAdapter] or a
   /// [LiteRtLmAsrAdapter].
@@ -1209,17 +1211,30 @@ class SpeechToTextEngine {
   static const String _qwen3AsrProjectorType = 'qwen3a';
 
   /// The type llama.cpp gives the audio projector loaded on [engine], read
-  /// from its GGUF header with llama.cpp's precedence: `clip.projector_type`,
-  /// else `clip.audio.projector_type`. Null when no projector is loaded, its
-  /// file cannot be read here, or it names neither.
-  static Future<String?> _loadedAudioProjectorType(LlamaEngine engine) async {
-    final location = loadedMultimodalProjectorLocation(engine);
-    if (location == null) {
-      return null;
+  /// once per loaded projector. Null when none is loaded, its file cannot be
+  /// read here, or it names no type.
+  Future<String?> _loadedAudioProjectorType(LlamaEngine engine) {
+    final projector = loadedMultimodalProjector(engine);
+    if (projector == null) {
+      return Future<String?>.value();
     }
+    if (!identical(projector, _checkedProjector)) {
+      _checkedProjector = projector;
+      _checkedProjectorType = _readAudioProjectorType(projector.location);
+    }
+    return _checkedProjectorType!;
+  }
+
+  /// The projector type in the GGUF header at [location], with llama.cpp's
+  /// precedence: `clip.projector_type`, else `clip.audio.projector_type`.
+  static Future<String?> _readAudioProjectorType(String location) async {
     try {
       final header = await readImageModelFileHeader(
-        (offset, length) => readProjectorFileRange(location, offset, length),
+        // Synchronous reads keep the check to microtasks: an asynchronous
+        // read would put real event-loop turns between the capability check
+        // and the task it gates.
+        (offset, length) async =>
+            readProjectorFileRange(location, offset, length),
       );
       final type =
           header.metadata['clip.projector_type'] ??

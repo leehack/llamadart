@@ -95,7 +95,7 @@ class LlamaEngine {
   int? _stalePerformanceContext;
   final Map<(int, int), int> _generationsInFlight = {};
   int? _mmContextHandle;
-  String? _mmProjLocation;
+  LoadedMultimodalProjector? _mmProjector;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
@@ -1367,7 +1367,7 @@ class LlamaEngine {
         _modelHandle!,
         mmProjPath,
       );
-      _mmProjLocation = mmProjPath;
+      _mmProjector = LoadedMultimodalProjector._(mmProjPath);
       if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
       LlamaLogger.instance.info(
         'Multimodal projector $mmProjName loaded successfully',
@@ -1409,7 +1409,7 @@ class LlamaEngine {
     await backend.multimodalContextFree(mmContextHandle);
     if (_mmContextHandle == mmContextHandle) {
       _mmContextHandle = null;
-      _mmProjLocation = null;
+      _mmProjector = null;
     }
   }
 
@@ -3720,11 +3720,19 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
   }
 }
 
-/// Where [engine]'s loaded multimodal projector came from: a local path, or
-/// on a URL-loading backend what the backend fetched. Null when none is
-/// loaded.
-String? loadedMultimodalProjectorLocation(LlamaEngine engine) =>
-    engine._mmContextHandle == null ? null : engine._mmProjLocation;
+/// A multimodal projector loaded on a [LlamaEngine]. Each load makes a new
+/// instance, so what a caller reads from the file can be cached by identity.
+final class LoadedMultimodalProjector {
+  /// Where it came from: a local path, or on a URL-loading backend what the
+  /// backend fetched.
+  final String location;
+
+  LoadedMultimodalProjector._(this.location);
+}
+
+/// The multimodal projector loaded on [engine], or null when none is.
+LoadedMultimodalProjector? loadedMultimodalProjector(LlamaEngine engine) =>
+    engine._mmContextHandle == null ? null : engine._mmProjector;
 
 /// [LlamaEngine.load] for the engines built on a [LlamaEngine].
 ///

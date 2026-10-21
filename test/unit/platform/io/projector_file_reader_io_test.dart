@@ -19,17 +19,18 @@ void main() {
 
   tearDown(() => directory.delete(recursive: true));
 
-  test('reads the requested range', () async {
-    expect(await readProjectorFileRange(path, 2, 3), <int>[2, 3, 4]);
+  test('reads the requested range', () {
+    expect(readProjectorFileRange(path, 2, 3), <int>[2, 3, 4]);
   });
 
-  test('returns fewer bytes at the end of the file', () async {
-    expect(await readProjectorFileRange(path, 4, 10), <int>[4, 5]);
+  test('returns fewer bytes at the end of the file', () {
+    expect(readProjectorFileRange(path, 4, 10), <int>[4, 5]);
   });
 
-  test('fails for a missing file', () async {
-    await expectLater(
-      readProjectorFileRange(p.join(directory.path, 'missing.gguf'), 0, 4),
+  test('fails for a missing file', () {
+    expect(
+      () =>
+          readProjectorFileRange(p.join(directory.path, 'missing.gguf'), 0, 4),
       throwsA(isA<FileSystemException>()),
     );
   });

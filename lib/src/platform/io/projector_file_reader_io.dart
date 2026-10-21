@@ -3,16 +3,12 @@ import 'dart:typed_data';
 
 /// Reads [length] bytes of the local projector file at [location] from
 /// [offset]; returns fewer at its end.
-Future<Uint8List> readProjectorFileRange(
-  String location,
-  int offset,
-  int length,
-) async {
-  final file = await File(location).open();
+Uint8List readProjectorFileRange(String location, int offset, int length) {
+  final file = File(location).openSync();
   try {
-    await file.setPosition(offset);
-    return await file.read(length);
+    file.setPositionSync(offset);
+    return file.readSync(length);
   } finally {
-    await file.close();
+    file.closeSync();
   }
 }

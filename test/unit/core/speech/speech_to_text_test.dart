@@ -1562,6 +1562,30 @@ void main() {
       expect((await recognizer.capabilities).isSupported, isFalse);
     });
 
+    test('reads the header without waiting on the event loop', () async {
+      await loadWithProjector({'clip.audio.projector_type': 'qwen3tts_spkenc'});
+
+      SpeechToTextCapabilities? capabilities;
+      unawaited(recognizer.capabilities.then((value) => capabilities = value));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(capabilities?.isSupported, isFalse);
+    });
+
+    test('reads the header once per loaded projector', () async {
+      final path = p.join(directory.path, 'mmproj.gguf');
+      await loadWithProjector({'clip.audio.projector_type': 'qwen3a'});
+      expect((await recognizer.capabilities).isSupported, isTrue);
+
+      await File(path).writeAsBytes(
+        _ggufHeader({'clip.audio.projector_type': 'qwen3tts_spkenc'}),
+      );
+      expect((await recognizer.capabilities).isSupported, isTrue);
+
+      await llamaEngine.loadMultimodalProjector(path);
+      expect((await recognizer.capabilities).isSupported, isFalse);
+    });
+
     test(
       'load refuses a Qwen3-TTS projector and disposes the engine',
       () async {
