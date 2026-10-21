@@ -95,6 +95,7 @@ class LlamaEngine {
   int? _stalePerformanceContext;
   final Map<(int, int), int> _generationsInFlight = {};
   int? _mmContextHandle;
+  String? _mmProjLocation;
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
@@ -1366,6 +1367,7 @@ class LlamaEngine {
         _modelHandle!,
         mmProjPath,
       );
+      _mmProjLocation = mmProjPath;
       if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
       LlamaLogger.instance.info(
         'Multimodal projector $mmProjName loaded successfully',
@@ -1407,6 +1409,7 @@ class LlamaEngine {
     await backend.multimodalContextFree(mmContextHandle);
     if (_mmContextHandle == mmContextHandle) {
       _mmContextHandle = null;
+      _mmProjLocation = null;
     }
   }
 
@@ -3716,6 +3719,12 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
     ).collect();
   }
 }
+
+/// Where [engine]'s loaded multimodal projector came from: a local path, or
+/// on a URL-loading backend what the backend fetched. Null when none is
+/// loaded.
+String? loadedMultimodalProjectorLocation(LlamaEngine engine) =>
+    engine._mmContextHandle == null ? null : engine._mmProjLocation;
 
 /// [LlamaEngine.load] for the engines built on a [LlamaEngine].
 ///

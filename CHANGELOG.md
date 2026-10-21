@@ -1,5 +1,6 @@
 ## Unreleased
 
+- `SpeechToTextEngine.capabilities` with `Qwen3AsrAdapter` reports a projector that is not Qwen3-ASR's, such as a Qwen3-TTS mmproj, as unsupported instead of failing later with an empty transcript; when the projector type cannot be read, an empty transcript's error details name a possible model mismatch ([#641](https://github.com/leehack/llamadart/issues/641)).
 - Document that Windows x64 builds download the full native bundle, about 700 MiB with CUDA, even when CUDA is not selected, and how to avoid it with `llamadart_native_path`.
 - Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them. Host `flutter test` on macOS for such an app no longer loads the bundled llama.cpp or stable_diffusion library, because `flutter_tester` links no companion.
 - Reject `ModelParams.loras` that LiteRT-LM cannot take before any adapter downloads, also for extensionless native `.litertlm` files, on the Web and in embedding mode.
