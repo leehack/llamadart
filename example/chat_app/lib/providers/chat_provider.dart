@@ -3745,14 +3745,17 @@ class ChatProvider extends ChangeNotifier {
       var completion = attempt.completion;
       var result = attempt.result;
       var transcript = (result ?? completion.result)?.text.trim() ?? '';
-      if (completion.state == SpeechToTextCompletionState.completed &&
+      // SpeechToTextEngine fails a task whose transcript is empty, so a
+      // trimmed capture that lost all speech arrives as a failure.
+      if (completion.state != SpeechToTextCompletionState.cancelled &&
+          completion.error is! LlamaSpeechTranscriptTruncatedException &&
           transcript.isEmpty &&
           fallbackAudio != null &&
           _isGenerating &&
           conversationRevision == _conversationRevision) {
         _logDart(
           LlamaLogLevel.info,
-          'Retrying empty browser microphone transcription with the '
+          'Retrying failed or empty browser microphone transcription with the '
           'untrimmed WAV.',
         );
         attempt = await runAttempt(fallbackAudio);

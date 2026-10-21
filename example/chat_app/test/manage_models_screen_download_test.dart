@@ -17,6 +17,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'mocks.dart';
 
+// Web caches models in the browser with its own catalog, platform filter and
+// labels, so tests of the native download flow skip there.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -118,7 +120,7 @@ void main() {
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
-    });
+    }, skip: kIsWeb);
 
     for (final platform in <TargetPlatform>[
       TargetPlatform.android,
@@ -147,7 +149,7 @@ void main() {
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
-      });
+      }, skip: kIsWeb);
     }
 
     testWidgets('selected multimodal model waits for models directory', (
@@ -181,7 +183,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text(model.name), findsOneWidget);
-    });
+    }, skip: kIsWeb);
 
     testWidgets('desktop-only presets are hidden on mobile', (tester) async {
       final mobileModel = _remoteModel();
@@ -224,7 +226,7 @@ void main() {
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
-    });
+    }, skip: kIsWeb);
 
     testWidgets('downloaded models are promoted ahead of catalog order', (
       tester,
@@ -247,7 +249,7 @@ void main() {
         lessThan(tester.getTopLeft(find.text(available.name)).dy),
       );
       expect(find.text('Downloaded'), findsOneWidget);
-    });
+    }, skip: kIsWeb);
 
     testWidgets('platform and capability search narrow the model library', (
       tester,
@@ -316,7 +318,7 @@ void main() {
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
-    });
+    }, skip: kIsWeb);
 
     testWidgets('desktop search uses native capability profile', (
       tester,
@@ -423,7 +425,7 @@ void main() {
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
-    });
+    }, skip: kIsWeb);
 
     testWidgets(
       'mobile lifecycle pause does not deliberately cancel downloads',
@@ -459,6 +461,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 150));
         await modelService.downloadCancelled.future.timeout(_testTimeout);
       },
+      skip: kIsWeb,
     );
 
     testWidgets('mobile download guidance is hidden on desktop platforms', (
@@ -486,7 +489,7 @@ void main() {
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }
-    });
+    }, skip: kIsWeb);
 
     testWidgets('cancel and discard reports a paused cancellation', (
       tester,
@@ -509,7 +512,7 @@ void main() {
       expect(modelService.lastCancelToken?.isCancelled, isTrue);
       expect(find.text('Download paused: ${model.name}'), findsOneWidget);
       expect(find.text('Download failed. Please retry.'), findsNothing);
-    });
+    }, skip: kIsWeb);
 
     testWidgets('disposing the screen cancels active controller downloads', (
       tester,
@@ -532,7 +535,7 @@ void main() {
       await modelService.downloadCancelled.future.timeout(_testTimeout);
 
       expect(modelService.lastCancelToken?.isCancelled, isTrue);
-    });
+    }, skip: kIsWeb);
 
     testWidgets(
       'app-owned download continues when the transient screen is replaced',
@@ -580,6 +583,7 @@ void main() {
         await modelService.downloadCancelled.future.timeout(_testTimeout);
         expect(finishedFilename, model.filename);
       },
+      skip: kIsWeb,
     );
 
     testWidgets(
@@ -624,6 +628,7 @@ void main() {
         expect(find.text('Use this model'), findsOneWidget);
         expect(find.text('Downloading model'), findsNothing);
       },
+      skip: kIsWeb,
     );
 
     testWidgets(
@@ -693,6 +698,7 @@ void main() {
         final clearedDecoration = clearedContainer.decoration! as BoxDecoration;
         expect(clearedDecoration.border, isNull);
       },
+      skip: kIsWeb,
     );
 
     testWidgets('second model waits while first download is active', (
@@ -744,7 +750,7 @@ void main() {
 
       expect(modelService.downloadCalls, 1);
       expect(downloadUi.hasPendingDownloads, isFalse);
-    });
+    }, skip: kIsWeb);
 
     testWidgets(
       'selection warns when runtime lacks advertised vision support',
@@ -782,6 +788,7 @@ void main() {
           findsOneWidget,
         );
       },
+      skip: kIsWeb,
     );
 
     testWidgets('delete refreshes other profiles that share cached assets', (
@@ -847,7 +854,7 @@ void main() {
         ),
         findsOneWidget,
       );
-    });
+    }, skip: kIsWeb);
 
     testWidgets('signed custom URLs require confirmation before saving', (
       tester,
