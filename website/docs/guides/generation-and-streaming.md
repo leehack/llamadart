@@ -343,7 +343,10 @@ an upstream v0.7.0 grammar defect.
 
 `allOf` supports additive object-property merges and nonempty enum intersections,
 including local references. Object merges make all merged properties required
-in the grammar and emit a closed object, matching upstream. An explicit outer
+in the grammar and emit a closed object, matching upstream. They ignore
+annotation-only components such as `{"description": "..."}`, as upstream does;
+such a component is rejected beside an enum intersection, where upstream would
+drop the enum. An explicit outer
 `type` must be `object`, or `string` for string enum intersections. Primitive
 intersections, nested/union components, duplicate merged property names,
 constrained additional properties (except a single closed object) and assertion

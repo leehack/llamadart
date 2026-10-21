@@ -113,9 +113,10 @@ description: >-
   uppercase hex allowed. Bounded arrays do not require items; their elements can
   be any JSON value. Negative integer maxima reject leading-zero JSON.
   Integer bounds, compatible fixed tuples (`items: [...]` or `prefixItems`),
-  additive allOf object merges and enum intersections are supported. AllOf
-  primitive/nested/union components, duplicate properties and constrained
-  additional properties are rejected. Annotations and unknown vocabulary are
+  additive allOf object merges and enum intersections are supported. Object
+  merges ignore annotation-only components. AllOf primitive/nested/union
+  components, annotation-only components outside an object merge, duplicate
+  properties and constrained additional properties are rejected. Annotations and unknown vocabulary are
   ignored as constraints; refs must target schema positions. Unused $defs and
   definitions are ignored; referenced entries are validated. See MIGRATION.md
   for combination, integer-range and upstream suffix limits. Nonempty annotation-only

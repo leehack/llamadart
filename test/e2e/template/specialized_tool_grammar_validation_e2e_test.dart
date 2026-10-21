@@ -311,6 +311,22 @@ void main() {
         valid: ['{}', '{"x":null}'],
         invalid: ['null', '[]', '3'],
       );
+      _expectGrammar(
+        validator,
+        responseFormatGrammar({
+          'allOf': [
+            {'description': 'Base'},
+            {
+              'type': 'object',
+              'properties': {
+                'ok': {'type': 'boolean'},
+              },
+            },
+          ],
+        }),
+        valid: ['{"ok":true}', '{ "ok": false }'],
+        invalid: ['{}', '{"ok":1}', '{"ok":true,"x":1}', 'true'],
+      );
     },
   );
 

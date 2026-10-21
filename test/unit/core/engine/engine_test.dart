@@ -3949,6 +3949,43 @@ void main() {
     );
 
     test(
+      'createStructuredJson accepts annotation-only allOf components',
+      () async {
+        backend.generationText = '{"ok":true}';
+        await engine.loadModel('test-model.bin');
+
+        final result = await engine.createStructuredJson<bool>(
+          const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'return status',
+            ),
+          ],
+          output: LlamaStructuredOutput<bool>.jsonSchema(
+            schema: const {
+              'allOf': [
+                {'description': 'Status'},
+                {
+                  'type': 'object',
+                  'properties': {
+                    'ok': {'type': 'boolean'},
+                  },
+                },
+              ],
+            },
+            decoder: (json) => json['ok'] as bool,
+          ),
+        );
+
+        expect(result, isTrue);
+        expect(
+          backend.lastGenerationParams?.grammar,
+          startsWith('root ::= "{" space root-ok-kv "}" space\n'),
+        );
+      },
+    );
+
+    test(
       'create rejects strict response format when backend lacks grammar',
       () async {
         final noGrammarBackend = NoGrammarMockLlamaBackend();
