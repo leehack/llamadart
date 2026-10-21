@@ -1847,10 +1847,12 @@ void main() {
   });
   test('engine create deadline override rejects invalid contracts', () {
     for (final patch in <Map<String, dynamic>>[
-      {'engine_create_case_timeout_ms': 120000},
       {'backend': 'gpu', 'engine_create_case_timeout_ms': '120000'},
       {'backend': 'gpu', 'engine_create_case_timeout_ms': 59999},
       {'backend': 'gpu', 'engine_create_case_timeout_ms': 180001},
+      {'backend': 'cpu', 'engine_create_case_timeout_ms': '120000'},
+      {'backend': 'cpu', 'engine_create_case_timeout_ms': 59999},
+      {'backend': 'cpu', 'engine_create_case_timeout_ms': 180001},
       {'backend': 'npu', 'engine_create_case_timeout_ms': 120000},
     ]) {
       expect(
@@ -1865,6 +1867,20 @@ void main() {
               as Map<String, dynamic>
           ..['engine_create_case_timeout_ms'] = 120000;
     expect(() => ValidationProfile.fromJson(gguf), throwsFormatException);
+  });
+
+  test('engine create deadline override is accepted for LiteRT CPU', () {
+    final cpu = ValidationProfile.fromJson(
+      profile().toJson()..['engine_create_case_timeout_ms'] = 90000,
+    );
+    expect(cpu.engineCreateCaseTimeout, const Duration(seconds: 90));
+    final runner = ValidationRunner(
+      profile: cpu,
+      engine: FakeEngine(),
+      emit: (_) async {},
+    );
+    expect(runner.caseDeadline('C09.reload'), const Duration(seconds: 90));
+    expect(runner.caseDeadline('C03.raw'), const Duration(seconds: 60));
   });
 
   test(
