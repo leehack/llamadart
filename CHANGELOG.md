@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Document that Windows x64 builds download the full native bundle, about 700 MiB with CUDA, even when CUDA is not selected, and how to avoid it with `llamadart_native_path`.
+
 ## 0.15.5
 
 - Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.
