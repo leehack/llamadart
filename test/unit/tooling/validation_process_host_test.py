@@ -101,6 +101,13 @@ def wait_for_zombie(pid):
             return
         time.sleep(0.01)
     raise RuntimeError('fixture child did not exit')
+if mode == 'exited-before-bind':
+    # macOS getpgid() raises ESRCH for an exited child that is still unreaped.
+    def exited_lookup(pid):
+        (root / 'observed.json').write_text(json.dumps({'pid': pid}))
+        wait_for_zombie(pid)
+        raise ProcessLookupError()
+    host.os.getpgid = exited_lookup
 setup_done = []
 stop_requests = []
 def receipt(pid):
@@ -142,7 +149,7 @@ def receipt(pid):
 seconds = {'slow-receipt': '2.0', 'exited-slow-receipt': '0.1'}.get(mode, '4')
 sys.argv = [str(spec.origin), seconds, sys.executable, '-c', source]
 try:
-    sys.exit(host.main(None if mode == 'default' or mode.startswith('missing:') else receipt))
+    sys.exit(host.main(None if mode in ('default', 'exited-before-bind') or mode.startswith('missing:') else receipt))
 except Exception as error:
     print('Subprocess host failed (' + type(error).__name__ + ')', file=sys.stderr)
     sys.exit(125)
@@ -299,6 +306,17 @@ finally:
         status, output, error = self.complete()
         self.assertEqual((status, output, error),
                          (125, b'', b'Subprocess host failed (PermissionError)\n'))
+
+    @unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
+    def test_child_exited_before_bind_keeps_output_and_status(self):
+        self.launch('exited-before-bind',
+                    'import sys; print("out"); print("err", file=sys.stderr); sys.exit(17)')
+        status, output, error = self.complete()
+        self.assertEqual((status, output, error), (17, b'out\n', b'err\n'))
+        with self.assertRaises(ProcessLookupError):
+            os.kill(self.child['pid'], 0)
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(self.child['pid'], 0)
 
     @unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
     def test_exited_leader_with_inherited_pipe_stays_reserved_until_stop(self):
@@ -495,13 +513,34 @@ class PosixReservationTest(unittest.TestCase):
         self.assertEqual(self.events, [])
         self.assertTrue(reservation.held)
 
-    def test_initial_unbound_lookup_ESRCH_never_guesses_group(self):
+    def test_lookup_ESRCH_after_held_completion_binds_own_session_group(self):
+        # The child exits between the first observation and the lookup.
+        calls = []
+        def group_signal(group, sig):
+            self.assertEqual(group, 42)
+            calls.append((sig, self.child.returncode))
+            if self.child.returncode is not None:
+                self.assertEqual(sig, 0)
+                raise ProcessLookupError()
+        with patch.object(self.module.os, 'waitid', side_effect=[None, self.observation, self.observation]), patch.object(self.module.os, 'getpgid', side_effect=[ProcessLookupError(), AssertionError('late completed lookup forbidden')]) as lookup, patch.object(self.module.os, 'kill') as leader_stop, patch.object(self.module.os, 'killpg', group_signal):
+            reservation = self.module.PosixChildReservation(self.child)
+            reservation.bind()
+            self.assertEqual(reservation.group, 42)
+            reservation.retire()
+        self.assertEqual(lookup.call_count, 1)
+        leader_stop.assert_not_called()
+        self.assertEqual(calls, [(0, None), (signal.SIGKILL, None), (0, 17)])
+        self.assertEqual(self.events, ['reap'])
+        self.assertEqual(reservation.returncode, 17)
+        self.assertFalse(reservation.held)
+
+    def test_initial_lookup_ESRCH_without_completion_never_guesses_group(self):
         reservation = self.module.PosixChildReservation(self.child)
         def own_leader_stop(pid, sig):
             self.assertEqual((pid, sig), (42, signal.SIGKILL))
             self.assertIsNone(self.child.returncode)
             self.events.append('own-leader-stop')
-        with patch.object(self.module.os, 'waitid', side_effect=[None, self.observation]), patch.object(self.module.os, 'getpgid', side_effect=ProcessLookupError()), patch.object(self.module.os, 'kill', own_leader_stop), patch.object(self.module.os, 'killpg') as delivery:
+        with patch.object(self.module.os, 'waitid', side_effect=[None, None, self.observation]), patch.object(self.module.os, 'getpgid', side_effect=ProcessLookupError()), patch.object(self.module.os, 'kill', own_leader_stop), patch.object(self.module.os, 'killpg') as delivery:
             with self.assertRaises(ProcessLookupError):
                 reservation.bind()
             self.assertIsNone(reservation.group)

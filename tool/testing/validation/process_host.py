@@ -45,7 +45,16 @@ class PosixChildReservation:
 
     def bind(self):
         self.observe()
-        actual_group = os.getpgid(self.child.pid)
+        try:
+            actual_group = os.getpgid(self.child.pid)
+        except ProcessLookupError:
+            # macOS getpgid() fails for an exited child that is still unreaped.
+            # Held completion keeps its PID, and so the ID of the group its
+            # setsid() created, from reuse; a session leader cannot leave that
+            # group. Without completion, ESRCH stays a binding failure.
+            if self.observe() is None:
+                raise
+            actual_group = self.child.pid
         if actual_group != self.child.pid:
             raise RuntimeError('Cannot bind returned child session group')
         self.group = actual_group
@@ -73,9 +82,9 @@ class PosixChildReservation:
             self.reap(deadline)
             raise RuntimeError('Child group retirement remains unproved')
         # A completed unreaped child can no longer support getpgid on every
-        # POSIX host. Its earlier verified own-session group remains bound while
-        # WNOWAIT holds the returned child reservation. Do not invent a group
-        # from ESRCH: an initial unbound child still fails above.
+        # POSIX host. Its earlier bound own-session group remains reserved while
+        # WNOWAIT holds the returned child reservation. Retirement never binds
+        # a group: an unbound child still fails above.
         if completion is None:
             try:
                 actual_group = os.getpgid(self.child.pid)
