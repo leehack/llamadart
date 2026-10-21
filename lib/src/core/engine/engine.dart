@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:path/path.dart' as p;
-
 import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
@@ -3032,11 +3030,10 @@ class LlamaEngine {
     }
     if (unloaded()) throw _loraModelChanged();
     _ensureReady();
-    final key = _loraKey(source);
-    final previous = _loraLocations[key];
+    final previous = _loraLocations[source.canonicalKey];
     try {
       await backend.setLoraAdapter(_contextHandle!, location, scale);
-      _loraLocations[key] = location;
+      _loraLocations[source.canonicalKey] = location;
       if (previous != null && previous != location) {
         await backend.removeLoraAdapter(_contextHandle!, previous);
       }
@@ -3049,14 +3046,6 @@ class LlamaEngine {
     'The model was unloaded while its LoRA adapter loaded, so the adapter '
     'was not applied.',
   );
-
-  /// [source]'s key in [_loraLocations], shared by every spelling of a local
-  /// path.
-  static String _loraKey(ModelSource source) {
-    final path = source.path;
-    if (path == null) return source.canonicalKey;
-    return ModelSource.path(p.normalize(path)).canonicalKey;
-  }
 
   /// Removes a specific LoRA adapter from the active session.
   @Deprecated(
@@ -3073,13 +3062,11 @@ class LlamaEngine {
   }
 
   /// Removes the LoRA adapter applied from [source], by [setLoraSource] or
-  /// [ModelParams.loras]; a local path matches however it is spelled, so
-  /// `/a/./b.gguf` removes `/a/b.gguf`. Does nothing when no adapter from
-  /// [source] is applied.
+  /// [ModelParams.loras]. Does nothing when no adapter from [source] is
+  /// applied.
   Future<void> removeLoraSource(ModelSource source) async {
     _ensureReady();
-    final key = _loraKey(source);
-    final applied = _loraLocations[key];
+    final applied = _loraLocations[source.canonicalKey];
     final location = applied ?? source.path;
     if (location == null) return;
     try {
@@ -3090,7 +3077,7 @@ class LlamaEngine {
       if (applied == null) return;
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
-    _loraLocations.remove(key);
+    _loraLocations.remove(source.canonicalKey);
   }
 
   /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
@@ -3116,7 +3103,7 @@ class LlamaEngine {
       final source = lora.source;
       if (source == null) {
         if (lora.path.isNotEmpty) {
-          locations[_loraKey(ModelSource.path(lora.path))] = lora.path;
+          locations[ModelSource.path(lora.path).canonicalKey] = lora.path;
         }
         resolved.add(lora);
         continue;
@@ -3126,7 +3113,7 @@ class LlamaEngine {
         options: _loraDownloadOptions(source, lora.download, options),
         assetType: 'LoRA adapter',
       );
-      locations[_loraKey(source)] = location;
+      locations[source.canonicalKey] = location;
       resolved.add(resolvedLoraAdapterConfig(location, lora.scale));
     }
     if (params.loras.every((lora) => lora.source == null)) return params;
