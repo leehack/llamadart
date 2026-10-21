@@ -288,7 +288,7 @@ void main() {
 
     // One token short of the first prompt's natural length, the speculative
     // reply ends on an accepted draft batch, so its last token is decoded only
-    // to look ahead.
+    // to look ahead. With maxTokens 1 it is decoded in the loop.
     test('a failed decode of the last token reports no limit', () async {
       final prompt = prompts.first;
       int? failAt;
@@ -347,6 +347,15 @@ void main() {
         failures = 0;
         expect(await generate(short), isEmpty, reason: '$config');
         expect(failures, 1, reason: '$config');
+
+        failAt = promptTokens;
+        failures = 0;
+        expect(
+          await generate(params.copyWith(maxTokens: 1)),
+          isEmpty,
+          reason: '$config, maxTokens: 1',
+        );
+        expect(failures, 1, reason: '$config, maxTokens: 1');
       }
     });
   });
