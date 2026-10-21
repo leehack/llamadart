@@ -27,6 +27,14 @@ flutter pub get
 flutter run
 ```
 
+Building on Linux also needs the GStreamer headers that `audioplayers_linux`
+links against, plus the [runtime libraries](../platforms/linux-prerequisites)
+for the backend modules you select:
+
+```bash
+sudo apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+```
+
 Variants:
 
 ```bash

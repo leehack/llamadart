@@ -46,6 +46,11 @@ sudo pacman -S --needed libgomp vulkan-icd-loader vulkan-tools openblas
 Minimal cloud and container images, such as the stock GCE Ubuntu 24.04
 accelerator image, may lack `libgomp1`.
 
+Building the [chat app](../examples/chat-app) on Linux additionally needs the
+GStreamer development headers (`libgstreamer1.0-dev` and
+`libgstreamer-plugins-base1.0-dev` on Ubuntu/Debian), which `audioplayers_linux`
+links against.
+
 ## Quick link check
 
 ```bash
