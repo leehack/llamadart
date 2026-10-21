@@ -6,11 +6,12 @@ class DecisionModelParams {
   /// Device to run the encoder and head on, as `ModelParams.device`.
   ///
   /// [ComputeDevice.auto] offloads every layer to the best GPU the backend
-  /// loads, otherwise uses the CPU; on Android it uses the CPU.
-  /// [ComputeDevice.gpu] runs on a GPU (Vulkan on Android) or
-  /// `DecisionEngine.load` throws `LlamaUnsupportedException` from the
-  /// encoder load. [ComputeDevice.npu] is not supported and throws
-  /// `LlamaUnsupportedException`.
+  /// loads, otherwise uses the CPU; on Android and on an iOS simulator it
+  /// uses the CPU. [ComputeDevice.gpu] runs on a GPU (Vulkan on Android,
+  /// Metal on an iOS simulator, where llama.cpp's output is incorrect, and
+  /// WebGPU on the Web) or `DecisionEngine.load` throws
+  /// `LlamaUnsupportedException` from the encoder load. [ComputeDevice.npu]
+  /// is not supported and throws `LlamaUnsupportedException`.
   final ComputeDevice device;
 
   /// CPU threads of the encoder and the head. `0` uses the runtime default.

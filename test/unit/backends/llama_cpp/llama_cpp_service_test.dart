@@ -3416,25 +3416,48 @@ void main() {
         ]);
       });
 
-      test('gpu with auto resolves to Metal, or throws naming it', () {
-        final service = LlamaCppService(isIosSimulator: true);
+      test('gpu with auto loads on Metal', () {
+        final checked = <GpuBackend>[];
+        final service = LlamaCppService(
+          isIosSimulator: true,
+          // Pins a Metal device, so a macOS host without one still loads.
+          deviceTypes: (backend) {
+            checked.add(backend);
+            return [ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value];
+          },
+        );
         addTearDown(service.dispose);
-        const params = ModelParams(contextSize: 512, device: ComputeDevice.gpu);
 
-        try {
-          service.loadModel(modelPath, params);
-        } on LlamaUnsupportedException catch (error) {
-          expect(
-            error.message,
-            contains('ComputeDevice.gpu needs the metal backend'),
-          );
-          expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
-          return;
-        }
-        expect(service.getActiveBackendName(), 'Metal');
+        service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
+        );
+
+        expect(checked, [GpuBackend.metal]);
         expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
         expect(simulatorWarnings(), hasLength(1));
-      });
+      }, testOn: 'mac-os');
+
+      test('gpu with auto throws naming Metal off macOS', () {
+        final service = LlamaCppService(isIosSimulator: true);
+        addTearDown(service.dispose);
+
+        expect(
+          () => service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('ComputeDevice.gpu needs the metal backend'),
+            ),
+          ),
+        );
+        expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+        expect(simulatorWarnings(), isEmpty);
+      }, testOn: '!mac-os');
 
       test('gpu with auto names Metal when no device is a GPU', () {
         final service = LlamaCppService(
@@ -3523,6 +3546,128 @@ void main() {
         expect(
           simulatorWarnings(),
           hasLength(service.getResolvedGpuLayers() == 0 ? 0 : 1),
+        );
+      });
+
+      // Records [handle] as a simulator load that kept 42 layers on Metal, as
+      // `GpuBackend.metal` does, whatever this host has.
+      void placeOnMetal(LlamaCppService service, int handle) {
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        )[handle] = 'Metal';
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        )[handle] = 42;
+        _readPrivateForTesting<Map<int, ModelParams>>(
+          service,
+          '_modelLoadParams',
+        )[handle] = const ModelParams(
+          contextSize: 512,
+          preferredBackend: GpuBackend.metal,
+          gpuLayers: 42,
+        );
+      }
+
+      test('a context follows its model onto the CPU or Metal', () {
+        final service = LlamaCppService(isIosSimulator: true);
+        addTearDown(service.dispose);
+        const auto = ModelParams(contextSize: 512);
+        const gpu = ModelParams(contextSize: 512, device: ComputeDevice.gpu);
+        llama_context_params contextParams(int context) =>
+            _readPrivateForTesting<Map<int, llama_context_params>>(
+              service,
+              '_contextParams',
+            )[context]!;
+
+        final onCpu = service.loadModel(modelPath, auto);
+        final cpuContext = contextParams(service.createContext(onCpu, gpu));
+        expect(cpuContext.offload_kqv, isFalse);
+        expect(cpuContext.op_offload, isFalse);
+
+        final onMetal = service.loadModel(modelPath, auto);
+        placeOnMetal(service, onMetal);
+        for (final params in [auto, gpu]) {
+          final metalContext = contextParams(
+            service.createContext(onMetal, params),
+          );
+          expect(metalContext.offload_kqv, isTrue, reason: '$params');
+          expect(metalContext.op_offload, isTrue, reason: '$params');
+        }
+      });
+
+      test('a draft model follows its target onto the CPU or Metal', () {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        final service = LlamaCppService(
+          isIosSimulator: true,
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        );
+        addTearDown(service.dispose);
+        void loadDraft(int target) => _invokePrivateForTesting<Object?>(
+          service,
+          '_loadSpeculativeDraftModel',
+          [target, modelPath, 'Draft model'],
+          {#loadMtp: false},
+        );
+
+        final onCpu = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512),
+        );
+        loadDraft(onCpu);
+        final onMetal = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512),
+        );
+        placeOnMetal(service, onMetal);
+        loadDraft(onMetal);
+
+        expect(
+          recorder.loadGpuLayers,
+          [0, 0, 0, 42],
+          reason:
+              'the CPU target, its draft, the target placed on Metal, '
+              'its draft',
+        );
+        expect(recorder.loadDevices[1], recorder.loadDevices[0]);
+        expect(recorder.loadDevices[3], isNot(recorder.loadDevices[0]));
+      });
+
+      test('a decision head follows its encoder onto the CPU or Metal', () {
+        var registryReads = 0;
+        final service = LlamaCppService(
+          isIosSimulator: true,
+          registeredDevices: () {
+            registryReads++;
+            return const <GgmlDeviceEntry>[];
+          },
+        );
+        addTearDown(service.dispose);
+        final encoderPath = path.join(tempDir.path, 'encoder.gguf');
+        final headPath = path.join(tempDir.path, 'head.safetensors');
+        final configPath = path.join(tempDir.path, 'config.json');
+        writeSyntheticModernBertGguf(encoderPath, decisionTokens: true);
+        SyntheticDecisionHead(d: 16, layers: 1, seed: 1).write(headPath);
+        File(configPath).writeAsStringSync('{"max_len": 64, "head_layers": 1}');
+        const params = ModelParams(contextSize: 512);
+
+        final onCpu = service.loadModel(encoderPath, params);
+        registryReads = 0;
+        final cpuHead = service.loadDecisionHead(onCpu, headPath, configPath);
+        expect(cpuHead.deviceName, 'CPU');
+        expect(registryReads, 0, reason: 'a CPU encoder skips GPU selection');
+
+        final onMetal = service.loadModel(encoderPath, params);
+        placeOnMetal(service, onMetal);
+        registryReads = 0;
+        service.loadDecisionHead(onMetal, headPath, configPath);
+        expect(
+          registryReads,
+          greaterThan(0),
+          reason: 'an encoder on Metal selects a GPU for its head',
         );
       });
     });
