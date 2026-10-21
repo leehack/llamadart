@@ -143,6 +143,113 @@ void main() {
       );
     });
 
+    test('removeLoraSource reports a load-time path adapter given as an alias '
+        'on a backend without a LoRA API', () async {
+      final engine = LlamaEngine(
+        _NoLoraBackend(),
+        modelDownloadManager: _CacheManager({}),
+      );
+      await engine.loadModel(
+        '/models/model.litertlm',
+        modelParams: const ModelParams(
+          loras: [LoraAdapterConfig(path: '/models/a.gguf')],
+        ),
+      );
+
+      await expectLater(
+        engine.removeLoraSource(ModelSource.path('/models/./a.gguf')),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
+    group('path aliases', () {
+      const aliases = [
+        '/models/./a.gguf',
+        '/models//a.gguf',
+        '/models/sub/../a.gguf',
+        '/models/a.gguf/',
+      ];
+
+      for (final alias in aliases) {
+        test('removeLoraSource($alias) removes an adapter set as '
+            '/models/a.gguf', () async {
+          final backend = _RecordingBackend();
+          final engine = LlamaEngine(
+            backend,
+            modelDownloadManager: _CacheManager({}),
+          );
+          await engine.loadModel('/models/model.gguf');
+
+          await engine.setLoraSource(ModelSource.path('/models/a.gguf'));
+          await engine.removeLoraSource(ModelSource.path(alias));
+
+          expect(backend.removedLoraPaths, ['/models/a.gguf']);
+        });
+      }
+
+      test(
+        'removeLoraSource removes a load-time adapter given as an alias',
+        () async {
+          final backend = _RecordingBackend();
+          final engine = LlamaEngine(
+            backend,
+            modelDownloadManager: _CacheManager({}),
+          );
+          await engine.loadModel(
+            '/models/model.gguf',
+            modelParams: const ModelParams(
+              loras: [LoraAdapterConfig(path: '/models/a.gguf')],
+            ),
+          );
+
+          await engine.removeLoraSource(ModelSource.path('/models//a.gguf'));
+
+          expect(backend.removedLoraPaths, ['/models/a.gguf']);
+        },
+      );
+
+      test('Windows-style aliases match, other files do not', () async {
+        final backend = _RecordingBackend();
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: _CacheManager({}),
+        );
+        await engine.loadModel('/models/model.gguf');
+
+        await engine.setLoraSource(ModelSource.path(r'C:\models\a.gguf'));
+        await engine.removeLoraSource(ModelSource.path(r'C:\models\b.gguf'));
+        await engine.removeLoraSource(ModelSource.path(r'C:\models\.\a.gguf'));
+        await engine.setLoraSource(ModelSource.path('C:/models/a.gguf'));
+        await engine.removeLoraSource(ModelSource.path(r'C:\models\\a.gguf'));
+
+        expect(backend.removedLoraPaths, [
+          r'C:\models\b.gguf',
+          r'C:\models\a.gguf',
+          'C:/models/a.gguf',
+        ]);
+      });
+
+      test('a different file does not remove the tracked adapter', () async {
+        final backend = _RecordingBackend();
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: _CacheManager({}),
+        );
+        await engine.loadModel('/models/model.gguf');
+
+        await engine.setLoraSource(ModelSource.path('/models/a.gguf'));
+        await engine.removeLoraSource(ModelSource.path('/models/./b.gguf'));
+        await engine.removeLoraSource(ModelSource.path('/other/../a.gguf'));
+        await engine.removeLoraSource(ModelSource.path('/models/a.gguf'));
+
+        expect(backend.removedLoraPaths, [
+          '/models/./b.gguf',
+          '/other/../a.gguf',
+          '/models/a.gguf',
+        ]);
+      });
+    });
+
     test('setLoraSource stops at a cancelled download token', () async {
       final backend = _RecordingBackend();
       final manager = _CacheManager({hfAdapter: '/cache/a.gguf'});

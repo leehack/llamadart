@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:path/path.dart' as p;
+
 import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
@@ -3034,16 +3036,28 @@ class LlamaEngine {
     }
     if (unloaded()) throw _loraModelChanged();
     _ensureReady();
-    final previous = _loraLocations[source.canonicalKey];
+    final previous = _loraLocations[_loraKey(source)];
     try {
       await backend.setLoraAdapter(_contextHandle!, location, scale);
-      _loraLocations[source.canonicalKey] = location;
+      _loraLocations[_loraKey(source)] = location;
       if (previous != null && previous != location) {
         await backend.removeLoraAdapter(_contextHandle!, previous);
       }
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
+  }
+
+  static final RegExp _windowsPath = RegExp(r'^([A-Za-z]:[\\/]|\\\\)');
+
+  // Aliases of one file (`/a/./b`, `/a//b`, `/c/../a/b`) must share a key.
+  static String _loraKey(ModelSource source) {
+    final path = source.path;
+    if (source.kind != ModelSourceKind.path || path == null) {
+      return source.canonicalKey;
+    }
+    final context = _windowsPath.hasMatch(path) ? p.windows : p.posix;
+    return 'path:${context.normalize(path)}';
   }
 
   static LlamaStateException _loraModelChanged() => LlamaStateException(
@@ -3070,7 +3084,7 @@ class LlamaEngine {
   /// applied.
   Future<void> removeLoraSource(ModelSource source) async {
     _ensureReady();
-    final applied = _loraLocations[source.canonicalKey];
+    final applied = _loraLocations[_loraKey(source)];
     final location = applied ?? source.path;
     if (location == null) return;
     try {
@@ -3081,7 +3095,7 @@ class LlamaEngine {
       if (applied == null) return;
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
-    _loraLocations.remove(source.canonicalKey);
+    _loraLocations.remove(_loraKey(source));
   }
 
   /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
@@ -3107,7 +3121,7 @@ class LlamaEngine {
       final source = lora.source;
       if (source == null) {
         if (lora.path.isNotEmpty) {
-          locations[ModelSource.path(lora.path).canonicalKey] = lora.path;
+          locations[_loraKey(ModelSource.path(lora.path))] = lora.path;
         }
         resolved.add(lora);
         continue;
@@ -3117,7 +3131,7 @@ class LlamaEngine {
         options: _loraDownloadOptions(source, lora.download, options),
         assetType: 'LoRA adapter',
       );
-      locations[source.canonicalKey] = location;
+      locations[_loraKey(source)] = location;
       resolved.add(resolvedLoraAdapterConfig(location, lora.scale));
     }
     if (params.loras.every((lora) => lora.source == null)) return params;
