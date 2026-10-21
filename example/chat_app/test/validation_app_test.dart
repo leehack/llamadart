@@ -1,3 +1,8 @@
+// `flutter test --platform chrome` serves no app assets, so rootBundle loads
+// never complete there.
+@TestOn('vm')
+library;
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';

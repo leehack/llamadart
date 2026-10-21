@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/services/audio_recording_service.dart';
 
@@ -17,6 +18,7 @@ void main() {
           Platform.isWindows;
       expect(recorder.isSupported, expected);
     },
+    skip: kIsWeb,
   );
 
   test('reads a finalized recording as encoded bytes', () async {
@@ -31,7 +33,7 @@ void main() {
     await file.writeAsBytes(expected);
 
     expect(await recorder.readRecording(file.path), expected);
-  });
+  }, skip: kIsWeb);
 
   test('reports an actionable finalized-recording read failure', () async {
     final recorder = AudioRecordingService();

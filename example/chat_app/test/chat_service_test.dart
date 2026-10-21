@@ -6,6 +6,8 @@ import 'package:llamadart_chat_example/services/chat_service.dart';
 
 import 'mocks.dart';
 
+// Android tuning and native full GPU offload do not apply on Web, so those
+// tests skip there.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -58,6 +60,7 @@ void main() {
         expect(engine.lastModelParams!.numberOfThreads, 2);
         expect(engine.lastModelParams!.numberOfThreadsBatch, 2);
       },
+      skip: kIsWeb,
     );
 
     test('keeps stricter Android Vulkan defaults for other models', () async {
@@ -80,7 +83,7 @@ void main() {
       expect(engine.lastModelParams!.microBatchSize, 1);
       expect(engine.lastModelParams!.numberOfThreads, 0);
       expect(engine.lastModelParams!.numberOfThreadsBatch, 0);
-    });
+    }, skip: kIsWeb);
 
     test('honors explicit Android Vulkan batch sizes', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -124,6 +127,7 @@ void main() {
         expect(engine.lastModelParams!.batchSize, 32);
         expect(engine.lastModelParams!.microBatchSize, 32);
       },
+      skip: kIsWeb,
     );
 
     test(
@@ -147,6 +151,7 @@ void main() {
         expect(engine.lastModelParams!.batchSize, 256);
         expect(engine.lastModelParams!.microBatchSize, 64);
       },
+      skip: kIsWeb,
     );
 
     test('keeps legacy batch defaults for CPU loads', () async {
@@ -189,7 +194,7 @@ void main() {
       expect(engine.lastModelParams, isNotNull);
       expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
       expect(engine.lastModelParams!.contextSize, 16384);
-    });
+    }, skip: kIsWeb);
 
     test('explicit CPU overrides a stale Max layer value', () async {
       final engine = MockLlamaEngine();
@@ -371,7 +376,7 @@ void main() {
       expect(engine.lastModelParams!.microBatchSize, 0);
       expect(engine.lastModelParams!.numberOfThreads, 4);
       expect(engine.lastModelParams!.numberOfThreadsBatch, 4);
-    });
+    }, skip: kIsWeb);
 
     test('loading another model replaces the loaded one', () async {
       final engine = MockLlamaEngine();

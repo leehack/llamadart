@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/litert_lm_benchmark_app.dart';
