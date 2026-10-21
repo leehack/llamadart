@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:test/test.dart';
 
@@ -262,6 +263,62 @@ void main() {
           HighRiskSurface.regressionPolicy,
         }),
       );
+    });
+
+    test('classifies CI selection and hosted-demo deploy scripts', () {
+      for (final path in [
+        'tool/ci/deploy_guard.py',
+        'tool/ci/select_jobs.py',
+        'tool/ci/web_deployment.py',
+      ]) {
+        expect(assessHighRiskFiles([path]).surfaces, {
+          HighRiskSurface.releaseAutomation,
+          HighRiskSurface.regressionPolicy,
+        }, reason: path);
+      }
+      for (final path in [
+        'tool/ci/check_genkit_package_score.py',
+        'tool/ci/litert_lm_temp_canary.sh',
+        'tool/ci/new_gate.py',
+      ]) {
+        expect(assessHighRiskFiles([path]).surfaces, {
+          HighRiskSurface.regressionPolicy,
+        }, reason: path);
+      }
+      expect(
+        assessHighRiskFiles([
+          'tool/ci/deploy_guard.py',
+          'tool/ci/select_jobs.py',
+          'test/ci/test_deploy_guard.py',
+        ]).isHighRisk,
+        isTrue,
+      );
+    });
+
+    test('every tool/ci script is high-risk and has a CODEOWNERS entry', () {
+      final owned = File('.github/CODEOWNERS')
+          .readAsLinesSync()
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty && !line.startsWith('#'))
+          .map((line) => line.split(RegExp(r'\s+')).first)
+          .map(
+            (pattern) =>
+                pattern.startsWith('/') ? pattern.substring(1) : pattern,
+          )
+          .toSet();
+      // Tracked files only: Python tests leave untracked bytecode caches here.
+      final listing = Process.runSync('git', ['ls-files', '-z', 'tool/ci']);
+      expect(listing.exitCode, 0, reason: '${listing.stderr}');
+      final scripts = (listing.stdout as String)
+          .split('\u0000')
+          .where((path) => path.isNotEmpty)
+          .toList();
+
+      expect(scripts, isNotEmpty);
+      for (final path in scripts) {
+        expect(assessHighRiskFiles([path]).isHighRisk, isTrue, reason: path);
+        expect(owned, contains(path), reason: '$path needs a CODEOWNERS entry');
+      }
     });
 
     test('keeps ordinary docs-only changes standard risk', () {

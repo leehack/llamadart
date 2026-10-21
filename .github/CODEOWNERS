@@ -67,6 +67,8 @@ packages/*/pubspec_overrides.yaml @leehack
 tool/ci/web_deployment.py @leehack
 tool/ci/deploy_guard.py @leehack
 test/ci/test_deploy_guard.py @leehack
+tool/ci/select_jobs.py @leehack
+tool/ci/litert_lm_temp_canary.sh @leehack
 
 example/chat_app/linux/runner/my_application.cc @leehack
 

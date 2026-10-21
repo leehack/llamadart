@@ -205,7 +205,12 @@ bool _isArtifactConsumer(String path) {
 bool _isReleaseAutomation(String path) {
   if (path.startsWith('tool/release/') ||
       path.startsWith('scripts/release/') ||
-      path == 'tool/testing/verify_release_docs_versions.dart') {
+      path == 'tool/testing/verify_release_docs_versions.dart' ||
+      path == 'tool/ci/deploy_guard.py' ||
+      path == 'tool/ci/web_deployment.py' ||
+      // The deploy guard reuses this selection to decide whether a newer push
+      // supersedes a hosted-demo build.
+      path == 'tool/ci/select_jobs.py') {
     return true;
   }
   if (!path.startsWith('.github/workflows/')) return false;
@@ -226,6 +231,7 @@ bool _isRegressionPolicy(String path) {
       path == '.github/CODEOWNERS' ||
       path == '.github/pull_request_template.md' ||
       path.startsWith('.github/workflows/') ||
+      path.startsWith('tool/ci/') ||
       path == 'doc/testing_matrix.md' ||
       path == 'doc/pr_branch_writer_inventory.md' ||
       path == 'doc/high_risk_pre_merge_readiness.md' ||
