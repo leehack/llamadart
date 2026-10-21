@@ -1691,6 +1691,30 @@ void main() {
         });
       }
 
+      test('throws a typed exception for deeply nested call output', () async {
+        String arguments(int depth) => '{"city":${'[' * depth}0${']' * depth}}';
+        List<String> tokens(int depth) {
+          final call = '[TOOL_CALLS]weather[ARGS]${arguments(depth)}';
+          final half = call.length ~/ 2;
+          return [call.substring(0, half), call.substring(half)];
+        }
+
+        final nested = await parse(ToolChoice.auto, tokens(64));
+        expect(calls(nested).single.function?.arguments, arguments(64));
+        for (final atLimit in [false, true]) {
+          await expectLater(
+            parse(ToolChoice.auto, tokens(5000), atLimit: atLimit),
+            throwsA(
+              isA<LlamaInferenceException>().having(
+                (error) => error.message,
+                'message',
+                'The model output is nested too deeply to parse.',
+              ),
+            ),
+          );
+        }
+      });
+
       test('none and auto replies that ended normally still parse', () async {
         final none = await parse(ToolChoice.none, const ['It is sunny.']);
         expect(none.last.choices.single.finishReason, 'stop');
