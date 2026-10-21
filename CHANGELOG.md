@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Check and link the Apple companions a pub workspace app reaches through another member, such as an e2e or white-label app built on a shared app package, instead of bundling the hook's runtimes without them.
+- Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them.
 
 ## 0.15.5
 

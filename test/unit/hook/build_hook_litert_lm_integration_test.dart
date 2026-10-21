@@ -1479,6 +1479,121 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     },
   );
 
+  group('Flutter app reaching the llama.cpp companion through app_core', () {
+    const companion = 'llamadart_llama_cpp_flutter';
+
+    /// A standalone Flutter app whose `app_core` dependency, or dev
+    /// dependency when [dev], declares the llama.cpp companion.
+    Future<PackageUserDefines> appWithCore({
+      String? companionTag,
+      bool dev = false,
+    }) => _flutterAppleUserDefines(
+      dependencies: const [companion],
+      companionTag: companionTag,
+      companionVersion: llamaCppAppleCompanionVersion,
+      mutate: (dir) {
+        final pubspec = File(path.join(dir.path, 'pubspec.yaml'));
+        pubspec.writeAsStringSync(
+          pubspec
+              .readAsStringSync()
+              .replaceFirst(
+                '  $companion: ^0.0.17\n',
+                dev ? '' : '  app_core: any\n',
+              )
+              .replaceFirst(
+                'dependencies:',
+                dev
+                    ? 'dev_dependencies:\n  app_core: any\n\ndependencies:'
+                    : 'dependencies:',
+              ),
+        );
+        File(
+          path.join(dir.path, _dartToolDir, 'package_graph.json'),
+        ).writeAsStringSync(
+          jsonEncode({
+            'roots': ['llamadart_apple_consumer'],
+            'packages': [
+              {
+                'name': 'llamadart_apple_consumer',
+                'dependencies': ['flutter', 'llamadart', if (!dev) 'app_core'],
+                'devDependencies': [if (dev) 'app_core'],
+              },
+              {
+                'name': 'app_core',
+                'dependencies': ['flutter', 'llamadart', companion],
+              },
+              {
+                'name': companion,
+                'dependencies': ['flutter', 'llamadart'],
+              },
+              {'name': 'flutter', 'dependencies': <String>[]},
+              {'name': 'llamadart', 'dependencies': <String>[]},
+            ],
+            'configVersion': 1,
+          }),
+        );
+      },
+    );
+
+    for (final target in [OS.iOS, OS.macOS]) {
+      test('Apple $target validates the companion', () async {
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+            userDefines: await appWithCore(companionTag: 'v0.5.0'),
+            check: (_, _) => fail('Must not emit in-process assets'),
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple llama.cpp companion',
+              ),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('Apple links the companion', () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: await appWithCore(),
+        check: (_, output) {
+          expect(
+            output.assets.encodedAssets.single.asCodeAsset.linkMode,
+            isA<LookupInProcess>(),
+          );
+          expect(
+            output.dependencies.map((uri) => uri.toFilePath()),
+            contains(endsWith(path.join(_dartToolDir, 'package_graph.json'))),
+          );
+        },
+      );
+    });
+
+    test('Apple ignores a companion only a dev dependency reaches', () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: await appWithCore(companionTag: 'v0.5.0', dev: true),
+        check: (_, output) => expect(
+          output.assets.encodedAssets.map(
+            (asset) => asset.asCodeAsset.linkMode,
+          ),
+          everyElement(isA<DynamicLoadingBundled>()),
+        ),
+      );
+    });
+  });
+
   group('pub workspace', () {
     const llamaCppCompanion = 'llamadart_llama_cpp_flutter';
     const app = ['flutter', 'llamadart', llamaCppCompanion];
