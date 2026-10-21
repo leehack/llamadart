@@ -3337,7 +3337,6 @@ void main() {
       test('gpu throws when no device is a GPU or integrated GPU', () {
         final requested = <GpuBackend>[];
         final pathAllocator = _RecordingAllocator();
-        addTearDown(pathAllocator.release);
         final service = LlamaCppService(
           deviceTypes: (backend) {
             requested.add(backend);
@@ -3368,7 +3367,7 @@ void main() {
         );
         expect(requested, [GpuBackend.auto]);
         expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
-        expect(pathAllocator.live, isEmpty, reason: 'the model path leaked');
+        pathAllocator.expectAllFreed();
       });
 
       for (final type in [
@@ -3377,7 +3376,6 @@ void main() {
       ]) {
         test('gpu loads when a device is a ${type.name}', () {
           final pathAllocator = _RecordingAllocator();
-          addTearDown(pathAllocator.release);
           final service = LlamaCppService(
             deviceTypes: (_) => [
               ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
@@ -3395,7 +3393,7 @@ void main() {
             isPositive,
           );
           expect(pathAllocator.allocations, 1);
-          expect(pathAllocator.live, isEmpty);
+          pathAllocator.expectAllFreed();
         });
       }
 
@@ -3428,6 +3426,115 @@ void main() {
         expect(recorder.loadGpuLayers.single, 42);
         expect(service.getActiveBackendName(), 'Metal');
         expect(service.getResolvedGpuLayers(), 42);
+      });
+
+      group('gpu with an explicit backend that has no GPU device', () {
+        GgmlDeviceEntry device(String registry, ggml_backend_dev_type type) =>
+            GgmlDeviceEntry(
+              name: '${registry}0',
+              registry: registry,
+              type: type.value,
+            );
+        String loadError(List<GgmlDeviceEntry> registered) {
+          final service = LlamaCppService(
+            deviceTypes: (_) => const <int>[],
+            registeredDevices: () => registered,
+          );
+          addTearDown(service.dispose);
+          try {
+            service.loadModel(
+              modelPath,
+              const ModelParams(
+                contextSize: 512,
+                device: ComputeDevice.gpu,
+                preferredBackend: GpuBackend.vulkan,
+              ),
+            );
+          } on LlamaUnsupportedException catch (error) {
+            expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+            return error.message;
+          }
+          fail('ComputeDevice.gpu loaded without a Vulkan GPU device.');
+        }
+
+        // As on the consolidated Apple runtime, where ComputeDevice.auto with
+        // GpuBackend.vulkan runs on Metal rather than on the CPU.
+        test('names the other registered GPU backend', () {
+          expect(
+            loadError([
+              device('CPU', ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU),
+              device('MTL', ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU),
+            ]),
+            allOf(
+              contains(
+                'ComputeDevice.gpu needs the vulkan backend for llama.cpp on '
+                '${Platform.operatingSystem}, but no vulkan GPU device is '
+                'available',
+              ),
+              endsWith(
+                'Use GpuBackend.metal to run on the metal GPU, or '
+                'ComputeDevice.cpu to run on the CPU.',
+              ),
+              isNot(contains('ComputeDevice.auto')),
+            ),
+          );
+        });
+
+        test('points to the CPU when no other GPU is registered', () {
+          expect(
+            loadError([
+              device('CPU', ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU),
+              device(
+                'BLAS',
+                ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL,
+              ),
+            ]),
+            allOf(
+              contains('but no GPU device is available'),
+              endsWith('Use ComputeDevice.auto to run on the CPU instead.'),
+            ),
+          );
+        });
+      });
+
+      test('a draft load frees its model path, also when it throws before '
+          'the native load', () {
+        var registryFails = false;
+        final pathAllocator = _RecordingAllocator();
+        final service = LlamaCppService(
+          registeredDevices: () {
+            if (registryFails) throw StateError('registry read failed');
+            return const <GgmlDeviceEntry>[];
+          },
+          modelPathAllocator: pathAllocator,
+        );
+        addTearDown(service.dispose);
+        final target = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, gpuLayers: 42),
+        );
+        // A draft of a target on a GPU reads the registry on every host.
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        )[target] = 'Metal';
+        void loadDraft(String draftPath) => _invokePrivateForTesting<Object?>(
+          service,
+          '_loadSpeculativeDraftModel',
+          [target, draftPath, 'Draft model'],
+          {#loadMtp: false},
+        );
+
+        loadDraft(modelPath);
+        expect(pathAllocator.allocations, 2, reason: 'the target and draft');
+        pathAllocator.expectAllFreed();
+
+        registryFails = true;
+        final otherDraft = path.join(tempDir.path, 'draft.gguf');
+        writeSyntheticLlamaGguf(otherDraft);
+        expect(() => loadDraft(otherDraft), throwsStateError);
+        expect(pathAllocator.allocations, 2);
+        pathAllocator.expectAllFreed();
       });
 
       test('createContext applies the device of its own params', () {
@@ -3671,7 +3778,13 @@ void main() {
       );
 
       test('an explicit Metal request keeps its GPU layers and warns', () {
-        final service = LlamaCppService(isIosSimulator: true);
+        // An uninitialized service has no module directory, so no host forces
+        // the missing Metal module onto the CPU, and no registered device can
+        // refuse the load: every host keeps the layers.
+        final service = LlamaCppService(
+          isIosSimulator: true,
+          registeredDevices: () => const <GgmlDeviceEntry>[],
+        );
         addTearDown(service.dispose);
 
         service.loadModel(
@@ -3683,14 +3796,8 @@ void main() {
           ),
         );
 
-        // Only a host without the Metal module loads this on the CPU.
-        if (Platform.isMacOS) {
-          expect(service.getResolvedGpuLayers(), 42);
-        }
-        expect(
-          simulatorWarnings(),
-          hasLength(service.getResolvedGpuLayers() == 0 ? 0 : 1),
-        );
+        expect(service.getResolvedGpuLayers(), 42);
+        expect(simulatorWarnings(), hasLength(1));
       });
 
       // Records [handle] as a simulator load that kept 42 layers on Metal, as
@@ -8308,8 +8415,12 @@ final class _RecordingAllocator implements Allocator {
     malloc.free(pointer);
   }
 
-  void release() {
-    live.forEach(malloc.free);
-    live.clear();
-  }
+  /// Fails unless every allocation came back through [free]. A pointer left
+  /// in [live] stays allocated: the code under test may have freed it some
+  /// other way, and freeing it again would abort the VM.
+  void expectAllFreed() => expect(
+    live,
+    isEmpty,
+    reason: 'a model path was leaked or freed outside modelPathAllocator',
+  );
 }

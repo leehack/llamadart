@@ -34,6 +34,7 @@ For canonical full release notes, use:
 - Fix the Web chat app not retrying a microphone recording with its untrimmed audio when the trimmed capture returns no transcript.
 - Include the native LiteRT-LM error message and status code in errors from failed engine creation, conversation creation and message sends, on runtimes that report them (`v0.18.0` and later).
 - Report the backend a llama.cpp model runs on when an explicit `preferredBackend` has no device and llama.cpp offloads its layers to another GPU, such as `GpuBackend.vulkan` on Metal on Apple platforms; `getBackendName()` reported `CPU` ([#1281](https://github.com/leehack/llamadart/issues/1281)).
+- When `ComputeDevice.gpu` finds no device of an explicit llama.cpp `preferredBackend` but another GPU is registered, the error names that backend, such as `GpuBackend.metal` for `GpuBackend.vulkan` on Apple platforms, instead of suggesting `ComputeDevice.auto` for the CPU ([#1017](https://github.com/leehack/llamadart/issues/1017)).
 
 ## 0.15.5
 

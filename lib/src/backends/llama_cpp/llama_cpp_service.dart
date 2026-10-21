@@ -660,8 +660,8 @@ class LlamaCppService {
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free token batches and prepared embedding
   /// resources, the read of the Vulkan device facts, the registered ggml
-  /// devices a load selects from, and the allocator of the model path
-  /// [loadModel] passes to llama.cpp.
+  /// devices a load selects from, and the allocator of the model paths
+  /// [loadModel] and draft model loads pass to llama.cpp.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -2304,14 +2304,47 @@ class LlamaCppService {
     final requested = backend == GpuBackend.auto
         ? 'a GPU'
         : 'the ${backend.name} backend';
-    final reason = forcedCpuFallback
-        ? 'its backend module is not bundled. Add ${backend.name} to the '
-              'llamadart_native_backends hook user-define in your app '
-              'pubspec.yaml'
-        : 'no GPU device is available (devices: '
-              '${getBackendInfo().join(', ')})';
-    return 'ComputeDevice.gpu needs $requested for llama.cpp on $platform, '
-        'but $reason. Use ComputeDevice.auto to run on the CPU instead.';
+    final needs =
+        'ComputeDevice.gpu needs $requested for llama.cpp on $platform';
+    const useCpu = 'Use ComputeDevice.auto to run on the CPU instead.';
+    if (forcedCpuFallback) {
+      return '$needs, but its backend module is not bundled. Add '
+          '${backend.name} to the llamadart_native_backends hook user-define '
+          'in your app pubspec.yaml. $useCpu';
+    }
+    final devices = getBackendInfo().join(', ');
+    // Without a device of its explicit backend, a ComputeDevice.auto load
+    // offloads to any other registered GPU, such as Metal on the consolidated
+    // Apple runtime, instead of running on the CPU.
+    final otherGpu = backend == GpuBackend.auto
+        ? null
+        : _registeredGpuBackendOtherThan(backend);
+    if (otherGpu != null) {
+      return '$needs, but no ${backend.name} GPU device is available '
+          '(devices: $devices). Use GpuBackend.${otherGpu.name} to run on the '
+          '${otherGpu.name} GPU, or ComputeDevice.cpu to run on the CPU.';
+    }
+    return '$needs, but no GPU device is available (devices: $devices). '
+        '$useCpu';
+  }
+
+  GpuBackend? _registeredGpuBackendOtherThan(GpuBackend backend) {
+    for (final device in _registeredDevices()) {
+      if (device.type !=
+              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value &&
+          device.type !=
+              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value) {
+        continue;
+      }
+      final registry = device.registry.toLowerCase();
+      for (final candidate in GpuBackend.values) {
+        if (candidate != backend &&
+            ggmlGpuRegistryName(candidate)?.toLowerCase() == registry) {
+          return candidate;
+        }
+      }
+    }
+    return null;
   }
 
   int _validateGgufModelFile(String modelPath, String label) {
@@ -2382,7 +2415,6 @@ class LlamaCppService {
 
     _prepareBackendsForModelLoad(draftBackend);
 
-    final modelPathPtr = draftModelPath.toNativeUtf8();
     final mparams = llama_model_default_params();
     var preferredDevices = _createPreferredDeviceList(draftBackend);
     // The target load already decided whether the GPU is usable; a draft
@@ -2408,6 +2440,9 @@ class LlamaCppService {
     }
 
     Pointer<llama_model> modelPtr = nullptr;
+    final modelPathPtr = draftModelPath.toNativeUtf8(
+      allocator: _modelPathAllocator,
+    );
     try {
       modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
@@ -2416,7 +2451,7 @@ class LlamaCppService {
         modelPtr,
       );
     } finally {
-      malloc.free(modelPathPtr);
+      _modelPathAllocator.free(modelPathPtr);
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
