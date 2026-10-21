@@ -59,7 +59,7 @@ void main() {
             ),
           ),
           throwsA(
-            isA<LlamaUnsupportedException>().having(
+            isA<LlamaStateException>().having(
               (error) => error.message,
               'message',
               contains('The attached LlamaEngine is disposed.'),
@@ -171,6 +171,31 @@ void main() {
       backend.releaseAudioProbe();
 
       await expectLater(pending, throwsA(isA<LlamaStateException>()));
+      expect(backend.generationStarted.isCompleted, isFalse);
+    });
+
+    test('a LlamaEngine disposed during preflight starts no task', () async {
+      backend.blockAudioProbe = true;
+      await _loadSpeechModel(llamaEngine);
+
+      final pending = speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      await backend.audioProbeStarted.future;
+      final disposal = llamaEngine.dispose();
+      backend.releaseAudioProbe();
+
+      await expectLater(
+        pending,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('The attached LlamaEngine is disposed.'),
+          ),
+        ),
+      );
+      await disposal;
       expect(backend.generationStarted.isCompleted, isFalse);
     });
 
@@ -670,7 +695,7 @@ void main() {
                 audio: SpeechAudioFileInput('/tmp/retry.wav'),
               ),
             ),
-            throwsA(isA<LlamaUnsupportedException>()),
+            throwsA(isA<LlamaStateException>()),
           );
           return;
         }

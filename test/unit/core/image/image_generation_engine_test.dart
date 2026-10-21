@@ -737,7 +737,12 @@ void main() {
 
       expect(engine.isDisposed, isTrue);
       expect(driver.session.disposeCalls, 1);
-      expect((await engine.capabilities).isSupported, isFalse);
+      final capabilities = await engine.capabilities;
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        'The ImageGenerationEngine is disposed.',
+      );
     });
   });
 

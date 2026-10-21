@@ -938,9 +938,7 @@ class SpeechToTextEngine {
     if (engine.isDisposed) {
       return const SpeechToTextCapabilities(
         isSupported: false,
-        unsupportedReason:
-            'The attached LlamaEngine is disposed. Create a new LlamaEngine '
-            'and attach a new SpeechToTextEngine.',
+        unsupportedReason: _engineDisposedMessage,
       );
     }
     if (speechToTextRequiresBackendCapability) {
@@ -1031,7 +1029,7 @@ class SpeechToTextEngine {
   /// input and unsupported preflight checks throw before a task is returned;
   /// failures after startup are reported by [SpeechToTextTask.done] and
   /// [SpeechToTextTask.result]. Throws [LlamaStateException] after
-  /// [dispose].
+  /// [dispose] and after [LlamaEngine.dispose] of an attached engine.
   ///
   /// On native llama.cpp, a prompt-adapted task that reaches the context
   /// size or [SpeechToTextRequest.maxOutputTokens] before the transcript ends
@@ -1060,6 +1058,9 @@ class SpeechToTextEngine {
     try {
       final currentCapabilities = await capabilities;
       _throwIfDisposed();
+      if (_engine!.isDisposed) {
+        throw LlamaStateException(_engineDisposedMessage);
+      }
       if (!currentCapabilities.isSupported) {
         throw LlamaUnsupportedException(
           currentCapabilities.unsupportedReason ??
@@ -1176,6 +1177,10 @@ class SpeechToTextEngine {
       throw LlamaStateException('The SpeechToTextEngine is disposed.');
     }
   }
+
+  static const String _engineDisposedMessage =
+      'The attached LlamaEngine is disposed. Create a new LlamaEngine and '
+      'attach a new SpeechToTextEngine.';
 
   Future<SpeechToTextTask> _transcribeLiteRtLm(
     SpeechToTextRequest request,
