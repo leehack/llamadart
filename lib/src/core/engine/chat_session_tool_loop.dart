@@ -64,9 +64,9 @@ enum LlamaToolLoopStopReason {
   contextExceeded,
 
   /// Generation was cancelled while the loop ran by
-  /// `LlamaEngine.cancelGeneration`, model unload/replacement or disposal. A reply
-  /// without tool calls stays in the history as the turn's answer, even an
-  /// empty one; otherwise the turn was rolled back.
+  /// `LlamaEngine.cancelGeneration`, model unload/replacement or disposal. A
+  /// reply without tool calls stays in the history as the turn's answer, even
+  /// an empty one; otherwise the turn was rolled back.
   ///
   /// Which of the two a cancel near the start of a reply gives depends on
   /// its timing, the backend, the chat template and its parser: an empty
@@ -220,9 +220,9 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// when a request did not fit its context budget (calls proposed from a
   /// trimmed prompt are not run), when a reply is cut off at
   /// `GenerationParams.maxTokens` or the end of the context, or when
-  /// `LlamaEngine.cancelGeneration` is called. A cancel does not interrupt running tools. [maxRounds] must not
-  /// be negative, or this throws [LlamaArgumentException]; `0` returns the
-  /// first reply's calls unrun.
+  /// `LlamaEngine.cancelGeneration` is called. A cancel does not interrupt
+  /// running tools. [maxRounds] must not be negative, or this throws
+  /// [LlamaArgumentException]; `0` returns the first reply's calls unrun.
   ///
   /// After every stop, [ChatSession.history] ends with a reply without tool
   /// calls, so a new user turn can follow, except after
@@ -283,7 +283,8 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// stream replies as they are generated.
   ///
   /// Throws [LlamaUnsupportedException] before changing history or generating
-  /// when the backend declares that it cannot reliably report generation limits.
+  /// when the backend declares that it cannot reliably report generation
+  /// limits.
   Future<LlamaToolLoopResult> completeWithTools(
     List<LlamaContentPart> parts, {
     required List<ToolDefinition> tools,

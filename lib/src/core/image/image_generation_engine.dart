@@ -350,9 +350,10 @@ class ImageGenerationEngine {
   ///   [ComputeDevice.gpu] is requested and the runtime reports no GPU, or
   ///   [ComputeDevice.npu] is requested; when [download] sets
   ///   [ModelLoadOptions.sha256] for a model of more than one file (a
-  ///   single file is verified against it); and when a source sets [ModelSource.format] to [ModelFormat.liteRtLm].
-  ///   Image files are classified by their headers, so [ModelSource.format]
-  ///   is otherwise unused here. Also when
+  ///   single file is verified against it); and when a source sets
+  ///   [ModelSource.format] to [ModelFormat.liteRtLm]. Image files are
+  ///   classified by their headers, so [ModelSource.format] is otherwise
+  ///   unused here. Also when
   ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
   ///   Metal backend, before any file is resolved or loaded.
   /// - [LlamaModelException] when a file is missing, is not an image-model
