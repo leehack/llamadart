@@ -238,6 +238,7 @@ void main() {
           readPinnedBridgeTag(repoRoot),
           verifyPublishedManifest: true,
           manifestFetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+          releaseFetcher: _FakeGitHub.pinned().fetch,
         ),
         isEmpty,
       );
@@ -1152,4 +1153,441 @@ void main() {
       expect(errors.single, contains('exceeds the 16-byte limit'));
     });
   });
+
+  group('Published release verification', () {
+    test('accepts the pinned immutable release and its tag commit', () async {
+      final github = _FakeGitHub.pinned();
+
+      expect(await _verifyRelease(github), isEmpty);
+      expect(github.requested.map((url) => url.path), <String>[
+        '/repos/$bridgeAssetsRepository/releases/tags/${github.tag}',
+        '/repos/$bridgeAssetsRepository/git/ref/tags/${github.tag}',
+      ]);
+      expect(github.requested.map((url) => url.host).toSet(), <String>{
+        'api.github.com',
+      });
+    });
+
+    test('peels annotated tags to the pinned commit', () async {
+      for (final chain in <List<String>>[
+        <String>['a' * 40],
+        <String>['a' * 40, 'b' * 40, 'c' * 40],
+      ]) {
+        final github = _FakeGitHub.pinned()
+          ..annotatedTag(chain, bridgeAssetsTagCommit);
+
+        expect(
+          await _verifyRelease(github),
+          isEmpty,
+          reason: '${chain.length} annotated tag(s)',
+        );
+        expect(
+          github.requested.last.path,
+          '/repos/$bridgeAssetsRepository/git/tags/${chain.last}',
+        );
+      }
+    });
+
+    test('an annotated tag object is not mistaken for its commit', () async {
+      final github = _FakeGitHub.pinned()
+        ..annotatedTag(<String>[bridgeAssetsTagCommit], 'd' * 40);
+
+      expect(await _verifyRelease(github), <String>[
+        'tag ${github.tag} points at commit ${'d' * 40}, expected '
+            'bridgeAssetsTagCommit $bridgeAssetsTagCommit',
+      ]);
+    });
+
+    test('a different release id fails', () async {
+      final github = _FakeGitHub.pinned()..release(<String, Object?>{'id': 1});
+
+      expect(await _verifyRelease(github), <String>[
+        'release ${github.tag} has id 1, expected bridgeAssetsReleaseId '
+            '$bridgeAssetsReleaseId',
+      ]);
+    });
+
+    test('a different tag commit fails', () async {
+      final github = _FakeGitHub.pinned()..lightweightTag('e' * 40);
+
+      expect(await _verifyRelease(github), <String>[
+        'tag ${github.tag} points at commit ${'e' * 40}, expected '
+            'bridgeAssetsTagCommit $bridgeAssetsTagCommit',
+      ]);
+    });
+
+    test('a mutable or draft release fails closed', () async {
+      for (final fields in <Map<String, Object?>>[
+        <String, Object?>{'immutable': false},
+        <String, Object?>{'immutable': null},
+        <String, Object?>{'immutable': 'true'},
+        <String, Object?>{'draft': true},
+        <String, Object?>{'draft': null},
+      ]) {
+        final github = _FakeGitHub.pinned()..release(fields);
+        final key = fields.keys.single;
+
+        expect(await _verifyRelease(github), <Matcher>[
+          contains('reports $key: ${fields[key]}'),
+        ], reason: '$fields was accepted');
+      }
+    });
+
+    test('missing or malformed release data fails closed', () async {
+      for (final entry in <Map<String, Object?>, String>{
+        <String, Object?>{'id': null}: 'reports no numeric release id',
+        <String, Object?>{'id': bridgeAssetsReleaseId}:
+            'reports no numeric release id',
+        <String, Object?>{'tag_name': 'v0.0.1'}: 'reports tag_name v0.0.1',
+      }.entries) {
+        final github = _FakeGitHub.pinned()..release(entry.key);
+
+        expect(await _verifyRelease(github), <Matcher>[
+          contains(entry.value),
+        ], reason: '${entry.key} was accepted');
+      }
+
+      final notAnObject = _FakeGitHub.pinned();
+      notAnObject.respond('releases/tags/${notAnObject.tag}', <Object?>[
+        <String, Object?>{'id': int.parse(bridgeAssetsReleaseId)},
+      ]);
+      expect(await _verifyRelease(notAnObject), <Matcher>[
+        contains('returned invalid JSON: expected an object'),
+      ]);
+    });
+
+    test('missing or malformed tag data fails closed', () async {
+      final tag = readPinnedBridgeTag(Directory.current);
+      for (final entry in <Object, String>{
+        <String, Object?>{
+          'ref': 'refs/tags/v0.0.1',
+          'object': <String, Object?>{
+            'type': 'commit',
+            'sha': bridgeAssetsTagCommit,
+          },
+        }: 'does not describe refs/tags/$tag',
+        <String, Object?>{'ref': 'refs/tags/$tag'}:
+            'reports no valid object sha',
+        <String, Object?>{
+          'ref': 'refs/tags/$tag',
+          'object': <String, Object?>{'type': 'commit', 'sha': 'abc123'},
+        }: 'reports no valid object sha',
+        <String, Object?>{
+          'ref': 'refs/tags/$tag',
+          'object': <String, Object?>{'type': 'tree', 'sha': 'f' * 40},
+        }: 'at a tree object, expected a commit or an annotated tag',
+        <Object?>[
+          <String, Object?>{'ref': 'refs/tags/$tag'},
+        ]: 'returned invalid JSON: expected an object',
+      }.entries) {
+        final github = _FakeGitHub.pinned()
+          ..respond('git/ref/tags/$tag', entry.key);
+
+        expect(await _verifyRelease(github), <Matcher>[
+          contains(entry.value),
+        ], reason: '${entry.key} was accepted');
+      }
+
+      final missingTagObject = _FakeGitHub.pinned()
+        ..annotatedTag(<String>['a' * 40], bridgeAssetsTagCommit);
+      missingTagObject.responses.remove(
+        '/repos/$bridgeAssetsRepository/git/tags/${'a' * 40}',
+      );
+      expect(await _verifyRelease(missingTagObject), <Matcher>[
+        endsWith('/git/tags/${'a' * 40} returned HTTP 404'),
+      ]);
+
+      final endless = _FakeGitHub.pinned()
+        ..annotatedTag(<String>[
+          for (var i = 0; i <= maxTagPeelDepth; i++)
+            i.toRadixString(16).padLeft(40, '0'),
+        ], bridgeAssetsTagCommit);
+      expect(await _verifyRelease(endless), <Matcher>[
+        contains('does not reach a commit within $maxTagPeelDepth'),
+      ]);
+    });
+
+    test('API failures are reported without throwing', () async {
+      final tag = readPinnedBridgeTag(Directory.current);
+
+      final missing = _FakeGitHub.pinned();
+      missing.responses.remove(
+        '/repos/$bridgeAssetsRepository/releases/tags/$tag',
+      );
+      expect(await _verifyRelease(missing), <Matcher>[
+        endsWith('/releases/tags/$tag returned HTTP 404'),
+      ]);
+
+      final limited = _FakeGitHub.pinned()
+        ..respond('git/ref/tags/$tag', null, status: HttpStatus.forbidden);
+      expect(await _verifyRelease(limited), <Matcher>[
+        allOf(
+          contains('returned HTTP 403'),
+          contains('set GH_TOKEN or GITHUB_TOKEN'),
+        ),
+      ]);
+
+      final invalid = _FakeGitHub.pinned();
+      invalid.responses['/repos/$bridgeAssetsRepository/releases/tags/$tag'] =
+          ManifestResponse(HttpStatus.ok, utf8.encode('{not-json'));
+      expect(await _verifyRelease(invalid), <Matcher>[
+        contains('returned invalid JSON'),
+      ]);
+
+      expect(
+        await verifyPublishedRelease(
+          expectedTag: tag,
+          expectedReleaseId: bridgeAssetsReleaseId,
+          expectedTagCommit: bridgeAssetsTagCommit,
+          fetcher: (_) async =>
+              throw const SocketException('connection refused'),
+        ),
+        <Matcher>[contains('could not read'), contains('could not read')],
+      );
+
+      final pending = Completer<ManifestResponse>();
+      expect(
+        await verifyPublishedRelease(
+          expectedTag: tag,
+          expectedReleaseId: bridgeAssetsReleaseId,
+          expectedTagCommit: bridgeAssetsTagCommit,
+          fetcher: (_) => pending.future,
+          timeout: const Duration(milliseconds: 20),
+        ),
+        <Matcher>[contains('timed out reading'), contains('timed out reading')],
+      );
+
+      expect(
+        await verifyPublishedRelease(
+          expectedTag: tag,
+          expectedReleaseId: bridgeAssetsReleaseId,
+          expectedTagCommit: bridgeAssetsTagCommit,
+          maximumBytes: 16,
+          fetcher: _FakeGitHub.pinned().fetch,
+        ),
+        <Matcher>[
+          contains('exceeds the 16-byte limit'),
+          contains('exceeds the 16-byte limit'),
+        ],
+      );
+    });
+
+    test('the aggregate gate reports release drift', () async {
+      final repoRoot = Directory.current;
+      final bytes = utf8.encode(_approvedManifestJson);
+      final github = _FakeGitHub.pinned()
+        ..release(<String, Object?>{'immutable': false});
+
+      expect(
+        await findBridgeProblems(
+          repoRoot,
+          readPinnedBridgeTag(repoRoot),
+          verifyPublishedManifest: true,
+          manifestFetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+          releaseFetcher: github.fetch,
+        ),
+        <Matcher>[contains('reports immutable: false')],
+      );
+    });
+
+    test(
+      'the token is sent only as a header and redirects are not followed',
+      () async {
+        const token = 'test-token-not-a-secret';
+        final tag = readPinnedBridgeTag(Directory.current);
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final seen = <String, String?>{};
+        server.listen((request) async {
+          seen[request.uri.path] = request.headers.value(
+            HttpHeaders.authorizationHeader,
+          );
+          final response = request.response;
+          if (request.uri.path.endsWith('/releases/tags/$tag')) {
+            response
+              ..statusCode = HttpStatus.found
+              ..headers.set(HttpHeaders.locationHeader, '/redirected');
+          } else if (request.uri.path.endsWith('/ref/tags/$tag')) {
+            response.write(
+              jsonEncode(<String, Object?>{
+                'ref': 'refs/tags/$tag',
+                'object': <String, Object?>{
+                  'type': 'commit',
+                  'sha': bridgeAssetsTagCommit,
+                },
+              }),
+            );
+          } else {
+            response.statusCode = HttpStatus.notFound;
+          }
+          await response.close();
+        });
+
+        Future<List<String>> run(Map<String, String> environment) =>
+            verifyPublishedRelease(
+              expectedTag: tag,
+              expectedReleaseId: bridgeAssetsReleaseId,
+              expectedTagCommit: bridgeAssetsTagCommit,
+              apiBase: Uri.parse('http://127.0.0.1:${server.port}'),
+              environment: environment,
+            );
+
+        final errors = await run(<String, String>{'GH_TOKEN': token});
+        expect(errors, <Matcher>[endsWith('returned HTTP 302')]);
+        expect(errors.join('\n'), isNot(contains(token)));
+        expect(seen.keys, isNot(contains('/redirected')));
+        expect(seen, hasLength(2));
+        expect(seen.values.toSet(), <String?>{'Bearer $token'});
+
+        // gh's precedence: GH_TOKEN wins, and a blank one is unset.
+        seen.clear();
+        await run(<String, String>{
+          'GH_TOKEN': token,
+          'GITHUB_TOKEN': 'other-token',
+        });
+        expect(seen.values.toSet(), <String?>{'Bearer $token'});
+
+        seen.clear();
+        await run(<String, String>{'GH_TOKEN': ' ', 'GITHUB_TOKEN': token});
+        expect(seen.values.toSet(), <String?>{'Bearer $token'});
+
+        seen.clear();
+        await run(const <String, String>{});
+        expect(seen, hasLength(2));
+        expect(seen.values.toSet(), <String?>{null});
+
+        // An invalid GH_TOKEN fails closed rather than falling back.
+        seen.clear();
+        expect(
+          await run(<String, String>{
+            'GH_TOKEN': 'bad\ntoken',
+            'GITHUB_TOKEN': token,
+          }),
+          <Matcher>[startsWith('GH_TOKEN is not a valid bearer token')],
+        );
+        expect(seen, isEmpty);
+      },
+    );
+
+    test('an invalid token fails closed without being printed', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        await request.response.close();
+      });
+      final repoRoot = Directory.current;
+      final manifest = utf8.encode(_approvedManifestJson);
+
+      for (final secret in const <String>[
+        'bogus-audit\nsecretpart',
+        'bogus-audit\r\nX-Injected: secretpart',
+        'bogus-audit\u0000secretpart',
+        'bogus-audit secretpart',
+        'bogus-auditésecretpart',
+      ]) {
+        for (final name in const <String>['GH_TOKEN', 'GITHUB_TOKEN']) {
+          final environment = <String, String>{name: secret};
+          final direct = await verifyPublishedRelease(
+            expectedTag: readPinnedBridgeTag(repoRoot),
+            expectedReleaseId: bridgeAssetsReleaseId,
+            expectedTagCommit: bridgeAssetsTagCommit,
+            apiBase: Uri.parse('http://127.0.0.1:${server.port}'),
+            environment: environment,
+          );
+          final aggregate = await findBridgeProblems(
+            repoRoot,
+            readPinnedBridgeTag(repoRoot),
+            verifyPublishedManifest: true,
+            manifestFetcher: (_) async =>
+                ManifestResponse(HttpStatus.ok, manifest),
+            environment: environment,
+          );
+
+          for (final problems in <List<String>>[direct, aggregate]) {
+            expect(problems, <String>[
+              '$name is not a valid bearer token, so no GitHub API request '
+                  'was sent; its value is not shown',
+            ], reason: '${jsonEncode(secret)} in $name');
+            expect(problems.join('\n'), isNot(contains('secretpart')));
+          }
+        }
+      }
+      expect(requests, 0);
+    });
+  });
+}
+
+Future<List<String>> _verifyRelease(_FakeGitHub github) =>
+    verifyPublishedRelease(
+      expectedTag: github.tag,
+      expectedReleaseId: bridgeAssetsReleaseId,
+      expectedTagCommit: bridgeAssetsTagCommit,
+      fetcher: github.fetch,
+    );
+
+/// Serves GitHub REST responses by path; anything unregistered is a 404.
+class _FakeGitHub {
+  final String tag;
+  final Map<String, ManifestResponse> responses = <String, ManifestResponse>{};
+  final List<Uri> requested = <Uri>[];
+
+  _FakeGitHub(this.tag);
+
+  /// The published state the production pins describe.
+  factory _FakeGitHub.pinned() =>
+      _FakeGitHub(readPinnedBridgeTag(Directory.current))
+        ..release(const <String, Object?>{})
+        ..lightweightTag(bridgeAssetsTagCommit);
+
+  void respond(String path, Object? json, {int status = HttpStatus.ok}) {
+    responses['/repos/$bridgeAssetsRepository/$path'] = ManifestResponse(
+      status,
+      utf8.encode(jsonEncode(json)),
+    );
+  }
+
+  /// Publishes the pinned release with [overrides]; a null value drops the
+  /// field.
+  void release(Map<String, Object?> overrides) {
+    final fields = <String, Object?>{
+      'id': int.parse(bridgeAssetsReleaseId),
+      'tag_name': tag,
+      'immutable': true,
+      'draft': false,
+      'prerelease': false,
+      ...overrides,
+    }..removeWhere((_, value) => value == null);
+    respond('releases/tags/$tag', fields);
+  }
+
+  void lightweightTag(String commit) {
+    respond('git/ref/tags/$tag', <String, Object?>{
+      'ref': 'refs/tags/$tag',
+      'object': <String, Object?>{'type': 'commit', 'sha': commit},
+    });
+  }
+
+  /// Points the tag at [tagObjects] in turn, the last of which tags [commit].
+  void annotatedTag(List<String> tagObjects, String commit) {
+    respond('git/ref/tags/$tag', <String, Object?>{
+      'ref': 'refs/tags/$tag',
+      'object': <String, Object?>{'type': 'tag', 'sha': tagObjects.first},
+    });
+    for (var i = 0; i < tagObjects.length; i++) {
+      respond('git/tags/${tagObjects[i]}', <String, Object?>{
+        'sha': tagObjects[i],
+        'object': i + 1 < tagObjects.length
+            ? <String, Object?>{'type': 'tag', 'sha': tagObjects[i + 1]}
+            : <String, Object?>{'type': 'commit', 'sha': commit},
+      });
+    }
+  }
+
+  Future<ManifestResponse> fetch(Uri url) async {
+    requested.add(url);
+    return responses[url.path] ??
+        const ManifestResponse(HttpStatus.notFound, <int>[]);
+  }
 }

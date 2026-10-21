@@ -300,7 +300,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'native pin unless a divergence is recorded',
     command:
         'dart run tool/testing/check_webgpu_bridge_tag.dart '
-        '(add --verify-manifest to re-read the published manifest)',
+        '(add --verify-manifest to check the published release, tag commit '
+        'and manifest)',
     useWhen:
         'Bridge asset tag bumps, native llama.cpp pin bumps, or edits to the '
         'docs that pin either.',
