@@ -1273,7 +1273,7 @@ void main() {
         'packages/llamadart_validation/assets/profiles/gemma4-litert-gpu.json',
       ).copySync(p.join(bundle.path, 'profile.json'));
       final run = Directory(p.join(scratch.path, 'reassessed-android'));
-      final device = p.join(run.path, 'remote-results/qa-one/caiman');
+      final device = p.join(run.path, 'remote-results', 'qa-one', 'caiman');
       File(p.join(device, 'artifacts/validation/runs/app-1/events.jsonl'))
         ..createSync(recursive: true)
         ..writeAsStringSync(journal);
