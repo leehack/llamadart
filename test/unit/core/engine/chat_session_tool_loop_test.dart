@@ -231,6 +231,15 @@ class _DelegatingSession implements ChatSession {
       throw UnimplementedError('${invocation.memberName}');
 }
 
+/// A [_DelegatingSession] whose [history] returns copies.
+class _CopyingDelegateSession extends _DelegatingSession {
+  _CopyingDelegateSession(super.inner);
+
+  @override
+  List<LlamaChatMessage> get history =>
+      List.unmodifiable(super.history.map(_copyOf));
+}
+
 List<LlamaToolResultContent> _toolResults(ChatSession session) => [
   for (final message in session.history)
     if (message.role == LlamaChatRole.tool)
@@ -1579,6 +1588,135 @@ void main() {
       [for (final message in copying.history) message.content],
       ['Hi', 'Hello'],
     );
+  });
+
+  test('a class that implements ChatSession keeps an equal message another '
+      'caller added meanwhile', () async {
+    final sideQuestion = _text(LlamaChatRole.user, 'Weather');
+    final sideAnswer = _text(LlamaChatRole.assistant, 'Side answer');
+    engine.replies
+      ..add(scriptedCalls([('a', 'weather', '{}')]))
+      ..add(scriptedCalls([('b', 'weather', '{}')]));
+
+    final result = await _DelegatingSession(session).sendWithTools(
+      'Weather',
+      tools: [
+        _tool('weather', (_) async {
+          session
+            ..addMessage(sideQuestion)
+            ..addMessage(sideAnswer);
+          return 'sunny';
+        }),
+      ],
+      maxRounds: 1,
+    );
+
+    expect(result.rolledBack, isTrue);
+    expect(session.history, orderedEquals([sideQuestion, sideAnswer]));
+  });
+
+  group('a class that implements ChatSession whose history returns copies', () {
+    final call = LlamaToolCallContent(
+      id: '1',
+      name: 'approve',
+      arguments: const {},
+      rawJson: '{}',
+    );
+
+    List<String> contents(ChatSession session) => [
+      for (final message in session.history) message.content,
+    ];
+
+    Future<LlamaToolLoopResult> stopAtMaxRounds(ChatSession session) {
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(scriptedCalls([('b', 'weather', '{}')]));
+      return session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 1,
+      );
+    }
+
+    test('rolls back a continued turn', () async {
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+        _text(LlamaChatRole.user, 'Delete it'),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [call],
+        ),
+        _result(call, 'approved'),
+      ].forEach(session.addMessage);
+      engine.replies.add(scriptedCalls([('2', 'weather', '{}')]));
+
+      final result = await _CopyingDelegateSession(session).completeWithTools(
+        const [],
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 0,
+      );
+
+      expect(result.rolledBack, isTrue);
+      expect(contents(session), ['Hi', 'Hello']);
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    test('rolls back a new turn', () async {
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(session.addMessage);
+
+      final result = await stopAtMaxRounds(_CopyingDelegateSession(session));
+
+      expect(result.rolledBack, isTrue);
+      expect(contents(session), ['Hi', 'Hello']);
+    });
+
+    test('keeps an earlier turn with the same content', () async {
+      [
+        _text(LlamaChatRole.user, 'Weather'),
+        _text(LlamaChatRole.assistant, 'Sunny.'),
+      ].forEach(session.addMessage);
+
+      final result = await stopAtMaxRounds(_CopyingDelegateSession(session));
+
+      expect(result.rolledBack, isTrue);
+      expect(contents(session), ['Weather', 'Sunny.']);
+    });
+
+    test('removes what its addMessage appended after a result, and keeps '
+        'an earlier equal result', () async {
+      final noting = _NotingSession(engine);
+      final delegate = _DelegatingSession(noting);
+      final earlierCall = LlamaToolCallContent(
+        id: 'a',
+        name: 'weather',
+        arguments: const {},
+        rawJson: '{}',
+      );
+      [
+        _text(LlamaChatRole.user, 'Weather'),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [earlierCall],
+        ),
+        _result(earlierCall, 'sunny'),
+        _text(LlamaChatRole.assistant, 'Sunny.'),
+      ].forEach(delegate.addMessage);
+
+      final result = await stopAtMaxRounds(delegate);
+
+      expect(result.rolledBack, isTrue);
+      expect(_toolResults(noting).single.id, 'a');
+      expect(noting.history.last.content, 'Sunny.');
+    });
   });
 
   test('completeWithTools sends media parts as the user turn', () async {

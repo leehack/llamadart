@@ -140,10 +140,11 @@ trimming dropped stay dropped, as after `create`. A rollback edits the history
 without calling `addMessage` or `reset`, so a `ChatSession` subclass that
 mirrors the history should check `result.rolledBack`.
 
-One edge case is not covered: an `implements ChatSession` class whose
-`history` returns copies can keep the open turn of a
-`completeWithTools(const [], ...)` continuation while `result.rolledBack` is
-true.
+A class that `implements ChatSession` is rolled back through `reset` and
+`addMessage` instead. If its `history` returns new copies on each read, the
+turn's messages are matched by role and content rather than identity, so an
+equal message that other code added during the loop can be removed in place
+of the turn's own.
 
 `result.rolledBack` tells whether the turn was removed. Tools that ran keep
 their side effects: `result.messages` holds every message of the turn,
