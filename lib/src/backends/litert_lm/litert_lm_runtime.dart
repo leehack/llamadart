@@ -14,6 +14,7 @@ import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_embedding_bindings.dart' as emb;
+import 'litert_lm_last_error.dart';
 import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
@@ -87,24 +88,28 @@ void liteRtLmCheckEngineCreated(
   int engineAddress, {
   required String backend,
   required String modelPath,
+  String? nativeError,
 }) {
   if (engineAddress == 0) {
     throw LiteRtLmEngineCreateError(
       liteRtLmEngineCreateFailureMessage(
         backend: backend,
         modelPath: modelPath,
+        nativeError: nativeError,
       ),
     );
   }
 }
 
-/// Builds a diagnostic for LiteRT-LM engine creation failures.
+/// Builds a diagnostic for LiteRT-LM engine creation failures, including
+/// [nativeError], the runtime's own description, when it reported one.
 ///
 /// This is public only for unit tests; production callers should receive the
 /// message through [LiteRtLmRuntimeClient.initialize].
 String liteRtLmEngineCreateFailureMessage({
   required String backend,
   required String modelPath,
+  String? nativeError,
 }) {
   final modelName = path.basename(modelPath);
   final displayName = modelName.isEmpty ? modelPath : modelName;
@@ -121,9 +126,13 @@ String liteRtLmEngineCreateFailureMessage({
       'Verify the backend name, LiteRT-LM bundle, and native runtime '
           'libraries.',
   };
+  final detail = nativeError == null ? '' : ' $nativeError';
   return 'LiteRT-LM engine creation failed for backend "$backend" and model '
-      '"$displayName". $hint';
+      '"$displayName".$detail $hint';
 }
+
+String _withNativeError(String message, String? nativeError) =>
+    nativeError == null ? message : '$message. $nativeError';
 
 /// The error LiteRT-LM reports on [abi] before it looks for a runtime, or
 /// null when litert-lm-native publishes one for [abi].
@@ -581,6 +590,7 @@ final class _BlockingSendMessageRequest {
     required this.companionLibraryPaths,
     required this.conversationAddress,
     required this.messageJson,
+    required this.diagnosticPaths,
     this.extraContextJson,
     this.visualTokenBudget,
     this.maxOutputTokens,
@@ -590,6 +600,7 @@ final class _BlockingSendMessageRequest {
   final List<String> companionLibraryPaths;
   final int conversationAddress;
   final String messageJson;
+  final List<String> diagnosticPaths;
   final String? extraContextJson;
   final int? visualTokenBudget;
   final int? maxOutputTokens;
@@ -702,6 +713,8 @@ class LiteRtLmRuntimeClient {
   _ProxyDeleteDart? _proxyDelete;
   String? _liteRtLmLibraryPath;
   List<String> _liteRtLmCompanionLibraryPaths = const <String>[];
+  // Paths a native error message may contain, cut to base names there.
+  List<String> _diagnosticPaths = const <String>[];
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
   int _defaultMaxOutputTokens = 256;
@@ -805,9 +818,13 @@ class LiteRtLmRuntimeClient {
     );
     final cacheDirPtr = cacheDir?.toNativeUtf8(allocator: calloc);
     final dispatchLibDirPtr = dispatchLibDir?.toNativeUtf8(allocator: calloc);
+    final diagnosticPaths = <String>[modelPath, ?cacheDir, ?dispatchLibDir];
+    _diagnosticPaths = diagnosticPaths;
     Pointer<_LiteRtLmEngineSettings> settings = nullptr;
 
     try {
+      final lastError = bindings.lastError;
+      lastError?.clear();
       settings = bindings.engineSettingsCreate(
         modelPathPtr.cast(),
         backendPtr.cast(),
@@ -815,7 +832,12 @@ class LiteRtLmRuntimeClient {
         audioBackendPtr?.cast() ?? nullptr,
       );
       if (settings == nullptr) {
-        throw StateError('litert_lm_engine_settings_create returned null');
+        throw StateError(
+          _withNativeError(
+            'litert_lm_engine_settings_create returned null',
+            lastError?.describe(paths: diagnosticPaths),
+          ),
+        );
       }
       bindings.engineSettingsSetMaxNumTokens(settings, maxTokens);
       // Benchmarking exposes real prefill/decode metrics. Do not set
@@ -871,7 +893,7 @@ class LiteRtLmRuntimeClient {
       final settingsAddress = settings.address;
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
       final companionLibraryPaths = _liteRtLmCompanionLibraryPaths;
-      final engineAddress = await Isolate.run(() {
+      final created = await Isolate.run(() {
         final companionLibraries = liteRtLmOpenCompanionLibraries(
           companionLibraryPaths,
         );
@@ -886,19 +908,30 @@ class LiteRtLmRuntimeClient {
                   Pointer<_LiteRtLmEngineSettings>,
                 )
               >('litert_lm_engine_create');
-          return create(
+          // The error state is per thread, so it is read in this isolate
+          // right after the call.
+          final lastError = LiteRtLmLastError.probeLibrary(lib);
+          lastError?.clear();
+          final address = create(
             Pointer<_LiteRtLmEngineSettings>.fromAddress(settingsAddress),
           ).address;
+          return (
+            address: address,
+            nativeError: address == 0
+                ? lastError?.describe(paths: diagnosticPaths)
+                : null,
+          );
         } finally {
           _keepAlive(companionLibraries);
         }
       });
       liteRtLmCheckEngineCreated(
-        engineAddress,
+        created.address,
         backend: resolvedBackend,
         modelPath: modelPath,
+        nativeError: created.nativeError,
       );
-      _engine = Pointer<_LiteRtLmEngine>.fromAddress(engineAddress);
+      _engine = Pointer<_LiteRtLmEngine>.fromAddress(created.address);
     } finally {
       if (settings != nullptr) {
         bindings.engineSettingsDelete(settings);
@@ -1016,9 +1049,16 @@ class LiteRtLmRuntimeClient {
         );
       }
       bindings.conversationConfigSetEnableConstrainedDecoding(config, false);
+      final lastError = bindings.lastError;
+      lastError?.clear();
       final conversation = bindings.conversationCreate(engine, config);
       if (conversation == nullptr) {
-        throw StateError('litert_lm_conversation_create returned null');
+        throw StateError(
+          _withNativeError(
+            'litert_lm_conversation_create returned null',
+            lastError?.describe(paths: [..._diagnosticPaths, ?loraPath]),
+          ),
+        );
       }
       _conversation = conversation;
     } finally {
@@ -1195,6 +1235,7 @@ class LiteRtLmRuntimeClient {
       companionLibraryPaths: _liteRtLmCompanionLibraryPaths,
       conversationAddress: conversation.address,
       messageJson: messageJson,
+      diagnosticPaths: _diagnosticPaths,
       extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
       maxOutputTokens: maxOutputTokens,
@@ -1360,6 +1401,8 @@ class LiteRtLmRuntimeClient {
         maxOutputTokens: maxOutputTokens,
       );
 
+      final lastError = bindings.lastError;
+      lastError?.clear();
       final rc = bindings.conversationSendMessageStream(
         conversation,
         messagePtr.cast(),
@@ -1369,7 +1412,12 @@ class LiteRtLmRuntimeClient {
         callbackData,
       );
       if (rc != 0) {
-        throw StateError('litert_lm_conversation_send_message_stream rc=$rc');
+        throw StateError(
+          _withNativeError(
+            'litert_lm_conversation_send_message_stream rc=$rc',
+            lastError?.describe(paths: _diagnosticPaths),
+          ),
+        );
       }
     } catch (_) {
       cleanup();
@@ -2203,6 +2251,8 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
         maxOutputTokens: request.maxOutputTokens,
       );
 
+      final lastError = bindings.lastError;
+      lastError?.clear();
       final response = bindings.conversationSendMessage(
         conversation,
         messagePtr.cast(),
@@ -2210,7 +2260,12 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
         optionalArgs,
       );
       if (response == nullptr) {
-        throw StateError('litert_lm_conversation_send_message returned null');
+        throw StateError(
+          _withNativeError(
+            'litert_lm_conversation_send_message returned null',
+            lastError?.describe(paths: request.diagnosticPaths),
+          ),
+        );
       }
 
       try {
@@ -3071,6 +3126,8 @@ class _LiteRtLmBindings {
       return null;
     }
   }
+
+  late final lastError = LiteRtLmLastError.probeLibrary(_library);
 
   late final setMinLogLevel = _library
       .lookupFunction<Void Function(Int), void Function(int)>(
