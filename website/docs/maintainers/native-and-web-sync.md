@@ -18,7 +18,12 @@ SwiftPM native pin must match the core hook pin (`llamaCppTag` or
 Each companion has its own template hash in `hook/build.dart`. Updating a
 declared dependency constraint alone is insufficient: rerun `flutter pub get`
 and resolve the matching companion. Core native tag/path/backend overrides do
-not replace SwiftPM frameworks and cannot bypass this check.
+not replace SwiftPM frameworks and cannot bypass this check. A companion that
+pins an earlier compatible tag (`llamaCppCompatibleAppleCompanionTags`,
+`stableDiffusionCompatibleAppleCompanionTags`) must also declare that tag's
+exact XCFramework checksum (`llamaCppCompatibleAppleCompanionChecksums`,
+`stableDiffusionAppleCompanionChecksums`); the native pin sync clears both
+when the pin moves.
 
 Local `Artifacts` overrides in that companion are rejected because their ABI
 provenance is unverified. Remove the override and use the pinned remote

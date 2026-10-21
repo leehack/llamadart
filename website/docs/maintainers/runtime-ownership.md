@@ -38,10 +38,13 @@ integration correctness.
 
 The consumer safety gate leaves
 [#919](https://github.com/leehack/llamadart/issues/919) open for reliable runtime
-reporting. The pinned native `v0.18.0` and Web `@litert-lm/core@0.18.0` do
-not expose a cause that distinguishes EOS from per-request output exhaustion.
-They cannot safely drive automatic tool loops. Plain completion remains
-available; its `stop` value is an unverified termination reason on those pins.
+reporting. Native `v0.18.0-3` adds the owner fix below
+([litert-lm-native#80](https://github.com/leehack/litert-lm-native/pull/80)):
+`stream_proxy_finish_reason_abi_version` and `stream_proxy_get_finish_reason`
+report the cause, but llamadart does not read them yet. Web
+`@litert-lm/core@0.18.0` exposes no cause. Until #919 lands, neither pin can
+safely drive automatic tool loops. Plain completion remains available; its
+`stop` value is an unverified termination reason.
 
 Verified source chain for the native artifact:
 

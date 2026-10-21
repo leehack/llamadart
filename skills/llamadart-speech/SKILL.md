@@ -53,8 +53,12 @@ description: >-
     `SpeechToTextTranscript`); override `supportsLanguageHints`,
     `supportsContextPrompt` or `supportsLanguageDetection` as needed.
   - LiteRT-LM ASR (live partials, then a final transcript):
-    `LiteRtLmAsrAdapter(preset)` with the `.tflite` model as `source` and its
-    tokenizer JSON as `tokenizer`. Native only, CPU only
+    `LiteRtLmAsrAdapter(preset)` with the `.tflite` model, or from native
+    `v0.18.0-3` a dedicated ASR `.litertlm` container such as Whisper tiny, as
+    `source` and its tokenizer JSON as `tokenizer` (still required for a
+    container, which uses its embedded tokenizer). Apple apps on LiteRT
+    companion `0.15.0`/`0.15.1` (`v0.18.0-2`) reject containers until the
+    companion is upgraded. Native only, CPU only
     (`LiteRtLmAsrBackend.cpu`); runtime settings go on the adapter, and
     `params`/`backend` must be null. `load` throws
     `LlamaUnsupportedException` where the runtime is unavailable, including

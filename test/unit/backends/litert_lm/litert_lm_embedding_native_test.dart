@@ -594,7 +594,7 @@ void main() {
           isA<LlamaUnsupportedException>().having(
             (e) => e.message,
             'ABI diagnostic',
-            allOf(contains('v0.18.0-2'), contains('dd3db31236')),
+            allOf(contains('v0.18.0-3'), contains('dd3db31236')),
           ),
         ),
       );

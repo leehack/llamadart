@@ -982,7 +982,9 @@ Set<String> _reachedThrough(
 /// its SwiftPM framework: the companion pins [nativeRepository]@[nativeTag]
 /// through `let [tagVariable]` in the maintained manifest template.
 /// [compatibleTags] maps earlier tags accepted with a warning to what their
-/// frameworks lack. [companionVersion] is the first companion release pinning
+/// frameworks lack; [artifactChecksums] binds each of them, and [nativeTag]
+/// when listed, to its exact XCFramework checksum. [companionVersion] is the
+/// first companion release pinning
 /// [nativeTag], when the core records it; [appleCompanionConstraint] decides
 /// whether a build error names it.
 typedef _AppleCompanionContract = ({
@@ -1004,7 +1006,7 @@ const _AppleCompanionContract _llamaCppCompanion = (
   nativeRepository: _nativeRepoSlug,
   nativeTag: llamaCppTag,
   compatibleTags: llamaCppCompatibleAppleCompanionTags,
-  artifactChecksums: <String, String>{},
+  artifactChecksums: llamaCppCompatibleAppleCompanionChecksums,
   companionVersion: llamaCppAppleCompanionVersion,
   templateSha256: _appleCompanionManifestTemplateSha256,
 );
@@ -1094,9 +1096,16 @@ void _validateAppleCompanion(
     }
     final normalizedSource = source.replaceAll('\r\n', '\n');
     final checksum = RegExp(r'checksum: "[0-9a-f]{64}"');
-    if (contract.artifactChecksums.isNotEmpty &&
-        checksum.firstMatch(normalizedSource)?.group(0) !=
-            'checksum: "${contract.artifactChecksums[pinnedTag]}"') {
+    final expectedChecksum = contract.artifactChecksums[pinnedTag];
+    // A compatible earlier tag is accepted only for its qualified artifact;
+    // the pinned tag is bound too when the contract records its checksum.
+    final checksumRequired =
+        contract.compatibleTags.containsKey(pinnedTag) ||
+        contract.artifactChecksums.containsKey(contract.nativeTag);
+    if (checksumRequired &&
+        (expectedChecksum == null ||
+            checksum.firstMatch(normalizedSource)?.group(0) !=
+                'checksum: "$expectedChecksum"')) {
       reject(
         'Companion XCFramework checksum does not match the qualified '
         'published artifact for $pinnedTag.',

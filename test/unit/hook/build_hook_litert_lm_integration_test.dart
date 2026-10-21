@@ -477,6 +477,49 @@ void main() {
         });
       }
 
+      test('Apple $target rejects compatible $tag declaring another '
+          'checksum', () async {
+        final pinnedChecksum = RegExp(r'checksum: "([0-9a-f]{64})"')
+            .firstMatch(
+              File(
+                'packages/llamadart_llama_cpp_flutter/'
+                'darwin/llamadart_llama_cpp_flutter/Package.swift',
+              ).readAsStringSync(),
+            )!
+            .group(1)!;
+        expect(
+          pinnedChecksum,
+          isNot(llamaCppCompatibleAppleCompanionChecksums[tag]),
+        );
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          companionTag: tag,
+          companionChecksum: pinnedChecksum,
+          companionVersion: '0.0.22',
+        );
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+            userDefines: defines,
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple llama.cpp companion: Companion '
+                'XCFramework checksum does not match the qualified published '
+                'artifact for $tag.',
+              ),
+            ),
+          ),
+        );
+        expect(emitted, isFalse);
+      });
+
       test('Apple $target still rejects local Artifacts beside compatible '
           '$tag', () async {
         final defines = await _flutterAppleUserDefines(
@@ -2475,6 +2518,7 @@ Future<PackageUserDefines> _flutterAppleUserDefines({
   Map<String, Object?> defines = const {},
   String dependenciesYaml = '',
   String? companionTag,
+  String? companionChecksum,
   String companionVersion = '0.0.18',
   bool missingConfiguration = false,
   bool duplicateCompanion = false,
@@ -2531,15 +2575,24 @@ ${dependencies.map((dependency) => '  $dependency: ^0.0.17').join('\n')}
       ),
     );
     await manifest.parent.create(recursive: true);
-    await manifest.writeAsString(
-      File(
-        'packages/llamadart_llama_cpp_flutter/'
-        'darwin/llamadart_llama_cpp_flutter/Package.swift',
-      ).readAsStringSync().replaceFirst(
-        'let llamaCppTag = "${_readPinnedConst('llamaCppTag')}"',
-        'let llamaCppTag = "${companionTag ?? _readPinnedConst('llamaCppTag')}"',
-      ),
-    );
+    var source =
+        File(
+          'packages/llamadart_llama_cpp_flutter/'
+          'darwin/llamadart_llama_cpp_flutter/Package.swift',
+        ).readAsStringSync().replaceFirst(
+          'let llamaCppTag = "${_readPinnedConst('llamaCppTag')}"',
+          'let llamaCppTag = "${companionTag ?? _readPinnedConst('llamaCppTag')}"',
+        );
+    final checksum =
+        companionChecksum ??
+        llamaCppCompatibleAppleCompanionChecksums[companionTag];
+    if (checksum != null) {
+      source = source.replaceFirst(
+        RegExp(r'checksum: "[0-9a-f]{64}"'),
+        'checksum: "$checksum"',
+      );
+    }
+    await manifest.writeAsString(source);
     if (localArtifacts) {
       await Directory(path.join(manifest.parent.path, 'Artifacts')).create();
     }

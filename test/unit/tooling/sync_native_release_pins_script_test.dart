@@ -1610,7 +1610,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final pins = File(_pinsPath).readAsStringSync();
-    expect(pins, contains("const liteRtLmReleaseTag = 'v0.18.0-2';"));
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.18.0-3';"));
     final hook = File('hook/build.dart').readAsStringSync();
     expect(hook, contains(r"'$liteRtLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$liteRtLmVersion")));
@@ -2958,10 +2958,14 @@ String _llamaCppBundleDigestPins([String? tag]) => [
 ].join('\n');
 
 /// The Apple llama.cpp companion version and compatible-tag pins.
-String _llamaCppAppleCompanionPins() => '''
+String _llamaCppAppleCompanionPins() =>
+    '''
 const llamaCppAppleCompanionVersion = '0.0.1';
 const llamaCppCompatibleAppleCompanionTags = <String, String>{
   'b9997': 'x',
+};
+const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
+  'b9997': '${'a' * 64}',
 };
 ''';
 

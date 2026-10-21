@@ -173,6 +173,67 @@ void main() {
     }
   });
 
+  // https://github.com/leehack/llamadart/issues/632: the code predictor that
+  // samples codebooks 1-15 ignored the seed and continued the previous
+  // synthesis's random stream, so only the first synthesis after a load was
+  // reproducible.
+  test('a fixed seed gives the same PCM on every synthesis of one engine, '
+      'including after another seed and a cancelled task', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final mmprojPath = _requiredFile(_mmprojPathKey);
+    if (modelPath == null || mmprojPath == null) {
+      return;
+    }
+
+    final synthesizer = await TextToSpeechEngine.load(
+      TextToSpeechModel(
+        ModelSource.path(modelPath),
+        projector: ModelSource.path(mmprojPath),
+        adapter: const Qwen3TtsAdapter(),
+      ),
+      params: const ModelParams(
+        contextSize: 4096,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      ),
+      backend: LlamaBackend(),
+    );
+    TextToSpeechRequest request(int seed) => TextToSpeechRequest(
+      text: 'Hello from llamadart. The answer is forty two.',
+      language: 'English',
+      maxFrames: 384,
+      seed: seed,
+    );
+    Future<TextToSpeechResult> synthesize(int seed) =>
+        synthesizer.synthesizeOnce(request(seed));
+    try {
+      final first = await synthesize(1);
+      expect(first.samples, isNotEmpty);
+
+      final repeated = await synthesize(1);
+      final otherSeed = await synthesize(2);
+
+      final cancelled = await synthesizer.synthesize(request(1));
+      await cancelled.events.firstWhere(
+        (event) => event is TextToSpeechProgressEvent,
+      );
+      cancelled.cancel();
+      expect(
+        (await cancelled.done).state,
+        TextToSpeechCompletionState.cancelled,
+      );
+      final afterCancel = await synthesize(1);
+
+      expect(repeated.framesGenerated, first.framesGenerated);
+      expect(repeated.samples, orderedEquals(first.samples));
+      expect(afterCancel.framesGenerated, first.framesGenerated);
+      expect(afterCancel.samples, orderedEquals(first.samples));
+      expect(otherSeed.samples, isNot(orderedEquals(first.samples)));
+    } finally {
+      await synthesizer.dispose();
+    }
+  });
+
   test('a cancel flag raised before synthesis starts cancels it', () async {
     await _withTextToSpeechService((service, context, projector) async {
       final flag = calloc<Int8>()..value = 1;

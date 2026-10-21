@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_release_tag.dart';
 import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
@@ -79,25 +80,25 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "ba73744e5ae40e4eea8e6d4f1e2db5c36d1b983b03eb8fa883f4b9969bbcfe5e",
-      "size_bytes": 121448
+      "sha256": "cad2b2bfc0df25f819fa38d8f317151a49cc90de6b039a40a087167410024c4f",
+      "size_bytes": 121605
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "04c98816c4a689a24c54716390adead5d2aa1cdf56a78bdec492819bf8a68a11",
-      "size_bytes": 10181038
+      "sha256": "620f8e963efaddb2d9a3053c7ed0e9da3ffaa87ff8a91ac1ca1bdb565f954ba5",
+      "size_bytes": 10193738
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "12c855741cd4a716402d359be971ac3a825cabeb1579af2be2ab7f68524929a8",
-      "size_bytes": 143013
+      "sha256": "6ff00e0862811321987af72e4d97527cda138ccd7e94411bdae009268a53d415",
+      "size_bytes": 143170
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "7365952fab6e66527e24862c177922cd04ed28347aa18de4f910fd7d2e86962b",
-      "size_bytes": 10463813
+      "sha256": "660cf5902f958eb82af153c4366e0cfd29f56a37a8e1aae1b5dff8e99ec7e2f3",
+      "size_bytes": 10477246
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.67",
-  "bridge_commit": "8992121b4b533a4444ad6de93d855ea3c99644c6",
+  "bridge_assets_tag": "v0.1.69",
+  "bridge_commit": "31cbb98fc1821d85eecc99d20e30273fbcff9cb5",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -140,31 +141,31 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "ba73744e5ae40e4eea8e6d4f1e2db5c36d1b983b03eb8fa883f4b9969bbcfe5e",
-      "size_bytes": 121448
+      "sha256": "cad2b2bfc0df25f819fa38d8f317151a49cc90de6b039a40a087167410024c4f",
+      "size_bytes": 121605
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "04c98816c4a689a24c54716390adead5d2aa1cdf56a78bdec492819bf8a68a11",
-      "size_bytes": 10181038
+      "sha256": "620f8e963efaddb2d9a3053c7ed0e9da3ffaa87ff8a91ac1ca1bdb565f954ba5",
+      "size_bytes": 10193738
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "12c855741cd4a716402d359be971ac3a825cabeb1579af2be2ab7f68524929a8",
-      "size_bytes": 143013
+      "sha256": "6ff00e0862811321987af72e4d97527cda138ccd7e94411bdae009268a53d415",
+      "size_bytes": 143170
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "7365952fab6e66527e24862c177922cd04ed28347aa18de4f910fd7d2e86962b",
-      "size_bytes": 10463813
+      "sha256": "660cf5902f958eb82af153c4366e0cfd29f56a37a8e1aae1b5dff8e99ec7e2f3",
+      "size_bytes": 10477246
     }
   },
-  "github_run_id": "39529732103",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/39529732103",
+  "github_run_id": "39597573965",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/39597573965",
   "llama_cpp_commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
   "llama_cpp_tag": "v0.7.0",
   "native_commit": "daffc7fc8bdb62bbc09f723a74e761f6f32d549f",
   "native_manifest_sha256": "ddcd7aecdbf129421b02a35224e6632059f97523baa0f214ef369710ae8446ce",
   "native_release_tag": "v0.7.0-1",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "auto-stable-v0.7.0-1-ddcd7aecdbf12942-build-8992121b4b533a44",
+  "orchestrator_correlation_id": "auto-stable-v0.7.0-1-ddcd7aecdbf12942-build-31cbb98fc1821d85",
   "qualification_gates": {
     "multimodal": "passed",
     "speech_to_text": "required-automated-qualification",
@@ -173,9 +174,9 @@ const String _approvedManifestJson = '''
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.67",
+  "release_tag": "v0.1.69",
   "schema_version": 2,
-  "source_commit": "8992121b4b533a4444ad6de93d855ea3c99644c6",
+  "source_commit": "31cbb98fc1821d85eecc99d20e30273fbcff9cb5",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
     "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
@@ -196,7 +197,7 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.67',
+    expectedTag: 'v0.1.69',
     expectedLlamaCppTag: bridgeLlamaCppTag,
     expectedLlamaCppCommit: bridgeLlamaCppCommit,
     expectedBridgeCommit: bridgeSourceCommit,
@@ -222,8 +223,13 @@ String _currentReleaseNotes(String path) {
 
 void main() {
   test('default assets include the qualified media embedding API', () {
-    expect(readPinnedBridgeTag(Directory.current), 'v0.1.67');
-    expect(bridgeNativeReleaseTag, bridgeApprovedNativePin);
+    expect(readPinnedBridgeTag(Directory.current), 'v0.1.69');
+    expect(bridgeNativeReleaseTag, 'v0.7.0-1');
+    expect(bridgeApprovedNativePin, 'v0.7.0-2');
+    expect(
+      normalizeNativeLlamaCppTag(bridgeApprovedNativePin),
+      bridgeLlamaCppTag,
+    );
   });
 
   test(
@@ -278,7 +284,7 @@ void main() {
         'website/docs/changelog/recent-releases.md',
       ]) {
         final current = _currentReleaseNotes(path);
-        expect(current, contains('`v0.1.67`'), reason: path);
+        expect(current, contains('`v0.1.69`'), reason: path);
         expect(current, contains(bridgeManifestSha256), reason: path);
         expect(
           current,
@@ -295,7 +301,7 @@ void main() {
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const liteRtLmReleaseTag = 'v0.18.0-2';"),
+        contains("const liteRtLmReleaseTag = 'v0.18.0-3';"),
       );
     },
   );
@@ -913,8 +919,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '419092691');
-      expect(bridgeAssetsTagCommit, '2657686bd3956c09ab60fe89ca7d6d660045b5e3');
+      expect(bridgeAssetsReleaseId, '419562436');
+      expect(bridgeAssetsTagCommit, '84ca5bfd436a778ea9371eb5f432c58a181a6052');
     });
 
     test('accepts equivalent CRLF documentation passages', () {

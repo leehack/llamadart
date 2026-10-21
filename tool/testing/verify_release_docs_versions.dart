@@ -460,12 +460,30 @@ Map<String, Set<String>> coreAcceptedCompanionPins() => <String, Set<String>>{
     llamaCppTag,
     ...llamaCppCompatibleAppleCompanionTags.keys,
   },
-  'llamadart_litert_lm_flutter': <String>{liteRtLmReleaseTag},
+  'llamadart_litert_lm_flutter': <String>{
+    liteRtLmReleaseTag,
+    ...earlierLiteRtLmRebuilds(liteRtLmReleaseTag),
+  },
   'llamadart_stable_diffusion_flutter': <String>{
     stableDiffusionReleaseTag,
     ...stableDiffusionCompatibleAppleCompanionTags.keys,
   },
 };
+
+/// Earlier wrapper rebuilds of [tag]'s upstream LiteRT-LM release, which
+/// `hook/build.dart` still links from a LiteRT-LM companion with an upgrade
+/// warning (`_isEarlierLiteRtLmRebuild`); a bare `vMAJOR.MINOR.PATCH` counts
+/// as rebuild 0.
+Set<String> earlierLiteRtLmRebuilds(String tag) {
+  final match = RegExp(r'^(v\d+\.\d+\.\d+)(?:-([1-9]\d*))?$').firstMatch(tag);
+  if (match == null) return const <String>{};
+  final base = match.group(1)!;
+  final rebuild = int.parse(match.group(2) ?? '0');
+  return <String>{
+    for (var earlier = 0; earlier < rebuild; earlier++)
+      earlier == 0 ? base : '$base-$earlier',
+  };
+}
 
 /// Checks that each current companion excludes every published core whose
 /// hook rejects its native pin. This is the reverse of

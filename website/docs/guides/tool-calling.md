@@ -11,10 +11,12 @@ chat template renders them, and the parser returns the model's calls as
 the calls, and your code runs them.
 
 Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
-runtime termination reporting. The pinned native LiteRT-LM `v0.18.0-2` and
-Web `@litert-lm/core@0.18.0` cannot distinguish normal completion from a
-per-request token cutoff. They throw `LlamaUnsupportedException` before
-starting the loop or modifying its history, including when resuming a turn or
+runtime termination reporting. On LiteRT-LM, llamadart cannot yet distinguish
+normal completion from a per-request token cutoff: it does not read the stream
+finish reason that native `v0.18.0-3` reports
+([#919](https://github.com/leehack/llamadart/issues/919)), and Web
+`@litert-lm/core@0.18.0` reports none. These loops throw
+`LlamaUnsupportedException` there before starting the loop or modifying its history, including when resuming a turn or
 passing an empty tools list. Plain `ChatSession.create` and
 `LlamaEngine.create` remain available for manually managed completion; their
 LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do not

@@ -98,7 +98,7 @@ unsupported. These observations do not establish the cause of the numerical gap.
 
 ## Unsupported paths and upstream gaps
 
-- **Native GPU:** fail before native engine creation. Pinned `v0.18.0-2` has a
+- **Native GPU:** fail before native engine creation. Pinned `v0.18.0-3` has a
   WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
   as well as the prototype. The upstream repair is after v0.18.0 in
   [LiteRT dd3db31236](https://github.com/google-ai-edge/LiteRT/commit/dd3db31236).
@@ -142,7 +142,7 @@ LITERT_LM_EMBEDDING_MODEL=/path/model.litertlm LITERT_LM_EMBEDDING_OUTPUT="$TMPD
 Compare the exported inputs against the upstream C API directly (macOS arm64):
 
 ```bash
-python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.0-2/macos/arm64 --output "$TMPDIR/qualification"
+python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.0-3/macos/arm64 --output "$TMPDIR/qualification"
 ```
 
 Serve the existing weights with Range and CORS on a free port other than 8080:
