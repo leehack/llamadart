@@ -208,6 +208,68 @@ void main() {
         },
       );
 
+      test('removeLoraSource finds a load-time path adapter loaded under a '
+          'non-normal path', () async {
+        final backend = _RecordingBackend();
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: _CacheManager({}),
+        );
+        await engine.loadModel(
+          '/models/model.gguf',
+          modelParams: const ModelParams(
+            loras: [LoraAdapterConfig(path: '/models/./a.gguf')],
+          ),
+        );
+
+        await engine.removeLoraSource(ModelSource.path('/models/a.gguf'));
+
+        expect(backend.removedLoraPaths, ['/models/./a.gguf']);
+      });
+
+      test('removeLoraSource finds a load-time source adapter loaded under '
+          'a non-normal path', () async {
+        final backend = _RecordingBackend();
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: _CacheManager({}),
+        );
+        await engine.loadModel(
+          '/models/model.gguf',
+          modelParams: ModelParams(
+            loras: [
+              LoraAdapterConfig.source(ModelSource.path('/models//a.gguf')),
+            ],
+          ),
+        );
+
+        await engine.removeLoraSource(ModelSource.path('/models/a.gguf'));
+
+        expect(backend.removedLoraPaths, ['/models//a.gguf']);
+      });
+
+      test('setLoraSource through an alias only changes the scale of the '
+          'applied adapter', () async {
+        final backend = _RecordingBackend();
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: _CacheManager({}),
+        );
+        await engine.loadModel('/models/model.gguf');
+
+        await engine.setLoraSource(ModelSource.path('/models/a.gguf'));
+        await engine.setLoraSource(
+          ModelSource.path('/models//a.gguf'),
+          scale: 0.5,
+        );
+
+        expect(backend.setLoraPaths, ['/models/a.gguf', '/models/a.gguf']);
+        expect(backend.removedLoraPaths, isEmpty);
+
+        await engine.removeLoraSource(ModelSource.path('/models/a.gguf'));
+        expect(backend.removedLoraPaths, ['/models/a.gguf']);
+      });
+
       test('Windows-style aliases match, other files do not', () async {
         final backend = _RecordingBackend();
         final engine = LlamaEngine(
