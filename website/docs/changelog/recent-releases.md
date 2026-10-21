@@ -19,6 +19,8 @@ For canonical full release notes, use:
 - Report `stop` instead of `length` when a llama.cpp speculative-decoding reply ends exactly at `maxTokens`, as without speculative decoding, so `completeWithTools` no longer rolls it back as truncated.
 - Report deeply nested tool-call output from PEG-parsed formats, such as Ministral, as `LlamaInferenceException` instead of a stack overflow.
 - Accept annotation-only `allOf` components, such as `{"description": "..."}`, in structured-output object merges, matching llama.cpp.
+- Let Hermes templates that open reasoning in the prompt, such as QwQ, reason before a `ToolChoice.required` tool call; the call was previously parsed as reasoning and lost.
+- Reject `\u`-escaped spellings of declared property names (such as `\u0063ity`) as extra keys in open-object tool and response schema grammars.
 
 ## 0.15.5
 

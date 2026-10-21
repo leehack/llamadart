@@ -1128,6 +1128,54 @@ void main() {
       },
     );
 
+    test('Hermes required calls stream after forced-open reasoning', () async {
+      const template =
+          '<|im_start|>{{ messages | tojson }}{{ tools | tojson }}<tool_call>'
+          '{% if add_generation_prompt %}<|im_start|>assistant\n<think>\n'
+          '{% endif %}';
+      await toolEngine.unloadModel();
+      await toolEngine.loadModel(
+        'test-model.gguf',
+        modelParams: const ModelParams(chatTemplate: template),
+      );
+      final call =
+          '<tool_call>\n${jsonEncode({'name': 'inspect', 'arguments': rawToolArguments})}\n</tool_call>';
+      runtime.generationChunks = [
+        'Need to ',
+        'inspect.\n</thi',
+        'nk>\n\n',
+        call.substring(0, 24),
+        call.substring(24),
+      ];
+      final chunks = await toolEngine
+          .create(
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            tools: [rawSchemaTool()],
+            toolChoice: ToolChoice.required,
+          )
+          .toList();
+
+      expect(
+        runtime.lastGenerationParams!.grammar,
+        startsWith('root ::= think-body "</think>" think-space ('),
+      );
+      expect(chunks.map((chunk) => chunk.thinking).join(), 'Need to inspect.');
+      expect(chunks.map((chunk) => chunk.choices.first.delta.content ?? ''), [
+        for (final _ in chunks) '',
+      ]);
+      final toolCalls = chunks
+          .expand((chunk) => chunk.choices.first.delta.toolCalls ?? [])
+          .toList();
+      expect(toolCalls, hasLength(1));
+      expect(
+        jsonDecode(toolCalls.single.function!.arguments!),
+        rawToolArguments,
+      );
+      expect(chunks.last.choices.first.finishReason, 'tool_calls');
+    });
+
     test(
       'valid tool loop invokes typed input and commits matched result',
       () async {

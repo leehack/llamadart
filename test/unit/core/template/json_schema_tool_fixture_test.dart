@@ -61,6 +61,61 @@ void main() {
     });
   }
 
+  group('QwQ forced-open thinking', () {
+    final template = _template('llama_cpp_templates/Qwen-QwQ-32B.jinja');
+    final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});
+
+    for (final (label, tool) in [
+      ('schema', rawSchemaTool()),
+      ('legacy', legacy),
+    ]) {
+      for (final choice in [ToolChoice.auto, ToolChoice.required]) {
+        for (final thinking in [true, false]) {
+          test('$label $choice grammar with thinking=$thinking', () {
+            final result = _render(
+              template,
+              [tool],
+              choice: choice,
+              thinking: thinking,
+            );
+            expect(ChatFormat.values[result.format], ChatFormat.hermes);
+            expect(result.thinkingForcedOpen, thinking);
+            expect(result.grammarLazy, choice == ToolChoice.auto);
+            expect(
+              result.grammar,
+              thinking && choice == ToolChoice.required
+                  ? startsWith('root ::= think-body "</think>" think-space (')
+                  : matches(r'^root ::= \(?"<tool_call>"'),
+            );
+          });
+        }
+      }
+    }
+
+    test('parses a required call only after the reasoning closes', () {
+      ChatParseResult parse(String output) => ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        output,
+        tools: [rawSchemaTool()],
+        thinkingForcedOpen: true,
+      );
+      final parsed = parse(
+        'Need to inspect.\n</think>\n\n<tool_call>\n$call\n</tool_call>',
+      );
+      expect(parsed.reasoningContent, 'Need to inspect.');
+      expect(parsed.content, isEmpty);
+      expect(
+        jsonDecode(parsed.toolCalls.single.function!.arguments!),
+        rawToolArguments,
+      );
+      // Without the close tag the whole reply is reasoning, so the grammar
+      // requires it.
+      final unclosed = parse('<tool_call>\n$call\n</tool_call>');
+      expect(unclosed.toolCalls, isEmpty);
+      expect(unclosed.reasoningContent, contains('<tool_call>'));
+    });
+  });
+
   group('Qwen3 thinking template with schema tools', () {
     final template = _template('templates/Qwen3-4B.jinja');
     final call = jsonEncode({'name': 'inspect', 'arguments': rawToolArguments});

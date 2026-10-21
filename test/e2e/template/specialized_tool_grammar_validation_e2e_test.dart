@@ -1654,6 +1654,32 @@ void main() {
     }
   });
 
+  test('three open objects sharing escape rules keep their key rules', () {
+    for (final label in ['21 distinct 20-character names', '1023 properties']) {
+      final names = largeKeySets[label]!;
+      final first = jsonEncode(names.first);
+      final grammar = responseFormatGrammar({
+        'type': 'object',
+        'properties': {
+          for (var i = 0; i < 3; i++)
+            'o$i': {
+              'type': 'object',
+              'properties': {
+                for (final name in names) name: {'type': 'integer'},
+              },
+              'additionalProperties': true,
+            },
+        },
+      });
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: ['{"o2":{$first:5,"zz-extra":"v"}}'],
+        invalid: ['{"o2":{$first:1,$first:2}}', '{"o2":{$first:"x"}}'],
+      );
+    }
+  });
+
   test('closed objects with 1023 optional properties load', () {
     final schema = <String, dynamic>{
       'type': 'object',
@@ -1692,6 +1718,92 @@ void main() {
           output('{"😀b":true,"😁":1}'),
         ],
         invalid: [output('{"😀":1}'), output('{"é":1}'), output('{"😀b":1}')],
+      );
+    }
+  });
+
+  test('open objects exclude escaped spellings of declared keys', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        'city': {'type': 'string'},
+        'ci': {'type': 'boolean'},
+        'é': {'type': 'null'},
+        '😀': {'type': 'null'},
+      },
+      'additionalProperties': true,
+    };
+    for (final (grammar, output) in _openObjectGrammars(schema)) {
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output('{"city":"x"}'),
+          output(r'{"\u0043ity":1}'),
+          output(r'{"cit\u0065":1}'),
+          output(r'{"x\u0063":1}'),
+          output(r'{"ci":true,"\u0062":1}'),
+          output(r'{"\u00E8":1}'),
+          output('{"😁":1}'),
+        ],
+        invalid: [
+          output(r'{"\u0063ity":"x"}'),
+          output(r'{"ci\u0074y":"x"}'),
+          output(r'{"c\u0069":true}'),
+          output(r'{"\u00E9":null}'),
+          output(r'{"\ud83d\ude00":null}'),
+        ],
+      );
+    }
+  });
+
+  test('Hermes required calls may follow forced-open reasoning', () {
+    final template = File(
+      'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja',
+    ).readAsStringSync();
+    final legacy = ToolDefinition(
+      name: 'inspect',
+      description: 'Inspect',
+      parameters: [ToolParam.string('code', required: true)],
+      handler: (_) async => null,
+    );
+    for (final (tool, call) in [
+      (
+        rawSchemaTool(),
+        '<tool_call>\n'
+            '${jsonEncode({'name': 'inspect', 'arguments': rawToolArguments})}'
+            '\n</tool_call>',
+      ),
+      (
+        legacy,
+        '<tool_call>{"name": "inspect", "arguments": {"code": "x"}}</tool_call>',
+      ),
+    ]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+      );
+      expect(rendered.thinkingForcedOpen, isTrue);
+      expect(rendered.grammarLazy, isFalse);
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          'Need to inspect.\n</think>\n\n$call',
+          '</think>$call',
+          'Maybe <tool_call> or </thin, <think> too.</think>\n$call',
+        ],
+        invalid: [
+          call,
+          'Need to inspect.\n</think>\n\nDone.',
+          'a</think>b</think>$call',
+          'Need to inspect.\n</think>\n\n$call trailing',
+        ],
       );
     }
   });
