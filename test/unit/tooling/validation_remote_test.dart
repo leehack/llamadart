@@ -935,6 +935,29 @@ void main() {
           DateTime.utc(2028, 3, 1, 7, 0, 2),
           elapsed + day,
         ),
+        // The device clock moves from eight to seven hours behind UTC.
+        (
+          'across the start of daylight saving time',
+          '03-08 01:59:57.000',
+          '03-08 03:00:02.000',
+          DateTime.utc(2026, 3, 8, 10, 0, 2),
+          elapsed,
+        ),
+        (
+          'across the end of daylight saving time',
+          '11-01 01:59:57.000',
+          '11-01 01:00:02.000',
+          DateTime.utc(2026, 11, 1, 9, 0, 2),
+          elapsed,
+        ),
+        // A half-hour change, as on Lord Howe Island.
+        (
+          'across a half-hour daylight saving change',
+          '10-04 01:59:57.000',
+          '10-04 02:30:02.000',
+          DateTime.utc(2026, 10, 3, 15, 30, 2),
+          elapsed,
+        ),
       ]) {
         expect(
           await synthetic(began, loaded, first, mintedBefore: since),
@@ -948,6 +971,30 @@ void main() {
             reason: '$name, minted $other before the first native line',
           );
         }
+      }
+      // Only a daylight saving change explains a jump in the device clock.
+      for (final (began, loaded, first) in [
+        (
+          '03-08 01:59:57.000',
+          '03-08 03:30:02.000',
+          DateTime.utc(2026, 3, 8, 10, 0, 2),
+        ),
+        (
+          '03-08 01:59:57.000',
+          '03-08 04:00:02.000',
+          DateTime.utc(2026, 3, 8, 10, 0, 2),
+        ),
+        (
+          '11-01 01:59:57.000',
+          '11-01 00:00:02.000',
+          DateTime.utc(2026, 11, 1, 9, 0, 2),
+        ),
+      ]) {
+        expect(
+          await synthetic(began, loaded, first, mintedBefore: elapsed),
+          isNull,
+          reason: 'a clock jump from $began to $loaded',
+        );
       }
     });
 
@@ -1004,6 +1051,27 @@ void main() {
         '$prefix I flutter : connecting http://localhost:33441/fixtureAuthCode',
         '$prefix I flutter : connecting http://[::1]:33441/fixtureAuthCode=/',
         '$prefix I flutter : connecting http://127.0.0.1/fixtureAuthCode=/',
+        // Loopback, unspecified and other IP-literal hosts in any spelling.
+        for (final host in [
+          '0.0.0.0',
+          'LOCALHOST',
+          'localhost.',
+          'dev.localhost',
+          '127.1',
+          '2130706433',
+          '0x7f000001',
+          '0177.0.0.1',
+          '10.0.2.15',
+          '[0:0:0:0:0:0:0:1]',
+          '[::ffff:127.0.0.1]',
+          'user@127.0.0.1',
+        ])
+          '$prefix I flutter : connecting http://$host:33441/fixtureAuthCode=/',
+        '$prefix I flutter : connecting HTTP://Localhost/fixtureAuthCode=/',
+        '$prefix I flutter : connecting ws://127.0.0.1?fixtureAuthCode=',
+        // Only the whole message of the `flutter` record is an announcement.
+        '$prefix I native  : flutter : The Dart VM service is listening on '
+            '$url',
       ]) {
         expect(await after(record), isNull, reason: record);
       }
@@ -1021,11 +1089,12 @@ void main() {
       final native = LineSplitter.split(
         logcat,
       ).firstWhere((line) => line.contains('Creating LiteRT environment'));
-      Stream<String> padded(int repeats) async* {
+      Stream<String> padded(int repeats, [String? last]) async* {
         yield* Stream.fromIterable(LineSplitter.split(logcat));
         for (var i = 0; i < repeats; i++) {
           yield native;
         }
+        if (last != null) yield last;
       }
 
       final perLine = native.length + 1;
@@ -1036,6 +1105,21 @@ void main() {
       );
       expect(
         await boundLogcatNativeLog(padded(room ~/ perLine + 1), journal),
+        isNull,
+      );
+      // A dropped service announcement counts toward the limit too.
+      final announcement =
+          '10-13 02:45:35.500 22950 23091 I flutter : The Dart VM service is '
+          'listening on http://127.0.0.1:33441/${'a' * perLine}=/';
+      expect(
+        await boundLogcatNativeLog(padded(0, announcement), journal),
+        process(logcat, '22950'),
+      );
+      expect(
+        await boundLogcatNativeLog(
+          padded(room ~/ perLine, announcement),
+          journal,
+        ),
         isNull,
       );
     });
@@ -1182,6 +1266,58 @@ void main() {
         }),
         stray,
       );
+    });
+
+    test('leaves no earlier native log when a run is reassessed', () async {
+      File(
+        'packages/llamadart_validation/assets/profiles/gemma4-litert-gpu.json',
+      ).copySync(p.join(bundle.path, 'profile.json'));
+      final run = Directory(p.join(scratch.path, 'reassessed-android'));
+      final device = p.join(run.path, 'remote-results', 'qa-one', 'caiman');
+      File(p.join(device, 'artifacts/validation/runs/app-1/events.jsonl'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(journal);
+      final deviceLog = File(p.join(device, 'logcat'))
+        ..writeAsStringSync(logcat);
+      final retained = File(p.join(run.path, 'report', 'native.log'));
+      Future<String?> assess() async {
+        String? log;
+        try {
+          await assessCollectedRun(
+            Directory.current.path,
+            plan(target: 'firebase-android', profile: 'gemma4-litert-gpu'),
+            run,
+            execute:
+                (
+                  executable,
+                  arguments, {
+                  directory,
+                  timeout,
+                  environment,
+                }) async {
+                  final index = arguments.indexOf('--native-log');
+                  if (index >= 0) log = arguments[index + 1];
+                  return const CommandResult(0, '', '');
+                },
+          );
+        } on ValidationAssessmentFailure catch (error) {
+          expect('$error', contains('wrote no results.json'));
+        }
+        return log;
+      }
+
+      expect(await assess(), retained.path);
+      expect(retained.readAsStringSync(), process(logcat, '22950'));
+      deviceLog.writeAsStringSync(galaxy);
+      expect(await assess(), isNull);
+      expect(retained.existsSync(), isFalse);
+
+      deviceLog.writeAsStringSync(logcat);
+      expect(await assess(), retained.path);
+      final stderr = File(p.join(device, 'stderr.log'))
+        ..writeAsStringSync('Selected adapter: stray\n');
+      expect(await assess(), stderr.path);
+      expect(retained.existsSync(), isFalse);
     });
   });
 

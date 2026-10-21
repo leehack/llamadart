@@ -120,6 +120,8 @@ Future<bool> assessCollectedRun(
   File(
     p.join(output.path, 'events.jsonl'),
   ).writeAsStringSync(candidates.values.single, flush: true);
+  final retainedLog = File(p.join(output.path, 'native.log'));
+  if (retainedLog.existsSync()) retainedLog.deleteSync();
   final stderrLogs = [
     for (final f in files)
       if (p.basename(f.path) == 'stderr.log' &&
@@ -134,9 +136,8 @@ Future<bool> assessCollectedRun(
   if (stderrLogs.length + consoleLogs.length == 1) {
     nativeLog = stderrLogs.isNotEmpty
         ? stderrLogs.single
-        : (File(
-            p.join(output.path, 'native.log'),
-          )..writeAsStringSync(consoleLogs.single, flush: true)).path;
+        : (retainedLog..writeAsStringSync(consoleLogs.single, flush: true))
+              .path;
   } else if (plan.target == 'firebase-android' &&
       !files.any(
         (f) => const {
@@ -161,9 +162,7 @@ Future<bool> assessCollectedRun(
         candidates.values.single,
       );
       if (bound != null) {
-        nativeLog = (File(
-          p.join(output.path, 'native.log'),
-        )..writeAsStringSync(bound, flush: true)).path;
+        nativeLog = (retainedLog..writeAsStringSync(bound, flush: true)).path;
       }
     }
   }
@@ -303,6 +302,10 @@ const _bindingWindow = Duration(seconds: 10);
 /// timestamps of the same records in the collected logs.
 const _logcatSkew = Duration(milliseconds: 100);
 
+/// How far a daylight saving time change moves the device clock: an hour,
+/// or half an hour on Lord Howe Island.
+const _daylightSavingShifts = [Duration(minutes: 30), Duration(hours: 1)];
+
 final _logcatLine = RegExp(
   r'^(\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}) +(\d+) +\d+ [VDIWEF] (.*)$',
 );
@@ -311,10 +314,16 @@ final _abslEpoch = RegExp(
 );
 final _modelDirectory = RegExp(r'/validation/models/([0-9a-f]{64})/');
 
-/// A line that may carry a Dart VM service URL, whose path is an auth code.
+/// A line that may carry a Dart VM service URL, whose path is an auth code:
+/// one named as such, or any URL whose host is `localhost`, a subdomain of it
+/// or an IP literal, in any case or numeric spelling.
 final _serviceUrl = RegExp(
   r'(?:Dart VM service|DevTools).*://|'
-  r'://(?:127\.0\.0\.1|localhost|\[::1\])[:/]',
+  r'://(?:[^\s/@]*@)?'
+  r'(?:\[[^\]\s]*\]|(?:[^\s/:?#@]*\.)?localhost\.?|'
+  r'(?:0x[0-9a-f]*|\d+)(?:\.(?:0x[0-9a-f]*|\d+)){0,3}\.?)'
+  r'(?:[:/?#\s]|$)',
+  caseSensitive: false,
 );
 
 /// The whole message of a Dart VM service announcement.
@@ -353,13 +362,15 @@ DateTime _logcatTime(String stamp, int year) => DateTime.utc(
 /// `started_at`; the device log never prints it, so it is bound by its time:
 /// it is at most [_bindingWindow] after the start record, whose epoch time is
 /// that first timestamp less the device-log time elapsed between the two
-/// records. A journal of another run whose times all fall inside those
-/// windows is not told apart.
+/// records. The log cannot show a daylight saving change between them, so
+/// that start may also be moved by any of [_daylightSavingShifts] either way.
+/// A journal of another run whose times all fall inside those windows is not
+/// told apart.
 ///
 /// The retained lines are stored with the report, so a Dart VM service
 /// announcement is dropped wherever that process logs it. Any other line of
-/// the process with a service or loopback URL leaves the log unbound, so that
-/// no line is altered or silently lost.
+/// the process that [_serviceUrl] matches leaves the log unbound, so that no
+/// line is altered or silently lost.
 Future<String?> boundLogcatNativeLog(
   Stream<String> logcat,
   String journal,
@@ -435,13 +446,24 @@ Future<String?> boundLogcatNativeLog(
       final year = DateTime.fromMicrosecondsSinceEpoch(epoch, isUtc: true).year;
       final logged = _logcatTime(entry[1]!, year);
       var testStart = _logcatTime(began!, year);
-      // A run across the device's New Year starts in the year before.
-      if (testStart.isAfter(logged)) testStart = _logcatTime(began, year - 1);
-      final sinceTestStart =
-          minted - (epoch - logged.difference(testStart).inMicroseconds);
+      // A run across the device's New Year starts in the year before; one
+      // across a daylight saving change that turns the clock back does not.
+      if (testStart.isAfter(logged.add(_daylightSavingShifts.last))) {
+        testStart = _logcatTime(began, year - 1);
+      }
+      final elapsed = logged.difference(testStart);
+      bool mintedInWindow(Duration shift) {
+        final sinceTestStart =
+            minted - (epoch - (elapsed + shift).inMicroseconds);
+        return sinceTestStart >= -_logcatSkew.inMicroseconds &&
+            sinceTestStart <= _bindingWindow.inMicroseconds;
+      }
+
       if (epoch - started > _bindingWindow.inMicroseconds ||
-          sinceTestStart < -_logcatSkew.inMicroseconds ||
-          sinceTestStart > _bindingWindow.inMicroseconds) {
+          ![
+            Duration.zero,
+            for (final shift in _daylightSavingShifts) ...[shift, -shift],
+          ].any(mintedInWindow)) {
         return null;
       }
     }

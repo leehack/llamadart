@@ -367,6 +367,19 @@ void main() {
         reason: 'a larger record after the last load',
         because: _recordsReason,
       );
+      // A record as large as the main model's leaves the main model unknown.
+      for (var record = 0; record < 12; record++) {
+        rejects(
+          _replaceNth(pixel, _embedder, _main, record),
+          reason: 'record $record declares as many as the main model',
+          because: _recordsReason,
+        );
+      }
+      rejects(
+        '$pixel${_record('litert', _main)}',
+        reason: 'an equal record after the last load',
+        because: _recordsReason,
+      );
     });
 
     test('an unparsable signature count fails closed', () {
@@ -422,6 +435,7 @@ void main() {
           'flutter',
           tag == 'native' ? 'litert' : 'native',
           'tflite',
+          '${tag}2',
         ]) {
           for (final hit in hits) {
             final edited = [...lines];
@@ -441,6 +455,10 @@ void main() {
           lines[hits.first].indexOf(' I $tag') + 3,
         );
         rejects(bare.map((line) => '$line\n').join(), because: _tagReason);
+        // Nor does a record that only contains a device-log record.
+        final quoted = [...lines];
+        quoted[hits.first] = '> ${lines[hits.first]}';
+        rejects(quoted.map((line) => '$line\n').join(), because: _tagReason);
       }
 
       // A failure marker counts whoever logged it.
