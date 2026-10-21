@@ -6926,11 +6926,12 @@ class LlamaCppService {
     var contextFull = false;
 
     // Like [_runInferenceLoop], a reply that ends exactly at a limit is not
-    // truncated. The last accepted token may not be decoded yet.
-    bool nextTokenEndsGeneration() {
+    // truncated, and a failed decode reports no limit. The last accepted
+    // token may not be decoded yet.
+    bool limitStands() {
       final undecoded = pendingSampledToken;
       if (undecoded != null) {
-        if (currentPos >= nCtx) return false;
+        if (currentPos >= nCtx) return true;
         batch.n_tokens = 1;
         batch.token[0] = undecoded;
         batch.pos[0] = currentPos;
@@ -6939,9 +6940,9 @@ class LlamaCppService {
         batch.logits[0] = 1;
         if (_calls.decode(ctx.pointer, batch) != 0) return false;
       } else if (currentPos == 0) {
-        return false;
+        return true;
       }
-      return llama_vocab_is_eog(
+      return !llama_vocab_is_eog(
         vocab,
         _calls.samplerSample(sampler, ctx.pointer, -1),
       );
@@ -7335,7 +7336,7 @@ class LlamaCppService {
           : !shouldStop && generatedTokens >= params.maxTokens
           ? BackendGenerationLimit.maxTokens
           : null;
-      if (limit != null && !nextTokenEndsGeneration()) onLimit?.call(limit);
+      if (limit != null && limitStands()) onLimit?.call(limit);
     } finally {
       malloc.free(draftPtr);
       malloc.free(idxPtr);

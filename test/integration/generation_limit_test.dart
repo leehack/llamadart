@@ -3,11 +3,16 @@
 library;
 
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:test/test.dart';
 
 import '../test_helper.dart';
@@ -185,7 +190,20 @@ void main() {
   });
 
   group('a reply that ends exactly at maxTokens', () {
+    const eosParams = ModelParams(
+      contextSize: 256,
+      gpuLayers: 0,
+      preferredBackend: GpuBackend.cpu,
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
+    );
+    const ngramSimple = SpeculativeDecodingConfig.ngramSimple(
+      ngramSizeN: 1,
+      ngramSizeM: 4,
+      ngramMinHits: 1,
+    );
     late Directory directory;
+    late File eosFile;
     late int eosModel;
     late int eosContext;
 
@@ -199,20 +217,13 @@ void main() {
         '\n',
         addSpecial: false,
       )).last;
-      final file = _copyWithEosToken(
+      eosFile = _copyWithEosToken(
         await TestHelper.getTestModel(),
         '${directory.path}/newline_eos.gguf',
         newline,
       );
-      const params = ModelParams(
-        contextSize: 256,
-        gpuLayers: 0,
-        preferredBackend: GpuBackend.cpu,
-        numberOfThreads: 2,
-        numberOfThreadsBatch: 2,
-      );
-      eosModel = await backend.modelLoad(file.path, params);
-      eosContext = await backend.contextCreate(eosModel, params);
+      eosModel = await backend.modelLoad(eosFile.path, eosParams);
+      eosContext = await backend.contextCreate(eosModel, eosParams);
     });
     tearDownAll(() async {
       await backend.contextFree(eosContext);
@@ -230,14 +241,7 @@ void main() {
 
     for (final (name, config) in <(String, SpeculativeDecodingConfig?)>[
       ('normal', null),
-      (
-        'speculative',
-        const SpeculativeDecodingConfig.ngramSimple(
-          ngramSizeN: 1,
-          ngramSizeM: 4,
-          ngramMinHits: 1,
-        ),
-      ),
+      ('speculative', ngramSimple),
     ]) {
       test('reports no limit with $name decoding', () async {
         Future<(String, BackendGenerationLimit?)> generate(
@@ -281,6 +285,70 @@ void main() {
         if (config != null) expect(acceptedDraftTokens, greaterThan(0));
       });
     }
+
+    // One token short of the first prompt's natural length, the speculative
+    // reply ends on an accepted draft batch, so its last token is decoded only
+    // to look ahead.
+    test('a failed decode of the last token reports no limit', () async {
+      final prompt = prompts.first;
+      int? failAt;
+      var failures = 0;
+      final service = LlamaCppService(
+        objectCalls: LlamaCppObjectCalls.untracked(
+          decode: (context, batch) {
+            if (batch.n_tokens == 1 && batch.pos[0] == failAt) {
+              failures++;
+              return 1;
+            }
+            return llama_decode(context, batch);
+          },
+        ),
+      )..initializeBackend();
+      final cancel = calloc<Int8>();
+      addTearDown(() {
+        calloc.free(cancel);
+        service.dispose();
+      });
+      final model = service.loadModel(eosFile.path, eosParams);
+      final context = service.createContext(model, eosParams);
+      final promptTokens = service.tokenize(model, prompt, true).length;
+
+      Future<List<BackendGenerationLimit>> generate(
+        GenerationParams params,
+      ) async {
+        final limits = <BackendGenerationLimit>[];
+        await service
+            .generate(
+              context,
+              prompt,
+              params,
+              cancel.address,
+              onLimit: limits.add,
+            )
+            .drain<void>();
+        return limits;
+      }
+
+      for (final config in [null, ngramSimple]) {
+        final params = GenerationParams(
+          maxTokens: 200,
+          temp: 0,
+          seed: 1,
+          penalty: 1,
+          speculativeDecodingConfig: config,
+        );
+        failAt = null;
+        expect(await generate(params), isEmpty);
+        final length = service.getPerformanceContext(context)!.evalTokens;
+        final short = params.copyWith(maxTokens: length - 1);
+        expect(await generate(short), [BackendGenerationLimit.maxTokens]);
+
+        failAt = promptTokens + length - 2;
+        failures = 0;
+        expect(await generate(short), isEmpty, reason: '$config');
+        expect(failures, 1, reason: '$config');
+      }
+    });
   });
 
   group('LlamaEngine.create finish reason', () {
