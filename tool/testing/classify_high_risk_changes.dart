@@ -156,6 +156,7 @@ bool _isStructuredOutputEvidence(String path) {
               'generated_tool_schema_grammar_test.dart' ||
       path == 'tool/testing/run_llama_cpp_chat_tests.sh' ||
       path == 'tool/testing/prepare_llama_cpp_source.sh' ||
+      path == 'tool/testing/build_llama_cpp_runtime_gbnf_validator.sh' ||
       path == 'tool/testing/llama_cpp_templates.ref' ||
       path == 'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart' ||
       path ==

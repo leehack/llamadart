@@ -140,17 +140,23 @@ void main() {
     });
 
     test('protects landed compiled grammar and upstream parity evidence', () {
-      final assessment = assessHighRiskFiles([
+      for (final path in [
         'test/integration/core/grammar/'
             'generated_tool_schema_grammar_test.dart',
         'tool/testing/run_llama_cpp_chat_tests.sh',
+        'tool/testing/prepare_llama_cpp_source.sh',
+        'tool/testing/build_llama_cpp_runtime_gbnf_validator.sh',
         'tool/testing/llama_cpp_templates.ref',
         'test/e2e/template/'
             'specialized_tool_grammar_validation_e2e_test.dart',
         'test/fixtures/templates/Kimi-K3.jinja',
-      ]);
-
-      expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
+      ]) {
+        expect(
+          assessHighRiskFiles([path]).surfaces,
+          contains(HighRiskSurface.structuredOutput),
+          reason: path,
+        );
+      }
     });
 
     test(
