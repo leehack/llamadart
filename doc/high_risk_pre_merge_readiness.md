@@ -118,7 +118,10 @@ directly, each only with its paired script in `production_refs` and a
 | `tool/native/test_sync_stable_diffusion_bindings.py` | `tool/native/sync_stable_diffusion_bindings.py` |
 
 Every other path rule, case/snippet and causal-control obligation applies. Other
-Python files are rejected regardless of name or extension.
+Python files are rejected regardless of name or extension. Everything under
+`tool/` counts as production, so a PR that also changes a suite or files under
+`tool/native/fixtures/` must list each of them in `production_refs`; otherwise
+it fails with "Some changed production paths lack reviewed test reachability".
 
 The evaluator verifies named cases/snippets against exact Git blobs and rejects
 missing or disconnected references. A literal match does **not** establish a

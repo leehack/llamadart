@@ -1884,6 +1884,66 @@ void main() {
       },
     );
 
+    const nativeSyncSuites = {
+      'tool/native/test_native_header_archive.py':
+          'tool/native/native_header_archive.py',
+      'tool/native/test_sync_native_headers_and_bindings.py':
+          'tool/native/sync_native_headers_and_bindings.sh',
+      'tool/native/test_sync_native_release_pins.py':
+          'tool/native/sync_native_release_pins.py',
+      'tool/native/test_sync_stable_diffusion_bindings.py':
+          'tool/native/sync_stable_diffusion_bindings.py',
+    };
+    for (final MapEntry(key: suite, value: script)
+        in nativeSyncSuites.entries) {
+      test('$suite binds only to $script, in any production_refs', () async {
+        final others = nativeSyncSuites.values
+            .where((other) => other != script)
+            .toList();
+        final evidence = backendEvidence()
+          ..['surfaces'] = ['artifactConsumer']
+          ..['affected_test_paths'] = [suite];
+        final proof = testProof(script)..['command'] = 'python3 $suite';
+        evidence['test_evidence'] = {suite: proof};
+        Future<HighRiskReadinessResult> evaluate(
+          List<String> changed,
+        ) => evaluatorFor(
+          [
+            for (final path in changed)
+              RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+          ],
+          existingPaths: {...nativeSyncSuites.keys, ...nativeSyncSuites.values},
+        ).evaluate(evidence: evidence, context: context);
+
+        expect(
+          (await evaluate([script])).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        proof['production_refs'] = [
+          ...productionRefs(script),
+          ...productionRefs(others[0]),
+        ];
+        expect(
+          (await evaluate([script, others[0]])).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        for (final refs in [
+          [others[0]],
+          [others[0], others[1]],
+        ]) {
+          proof['production_refs'] = [
+            for (final path in refs) ...productionRefs(path),
+          ];
+          final result = await evaluate(refs);
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains(script), reason: '$refs');
+        }
+      });
+    }
+
     test('rejects Python paths outside the native-sync suites', () async {
       for (final path in [
         'tool/native/sync_native_release_pins.py',
