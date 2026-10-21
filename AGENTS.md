@@ -146,9 +146,9 @@ analyze and the relevant tests before the final commit.
   after the release. Never add to a released section. Move `Unreleased` into a
   version only in an explicit release task.
 - Both changelogs union-merge (`.gitattributes`), so a rebase never conflicts
-  there but can move bullets silently. After rebasing across a release, check
-  your bullets are still under `## Unreleased`; release prep turns union off
-  first (`website/docs/maintainers/release-workflow.md`).
+  there but can move bullets silently; CI fails a non-release-prep PR that
+  changes a released section. Release prep turns union off first
+  (`website/docs/maintainers/release-workflow.md`).
 - One short user-facing bullet per change; implementation detail and migration
   notes go in the PR or maintainer docs.
 - When release prep moves `Unreleased` into a version, compact it in both

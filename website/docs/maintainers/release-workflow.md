@@ -349,10 +349,14 @@ the PR branch with `tool/git/safe_pr_head_update.dart`.
 Union never conflicts: it keeps both sides of any edit, so it cannot tell
 a new bullet from a heading rename. A branch that added a bullet before a
 release and is rebased after it can end up with that bullet, and stale copies
-of the released bullets, inside the new `## X.Y.Z` section. After any rebase
-across a release, check that `git diff origin/main -- CHANGELOG.md
-website/docs/changelog/recent-releases.md` adds only lines under
-`## Unreleased`.
+of the released bullets, inside the new `## X.Y.Z` section. CI's
+`check_released_changelog_sections.dart` (in the Analyze and docs-version
+jobs) fails such a PR: everything from the first `## <version>` heading down
+must match the merge base with the PR's base branch byte-for-byte, and the
+error names the file and first differing line. Move the bullet back under
+`## Unreleased`. Release-prep PRs, detected by the same label and branch rules
+as `release_on_prep_merge.yml`, are exempt. CI reads labels from the event
+that started the run, so push again after adding the `release-prep` label.
 
 Turn union off for release prep, which renames `## Unreleased` and rewrites
 its bullets, and for any rebase across a release-prep commit whose result you
