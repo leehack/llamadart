@@ -12,6 +12,7 @@
 - Accept annotation-only `allOf` components, such as `{"description": "..."}`, in structured-output object merges, matching llama.cpp.
 - Let Hermes templates that open reasoning in the prompt, such as QwQ, reason before a `ToolChoice.required` tool call; the call was previously parsed as reasoning and lost.
 - Reject `\u`-escaped spellings of declared property names (such as `\u0063ity`) as extra keys in open-object tool and response schema grammars.
+- Reject `responseFormat` and structured-output integer bounds at -2^63 on native platforms with `LlamaUnsupportedException` naming the bound, as on Web; they could fail with an opaque converter error or silently apply a wrong constraint.
 
 ## 0.15.5
 
