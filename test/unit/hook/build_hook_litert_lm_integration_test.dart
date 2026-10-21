@@ -1619,6 +1619,57 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       );
     });
 
+    for (final (scenario, members) in [
+      (
+        'an e2e app that depends on the app',
+        const {
+          'app': app,
+          'e2e': ['flutter', 'app'],
+        },
+      ),
+      (
+        'white-label apps that depend on a shared app core',
+        const {
+          'app_core': app,
+          'brand_a': ['flutter', 'app_core'],
+          'brand_b': ['flutter', 'app_core'],
+        },
+      ),
+    ]) {
+      for (final target in [OS.iOS, OS.macOS]) {
+        test('Apple $target validates the companion of $scenario', () async {
+          await expectLater(
+            testCodeBuildHook(
+              mainMethod: build_hook.main,
+              targetOS: target,
+              targetArchitecture: Architecture.arm64,
+              targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+              userDefines: await _appleWorkspaceUserDefines(
+                members: members,
+                llamaCppTag: 'v0.5.0',
+              ),
+              check: (_, _) => fail('Must not emit in-process assets'),
+            ),
+            incompatibleLlamaCpp,
+          );
+        });
+      }
+
+      test('Apple links the companion of $scenario', () async {
+        await testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: await _appleWorkspaceUserDefines(members: members),
+          check: (_, output) => expect(
+            output.assets.encodedAssets.single.asCodeAsset.linkMode,
+            inProcess,
+          ),
+        );
+      });
+    }
+
     test('Apple applies the companions several Flutter apps share', () async {
       await expectLater(
         testCodeBuildHook(
@@ -1658,10 +1709,14 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
                 output.assets.encodedAssets.single.asCodeAsset.linkMode,
                 bundled,
               );
-              // A Flutter dependency added to the member must rerun the hook.
+              // A Flutter dependency added to the member, or a moved member
+              // root, must rerun the hook.
               expect(
                 output.dependencies.map((uri) => uri.toFilePath()),
-                contains(endsWith(path.join('tool', 'pubspec.yaml'))),
+                containsAll([
+                  endsWith(path.join('tool', 'pubspec.yaml')),
+                  endsWith(path.join(_dartToolDir, 'package_config.json')),
+                ]),
               );
             },
           ),
@@ -1713,6 +1768,30 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         );
       });
     }
+
+    test('macOS validates the Flutter app next to a Dart package whose '
+        'dependency only dev-depends on llamadart', () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.arm64,
+          userDefines: await _appleWorkspaceUserDefines(
+            members: const {
+              'app': app,
+              'cli': ['helper'],
+              'helper': <String>[],
+            },
+            devDependencies: const {
+              'helper': ['llamadart'],
+            },
+            llamaCppTag: 'v0.5.0',
+          ),
+          check: (_, _) => fail('Must not emit in-process assets'),
+        ),
+        incompatibleLlamaCpp,
+      );
+    });
 
     const apple = [OS.iOS, OS.macOS];
     for (final (scenario, targets, members, devDependencies, setups) in [
@@ -1768,6 +1847,19 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         },
         const {
           'e2e': ['flutter_test', 'llamadart'],
+        },
+        'app (Flutter, $llamaCppCompanion); e2e (Flutter, no Apple '
+            'companion)',
+      ),
+      (
+        'a Flutter app and an e2e Flutter app that dev-depends on the app',
+        apple,
+        const {
+          'app': app,
+          'e2e': ['flutter'],
+        },
+        const {
+          'e2e': ['app'],
         },
         'app (Flutter, $llamaCppCompanion); e2e (Flutter, no Apple '
             'companion)',
@@ -1856,22 +1948,24 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       );
     });
 
+    final graph = path.join(_dartToolDir, 'package_graph.json');
+    final config = path.join(_dartToolDir, 'package_config.json');
     for (final (scenario, file, problem, edit) in [
       (
         'missing package graph',
-        'package_graph.json',
+        graph,
         'could not be read',
         (File graph) => graph.deleteSync(),
       ),
       (
         'malformed package graph',
-        'package_graph.json',
+        graph,
         'is malformed',
         (File graph) => graph.writeAsStringSync('{"roots": 1}'),
       ),
       (
         'package graph entry without dependencies',
-        'package_graph.json',
+        graph,
         'is malformed',
         (File graph) => graph.writeAsStringSync(
           jsonEncode({
@@ -1884,7 +1978,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       ),
       (
         'member root that is not a local directory',
-        'package_config.json',
+        config,
         'has no local root for workspace member app',
         (File config) => config.writeAsStringSync(
           config.readAsStringSync().replaceFirst(
@@ -1893,19 +1987,38 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
           ),
         ),
       ),
+      (
+        'member missing from the package config',
+        config,
+        'has no local root for workspace member app',
+        (File config) => config.writeAsStringSync(
+          config.readAsStringSync().replaceFirst(
+            '{"name":"app","rootUri":"../app"},',
+            '',
+          ),
+        ),
+      ),
+      (
+        'member pubspec that cannot be read',
+        path.join('app', 'pubspec.yaml'),
+        'could not be read',
+        (File pubspec) => pubspec.deleteSync(),
+      ),
     ]) {
       test('Apple warns and bundles assets for a $scenario', () async {
+        // kiosk fails companion validation, so the build only bundles assets
+        // when the broken app member stops the search.
         final defines = await _appleWorkspaceUserDefines(
-          members: const {'app': app},
+          members: const {'app': app, 'kiosk': app},
           defines: {
             'llamadart_native_runtimes': ['llama_cpp'],
           },
+          llamaCppTag: 'v0.5.0',
         );
         edit(
           File(
             path.join(
               File.fromUri(defines.workspacePubspec!.basePath).parent.path,
-              _dartToolDir,
               file,
             ),
           ),

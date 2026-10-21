@@ -743,17 +743,19 @@ _AppleCompanions? _flutterAppleCompanions({
   );
 }
 
-/// The Flutter app of the pub workspace rooted at [workspaceRoot] whose
-/// pubspec `dependencies` choose the Apple companions, or `null` to keep the
-/// bundled Apple native assets.
+/// The Flutter app of the pub workspace rooted at [workspaceRoot] with every
+/// package its regular dependencies reach, directly or not, or `null` to keep
+/// the bundled Apple native assets. Flutter links each plugin among those
+/// packages, so they choose the Apple companions.
 ///
 /// pub passes the workspace root pubspec, which holds the user-defines, and
 /// the build does not tell the hook which member it builds, so the hook reads
 /// `.dart_tool/package_graph.json`. A member builds llamadart into an app when
 /// its dependencies or dev dependencies reach [_packageName] and no other
-/// member depends on it. Every member shares this hook output, so when those
-/// members do not all declare the same companions, or mix Flutter apps with
-/// other packages, the build warns and keeps the bundled assets.
+/// member lists it under regular dependencies. Every member shares this hook
+/// output, so when those members do not all reach the same companions, or mix
+/// Flutter apps with other packages, the build warns and keeps the bundled
+/// assets.
 ///
 /// Only a Flutter build targets iOS, so for [ios] non-Flutter members are not
 /// considered; `flutter build ios` also hides hook warnings, which would leave
@@ -842,16 +844,18 @@ _AppleCompanions? _flutterAppleCompanions({
   final libraries = {
     for (final member in members) ...?dependencies[member],
   }.intersection(members.toSet());
-  bool reachesCore(String member) {
+  Set<String> reachedFrom(Iterable<String> packages) {
     final reached = <String>{};
-    final pending = [member, ...?devDependencies[member]];
+    final pending = [...packages];
     while (pending.isNotEmpty) {
       final name = pending.removeLast();
-      if (name == _packageName) return true;
       if (reached.add(name)) pending.addAll(dependencies[name] ?? const []);
     }
-    return false;
+    return reached;
   }
+
+  bool reachesCore(String member) =>
+      reachedFrom([member, ...?devDependencies[member]]).contains(_packageName);
 
   const companions = {
     _llamaCppFlutterPackageName,
@@ -890,11 +894,14 @@ _AppleCompanions? _flutterAppleCompanions({
       }
       continue;
     }
-    final declared = _pubspecDependencyNames(source);
-    final selected = companions.where(declared.contains).toList()..sort();
+    final reached = {
+      ..._pubspecDependencyNames(source),
+      ...reachedFrom(dependencies[member] ?? const []),
+    };
+    final selected = companions.where(reached.contains).toList()..sort();
     apps.add((
       name: member,
-      dependencies: declared,
+      dependencies: reached,
       setup: selected.isEmpty
           ? 'Flutter, no Apple companion'
           : 'Flutter, ${selected.join(', ')}',
