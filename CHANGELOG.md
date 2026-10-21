@@ -4,6 +4,7 @@
 - Check and link the Apple companions a Flutter app reaches through another dependency, such as an e2e or white-label app built on a shared app package, including across pub workspace members, instead of bundling the hook's runtimes without them. Host `flutter test` on macOS for such an app no longer loads the bundled llama.cpp or stable_diffusion library, because `flutter_tester` links no companion.
 - Reject `ModelParams.loras` that LiteRT-LM cannot take before any adapter downloads, also for extensionless native `.litertlm` files, on the Web and in embedding mode.
 - `package:llamadart/backend.dart` exports `BackendRuntimeIdentity`, `BackendModelFormatRouting`, `BackendChatScope`, `BackendDirectMediaInput` and `BackendDeferredEngineCreation`, the interfaces `LiteRtLmBackend` implements, so custom backends can report their runtime and load an explicit `ModelSource.format` ([#917](https://github.com/leehack/llamadart/issues/917)).
+- Release a finished dedicated LiteRT-LM speech-to-text task when nobody listens to its events, as with `transcribeOnce`, instead of keeping it and its input audio until the next task.
 
 ## 0.15.5
 
