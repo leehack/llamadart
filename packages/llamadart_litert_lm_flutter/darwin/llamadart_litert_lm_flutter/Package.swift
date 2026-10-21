@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let liteRtLmTag = "v0.18.0-2"
+let liteRtLmTag = "v0.18.0-3"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,63 +47,63 @@ let package = Package(
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "c3607845d4c7263e479d90d4cb78be38123c2804900ea11dac600d52e52867b1"
+            checksum: "905e418865c9ffc519120a4333c01d2902c1951928768197375502c6f9af2ff0"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLM",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "1bcfc03a3e8829f6861cbc6cf59dcf953426ce5381cf50e73c24eecdf0f510ba"
+            checksum: "5757e541cc5c4042372208c4d13c289fb9f3ee4815bdb0769e1a21c6e7aca3bd"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLMMac",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "aa4479635599f700f32580057c11aa38a2838cd3a734dc8a1a2b0c5be49c7e6c"
+            checksum: "046f163609806121be74d47823a5ab468927158822bd9b5e445bf788d078b899"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtMetalAccelerator",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "42897fca46a97732892489ca51f5f831600139ae53aa801f44aaf742e4fd179f"
+            checksum: "2dfd4f402268282ae497d09a111baf1bb84a38db66ac0c919e4c704642bd248d"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtTopKMetalSampler",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "07336325a5aba5d3061901f2016986639a7e142a2a22fc2e5c68e486847d2140"
+            checksum: "e207ea60d075c00f0d5394106214696be60998829972c658a002559d23433da9"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRt",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRt-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "c1310db645ab456e65a5eaa79f841f982d2b85bfef5f3ac915db2bace7a879da"
+            checksum: "5f9dae254cadc7440052f68c303b9216a214c9f207cc6d1961983774b573cdc9"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtTopKWebGpuSampler",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "3530441033aa04145f044ca77e5a5711973f6f791ff30eaf4122085a24b7004a"
+            checksum: "b8df3ae9d00160ec255ec54cc65015871132c01ce9133324fbf43c6aa1f17ba6"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtWebGpuAccelerator",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "0164e3954226c19416750b70a1290a384f16f22e62466ea11826c8cee603e00f"
+            checksum: "2babe51c90b21b1a3177a7dbd9332d228063fe423c8840956d79f8785d48f8fe"
         ),
         nativeRepoBinaryTarget(
             name: "WebgpuDawn",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-WebgpuDawn-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "3477373ac2bbeb256e8ad8c8f28f41aea7a75aa5782b746e82020203ab076df6"
+            checksum: "6b698cccf9b912a66c775d85c8b425bcc2f66dc69ee256f94318a1e2e8e3a3e7"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",

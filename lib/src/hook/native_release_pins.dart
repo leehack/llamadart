@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.7.0-1';
+const llamaCppTag = 'v0.7.0-2';
 
 /// The first `llamadart_llama_cpp_flutter` release whose `Package.swift` pins
 /// [llamaCppTag].
@@ -16,7 +16,7 @@ const llamaCppTag = 'v0.7.0-1';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.15.0';
+const llamaCppAppleCompanionVersion = '0.15.2';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
@@ -38,34 +38,34 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{};
 /// against this map before extracting it.
 const llamaCppBundleSha256 = <String, String>{
   'android-arm64':
-      'e25056a80c0520e0198350da395814285dc5a116da581e90e49b02e106b56174',
+      '72fd7d6ed2bec218cbc23901b6c82fc7ddaac989d7ea287a1054d3e20c538a89',
   'android-x64':
-      '600ab700681f879bef3f583ca001ac7cea50f04085f4ccd5dd9789f599354850',
+      'ee3d096f214d1790c34c516b511f0386cefc9a52ed19024573b0cc2f62873026',
   'ios-arm64':
-      '022f29fccab8f2abb521d5270bf774c079cee9a66525272655278291b4a050f8',
+      'fb9fb1ce49c1a91a07da4baadb7abaddc47ed172ec45cc5da21350a05c6971f0',
   'ios-arm64-sim':
-      '1438643353a02aec1343509b23841d750930b849c3edbb038d05e72c410b18ea',
+      '8d0f8aad3ae3b854b809c3f7d3d8e1c0b97e10c4b850f0f8bac36d76394aecdc',
   'ios-x86_64-sim':
-      '449a760fabc32688a27c4ce5183c1d422fe4ed626568c45c2386e09f664a475b',
+      '471e62bd3b07c626e0499ed5679cadf10fbf81c35e0d7ad6c63acc4e32fe88b7',
   'linux-arm64':
-      'cd679e88094921eef0dd2983e407aaf087d55a8a375336c4f3a345105916aff0',
+      'e491a5300b2994774c7cc130ec20ad75f0ac0d9db8e08698e47f6382e09cb6b7',
   'linux-x64':
-      'af61abad6457f98a93da226db48e3d3144e4542f24d5b803f9636d4ad482d2aa',
+      '2c3671399545c409b69707aca04a85c46b1f9cceb8020c234b392104a299652b',
   'macos-arm64':
-      '091524ad25e1f083f08e08ee078f74e777ed3045700b6fc9de7c28465d427c1d',
+      'c57c9e2cff650ba0f34844b99a5dbcf70fb6358899792ac117f4ddf028ede718',
   'macos-x86_64':
-      'f4c70bdbe5a735dc1c35a3e2cdf21a2563bd8aef71ed82f2b02357fce2379f1f',
+      'd840fec8eb5846b88f17e8f0041b3418a24cf5c7f566787fd7572f03ebc58f91',
   'windows-arm64':
-      '13aec59acad0621ce8f0f64ac098dd2ab0255ae52084559201d4414c7328f99e',
+      'bbea24506fe5551d092a0efb5a6dc3915a066f5a80a62cab9e24d5f5af97dcbd',
   'windows-x64':
-      'b3499bf92f532392698421a39d1246665b469d6f2b0988a9000960275e179727',
+      '0bec255d9336eab934f601408f2871b53f83a29432587e01b0fa71a4d33840e2',
 };
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
-const liteRtLmReleaseTag = 'v0.18.0-2';
+const liteRtLmReleaseTag = 'v0.18.0-3';
 
 /// LiteRT-LM cache directory version derived from [liteRtLmReleaseTag].
-const liteRtLmVersion = '0.18.0-2';
+const liteRtLmVersion = '0.18.0-3';
 
 /// A published LiteRT-LM runtime archive and the libraries it must contain.
 class LiteRtLmBundleSpec {
@@ -90,7 +90,7 @@ class LiteRtLmBundleSpec {
 const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   LiteRtLmBundleSpec(
     'android-arm64',
-    sha256: 'd6203343b8b11c2fff17337f464389511e9793544f275351aa47752dfff56008',
+    sha256: '99bec56a402a53901ee3c9ced1234a53e1038aec2ce8300db35d9270e286c131',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
@@ -104,7 +104,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'android-x64',
-    sha256: '2adb600c508f94f4c20e32fe470eb3db67c6ff0da3d15f74ad50fbdff87d7363',
+    sha256: '3dd596c6f4cfa4d9986c51a95ab77e6c70d7910397cddf3647f89911aa12c480',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
@@ -118,7 +118,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'ios-arm64',
-    sha256: '60ee1075e98957ec21eda6f553f810b6ee2daf4bb5044fbde44dff5916a40343',
+    sha256: '21d4d730466de7aa64601b4a677f14bed579631354303dbe5ead295c6a6a3c6b',
     requiredLibraries: {
       'CLiteRTLM',
       'LiteRtLm',
@@ -128,7 +128,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'ios-arm64-sim',
-    sha256: 'a8aa89cf34da7a24a4f3fe15f9e07406a5fbf75ef71a404ce914a3884599d7c2',
+    sha256: '06942fd284de5422f0670f14059ca69cbcee72067aef0e9811d825965a47deb2',
     requiredLibraries: {
       'CLiteRTLM',
       'LiteRtLm',
@@ -138,7 +138,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'macos-arm64',
-    sha256: 'e1da8be7168d3e33180d72abc454f636a2e5dd4a1ead8521d9990b4fd0819502',
+    sha256: '4197578f3f13c2b1bcbfcbccb55fd0a72bbad11a596eea0bcb278047955e7790',
     requiredLibraries: {
       'libCLiteRTLM_mac.dylib',
       'libGemmaModelConstraintProvider.dylib',
@@ -153,7 +153,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'linux-arm64',
-    sha256: '519889568c36511fdba69af4b414a6460b05108d577fbd9fc44d7a14f9a142d5',
+    sha256: '1a0a6f472628d2fd70a34a878974b9d0565668f6acf9ae1e208412428addbc0a',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -165,7 +165,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'linux-x64',
-    sha256: '314fe89228cdfc0ac2f69ebe824129fae0efca8d9608b5b0e3c23fcd0a3f3673',
+    sha256: '18ee2e30d8b82d43218bec78b28a358e67a342b57f6cbddffc1aa8af77411836',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -177,7 +177,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'windows-x64',
-    sha256: 'cc0eb6e54f412c5ea62eb1f60066de3b5744f2715cf5b574dbfe6567b58fdc02',
+    sha256: '62ca2f55894f15c45e48cc8a2cb1d1a183a8ca6eefb3f316e5c6b640ef43cd87',
     requiredLibraries: {
       'LiteRtLm.dll',
       'dxcompiler.dll',
