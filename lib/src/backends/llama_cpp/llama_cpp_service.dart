@@ -6925,6 +6925,28 @@ class LlamaCppService {
     var shouldStop = false;
     var contextFull = false;
 
+    // Like [_runInferenceLoop], a reply that ends exactly at a limit is not
+    // truncated. The last accepted token may not be decoded yet.
+    bool nextTokenEndsGeneration() {
+      final undecoded = pendingSampledToken;
+      if (undecoded != null) {
+        if (currentPos >= nCtx) return false;
+        batch.n_tokens = 1;
+        batch.token[0] = undecoded;
+        batch.pos[0] = currentPos;
+        batch.n_seq_id[0] = 1;
+        batch.seq_id[0][0] = 0;
+        batch.logits[0] = 1;
+        if (_calls.decode(ctx.pointer, batch) != 0) return false;
+      } else if (currentPos == 0) {
+        return false;
+      }
+      return llama_vocab_is_eog(
+        vocab,
+        _calls.samplerSample(sampler, ctx.pointer, -1),
+      );
+    }
+
     try {
       while (!shouldStop && generatedTokens < params.maxTokens) {
         if (cancelToken.value == 1) break;
@@ -7034,7 +7056,10 @@ class LlamaCppService {
           }
           evalTick.stop();
           evalMicros += evalTick.elapsedMicroseconds;
-          if (decodeStatus != 0) break;
+          if (decodeStatus != 0) {
+            shouldStop = true;
+            break;
+          }
 
           tokensPtr[currentPos] = selectedToken;
           currentPos++;
@@ -7113,7 +7138,10 @@ class LlamaCppService {
           }
           evalTick.stop();
           evalMicros += evalTick.elapsedMicroseconds;
-          if (decodeStatus != 0) break;
+          if (decodeStatus != 0) {
+            shouldStop = true;
+            break;
+          }
           speculativeVerifyTokens += batchTokens;
 
           for (int i = 0; i < batchTokens; i++) {
@@ -7291,7 +7319,7 @@ class LlamaCppService {
             }
           }
 
-          if (!shouldStop && generatedTokens < params.maxTokens) {
+          if (!shouldStop) {
             pendingSampledToken = acceptedPtr[acceptedCount - 1];
           }
         } finally {
@@ -7302,11 +7330,12 @@ class LlamaCppService {
       }
       final remaining = stopBuffer.finish();
       if (remaining.isNotEmpty) yield remaining;
-      if (contextFull) {
-        onLimit?.call(BackendGenerationLimit.contextSize);
-      } else if (!shouldStop && generatedTokens >= params.maxTokens) {
-        onLimit?.call(BackendGenerationLimit.maxTokens);
-      }
+      final limit = contextFull
+          ? BackendGenerationLimit.contextSize
+          : !shouldStop && generatedTokens >= params.maxTokens
+          ? BackendGenerationLimit.maxTokens
+          : null;
+      if (limit != null && !nextTokenEndsGeneration()) onLimit?.call(limit);
     } finally {
       malloc.free(draftPtr);
       malloc.free(idxPtr);
