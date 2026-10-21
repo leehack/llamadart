@@ -244,6 +244,11 @@ Selection rules:
   module.
 - CUDA runtime DLLs (`cudart64_*`, `cublas64_*`, `cublaslt64_*`) ship only with
   `cuda`, and OpenBLAS libraries only with `blas`.
+- Modules are selected after download. On `windows-x64` the pinned archive is
+  about 700 MiB, mostly CUDA DLLs, and the hook downloads it once per pinned
+  release even when `cuda` is not selected. It is cached under the llamadart
+  package's `.dart_tool/llamadart/native_bundles/`. To skip the download, set
+  `llamadart_native_path` to a local archive or bundle.
 - On `windows-x64`, the hook rejects a bundle whose `cuda` module lacks the
   cudart and cuBLAS DLLs, or whose `blas` module lacks OpenBLAS.
 
