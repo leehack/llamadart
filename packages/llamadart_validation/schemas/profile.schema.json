@@ -491,7 +491,10 @@
             "const": "litert"
           },
           "backend": {
-            "const": "gpu"
+            "enum": [
+              "cpu",
+              "gpu"
+            ]
           }
         }
       }
