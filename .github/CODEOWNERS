@@ -12,6 +12,7 @@ scripts/verify_chat_app_web_deployment.sh @leehack
 # Version, release, and native-runtime publication surfaces.
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
+/.gitattributes @leehack
 doc/testing_matrix.md @leehack
 doc/pr_branch_writer_inventory.md @leehack
 doc/high_risk_pre_merge_readiness.md @leehack
@@ -40,6 +41,7 @@ tool/git/safe_pr_head_update.dart @leehack
 tool/git/pr_head_update_evidence.schema.json @leehack
 test/unit/tooling/safe_pr_head_update_test.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
+tool/testing/check_released_changelog_sections.dart @leehack
 test/unit/tooling/release_prep_heading_test.dart @leehack
 tool/release/companion_pub_preflight.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
