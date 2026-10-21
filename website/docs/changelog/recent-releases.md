@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` moves or repeats messages, or whose `history` returns copies when continuing a turn.
+- Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` moves or repeats messages, or whose `history` returns copies or hides messages when continuing a turn.
 
 ## 0.15.5
 

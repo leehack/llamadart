@@ -134,6 +134,41 @@ class _RewritingSession extends ChatSession {
   }
 }
 
+/// A [ChatSession] subclass that keeps a note last by storing a new copy of
+/// it behind each added message.
+class _RenotingSession extends ChatSession {
+  _RenotingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    final kept = [
+      for (final stored in history)
+        if (stored.content != 'Note') stored,
+    ];
+    reset();
+    kept.forEach(super.addMessage);
+    super.addMessage(message);
+    super.addMessage(_text(LlamaChatRole.system, 'Note'));
+  }
+}
+
+/// A [ChatSession] subclass that stores a shared marker after each tool
+/// result.
+class _MarkingSession extends ChatSession {
+  _MarkingSession(super.engine) : super(maxContextTokens: 0);
+
+  static const LlamaChatMessage marker = LlamaChatMessage.fromText(
+    role: LlamaChatRole.system,
+    text: 'Marker',
+  );
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    super.addMessage(message);
+    if (message.role == LlamaChatRole.tool) super.addMessage(marker);
+  }
+}
+
 /// A [ChatSession] subclass that stores each tool result twice.
 class _DoublingSession extends ChatSession {
   _DoublingSession(super.engine) : super(maxContextTokens: 0);
@@ -1401,6 +1436,41 @@ void main() {
         ['Hi', 'Hello'],
       );
       expect(_toolResults(rewriting), isEmpty);
+    });
+
+    test('whose addMessage replaces a note with a copy keeps it', () async {
+      final renoting = _RenotingSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(renoting.addMessage);
+
+      final result = await stopAtMaxRounds(renoting);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in renoting.history) message.content],
+        ['Hi', 'Hello', 'Note'],
+      );
+    });
+
+    test('removes an instance its addMessage appended that an earlier turn '
+        'holds, and keeps the earlier one', () async {
+      final marking = _MarkingSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _MarkingSession.marker,
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(marking.addMessage);
+
+      final result = await stopAtMaxRounds(marking);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in marking.history) message.content],
+        ['Hi', 'Marker', 'Hello'],
+      );
+      expect(marking.history[1], same(_MarkingSession.marker));
     });
 
     test('whose addMessage stores a result twice removes both', () async {
