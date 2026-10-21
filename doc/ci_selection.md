@@ -10,8 +10,10 @@ PR. A path filter must not prevent a required workflow from reporting.
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, root Linux coverage and full macOS/Windows VM checks, Web Chat consumer | Android, Web, iOS inputs |
-| Validation package tests/profiles/schemas | Root static checks, private suite and provider/workspace/Flutter consumer contracts | None |
-| Validation implementation/dependencies or provider/build helpers | Same validation checks | All desktop and app targets |
+| Validation package tests/schemas or unbundled assets | Root static checks, private suite and provider/workspace/Flutter consumer contracts | None |
+| Validation assets the chat app bundles (`flutter.assets`, such as profiles) | Same validation checks and Web Chat | None |
+| Validation implementation/dependencies | Same validation checks and Web Chat | All desktop and app targets |
+| Validation provider/build helpers | Same validation checks | All desktop and app targets |
 | Android/iOS/Web chat packaging | Root static checks; Web Chat for Web inputs | Affected app target |
 | Other chat app implementation/dependencies | Static, private harness, Web Chat | All app targets |
 | Chat app unit tests | Static and Web Chat | None |
@@ -113,10 +115,11 @@ compares its tip with the artifact's commit:
 |---|---|
 | Unchanged | Upload and verify. |
 | Only commits that would not select Web Chat on their own, such as a docs version cut | Upload and verify; a notice names `main`'s tip. |
-| Any commit that selects Web Chat, even one reverted later | Superseded: upload and verification are skipped, the job passes, and a notice plus the job summary name `main`'s tip and the changed inputs. |
+| Web Chat inputs differ at `main`'s tip | Superseded: upload and verification are skipped, the job passes, and a notice plus the job summary name `main`'s tip and the changed inputs. |
+| Web Chat inputs changed and then restored | Upload and verify; the artifact matches `main`'s inputs. Git records no push boundaries, so this holds even when the change had its own deploy run. |
 | `main` no longer contains the commit, or the fetch fails | The job fails. |
 
-A commit that selects Web Chat deploys through its own CI run, so a superseded
+A push that changes Web Chat inputs deploys through its own CI run, so a superseded
 artifact is never uploaded over it. The Laya Tetris deploy runs the same guard
 with its workflow's `paths` filter as the input list, since a push outside that
 filter starts no Laya Tetris run.

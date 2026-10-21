@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Decide whether a hosted-demo build is still current once `main` has moved.
 
-A build stays deployable while no commit after it changes the demo's inputs.
-A commit that does change them supersedes the build: it has, or needs, a deploy
-run of its own, so the older build ends neutrally instead of failing. Only a
+A build stays deployable while `main`'s tip has the same demo inputs. Once they
+differ, the newer commits supersede the build: they have, or need, a deploy run
+of their own, so the older build ends neutrally instead of failing. Only a
 build `main` no longer contains, or a Git failure, is an error.
 """
 import base64
@@ -55,19 +55,15 @@ def fetch_main():
 
 
 def newer_inputs(demo, deploy_sha, main_sha):
-    """Demo inputs changed by any commit after the build, reverted ones included."""
+    """Demo inputs that differ between the build and main's tip."""
     if subprocess.run(['git', 'merge-base', '--is-ancestor', deploy_sha, main_sha]).returncode:
         raise ValueError(f'main ({main_sha}) does not contain {deploy_sha}')
-    # The per-commit steps cover every later push's own diff, so an input
-    # changed and then reverted still counts: that push had a deploy run.
-    steps = [(deploy_sha, main_sha)] + [
-        (commit + '^1', commit)
-        for commit in git('rev-list', '--first-parent', f'{deploy_sha}..{main_sha}').split()]
-    paths = set()
-    for base, head in steps:
-        paths.update(inventory(subprocess.check_output(
-            ['git', 'diff', '--name-status', '-z', '-M', base, head, '--'])))
-    return sorted(path for path in paths if is_input(demo, path))
+    # Git records no push boundaries, so only the whole range is compared. An
+    # input that differs here changed in some later push, which had a deploy run;
+    # one changed and restored leaves this build equal to main for the demo.
+    paths = inventory(subprocess.check_output(
+        ['git', 'diff', '--name-status', '-z', '-M', deploy_sha, main_sha, '--']))
+    return sorted({path for path in paths if is_input(demo, path)})
 
 
 def verdict(demo, deploy_sha, main_sha, inputs):

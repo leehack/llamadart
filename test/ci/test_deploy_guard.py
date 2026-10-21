@@ -32,6 +32,11 @@ class InputTest(unittest.TestCase):
         self.assertFalse(guard.is_input('chat-app', 'example/chat_app/android/app/build.gradle.kts'))
         # Unknown paths stay conservative for the selector-driven chat app.
         self.assertTrue(guard.is_input('chat-app', 'new-unknown-input'))
+        # The chat app depends on the validation package and bundles its profiles.
+        for path in ['packages/llamadart_validation/lib/src/runner.dart',
+                     'packages/llamadart_validation/assets/profiles/chat-gguf-cpu.json']:
+            self.assertTrue(guard.is_input('chat-app', path), path)
+            self.assertFalse(guard.is_input('laya-tetris', path), path)
 
     def test_laya_patterns_stay_within_the_supported_filter_forms(self):
         for pattern in guard.LAYA_TETRIS_INPUTS:
@@ -124,12 +129,43 @@ class HistoryTest(unittest.TestCase):
             self.assertIn('lib/llamadart.dart', summary)
             self.assertEqual(summary.count('\n'), 1)
 
-    def test_input_changed_and_reverted_by_later_pushes_still_supersedes(self):
+    def test_input_changed_and_restored_after_the_build_still_deploys(self):
+        # Git cannot tell one push from two: this may be one push that started no
+        # deploy run, and the build matches main's inputs either way.
         self.commit({'lib/llamadart.dart': 'new'})
         self.commit({'lib/llamadart.dart': 'old'})
         self.assertEqual(self.git(self.origin, 'diff', '--name-only', self.deploy_sha, 'HEAD'), '')
         for demo in guard.DEMOS:
-            self.assertEqual(self.run_guard(demo)[1], 'deploy=false\n')
+            result, output, _ = self.run_guard(demo)
+            self.assertEqual(output, 'deploy=true\n', result.stderr)
+            self.assertIn('::notice title=Deploying behind main::', result.stdout)
+
+    def test_validation_package_change_supersedes_only_the_chat_app(self):
+        self.commit({'packages/llamadart_validation/lib/src/runner.dart': 'new'})
+        self.assertEqual(self.run_guard('chat-app')[1], 'deploy=false\n')
+        self.assertEqual(self.run_guard('laya-tetris')[1], 'deploy=true\n')
+
+    def fast_forward_main_to_branch_that_merged_it(self, files):
+        self.git(self.origin, 'checkout', '-q', '-b', 'topic', self.deploy_sha + '~1')
+        self.commit(files)
+        self.git(self.origin, 'merge', '-q', '--no-ff', '--no-edit', 'main')
+        self.git(self.origin, 'checkout', '-q', 'main')
+        self.git(self.origin, 'merge', '-q', '--ff-only', 'topic')
+        self.assertEqual(self.git(self.origin, 'rev-parse', 'HEAD^2'), self.deploy_sha)
+
+    def test_fast_forward_to_a_branch_that_merged_main_compares_its_inputs(self):
+        for history in ('shallow', 'full'):
+            for files, deploy in (({'README.md': 'new'}, 'true'),
+                                  ({'lib/llamadart.dart': 'new'}, 'false')):
+                with self.subTest(history=history, files=files):
+                    self.setUp()
+                    if history == 'full':
+                        self.git(self.work, 'fetch', '-q', '--unshallow', 'origin')
+                    self.fast_forward_main_to_branch_that_merged_it(files)
+                    for demo in guard.DEMOS:
+                        result, output, _ = self.run_guard(demo)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(output, f'deploy={deploy}\n', (demo, result.stdout))
 
     def test_demo_specific_inputs_only_supersede_their_own_demo(self):
         self.commit({'example/chat_app/web/index.html': 'new'})
