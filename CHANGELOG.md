@@ -13,6 +13,14 @@
 - Let Hermes templates that open reasoning in the prompt, such as QwQ, reason before a `ToolChoice.required` tool call; the call was previously parsed as reasoning and lost.
 - Reject `\u`-escaped spellings of declared property names (such as `\u0063ity`) as extra keys in open-object tool and response schema grammars.
 - Reject `responseFormat` and structured-output integer bounds at -2^63 on native platforms with `LlamaUnsupportedException` naming the bound, as on Web; they could fail with an opaque converter error or silently apply a wrong constraint.
+* Aligned the default WebGPU bridge assets to `v0.1.67`: loading a missing Web
+  state file throws `LlamaStateException` instead of aborting the runtime,
+  and chat image and audio URLs relative to the page load in worker mode.
+  Runtime pins are unchanged: native `v0.7.0-1` uses upstream
+  `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`; Web LiteRT-LM stays
+  `@litert-lm/core@0.18.0`.
+  Manifest SHA-256:
+  `d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`.
 
 ## 0.15.5
 

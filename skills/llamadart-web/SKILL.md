@@ -106,8 +106,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   context and media caps. Older bridges cannot report this truncation.
 - WebGPU grammar applies from the first token at `root`: `grammarLazy` or
   another `grammarRoot` throws `LlamaUnsupportedException`. State files live in
-  the bridge's WASMFS and are lost on reload; `getPerformanceContext()` returns
-  null.
+  the bridge's WASMFS and are lost on reload; with assets `v0.1.67+`, loading a
+  missing one throws `LlamaStateException` and the runtime stays usable.
+  `getPerformanceContext()` returns null.
 - LiteRT-LM on the web: preload `@litert-lm/core` and set
   `window.LiteRtLmEngine = module.Engine`, or set
   `window.__llamadartLiteRtLmModuleUrl` to its module URL. Otherwise the load

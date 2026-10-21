@@ -159,7 +159,8 @@ does not by itself provide a transcript contract. For typed transcription, see
 - Local file path media inputs are native-first; web flows use browser file
   bytes/URLs. `LlamaImageContent.url` is read only by the web bridge: native
   `llama.cpp` throws `LlamaUnsupportedException` for it, so download the image
-  and pass its bytes.
+  and pass its bytes. On the web, a relative URL resolves against the document
+  in both bridge runtimes with assets `v0.1.67+`.
 - LiteRT-LM web through `@litert-lm/core` remains text-only in `llamadart`.
 
 ## Tuning notes

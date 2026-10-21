@@ -236,7 +236,9 @@ The feature-by-runtime table is in the
 - A stop sequence equal to a `preservedTokens` entry is ignored, as on native
   llama.cpp.
 - State files live in the bridge's WASMFS virtual filesystem and do not
-  survive a page reload.
+  survive a page reload. With bridge assets `v0.1.67+`, loading a missing
+  state file throws `LlamaStateException` and the runtime stays usable;
+  older assets abort the runtime.
 - The runtime fetches the model and projector itself. `ModelSource.parse`
   takes a remote `https://` URL; a `ModelSource.path` is a URL relative to the
   document, or a `blob:` URL. `download` must stay at its defaults, and
@@ -309,16 +311,16 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.66`, with local vendored assets
-identified as `v0.1.66-local-v0.7.0`.
+The example currently pins bridge assets to `v0.1.67`, with local vendored assets
+identified as `v0.1.67-local-v0.7.0`.
 
-- The pinned `v0.1.66` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
+- The pinned `v0.1.67` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
   (`v0.7.0-1`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-  even though the bridge asset tag `v0.1.66` differs from the native runtime tag
-  `v0.7.0-1`. Pinned artifact provenance: release `416599814`, tag commit
-  `9270b4862d24e9b7155396023ce29a4be065e86b`, bridge source
-  `de2c3727c4b8ae9dad9b887bd89f1cb43793f008`, manifest SHA-256
-  `6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`. The
+  even though the bridge asset tag `v0.1.67` differs from the native runtime tag
+  `v0.7.0-1`. Pinned artifact provenance: release `419092691`, tag commit
+  `2657686bd3956c09ab60fe89ca7d6d660045b5e3`, bridge source
+  `8992121b4b533a4444ad6de93d855ea3c99644c6`, manifest SHA-256
+  `d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`. The
   bridge assets were qualified against native `v0.7.0-1`, matching the current
   native pin. They include the API-version-1 media embedding contract.
   Extraction and state smokes pass through direct and worker paths in both memory modes.
@@ -326,7 +328,7 @@ identified as `v0.1.66-local-v0.7.0`.
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.66 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.67 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -334,7 +336,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.66';
+  window.__llamadartBridgeAssetsTag = 'v0.1.67';
 </script>
 ```
 
