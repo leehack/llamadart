@@ -1572,6 +1572,17 @@ void main() {
       expect(capabilities?.isSupported, isFalse);
     });
 
+    test('a projector type past the 1 MiB metadata cap is unknown', () async {
+      await loadWithProjector({
+        'padding': Uint8List(1 << 20),
+        'clip.audio.projector_type': 'qwen3tts_spkenc',
+      });
+
+      expect((await recognizer.capabilities).isSupported, isTrue);
+      final error = await emptyTranscriptError();
+      expect(error.details, contains('could not be checked'));
+    });
+
     test('reads the header once per loaded projector', () async {
       final path = p.join(directory.path, 'mmproj.gguf');
       await loadWithProjector({'clip.audio.projector_type': 'qwen3a'});
@@ -1642,7 +1653,8 @@ void main() {
   });
 }
 
-/// A GGUF header with [metadata] (string and bool values) and no tensors.
+/// A GGUF header with [metadata] (string, bool and `uint8` array values) and
+/// no tensors.
 Uint8List _ggufHeader(Map<String, Object> metadata) {
   final bytes = BytesBuilder();
   void u32(int value) => bytes.add(
@@ -1670,6 +1682,11 @@ Uint8List _ggufHeader(Map<String, Object> metadata) {
       case final bool flag:
         u32(7);
         bytes.addByte(flag ? 1 : 0);
+      case final Uint8List items:
+        u32(9);
+        u32(0);
+        u64(items.length);
+        bytes.add(items);
       default:
         throw ArgumentError.value(value, key);
     }

@@ -1210,6 +1210,10 @@ class SpeechToTextEngine {
 
   static const String _qwen3AsrProjectorType = 'qwen3a';
 
+  // The synchronous parse runs on the caller's isolate, so it is capped far
+  // below the generic header limit; real projector metadata takes a few KiB.
+  static const int _projectorMetadataByteCap = 1 << 20;
+
   /// The type llama.cpp gives the audio projector loaded on [engine], read
   /// once per loaded projector. Null when none is loaded, its file cannot be
   /// read here, or it names no type.
@@ -1229,16 +1233,18 @@ class SpeechToTextEngine {
   /// precedence: `clip.projector_type`, else `clip.audio.projector_type`.
   static Future<String?> _readAudioProjectorType(String location) async {
     try {
-      final header = await readImageModelFileHeader(
+      final metadata = await readGgufMetadata(
         // Synchronous reads keep the check to microtasks: an asynchronous
         // read would put real event-loop turns between the capability check
         // and the task it gates.
         (offset, length) async =>
             readProjectorFileRange(location, offset, length),
+        maxBytes: _projectorMetadataByteCap,
+        stopAt: 'clip.projector_type',
       );
       final type =
-          header.metadata['clip.projector_type'] ??
-          header.metadata['clip.audio.projector_type'];
+          metadata['clip.projector_type'] ??
+          metadata['clip.audio.projector_type'];
       return type is String ? type : null;
     } catch (_) {
       return null;

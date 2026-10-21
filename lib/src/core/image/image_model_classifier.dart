@@ -154,29 +154,69 @@ Future<ImageModelFileHeader> readImageModelFileHeader(
   );
 }
 
-Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
+/// Reads the GGUF key/value metadata through [read], stopping after the key
+/// [stopAt] or at the end of the block; tensor infos are not read. At most
+/// [maxBytes] of the file are parsed.
+///
+/// Throws [FormatException] when the file is not GGUF, or its metadata is
+/// truncated, implausible or longer than [maxBytes].
+Future<Map<String, Object?>> readGgufMetadata(
+  ImageModelFileReader read, {
+  required int maxBytes,
+  String? stopAt,
+}) async {
+  final reader = _HeaderReader(read, maxBytes: maxBytes);
+  if (ascii.decode(await reader.bytes(4), allowInvalid: true) != 'GGUF') {
+    throw const FormatException('Not a GGUF file.');
+  }
   await reader.u32();
-  final tensorCount = _checkedCount(
-    await reader.u64(),
-    maxImageModelGgufTensors,
-  );
-  final keyCount = _checkedCount(await reader.u64(), maxImageModelGgufKeys);
+  await reader.u64();
   final metadata = <String, Object?>{};
+  await _readGgufKeys(reader, metadata, (key, _) => key == stopAt);
+  return metadata;
+}
+
+/// Reads key/value pairs into [metadata] until [stop] holds for one or the
+/// block ends; returns whether [stop] ended it.
+Future<bool> _readGgufKeys(
+  _HeaderReader reader,
+  Map<String, Object?> metadata,
+  bool Function(String key, Object? value) stop,
+) async {
+  final keyCount = _checkedCount(await reader.u64(), maxImageModelGgufKeys);
   for (var i = 0; i < keyCount; i++) {
     final key = await reader.string();
     final value = await _ggufValue(reader, await reader.u32());
     if (value != null) {
       metadata[key] = value;
     }
-    if (key == 'general.architecture' &&
-        imageModelLanguageModelArchitectures.contains(value)) {
-      return ImageModelFileHeader(
-        isGguf: true,
-        metadata: metadata,
-        tensors: const [],
-        stoppedAtArchitecture: true,
-      );
+    if (stop(key, value)) {
+      return true;
     }
+  }
+  return false;
+}
+
+Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
+  await reader.u32();
+  final tensorCount = _checkedCount(
+    await reader.u64(),
+    maxImageModelGgufTensors,
+  );
+  final metadata = <String, Object?>{};
+  if (await _readGgufKeys(
+    reader,
+    metadata,
+    (key, value) =>
+        key == 'general.architecture' &&
+        imageModelLanguageModelArchitectures.contains(value),
+  )) {
+    return ImageModelFileHeader(
+      isGguf: true,
+      metadata: metadata,
+      tensors: const [],
+      stoppedAtArchitecture: true,
+    );
   }
   final tensors = <ImageModelTensor>[];
   for (var i = 0; i < tensorCount; i++) {
@@ -261,9 +301,10 @@ int _checkedStringLength(int length) {
 
 /// Sequential reader that fetches in growing blocks.
 class _HeaderReader {
-  _HeaderReader(this._read);
+  _HeaderReader(this._read, {this.maxBytes = maxImageModelHeaderBytes});
 
   final ImageModelFileReader _read;
+  final int maxBytes;
   int _blockSize = 64 * 1024;
   Uint8List _buffer = Uint8List(0);
   int _bufferStart = 0;
@@ -297,7 +338,7 @@ class _HeaderReader {
   }
 
   void _checkBudget(int count) {
-    if (position + count > maxImageModelHeaderBytes) {
+    if (position + count > maxBytes) {
       throw const FormatException('Model file header is too large.');
     }
   }
