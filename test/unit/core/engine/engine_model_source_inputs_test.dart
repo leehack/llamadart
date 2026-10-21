@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
-    show BackendModelFormatRouting, BackendRuntimeIdentity;
+    show
+        BackendModelFormatDetection,
+        BackendModelFormatRouting,
+        BackendRuntimeIdentity;
 import 'package:test/test.dart';
 
 import 'engine_test.dart'
@@ -523,6 +526,106 @@ void main() {
       expect(manager.calls.map((call) => call.source.cacheKey), [
         model.cacheKey,
       ]);
+    });
+
+    test('a format-routing backend that detects a LiteRT-LM bundle in an '
+        'extensionless file rejects them before it downloads any, and reads '
+        'no file for adapters it takes', () async {
+      final backend = _DetectingBackend(ModelFormat.liteRtLm);
+      final manager = _CacheManager({
+        hfAdapter: '/cache/style.gguf',
+        urlAdapter: '/cache/tone.gguf',
+      });
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await expectLater(
+        engine.loadModel('/models/download', modelParams: twoAdapters),
+        unsupportedLoras('has 2 adapters'),
+      );
+      expect(backend.detectedPaths, ['/models/download']);
+      expect(manager.calls, isEmpty);
+      expect(backend.modelLoadCalls, 0);
+
+      backend.detectedPaths.clear();
+      await engine.loadModel(
+        '/models/download',
+        modelParams: ModelParams(loras: [LoraAdapterConfig.source(hfAdapter)]),
+      );
+      expect(backend.detectedPaths, isEmpty);
+      expect(manager.calls.single.source.cacheKey, hfAdapter.cacheKey);
+    });
+
+    test('a format-routing backend that detects GGUF in an extensionless '
+        'file downloads stacked adapters', () async {
+      final backend = _DetectingBackend(ModelFormat.gguf);
+      final manager = _CacheManager({
+        hfAdapter: '/cache/style.gguf',
+        urlAdapter: '/cache/tone.gguf',
+      });
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await engine.loadModel('/models/download', modelParams: twoAdapters);
+      expect(manager.calls.map((call) => call.source.cacheKey), [
+        hfAdapter.cacheKey,
+        urlAdapter.cacheKey,
+      ]);
+    });
+
+    test('LiteRT-LM embedding mode rejects an adapter before it downloads '
+        'it', () async {
+      final backend = _RuntimeBackend(LlamaRuntime.liteRtLm);
+      final manager = _CacheManager({hfAdapter: '/cache/style.gguf'});
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await expectLater(
+        engine.loadModel(
+          '/models/model',
+          modelParams: ModelParams(
+            liteRtLmEmbeddingEngine: true,
+            loras: [LoraAdapterConfig.source(hfAdapter)],
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('LiteRT-LM embedding mode takes no LoRA adapter'),
+          ),
+        ),
+      );
+      expect(manager.calls, isEmpty);
+      expect(backend.modelLoadCalls, 0);
+    });
+
+    test('a URL-loading LiteRT-LM backend rejects even one adapter at scale '
+        '1.0 before it resolves it', () async {
+      final backend = _RuntimeBackend(
+        LlamaRuntime.liteRtLm,
+        urlLoadingSupported: true,
+      );
+      final resolver = _CountingResolver();
+      final engine = LlamaEngine(backend, modelResolver: resolver);
+
+      await expectLater(
+        engine.loadModelSource(
+          ModelSource.url(Uri.parse('https://example.com/model.litertlm')),
+          modelParams: ModelParams(
+            loras: [LoraAdapterConfig.source(hfAdapter)],
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('LiteRT-LM on the Web takes no LoRA adapter'),
+              contains('has 1'),
+            ),
+          ),
+        ),
+      );
+      expect(resolver.resolved, isNot(contains(hfAdapter.cacheKey)));
+      expect(backend.modelLoadCalls, 0);
     });
   });
 
@@ -1572,7 +1675,11 @@ class _MirrorResolver implements ModelResolver {
 
 class _RuntimeBackend extends _RecordingBackend
     implements BackendRuntimeIdentity, BackendGenerationCapabilitiesSupport {
-  _RuntimeBackend(this.runtime, {this.strategies = const {}});
+  _RuntimeBackend(
+    this.runtime, {
+    this.strategies = const {},
+    super.urlLoadingSupported,
+  });
 
   @override
   final LlamaRuntime runtime;
@@ -1614,6 +1721,36 @@ class _FormatRoutingBackend extends _RecordingBackend
   }) {
     runtime = format.runtime;
     return super.modelLoadFromUrl(url, params, onProgress: onProgress);
+  }
+}
+
+/// Routes like [_FormatRoutingBackend] and detects [detected] in every file
+/// it is asked about, as `LlamaBackend()` reads a native file header.
+class _DetectingBackend extends _FormatRoutingBackend
+    implements BackendModelFormatDetection {
+  _DetectingBackend(this.detected);
+
+  final ModelFormat detected;
+  final List<String> detectedPaths = <String>[];
+
+  @override
+  Future<ModelFormat?> detectModelFormat(String path) async {
+    detectedPaths.add(path);
+    return detected;
+  }
+}
+
+/// Resolves like the default resolver and records each source's cache key.
+class _CountingResolver implements ModelResolver {
+  final List<String> resolved = <String>[];
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) {
+    resolved.add(source.cacheKey);
+    return const DefaultModelResolver().resolve(source, request);
   }
 }
 

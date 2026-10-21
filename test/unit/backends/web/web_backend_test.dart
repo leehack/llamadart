@@ -18,12 +18,14 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
+import 'package:llamadart/src/core/models/model_resolver.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/core/models/inference/embedding.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
@@ -779,6 +781,54 @@ void main() {
       }
     });
 
+    test('engine rejects ModelParams.loras for a Web LiteRT-LM model '
+        'before it resolves any adapter, and resolves them for a GGUF '
+        'model', () async {
+      final webGpu = _FormatRecordingBackend('webgpu');
+      final liteRtLm = _FormatRecordingBackend('litert');
+      final resolver = _RecordingResolver();
+      final engine = LlamaEngine(
+        WebAutoBackend(
+          webGpuFactory: () => webGpu,
+          liteRtLmFactory: () => liteRtLm,
+        ),
+        modelResolver: resolver,
+      );
+      final adapter = ModelSource.url(
+        Uri.parse('https://example.com/adapter.gguf'),
+      );
+      final params = ModelParams(loras: [LoraAdapterConfig.source(adapter)]);
+
+      try {
+        for (final model in [
+          ModelSource.url(Uri.parse('https://example.com/model.litertlm')),
+          ModelSource.url(Uri.parse(url), format: ModelFormat.liteRtLm),
+        ]) {
+          await expectLater(
+            engine.loadModelSource(model, modelParams: params),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('LiteRT-LM on the Web takes no LoRA adapter'),
+              ),
+            ),
+          );
+        }
+        expect(resolver.resolved, isNot(contains(adapter.cacheKey)));
+        expect(liteRtLm.loadedUrls, isEmpty);
+
+        await engine.loadModelSource(
+          ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+          modelParams: params,
+        );
+        expect(resolver.resolved, contains(adapter.cacheKey));
+        expect(webGpu.loadedUrls, ['https://example.com/model.gguf']);
+      } finally {
+        await engine.dispose();
+      }
+    });
+
     test(
       'engine rejects a format a single-runtime backend cannot run',
       () async {
@@ -836,6 +886,20 @@ class _FormatRecordingBackend extends _RecordingBackend
 
   @override
   void cancelGeneration() {}
+}
+
+/// Resolves like the default resolver and records each source's cache key.
+class _RecordingResolver implements ModelResolver {
+  final resolved = <String>[];
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) {
+    resolved.add(source.cacheKey);
+    return const DefaultModelResolver().resolve(source, request);
+  }
 }
 
 class _NoStateBackend implements LlamaBackend {

@@ -34,6 +34,7 @@ class NativeAutoBackend
     implements
         BackendRuntimeIdentity,
         BackendModelFormatRouting,
+        BackendModelFormatDetection,
         LlamaBackend,
         BackendAvailability,
         BackendDirectMediaInput,
@@ -131,6 +132,10 @@ class NativeAutoBackend
     final delegate = await _delegateFor(format.runtime);
     return delegate.modelLoad(path, params);
   }
+
+  @override
+  Future<ModelFormat?> detectModelFormat(String path) =>
+      readModelFormatHeader(path);
 
   @override
   Future<int> modelLoadAs(

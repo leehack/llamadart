@@ -23,6 +23,7 @@ import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
@@ -681,6 +682,128 @@ void main() {
         throwsA(isA<LlamaModelFormatException>()),
       );
       expect(litert.loadedPaths, isEmpty);
+    });
+
+    test('an engine rejects ModelParams.loras that an extensionless '
+        'LiteRT-LM bundle cannot take before it downloads any, and still '
+        'downloads one adapter at scale 1.0', () async {
+      final path = await writeModel('download', 'LITERTLM');
+      final adapterFile = File('${tempDir.path}/adapter.bin');
+      await adapterFile.writeAsString('adapter');
+      final adapter = ModelSource.url(
+        Uri.parse('https://example.test/adapter.bin'),
+      );
+      final manager = _FakeModelDownloadManager(
+        ModelCacheEntry(
+          sourceCanonicalKey: adapter.metadataSourceKey,
+          cacheKey: adapter.cacheKey,
+          fileName: adapter.fileName,
+          filePath: adapterFile.path,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      );
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      for (final (loras, reason) in [
+        ([LoraAdapterConfig.source(adapter, scale: 0.5)], 'sets scale 0.5'),
+        (
+          [
+            LoraAdapterConfig.source(adapter),
+            LoraAdapterConfig.source(adapter),
+          ],
+          'has 2 adapters',
+        ),
+      ]) {
+        await expectLater(
+          engine.loadModel(path, modelParams: ModelParams(loras: loras)),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('LiteRT-LM takes one LoRA adapter at scale 1.0'),
+                contains(reason),
+              ),
+            ),
+          ),
+        );
+      }
+      expect(manager.ensureModelCalls, 0);
+      expect(litert.loadedPaths, isEmpty);
+
+      await engine.loadModel(
+        path,
+        modelParams: ModelParams(loras: [LoraAdapterConfig.source(adapter)]),
+      );
+      expect(manager.ensureModelCalls, 1);
+      expect(litert.loadedPaths, [path]);
+      expect(litert.loadedParams.single.loras.single.path, adapterFile.path);
+      await engine.dispose();
+    });
+
+    test('an engine downloads stacked adapters for an extensionless GGUF '
+        'file', () async {
+      final path = await writeModel('blob', 'GGUF');
+      final adapter = ModelSource.url(
+        Uri.parse('https://example.test/adapter.gguf'),
+      );
+      final manager = _FakeModelDownloadManager(
+        ModelCacheEntry(
+          sourceCanonicalKey: adapter.metadataSourceKey,
+          cacheKey: adapter.cacheKey,
+          fileName: adapter.fileName,
+          filePath: '${tempDir.path}/adapter.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      );
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await engine.loadModel(
+        path,
+        modelParams: ModelParams(
+          loras: [
+            LoraAdapterConfig.source(adapter, scale: 0.5),
+            LoraAdapterConfig.source(adapter),
+          ],
+        ),
+      );
+      expect(manager.ensureModelCalls, 2);
+      expect(llama.loadedPaths, [path]);
+      await engine.dispose();
+    });
+
+    test('an engine downloads stacked adapters for an extensionless file '
+        'with an unrecognized header', () async {
+      final path = await writeModel('unknown', 'fake');
+      final adapter = ModelSource.url(
+        Uri.parse('https://example.test/adapter.gguf'),
+      );
+      final manager = _FakeModelDownloadManager(
+        ModelCacheEntry(
+          sourceCanonicalKey: adapter.metadataSourceKey,
+          cacheKey: adapter.cacheKey,
+          fileName: adapter.fileName,
+          filePath: '${tempDir.path}/adapter.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      );
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await engine.loadModel(
+        path,
+        modelParams: ModelParams(
+          loras: [
+            LoraAdapterConfig.source(adapter, scale: 0.5),
+            LoraAdapterConfig.source(adapter),
+          ],
+        ),
+      );
+      expect(manager.ensureModelCalls, 2);
+      expect(llama.loadedPaths, [path]);
+      await engine.dispose();
     });
 
     test('rejects URL loads with an explicit format', () {
