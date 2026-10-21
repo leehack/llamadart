@@ -207,6 +207,14 @@ void main() {
     }
   });
 
+  test('engine create timeout is accepted on LiteRT CPU and GPU', () {
+    for (final name in ['chat-litert-cpu.json', 'qwen35-litert-gpu.json']) {
+      final profile = patched(name, {'engine_create_case_timeout_ms': 90000});
+      expect(_violations(profile, schema), isEmpty, reason: name);
+      expect(() => ValidationProfile.fromJson(profile), returnsNormally);
+    }
+  });
+
   final imageProfiles = [
     for (final file in Directory(
       'assets/image_profiles',
@@ -361,6 +369,12 @@ void main() {
       }),
       'non-boolean history controls': patched('chat-litert-cpu.json', {
         'history_controls': 'yes',
+      }),
+      'engine create timeout on LiteRT npu': patched('npu-tensor-g5.json', {
+        'engine_create_case_timeout_ms': 120000,
+      }),
+      'engine create timeout on GGUF cpu': patched('chat-gguf-cpu.json', {
+        'engine_create_case_timeout_ms': 120000,
       }),
     };
     for (final entry in schemaAndManifest.entries) {
