@@ -6,7 +6,6 @@ import 'dart:mirrors';
 
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:test/test.dart';

@@ -1,3 +1,7 @@
+## Unreleased
+
+- `package:llamadart/backend.dart` exports `BackendRuntimeIdentity`, `BackendModelFormatRouting`, `BackendChatScope`, `BackendDirectMediaInput` and `BackendDeferredEngineCreation`, the interfaces `LiteRtLmBackend` implements, so custom backends can report their runtime and load an explicit `ModelSource.format` ([#917](https://github.com/leehack/llamadart/issues/917)).
+
 ## 0.15.5
 
 - Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.

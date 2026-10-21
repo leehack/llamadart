@@ -21,12 +21,21 @@ Apps need only the first. Import `backend.dart` next to it to implement a
 custom backend or a test fake (`implements LlamaBackend, BackendTextToSpeech`),
 or to drive LiteRT-LM directly.
 
+A custom backend that runs one runtime reports it with
+`BackendRuntimeIdentity`, which `LlamaEngine.runtime` returns, and then loads
+only that runtime's `ModelSource.format`. To load any explicit format,
+implement `BackendModelFormatRouting`.
+
 Custom backends and test fakes declare URL-load progress as
 `void Function(double progress)? onProgress` in 0.14. Forward the callback's
 fractions without using its return value: it is a notification, not a load
-cancellation signal. Apply the same signature to format-routing loads and
-callback fields. See the
+cancellation signal. Apply the same signature to
+`BackendModelFormatRouting.modelLoadFromUrlAs` and callback fields. See the
 [migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md).
+
+The `LlamaEngineBackendHooks` members, such as `modelHandle`, are extension
+members: call them on an expression typed `LlamaEngine`. A call through
+`dynamic` throws `NoSuchMethodError`.
 
 ## High-Level API
 

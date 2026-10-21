@@ -386,6 +386,8 @@ void main() {
       );
       expect(result.samples, <double>[0.25, -0.25]);
       expect(delegate.lastText, 'Hello');
+      expect(delegate.capabilityHandles, (3, 4));
+      expect(delegate.synthesisHandles, (3, 4));
 
       backend.cancelTextToSpeech();
       expect(delegate.cancelCalls, 1);
@@ -1052,17 +1054,22 @@ class _TextToSpeechBackend extends _NoStateBackend
     implements BackendTextToSpeech {
   String? lastText;
   var cancelCalls = 0;
+  (int, int)? capabilityHandles;
+  (int, int)? synthesisHandles;
 
   @override
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
     int contextHandle,
     int mmContextHandle,
-  ) async => const BackendTextToSpeechCapabilities(
-    isSupported: true,
-    model: BackendTextToSpeechModel.qwen3Tts,
-    sampleRateHz: 24000,
-    channelCount: 1,
-  );
+  ) async {
+    capabilityHandles = (contextHandle, mmContextHandle);
+    return const BackendTextToSpeechCapabilities(
+      isSupported: true,
+      model: BackendTextToSpeechModel.qwen3Tts,
+      sampleRateHz: 24000,
+      channelCount: 1,
+    );
+  }
 
   @override
   Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
@@ -1072,6 +1079,7 @@ class _TextToSpeechBackend extends _NoStateBackend
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
     lastText = request.text;
+    synthesisHandles = (contextHandle, mmContextHandle);
     return BackendTextToSpeechResult(
       samples: Float32List.fromList(<double>[0.25, -0.25]),
       sampleRateHz: 24000,

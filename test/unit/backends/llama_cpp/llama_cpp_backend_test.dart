@@ -869,6 +869,20 @@ void main() {
         expect(result.samples, <double>[0.25, -0.25]);
         expect(result.sampleRateHz, 24000);
         expect(result.channelCount, 1);
+        final capabilityRequest = harness.received
+            .whereType<TextToSpeechCapabilitiesRequest>()
+            .single;
+        final synthesisRequest = harness.received
+            .whereType<TextToSpeechSynthesizeRequest>()
+            .single;
+        expect(
+          (capabilityRequest.contextHandle, capabilityRequest.mmContextHandle),
+          (22, 33),
+        );
+        expect(
+          (synthesisRequest.contextHandle, synthesisRequest.mmContextHandle),
+          (22, 33),
+        );
 
         harness.holdTextToSpeech = true;
         final pending = backend.synthesizeTextToSpeech(

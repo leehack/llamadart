@@ -639,6 +639,8 @@ void main() {
       final responsePort = ReceivePort();
       final responses = <Object>[];
       final resultCompleter = Completer<TextToSpeechResultResponse>();
+      final capabilitiesCompleter =
+          Completer<TextToSpeechCapabilitiesResponse>();
       final subscription = responsePort.listen((response) {
         if (response is Object) {
           responses.add(response);
@@ -647,9 +649,19 @@ void main() {
             !resultCompleter.isCompleted) {
           resultCompleter.complete(response);
         }
+        if (response is TextToSpeechCapabilitiesResponse &&
+            !capabilitiesCompleter.isCompleted) {
+          capabilitiesCompleter.complete(response);
+        }
       });
 
       try {
+        worker.sendPort.send(
+          TextToSpeechCapabilitiesRequest(2, 3, responsePort.sendPort),
+        );
+        await capabilitiesCompleter.future;
+        expect(service.capabilityHandles, (2, 3));
+
         worker.sendPort.send(
           TextToSpeechSynthesizeRequest(
             2,
@@ -660,6 +672,7 @@ void main() {
           ),
         );
         await service.synthesisStarted.future;
+        expect(service.synthesisHandles, (2, 3));
         expect(service.receivedCancelFlagAddress, 0x5a5a0);
         worker.sendPort.send(TextToSpeechCancelRequest());
         await service.cancelObserved.future;
@@ -1287,6 +1300,8 @@ class _BlockingTextToSpeechService extends LlamaCppService {
   final Completer<void> _releaseSynthesis = Completer<void>();
   int cancelCalls = 0;
   int? receivedCancelFlagAddress;
+  (int, int)? capabilityHandles;
+  (int, int)? synthesisHandles;
 
   void releaseSynthesis() {
     if (!_releaseSynthesis.isCompleted) {
@@ -1301,6 +1316,15 @@ class _BlockingTextToSpeechService extends LlamaCppService {
   void setLogLevel(LlamaLogLevel level) {}
 
   @override
+  BackendTextToSpeechCapabilities textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) {
+    capabilityHandles = (contextHandle, mmContextHandle);
+    return const BackendTextToSpeechCapabilities(isSupported: true);
+  }
+
+  @override
   Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
     int contextHandle,
     int mmContextHandle,
@@ -1308,6 +1332,7 @@ class _BlockingTextToSpeechService extends LlamaCppService {
     int cancelFlagAddress, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
+    synthesisHandles = (contextHandle, mmContextHandle);
     receivedCancelFlagAddress = cancelFlagAddress;
     if (!synthesisStarted.isCompleted) {
       synthesisStarted.complete();

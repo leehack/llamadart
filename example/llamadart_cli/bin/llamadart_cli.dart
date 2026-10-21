@@ -1,11 +1,9 @@
 import 'dart:io';
 
-import 'package:llamadart/llama_cpp_bindings.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_cli_example/llamadart_cli.dart';
 
 Future<void> main(List<String> arguments) async {
-  _configureNativeLogLevel();
   await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
 
   final parser = LlamaCliArgParser();
@@ -56,11 +54,3 @@ const String _examplesText =
     '  dart run bin/llamadart_cli.dart \\\n'
     '    --model ./models/GLM-4.7-Flash-UD-Q4_K_XL.gguf \\\n'
     '    --ctx-size 16384 --fit on --jinja';
-
-void _configureNativeLogLevel() {
-  try {
-    llama_dart_set_log_level(LlamaLogLevel.warn.index);
-  } catch (_) {
-    // Ignore when native bindings are not initialized yet.
-  }
-}

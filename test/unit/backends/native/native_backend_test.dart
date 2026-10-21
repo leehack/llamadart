@@ -1191,6 +1191,29 @@ void main() {
     }
   });
 
+  test('forwards text-to-speech handles to the loaded runtime', () async {
+    final llama = _TextToSpeechFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      await backend.modelLoad('/models/qwen3-tts.gguf', const ModelParams());
+      await backend.textToSpeechCapabilities(2, 3);
+      await backend.synthesizeTextToSpeech(
+        2,
+        3,
+        const BackendTextToSpeechRequest(text: 'Hello.'),
+      );
+
+      expect(llama.capabilityHandles, (2, 3));
+      expect(llama.synthesisHandles, (2, 3));
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects decision calls before a model load', () async {
     final llama = _DecisionFakeBackend(handle: 11);
     final backend = NativeAutoBackend(
@@ -2227,6 +2250,43 @@ class _DirectMediaFakeBackend extends _FakeBackend
   @override
   Future<({bool vision, bool audio})> directMediaInput() async =>
       (vision: true, audio: true);
+}
+
+class _TextToSpeechFakeBackend extends _FakeBackend
+    implements BackendTextToSpeech {
+  _TextToSpeechFakeBackend({required super.handle});
+
+  (int, int)? capabilityHandles;
+  (int, int)? synthesisHandles;
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    capabilityHandles = (contextHandle, mmContextHandle);
+    return const BackendTextToSpeechCapabilities(isSupported: true);
+  }
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    synthesisHandles = (contextHandle, mmContextHandle);
+    return BackendTextToSpeechResult(
+      samples: Float32List(0),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 0,
+      truncated: false,
+    );
+  }
+
+  @override
+  void cancelTextToSpeech() {}
 }
 
 class _DecisionFakeBackend extends _FakeBackend implements BackendDecision {
