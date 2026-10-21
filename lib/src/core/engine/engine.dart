@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:path/path.dart' as p;
+
 import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
@@ -3034,17 +3036,37 @@ class LlamaEngine {
     }
     if (unloaded()) throw _loraModelChanged();
     _ensureReady();
-    final previous = _loraLocations[source.canonicalKey];
+    final previous = _loraLocations[_loraKey(source)];
+    // Another spelling of the applied file only changes its scale; backends
+    // key adapters by their own spelling and would apply or drop it twice.
+    final sameFile =
+        previous != null &&
+        _normalizeLoraPath(previous) == _normalizeLoraPath(location);
+    final target = sameFile ? previous : location;
     try {
-      await backend.setLoraAdapter(_contextHandle!, location, scale);
-      _loraLocations[source.canonicalKey] = location;
-      if (previous != null && previous != location) {
+      await backend.setLoraAdapter(_contextHandle!, target, scale);
+      _loraLocations[_loraKey(source)] = target;
+      if (previous != null && previous != target) {
         await backend.removeLoraAdapter(_contextHandle!, previous);
       }
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
   }
+
+  static final RegExp _windowsPath = RegExp(r'^([A-Za-z]:[\\/]|\\\\)');
+
+  // Aliases of one file (`/a/./b`, `/a//b`, `/c/../a/b`) must share a key.
+  static String _loraKey(ModelSource source) {
+    final path = source.path;
+    if (source.kind != ModelSourceKind.path || path == null) {
+      return source.canonicalKey;
+    }
+    return 'path:${_normalizeLoraPath(path)}';
+  }
+
+  static String _normalizeLoraPath(String path) =>
+      (_windowsPath.hasMatch(path) ? p.windows : p.posix).normalize(path);
 
   static LlamaStateException _loraModelChanged() => LlamaStateException(
     'The model was unloaded while its LoRA adapter loaded, so the adapter '
@@ -3070,7 +3092,7 @@ class LlamaEngine {
   /// applied.
   Future<void> removeLoraSource(ModelSource source) async {
     _ensureReady();
-    final applied = _loraLocations[source.canonicalKey];
+    final applied = _loraLocations[_loraKey(source)];
     final location = applied ?? source.path;
     if (location == null) return;
     try {
@@ -3081,15 +3103,16 @@ class LlamaEngine {
       if (applied == null) return;
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
-    _loraLocations.remove(source.canonicalKey);
+    _loraLocations.remove(_loraKey(source));
   }
 
   /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
   /// resolved as [setLoraSource] resolves it, with the adapter's own
   /// [LoraAdapterConfig.download], or else only the non-secret parts of the
   /// model load's [options]. Records where each adapter resolved in
-  /// [locations], a path configuration under its [ModelSource.path], which
-  /// the caller keeps once the model loads.
+  /// [locations], keyed by [_loraKey] of its source (a path configuration
+  /// under its [ModelSource.path]), which the caller keeps once the model
+  /// loads.
   ///
   /// Throws [LlamaUnsupportedException] before any adapter resolves when the
   /// backend can load the [model] file or URL, declared as [format], only
@@ -3107,7 +3130,7 @@ class LlamaEngine {
       final source = lora.source;
       if (source == null) {
         if (lora.path.isNotEmpty) {
-          locations[ModelSource.path(lora.path).canonicalKey] = lora.path;
+          locations[_loraKey(ModelSource.path(lora.path))] = lora.path;
         }
         resolved.add(lora);
         continue;
@@ -3117,7 +3140,7 @@ class LlamaEngine {
         options: _loraDownloadOptions(source, lora.download, options),
         assetType: 'LoRA adapter',
       );
-      locations[source.canonicalKey] = location;
+      locations[_loraKey(source)] = location;
       resolved.add(resolvedLoraAdapterConfig(location, lora.scale));
     }
     if (params.loras.every((lora) => lora.source == null)) return params;

@@ -7,47 +7,25 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'support/bounded_process.dart';
+
 const _script = 'tool/testing/playwright_chat_app_real_model_smoke.py';
 const _playwrightReached = 'fake playwright reached';
 
-// Well above the slowest first `node` start seen on GitHub's Windows runners,
-// where the first launch in a job has taken 2-17 s in passing runs.
+// Well above any run here: `python` stays under 4 s even on GitHub's Windows
+// runners.
 const _processTimeout = Duration(seconds: 60);
 
-/// Runs [executable] like [Process.run], but kills it after [_processTimeout].
-///
-/// A test timeout does not stop a [Process.run] child: it keeps running into
-/// the next test after `tearDown` has deleted its files, and competes with that
-/// test's own processes.
 Future<ProcessResult> _runProcess(
   String executable,
   List<String> arguments, {
   Map<String, String>? environment,
-}) async {
-  final process = await Process.start(
-    executable,
-    arguments,
-    environment: environment,
-  );
-  final stdout = process.stdout.transform(systemEncoding.decoder).join();
-  final stderr = process.stderr.transform(systemEncoding.decoder).join();
-  final exitCode = await process.exitCode.timeout(
-    _processTimeout,
-    onTimeout: () async {
-      process.kill();
-      // A grandchild that inherited the pipes can hold stderr open.
-      final partialStderr = await stderr.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => '<still open>',
-      );
-      fail(
-        '`$executable ${arguments.first}` did not exit within '
-        '${_processTimeout.inSeconds} s.\nstderr:\n$partialStderr',
-      );
-    },
-  );
-  return ProcessResult(process.pid, exitCode, await stdout, await stderr);
-}
+}) => runBoundedProcess(
+  executable,
+  arguments,
+  timeout: _processTimeout,
+  environment: environment,
+);
 
 // Stands in for a browser: the page answers from a scenario and records the
 // scripts the helper hands it.
@@ -200,6 +178,10 @@ URL.createObjectURL = (blob) => {
 };
 window.__llamadartLiteRtLmModuleUrl = runtimeUrl;
 (0, eval)(success.initScript);
+// The init script polls for a WebGPU bridge that never loads here. Left
+// running, its interval turns any stalled await below into a hang instead of
+// node's unsettled top-level await error.
+clearInterval(window.__llamadartRealBridgePatchTimer);
 
 const wrapperPath = join(workDir, 'wrapped_litert_lm.mjs');
 writeFileSync(wrapperPath, await wrapperSource);
@@ -445,6 +427,11 @@ void main() {
         expect(initScript.contains('.create ='), isFalse);
       });
 
+      // The page scripts target a browser, so node on Linux and macOS covers
+      // them. The first `node` start of a GitHub Windows job takes 3-42 s
+      // (later ones under 1 s) and has stalled past two minutes.
+      const nodeTestOn = '!windows';
+
       Future<Map<String, dynamic>> runPageScripts() async {
         await runFailedLoad();
         await runLoadedChat();
@@ -464,39 +451,50 @@ void main() {
 
       // Issue 970: a second wrapper assigned through the module's Proxy made
       // Engine.create call itself until the stack overflowed.
-      test('wrapped Engine.create reaches the runtime once per call', () async {
-        final report = await runPageScripts();
+      test(
+        'wrapped Engine.create reaches the runtime once per call',
+        testOn: nodeTestOn,
+        () async {
+          final report = await runPageScripts();
 
-        expect(report['createError'], isNull);
-        expect(report['runtimeCreateReplaced'], isFalse);
-        expect(report['runtimeCreateCalls'], 2);
-        expect(report['settingsModel'], 'ok');
-        expect(report['prompt'], '2+2?');
-        expect(report['response'], '4');
-        expect(
-          (report['resultGlobals']
-              as Map<String, dynamic>)['liteRtLmOriginalModuleUrl'],
-          report['runtimeUrl'],
-        );
-      });
+          expect(report['createError'], isNull);
+          expect(report['runtimeCreateReplaced'], isFalse);
+          expect(report['runtimeCreateCalls'], 2);
+          expect(report['settingsModel'], 'ok');
+          expect(report['prompt'], '2+2?');
+          expect(report['response'], '4');
+          expect(
+            (report['resultGlobals']
+                as Map<String, dynamic>)['liteRtLmOriginalModuleUrl'],
+            report['runtimeUrl'],
+          );
+        },
+      );
 
-      test('a rejected Engine.create leaves its stack for the load-failure '
-          'report', () async {
-        final report = await runPageScripts();
+      test(
+        'a rejected Engine.create leaves its stack for the load-failure '
+        'report',
+        testOn: nodeTestOn,
+        () async {
+          final report = await runPageScripts();
 
-        expect(report['brokenCreateError'], 'Error: fake engine create failed');
-        final state =
-            (report['loadFailureStates'] as List<dynamic>).single
-                as Map<String, dynamic>;
-        expect(state['liteRtLmError'], 'Error: fake engine create failed');
-        expect(
-          state['liteRtLmCreateErrorStack'],
-          allOf(
-            startsWith('Error: fake engine create failed\n'),
-            contains('fake_litert_lm.mjs'),
-          ),
-        );
-      });
+          expect(
+            report['brokenCreateError'],
+            'Error: fake engine create failed',
+          );
+          final state =
+              (report['loadFailureStates'] as List<dynamic>).single
+                  as Map<String, dynamic>;
+          expect(state['liteRtLmError'], 'Error: fake engine create failed');
+          expect(
+            state['liteRtLmCreateErrorStack'],
+            allOf(
+              startsWith('Error: fake engine create failed\n'),
+              contains('fake_litert_lm.mjs'),
+            ),
+          );
+        },
+      );
     },
   );
 }

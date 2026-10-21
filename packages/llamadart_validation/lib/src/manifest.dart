@@ -148,9 +148,9 @@ class ValidationProfile {
             reloadTimeout < 60000 ||
             reloadTimeout > 180000 ||
             runtime != 'litert' ||
-            backend != 'gpu')) {
+            (backend != 'gpu' && backend != 'cpu'))) {
       throw const FormatException(
-        'engine_create_case_timeout_ms requires a LiteRT GPU profile and an '
+        'engine_create_case_timeout_ms requires a LiteRT CPU or GPU profile and an '
         'integer from 60000 to 180000',
       );
     }
