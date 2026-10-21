@@ -620,7 +620,10 @@ void _validateNumericBounds(Map<String, dynamic> schema, String path) {
   for (final key in keys) {
     if (!schema.containsKey(key)) continue;
     final value = schema[key];
-    if (value is! num || value.abs() > 9007199254740991) {
+    // abs() of the VM's minimum int overflows to itself.
+    if (value is! num ||
+        value < -9007199254740991 ||
+        value > 9007199254740991) {
       _unsupported(
         '$path.$key',
         'must be a number within the exact VM/Web integer range',
