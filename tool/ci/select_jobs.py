@@ -34,6 +34,12 @@ VALIDATION_IMPORTED_CHAT_APP_FILES = (
     'example/chat_app/integration_test/support/image_evidence.dart',
     'example/chat_app/integration_test/support/image_settings_evidence.dart',
 )
+# The validation package's `flutter.assets`, which the chat app bundles.
+VALIDATION_BUNDLED_ASSETS = (
+    'packages/llamadart_validation/assets/profiles/',
+    'packages/llamadart_validation/assets/decision/',
+    'packages/llamadart_validation/assets/embeddings/v1/',
+)
 
 def inventory(raw):
     """Return both endpoints of renames/copies and deleted paths; reject truncation."""
@@ -92,9 +98,13 @@ def select(paths, force_full=False):
             apps.update(APPS)
         elif path.startswith('packages/llamadart_validation/'):
             jobs.update(('analyze', 'validation-harness', 'validation-integration'))
-            if not path.startswith(('packages/llamadart_validation/test/',
-                                    'packages/llamadart_validation/assets/',
-                                    'packages/llamadart_validation/schemas/')):
+            compiled = not path.startswith(('packages/llamadart_validation/test/',
+                                            'packages/llamadart_validation/assets/',
+                                            'packages/llamadart_validation/schemas/'))
+            if compiled or path.startswith(VALIDATION_BUNDLED_ASSETS):
+                # The chat app depends on this package, so it is a deployed input.
+                jobs.add('web-chat-contract')
+            if compiled:
                 desktops.update(DESKTOPS)
                 apps.update(APPS)
         elif path.startswith(('tool/testing/validation/', 'tool/testing/validation.dart')):

@@ -26,12 +26,24 @@ Future<Map<String, dynamic>> selected(List<String> paths) async {
   return jsonDecode(result.stdout as String) as Map<String, dynamic>;
 }
 
-/// The upload directly follows the superseded-build check, and nothing after
-/// that check runs unless it allowed the deploy.
-void expectGuardedUpload(List<dynamic> steps, String demo) {
+/// The job checks out its own revision without credentials, the guard compares
+/// that revision with `main`, the upload directly follows the guard, and nothing
+/// after the guard runs unless it allowed the deploy.
+void expectGuardedUpload(Map<String, dynamic> job, String demo) {
+  final steps = job['steps'] as List;
+  final checkout = steps.singleWhere(
+    (step) => '${step['uses']}'.contains('checkout@'),
+  );
+  expect(checkout['with'], {
+    'ref': r'${{ github.sha }}',
+    'persist-credentials': false,
+  });
   final guard = steps.indexWhere((step) => step['id'] == 'current');
   expect(guard, greaterThanOrEqualTo(0));
   expect(steps[guard]['run'], 'python3 tool/ci/deploy_guard.py $demo');
+  final guardEnv = {...?job['env'] as Map?, ...?steps[guard]['env'] as Map?};
+  expect(guardEnv['DEPLOY_SHA'], r'${{ github.sha }}');
+  expect(guardEnv['GH_TOKEN'], r'${{ github.token }}');
   expect((steps[guard] as Map).containsKey('if'), isFalse);
   expect(jsonEncode(steps[guard]), isNot(contains('secrets.')));
   final upload = steps.indexWhere(
@@ -98,7 +110,7 @@ void main() {
       );
       final text = jsonEncode(callee);
       expect(text, contains('web_deployment.py verify'));
-      expectGuardedUpload(callee['steps'] as List, 'chat-app');
+      expectGuardedUpload(callee as Map<String, dynamic>, 'chat-app');
       expect(text, isNot(contains('build_chat_app_web.sh')));
       expect(text, isNot(contains('flutter-action')));
     },
@@ -127,7 +139,7 @@ void main() {
         jsonDecode(guardInputs.stdout as String),
       );
       expect(workflow['permissions'], {'contents': 'read'});
-      final deploy = workflow['jobs']['deploy'] as Map;
+      final deploy = workflow['jobs']['deploy'] as Map<String, dynamic>;
       expect(
         deploy['if'],
         "github.ref == 'refs/heads/main' && "
@@ -135,7 +147,7 @@ void main() {
       );
       expect(deploy.containsKey('continue-on-error'), isFalse);
       final steps = deploy['steps'] as List;
-      expectGuardedUpload(steps, 'laya-tetris');
+      expectGuardedUpload(deploy, 'laya-tetris');
       final tests = steps.indexWhere(
         (step) => '${step['run']}'.contains('flutter test'),
       );
@@ -152,13 +164,6 @@ void main() {
         secretReferences(workflow),
         secretReferences(steps[secretSteps.single]),
       );
-      final checkout = steps.singleWhere(
-        (step) => '${step['uses']}'.contains('checkout@'),
-      );
-      expect(checkout['with'], {
-        'ref': r'${{ github.sha }}',
-        'persist-credentials': false,
-      });
       expect('${steps[secretSteps.single]['run']}', contains('private=False'));
     },
   );
@@ -439,7 +444,7 @@ void main() {
         isTrue,
       );
       final mixed = await selected([
-        'packages/llamadart_validation/lib/src/runner.dart',
+        'packages/llamadart_validation/test/validation_test.dart',
         'test/unit/tooling/validation_remote_test.dart',
       ]);
       expect(mixed['jobs']['validation-integration'], isTrue);

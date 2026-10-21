@@ -130,6 +130,29 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
 
+    def test_validation_files_the_chat_app_builds_from_select_web_chat(self):
+        for path in ('lib/src/runner.dart', 'pubspec.yaml', 'assets/profiles/chat-gguf-cpu.json',
+                     'assets/decision/laya_0_3_5_reference.json',
+                     'assets/embeddings/v1/reference.json'):
+            with self.subTest(path=path):
+                self.assertTrue(ci.select(['packages/llamadart_validation/' + path])
+                                ['jobs']['web-chat-contract'])
+        for path in ('test/validation_test.dart', 'schemas/profile.schema.json',
+                     'assets/capability_coverage.json', 'assets/speech/tone.wav'):
+            with self.subTest(path=path):
+                self.assertFalse(ci.select(['packages/llamadart_validation/' + path])
+                                 ['jobs']['web-chat-contract'])
+
+    def test_bundled_validation_assets_match_the_package_flutter_assets(self):
+        lines = (ROOT / 'packages/llamadart_validation/pubspec.yaml').read_text().splitlines()
+        start = lines.index('  assets:', lines.index('flutter:'))
+        declared = []
+        for line in lines[start + 1:]:
+            if not line.startswith('    - '):
+                break
+            declared.append('packages/llamadart_validation/' + line[len('    - '):])
+        self.assertEqual(sorted(declared), sorted(ci.VALIDATION_BUNDLED_ASSETS))
+
     def test_validation_implementation_and_deps_build_consumers(self):
         for path in ('lib/src/runner.dart', 'bin/run.dart', 'pubspec.yaml'):
             plan = ci.select(['packages/llamadart_validation/' + path])
@@ -138,7 +161,7 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(plan['desktops'], list(ci.DESKTOPS))
 
     def test_mixed_changes_keep_flutter_consumer_when_only_root_tests_are_substituted(self):
-        validation = 'packages/llamadart_validation/lib/src/runner.dart'
+        validation = 'packages/llamadart_validation/test/validation_test.dart'
         mixed = ci.select([validation, 'test/unit/tooling/validation_remote_test.dart'])
         self.assertTrue(mixed['jobs']['test-linux-coverage'])
         self.assertFalse(mixed['jobs']['web-chat-contract'])
