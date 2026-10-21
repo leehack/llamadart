@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.66`.
+Default pinned tag in the example is `v0.1.67`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.66 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.67 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,17 +81,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.66';
+  window.__llamadartBridgeAssetsTag = 'v0.1.67';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-1`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.66` differs from the native runtime tag
-`v0.7.0-1`. Provenance for this immutable consumer artifact: release `416599814`,
-tag commit `9270b4862d24e9b7155396023ce29a4be065e86b`, bridge source
-`de2c3727c4b8ae9dad9b887bd89f1cb43793f008`, and manifest SHA-256
-`6a82e16cd850c79ebb8d5f5613dccc9adc42030bf5788bc3cffcda21f19f2f1d`. The bridge
+even though the bridge asset tag `v0.1.67` differs from the native runtime tag
+`v0.7.0-1`. Provenance for this immutable consumer artifact: release `419092691`,
+tag commit `2657686bd3956c09ab60fe89ca7d6d660045b5e3`, bridge source
+`8992121b4b533a4444ad6de93d855ea3c99644c6`, and manifest SHA-256
+`d596304c609034afc37280bf86b8231a941bf3a7f3a3e584acd084f646a472ba`. The bridge
 assets were qualified against native `v0.7.0-1`, matching the current native pin.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
@@ -133,6 +133,9 @@ physical playback, intelligibility or speaker-reference fidelity.
   adapters and speculative decoding, which llamadart gates on the bridge's
   capability probes rather than on this tag, and the bridge's
   `supportsCompletionUsage` flag for per-request usage.
+- `v0.1.67+`: a state file the core cannot open rejects instead of aborting
+  the runtime; media URLs resolve against `document.baseURI` before reaching
+  the worker; teardown awaits the WebGPU model free and shutdown.
 
 ### Media embeddings
 
@@ -353,6 +356,8 @@ tag:
 
 `test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks these
 gates against real assets and models; its header lists the setup.
+`test/e2e/webgpu/bridge_runtime_fixes_e2e_test.dart` (local-only) checks the
+`v0.1.67+` state-file, relative-URL and reload behavior in both runtimes.
 
 ## Notes
 
