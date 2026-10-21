@@ -33,6 +33,7 @@ import '../../hook/native_release_pins.dart';
 import '../../platform/io/ios_simulator.dart';
 import 'decision_head.dart';
 import 'exit_teardown_api.dart';
+import 'ggml_graph_api.dart';
 import 'lazy_grammar_triggers.dart';
 import 'load_device_selection.dart';
 import 'load_param_helpers.dart';
@@ -656,11 +657,11 @@ class LlamaCppService {
   /// its backend and context policy, the iOS simulator check behind its
   /// backend policy, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
-  /// free and run models and contexts, the calls that allocate and free
-  /// token batches and prepared embedding resources, the read of the Vulkan
-  /// device facts, the registered ggml devices a load selects from, and the
-  /// allocator of the model paths [loadModel] and draft model loads pass to
-  /// llama.cpp.
+  /// free and run models and contexts, the ggml calls of decision heads, the
+  /// calls that allocate and free token batches and prepared embedding
+  /// resources, the read of the Vulkan device facts, the registered ggml
+  /// devices a load selects from, and the allocator of the model paths
+  /// [loadModel] and draft model loads pass to llama.cpp.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -671,6 +672,7 @@ class LlamaCppService {
         findMissingWindowsLibraries,
     List<int> Function(GpuBackend backend)? deviceTypes,
     LlamaCppObjectCalls? objectCalls,
+    GgmlGraphApi? decisionHeadGraphApi,
     llama_batch Function(int tokens, int embd, int sequences)? batchInit,
     void Function(llama_batch batch)? batchFree,
     void Function(Pointer<mtmd_input_chunks>)? embeddingChunksFree,
@@ -687,6 +689,7 @@ class LlamaCppService {
        _missingWindowsLibraries = missingWindowsLibraries,
        _deviceTypesOverride = deviceTypes,
        _objectCallsOverride = objectCalls,
+       _decisionHeadGraphApi = decisionHeadGraphApi,
        _batchInit = batchInit ?? llama_batch_init,
        _batchFree = batchFree ?? llama_batch_free,
        _embeddingChunksFree = embeddingChunksFree,
@@ -704,6 +707,7 @@ class LlamaCppService {
   final List<String> Function(List<String> names) _missingWindowsLibraries;
   final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   final LlamaCppObjectCalls? _objectCallsOverride;
+  final GgmlGraphApi? _decisionHeadGraphApi;
   final llama_batch Function(int tokens, int embd, int sequences) _batchInit;
   final void Function(llama_batch batch) _batchFree;
   final void Function(Pointer<mtmd_input_chunks>)? _embeddingChunksFree;
@@ -9457,6 +9461,7 @@ class LlamaCppService {
           device: device,
           cpuThreads: llama_n_threads_batch(context),
           opOffload: device != null && ctxParams.op_offload,
+          api: _decisionHeadGraphApi,
           exitTeardown: _calls.exit,
           failures: _calls.failures,
         );

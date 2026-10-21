@@ -295,30 +295,62 @@ void main() {
       );
     });
 
-    test('every tool/ci script is high-risk and has a CODEOWNERS entry', () {
-      final owned = File('.github/CODEOWNERS')
-          .readAsLinesSync()
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty && !line.startsWith('#'))
-          .map((line) => line.split(RegExp(r'\s+')).first)
-          .map(
-            (pattern) =>
-                pattern.startsWith('/') ? pattern.substring(1) : pattern,
-          )
-          .toSet();
-      // Tracked files only: Python tests leave untracked bytecode caches here.
-      final listing = Process.runSync('git', ['ls-files', '-z', 'tool/ci']);
-      expect(listing.exitCode, 0, reason: '${listing.stderr}');
-      final scripts = (listing.stdout as String)
-          .split('\u0000')
-          .where((path) => path.isNotEmpty)
-          .toList();
-
-      expect(scripts, isNotEmpty);
-      for (final path in scripts) {
-        expect(assessHighRiskFiles([path]).isHighRisk, isTrue, reason: path);
-        expect(owned, contains(path), reason: '$path needs a CODEOWNERS entry');
+    test('keeps sibling paths of tool/ci and test/ci scripts standard', () {
+      for (final path in [
+        'tool/ci_foo.py',
+        'tool/cifoo/x.py',
+        'tool/ci',
+        'test/ci/test_unlisted.py',
+      ]) {
+        expect(assessHighRiskFiles([path]).isHighRisk, isFalse, reason: path);
       }
+    });
+
+    final toolCiListing = _gitListing('tool/ci');
+    test('every tool/ci script is high-risk and has a CODEOWNERS entry', () {
+      expect(toolCiListing.failure, isNull);
+      final lines = File('.github/CODEOWNERS').readAsLinesSync();
+
+      expect(toolCiListing.scripts, isNotEmpty);
+      for (final path in toolCiListing.scripts) {
+        expect(assessHighRiskFiles([path]).isHighRisk, isTrue, reason: path);
+        expect(
+          isCodeownersOwned(lines, path),
+          isTrue,
+          reason: '$path needs a CODEOWNERS entry',
+        );
+      }
+    }, skip: toolCiListing.skipReason);
+
+    test('a git failure inside a work tree fails instead of skipping', () {
+      final listing = _gitListing(
+        'tool/ci',
+        environment: {'GIT_INDEX_FILE': Directory.systemTemp.path},
+      );
+
+      expect(listing.skipReason, isNull);
+      expect(listing.failure, isNotNull);
+    });
+
+    test('a directory outside any work tree skips the ownership check', () {
+      final outside = Directory.systemTemp.createTempSync('no_git_');
+      addTearDown(() => outside.deleteSync(recursive: true));
+
+      final listing = _gitListing('tool/ci', workingDirectory: outside.path);
+
+      expect(listing.skipReason, contains('not inside a git checkout'));
+      expect(listing.failure, isNull);
+    });
+
+    test('CODEOWNERS matching honors directories, comments and last match', () {
+      const path = 'tool/ci/select_jobs.py';
+      expect(isCodeownersOwned(['/tool/ci/select_jobs.py @a'], path), isTrue);
+      expect(isCodeownersOwned(['/tool/ci/ @a'], path), isTrue);
+      expect(isCodeownersOwned(['/tool/ci @a'], path), isFalse);
+      expect(isCodeownersOwned(['/tool/ci_x/ @a'], path), isFalse);
+      expect(isCodeownersOwned(['#/tool/ci/ @a', '  '], path), isFalse);
+      expect(isCodeownersOwned(['/tool/ci/ @a', path], path), isFalse);
+      expect(isCodeownersOwned([path, '/tool/ci/ @a'], path), isTrue);
     });
 
     test('keeps ordinary docs-only changes standard risk', () {
@@ -392,4 +424,75 @@ void main() {
       expect(result.standardError, isNot(contains('Unhandled exception')));
     });
   });
+}
+
+/// Whether the last matching CODEOWNERS line assigns [path] an owner.
+bool isCodeownersOwned(List<String> lines, String path) {
+  bool? owned;
+  for (final raw in lines) {
+    final line = raw.trim();
+    if (line.isEmpty || line.startsWith('#')) continue;
+    final parts = line.split(RegExp(r'\s+'));
+    final pattern = parts.first.startsWith('/')
+        ? parts.first.substring(1)
+        : parts.first;
+    if (pattern == path ||
+        (pattern.endsWith('/') && path.startsWith(pattern))) {
+      owned = parts.length > 1;
+    }
+  }
+  return owned ?? false;
+}
+
+typedef GitListing = ({
+  List<String> scripts,
+  String? skipReason,
+  String? failure,
+});
+
+// Skip only when git is missing or the directory is not a work tree; a git
+// error inside a work tree must fail the caller.
+GitListing _gitListing(
+  String directory, {
+  Map<String, String>? environment,
+  String? workingDirectory,
+}) {
+  GitListing skipped(String reason) =>
+      (scripts: const [], skipReason: reason, failure: null);
+  final ProcessResult inside;
+  try {
+    inside = Process.runSync(
+      'git',
+      ['rev-parse', '--is-inside-work-tree'],
+      environment: environment,
+      workingDirectory: workingDirectory,
+    );
+  } on ProcessException catch (error) {
+    return skipped('git is unavailable: $error');
+  }
+  if (inside.exitCode != 0 || (inside.stdout as String).trim() != 'true') {
+    return skipped('not inside a git checkout');
+  }
+  // Tracked files only: Python tests leave untracked bytecode caches here.
+  final result = Process.runSync(
+    'git',
+    ['ls-files', '-z', directory],
+    environment: environment,
+    workingDirectory: workingDirectory,
+  );
+  if (result.exitCode != 0) {
+    return (
+      scripts: const [],
+      skipReason: null,
+      failure: 'git ls-files exited ${result.exitCode}: ${result.stderr}',
+    );
+  }
+  return (
+    scripts: (result.stdout as String)
+        .split('\u0000')
+        .where((path) => path.isNotEmpty)
+        .toList(),
+    skipReason: null,
+    failure: null,
+  );
 }
