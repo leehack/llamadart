@@ -295,8 +295,20 @@ void main() {
       );
     });
 
+    test('keeps sibling paths of tool/ci and test/ci scripts standard', () {
+      for (final path in [
+        'tool/ci_foo.py',
+        'tool/cifoo/x.py',
+        'tool/ci',
+        'test/ci/test_unlisted.py',
+      ]) {
+        expect(assessHighRiskFiles([path]).isHighRisk, isFalse, reason: path);
+      }
+    });
+
+    final toolCiListing = _gitListing('tool/ci');
     test('every tool/ci script is high-risk and has a CODEOWNERS entry', () {
-      final owned = File('.github/CODEOWNERS')
+      final patterns = File('.github/CODEOWNERS')
           .readAsLinesSync()
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty && !line.startsWith('#'))
@@ -306,20 +318,18 @@ void main() {
                 pattern.startsWith('/') ? pattern.substring(1) : pattern,
           )
           .toSet();
-      // Tracked files only: Python tests leave untracked bytecode caches here.
-      final listing = Process.runSync('git', ['ls-files', '-z', 'tool/ci']);
-      expect(listing.exitCode, 0, reason: '${listing.stderr}');
-      final scripts = (listing.stdout as String)
-          .split('\u0000')
-          .where((path) => path.isNotEmpty)
-          .toList();
+      bool isOwned(String path) => patterns.any(
+        (pattern) =>
+            pattern == path ||
+            (pattern.endsWith('/') && path.startsWith(pattern)),
+      );
 
-      expect(scripts, isNotEmpty);
-      for (final path in scripts) {
+      expect(toolCiListing.scripts, isNotEmpty);
+      for (final path in toolCiListing.scripts) {
         expect(assessHighRiskFiles([path]).isHighRisk, isTrue, reason: path);
-        expect(owned, contains(path), reason: '$path needs a CODEOWNERS entry');
+        expect(isOwned(path), isTrue, reason: '$path needs a CODEOWNERS entry');
       }
-    });
+    }, skip: toolCiListing.skipReason);
 
     test('keeps ordinary docs-only changes standard risk', () {
       final assessment = assessHighRiskFiles([
@@ -392,4 +402,27 @@ void main() {
       expect(result.standardError, isNot(contains('Unhandled exception')));
     });
   });
+}
+
+({List<String> scripts, String? skipReason}) _gitListing(String directory) {
+  // Tracked files only: Python tests leave untracked bytecode caches here.
+  final ProcessResult result;
+  try {
+    result = Process.runSync('git', ['ls-files', '-z', directory]);
+  } on ProcessException catch (error) {
+    return (scripts: const [], skipReason: 'git is unavailable: $error');
+  }
+  if (result.exitCode != 0) {
+    return (
+      scripts: const [],
+      skipReason: 'not inside a git checkout: ${result.stderr}'.trim(),
+    );
+  }
+  return (
+    scripts: (result.stdout as String)
+        .split('\u0000')
+        .where((path) => path.isNotEmpty)
+        .toList(),
+    skipReason: null,
+  );
 }
