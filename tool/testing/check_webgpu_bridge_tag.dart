@@ -639,9 +639,10 @@ String? _readGateFile(File file, String path, List<String> problems) {
 /// Maximum accepted response size for the small release manifest.
 const int maxBridgeManifestBytes = 64 * 1024;
 
-/// The transport result consumed by [verifyManifest].
+/// The transport result consumed by [verifyManifest] and
+/// [verifyPublishedRelease].
 class ManifestResponse {
-  /// HTTP status returned by the manifest endpoint.
+  /// HTTP status returned by the endpoint.
   final int statusCode;
 
   /// Response bytes, empty for a non-success status.
@@ -665,16 +666,21 @@ const Map<String, String> _manifestProvenanceAliases = <String, String>{
 Future<ManifestResponse> _fetchManifest(
   HttpClient client,
   Uri url,
-  int maximumBytes,
-) async {
+  int maximumBytes, {
+  String what = 'manifest',
+  Map<String, String> headers = const <String, String>{},
+  bool followRedirects = true,
+}) async {
   final request = await client.getUrl(url);
+  request.followRedirects = followRedirects;
+  headers.forEach(request.headers.set);
   final response = await request.close();
   if (response.statusCode != HttpStatus.ok) {
     return ManifestResponse(response.statusCode, const <int>[]);
   }
   if (response.contentLength > maximumBytes) {
     throw HttpException(
-      'manifest Content-Length ${response.contentLength} exceeds the '
+      '$what Content-Length ${response.contentLength} exceeds the '
       '$maximumBytes-byte limit',
       uri: url,
     );
@@ -684,7 +690,7 @@ Future<ManifestResponse> _fetchManifest(
   await for (final chunk in response) {
     if (bytes.length + chunk.length > maximumBytes) {
       throw HttpException(
-        'manifest body exceeds the $maximumBytes-byte limit',
+        '$what body exceeds the $maximumBytes-byte limit',
         uri: url,
       );
     }
@@ -830,6 +836,188 @@ Future<List<String>> verifyManifest({
   }
 }
 
+/// The GitHub REST API root [verifyPublishedRelease] reads by default.
+final Uri gitHubApiBase = Uri.parse('https://api.github.com');
+
+/// Maximum accepted size of one GitHub API response.
+const int maxGitHubApiResponseBytes = 1024 * 1024;
+
+/// Fetches one GitHub REST API response.
+typedef GitHubApiFetcher = Future<ManifestResponse> Function(Uri url);
+
+/// Annotated tags may point at further tags; a longer chain is refused rather
+/// than followed indefinitely.
+const int maxTagPeelDepth = 8;
+
+final RegExp _gitObjectSha = RegExp(r'^[0-9a-f]{40}$');
+
+/// Reads the release published under [expectedTag] and the commit its tag
+/// peels to, and returns one message per mismatch with the pinned values.
+///
+/// The manifest bytes alone do not identify the release: an unpinned or
+/// mutable release could be re-tagged or re-published with the same bytes.
+/// Any missing field, unexpected shape or API failure is a problem, never a
+/// pass. `GITHUB_TOKEN` (or `GH_TOKEN`) in [environment] authenticates the
+/// requests; it is sent only as a header and redirects are not followed, so it
+/// cannot reach another host or appear in a message.
+Future<List<String>> verifyPublishedRelease({
+  required String expectedTag,
+  required String expectedReleaseId,
+  required String expectedTagCommit,
+  Uri? apiBase,
+  Map<String, String>? environment,
+  Duration timeout = const Duration(seconds: 15),
+  int maximumBytes = maxGitHubApiResponseBytes,
+  GitHubApiFetcher? fetcher,
+}) async {
+  final base = apiBase ?? gitHubApiBase;
+  Uri api(String path) =>
+      base.replace(path: '/repos/$bridgeAssetsRepository/$path');
+
+  final client = fetcher == null ? HttpClient() : null;
+  final headers = _gitHubApiHeaders(environment ?? Platform.environment);
+  final fetch =
+      fetcher ??
+      (Uri url) => _fetchManifest(
+        client!,
+        url,
+        maximumBytes,
+        what: 'GitHub API response',
+        headers: headers,
+        followRedirects: false,
+      );
+
+  Future<Object> readObject(Uri url) async {
+    final ManifestResponse response;
+    try {
+      response = await fetch(url).timeout(timeout);
+    } on TimeoutException {
+      return 'timed out reading $url after ${timeout.inMilliseconds} ms';
+    } on IOException catch (error) {
+      return 'could not read $url: $error';
+    }
+    if (response.statusCode != HttpStatus.ok) {
+      final hint = const <int>{401, 403, 429}.contains(response.statusCode)
+          ? '; unauthenticated requests are rate limited, so set GITHUB_TOKEN '
+                'or GH_TOKEN, or check the one that is set'
+          : '';
+      return '$url returned HTTP ${response.statusCode}$hint';
+    }
+    if (response.bytes.length > maximumBytes) {
+      return '$url GitHub API response exceeds the $maximumBytes-byte limit';
+    }
+    try {
+      final decoded = jsonDecode(utf8.decode(response.bytes));
+      if (decoded is Map<String, dynamic>) return decoded;
+    } on FormatException catch (error) {
+      return '$url returned invalid JSON: $error';
+    }
+    return '$url returned invalid JSON: expected an object';
+  }
+
+  try {
+    final problems = <String>[];
+
+    final releaseUrl = api('releases/tags/$expectedTag');
+    final release = await readObject(releaseUrl);
+    if (release is String) {
+      problems.add(release);
+    } else if (release is Map<String, dynamic>) {
+      final tagName = release['tag_name'];
+      if (tagName != expectedTag) {
+        problems.add('$releaseUrl reports tag_name $tagName');
+      }
+      final id = release['id'];
+      if (id is! int) {
+        problems.add('$releaseUrl reports no numeric release id');
+      } else if ('$id' != expectedReleaseId) {
+        problems.add(
+          'release $expectedTag has id $id, expected bridgeAssetsReleaseId '
+          '$expectedReleaseId',
+        );
+      }
+      if (release['immutable'] != true) {
+        problems.add(
+          'release $expectedTag reports immutable: ${release['immutable']}, '
+          'expected true — a mutable release can change after it is pinned',
+        );
+      }
+      if (release['draft'] != false) {
+        problems.add(
+          'release $expectedTag reports draft: ${release['draft']}, expected '
+          'false',
+        );
+      }
+    }
+
+    final refUrl = api('git/ref/tags/$expectedTag');
+    final ref = await readObject(refUrl);
+    if (ref is String) return <String>[...problems, ref];
+    if (ref is! Map<String, dynamic> ||
+        ref['ref'] != 'refs/tags/$expectedTag') {
+      return <String>[
+        ...problems,
+        '$refUrl does not describe refs/tags/$expectedTag',
+      ];
+    }
+
+    var target = ref['object'];
+    var source = refUrl;
+    for (var depth = 0; ; depth++) {
+      final type = target is Map<String, dynamic> ? target['type'] : null;
+      final sha = target is Map<String, dynamic> ? target['sha'] : null;
+      if (sha is! String || !_gitObjectSha.hasMatch(sha)) {
+        problems.add('$source reports no valid object sha');
+        break;
+      }
+      if (type == 'commit') {
+        if (sha != expectedTagCommit) {
+          problems.add(
+            'tag $expectedTag points at commit $sha, expected '
+            'bridgeAssetsTagCommit $expectedTagCommit',
+          );
+        }
+        break;
+      }
+      if (type != 'tag') {
+        problems.add(
+          '$source points tag $expectedTag at a $type object, expected a '
+          'commit or an annotated tag',
+        );
+        break;
+      }
+      if (depth == maxTagPeelDepth) {
+        problems.add(
+          'tag $expectedTag does not reach a commit within $maxTagPeelDepth '
+          'annotated tags',
+        );
+        break;
+      }
+      source = api('git/tags/$sha');
+      final tagObject = await readObject(source);
+      if (tagObject is String) {
+        problems.add(tagObject);
+        break;
+      }
+      target = (tagObject as Map<String, dynamic>)['object'];
+    }
+    return problems;
+  } finally {
+    client?.close(force: true);
+  }
+}
+
+Map<String, String> _gitHubApiHeaders(Map<String, String> environment) {
+  final token = <String?>[environment['GITHUB_TOKEN'], environment['GH_TOKEN']]
+      .map((value) => value?.trim() ?? '')
+      .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+  return <String, String>{
+    HttpHeaders.acceptHeader: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    if (token.isNotEmpty) HttpHeaders.authorizationHeader: 'Bearer $token',
+  };
+}
+
 /// Machine-readable ways of writing a pin, whatever value it holds.
 ///
 /// Scanning for these as well as for the current tag is what catches a newly
@@ -963,17 +1151,26 @@ List<_PinOccurrence> _pinOccurrences(String line, String expectedTag) {
   return found;
 }
 
-/// Runs every offline drift gate and the optional published-manifest gate.
+/// Runs every offline drift gate and the optional published release and
+/// manifest gates.
 Future<List<String>> findBridgeProblems(
   Directory repoRoot,
   String expectedTag, {
   bool verifyPublishedManifest = false,
   ManifestFetcher? manifestFetcher,
+  GitHubApiFetcher? releaseFetcher,
 }) async => <String>[
   ...findBridgeTagDrift(repoRoot, expectedTag),
   ...findUnregisteredTagSites(repoRoot, expectedTag),
   ...findBridgeRuntimeDrift(repoRoot, bridgeLlamaCppTag),
   ...findBridgeProvenanceDrift(repoRoot),
+  if (verifyPublishedManifest)
+    ...await verifyPublishedRelease(
+      expectedTag: expectedTag,
+      expectedReleaseId: bridgeAssetsReleaseId,
+      expectedTagCommit: bridgeAssetsTagCommit,
+      fetcher: releaseFetcher,
+    ),
   if (verifyPublishedManifest)
     ...await verifyManifest(
       expectedTag: expectedTag,
@@ -1036,4 +1233,11 @@ Future<void> main(List<String> arguments) async {
     '[webgpu-bridge-tag] OK: ${bridgeProvenancePins.length} docs restate the '
     'release $bridgeAssetsReleaseId provenance correctly.',
   );
+  if (verifyManifestFlag) {
+    stdout.writeln(
+      '[webgpu-bridge-tag] OK: immutable release $bridgeAssetsReleaseId '
+      'publishes $expectedTag at commit $bridgeAssetsTagCommit with the '
+      'approved manifest bytes.',
+    );
+  }
 }

@@ -370,6 +370,20 @@ Fetch pinned assets for local app web files:
 WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
+A repin updates the release id, tag commit, bridge source and manifest SHA-256
+in `tool/testing/check_webgpu_bridge_tag.dart` and the docs that restate them.
+Before opening the PR, check them against the published release:
+
+```bash
+dart run tool/testing/check_webgpu_bridge_tag.dart --verify-manifest
+```
+
+It fails unless GitHub reports the pinned release id for the tag, the release
+is immutable and not a draft, the tag (peeled through any annotated tags)
+points at the pinned commit, and the CDN manifest bytes and provenance match.
+Unauthenticated GitHub API calls are rate limited; set `GITHUB_TOKEN` or
+`GH_TOKEN` to authenticate. The token is sent only as a request header.
+
 ## Validation after sync
 
 Use the contributor matrix to choose exact rows and record PR evidence:
