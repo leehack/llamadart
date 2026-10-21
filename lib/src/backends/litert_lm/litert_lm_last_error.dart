@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
@@ -120,30 +121,45 @@ final class LiteRtLmLastError {
 ///
 /// Each of [paths], typically the model, cache and adapter paths of the
 /// failing call, and its directory are cut to their base names wherever
-/// [message] contains them, and URL credentials are redacted, so that the
-/// error carries no directory or signed-URL secrets.
+/// [message] contains them, as given, with either separator or resolved
+/// through symbolic links, and URL credentials are redacted, so that the
+/// error carries no directory or signed-URL secrets. Whitespace runs become
+/// single spaces.
 String liteRtLmNativeErrorDetail({
   required int code,
   required String message,
   Iterable<String?> paths = const <String?>[],
 }) {
   final name = _statusNames[code];
-  var text = message.trim();
+  var text = message.replaceAll(_whitespace, ' ').trim();
   if (name != null && text.startsWith('$name: ')) {
     text = text.substring(name.length + 2).trim();
   }
-  final knownPaths =
-      <String>{
-          for (final value in paths.whereType<String>()) ...[
-            value,
-            path.dirname(value),
-          ],
-        }.where((value) => path.basename(value) != value).toList()
-        ..sort((a, b) => b.length.compareTo(a.length));
-  for (final knownPath in knownPaths) {
-    text = text.replaceAll(knownPath, path.basename(knownPath));
+  final baseNames = <String, String>{};
+  for (final value in paths.whereType<String>()) {
+    for (final known in <String>[value, path.dirname(value)]) {
+      final baseName = path.basename(known);
+      if (baseName.isEmpty || baseName == known) {
+        continue;
+      }
+      for (final spelling in <String?>[
+        known,
+        known.replaceAll(r'\', '/'),
+        known.replaceAll('/', r'\'),
+        _realPath(known),
+      ]) {
+        if (spelling != null && spelling != baseName) {
+          baseNames.putIfAbsent(spelling, () => baseName);
+        }
+      }
+    }
   }
-  text = redactUrlSecrets(text);
+  for (final spelling
+      in baseNames.keys.toList()
+        ..sort((a, b) => b.length.compareTo(a.length))) {
+    text = text.replaceAll(spelling, baseNames[spelling]!);
+  }
+  text = redactUrlSecrets(text).replaceFirst(_trailingSeparators, '');
   final status = switch (code) {
     0 => '',
     _ when name != null => ' $name ($code)',
@@ -152,6 +168,27 @@ String liteRtLmNativeErrorDetail({
   if (text.isEmpty) {
     return 'LiteRT-LM reported$status.';
   }
-  final stop = text.endsWith('.') ? '' : '.';
+  final stop = _sentenceEnd.hasMatch(text) ? '' : '.';
   return 'LiteRT-LM reported$status: $text$stop';
+}
+
+final RegExp _whitespace = RegExp(r'\s+');
+final RegExp _trailingSeparators = RegExp(r'[\s:;,]+$');
+final RegExp _sentenceEnd = RegExp(r'[.!?]$');
+
+/// [value] with symbolic links resolved, through its directory when [value]
+/// itself does not exist, or null when neither exists.
+String? _realPath(String value) {
+  try {
+    return File(value).resolveSymbolicLinksSync();
+  } on FileSystemException {
+    try {
+      return path.join(
+        Directory(path.dirname(value)).resolveSymbolicLinksSync(),
+        path.basename(value),
+      );
+    } on FileSystemException {
+      return null;
+    }
+  }
 }

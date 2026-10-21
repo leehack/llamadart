@@ -170,6 +170,83 @@ void main() {
       expect(detail, isNot(contains('abc123def456')));
       expect(detail, contains('https://example.com/model.litertlm'));
     });
+
+    test('collapses whitespace runs to single spaces', () {
+      expect(
+        liteRtLmNativeErrorDetail(
+          code: 13,
+          message: ' INTERNAL: first line\n\n  second\tline \r\n',
+        ),
+        'LiteRT-LM reported INTERNAL (13): first line second line.',
+      );
+    });
+
+    test('ends with a single sentence stop', () {
+      for (final (message, expected) in <(String, String)>[
+        ('done.', 'done.'),
+        ('done!', 'done!'),
+        ('done?', 'done?'),
+        ('failed:', 'failed.'),
+        ('failed: ;', 'failed.'),
+        ('failed,', 'failed.'),
+        (':', ''),
+      ]) {
+        expect(
+          liteRtLmNativeErrorDetail(code: 2, message: message),
+          expected.isEmpty
+              ? 'LiteRT-LM reported UNKNOWN (2).'
+              : 'LiteRT-LM reported UNKNOWN (2): $expected',
+          reason: message,
+        );
+      }
+    });
+
+    test('cuts a path written with the other separator', () {
+      const posix = '/srv/secret/models/gemma.litertlm';
+      const windows = r'C:\Users\secret\models\gemma.litertlm';
+      for (final (known, written) in <(String, String)>[
+        (posix, r'\srv\secret\models\gemma.litertlm'),
+        (windows, 'C:/Users/secret/models/gemma.litertlm'),
+        (windows, windows),
+      ]) {
+        if (known == windows && !Platform.isWindows) {
+          continue;
+        }
+        final detail = liteRtLmNativeErrorDetail(
+          code: 5,
+          message: 'open($written) failed',
+          paths: <String>[known],
+        );
+        expect(
+          detail,
+          'LiteRT-LM reported NOT_FOUND (5): open(gemma.litertlm) '
+          'failed.',
+        );
+      }
+    });
+
+    test('cuts the resolved path of a symbolic link', () async {
+      final root = await Directory.systemTemp.createTemp('litert_last_error_');
+      addTearDown(() => root.delete(recursive: true));
+      final real = await Directory('${root.path}/secret_real').create();
+      final link = await Link('${root.path}/secret_link').create(real.path);
+      final resolved = real.resolveSymbolicLinksSync();
+      File('$resolved/present.litertlm').writeAsStringSync('x');
+
+      for (final model in <String>['present.litertlm', 'missing.litertlm']) {
+        final detail = liteRtLmNativeErrorDetail(
+          code: 5,
+          message: 'open $resolved/$model and $resolved/other.bin failed',
+          paths: <String>['${link.path}/$model'],
+        );
+        expect(
+          detail,
+          'LiteRT-LM reported NOT_FOUND (5): open $model and '
+          'secret_link/other.bin failed.',
+          reason: model,
+        );
+      }
+    });
   });
 }
 
