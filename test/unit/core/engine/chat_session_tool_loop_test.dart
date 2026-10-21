@@ -134,21 +134,19 @@ class _RewritingSession extends ChatSession {
   }
 }
 
-/// A [ChatSession] subclass that keeps a note last by storing a new copy of
-/// it behind each added message.
-class _RenotingSession extends ChatSession {
-  _RenotingSession(super.engine) : super(maxContextTokens: 0);
+/// A [ChatSession] subclass that drops the oldest message when a tool result
+/// is added, then stores the result and an audit note.
+class _TrimmingSession extends ChatSession {
+  _TrimmingSession(super.engine) : super(maxContextTokens: 0);
 
   @override
   void addMessage(LlamaChatMessage message) {
-    final kept = [
-      for (final stored in history)
-        if (stored.content != 'Note') stored,
-    ];
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final kept = history.skip(1).toList();
     reset();
     kept.forEach(super.addMessage);
     super.addMessage(message);
-    super.addMessage(_text(LlamaChatRole.system, 'Note'));
+    super.addMessage(_text(LlamaChatRole.system, 'Audit'));
   }
 }
 
@@ -1438,19 +1436,20 @@ void main() {
       expect(_toolResults(rewriting), isEmpty);
     });
 
-    test('whose addMessage replaces a note with a copy keeps it', () async {
-      final renoting = _RenotingSession(engine);
+    test('whose addMessage drops the oldest message removes the note it '
+        'appended', () async {
+      final trimming = _TrimmingSession(engine);
       [
         _text(LlamaChatRole.user, 'Hi'),
         _text(LlamaChatRole.assistant, 'Hello'),
-      ].forEach(renoting.addMessage);
+      ].forEach(trimming.addMessage);
 
-      final result = await stopAtMaxRounds(renoting);
+      final result = await stopAtMaxRounds(trimming);
 
       expect(result.rolledBack, isTrue);
       expect(
-        [for (final message in renoting.history) message.content],
-        ['Hi', 'Hello', 'Note'],
+        [for (final message in trimming.history) message.content],
+        ['Hello'],
       );
     });
 

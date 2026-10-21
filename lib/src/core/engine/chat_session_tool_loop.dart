@@ -489,10 +489,9 @@ class _ToolLoopTurn {
   ///
   /// The instances the call put into the stored history are also removed on
   /// a rollback, since an override may store a copy, store [message] twice
-  /// or append more messages. Instances it only moved stay, and besides
-  /// [message] at most as many are taken as the history grew beyond it, so
-  /// an override that stores copies of earlier messages does not lose
-  /// earlier turns.
+  /// or append more messages. Instances it only moved stay, and at most as
+  /// many are taken as the history grew, so an override that stores copies
+  /// of earlier messages does not lose earlier turns.
   void add(LlamaChatMessage message) {
     final before = HashMap<LlamaChatMessage, int>.identity();
     final countBefore = _storedHistory.length;
@@ -510,14 +509,12 @@ class _ToolLoopTurn {
         added.add(stored);
       }
     }
-    var grown = after.length - countBefore;
-    final own = added.indexWhere((stored) => identical(stored, message));
-    if (own >= 0) {
-      added.removeAt(own);
-      grown -= 1;
-    }
+    final grown = after.length - countBefore;
     if (grown > 0) {
-      _appended.addAll(added.sublist(max(0, added.length - grown)));
+      final appended = added.sublist(max(0, added.length - grown));
+      final own = appended.indexWhere((stored) => identical(stored, message));
+      if (own >= 0) appended.removeAt(own);
+      _appended.addAll(appended);
     }
     report(message);
   }
