@@ -3766,7 +3766,8 @@ Future<(LlamaEngine, List<String>)> loadLlamaEngine(
 /// Applications should use those engines instead. These are extension
 /// members, not instance members, so a subclass of [LlamaEngine] cannot
 /// override them: fake a backend that implements the matching `Backend*`
-/// interface instead.
+/// interface instead. They resolve at compile time, so a call through
+/// `dynamic` throws `NoSuchMethodError`.
 extension LlamaEngineBackendHooks on LlamaEngine {
   /// Internal model handle.
   int? get modelHandle => _modelHandle;

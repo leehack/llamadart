@@ -4,11 +4,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/foundation.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
-import 'package:llamadart/llama_cpp_bindings.dart';
 import 'package:llamadart/llamadart.dart';
 
 void main() {
@@ -19,14 +17,7 @@ void main() {
       tester,
     ) async {
       try {
-        // 1. Basic Init Check
-        llama_backend_init();
-
-        final sysInfoPtr = llama_print_system_info();
-        expect(sysInfoPtr, isNotNull);
-        sysInfoPtr.cast<Utf8>().toDartString();
-
-        // 2. Download Tiny Model
+        // 1. Download Tiny Model
         const configuredModelUrl = String.fromEnvironment(
           'LLAMADART_GGUF_MODEL_URL',
         );
@@ -61,7 +52,7 @@ void main() {
         debugPrint('MODEL_SHA256 $digest');
         if (expectedSha.isNotEmpty) expect(digest.toString(), expectedSha);
 
-        // 3. Full Inference Pipeline Test
+        // 2. Full Inference Pipeline Test
         final backend = LlamaBackend();
         final engine = LlamaEngine(backend);
 

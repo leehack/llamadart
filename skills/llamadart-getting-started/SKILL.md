@@ -15,9 +15,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
 ## Guidelines
 
 - In custom backends and fakes, declare URL-load callbacks as
-  `void Function(double progress)? onProgress` (0.14+), including format-routing
-  loads. Forward progress fractions unchanged; return values do not control or
-  cancel loading. Native FFI `bool` callbacks keep their separate contract.
+  `void Function(double progress)? onProgress` (0.14+), including
+  `BackendModelFormatRouting.modelLoadFromUrlAs`. Forward progress fractions
+  unchanged; return values do not control or cancel loading. Native FFI `bool`
+  callbacks keep their separate contract.
 
 - Create one engine per loaded model with
   `LlamaEngine.load(LlamaModel(source))`, or with `LlamaEngine(LlamaBackend())`
@@ -90,9 +91,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
 - Import only `package:llamadart/llamadart.dart` in app code. Custom
   backends and backend test fakes (`implements LlamaBackend,
   BackendTextToSpeech`, ...) and direct LiteRT-LM runtime access also import
-  `package:llamadart/backend.dart`. Avoid
-  `package:llamadart/llama_cpp_bindings.dart`: the raw FFI is native-only
-  and can change in any release.
+  `package:llamadart/backend.dart`; its `LlamaEngineBackendHooks` are
+  extension members, so call them on a `LlamaEngine`-typed value, never
+  through `dynamic`. Avoid `package:llamadart/llama_cpp_bindings.dart`: the
+  raw FFI is native-only and can change in any release.
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,
   `LlamaStateException`, `LlamaUnsupportedException`, ...) rather than
   `Exception`.

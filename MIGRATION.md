@@ -1154,8 +1154,11 @@ of two new libraries.
    `cancelTextToSpeechBackend`, `backendDecisionCapabilities`,
    `loadDecisionHeadBackend`, `runDecisionBackend` and
    `freeDecisionHeadBackend` move from `LlamaEngine` to the
-   `LlamaEngineBackendHooks` extension in `backend.dart`. Calls keep working
-   once `backend.dart` is imported. A `LlamaEngine` subclass that overrode
+   `LlamaEngineBackendHooks` extension in `backend.dart`. Statically typed
+   calls keep working once `backend.dart` is imported. Extension members
+   resolve at compile time, so a call through `dynamic`, such as
+   `(engine as dynamic).modelHandle`, throws `NoSuchMethodError`; type the
+   receiver as `LlamaEngine`. A `LlamaEngine` subclass that overrode
    one no longer intercepts it, and the analyzer reports only an
    `override_on_non_overriding_member` warning. A fake that
    `implements LlamaEngine` is bypassed the same way wherever it is typed as

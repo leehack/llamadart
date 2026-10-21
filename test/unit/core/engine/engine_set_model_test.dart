@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/backends/backend.dart'
-    show BackendModelFormatRouting, BackendRuntimeIdentity;
 import 'package:llamadart/src/core/models/model_target_file.dart'
     show UncacheableLocalModelFileException;
 import 'package:test/test.dart';

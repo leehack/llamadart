@@ -1,8 +1,11 @@
 @TestOn('vm')
 library;
 
+import 'dart:io';
 import 'dart:mirrors';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
@@ -300,12 +303,15 @@ void main() {
       'BackendAvailability',
       'BackendBatchEmbeddings',
       'BackendChatPromptGeneration',
+      'BackendChatScope',
       'BackendDartLogLevel',
       'BackendDecision',
       'BackendDecisionCapabilities',
       'BackendDecisionHeadInfo',
       'BackendDecisionOutput',
       'BackendDecisionSequence',
+      'BackendDeferredEngineCreation',
+      'BackendDirectMediaInput',
       'BackendEmbeddings',
       'BackendEmbeddingsSupport',
       'BackendMultimodalEmbeddings',
@@ -316,6 +322,7 @@ void main() {
       'BackendGrammarConstraintsSupport',
       'BackendLazyGrammarSupport',
       'BackendModelFileTypeDiagnostics',
+      'BackendModelFormatRouting',
       'BackendNativeChatGeneration',
       'BackendNextTokenScoring',
       'BackendNextTokenScoringSupport',
@@ -323,6 +330,7 @@ void main() {
       'BackendPerformanceDiagnostics',
       'BackendPromptSpeechToTextSupport',
       'BackendRuntimeDiagnostics',
+      'BackendRuntimeIdentity',
       'BackendStatePersistence',
       'BackendStatePersistenceSupport',
       'BackendTextToSpeech',
@@ -343,6 +351,80 @@ void main() {
       'LiteRtLmAsrPushResult',
       'LiteRtLmAsrRuntimeSession',
     });
+  });
+
+  test('exported classes implement only exported llamadart types', () async {
+    final exported = <String, DeclarationMirror>{
+      ..._exportedDeclarations(await _load(_appUri)),
+      ..._exportedDeclarations(backendLibrary),
+    };
+    final unexported = <String>{
+      for (final MapEntry(:key, :value) in exported.entries)
+        if (value is ClassMirror)
+          for (final supertype in _supertypes(value))
+            if (_isPackageType(supertype) &&
+                !exported.containsKey(_typeName(supertype)))
+              '$key -> ${_typeName(supertype)}',
+    };
+
+    expect(unexported, isEmpty);
+  });
+
+  test('every platform variant of a backend export implements only exported '
+      'types', () {
+    final exported = app.union(backend);
+    final variants = <String>{};
+    final unexported = <String>{};
+    for (final directive in _parse(
+      'lib/backend.dart',
+    ).directives.whereType<ExportDirective>()) {
+      if (directive.configurations.isEmpty) continue;
+      final shown = {
+        for (final combinator
+            in directive.combinators.whereType<ShowCombinator>())
+          for (final name in combinator.shownNames) name.name,
+      };
+      for (final uri in [
+        directive.uri.stringValue!,
+        for (final configuration in directive.configurations)
+          configuration.uri.stringValue!,
+      ]) {
+        for (final declaration in _parse(
+          'lib/$uri',
+        ).declarations.whereType<ClassDeclaration>()) {
+          // The token after `class` is the name in every supported analyzer.
+          final name = declaration.classKeyword.next!.lexeme;
+          if (!shown.contains(name)) continue;
+          variants.add('$uri $name');
+          for (final supertype in [
+            ?declaration.extendsClause?.superclass,
+            ...?declaration.withClause?.mixinTypes,
+            ...?declaration.implementsClause?.interfaces,
+          ]) {
+            final supertypeName = supertype.toSource().split('<').first;
+            if (!exported.contains(supertypeName)) {
+              unexported.add('$uri $name -> $supertypeName');
+            }
+          }
+        }
+      }
+    }
+
+    expect(
+      variants,
+      contains(
+        'src/backends/litert_lm/litert_lm_backend_web.dart '
+        'LiteRtLmBackend',
+      ),
+    );
+    expect(unexported, isEmpty);
+  });
+
+  test('examples use the app API, not the raw llama.cpp bindings', () {
+    expect([
+      for (final file in _dartSources(Directory('example')))
+        if (file.readAsStringSync().contains(_bindingsUri)) file.path,
+    ], isEmpty);
   });
 
   test('the engine hooks are extension members a subclass cannot override', () {
@@ -377,23 +459,41 @@ void main() {
 Future<LibraryMirror> _load(String uri) =>
     currentMirrorSystem().isolate.loadUri(Uri.parse(uri));
 
+/// The Dart files under [directory], skipping hidden and `build` directories
+/// that hold generated and third-party code.
+Iterable<File> _dartSources(Directory directory) sync* {
+  for (final entity in directory.listSync(followLinks: false)) {
+    final name = entity.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+    if (entity is Directory) {
+      if (name.startsWith('.') || name == 'build') continue;
+      yield* _dartSources(entity);
+    } else if (entity is File && name.endsWith('.dart')) {
+      yield entity;
+    }
+  }
+}
+
+CompilationUnit _parse(String path) =>
+    parseString(content: File(path).readAsStringSync(), path: path).unit;
+
 /// The top-level names [library] exports. The VM mirror system lists an
 /// extension as one `Extension.member` entry per member, so those collapse to
 /// the extension's name.
-Set<String> _exportedNames(LibraryMirror library) =>
-    _exportedEntries(library).map((name) => name.split('.').first).toSet();
+Set<String> _exportedNames(LibraryMirror library) => _exportedDeclarations(
+  library,
+).keys.map((name) => name.split('.').first).toSet();
 
 Set<String> _exportedMembers(LibraryMirror library, String extension) => {
-  for (final name in _exportedEntries(library))
+  for (final name in _exportedDeclarations(library).keys)
     if (name.startsWith('$extension.')) name.substring(extension.length + 1),
 };
 
 /// Follows export directives. The VM splits `show A, B` into one combinator
 /// per name, so the shown and hidden names of a directive are unioned.
-Set<String> _exportedEntries(LibraryMirror library) {
-  final names = <String>{
+Map<String, DeclarationMirror> _exportedDeclarations(LibraryMirror library) {
+  final declarations = <String, DeclarationMirror>{
     for (final MapEntry(:key, :value) in library.declarations.entries)
-      if (!value.isPrivate) MirrorSystem.getName(key),
+      if (!value.isPrivate) MirrorSystem.getName(key): value,
   };
   for (final dependency in library.libraryDependencies) {
     if (!dependency.isExport) continue;
@@ -404,13 +504,38 @@ Set<String> _exportedEntries(LibraryMirror library) {
         combinator.identifiers.map(MirrorSystem.getName),
       );
     }
-    for (final name in _exportedEntries(dependency.targetLibrary!)) {
-      final topLevel = name.split('.').first;
+    for (final MapEntry(:key, :value) in _exportedDeclarations(
+      dependency.targetLibrary!,
+    ).entries) {
+      final topLevel = key.split('.').first;
       if ((shown.isEmpty || shown.contains(topLevel)) &&
           !hidden.contains(topLevel)) {
-        names.add(name);
+        declarations[key] = value;
       }
     }
   }
-  return names;
+  return declarations;
 }
+
+/// The declared supertypes of [type], looking through the anonymous
+/// `S with M` classes that mixins create.
+Iterable<ClassMirror> _supertypes(ClassMirror type) sync* {
+  yield* type.superinterfaces;
+  final superclass = type.superclass;
+  if (superclass == null) return;
+  if (superclass.mixin != superclass) {
+    yield superclass.mixin;
+    yield* _supertypes(superclass);
+  } else {
+    yield superclass;
+  }
+}
+
+bool _isPackageType(ClassMirror type) {
+  final owner = type.originalDeclaration.owner;
+  return owner is LibraryMirror &&
+      owner.uri.toString().startsWith('package:llamadart/');
+}
+
+String _typeName(ClassMirror type) =>
+    MirrorSystem.getName(type.originalDeclaration.simpleName);
