@@ -1076,6 +1076,16 @@ void main() {
       });
     }
 
+    test('a download manager\'s own checksum error passes through when the '
+        'load sets no sha256', () async {
+      final failure = LlamaModelException(
+        'Checksum mismatch for ${_local(_model)}.',
+      );
+      downloads.unconditionalError = failure;
+
+      await expectLater(load(_sdxs(_local(_model))), throwsA(same(failure)));
+    });
+
     test(
       'another model error from a checksummed load passes through',
       () async {
@@ -2136,6 +2146,9 @@ final class _FakeDownloads implements ModelDownloadManager {
 
   /// Thrown for any file when the load sets [ModelLoadOptions.sha256].
   Object? checksumError;
+
+  /// Thrown for any file, with or without a checksum.
+  Object? unconditionalError;
   Completer<void>? gate;
 
   static String cachePath(ModelSource source) =>
@@ -2148,6 +2161,9 @@ final class _FakeDownloads implements ModelDownloadManager {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     calls.add((source, options));
+    if (unconditionalError != null) {
+      throw unconditionalError!;
+    }
     if (options.sha256 != null && checksumError != null) {
       throw checksumError!;
     }

@@ -253,7 +253,9 @@ file per role. `load` throws `LlamaModelException`, naming files by position
   diffusion weights;
 - a VAE or tiny autoencoder for other latent channels than the diffusion
   model's, such as TAESD (4 channels) with FLUX (16);
-- a file with no known image-model layout, such as a pickled `.ckpt`.
+- a file with no known image-model layout, such as a pickled `.ckpt`;
+- a `ModelLoadOptions.sha256` mismatch, which names the main file the same
+  way.
 
 Give such a file its role yourself with `ImageModelComponent(source, role:
 ImageModelRole.vae)`, or `ImageGenerationModel(source, role: ...)` for the
