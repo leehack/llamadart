@@ -3452,6 +3452,11 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
                     text,
                 )
                 self.assertIn(
+                    "const llamaCppCompatibleAppleCompanionChecksums = "
+                    "<String, String>{};",
+                    text,
+                )
+                self.assertIn(
                     "const llamaCppAppleCompanionVersion = "
                     f"'{pins.bump_patch_version(version)}';",
                     text,
@@ -3516,12 +3521,22 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
             "const llamaCppCompatibleAppleCompanionTags = <String, String>{};",
             cleared_text,
         )
+        self.assertIn(
+            "const llamaCppCompatibleAppleCompanionChecksums = <String, String>{};",
+            cleared_text,
+        )
         self.assertEqual(
             pins.clear_compatible_apple_companion_tags(cleared_text),
             (cleared_text, []),
         )
         with self.assertRaisesRegex(ReleaseError, "llamaCppCompatibleAppleCompanionTags"):
             pins.clear_compatible_apple_companion_tags("const llamaCppTag = 'v0.6.0';\n")
+        with self.assertRaisesRegex(
+            ReleaseError, "llamaCppCompatibleAppleCompanionChecksums"
+        ):
+            pins.clear_compatible_apple_companion_tags(
+                "const llamaCppCompatibleAppleCompanionTags = <String, String>{};\n"
+            )
 
 
 class LlamaCppBundleDigestPinTest(unittest.TestCase):

@@ -2958,10 +2958,14 @@ String _llamaCppBundleDigestPins([String? tag]) => [
 ].join('\n');
 
 /// The Apple llama.cpp companion version and compatible-tag pins.
-String _llamaCppAppleCompanionPins() => '''
+String _llamaCppAppleCompanionPins() =>
+    '''
 const llamaCppAppleCompanionVersion = '0.0.1';
 const llamaCppCompatibleAppleCompanionTags = <String, String>{
   'b9997': 'x',
+};
+const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
+  'b9997': '${'a' * 64}',
 };
 ''';
 

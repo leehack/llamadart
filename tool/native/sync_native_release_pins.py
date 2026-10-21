@@ -3215,24 +3215,42 @@ _COMPATIBLE_APPLE_COMPANION_TAGS_PATTERN = re.compile(
     r"const llamaCppCompatibleAppleCompanionTags = <String, String>\{(.*?)\};",
     re.DOTALL,
 )
+_COMPATIBLE_APPLE_COMPANION_CHECKSUMS_PATTERN = re.compile(
+    r"const llamaCppCompatibleAppleCompanionChecksums = <String, String>\{(.*?)\};",
+    re.DOTALL,
+)
 
 
 def clear_compatible_apple_companion_tags(pins_text: str) -> tuple[str, list[str]]:
-    """Empty the accepted earlier companion tags, which hold for one pin only."""
-    matches = list(_COMPATIBLE_APPLE_COMPANION_TAGS_PATTERN.finditer(pins_text))
-    if len(matches) != 1:
-        raise ReleaseError(
-            "Could not find llamaCppCompatibleAppleCompanionTags in "
-            f"{DEFAULT_NATIVE_RELEASE_PINS}"
+    """Empty the accepted earlier companion tags and their checksums, which
+    hold for one pin only."""
+    cleared: list[str] = []
+    for name, pattern, collect in (
+        (
+            "llamaCppCompatibleAppleCompanionTags",
+            _COMPATIBLE_APPLE_COMPANION_TAGS_PATTERN,
+            True,
+        ),
+        (
+            "llamaCppCompatibleAppleCompanionChecksums",
+            _COMPATIBLE_APPLE_COMPANION_CHECKSUMS_PATTERN,
+            False,
+        ),
+    ):
+        matches = list(pattern.finditer(pins_text))
+        if len(matches) != 1:
+            raise ReleaseError(
+                f"Could not find {name} in {DEFAULT_NATIVE_RELEASE_PINS}"
+            )
+        match = matches[0]
+        if collect:
+            cleared = re.findall(r"^  '([^']+)':", match.group(1), re.MULTILINE)
+        pins_text = (
+            pins_text[: match.start()]
+            + f"const {name} = <String, String>{{}};"
+            + pins_text[match.end() :]
         )
-    match = matches[0]
-    cleared = re.findall(r"^  '([^']+)':", match.group(1), re.MULTILINE)
-    updated = (
-        pins_text[: match.start()]
-        + "const llamaCppCompatibleAppleCompanionTags = <String, String>{};"
-        + pins_text[match.end() :]
-    )
-    return updated, cleared
+    return pins_text, cleared
 
 
 def replace_one(text: str, pattern: str, replacement: str, description: str) -> str:

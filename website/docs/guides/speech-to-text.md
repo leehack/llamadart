@@ -261,6 +261,15 @@ Native runtime `v0.18.0-2` reduces duplicated words at untimed ASR window
 boundaries with the default overlap. Other boundary and recognition errors can
 remain.
 
+From native runtime `v0.18.0-3`, the model can also be a dedicated ASR
+`.litertlm` container, such as the published Whisper tiny container with the
+`whisperTiny` preset. The container uses its embedded tokenizer, but `load`
+still requires a `tokenizer` file. Earlier runtimes fail engine creation for
+such a container with `tf_lite_prefill_decode not found`. Flutter iOS and
+macOS apps run the runtime that `llamadart_litert_lm_flutter` links, so
+companions `0.15.0` and `0.15.1` (`v0.18.0-2`) keep that behavior until the
+app upgrades the companion.
+
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
 `finish` flushes a partial final window.

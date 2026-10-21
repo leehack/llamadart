@@ -29,11 +29,13 @@ void main() {
               )
               as Map<String, dynamic>;
       final checksums = proof['xcframework_checksums'] as Map<String, dynamic>;
+      final previous = proof['previous_tag'] as String;
       expect(proof['current_tag'], llamaCppTag);
-      expect(llamaCppCompatibleAppleCompanionTags.keys, [
-        proof['previous_tag'],
-      ]);
-      expect(checksums.keys, {proof['previous_tag'], llamaCppTag});
+      expect(llamaCppCompatibleAppleCompanionTags.keys, [previous]);
+      expect(checksums.keys, {previous, llamaCppTag});
+      expect(llamaCppCompatibleAppleCompanionChecksums, {
+        previous: checksums[previous],
+      });
       final swift = File(
         'packages/llamadart_llama_cpp_flutter/darwin/'
         'llamadart_llama_cpp_flutter/Package.swift',
@@ -96,6 +98,35 @@ void main() {
               '${int.parse(version.group(3)!) + 1}'
         : firstPinning;
     expect(llamaCppAppleCompanionVersion, expected);
+  });
+
+  test('the compatible llama.cpp checksum is the one published companions '
+      'declare', () {
+    final proof =
+        jsonDecode(
+              File(
+                'test/fixtures/native/llama_cpp_apple_compatibility.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final previous = proof['previous_tag'] as String;
+    final published =
+        proof['published_companion_checksums'] as Map<String, dynamic>;
+    expect(published, isNotEmpty);
+    for (final MapEntry(key: tag, value: checksum) in published.entries) {
+      expect(checksum, llamaCppCompatibleAppleCompanionChecksums[previous]);
+      // Release tags are absent from shallow CI checkouts; the recorded
+      // value is checked against the tag wherever it is present.
+      final shown = Process.runSync('git', [
+        'show',
+        '$tag:packages/llamadart_llama_cpp_flutter/darwin/'
+            'llamadart_llama_cpp_flutter/Package.swift',
+      ]);
+      if (shown.exitCode != 0) continue;
+      final manifest = shown.stdout as String;
+      expect(manifest, contains('let llamaCppTag = "$previous"'), reason: tag);
+      expect(manifest, contains('checksum: "$checksum"'), reason: tag);
+    }
   });
 
   test('llama.cpp pins a sha256 for exactly the bundles the hook selects', () {

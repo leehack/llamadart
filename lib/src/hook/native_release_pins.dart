@@ -36,6 +36,17 @@ const llamaCppCompatibleAppleCompanionTags = <String, String>{
   'v0.7.0-1': 'the fix that seeds every Qwen3-TTS codebook from the request',
 };
 
+/// The exact XCFramework checksum a companion pinning each
+/// [llamaCppCompatibleAppleCompanionTags] entry must declare.
+///
+/// A tag alone establishes no ABI compatibility, so the build rejects a
+/// compatible tag whose checksum is missing here or differs. The native pin
+/// sync clears it together with [llamaCppCompatibleAppleCompanionTags].
+const llamaCppCompatibleAppleCompanionChecksums = <String, String>{
+  'v0.7.0-1':
+      '90fee6868a611c5b053179e6944baba36975cf0d91b5e9888f51e03a74b4cbe0',
+};
+
 /// SHA-256 of each published `llamadart-native-<bundle>-<llamaCppTag>.tar.gz`
 /// archive, keyed by bundle.
 ///

@@ -36,8 +36,13 @@ class LiteRtLmAsrRuntimeConfig {
   final String? _modelPath;
   final String? _tokenizerPath;
 
-  /// The `.tflite` speech-recognition model: a local path, an HTTP(S) URL or
-  /// a Hugging Face file.
+  /// The `.tflite` speech-recognition model, or from native `v0.18.0-3` a
+  /// dedicated ASR `.litertlm` container such as Whisper tiny: a local path,
+  /// an HTTP(S) URL or a Hugging Face file.
+  ///
+  /// A container uses its embedded tokenizer, but [tokenizer] is still
+  /// required. Flutter Apple apps run the `llamadart_litert_lm_flutter`
+  /// runtime, so a companion pinning an earlier release rejects containers.
   ///
   /// The runtime opens local files only. `SpeechToTextEngine.load` with a
   /// `LiteRtLmAsrAdapter` downloads remote files into the model cache and
