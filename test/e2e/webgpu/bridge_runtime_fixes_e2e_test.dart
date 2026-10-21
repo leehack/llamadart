@@ -1,5 +1,5 @@
-/// Real-asset check of the bridge runtime fixes in assets `v0.1.67`, through
-/// both the worker and the direct runtime:
+/// Real-asset check of the bridge runtime fixes in the pinned bridge assets,
+/// through both the worker and the direct runtime:
 ///
 /// - a model and a chat image URL relative to the document load without
 ///   leaving the worker
@@ -20,7 +20,7 @@
 ///
 /// ```json
 /// {
-///   "assets": "assets/v0.1.67/",
+///   "assets": "assets/<tag>/",
 ///   "model": "models/stories15M.gguf",
 ///   "visionModel": "models/LFM2-VL-450M-Q4_0.gguf",
 ///   "visionProjector": "models/mmproj-LFM2-VL-450M-Q8_0.gguf",
