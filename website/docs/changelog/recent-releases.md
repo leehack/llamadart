@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Let Hermes templates that open reasoning in the prompt, such as QwQ, reason before a `ToolChoice.required` tool call; the call was previously parsed as reasoning and lost.
+- Reject `\u`-escaped spellings of declared property names (such as `\u0063ity`) as extra keys in open-object tool and response schema grammars.
+
 ## 0.15.5
 
 - Keep Llama 3 (JSON and builtin `<|python_tag|>`), FireFunction v2, Functionary v3.1/v3.2, FunctionGemma and Gemma tool calls out of streamed answer text, and LFM2 and Kimi K2 tool calls out of streamed answer text and reasoning.

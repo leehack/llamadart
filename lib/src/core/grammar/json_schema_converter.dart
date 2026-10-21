@@ -39,7 +39,6 @@ const _primitiveRules = <String, _BuiltinRule>{
     r'[^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})',
     [],
   ),
-  'char-escape': _BuiltinRule(r'[\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})', []),
   'string': _BuiltinRule(r'"\"" char* "\"" space', ['char']),
   'null': _BuiltinRule('"null" space', []),
 };
@@ -623,9 +622,10 @@ class JsonSchemaConverter {
   /// prefix of a declared key stays available, and the divergent character
   /// excludes `"`, `\` and control characters so the key remains valid JSON.
   /// Where a declared key continues with an escape sequence, other escapes
-  /// are not offered at that position. Escaped spellings of a declared key
-  /// (such as `\u0063ity` for `city`) still match; final validation checks
-  /// their decoded values.
+  /// are not offered at that position. Elsewhere, a `\u` escape of a
+  /// character that a declared key continues with is not offered, so an
+  /// escaped spelling (such as `\u0063ity` for `city`) cannot bypass the
+  /// exclusion. Every key not declared still matches in canonical spelling.
   ///
   /// A subtree whose inline groups would create more than
   /// [_maxInlineGroupSize] llama.cpp symbols becomes a named rule, so no
@@ -641,12 +641,23 @@ class JsonSchemaConverter {
       node.isEnd = true;
     }
 
-    String build(
-      String Function(String name, String rule) emit,
-      String char,
-      String escape,
-    ) {
+    String build(String Function(String name, String rule) emit, String char) {
       var index = 0;
+      final escapeRules = <String, String>{};
+
+      String escapeExcluding(List<int> runes) {
+        final units = {
+          for (final rune in runes)
+            rune > 0xFFFF ? 0xD800 + ((rune - 0x10000) >> 10) : rune,
+        }.toList()..sort();
+        final key = units.map(_hexCodeUnit).join('-');
+        // Named by the excluded set, so every key trie in the grammar shares
+        // one rule per set and references stay short.
+        return escapeRules[key] ??= emit(
+          'esc-$key',
+          '[\\\\] (["\\\\bfnrt] | "u" (${_hexExcluding(units, 0)!}))',
+        );
+      }
 
       // Each record holds GBNF text and an upper bound on the symbols
       // llama.cpp creates while parsing it inside a group: one per group, per
@@ -689,7 +700,7 @@ class JsonSchemaConverter {
         other.write(']');
         final divergent = escapedChild
             ? other.toString()
-            : '($other | $escape)';
+            : '($other | ${escapeExcluding(plain)})';
         alternatives.add('$divergent $char*');
         symbols += escapedChild ? 1 : 3;
         return (alternatives.join(' | '), symbols);
@@ -700,21 +711,42 @@ class JsonSchemaConverter {
     }
 
     var length = 0;
-    build(
-      (name, rule) {
-        length += name.length + rule.length;
-        return name;
-      },
-      'char',
-      'char-escape',
-    );
+    build((name, rule) {
+      length += name.length + rule.length;
+      return name;
+    }, 'char');
     if (_keyTrieGrammarLength + length > _maxKeyTrieGrammarLength) return null;
     _keyTrieGrammarLength += length;
-    return build(
-      _addRule,
-      _addPrimitive('char', _primitiveRules['char']!),
-      _addPrimitive('char-escape', _primitiveRules['char-escape']!),
-    );
+    return build(_addRule, _addPrimitive('char', _primitiveRules['char']!));
+  }
+
+  /// Matches four hex digits, in either case, spelling none of the sorted
+  /// code [units], which share their first [depth] digits.
+  static String? _hexExcluding(List<int> units, int depth) {
+    final shift = 4 * (3 - depth);
+    final byDigit = <int, List<int>>{};
+    for (final unit in units) {
+      (byDigit[(unit >> shift) & 0xF] ??= []).add(unit);
+    }
+    final alternatives = <String>[
+      if (depth < 3)
+        for (final MapEntry(key: digit, value: rest) in byDigit.entries)
+          if (_hexExcluding(rest, depth + 1) case final tail?)
+            '${_hexClass([digit])} ($tail)',
+    ];
+    final other = [
+      for (var digit = 0; digit < 16; digit++)
+        if (!byDigit.containsKey(digit)) digit,
+    ];
+    if (other.isNotEmpty) {
+      final rest = switch (3 - depth) {
+        0 => '',
+        1 => ' [0-9a-fA-F]',
+        final count => ' [0-9a-fA-F]{$count}',
+      };
+      alternatives.add('${_hexClass(other)}$rest');
+    }
+    return alternatives.isEmpty ? null : alternatives.join(' | ');
   }
 
   String _buildObjectRule(
@@ -836,6 +868,44 @@ List<String> _wireTokens(String wire) {
     }
   }
   return tokens;
+}
+
+/// Returns [unit] as four uppercase hex digits.
+String _hexCodeUnit(int unit) =>
+    unit.toRadixString(16).toUpperCase().padLeft(4, '0');
+
+/// Returns a GBNF class matching the ascending hex [digits] in either case.
+String _hexClass(List<int> digits) {
+  String runs(List<int> values, String Function(int) spell) {
+    final out = StringBuffer();
+    for (var start = 0; start < values.length;) {
+      var end = start;
+      while (end + 1 < values.length && values[end + 1] == values[end] + 1) {
+        end++;
+      }
+      if (end - start >= 2) {
+        out.write('${spell(values[start])}-${spell(values[end])}');
+      } else {
+        for (var i = start; i <= end; i++) {
+          out.write(spell(values[i]));
+        }
+      }
+      start = end + 1;
+    }
+    return out.toString();
+  }
+
+  final decimal = [
+    for (final digit in digits)
+      if (digit < 10) digit,
+  ];
+  final letters = [
+    for (final digit in digits)
+      if (digit >= 10) digit,
+  ];
+  String letter(int digit) => digit.toRadixString(16);
+  return '[${runs(decimal, (digit) => '$digit')}${runs(letters, letter)}'
+      '${runs(letters, (digit) => letter(digit).toUpperCase())}]';
 }
 
 /// Encodes [rune] for a GBNF character class.

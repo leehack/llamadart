@@ -1680,6 +1680,91 @@ void main() {
     }
   });
 
+  test('open objects exclude escaped spellings of declared keys', () {
+    final schema = <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        'city': {'type': 'string'},
+        'ci': {'type': 'boolean'},
+        'é': {'type': 'null'},
+        '😀': {'type': 'null'},
+      },
+      'additionalProperties': true,
+    };
+    for (final (grammar, output) in _openObjectGrammars(schema)) {
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output('{"city":"x"}'),
+          output(r'{"\u0043ity":1}'),
+          output(r'{"cit\u0065":1}'),
+          output(r'{"x\u0063":1}'),
+          output(r'{"ci":true,"\u0062":1}'),
+          output('{"😁":1}'),
+        ],
+        invalid: [
+          output(r'{"\u0063ity":"x"}'),
+          output(r'{"ci\u0074y":"x"}'),
+          output(r'{"c\u0069":true}'),
+          output(r'{"\u00E9":null}'),
+          output(r'{"\ud83d\ude00":null}'),
+        ],
+      );
+    }
+  });
+
+  test('Hermes required calls may follow forced-open reasoning', () {
+    final template = File(
+      'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja',
+    ).readAsStringSync();
+    final legacy = ToolDefinition(
+      name: 'inspect',
+      description: 'Inspect',
+      parameters: [ToolParam.string('code', required: true)],
+      handler: (_) async => null,
+    );
+    for (final (tool, call) in [
+      (
+        rawSchemaTool(),
+        '<tool_call>\n'
+            '${jsonEncode({'name': 'inspect', 'arguments': rawToolArguments})}'
+            '\n</tool_call>',
+      ),
+      (
+        legacy,
+        '<tool_call>{"name": "inspect", "arguments": {"code": "x"}}</tool_call>',
+      ),
+    ]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+      );
+      expect(rendered.thinkingForcedOpen, isTrue);
+      expect(rendered.grammarLazy, isFalse);
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          'Need to inspect.\n</think>\n\n$call',
+          '</think>$call',
+          'Maybe <tool_call> or </thin, <think> too.</think>\n$call',
+        ],
+        invalid: [
+          call,
+          'Need to inspect.\n</think>\n\nDone.',
+          'a</think>b</think>$call',
+          'Need to inspect.\n</think>\n\n$call trailing',
+        ],
+      );
+    }
+  });
+
   test('maxItems 1999 loads for every minItems and item type', () {
     for (final item in boundedArrayItemSchemas) {
       final value = jsonEncode(boundedArrayItemValue(item));
