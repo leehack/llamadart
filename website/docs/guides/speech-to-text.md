@@ -51,7 +51,8 @@ you loaded yourself, for example to chat with the same model, and its
 `load` takes `download:` (`ModelLoadOptions` for every remote file: cache
 policy and directory, authentication, resume, retries and cancel token),
 `onProgress:` (one combined progress for all files; 1 means they have loaded,
-before the capability check), `store:` (a `ModelFileStore` with your own
+before the capability check; on [Web](#web) only the model's fetch reports
+progress, up to 0.5 with a projector), `store:` (a `ModelFileStore` with your own
 resolver or download manager), and, for a prompt adapter, `params:`
 (`ModelParams`) and `backend:` (by default `LlamaBackend()`). Every file resolves, main file first, before anything
 loads. A local file takes only the cancel token. The bearer token and headers
