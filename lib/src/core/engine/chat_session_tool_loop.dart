@@ -498,9 +498,11 @@ class _ToolLoopTurn {
   /// stored [message] or a copy of it, copies of the turn's earlier
   /// messages, and new messages placed after the turn's first message or
   /// within how much the history grew beyond the stored [message]. A copy of
-  /// a message from outside the turn that the call replaced stays, and so
-  /// does a new message placed before the turn in place of another, such as
-  /// a summary of earlier turns. Instances the call only moved stay.
+  /// a message from outside the turn that the call replaced stays, unless
+  /// the call trimmed that message from the front of the history and did
+  /// not put the copy in its place; so does a new message placed before the
+  /// turn in place of another, such as a summary of earlier turns. Instances
+  /// the call only moved stay.
   void add(LlamaChatMessage message) {
     final before = _storedHistory.toList();
     final leftover = HashMap<LlamaChatMessage, int>.identity();
@@ -518,12 +520,12 @@ class _ToolLoopTurn {
         added.add(index);
       }
     }
-    final replaced = <LlamaChatMessage>[];
-    for (final stored in before) {
+    final replaced = <int>[];
+    for (final (index, stored) in before.indexed) {
       final count = leftover[stored] ?? 0;
       if (count > 0) {
         leftover[stored] = count - 1;
-        replaced.add(stored);
+        replaced.add(index);
       }
     }
 
@@ -541,16 +543,37 @@ class _ToolLoopTurn {
     final members = [...messages, ..._appended];
     bool isMember(LlamaChatMessage stored) =>
         members.any((member) => identical(member, stored));
+    final inPlace = _copiesInPlace(
+      before,
+      after,
+      replaced,
+      added,
+      own,
+      isMember,
+    );
+    final pairedOld = inPlace.values.toSet();
+    var trimmed = 0;
+    while (trimmed < replaced.length &&
+        replaced[trimmed] == trimmed &&
+        !pairedOld.contains(trimmed)) {
+      trimmed++;
+    }
+    final originals = [
+      for (final index in replaced)
+        if (!pairedOld.contains(index) &&
+            (index >= trimmed || isMember(before[index])))
+          before[index],
+    ];
     final turn = {...own};
     final fresh = <int>[];
     for (final index in added) {
-      if (own.contains(index)) continue;
-      final original = replaced.indexWhere(
+      if (own.contains(index) || inPlace.containsKey(index)) continue;
+      final original = originals.indexWhere(
         (stored) => _sameContent(stored, after[index]),
       );
       if (original < 0) {
         fresh.add(index);
-      } else if (isMember(replaced.removeAt(original))) {
+      } else if (isMember(originals.removeAt(original))) {
         turn.add(index);
       }
     }
@@ -619,6 +642,72 @@ class _ToolLoopTurn {
     rebuilt.forEach(_session.addMessage);
   }
 }
+
+/// The new copies in [after] that took the place of a message from outside
+/// the turn, mapped to that message's index in [before]: pairs from the
+/// longest order-preserving match of the messages outside the turn, where a
+/// kept instance matches only itself and a new one only a content-equal
+/// message that the add replaced.
+Map<int, int> _copiesInPlace(
+  List<LlamaChatMessage> before,
+  List<LlamaChatMessage> after,
+  List<int> replaced,
+  List<int> added,
+  List<int> own,
+  bool Function(LlamaChatMessage) isMember,
+) {
+  final replacedOutside = {
+    for (final index in replaced)
+      if (!isMember(before[index])) index,
+  };
+  final addedSet = added.toSet();
+  if (replacedOutside.isEmpty || addedSet.length <= own.length) return {};
+  final olds = [
+    for (final (index, stored) in before.indexed)
+      if (!isMember(stored)) index,
+  ];
+  final news = [
+    for (final (index, stored) in after.indexed)
+      if (!own.contains(index) && !isMember(stored)) index,
+  ];
+  final keys = HashMap<LlamaChatMessage, String>.identity();
+  String key(LlamaChatMessage message) =>
+      keys.putIfAbsent(message, () => _contentKey(message));
+  bool matches(int old, int index) => addedSet.contains(index)
+      ? replacedOutside.contains(old) && key(before[old]) == key(after[index])
+      : !replacedOutside.contains(old) && identical(before[old], after[index]);
+
+  final width = news.length + 1;
+  final lengths = List.filled((olds.length + 1) * width, 0);
+  for (var i = olds.length - 1; i >= 0; i--) {
+    for (var j = news.length - 1; j >= 0; j--) {
+      lengths[i * width + j] = matches(olds[i], news[j])
+          ? lengths[(i + 1) * width + j + 1] + 1
+          : max(lengths[(i + 1) * width + j], lengths[i * width + j + 1]);
+    }
+  }
+  final copies = <int, int>{};
+  var i = 0;
+  var j = 0;
+  while (i < olds.length && j < news.length) {
+    if (matches(olds[i], news[j]) &&
+        lengths[i * width + j] == lengths[(i + 1) * width + j + 1] + 1) {
+      if (addedSet.contains(news[j])) copies[news[j]] = olds[i];
+      i++;
+      j++;
+    } else if (lengths[(i + 1) * width + j] >= lengths[i * width + j + 1]) {
+      i++;
+    } else {
+      j++;
+    }
+  }
+  return copies;
+}
+
+String _contentKey(LlamaChatMessage message) => jsonEncode([
+  message.role.name,
+  for (final part in message.parts) ['${part.runtimeType}', part.toJson()],
+]);
 
 /// Removes [turn] from [history], matching each message with [same]
 /// (identity by default) from the end, so an earlier turn that holds the

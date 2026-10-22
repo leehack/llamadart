@@ -205,6 +205,29 @@ class _RenotingSession extends ChatSession {
   }
 }
 
+/// A [ChatSession] subclass that keeps one app-owned note just ahead of the
+/// newest message, storing copies of the other messages with [copies].
+class _NoteAheadSession extends ChatSession {
+  _NoteAheadSession(super.engine, {this.copies = false})
+    : super(maxContextTokens: 0);
+
+  final bool copies;
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    final kept = [
+      for (final stored in history)
+        if (stored.content != 'Note') copies ? _copyOf(stored) : stored,
+    ];
+    reset();
+    [
+      ...kept,
+      _text(LlamaChatRole.system, 'Note'),
+      message,
+    ].forEach(super.addMessage);
+  }
+}
+
 /// A [ChatSession] subclass that replaces its [summarized] oldest messages
 /// with a summary when a tool result, or a copy of it, is added.
 class _SummarizingSession extends ChatSession {
@@ -1595,6 +1618,87 @@ void main() {
         [for (final message in rewriting.history) message.content],
         ['Hi', 'Hello'],
       );
+    });
+
+    test('whose addMessage copies earlier messages keeps an earlier turn '
+        'with an equal result', () async {
+      final rewriting = _RewritingSession(engine);
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(scriptedAnswer('Done'));
+      await rewriting.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+      );
+      final before = [for (final message in rewriting.history) message.content];
+
+      final result = await stopAtMaxRounds(rewriting);
+
+      expect(result.rolledBack, isTrue);
+      expect([
+        for (final message in rewriting.history) message.content,
+      ], before);
+      expect(_roles(rewriting.history), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    for (final copies in [false, true]) {
+      test('whose addMessage moves a fresh note ahead of each message'
+          '${copies ? ' and copies the others' : ''} keeps the note', () async {
+        final noting = _NoteAheadSession(engine, copies: copies);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(noting.addMessage);
+
+        final result = await stopAtMaxRounds(noting);
+
+        expect(result.rolledBack, isTrue);
+        expect(
+          [for (final message in noting.history) message.content],
+          ['Hi', 'Hello', 'Note'],
+        );
+      });
+    }
+
+    test('whose addMessage drops an earlier equal note first removes the note '
+        'it appended', () async {
+      final trimming = _TrimmingSession(engine);
+      [
+        _text(LlamaChatRole.system, 'Audit'),
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(trimming.addMessage);
+
+      final result = await stopAtMaxRounds(trimming);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in trimming.history) message.content],
+        ['Hi', 'Hello'],
+      );
+    });
+
+    test('whose addMessage drops the oldest message ends with the last reply '
+        'after completed tool turns', () async {
+      final trimming = _TrimmingSession(engine);
+      final tools = [_tool('weather', (_) async => 'sunny')];
+      for (var turn = 0; turn < 3; turn++) {
+        engine.replies
+          ..add(scriptedCalls([('a$turn', 'weather', '{}')]))
+          ..add(scriptedAnswer('Done $turn'));
+        await trimming.sendWithTools('Weather $turn', tools: tools);
+      }
+      expect(trimming.history.first.content, 'Audit');
+
+      final result = await stopAtMaxRounds(trimming);
+
+      expect(result.rolledBack, isTrue);
+      expect(trimming.history.last.content, 'Done 2');
     });
 
     test('whose addMessage drops the oldest message removes the note it '
