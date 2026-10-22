@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Seed-OSS, MiniMax M2, Apriel 1.5, Xiaomi MiMo and EXAONE MoE return a thought opened by the prompt as reasoning until its end tag, as llama.cpp does, and stream it once instead of as content or twice ([#742](https://github.com/leehack/llamadart/issues/742)).
+- Let DeepSeek V3, Seed-OSS, MiniMax M2, Apriel 1.5 and EXAONE MoE templates that open a thought in the prompt reason before a `ToolChoice.required` tool call and end the thought, so the call is not parsed as reasoning and lost ([#742](https://github.com/leehack/llamadart/issues/742)).
+
 ## 0.15.6
 
 - Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.7.0-2`: a fixed `TextToSpeechRequest.seed` gives the same Qwen3-TTS audio on every synthesis of a loaded engine, including after a cancelled one ([#632](https://github.com/leehack/llamadart/issues/632)), and Windows arm64 bundles no longer ship `libomp140.aarch64.dll`, a Visual Studio debug DLL that apps may not redistribute. Apple apps get it with `llamadart_llama_cpp_flutter` `0.15.2`; companions `0.15.0` and `0.15.1` keep building with an upgrade warning.
