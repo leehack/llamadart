@@ -94,12 +94,12 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    final shouldTreatAsContent =
-        thinkingForcedOpen && !isPartial && !output.contains('</think>');
-
-    final extracted = shouldTreatAsContent
-        ? (content: output, reasoning: null)
-        : extractThinking(output, thinkingForcedOpen: thinkingForcedOpen);
+    // As in llama.cpp (`620d2225c`), a forced-open thought that never closes
+    // is reasoning.
+    final extracted = extractThinking(
+      output,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
 
     if (!parseToolCalls) {
       return ChatParseResult(

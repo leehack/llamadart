@@ -104,6 +104,7 @@ class SeedOssHandler extends ChatTemplateHandler {
       startThink: thinkingStartTag,
       endThink: thinkingEndTag,
       parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
     );
     return ChatParseResult(
       content: parsed.content.trim(),

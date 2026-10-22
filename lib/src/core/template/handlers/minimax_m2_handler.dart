@@ -99,6 +99,7 @@ class MinimaxM2Handler extends ChatTemplateHandler {
       startThink: '<think>',
       endThink: '</think>',
       parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
     );
     return ChatParseResult(
       content: result.content.trim(),

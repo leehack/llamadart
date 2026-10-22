@@ -198,7 +198,7 @@ void main() {
       expect(result.toolCalls.first.function?.name, equals('weather'));
     });
 
-    test('treats forced-open EXAONE output as content when no end tag', () {
+    test('treats forced-open EXAONE output as reasoning when no end tag', () {
       const output =
           '<tool_call>{"name":"weather","arguments":{"city":"Seoul"}}</tool_call>';
 
@@ -208,9 +208,9 @@ void main() {
         thinkingForcedOpen: true,
       );
 
-      expect(result.reasoningContent, isNull);
-      expect(result.toolCalls, hasLength(1));
-      expect(result.toolCalls.first.function?.name, equals('weather'));
+      expect(result.content, isEmpty);
+      expect(result.reasoningContent, output);
+      expect(result.toolCalls, isEmpty);
     });
 
     test('parses Kimi K2 tool call and strips function prefix/index', () {
