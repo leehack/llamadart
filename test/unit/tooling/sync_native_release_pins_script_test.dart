@@ -13,63 +13,6 @@ import 'package:test/test.dart';
 const _pinsPath = 'lib/src/hook/native_release_pins.dart';
 
 void main() {
-  test('SD sync clears old compatibility proof on a pin change and keeps '
-      'same-tag refreshes immutable', () async {
-    final result = await Process.run('python3', [
-      '-m',
-      'unittest',
-      'tool.native.test_sync_native_release_pins.StableDiffusionAppleCompatibilitySyncTest',
-      'tool.native.test_sync_native_release_pins.StableDiffusionPinSyncTest',
-    ]);
-    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-  });
-  test(
-    'Apple companion sync retains and clears explicit compatibility entries',
-    () async {
-      final result = await Process.run('python3', [
-        '-m',
-        'unittest',
-        'tool.native.test_sync_native_release_pins.LlamaCppAppleCompanionCompatibilitySyncTest',
-      ]);
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-    },
-  );
-
-  test(
-    'LiteRT source patch provenance is optional and strictly validated',
-    () async {
-      final result = await Process.run('python3', [
-        '-m',
-        'unittest',
-        'tool.native.test_sync_native_release_pins.LiteRtSourcePatchesTest',
-      ]);
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-    },
-  );
-
-  test('sync CLI preserves generated macOS GPU completeness checks', () async {
-    final result = await Process.run('python3', [
-      '-m',
-      'unittest',
-      'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest.test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness',
-    ]);
-    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-  });
-
-  test('LiteRT prebuilt override table covers the pinned upstream version '
-      'and names a version it lacks', () async {
-    const suite =
-        'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest';
-    final result = await Process.run('python3', [
-      '-m',
-      'unittest',
-      '$suite.test_override_table_has_an_entry_for_the_pinned_upstream_version',
-      '$suite.test_override_mismatch_names_the_upstream_version_missing_from_the_table',
-      '$suite.test_v017_and_v018_require_exact_android_dawn_repair_provenance',
-    ]);
-    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-  });
-
   test(
     'stable rebuild entry is explicit and retains rollback guards',
     () async {
