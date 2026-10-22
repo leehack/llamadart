@@ -651,14 +651,21 @@ void main() {
         contains('only for Android'),
       );
       expect((manifest()['environment'] as Map)['litert_tag'], '0.18.0');
-      for (final tag in ['0.18.0', '0.18.0-1', '0.18.0-2', '0.18.0-3']) {
+      for (final tag in [
+        '0.18.0',
+        '0.18.0-1',
+        '0.18.0-2',
+        '0.18.0-3',
+        '0.18.1',
+      ]) {
         final placement = inspect(pixel, of: on({'litert_tag': tag}));
         expect(placement['verified'], isTrue, reason: tag);
         expect(placement['placement'], _label, reason: tag);
       }
       for (final tag in [
         '0.19.0',
-        '0.18.1',
+        '0.18.2',
+        '0.18.1-1',
         '0.18.0-4',
         '0.18.0-',
         '0.17.0-8',

@@ -327,12 +327,15 @@ const _liteRtGpuFailureMarkers = [
 /// `litert/runtime/compiled_model.cc` at that tag's pins. A `-N` wrapper
 /// rebuild is listed only once its upstream sources are confirmed unchanged.
 /// v0.18.0-2 and v0.18.0-3 retain both source pins; their patches touch only
-/// ASR sources and the conversation finish reason.
+/// ASR sources and the conversation finish reason. v0.18.1 keeps the
+/// LiteRT-LM source and moves LiteRT to `ca21dc99`, where both rules hold and
+/// the undelegated-node count can only grow.
 const _liteRtGpuOnlyDelegationTags = {
   '0.18.0',
   '0.18.0-1',
   '0.18.0-2',
   '0.18.0-3',
+  '0.18.1',
 };
 
 /// A logcat `threadtime` record's tag:
