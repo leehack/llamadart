@@ -2991,7 +2991,11 @@ class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
         self.source = (Path(__file__).resolve().parents[2] /
                        "lib/src/hook/native_release_pins.dart").read_text()
         self.current = pins.current_stable_diffusion_release_tag(self.source)
-        self.checksum = "24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b"
+        self.checksum = re.search(
+            r"const stableDiffusionAppleCompanionChecksums = <String, String>\{\s*"
+            r"'" + re.escape(self.current) + r"': '([0-9a-f]{64})'",
+            self.source,
+        ).group(1)
 
     def test_same_tag_retains_verified_compatibility(self) -> None:
         self.assertEqual(pins.refresh_stable_diffusion_apple_contract(
