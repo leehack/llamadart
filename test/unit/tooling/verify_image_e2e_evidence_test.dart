@@ -16,11 +16,18 @@ import '../../../example/chat_app/test_vm/evidence_png_fixture.dart';
 // Use the same maintained lock as the production verifier.
 // ignore: avoid_relative_lib_imports
 import '../../../example/chat_app/lib/models/image_model_profile.dart';
+import '../../support/dart_script_snapshot.dart';
 
 const _commit = 'dfc58e7998bd751a9084bfa36d9ab9a90ba6d963';
 
 void main() {
+  late String verifier;
   late Directory directory;
+  setUpAll(
+    () async => verifier = await compileDartScript(
+      'tool/testing/verify_image_e2e_evidence.dart',
+    ),
+  );
   setUp(
     () => directory = Directory.systemTemp.createTempSync('image-tool-test-'),
   );
@@ -63,7 +70,7 @@ void main() {
     String backend = 'CPU',
   }) => Process.run(Platform.resolvedExecutable, [
     '--packages=${p.absolute('.dart_tool/package_config.json')}',
-    'tool/testing/verify_image_e2e_evidence.dart',
+    verifier,
     directory.path,
     commit,
     backend,

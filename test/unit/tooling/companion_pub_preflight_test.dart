@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import '../../../tool/release/companion_pub_preflight.dart';
+import '../../support/dart_script_snapshot.dart';
 
 const _preflightCommand = 'dart run tool/release/companion_pub_preflight.dart';
 const _validateStep = '- name: Validate release state';
@@ -485,13 +486,15 @@ void main() {
 
   group('the preflight CLI', () {
     const script = 'tool/release/companion_pub_preflight.dart';
+    late String snapshot;
+    setUpAll(() async => snapshot = await compileDartScript(script));
 
     ProcessResult runCli(List<String> arguments) {
       final cwd = Directory.systemTemp.createTempSync('companion_preflight_');
       addTearDown(() => cwd.deleteSync(recursive: true));
       return Process.runSync(Platform.resolvedExecutable, [
         '--packages=${File('.dart_tool/package_config.json').absolute.path}',
-        File(script).absolute.path,
+        snapshot,
         ...arguments,
       ], workingDirectory: cwd.path);
     }

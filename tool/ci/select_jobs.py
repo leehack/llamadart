@@ -25,6 +25,9 @@ CORE_JOBS = (
     'native-prompt-reuse-parity', 'artifact-contract',
     'genkit', 'genkit-lower-bounds',
 )
+# Jobs outside the plan that run exactly when the planned job they feed runs:
+# the Linux VM test shards whose raw coverage test-linux-coverage merges.
+SHARD_JOBS = {'test-linux-vm': 'test-linux-coverage'}
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
 # Imported by tool/testing/validation/image_profile.dart, whose root tests run
@@ -174,11 +177,17 @@ def validate_plan(plan):
         raise ValueError('Companion matrix disagrees with job selection')
 
 
+def expected_jobs(plan, bundle=False):
+    """Whether each job the aggregate needs, other than `changes`, is selected."""
+    if bundle:
+        return {'desktop': bool(plan['desktops']), 'app': bool(plan['apps'])}
+    return {**plan['jobs'], **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()}}
+
+
 def aggregate(plan, needs, bundle=False):
     """A selected job must succeed; only intentionally unselected jobs may skip."""
     validate_plan(plan)
-    expected = ({'desktop': bool(plan['desktops']), 'app': bool(plan['apps'])}
-                if bundle else plan['jobs'])
+    expected = expected_jobs(plan, bundle)
     errors = []
     if needs.get('changes', {}).get('result') != 'success':
         errors.append('change selection did not succeed')
