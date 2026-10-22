@@ -498,8 +498,10 @@ class _ToolLoopTurn {
   /// so a rollback removes it: the stored [message] or a copy of it, copies
   /// of the turn's earlier messages, and every other new message, except
   /// one placed before the turn in place of a message from before the turn
-  /// that the call removed, such as a summary of earlier turns. Messages
-  /// from before the turn that the call kept stay, even if it moved them.
+  /// that the call removed: a copy of that message, or, while removed
+  /// messages remain without a copy, another message such as a summary of
+  /// earlier turns. Messages from before the turn that the call kept stay,
+  /// even if it moved them.
   void add(LlamaChatMessage message) {
     final byContent = _historyReturnsCopies;
     final bool Function(LlamaChatMessage, LlamaChatMessage) same = byContent
@@ -515,11 +517,11 @@ class _ToolLoopTurn {
     final members = [...messages, ..._appended];
     final unmatched = [...members];
     final replacedTurn = <LlamaChatMessage>[];
-    var removedOutside = 0;
+    final removedOutside = <LlamaChatMessage>[];
     for (final stored in removed) {
       final member = unmatched.indexWhere((member) => same(member, stored));
       if (member < 0) {
-        removedOutside++;
+        removedOutside.add(stored);
       } else {
         unmatched.removeAt(member);
         replacedTurn.add(stored);
@@ -539,29 +541,45 @@ class _ToolLoopTurn {
     }
     final turn = {...own};
     final turnCopies = <int>[];
-    final fresh = <int>[];
+    final freshFromEnd = <int>[];
     for (final index in added.reversed) {
       if (own.contains(index)) continue;
-      final original = replacedTurn.lastIndexWhere(
-        (stored) => _sameContent(stored, after[index]),
-      );
+      final original = replacedTurn.isEmpty
+          ? -1
+          : replacedTurn.lastIndexWhere(
+              (stored) => _sameContent(stored, after[index]),
+            );
       if (original < 0) {
-        fresh.insert(0, index);
+        freshFromEnd.add(index);
       } else {
         replacedTurn.removeAt(original);
         turnCopies.add(index);
       }
     }
+    final fresh = freshFromEnd.reversed.toList();
     // A rollback finds the turn's messages by content in a history that
     // returns copies, so their copies there must not be removed twice.
     if (!byContent) turn.addAll(turnCopies);
     if (fresh.isNotEmpty) {
+      // The turn starts at its first loop message; notes the override added
+      // earlier in the turn may sit before it.
       final start = [
-        ...turn,
-        ..._turnIndices(after, members, same),
+        ...own,
+        for (final index in turnCopies)
+          if (messages.any((loop) => _sameContent(loop, after[index]))) index,
+        ..._turnIndices(after, messages, same),
       ].fold(after.length, min);
-      var replacements = removedOutside;
+      final copies = _copiesOf(
+        [
+          for (final index in fresh)
+            if (index < start) index,
+        ],
+        after,
+        removedOutside,
+      );
+      var replacements = removedOutside.length - copies.length;
       for (final index in fresh) {
+        if (copies.contains(index)) continue;
         if (index < start && replacements > 0) {
           replacements--;
         } else {
@@ -654,6 +672,31 @@ class _ToolLoopTurn {
     }
   }
   return (added, removed);
+}
+
+/// The indices in [candidates] of copies of [removed] messages, each removed
+/// message standing for at most one copy.
+Set<int> _copiesOf(
+  List<int> candidates,
+  List<LlamaChatMessage> after,
+  List<LlamaChatMessage> removed,
+) {
+  final copies = <int>{};
+  final used = List.filled(removed.length, false);
+  var first = 0;
+  for (final index in candidates) {
+    while (first < removed.length && used[first]) {
+      first++;
+    }
+    for (var match = first; match < removed.length; match++) {
+      if (!used[match] && _sameContent(removed[match], after[index])) {
+        used[match] = true;
+        copies.add(index);
+        break;
+      }
+    }
+  }
+  return copies;
 }
 
 /// [_diffInstances] for a history that returns copies: messages match by

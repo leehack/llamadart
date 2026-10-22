@@ -171,7 +171,8 @@ class _TrimmingSession extends ChatSession {
 /// A [ChatSession] subclass that drops its oldest message when a tool result
 /// is added, then stores the result, or a copy of it, with an audit note.
 /// With [keepsLength] it drops two messages, so the history does not grow;
-/// with [atFront] it stores the result and note before the kept messages.
+/// with [atFront] it stores the result and note before the kept messages;
+/// with [copiesAll] it stores copies of the kept messages.
 class _AuditingSession extends ChatSession {
   _AuditingSession(
     super.engine, {
@@ -179,17 +180,22 @@ class _AuditingSession extends ChatSession {
     this.noteFirst = false,
     this.keepsLength = false,
     this.atFront = false,
+    this.copiesAll = false,
   }) : super(maxContextTokens: 0);
 
   final bool copiesResult;
   final bool noteFirst;
   final bool keepsLength;
   final bool atFront;
+  final bool copiesAll;
 
   @override
   void addMessage(LlamaChatMessage message) {
     if (message.role != LlamaChatRole.tool) return super.addMessage(message);
-    final kept = history.skip(keepsLength ? 2 : 1).toList();
+    final kept = [
+      for (final stored in history.skip(keepsLength ? 2 : 1))
+        copiesAll ? _copyOf(stored) : stored,
+    ];
     final result = copiesResult ? _copyOf(message) : message;
     final note = _text(LlamaChatRole.system, 'Audit');
     reset();
@@ -311,6 +317,43 @@ class _PrependingSession extends ChatSession {
       _text(LlamaChatRole.system, 'Note'),
       ...kept,
       message,
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that stores copies of every message and puts a
+/// header first when a tool result is added. With [systemFirst] it also
+/// moves system messages ahead of the others; with [keepsHeaders] it keeps
+/// the headers it stored before.
+class _CopyingHeaderSession extends ChatSession {
+  _CopyingHeaderSession(
+    super.engine, {
+    this.systemFirst = false,
+    this.keepsHeaders = false,
+  }) : super(maxContextTokens: 0);
+
+  final bool systemFirst;
+  final bool keepsHeaders;
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final copies = [
+      for (final stored in history)
+        if (keepsHeaders || stored.content != 'Header') _copyOf(stored),
+    ];
+    if (systemFirst) {
+      copies.sort(
+        (a, b) =>
+            (a.role == LlamaChatRole.system ? 0 : 1) -
+            (b.role == LlamaChatRole.system ? 0 : 1),
+      );
+    }
+    reset();
+    [
+      _text(LlamaChatRole.system, 'Header'),
+      ...copies,
+      _copyOf(message),
     ].forEach(super.addMessage);
   }
 }
@@ -1803,6 +1846,11 @@ void main() {
         (LlamaEngine engine) =>
             _AuditingSession(engine, copiesResult: true, atFront: true),
       ),
+      (
+        'stores copies and a note before the result removes the note',
+        (LlamaEngine engine) =>
+            _AuditingSession(engine, copiesAll: true, noteFirst: true),
+      ),
     ]) {
       test(
         'whose addMessage drops the oldest message and $description',
@@ -1910,6 +1958,68 @@ void main() {
         expect([
           for (final message in summarizing.history) message.content,
         ], kept);
+      });
+    }
+
+    test('whose addMessage copies earlier messages and adds another equal '
+        'header removes the new one', () async {
+      final heading = _CopyingHeaderSession(engine, keepsHeaders: true);
+      [
+        _text(LlamaChatRole.system, 'Header'),
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(heading.addMessage);
+
+      final result = await stopAtMaxRounds(heading);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in heading.history) message.content],
+        ['Header', 'Hi', 'Hello'],
+      );
+    });
+
+    test('whose addMessage copies earlier messages, moves system messages '
+        'first and adds a header keeps the copies', () async {
+      final heading = _CopyingHeaderSession(engine, systemFirst: true);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.system, 'Rule'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(heading.addMessage);
+
+      final result = await stopAtMaxRounds(heading);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in heading.history) message.content],
+        ['Rule', 'Hi', 'Hello'],
+      );
+    });
+
+    for (final rounds in [1, 2]) {
+      test('whose addMessage copies earlier messages and adds a header keeps '
+          'the copies and removes the header after $rounds rounds', () async {
+        final heading = _CopyingHeaderSession(engine);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(heading.addMessage);
+        for (var round = 0; round <= rounds; round++) {
+          engine.replies.add(scriptedCalls([('c$round', 'weather', '{}')]));
+        }
+
+        final result = await heading.sendWithTools(
+          'Weather',
+          tools: [_tool('weather', (_) async => 'sunny')],
+          maxRounds: rounds,
+        );
+
+        expect(result.rolledBack, isTrue);
+        expect(
+          [for (final message in heading.history) message.content],
+          ['Hi', 'Hello'],
+        );
       });
     }
 
@@ -2350,6 +2460,18 @@ void main() {
       expect([
         for (final message in trimming.history) message.content,
       ], before.skip(3));
+    });
+
+    test('of a subclass whose addMessage copies every message keeps the '
+        'copies', () async {
+      final heading = _CopyingHeaderSession(engine);
+      fill(heading);
+      final before = [for (final message in heading.history) message.content];
+
+      final result = await stopAtMaxRounds(heading);
+
+      expect(result.rolledBack, isTrue);
+      expect([for (final message in heading.history) message.content], before);
     });
 
     test('of a class that implements ChatSession whose history returns '
