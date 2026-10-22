@@ -100,6 +100,15 @@ build keeps macOS LiteRT-LM in the hook cache with a build warning. The app
 API is unchanged, and native GPU embeddings still throw
 `LlamaUnsupportedException`.
 
+### stable_diffusion native runtime `v0.3.0`
+
+The hook and the stable_diffusion Apple companion source pin `v0.3.0`, whose
+`sd_ctx_params_t` is larger than in `v0.2.0-4`. A Flutter iOS or macOS build
+fails with `Incompatible Apple stable_diffusion companion` until the app
+depends on the companion release that pins `v0.3.0`; upgrade both together.
+`ImageModelParams` is unchanged, and flash attention and direct convolution
+stay as it selects them.
+
 <a id="014x-to-0150-upgrade-guide"></a>
 
 ## `0.14.x` -> `0.15.0`: upgrade guide

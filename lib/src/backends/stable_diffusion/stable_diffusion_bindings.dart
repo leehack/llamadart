@@ -84,6 +84,8 @@ bool convert(
     ffi.Pointer<ffi.Char>,
     ffi.Bool,
     ffi.Int,
+    ffi.Pointer<sd_lora_t>,
+    ffi.Int,
   )
 >(symbol: 'convert_with_components')
 external bool _convert_with_components(
@@ -98,6 +100,8 @@ external bool _convert_with_components(
   ffi.Pointer<ffi.Char> tensor_type_rules,
   bool convert_name,
   int n_threads,
+  ffi.Pointer<sd_lora_t> loras,
+  int lora_count,
 );
 
 bool convert_with_components(
@@ -112,6 +116,8 @@ bool convert_with_components(
   ffi.Pointer<ffi.Char> tensor_type_rules,
   bool convert_name,
   int n_threads,
+  ffi.Pointer<sd_lora_t> loras,
+  int lora_count,
 ) {
   return _convert_with_components(
     model_path,
@@ -125,6 +131,8 @@ bool convert_with_components(
     tensor_type_rules,
     convert_name,
     n_threads,
+    loras,
+    lora_count,
   );
 }
 
@@ -291,6 +299,12 @@ external ffi.Pointer<ffi.Char> sd_ctx_params_to_str(
 @ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
 external bool sd_ctx_supports_image_generation(ffi.Pointer<sd_ctx_t> sd_ctx);
 
+/// Returns whether the loaded model consumes ref_images as conditioning inputs.
+@ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
+external bool sd_ctx_supports_ref_image_conditioning(
+  ffi.Pointer<sd_ctx_t> sd_ctx,
+);
+
 @ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
 external bool sd_ctx_supports_video_generation(ffi.Pointer<sd_ctx_t> sd_ctx);
 
@@ -432,6 +446,9 @@ external ffi.Pointer<ffi.Char> sd_get_model_version_name(
 
 @ffi.Native<ffi.Int32 Function()>()
 external int sd_get_num_physical_cores();
+
+@ffi.Native<sd_preview_info_t Function()>()
+external sd_preview_info_t sd_get_preview_info();
 
 @ffi.Native<ffi.Pointer<ffi.Char> Function()>()
 external ffi.Pointer<ffi.Char> sd_get_system_info();
@@ -1226,6 +1243,9 @@ final class sd_ctx_params_t extends ffi.Struct {
   @ffi.Bool()
   external bool disable_segmented_compute;
 
+  @ffi.Bool()
+  external bool batched_cfg;
+
   @ffi.Float()
   external double linear_scale;
 
@@ -1239,6 +1259,10 @@ final class sd_ctx_params_t extends ffi.Struct {
 
   @ffi.Int()
   external int conditioning_cache_size;
+
+  external ffi.Pointer<ffi.Char> flash_attn_mode;
+
+  external ffi.Pointer<ffi.Char> conv_direct_mode;
 
   static ffi.Pointer<sd_ctx_params_t> $allocate(
     ffi.Allocator $allocator, {
@@ -1289,11 +1313,14 @@ final class sd_ctx_params_t extends ffi.Struct {
     required ffi.Pointer<ffi.Char> rpc_servers,
     required ffi.Pointer<ffi.Char> model_args,
     required bool disable_segmented_compute,
+    required bool batched_cfg,
     required double linear_scale,
     required double attn_scale,
     required ffi.Pointer<ffi.Char> tokenizer,
     required bool sage_attn,
     required int conditioning_cache_size,
+    required ffi.Pointer<ffi.Char> flash_attn_mode,
+    required ffi.Pointer<ffi.Char> conv_direct_mode,
   }) => $allocator<sd_ctx_params_t>()
     ..ref.model_path = model_path
     ..ref.clip_l_path = clip_l_path
@@ -1342,11 +1369,14 @@ final class sd_ctx_params_t extends ffi.Struct {
     ..ref.rpc_servers = rpc_servers
     ..ref.model_args = model_args
     ..ref.disable_segmented_compute = disable_segmented_compute
+    ..ref.batched_cfg = batched_cfg
     ..ref.linear_scale = linear_scale
     ..ref.attn_scale = attn_scale
     ..ref.tokenizer = tokenizer
     ..ref.sage_attn = sage_attn
-    ..ref.conditioning_cache_size = conditioning_cache_size;
+    ..ref.conditioning_cache_size = conditioning_cache_size
+    ..ref.flash_attn_mode = flash_attn_mode
+    ..ref.conv_direct_mode = conv_direct_mode;
 }
 
 final class sd_ctx_t extends ffi.Opaque {}
@@ -1786,6 +1816,23 @@ typedef Dartsd_preview_cb_tFunction =
       bool is_noisy,
       ffi.Pointer<ffi.Void> data,
     );
+
+final class sd_preview_info_t extends ffi.Struct {
+  @ffi.Int()
+  external int sample_pass;
+
+  @ffi.Int()
+  external int total_steps;
+
+  static ffi.Pointer<sd_preview_info_t> $allocate(
+    ffi.Allocator $allocator, {
+    required int sample_pass,
+    required int total_steps,
+  }) => $allocator<sd_preview_info_t>()
+    ..ref.sample_pass = sample_pass
+    ..ref.total_steps = total_steps;
+}
+
 typedef sd_progress_cb_t =
     ffi.Pointer<ffi.NativeFunction<sd_progress_cb_tFunction>>;
 typedef sd_progress_cb_tFunction =
