@@ -123,6 +123,21 @@ void main() {
       expect(mixed.draftModelUrl, 'draft.gguf');
     });
 
+    test('rejects a draft micro-batch size the bridge cannot apply', () {
+      expect(
+        () => resolve(
+          const SpeculativeDecodingConfig.mtp(draftMicroBatchSize: 8),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('draftMicroBatchSize'),
+          ),
+        ),
+      );
+    });
+
     test('names the draft and cache URLs for redaction', () {
       final request = resolve(
         const SpeculativeDecodingConfig.mixed(

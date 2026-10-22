@@ -355,10 +355,12 @@ Important fields:
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
   draft tuning, on bundles that carry a speculative drafter; native llama.cpp takes any `SpeculativeDecodingConfig`
-  strategy. `draftModel` is a `ModelSource` that native backends download
+  strategy, and `draftMicroBatchSize` sizes its draft context's micro-batch.
+  `draftModel` is a `ModelSource` that native backends download
   and cache when a generation starts, with `draftModelDownload`. WebGPU takes
   the strategies its bridge assets report, with a remote `draftModel` whose
-  URL the runtime fetches, and URLs for the n-gram cache paths. LiteRT-LM web rejects both.
+  URL the runtime fetches, and URLs for the n-gram cache paths, and rejects
+  `draftMicroBatchSize`. LiteRT-LM web rejects both.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.

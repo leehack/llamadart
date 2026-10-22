@@ -76,7 +76,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Gate optional features on probes, not on the browser or the asset tag:
   - `await engine.capabilities` for `supportsPresencePenalty`,
     `supportsMinP`, `supportsThinkingBudget` and
-    `speculativeDecodingStrategies` (bridge `v0.1.54+`), and for what
+    `speculativeDecodingStrategies` (bridge `v0.1.54+`; WebGPU rejects
+    `SpeculativeDecodingConfig.draftMicroBatchSize`), and for what
     LiteRT-LM web lacks: `supportsMultiTurnChat`, `supportsToolCalling`,
     `supportsPenalty` and `supportsGrammar` are false there. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
