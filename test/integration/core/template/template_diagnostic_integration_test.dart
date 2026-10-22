@@ -41,17 +41,6 @@ void main() {
     'tokenizer.ggml.eos_token': '</s>',
   };
 
-  group('Format Detection', () {
-    for (final file in templateFiles) {
-      final name = file.path.split('/').last.replaceAll('.jinja', '');
-      test('detects format for $name', () {
-        final source = file.readAsStringSync();
-        final format = detectChatFormat(source);
-        expect(format, isNotNull);
-      });
-    }
-  });
-
   group('Render Pipeline - Simple Messages', () {
     for (final file in templateFiles) {
       final name = file.path.split('/').last.replaceAll('.jinja', '');

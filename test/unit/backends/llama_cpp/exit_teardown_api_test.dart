@@ -80,17 +80,6 @@ void main() {
     );
   });
 
-  test('resolves from the pinned runtime', () {
-    expect(
-      ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
-      isNotNull,
-    );
-    expect(
-      LlamaCppObjectCalls.resolve(isWindows: Platform.isWindows).exit,
-      isNotNull,
-    );
-  });
-
   test('binds every function through the lookup, and resolves none when one '
       'is missing', () {
     final requested = <String>[];

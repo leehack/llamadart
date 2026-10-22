@@ -18,13 +18,14 @@ import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:test/test.dart';
 
 /// Templates whose role-alternation check rejects a `tool` message.
+///
+/// `tool/litert_lm_templates/gemma{,3n}.jinja` are byte-identical to the
+/// Gemma 3 fixtures here.
 const _rejectingTemplates = <String>[
   'test/fixtures/templates/gemma-3-4b-it.jinja',
   'test/fixtures/templates/gemma-3n-E4B-it.jinja',
   'test/fixtures/templates/Mistral-7B-Instruct-v0_2.jinja',
   'test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja',
-  'tool/litert_lm_templates/gemma.jinja',
-  'tool/litert_lm_templates/gemma3n.jinja',
 ];
 
 /// Templates that render the `tool` role themselves.
@@ -163,11 +164,6 @@ void main() {
 
   for (final path in _rejectingTemplates) {
     group(_name(path), () {
-      test('reports that it rejects the tool role', () {
-        final source = File(path).readAsStringSync();
-        expect(TemplateCaps.detect(source).supportsToolResponses, isFalse);
-      });
-
       for (final choice in ToolChoice.values) {
         test('sends the result as a user turn with tool_choice '
             '${choice.name}', () {

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -2100,9 +2101,23 @@ void main() {
       }
     });
 
-    test('default startup timeout permits a slow native cold start', () async {
+    test('default startup timeout permits a slow native cold start', () {
+      final mirror = reflect(NativeLlamaBackend());
+      final owner = mirror.type.owner as LibraryMirror;
+      expect(
+        mirror
+            .getField(MirrorSystem.getSymbol('_workerStartupTimeout', owner))
+            .reflectee,
+        const Duration(seconds: 30),
+        reason: 'physical iOS cold starts exceed the former 5 s default (#462)',
+      );
+    });
+
+    test('a handshake slower than instant completes within the startup '
+        'timeout', () async {
       final backend = NativeLlamaBackend(
         workerEntrypoint: _slowReusableWorkerEntry,
+        workerStartupTimeout: const Duration(seconds: 2),
       );
 
       try {
@@ -2273,7 +2288,7 @@ void _slowReusableWorkerEntry(SendPort initialSendPort) {
   receivePort.listen((message) async {
     switch (message) {
       case WorkerHandshake():
-        await Future<void>.delayed(const Duration(milliseconds: 5200));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
         message.sendPort.send(DoneResponse());
       case ModelLoadRequest():
         message.sendPort.send(HandleResponse(42));

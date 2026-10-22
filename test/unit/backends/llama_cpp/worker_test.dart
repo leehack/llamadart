@@ -19,10 +19,6 @@ import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('llamaWorkerEntry function is available', () {
-    expect(llamaWorkerEntry, isA<Function>());
-  });
-
   group('llamaWorkerEntry isolate routing', () {
     test('reports and cleans up backend initialization failure', () async {
       final service = _FailingInitializationLlamaCppService();

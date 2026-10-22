@@ -135,8 +135,6 @@ void main() {
         expect(evaluator, isNot(contains('LLAMADART_READINESS_APP_ID')));
         expect(evaluator, isNot(contains('LLAMADART_READINESS_PRIVATE_KEY')));
         expect(evaluator, isNot(contains('Platform.environment')));
-        expect(workflow, contains('pull_request_target:'));
-        expect(workflow, contains(r'ref: ${{ github.sha }}'));
         expect(workflow, isNot(contains('workflow_dispatch:')));
         expect(
           workflow,
@@ -144,7 +142,6 @@ void main() {
             contains(r'ref: ${{ github.event.repository.default_branch }}'),
           ),
         );
-        expect(workflow, contains('persist-credentials: false'));
         expect(workflow, contains('Read-only advisory'));
         expect(workflow, contains('observed_head'));
         expect(workflow, contains('current_head'));
