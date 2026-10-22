@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/backend.dart'
+    show BackendModelParamsCheck;
 import 'package:llamadart/src/core/models/model_target_file.dart'
     show UncacheableLocalModelFileException;
 import 'package:test/test.dart';
@@ -317,6 +319,34 @@ void main() {
         expect(backend.events, isEmpty);
         expect(engine.isReady, isTrue);
       });
+    });
+
+    test('asks the backend to check ModelParams for the named format before '
+        'any download', () async {
+      final backend = _ParamsCheckBackend();
+      final manager = _Manager(cacheFiles());
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      addTearDown(engine.dispose);
+      const ignored = ModelParams(liteRtLmCacheDir: '/cache');
+
+      await expectLater(
+        engine.setModel(LlamaModel(remoteModel), params: ignored),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(backend.checkedFormats, [ModelFormat.gguf]);
+      expect(manager.sources, isEmpty);
+      expect(backend.events, isEmpty);
+
+      final unnamed = ModelSource.parse('https://example.com/download?id=7');
+      await expectLater(
+        engine.setModel(LlamaModel(unnamed), params: ignored),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(backend.checkedFormats, [ModelFormat.gguf, null]);
+      expect(manager.sources, isEmpty);
+
+      await engine.setModel(LlamaModel(remoteModel));
+      expect(backend.events, ['modelLoad /cache/model.gguf']);
     });
 
     test('does not reject a device or projector for a file whose format it '
@@ -1750,6 +1780,18 @@ class _RoutingBackend extends _Backend
 /// [failing] one throws; and an [uncacheable] local path throws what the
 /// package download manager throws for a name no cache entry can hold. With
 /// [ignoresCancel] a download completes although its token is cancelled.
+class _ParamsCheckBackend extends _Backend implements BackendModelParamsCheck {
+  final List<ModelFormat?> checkedFormats = <ModelFormat?>[];
+
+  @override
+  void checkModelParams(ModelParams params, ModelFormat? format) {
+    checkedFormats.add(format);
+    if (params.liteRtLmCacheDir != null) {
+      throw LlamaUnsupportedException('liteRtLmCacheDir');
+    }
+  }
+}
+
 class _Manager implements ModelDownloadManager {
   _Manager(
     Map<ModelSource, String> files, {

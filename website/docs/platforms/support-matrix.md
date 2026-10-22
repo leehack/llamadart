@@ -76,6 +76,14 @@ hosts without a hardware Vulkan driver. Windows arm64 has no LiteRT-LM
 runtime. The deprecated `liteRtLmBackend` selector works until 1.0; an
 unavailable choice there throws `LlamaModelException`.
 
+`LlamaBackend()` rejects a LiteRT-LM model with `LlamaUnsupportedException`
+before any download on macOS x86_64, Windows arm64 and the x86_64 iOS
+simulator, which have no LiteRT-LM runtime, and for an explicit `device` the
+platform's LiteRT-LM lacks, such as `gpu` on Linux arm64. The message names
+the ABI. This applies when `ModelSource.format` or the file name says
+`.litertlm`; a model known only from its file header is rejected when it
+loads.
+
 ## Features by runtime
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
@@ -151,7 +159,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   [Intel Macs](../getting-started/installation#intel-macs).
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
-  builds for it.
+  builds for it. LiteRT-LM throws `LlamaUnsupportedException` there.
 - iOS simulator: llama.cpp on Metal returns incorrect output. On an arm64
   simulator (iPhone 17 Pro, iOS 26.5, Apple silicon host) Qwen3.5 0.8B
   (`Q4_K_M`) generates garbage text on Metal and answers correctly on the

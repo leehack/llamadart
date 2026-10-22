@@ -611,6 +611,31 @@ void main() {
       );
     });
 
+    test(
+      'rejects options the Web runtime ignores before any bridge call',
+      () async {
+        for (final (params, field) in [
+          (const ModelParams(useMmap: false), 'useMmap=false'),
+          (const ModelParams(useMlock: true), 'useMlock'),
+          (const ModelParams(liteRtLmCacheDir: '/cache'), 'liteRtLmCacheDir'),
+        ]) {
+          await expectLater(
+            backend.modelLoadFromUrl('https://example.com/model.gguf', params),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (e) => e.message,
+                'message',
+                contains(
+                  'llama.cpp on the Web does not apply these ModelParams: '
+                  '$field.',
+                ),
+              ),
+            ),
+          );
+        }
+      },
+    );
+
     test('reports the llama.cpp runtime', () {
       expect(WebGpuLlamaBackend().runtime, LlamaRuntime.llamaCpp);
     });
