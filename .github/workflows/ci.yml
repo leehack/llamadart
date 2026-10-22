@@ -551,6 +551,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Skip the stable_diffusion runtime download
+        working-directory: example/chat_app
+        run: |
+          sed -i 's/^\( *llamadart_native_runtimes:\) all$/\1 both/' pubspec.yaml
+          grep -q '^ *llamadart_native_runtimes: both$' pubspec.yaml
+
       - name: Install dependencies
         run: |
           flutter pub get
@@ -562,6 +568,9 @@ jobs:
           flutter test test test_vm
           flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart \
             test/unit_test.dart test/conversation_state_service_test.dart
+
+      - name: Restore the chat app pubspec
+        run: git checkout -- example/chat_app/pubspec.yaml
 
       - name: Build and validate deployable Web artifact
         env:

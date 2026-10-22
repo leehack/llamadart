@@ -597,9 +597,6 @@ class ChatCompletionStreamParser {
 
   /// The tool-call opening scanner of a format whose parse drops tool-call
   /// envelopes from trimmed content, or `null` for other formats.
-  ///
-  /// The Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo parses ignore a
-  /// forced-open thought, so those streams are gated only without one.
   static int Function(String text, int from)? _toolCallOpeningFor(
     LlamaChatTemplateResult templateResult,
   ) {
@@ -607,7 +604,6 @@ class ChatCompletionStreamParser {
         templateResult.format >= ChatFormat.values.length) {
       return null;
     }
-    final forcedOpen = templateResult.thinkingForcedOpen;
     return switch (ChatFormat.values[templateResult.format]) {
       ChatFormat.hermes => HermesHandler.toolCallOpening,
       ChatFormat.mistralNemo => MistralHandler.toolCallOpening,
@@ -631,14 +627,10 @@ class ChatCompletionStreamParser {
       ChatFormat.exaoneMoe => ExaoneMoeHandler.toolCallOpening,
       ChatFormat.qwen3CoderXml => XmlToolCallFormat.qwen3Coder.toolCallOpening,
       ChatFormat.minicpm5 => XmlToolCallFormat.minicpm5.toolCallOpening,
-      ChatFormat.seedOss when !forcedOpen =>
-        XmlToolCallFormat.seedOss.toolCallOpening,
-      ChatFormat.minimaxM2 when !forcedOpen =>
-        XmlToolCallFormat.minimaxM2.toolCallOpening,
-      ChatFormat.apriel15 when !forcedOpen =>
-        XmlToolCallFormat.apriel15.toolCallOpening,
-      ChatFormat.xiaomiMimo when !forcedOpen =>
-        XmlToolCallFormat.xiaomiMimo.toolCallOpening,
+      ChatFormat.seedOss => XmlToolCallFormat.seedOss.toolCallOpening,
+      ChatFormat.minimaxM2 => XmlToolCallFormat.minimaxM2.toolCallOpening,
+      ChatFormat.apriel15 => XmlToolCallFormat.apriel15.toolCallOpening,
+      ChatFormat.xiaomiMimo => XmlToolCallFormat.xiaomiMimo.toolCallOpening,
       _ => null,
     };
   }

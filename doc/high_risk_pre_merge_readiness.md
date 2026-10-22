@@ -99,8 +99,11 @@ the test command, `head_result: pass`, `control_result: fail`, `control_kind`
 (`before-fix` or `mutation`), control description, and evidence notes linking the
 observed results. The independent reviewer checks that the case really reaches
 the affected branch and that the failure is causal, not a setup error. Every
-changed production path under `lib/`, `tool/`, `hook/`, or
-`packages/genkit_llamadart/lib/` needs this coverage. The independent Genkit
+changed production path under `lib/`, `tool/`, `hook/`,
+`packages/genkit_llamadart/lib/`, or `.github/workflows/` needs this coverage.
+Workflows count because the classifier treats each one as high-risk and the
+tooling tests that load them are their only durable proof; no other `.github/`
+or policy path is a production reference. The independent Genkit
 package may cite its own `packages/genkit_llamadart/test/**/*_test.dart` files;
 the same exact-blob, callsite, causal-control and structured-output obligations
 apply. This does not admit arbitrary package paths or relax compiled-grammar,
