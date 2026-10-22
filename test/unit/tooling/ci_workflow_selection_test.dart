@@ -26,6 +26,18 @@ Future<Map<String, dynamic>> selected(List<String> paths) async {
   return jsonDecode(result.stdout as String) as Map<String, dynamic>;
 }
 
+/// `SHARD_JOBS` of `tool/ci/select_jobs.py`: each matrix job outside the plan
+/// mapped to the planned job whose selection it shares and that consumes it.
+Future<Map<String, String>> shardJobs() async {
+  final result = await Process.run(Platform.isWindows ? 'python' : 'python3', [
+    '-c',
+    'import json,runpy; '
+        'print(json.dumps(runpy.run_path("tool/ci/select_jobs.py")["SHARD_JOBS"]))',
+  ]);
+  expect(result.exitCode, 0, reason: '${result.stderr}');
+  return (jsonDecode(result.stdout as String) as Map).cast<String, String>();
+}
+
 /// The job checks out its own revision without credentials, the guard compares
 /// that revision with `main`, the upload directly follows the guard, and nothing
 /// after the guard runs unless it allowed the deploy.
@@ -213,15 +225,22 @@ void main() {
       final jobs = workflow['jobs'] as Map<String, dynamic>;
       final plan = await selected(['lib/llamadart.dart']);
       final planned = (plan['jobs'] as Map).keys.toSet();
+      final shards = await shardJobs();
+      expect(shards, {'test-linux-vm': 'test-linux-coverage'});
       expect(jobs.keys.toSet(), {
         ...planned,
+        ...shards.keys,
         'changes',
         'test-linux-web',
         'deploy-chat-app',
       });
       final aggregate = jobs['test-linux-web'] as Map;
       expect(aggregate['if'], r'${{ always() }}');
-      expect((aggregate['needs'] as List).toSet(), {...planned, 'changes'});
+      expect((aggregate['needs'] as List).toSet(), {
+        ...planned,
+        ...shards.keys,
+        'changes',
+      });
       final steps = aggregate['steps'] as List;
       final check = steps.last as Map;
       expect(check['run'], 'python3 tool/ci/select_jobs.py aggregate');
@@ -229,8 +248,15 @@ void main() {
         'PLAN': r'${{ needs.changes.outputs.plan }}',
         'NEEDS': r'${{ toJSON(needs) }}',
       });
+      final consumers = {for (final e in shards.entries) e.value: e.key};
       for (final name in planned) {
-        expect(jobs[name]['needs'], 'changes', reason: '$name');
+        final shard = consumers[name];
+        // A consumer waits for its shards, so it is skipped when one fails.
+        expect(
+          jobs[name]['needs'],
+          shard == null ? 'changes' : ['changes', shard],
+          reason: '$name',
+        );
         expect(
           jobs[name]['if'],
           "needs.changes.outputs.$name == 'true'",
@@ -240,6 +266,15 @@ void main() {
           jobs['changes']['outputs'][name],
           '\${{ steps.select.outputs.$name }}',
         );
+      }
+      for (final MapEntry(key: shard, value: consumer) in shards.entries) {
+        expect(jobs[shard]['needs'], 'changes', reason: shard);
+        expect(
+          jobs[shard]['if'],
+          "needs.changes.outputs.$consumer == 'true'",
+          reason: shard,
+        );
+        expect(jobs[shard]['strategy']['fail-fast'], isFalse, reason: shard);
       }
       expect(
         jobs['companion-packages']['strategy']['matrix']['package'],
@@ -475,40 +510,118 @@ void main() {
         ),
         isTrue,
       );
+      final shardSteps = jobs['test-linux-vm']['steps'] as List;
+      final shardRuns = shardSteps.map((s) => '${s['run']}').toList();
+      expect(
+        shardRuns,
+        contains(
+          'dart test -p vm -j 1 --exclude-tags local-only '
+          r'--coverage=coverage ${{ matrix.paths }}',
+        ),
+      );
+      final upload =
+          shardSteps.singleWhere(
+                (s) => '${s['uses']}'.startsWith('actions/upload-artifact@'),
+              )
+              as Map;
+      expect(upload['with'], {
+        'name': r'linux-vm-coverage-${{ matrix.shard }}',
+        'path': 'coverage/',
+        'if-no-files-found': 'error',
+        'retention-days': 1,
+        'overwrite': true,
+      });
+      expect(upload.containsKey('if'), isFalse);
+
       final coverageSteps = jobs['test-linux-coverage']['steps'] as List;
+      int index(bool Function(Map step) test) =>
+          coverageSteps.indexWhere((s) => test(s as Map));
+      final download = index(
+        (s) => '${s['uses']}'.startsWith('actions/download-artifact@'),
+      );
+      expect(download, greaterThanOrEqualTo(0));
+      expect(coverageSteps[download]['with'], {
+        'pattern': 'linux-vm-coverage-*',
+        'merge-multiple': true,
+        'path': 'coverage/',
+      });
+      final format = index(
+        (s) => '${s['run']}'.contains(
+          'dart run tool/testing/format_lcov.dart --lcov '
+          '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
+          '--check-ignore',
+        ),
+      );
+      expect(format, greaterThan(download));
       expect(
-        coverageSteps.any(
-          (s) => '${s['run']}'.contains(
-            'dart run tool/testing/format_lcov.dart --lcov '
-            '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
-            '--check-ignore',
+        coverageSteps[format]['run'],
+        contains(
+          'dart run tool/testing/check_lcov_threshold.dart '
+          'coverage/lcov.info 70',
+        ),
+      );
+      final codecov = index(
+        (s) => '${s['uses']}'.startsWith('codecov/codecov-action@'),
+      );
+      expect(codecov, greaterThan(format));
+      expect(coverageSteps[codecov]['with']['files'], 'coverage/lcov.info');
+      for (final steps in [shardSteps, coverageSteps]) {
+        expect(
+          steps.any(
+            (s) => '${s['run']}'.contains('pub global activate coverage'),
           ),
-        ),
-        isTrue,
-      );
+          isFalse,
+        );
+      }
       expect(
-        coverageSteps.any(
-          (s) => '${s['run']}'.contains('pub global activate coverage'),
-        ),
+        coverageSteps.any((s) => '${s['run']}'.contains('dart test')),
         isFalse,
-      );
-      expect(
-        coverageSteps.any(
-          (s) => '${s['run']}'.contains('coverage/lcov.info 70'),
-        ),
-        isTrue,
-      );
-      expect(
-        coverageSteps.any((s) => '${s['run']}'.contains('--coverage=coverage')),
-        isTrue,
       );
     },
   );
 
+  test('Linux VM shards run every root test file exactly once', () {
+    final matrix =
+        readWorkflow('ci')['jobs']['test-linux-vm']['strategy']['matrix']
+            as Map;
+    final shards = {
+      for (final entry in (matrix['include'] as List).cast<Map>())
+        entry['shard'] as String: (entry['paths'] as String)
+            .split(RegExp(r'\s+'))
+            .where((path) => path.isNotEmpty)
+            .toList(),
+    };
+    expect(shards.keys, unorderedEquals(['core', 'tooling', 'runtime']));
+    final testFiles = Directory('test')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .map((file) => file.path.replaceAll(r'\', '/'))
+        .where((path) => path.endsWith('_test.dart'))
+        .toList();
+    expect(testFiles, isNotEmpty);
+    for (final paths in shards.values) {
+      for (final path in paths) {
+        expect(
+          FileSystemEntity.typeSync(path),
+          isNot(FileSystemEntityType.notFound),
+          reason: path,
+        );
+      }
+    }
+    for (final file in testFiles) {
+      final owners = [
+        for (final MapEntry(key: shard, value: paths) in shards.entries)
+          for (final path in paths)
+            if (file == path || file.startsWith('$path/')) '$shard:$path',
+      ];
+      expect(owners, hasLength(1), reason: file);
+    }
+  });
+
   test('VM test lanes run against a temp directory guarded by a LiteRT-LM '
       'cache canary', () {
     final jobs = readWorkflow('ci')['jobs'];
-    for (final job in ['test-linux-coverage', 'test-other-os']) {
+    for (final job in ['test-linux-vm', 'test-other-os']) {
       final steps = jobs[job]['steps'] as List;
       int index(String run) => steps.indexWhere((s) => s['run'] == run);
       final seed = index('bash tool/ci/litert_lm_temp_canary.sh seed');
