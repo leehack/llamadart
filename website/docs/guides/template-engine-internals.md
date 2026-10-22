@@ -165,9 +165,8 @@ thinking tag or, with tools, a tool-call opening.
 When tool calls are parsed, streamed content equals the content of the final
 parse for Hermes, Mistral Nemo, Magistral, Qwen3-Coder XML, DeepSeek R1 and
 V3, Command R7B, Cohere2 MoE, Granite, Nemotron V2, Apertus, MiniCPM5,
-Hunyuan V3 and EXAONE MoE output, and for Seed-OSS, MiniMax M2, Apriel 1.5
-and Xiaomi MiMo output without a forced-open thought; those four parses
-ignore one. Text from where the format's parse may find a tool-call opening,
+Hunyuan V3, EXAONE MoE, Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo
+output. Text from where the format's parse may find a tool-call opening,
 and trailing whitespace, is held until later output rules the opening out or
 generation ends, as llama.cpp (`7fe450e1`) PEG `until` stops content before a
 whole delimiter or a partial one at the end of the input. With Qwen3-Coder
@@ -193,10 +192,11 @@ The parse keeps it untrimmed,
 but the stream drops the leading whitespace before it can know the thought
 will not close. The streamed text is then no prefix of the parse, so the final
 reconciliation adds nothing and the trailing whitespace is lost too:
-`"  \n Hello there.  \n\n"` streams as `"Hello there."`. The EXAONE MoE parse
-returns a forced-open thought that never closes as content, so it streams as
-reasoning and then as content. The DeepSeek V3 parse returns one as
-reasoning, as llama.cpp (`7fe450e1`) does with the DeepSeek V3.1 template.
+`"  \n Hello there.  \n\n"` streams as `"Hello there."`. The DeepSeek V3,
+EXAONE MoE, Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo parses return a
+forced-open thought that never closes as reasoning, including any tool-call
+envelope inside it, as llama.cpp (`620d2225c`) does with the MiniMax-M2 and
+DeepSeek V3.1 templates.
 
 Output parsed with a PEG parser (Ministral, Solar Open, Nemotron V3, or
 Qwen3-Coder XML given a parser) streams the content and reasoning of partial

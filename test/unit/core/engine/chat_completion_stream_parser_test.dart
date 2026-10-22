@@ -1455,7 +1455,7 @@ void main() {
     for (final (name, format, forced, content, thinking) in [
       ('gpt-oss', ChatFormat.gptOss, false, '<think>a</thi', ''),
       ('GLM-4.7-Flash', ChatFormat.glm45, true, '', '<think>a</thi'),
-      ('MiniMax-M2', ChatFormat.minimaxM2, true, '', '<think>a</thi'),
+      ('MiniMax-M2', ChatFormat.minimaxM2, true, '', 'a</thi'),
     ]) {
       for (final tokens in [
         ['<think>a</thi'],
@@ -1961,18 +1961,6 @@ void main() {
             '</tool_call:opensource>\n'
             '</tool_calls:opensource>',
       };
-      // These parses ignore a forced-open thought.
-      const ungatedWhenForcedOpen = <ChatFormat>{
-        ChatFormat.seedOss,
-        ChatFormat.minimaxM2,
-        ChatFormat.apriel15,
-        ChatFormat.xiaomiMimo,
-      };
-      // These parses keep a forced-open thought that never ends as content.
-      const unendedForcedThoughtIsContent = <ChatFormat>{
-        ChatFormat.deepseekV3,
-        ChatFormat.exaoneMoe,
-      };
 
       /// Text-first and other outputs around [call], with the format's tags.
       List<String> outputs(ChatFormat format, String call) {
@@ -2001,17 +1989,12 @@ void main() {
           }
         });
 
-        if (ungatedWhenForcedOpen.contains(format)) {
-          continue;
-        }
         final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
         test('${format.name} after a forced-open thought', () async {
           for (final output in [
             'Plan.\n${tags.endTag}\n\nLet me check.\n$call',
-            if (!unendedForcedThoughtIsContent.contains(format)) ...[
-              'Plan. $call',
-              'Plan it.\n',
-            ],
+            'Plan. $call',
+            'Plan it.\n',
           ]) {
             await _expectStreamMatchesParse(
               format,
@@ -2022,16 +2005,6 @@ void main() {
           }
         });
       }
-
-      test('keeps parses that ignore a forced-open thought ungated', () async {
-        for (final format in ungatedWhenForcedOpen) {
-          await _expectStreamMatchesParse(
-            format,
-            'Plan it.\n',
-            forcedOpen: true,
-          );
-        }
-      });
 
       test('Qwen3-Coder XML ends a forced-open thought at a call', () async {
         for (final output in const [
@@ -2225,8 +2198,7 @@ void main() {
             '</tool_call>';
         final forcedGatedCalls = <ChatFormat, String>{
           ChatFormat.hermes: hermesCall,
-          for (final MapEntry(key: format, value: call) in gatedCalls.entries)
-            if (!ungatedWhenForcedOpen.contains(format)) format: call,
+          ...gatedCalls,
         };
 
         Future<void> expectForced(
@@ -2248,10 +2220,6 @@ void main() {
           final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
           final s = tags.startTag;
           final e = tags.endTag;
-
-          // The EXAONE MoE parse returns an unended forced-open thought as
-          // content, which its stream cannot know before the end.
-          final unended = format != ChatFormat.exaoneMoe;
           test('${format.name} drops a repeated start tag', () async {
             for (final output in [
               '$s\nPlan.\n$e\n\nSure.',
@@ -2259,11 +2227,9 @@ void main() {
               '$s\nPlan.\n$e\n\n$call',
               '$s $e\nSure.${s}More.$e',
               s,
-              if (unended) ...[
-                '$s\nPlan.',
-                '$s\nPlan. $call',
-                s.substring(0, 3),
-              ],
+              '$s\nPlan.',
+              '$s\nPlan. $call',
+              s.substring(0, 3),
             ]) {
               await expectForced(format, output, openings: [call]);
             }
@@ -2452,8 +2418,6 @@ void main() {
         });
 
         test('the end of the stream releases a held backslash', () async {
-          // The EXAONE MoE parse returns an unended thought as content, so
-          // only the stream's own end releases the backslash as reasoning.
           for (final tokens in const [
             ['Plan', r' \'],
             ['Plan ', r'\'],
@@ -2629,19 +2593,12 @@ void main() {
           String withTags(String output) => output
               .replaceAll('<think>', tags.startTag)
               .replaceAll('</think>', tags.endTag);
-          final forcedOpen = switch (format) {
-            ChatFormat.seedOss ||
-            ChatFormat.minimaxM2 ||
-            ChatFormat.apriel15 ||
-            ChatFormat.xiaomiMimo => [false],
-            _ => [false, true],
-          };
           for (final tools in const [true, false]) {
-            for (final forced in forcedOpen) {
+            for (final forced in const [false, true]) {
               for (final output in [
                 ...thoughts,
                 if (forced) ...forcedThoughts,
-                if (forced && format != ChatFormat.exaoneMoe) 'Plan it.  \n\n',
+                if (forced) 'Plan it.  \n\n',
                 if (!forced) '<think>\n Plan never ends. \n',
                 if (!forced) '<think>Plan </thi',
               ]) {

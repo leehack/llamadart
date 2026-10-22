@@ -73,9 +73,10 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: _buildGrammarWithOptions(
-        tools,
-        parallelToolCalls: parallelToolCalls,
+      grammar: requiredGrammarAfterThought(
+        _buildGrammarWithOptions(tools, parallelToolCalls: parallelToolCalls),
+        metadata: metadata,
+        thinkingForcedOpen: thinkingForcedOpen,
       ),
       grammarLazy: hasTools && !toolChoiceRequired,
       thinkingForcedOpen: thinkingForcedOpen,
@@ -96,12 +97,12 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    final shouldTreatAsContent =
-        thinkingForcedOpen && !isPartial && !output.contains('</think>');
-
-    final extracted = shouldTreatAsContent
-        ? (content: output, reasoning: null)
-        : extractThinking(output, thinkingForcedOpen: thinkingForcedOpen);
+    // As in llama.cpp (`620d2225c`), a forced-open thought that never closes
+    // is reasoning.
+    final extracted = extractThinking(
+      output,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
 
     if (!parseToolCalls) {
       return ChatParseResult(

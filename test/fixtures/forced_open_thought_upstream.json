@@ -1,0 +1,114 @@
+{
+  "upstream_commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
+  "user_prompt": "Weather in Paris?",
+  "tool": {
+    "name": "weather",
+    "parameters": {
+      "city": {
+        "type": "string",
+        "required": true
+      }
+    }
+  },
+  "templates": [
+    {
+      "template": "test/fixtures/llama_cpp_templates/MiniMax-M2.jinja",
+      "format": "minimaxM2",
+      "generation_prompt": "]~b]ai\n<think>\n",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-inside-unended-thought",
+          "output": "Plan. <minimax:tool_call>\n<invoke name=\"weather\">\n<parameter name=\"city\">Paris</parameter>\n</invoke>\n</minimax:tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan. <minimax:tool_call>\n<invoke name=\"weather\">\n<parameter name=\"city\">Paris</parameter>\n</invoke>\n</minimax:tool_call>",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-ended-thought",
+          "output": "Plan.\n</think>\n\n<minimax:tool_call>\n<invoke name=\"weather\">\n<parameter name=\"city\">Paris</parameter>\n</invoke>\n</minimax:tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja",
+      "format": "deepseekV3",
+      "chat_template_kwargs": {
+        "thinking": true
+      },
+      "generation_prompt": "<｜Assistant｜><think>",
+      "cases": [
+        {
+          "name": "unended-thought",
+          "output": "Plan it.\n",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-inside-unended-thought",
+          "output": "Plan. <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>{\"city\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan. <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>{\"city\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "ended-thought",
+          "output": "Plan.\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "\n\nSunny.",
+            "reasoning_content": "Plan.\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-ended-thought",
+          "output": "Plan.</think><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>{\"city\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan.",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
