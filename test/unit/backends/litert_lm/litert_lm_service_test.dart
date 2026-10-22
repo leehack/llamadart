@@ -6179,6 +6179,39 @@ void main() {
       ));
     });
 
+    test('rereads the thinking channel when another bundle loads', () async {
+      expect(service.generationControls().thinkingBudget, isTrue);
+
+      firstChannel = null;
+      final model = await service.loadModel(
+        modelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu),
+      );
+      final reloaded = service.createContext(model, const ModelParams());
+
+      expect(service.generationControls(), (
+        penalties: true,
+        thinkingBudget: false,
+      ));
+      await expectLater(
+        service.generateChat(
+          reloaded,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ],
+          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 8)),
+        ),
+        emitsError(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('declares no thinking channel'),
+          ),
+        ),
+      );
+      expect(client.generateCount, 0);
+    });
+
     test('reports no controls for a runtime without their APIs', () {
       client
         ..samplingPenalties = false

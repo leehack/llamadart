@@ -87,11 +87,6 @@ class LiteRtLmRuntimeClient {
   /// Thinking budgets are unavailable without `dart:ffi`.
   bool get supportsThinkingBudget => false;
 
-  /// Bundle thinking queries are unavailable without `dart:ffi`.
-  bool? bundleSupportsThinking(String modelPath) {
-    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
-  }
-
   /// Bundle capability queries are unavailable without `dart:ffi`.
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
     String modelPath,

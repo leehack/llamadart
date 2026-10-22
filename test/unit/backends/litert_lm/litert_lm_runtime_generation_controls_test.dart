@@ -134,6 +134,12 @@ void main() {
         expect(fixture.repetitionPenalty(), 1.0);
         expect(fixture.presencePenalty(), 0.75);
         expect(fixture.hasThinking(), isFalse);
+
+        await client.generate('Hi', repetitionPenalty: 1.4).drain<void>();
+
+        expect(fixture.hasPenalty(), isTrue);
+        expect(fixture.repetitionPenalty(), closeTo(1.4, 1e-6));
+        expect(fixture.presencePenalty(), 0.0);
       });
 
       test('scopes controls to the send that sets them', () async {

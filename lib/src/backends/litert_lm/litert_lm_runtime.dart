@@ -688,36 +688,6 @@ class LiteRtLmRuntimeClient {
     }
   }
 
-  /// Whether the `.litertlm` bundle at [modelPath] declares thinking support
-  /// in its metadata, read without creating an engine.
-  ///
-  /// Returns null when the runtime lacks the loaded-file API or cannot read
-  /// the bundle.
-  bool? bundleSupportsThinking(String modelPath) {
-    _ensureLibrariesLoaded();
-    final bindings = _bindings!;
-    final create = bindings.loadedFileCreate;
-    final delete = bindings.loadedFileDelete;
-    final supportsThinking = bindings.loadedFileSupportsThinking;
-    if (create == null || delete == null || supportsThinking == null) {
-      return null;
-    }
-    final modelPathPtr = modelPath.toNativeUtf8(allocator: calloc);
-    try {
-      final loadedFile = create(modelPathPtr.cast());
-      if (loadedFile == nullptr) {
-        return null;
-      }
-      try {
-        return supportsThinking(loadedFile);
-      } finally {
-        delete(loadedFile);
-      }
-    } finally {
-      calloc.free(modelPathPtr);
-    }
-  }
-
   /// What the `.litertlm` bundle at [modelPath] declares in its section
   /// metadata, read without creating an engine: whether it takes image and
   /// audio input, and whether it has a speculative decoding drafter.
@@ -3842,11 +3812,6 @@ class _LiteRtLmBindings {
         Double Function(Pointer<_LiteRtLmBenchmarkInfo>, Int),
         double Function(Pointer<_LiteRtLmBenchmarkInfo>, int)
       >('litert_lm_benchmark_info_get_decode_tokens_per_sec_at');
-
-  late final loadedFileSupportsThinking =
-      _lookupOptionalNative<Bool Function(Pointer<_LiteRtLmLoadedFile>)>(
-        'litert_lm_loaded_file_supports_thinking',
-      )?.asFunction<bool Function(Pointer<_LiteRtLmLoadedFile>)>();
 
   late final _LiteRtLmPenaltyApi? penaltyApi = _LiteRtLmPenaltyApi.lookup(this);
 
