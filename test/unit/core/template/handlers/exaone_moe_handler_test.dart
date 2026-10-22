@@ -54,4 +54,19 @@ void main() {
     expect(parsed.toolCalls, isEmpty);
     expect(parsed.content, equals(input));
   });
+
+  test('ExaoneMoeHandler returns a forced-open thought as reasoning', () {
+    const call =
+        '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}</tool_call>';
+    for (final (output, reasoning, calls) in [
+      ('Plan it.\n', 'Plan it.\n', 0),
+      ('Plan. $call', 'Plan. $call', 0),
+      ('Plan.</think>\n$call', 'Plan.', 1),
+    ]) {
+      final parsed = ExaoneMoeHandler().parse(output, thinkingForcedOpen: true);
+      expect(parsed.content, isEmpty, reason: output);
+      expect(parsed.reasoningContent, reasoning, reason: output);
+      expect(parsed.toolCalls, hasLength(calls), reason: output);
+    }
+  });
 }

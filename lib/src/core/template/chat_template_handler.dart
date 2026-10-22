@@ -5,6 +5,7 @@ import 'package:dinja/dinja.dart';
 import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_template_result.dart';
+import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
 import 'media_placeholders.dart';
@@ -13,6 +14,7 @@ import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
 import 'thinking_utils.dart';
+import 'tool_call_grammar_utils.dart';
 
 export 'template_render_context.dart' show TemplateToolCallSerialization;
 
@@ -156,6 +158,20 @@ abstract class ChatTemplateHandler {
   /// Each format wraps tool call JSON differently (e.g., `<tool_call>` tags
   /// for Hermes, `[TOOL_CALLS]` prefix for Mistral).
   String? buildGrammar(List<ToolDefinition>? tools);
+
+  /// Returns [grammar], or for a [ToolChoice.required] request in [metadata]
+  /// after a forced-open thought, [grammar] preceded by that thought and its
+  /// [thinkingEndTag], so the parse finds the calls outside it.
+  String? requiredGrammarAfterThought(
+    String? grammar, {
+    required Map<String, String> metadata,
+    required bool thinkingForcedOpen,
+  }) =>
+      grammar != null &&
+          thinkingForcedOpen &&
+          metadata[internalToolChoiceMetadataKey] == ToolChoice.required.name
+      ? ToolCallGrammarUtils.afterForcedOpenThought(grammar, thinkingEndTag)
+      : grammar;
 
   /// Renders [template] with [context] plus llama.cpp-style extra globals.
   ///

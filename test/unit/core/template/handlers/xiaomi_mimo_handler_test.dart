@@ -91,6 +91,25 @@ void main() {
     expect(partial.content, truncated);
     expect(partial.toolCalls, isEmpty);
   });
+
+  test('XiaomiMimoHandler returns a forced-open thought as reasoning', () {
+    const call =
+        '<tool_call>\n{"name": "weather", '
+        '"arguments": {"city": "Paris"}\n</tool_call>';
+    for (final (output, reasoning, calls) in [
+      ('Plan.', 'Plan.', 0),
+      ('Plan. $call', 'Plan. $call', 0),
+      ('Plan.</think>\n$call', 'Plan.', 1),
+    ]) {
+      final parsed = XiaomiMimoHandler().parse(
+        output,
+        thinkingForcedOpen: true,
+      );
+      expect(parsed.content, isEmpty, reason: output);
+      expect(parsed.reasoningContent, reasoning, reason: output);
+      expect(parsed.toolCalls, hasLength(calls), reason: output);
+    }
+  });
 }
 
 Future<Object?> _noop(_) async {

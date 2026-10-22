@@ -491,6 +491,41 @@ void main() {
     },
   );
 
+  test('Web Chat Contract opts the chat app out of stable_diffusion', () {
+    final steps =
+        readWorkflow('ci')['jobs']['web-chat-contract']['steps'] as List;
+    int indexOfRun(Pattern needle) =>
+        steps.indexWhere((s) => '${s['run']}'.contains(needle));
+    final optOut = indexOfRun('llamadart_native_runtimes');
+    final install = indexOfRun('flutter pub get');
+    final tests = indexOfRun('flutter test test test_vm');
+    final restore = indexOfRun('git checkout -- example/chat_app/pubspec.yaml');
+    final build = indexOfRun('scripts/build_chat_app_web.sh');
+    expect(optOut, isNonNegative);
+    expect(optOut, lessThan(install));
+    expect(install, lessThan(tests));
+    expect(tests, lessThan(restore));
+    expect(restore, lessThan(build));
+
+    final lines = '${steps[optOut]['run']}'
+        .split('\n')
+        .map((l) => l.trim())
+        .toList();
+    expect(
+      lines,
+      contains(
+        r"sed -i 's/^\( *llamadart_native_runtimes:\) all$/\1 both/' "
+        'pubspec.yaml',
+      ),
+    );
+    expect(
+      lines,
+      contains(r"grep -q '^ *llamadart_native_runtimes: both$' pubspec.yaml"),
+    );
+    expect(steps[optOut]['shell'], isNull);
+    expect(steps[optOut]['continue-on-error'], isNull);
+  });
+
   test(
     'runtime lanes retain full OS tests, model smoke, and coverage threshold',
     () {

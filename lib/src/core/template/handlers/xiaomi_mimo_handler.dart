@@ -67,6 +67,7 @@ class XiaomiMimoHandler extends ChatTemplateHandler {
       output,
       XmlToolCallFormat.xiaomiMimo,
       parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
     );
     return ChatParseResult(
       content: parsed.content.trim(),

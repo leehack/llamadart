@@ -62,6 +62,43 @@ void main() {
     }
   });
 
+  group('afterForcedOpenThought', () {
+    for (final endTag in ['</think>', '</seed:think>', '</thinking>']) {
+      test('requires $endTag once before the calls', () {
+        final grammar = ToolCallGrammarUtils.afterForcedOpenThought(
+          'root ::= call\ncall ::= "x"\n',
+          endTag,
+        );
+        final lines = grammar.split('\n');
+        expect(
+          lines.first,
+          'root ::= think-body ${ToolCallGrammarUtils.literal(endTag)} '
+          'think-space (call)',
+        );
+        expect(lines, contains('call ::= "x"'));
+
+        final body = _ExcludingRules(lines, 'think-body');
+        for (final text in [
+          '',
+          'plan',
+          endTag.substring(0, endTag.length - 1),
+          '<${endTag.substring(0, endTag.length - 1)}',
+          '${endTag.substring(0, 3)}${endTag.substring(0, 2)}',
+        ]) {
+          expect(body.matches(text), isTrue, reason: text);
+        }
+        for (final text in [
+          endTag,
+          'plan $endTag',
+          '<$endTag',
+          '${endTag.substring(0, 3)}$endTag tail',
+        ]) {
+          expect(body.matches(text), isFalse, reason: text);
+        }
+      });
+    }
+  });
+
   test('wrapRootGrammar wraps root rule with literals', () {
     const grammar = 'root ::= obj\nobj ::= "{}"\n';
 
@@ -230,3 +267,38 @@ ToolDefinition _tool(String name) => ToolDefinition(
   parameters: const [],
   handler: _noop,
 );
+
+/// Runs the `name ::= | [chars] next | ...` rules of an excluding grammar.
+class _ExcludingRules {
+  _ExcludingRules(List<String> lines, this.start) {
+    final alternative = RegExp(r'\[(\^?)((?:\\.|[^\]\\])*)\] ([\w-]+)');
+    for (final line in lines) {
+      final rule = RegExp(r'^([\w-]+) ::= \|(.*)$').firstMatch(line);
+      if (rule == null || !rule[1]!.startsWith(start)) continue;
+      _rules[rule[1]!] = [
+        for (final m in alternative.allMatches(rule[2]!))
+          (
+            negated: m[1] == '^',
+            chars: m[2]!.replaceAllMapped(RegExp(r'\\(.)'), (e) => e[1]!),
+            next: m[3]!,
+          ),
+      ];
+    }
+  }
+
+  final String start;
+  final _rules = <String, List<({bool negated, String chars, String next})>>{};
+
+  bool matches(String text) {
+    var state = start;
+    for (final char in text.split('')) {
+      final next = _rules[state]!
+          .where((a) => a.chars.contains(char) != a.negated)
+          .map((a) => a.next)
+          .firstOrNull;
+      if (next == null) return false;
+      state = next;
+    }
+    return true;
+  }
+}
