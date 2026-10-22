@@ -109,6 +109,11 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
   return HighRiskAssessment(changedFiles: changedFiles, surfaces: surfaces);
 }
 
+/// Whether [path] is a GitHub Actions workflow. Every workflow is a high-risk
+/// policy surface, and readiness evidence cites workflows as the production
+/// code their tooling tests load.
+bool isWorkflowPath(String path) => path.startsWith('.github/workflows/');
+
 bool _isPublicEntrypoint(String path) {
   return path == 'packages/genkit_llamadart/lib/genkit_llamadart.dart' ||
       path == 'packages/genkit_llamadart/lib/experimental.dart' ||
@@ -213,7 +218,7 @@ bool _isReleaseAutomation(String path) {
       path == 'tool/ci/select_jobs.py') {
     return true;
   }
-  if (!path.startsWith('.github/workflows/')) return false;
+  if (!isWorkflowPath(path)) return false;
   final name = path.split('/').last;
   return name.contains('publish') ||
       name.contains('release') ||
@@ -230,7 +235,7 @@ bool _isRegressionPolicy(String path) {
       path == 'CONTRIBUTING.md' ||
       path == '.github/CODEOWNERS' ||
       path == '.github/pull_request_template.md' ||
-      path.startsWith('.github/workflows/') ||
+      isWorkflowPath(path) ||
       path.startsWith('tool/ci/') ||
       path == 'doc/testing_matrix.md' ||
       path == 'doc/pr_branch_writer_inventory.md' ||

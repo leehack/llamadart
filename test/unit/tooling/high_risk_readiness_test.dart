@@ -1811,6 +1811,91 @@ void main() {
     );
 
     test(
+      'workflow changes bind tooling tests to the changed workflow',
+      () async {
+        const workflow = '.github/workflows/ci.yml';
+        const otherWorkflow = '.github/workflows/docs_pages.yml';
+        const target = 'test/unit/tooling/ci_workflow_selection_test.dart';
+        final evidence = backendEvidence()
+          ..['surfaces'] = ['regressionPolicy']
+          ..['affected_test_paths'] = [target];
+        final proof = testProof(workflow);
+        evidence['test_evidence'] = {target: proof};
+        var changes = const [
+          RepositoryChange(path: workflow, kind: RepositoryChangeKind.modified),
+        ];
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          changes,
+          existingPaths: {workflow, otherWorkflow, target, backendSource},
+        ).evaluate(evidence: evidence, context: context);
+
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+
+        for (final unrelated in [otherWorkflow, backendSource]) {
+          proof['production_refs'] = productionRefs(unrelated);
+          final result = await evaluate();
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('disconnected'), reason: unrelated);
+        }
+
+        changes = const [
+          RepositoryChange(path: workflow, kind: RepositoryChangeKind.modified),
+          RepositoryChange(
+            path: backendSource,
+            kind: RepositoryChangeKind.modified,
+          ),
+        ];
+        evidence['surfaces'] = ['backendRuntime', 'regressionPolicy'];
+        final result = await evaluate();
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('lack reviewed test reachability'));
+        proof['production_refs'] = [
+          ...productionRefs(workflow),
+          ...productionRefs(backendSource),
+        ];
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+
+    test('production refs admit no non-workflow policy paths', () async {
+      for (final path in [
+        '.github/CODEOWNERS',
+        '.github/pull_request_template.md',
+        '.github/workflows_backup/ci.yml',
+        '.github/workflows/../CODEOWNERS',
+        'packages/genkit_llamadart/.github/check_docs.py',
+        'scripts/release/publish.sh',
+        'doc/high_risk_pre_merge_readiness.md',
+        'AGENTS.md',
+      ]) {
+        final evidence = backendEvidence()..['surfaces'] = ['regressionPolicy'];
+        evidence['test_evidence'][backendTest]['production_refs'] =
+            productionRefs(path);
+        final result = await evaluatorFor(
+          [
+            ...backendChanges,
+            RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+          ],
+          existingPaths: {backendSource, backendTest, path},
+        ).evaluate(evidence: evidence, context: context);
+        expectFailure(result, ReadinessFailureClassification.schemaViolation);
+        expect(result.message, 'Invalid production reference.', reason: path);
+      }
+    });
+
+    test(
       'native-sync Python suites bind to their paired script and command',
       () async {
         const source = 'tool/native/sync_native_release_pins.py';
