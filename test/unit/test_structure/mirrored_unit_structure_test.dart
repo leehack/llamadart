@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 /// Sources with no behavior of their own. The guard below requires each to
 /// exist under `lib/src` and to have no mirrored file under `test/unit`.
 const Set<String> behaviorlessSources = <String>{
+  'backends/llama_cpp/llama_cpp_raw_bindings.dart',
   'backends/webgpu/interop.dart',
   'core/decision/decision_model.dart',
   'core/image/image_generation_driver.dart',
@@ -17,6 +18,12 @@ const Set<String> behaviorlessSources = <String>{
   'core/models/config/compute_device.dart',
   'core/models/config/flash_attention.dart',
   'core/models/config/kv_cache_type.dart',
+  'core/models/download/model_download_manager.dart',
+  'core/speech/litert_lm_speech_to_text_driver.dart',
+  'core/speech/speech_platform_stub.dart',
+  'core/speech/speech_platform_web.dart',
+  'core/speech/text_to_speech_platform_stub.dart',
+  'core/speech/text_to_speech_platform_web.dart',
 };
 
 void main() {

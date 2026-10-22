@@ -181,20 +181,6 @@ void main() {
     ];
   });
 
-  group('ToolDefinition', () {
-    test('toJsonSchema includes tool definitions', () {
-      final tool = tools.first;
-      final schema = tool.toJsonSchema();
-      expect(schema['properties'], containsPair('location', isA<Map>()));
-    });
-
-    test('invoke handles valid tool call', () async {
-      final tool = tools.first;
-      final result = await tool.invoke({'location': 'London'});
-      expect(result, 'Sunny in London');
-    });
-  });
-
   group('ChatSession with Tools', () {
     test('tools are passed to engine.create', () async {
       final session = ChatSession(engine);

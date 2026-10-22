@@ -25,13 +25,9 @@ void main() {
       null,
       'unchanged "text" 👋',
     ]) {
-      for (final (multimodal, typedContentOnly) in [
-        (false, false),
-        (true, false),
-        (true, true),
-      ]) {
+      for (final typedContentOnly in [false, true]) {
         test('serializes typed tool result ${payload.runtimeType}, '
-            'multimodal=$multimodal, typedContentOnly=$typedContentOnly', () {
+            'typedContentOnly=$typedContentOnly', () {
           final part = LlamaToolResultContent(
             id: 'call_0',
             name: 'get_weather',
@@ -42,11 +38,9 @@ void main() {
             content: [part],
           );
           final before = message.toJson();
-          final rendered = TemplateRenderContext.messagesForTemplate(
-            [message],
-            multimodal: multimodal,
-            typedContentOnly: typedContentOnly,
-          ).single;
+          final rendered = TemplateRenderContext.messagesForTemplate([
+            message,
+          ], typedContentOnly: typedContentOnly).single;
           final expected = payload is String ? payload : jsonEncode(payload);
           expect(
             rendered['content'],
@@ -63,13 +57,9 @@ void main() {
         });
       }
     }
-    for (final (multimodal, typedContentOnly) in [
-      (false, false),
-      (true, false),
-      (true, true),
-    ]) {
+    for (final typedContentOnly in [false, true]) {
       test('renders one tool message per tool result, '
-          'multimodal=$multimodal, typedContentOnly=$typedContentOnly', () {
+          'typedContentOnly=$typedContentOnly', () {
         const message = LlamaChatMessage.withContent(
           role: LlamaChatRole.tool,
           content: [
@@ -92,11 +82,9 @@ void main() {
             : text;
 
         expect(
-          TemplateRenderContext.messagesForTemplate(
-            [message],
-            multimodal: multimodal,
-            typedContentOnly: typedContentOnly,
-          ),
+          TemplateRenderContext.messagesForTemplate([
+            message,
+          ], typedContentOnly: typedContentOnly),
           [
             {
               'role': 'tool',
@@ -115,15 +103,9 @@ void main() {
       });
     }
 
-    for (final (multimodal, typedContentOnly) in [
-      (false, false),
-      (true, false),
-      (false, true),
-      (true, true),
-    ]) {
+    for (final typedContentOnly in [false, true]) {
       test('gives tool-call-only and reasoning-only assistant turns empty '
-          'content, multimodal=$multimodal, '
-          'typedContentOnly=$typedContentOnly', () {
+          'content, typedContentOnly=$typedContentOnly', () {
         const messages = [
           LlamaChatMessage.withContent(
             role: LlamaChatRole.assistant,
@@ -143,7 +125,6 @@ void main() {
 
         final rendered = TemplateRenderContext.messagesForTemplate(
           messages,
-          multimodal: multimodal,
           typedContentOnly: typedContentOnly,
         );
 

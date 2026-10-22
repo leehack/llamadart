@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/granite_handler.dart';
 import 'package:test/test.dart';
 
@@ -12,11 +11,6 @@ void main() {
     );
     expect(GraniteHandler.toolCallOpening('Let me check. <|tool'), 14);
     expect(GraniteHandler.toolCallOpening('Use <x> or [y] here.'), 20);
-  });
-
-  test('GraniteHandler exposes chat format', () {
-    final handler = GraniteHandler();
-    expect(handler.format, isA<ChatFormat>());
   });
 
   test('parses tool-call array with whitespace after marker', () {

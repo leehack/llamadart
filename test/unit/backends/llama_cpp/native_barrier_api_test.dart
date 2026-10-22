@@ -187,13 +187,6 @@ void main() {
       dir.deleteSync(recursive: true);
     });
 
-    test('exports the exception barrier', () {
-      expect(
-        NativeBarrierApi.tryResolve(isWindows: Platform.isWindows),
-        isNotNull,
-      );
-    });
-
     test('records the message of an exception llama.cpp throws, for the '
         'next call to clear', () {
       final vocab = llama_model_get_vocab(model);

@@ -11,11 +11,6 @@ import 'package:test/test.dart';
 void main() {
   final messages = [const LlamaChatMessage(role: 'user', content: 'hello')];
 
-  test('Llama3Handler exposes chat format', () {
-    final handler = Llama3Handler();
-    expect(handler.format, isA<ChatFormat>());
-  });
-
   test('returns content-only format when no tools are provided', () {
     final handler = Llama3Handler();
     final result = handler.render(

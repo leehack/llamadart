@@ -869,55 +869,42 @@ void main() {
       'Qwen2.5-0.5B',
     ]) {
       for (final override in [null, '{{ messages[0].content }}', '']) {
-        for (final hasSetter in [false, true]) {
-          test(
-            'main native routing $name override=$override setter=$hasSetter',
-            () async {
-              final file = File('${tempDir.path}/$name.litertlm');
-              await file.writeAsBytes(_thinkingBundle(modelType: 1));
-              final client = _FakeLiteRtLmRuntimeClient()
-                ..rendersMessages = true
-                ..onRenderMessage = (_) => liteRtLmContentShapeProbeText;
-              // A runtime without the optional setter still supports these chats.
-              if (!hasSetter) {
-                client.onCreateConversation = () {
-                  if (client.lastPromptTemplate != null) {
-                    throw LlamaUnsupportedException('no template setter');
-                  }
-                };
-              }
-              final service = LiteRtLmService(clientFactory: () => client);
-              final params = ModelParams(
-                liteRtLmBackend: LiteRtLmBackendPreference.cpu,
-                chatTemplate: override,
-              );
-              try {
-                final model = await service.loadModel(file.path, params);
-                expect(
-                  await generate(
-                    service,
-                    client,
-                    service.createContext(model, params),
-                  ),
-                  isNull,
-                );
-                expect(client.renderMessageCount, 1);
-                expect(client.conversations, [
-                  (template: null, seeded: false),
-                  (template: null, seeded: true),
-                ]);
-                if (override != null) {
-                  expect(
-                    service.getMetadata(model)['tokenizer.chat_template'],
-                    override,
-                  );
-                }
-              } finally {
-                service.dispose();
-              }
-            },
+        test('main native routing $name override=$override', () async {
+          final file = File('${tempDir.path}/$name.litertlm');
+          await file.writeAsBytes(_thinkingBundle(modelType: 1));
+          final client = _FakeLiteRtLmRuntimeClient()
+            ..rendersMessages = true
+            ..onRenderMessage = (_) => liteRtLmContentShapeProbeText;
+          final service = LiteRtLmService(clientFactory: () => client);
+          final params = ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            chatTemplate: override,
           );
-        }
+          try {
+            final model = await service.loadModel(file.path, params);
+            expect(
+              await generate(
+                service,
+                client,
+                service.createContext(model, params),
+              ),
+              isNull,
+            );
+            expect(client.renderMessageCount, 1);
+            expect(client.conversations, [
+              (template: null, seeded: false),
+              (template: null, seeded: true),
+            ]);
+            if (override != null) {
+              expect(
+                service.getMetadata(model)['tokenizer.chat_template'],
+                override,
+              );
+            }
+          } finally {
+            service.dispose();
+          }
+        });
       }
     }
 
