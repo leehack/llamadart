@@ -241,8 +241,10 @@ Knobs:
 - `draftMicroBatchSize` (native llama.cpp only; upstream
   `--spec-draft-n-ubatch`): the draft context's micro-batch (`n_ubatch`).
   Unset, the draft follows the target's `microBatchSize`. A smaller value
-  shrinks the draft compute buffer without changing the output. It must be
-  between 1 and the context's resolved `batchSize`, and at least
+  shrinks the draft compute buffer. It can change which tokens the draft
+  proposes, and so speed, acceptance and, for non-greedy or numerically
+  sensitive runs, the output; the target still verifies every accepted token.
+  It must be between 1 and the context's resolved `batchSize`, and at least
   `draftTokenMax + 1` for `draftDflash` and `draftDspark`, which decode a
   whole draft block in one micro-batch. N-gram-only configurations, WebGPU and
   LiteRT-LM reject it.

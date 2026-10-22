@@ -189,8 +189,11 @@ class SpeculativeDecodingConfig {
   ///
   /// Mirrors upstream llama.cpp `--spec-draft-n-ubatch`. A value below the
   /// target's `ModelParams.microBatchSize` shrinks the draft context's compute
-  /// buffer without changing the drafted tokens. `null` keeps the draft
-  /// context on the target context's micro-batch size.
+  /// buffer. Chunked draft prefill can change the draft model's numerics, so
+  /// it may change which tokens the draft proposes, and with them speed,
+  /// acceptance and, for non-greedy or numerically sensitive runs, the output.
+  /// The target model still verifies every accepted token. `null` keeps the
+  /// draft context on the target context's micro-batch size.
   ///
   /// Native llama.cpp applies it to the draft context of `draftSimple`,
   /// `draftEagle3`, `mtp`, `draftDflash` and `draftDspark`, and throws
