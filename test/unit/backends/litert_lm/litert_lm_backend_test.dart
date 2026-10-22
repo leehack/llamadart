@@ -409,6 +409,27 @@ void main() {
     },
   );
 
+  test(
+    'embedding without an embedding engine names the option to set',
+    () async {
+      final backend = LiteRtLmBackend();
+      try {
+        await expectLater(
+          backend.embed(1, 'text'),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('LiteRtLmModelParams(embeddingEngine: true)'),
+            ),
+          ),
+        );
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
   test('embedding mode names options the way LiteRtLmModelParams spells '
       'them', () async {
     final backend = LiteRtLmBackend();

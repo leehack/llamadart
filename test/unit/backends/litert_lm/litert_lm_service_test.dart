@@ -2155,6 +2155,36 @@ void main() {
       }
     });
 
+    test('the cache-directory hint names the option as '
+        'LiteRtLmModelParams spells it', () async {
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(
+          initializeError: LiteRtLmEngineCreateError('no engine.'),
+        ),
+      );
+      try {
+        final params = LiteRtLmModelParams(
+          device: ComputeDevice.cpu,
+          cacheDir: '${tempDir.path}/cache',
+        );
+        final model = await service.loadModel(modelFile.path, params);
+        service.createContext(model, params);
+
+        await expectLater(
+          service.tokenize(model, 'hi', true),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              contains('write LiteRtLmModelParams.cacheDir.'),
+            ),
+          ),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
     for (final linked in [false, true]) {
       test('an engine that fails to start with '
           '${linked ? "a linked bundle's directory" : 'the default temp '

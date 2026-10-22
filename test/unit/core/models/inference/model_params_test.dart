@@ -820,6 +820,28 @@ void main() {
       );
     });
 
+    test('LiteRtLmModelParams.copyWith prefers the unprefixed embedding '
+        'option and forwards the deprecated backend', () {
+      const params = LiteRtLmModelParams();
+      expect(
+        params
+            .copyWith(embeddingEngine: true, liteRtLmEmbeddingEngine: false)
+            .embeddingEngine,
+        isTrue,
+      );
+      expect(
+        params
+            .copyWith(embeddingEngine: false, liteRtLmEmbeddingEngine: true)
+            .embeddingEngine,
+        isFalse,
+      );
+      final updated = params.copyWith(
+        liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+      );
+      expect(updated, isA<LiteRtLmModelParams>());
+      expect(updated.liteRtLmBackend, LiteRtLmBackendPreference.gpu);
+    });
+
     test('copyWith rejects the other runtime\'s fields', () {
       const ModelParams llamaCpp = LlamaCppModelParams();
       expect(

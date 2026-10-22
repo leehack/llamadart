@@ -595,6 +595,23 @@ void main() {
       clearBridgeGlobals();
     });
 
+    test('names the subtype mismatch before the embedding-engine '
+        'rejection', () async {
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const LiteRtLmModelParams(embeddingEngine: true),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('Use LlamaCppModelParams.'),
+          ),
+        ),
+      );
+    });
+
     test('rejects LiteRT-LM embedding mode before any bridge call', () async {
       await expectLater(
         backend.modelLoadFromUrl(
