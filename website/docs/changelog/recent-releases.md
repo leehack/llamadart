@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` stores a copy of a tool result, adds a note before it, keeps the history length fixed or replaces a note with a fresh copy: the rollback could leave an orphaned tool result or note behind, or remove the app's note ([#1268](https://github.com/leehack/llamadart/issues/1268)).
+- Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` stores a copy of a tool result, adds a note before it or keeps the history length fixed: the rollback could leave an orphaned tool result or note behind ([#1268](https://github.com/leehack/llamadart/issues/1268)).
 
 ## 0.15.6
 

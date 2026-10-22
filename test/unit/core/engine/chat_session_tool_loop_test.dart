@@ -135,18 +135,36 @@ class _RewritingSession extends ChatSession {
 }
 
 /// A [ChatSession] subclass that drops the oldest message when a tool result
-/// is added, then stores the result and an audit note.
+/// is added, then stores the result and an audit note. With [pinsFirst] it
+/// keeps its first message; with [summarizes] it puts a new summary first.
 class _TrimmingSession extends ChatSession {
-  _TrimmingSession(super.engine) : super(maxContextTokens: 0);
+  _TrimmingSession(
+    super.engine, {
+    this.pinsFirst = false,
+    this.summarizes = false,
+  }) : super(maxContextTokens: 0);
+
+  final bool pinsFirst;
+  final bool summarizes;
 
   @override
   void addMessage(LlamaChatMessage message) {
     if (message.role != LlamaChatRole.tool) return super.addMessage(message);
-    final kept = history.skip(1).toList();
+    final stored = [
+      for (final stored in history)
+        if (!summarizes || stored.content != 'Summary') stored,
+    ];
+    final kept = [
+      if (pinsFirst) stored.first,
+      ...stored.skip(pinsFirst ? 2 : 1),
+    ];
     reset();
-    kept.forEach(super.addMessage);
-    super.addMessage(message);
-    super.addMessage(_text(LlamaChatRole.system, 'Audit'));
+    [
+      if (summarizes) _text(LlamaChatRole.system, 'Summary'),
+      ...kept,
+      message,
+      _text(LlamaChatRole.system, 'Audit'),
+    ].forEach(super.addMessage);
   }
 }
 
@@ -235,10 +253,12 @@ class _SummarizingSession extends ChatSession {
     super.engine, {
     this.summarized = 2,
     this.copiesResult = false,
+    this.notes = false,
   }) : super(maxContextTokens: 0);
 
   final int summarized;
   final bool copiesResult;
+  final bool notes;
 
   @override
   void addMessage(LlamaChatMessage message) {
@@ -247,6 +267,7 @@ class _SummarizingSession extends ChatSession {
     reset();
     [
       _text(LlamaChatRole.system, 'Summary'),
+      if (notes) _text(LlamaChatRole.system, 'Note'),
       ...kept,
       copiesResult ? _copyOf(message) : message,
     ].forEach(super.addMessage);
@@ -289,6 +310,26 @@ class _PrependingSession extends ChatSession {
     [
       _text(LlamaChatRole.system, 'Note'),
       ...kept,
+      message,
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that swaps its two latest messages when a tool
+/// result is added.
+class _SwappingSession extends ChatSession {
+  _SwappingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final stored = history.toList();
+    final last = stored.length - 1;
+    reset();
+    [
+      ...stored.take(last - 1),
+      stored[last],
+      stored[last - 1],
       message,
     ].forEach(super.addMessage);
   }
@@ -1647,59 +1688,89 @@ void main() {
     });
 
     for (final copies in [false, true]) {
-      test('whose addMessage moves a fresh note ahead of each message'
-          '${copies ? ' and copies the others' : ''} keeps the note', () async {
-        final noting = _NoteAheadSession(engine, copies: copies);
-        [
-          _text(LlamaChatRole.user, 'Hi'),
-          _text(LlamaChatRole.assistant, 'Hello'),
-        ].forEach(noting.addMessage);
+      test(
+        'whose addMessage moves a fresh note ahead of each message'
+        '${copies ? ' and copies the others' : ''} removes the note',
+        () async {
+          final noting = _NoteAheadSession(engine, copies: copies);
+          [
+            _text(LlamaChatRole.user, 'Hi'),
+            _text(LlamaChatRole.assistant, 'Hello'),
+          ].forEach(noting.addMessage);
 
-        final result = await stopAtMaxRounds(noting);
+          final result = await stopAtMaxRounds(noting);
 
-        expect(result.rolledBack, isTrue);
-        expect(
-          [for (final message in noting.history) message.content],
-          ['Hi', 'Hello', 'Note'],
-        );
-      });
+          expect(result.rolledBack, isTrue);
+          expect(
+            [for (final message in noting.history) message.content],
+            ['Hi', 'Hello'],
+          );
+        },
+      );
     }
 
-    test('whose addMessage drops an earlier equal note first removes the note '
-        'it appended', () async {
-      final trimming = _TrimmingSession(engine);
-      [
-        _text(LlamaChatRole.system, 'Audit'),
-        _text(LlamaChatRole.user, 'Hi'),
-        _text(LlamaChatRole.assistant, 'Hello'),
-      ].forEach(trimming.addMessage);
+    for (final (description, session, first) in [
+      (
+        'drops an earlier equal note first',
+        (LlamaEngine engine) => _TrimmingSession(engine),
+        <String>[],
+      ),
+      (
+        'pins its first message and drops an earlier equal note after it',
+        (LlamaEngine engine) => _TrimmingSession(engine, pinsFirst: true),
+        ['Pinned'],
+      ),
+      (
+        'puts a new summary first and drops an earlier equal note after it',
+        (LlamaEngine engine) => _TrimmingSession(engine, summarizes: true),
+        ['Summary'],
+      ),
+    ]) {
+      test(
+        'whose addMessage $description removes the note it appended',
+        () async {
+          final trimming = session(engine);
+          [
+            for (final text in first) _text(LlamaChatRole.system, text),
+            _text(LlamaChatRole.system, 'Audit'),
+            _text(LlamaChatRole.user, 'Hi'),
+            _text(LlamaChatRole.assistant, 'Hello'),
+          ].forEach(trimming.addMessage);
 
-      final result = await stopAtMaxRounds(trimming);
+          final result = await stopAtMaxRounds(trimming);
 
-      expect(result.rolledBack, isTrue);
-      expect(
-        [for (final message in trimming.history) message.content],
-        ['Hi', 'Hello'],
+          expect(result.rolledBack, isTrue);
+          expect(
+            [for (final message in trimming.history) message.content],
+            [...first, 'Hi', 'Hello'],
+          );
+        },
       );
-    });
+    }
 
-    test('whose addMessage drops the oldest message ends with the last reply '
-        'after completed tool turns', () async {
-      final trimming = _TrimmingSession(engine);
-      final tools = [_tool('weather', (_) async => 'sunny')];
-      for (var turn = 0; turn < 3; turn++) {
-        engine.replies
-          ..add(scriptedCalls([('a$turn', 'weather', '{}')]))
-          ..add(scriptedAnswer('Done $turn'));
-        await trimming.sendWithTools('Weather $turn', tools: tools);
-      }
-      expect(trimming.history.first.content, 'Audit');
+    for (final pinsFirst in [false, true]) {
+      test('whose addMessage drops the oldest message'
+          '${pinsFirst ? ' after a pinned one' : ''} ends with the last reply '
+          'after completed tool turns', () async {
+        final trimming = _TrimmingSession(engine, pinsFirst: pinsFirst);
+        if (pinsFirst) {
+          trimming.addMessage(_text(LlamaChatRole.system, 'Pinned'));
+        }
+        final tools = [_tool('weather', (_) async => 'sunny')];
+        for (var turn = 0; turn < 3; turn++) {
+          engine.replies
+            ..add(scriptedCalls([('a$turn', 'weather', '{}')]))
+            ..add(scriptedAnswer('Done $turn'));
+          await trimming.sendWithTools('Weather $turn', tools: tools);
+        }
+        expect(trimming.history[pinsFirst ? 1 : 0].content, 'Audit');
 
-      final result = await stopAtMaxRounds(trimming);
+        final result = await stopAtMaxRounds(trimming);
 
-      expect(result.rolledBack, isTrue);
-      expect(trimming.history.last.content, 'Done 2');
-    });
+        expect(result.rolledBack, isTrue);
+        expect(trimming.history.last.content, 'Done 2');
+      });
+    }
 
     test('whose addMessage drops the oldest message removes the note it '
         'appended', () async {
@@ -1753,6 +1824,20 @@ void main() {
       );
     }
 
+    test('whose addMessage drops the turn\'s first messages and stores a note '
+        'before the result removes the note', () async {
+      final windowed = _AuditingSession(
+        engine,
+        keepsLength: true,
+        noteFirst: true,
+      );
+
+      final result = await stopAtMaxRounds(windowed);
+
+      expect(result.rolledBack, isTrue);
+      expect(windowed.history, isEmpty);
+    });
+
     test(
       'whose addMessage keeps the length removes the note it appended',
       () async {
@@ -1770,7 +1855,7 @@ void main() {
     );
 
     test(
-      'whose addMessage replaces a note with a copy keeps the note',
+      'whose addMessage replaces a note with a copy removes the copy',
       () async {
         final renoting = _RenotingSession(engine);
         [
@@ -1783,7 +1868,7 @@ void main() {
         expect(result.rolledBack, isTrue);
         expect(
           [for (final message in renoting.history) message.content],
-          ['Hi', 'Hello', 'Note'],
+          ['Hi', 'Hello'],
         );
       },
     );
@@ -1803,6 +1888,12 @@ void main() {
         'summarizes the oldest message and stores a copy of the result',
         (LlamaEngine engine) =>
             _SummarizingSession(engine, summarized: 1, copiesResult: true),
+        ['Summary', 'Hello'],
+      ),
+      (
+        'summarizes the oldest message and adds a note after the summary',
+        (LlamaEngine engine) =>
+            _SummarizingSession(engine, summarized: 1, notes: true),
         ['Summary', 'Hello'],
       ),
     ]) {
@@ -2086,6 +2177,46 @@ void main() {
       expect(contents(session), ['Weather', 'Sunny.']);
     });
 
+    for (final (description, wrapped) in [
+      ('', (ChatSession session) => session),
+      (
+        ' when its addMessage moves a note last',
+        (ChatSession session) => _RenotingSession(session.engine),
+      ),
+      (
+        ' when its addMessage swaps the turn\'s messages',
+        (ChatSession session) => _SwappingSession(session.engine),
+      ),
+    ]) {
+      test(
+        'keeps an earlier tool turn with the same content$description',
+        () async {
+          final inner = wrapped(session);
+          final copying = _CopyingDelegateSession(inner);
+          engine.replies
+            ..add(scriptedCalls([('a', 'weather', '{}')]))
+            ..add(scriptedAnswer('Done'));
+          await copying.sendWithTools(
+            'Weather',
+            tools: [_tool('weather', (_) async => 'sunny')],
+          );
+          final before = [
+            for (final message in inner.history)
+              (message.role, message.content, message.parts.length),
+          ];
+
+          final result = await stopAtMaxRounds(copying);
+
+          expect(result.rolledBack, isTrue);
+          // Rebuilding through this addMessage moves the note last again.
+          expect([
+            for (final message in inner.history)
+              (message.role, message.content, message.parts.length),
+          ], unorderedEquals(before));
+        },
+      );
+    }
+
     test('rolls back a turn whose parts are rebuilt on each read', () async {
       [
         _text(LlamaChatRole.user, 'Hi'),
@@ -2185,5 +2316,52 @@ void main() {
 
     expect(result.text, 'A cat.');
     expect(session.history.first.parts, hasLength(2));
+  });
+
+  group('a rollback on a long history', () {
+    const earlier = 10000;
+
+    void fill(ChatSession session) {
+      for (var index = 0; index < earlier; index += 2) {
+        session.addMessage(_text(LlamaChatRole.user, 'Question $index'));
+        session.addMessage(_text(LlamaChatRole.assistant, 'Answer $index'));
+      }
+    }
+
+    Future<LlamaToolLoopResult> stopAtMaxRounds(ChatSession session) {
+      for (var round = 0; round <= 3; round++) {
+        engine.replies.add(scriptedCalls([('c$round', 'weather', '{}')]));
+      }
+      return session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 3,
+      );
+    }
+
+    test('of a subclass whose addMessage trims keeps the rest', () async {
+      final trimming = _TrimmingSession(engine);
+      fill(trimming);
+      final before = [for (final message in trimming.history) message.content];
+
+      final result = await stopAtMaxRounds(trimming);
+
+      expect(result.rolledBack, isTrue);
+      expect([
+        for (final message in trimming.history) message.content,
+      ], before.skip(3));
+    });
+
+    test('of a class that implements ChatSession whose history returns '
+        'copies keeps it', () async {
+      final copying = _CopyingDelegateSession(session);
+      fill(copying);
+      final before = [for (final message in session.history) message.content];
+
+      final result = await stopAtMaxRounds(copying);
+
+      expect(result.rolledBack, isTrue);
+      expect([for (final message in session.history) message.content], before);
+    });
   });
 }
