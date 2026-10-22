@@ -45,6 +45,18 @@ missing or unexpectedly skipped selected jobs. Only deliberately unselected
 jobs may be skipped. The bundle result applies the same rule to target matrices.
 This is executable job accounting, not a new repository protection setting.
 
+Linux VM tests run as parallel shards, `Test Linux VM (core)`, `(tooling)` and
+`(runtime)`, which split `test/` by directory. Together they run every root
+`*_test.dart` file exactly once, each with `-j 1 --exclude-tags local-only`
+and its own LiteRT-LM temp canary; `ci_workflow_selection_test.dart` fails when
+a test file belongs to no shard or to two, so a new top-level test directory
+needs a shard in `ci.yml`. Each shard uploads its raw VM coverage.
+`Test Linux VM (with Coverage)` waits for every shard, formats their combined
+raw coverage with `format_lcov.dart` exactly as one full run would, then
+enforces the threshold and uploads to Codecov. The aggregate requires the
+shards (`SHARD_JOBS` in the selector) as well as that job whenever Linux
+coverage is selected.
+
 Obsolete PR bundle runs cancel. Manual bundle runs have unique concurrency
 groups and do not cancel one another. Bundle workflows do not automatically run
 on main pushes; that candidate/artifact policy remains unchanged.

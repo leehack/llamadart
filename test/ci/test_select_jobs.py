@@ -315,8 +315,7 @@ class AggregateTest(unittest.TestCase):
         for bundle in (False, True):
             for paths in (['README.md'], ['lib/llamadart.dart'], ['example/chat_app/android/a']):
                 plan = ci.select(paths)
-                expected = ({'desktop': bool(plan['desktops']), 'app': bool(plan['apps'])}
-                            if bundle else plan['jobs'])
+                expected = ci.expected_jobs(plan, bundle)
                 needs = {'changes': {'result': 'success'}}
                 needs.update({j: {'result': 'success' if selected else 'skipped'} for j, selected in expected.items()})
                 self.assertEqual(ci.aggregate(plan, needs, bundle), [])
@@ -328,6 +327,18 @@ class AggregateTest(unittest.TestCase):
                     needs[job]['result'] = correct
                 needs['changes']['result'] = 'failure'
                 self.assertTrue(ci.aggregate(plan, needs, bundle))
+
+    def test_linux_vm_shards_share_the_coverage_selection(self):
+        for paths, selected in ((['example/chat_app/android/a'], False), (['lib/llamadart.dart'], True)):
+            plan = ci.select(paths)
+            self.assertEqual(plan['jobs']['test-linux-coverage'], selected)
+            self.assertEqual(ci.expected_jobs(plan)['test-linux-vm'], selected)
+            self.assertNotIn('test-linux-vm', ci.expected_jobs(plan, bundle=True))
+            needs = {'changes': {'result': 'success'}}
+            needs.update({j: {'result': 'success' if s else 'skipped'}
+                          for j, s in ci.expected_jobs(plan).items()})
+            del needs['test-linux-vm']
+            self.assertTrue(ci.aggregate(plan, needs), paths)
 
     def test_malformed_selection_cannot_turn_missing_work_into_success(self):
         for field, value in [('jobs', {}), ('desktops', ['unknown']), ('apps', ['web', 'web']),
@@ -345,7 +356,9 @@ class AggregateTest(unittest.TestCase):
         plan = ci.select(['README.md'])
         self.assertTrue(ci.aggregate(plan, {'changes': {'result': 'success'}}))
         needs = {'changes': {'result': 'success'}}
-        needs.update({j: {'result': 'success' if selected else 'skipped'} for j, selected in plan['jobs'].items()})
+        needs.update({j: {'result': 'success' if selected else 'skipped'}
+                      for j, selected in ci.expected_jobs(plan).items()})
+        self.assertEqual(ci.aggregate(plan, needs), [])
         needs['new-unaccounted-job'] = {'result': 'success'}
         self.assertTrue(ci.aggregate(plan, needs))
 

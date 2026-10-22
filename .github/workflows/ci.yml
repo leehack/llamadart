@@ -356,12 +356,27 @@ jobs:
       - name: Build documentation site
         run: ./tool/docs/build_site.sh
 
-  test-linux-coverage:
+  test-linux-vm:
     needs: changes
     if: needs.changes.outputs.test-linux-coverage == 'true'
-    name: Test Linux VM (with Coverage)
+    name: Test Linux VM (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      # Together the shards run every root test file exactly once; each keeps
+      # -j 1 and writes raw coverage that test-linux-coverage merges.
+      matrix:
+        include:
+          - shard: core
+            paths: test/unit/core
+          - shard: tooling
+            paths: >-
+              test/unit/tooling test/unit/hook test/unit/platform
+              test/unit/test_structure test/unit/public_entrypoints_test.dart
+              test/unit/public_entrypoints_web_test.dart
+          - shard: runtime
+            paths: test/unit/backends test/integration test/e2e
     steps:
       - uses: actions/checkout@v7
 
@@ -424,12 +439,47 @@ jobs:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
           LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
           REQUIRE_LLAMA_CPP_TEMPLATES: '1'
-        run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage
+        run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage ${{ matrix.paths }}
 
       - name: Check the LiteRT-LM cache canary
         if: ${{ !cancelled() }}
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
+
+      - name: Upload raw coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-vm-coverage-${{ matrix.shard }}
+          path: coverage/
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  test-linux-coverage:
+    needs: [changes, test-linux-vm]
+    if: needs.changes.outputs.test-linux-coverage == 'true'
+    name: Test Linux VM (with Coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Download raw coverage of every shard
+        uses: actions/download-artifact@v8
+        with:
+          pattern: linux-vm-coverage-*
+          merge-multiple: true
+          path: coverage/
 
       - name: Format coverage
         run: |
@@ -677,6 +727,7 @@ jobs:
       - validation-harness
       - validation-integration
       - companion-packages
+      - test-linux-vm
       - test-linux-coverage
       - test-web
       - web-chat-contract
