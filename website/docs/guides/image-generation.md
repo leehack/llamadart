@@ -194,8 +194,9 @@ seed 42. The public Dart API and a direct native control agreed in every case:
 `v0.3.0` carries the pickle reader fix for the legacy `.pth` row
 ([stable-diffusion-native#23](https://github.com/leehack/stable-diffusion-native/issues/23));
 the 2.6 GB load has not been repeated through llamadart. These are container
-checks, not qualification of every model, dtype, device or multi-shard layout. In particular, the large PyTorch failures are also present
-without Dart; small component success does not remove those limits. The
+checks, not qualification of every model, dtype, device or multi-shard layout.
+The slow full-size ZIP loads were also slow in the native control, and small
+component success does not remove those limits. The
 [basic example's local format checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
 can repeat same-weight comparisons without downloading models.
 
