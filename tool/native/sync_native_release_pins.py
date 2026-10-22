@@ -191,6 +191,7 @@ LITERT_PREBUILT_OVERRIDES = {
     "v0.17.1": LITERT_ANDROID_DAWN_OVERRIDES,
     # Stock v0.18 still loses the Vulkan device on Pixel Mali-G715.
     "v0.18.0": LITERT_ANDROID_DAWN_OVERRIDES,
+    "v0.18.1": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",

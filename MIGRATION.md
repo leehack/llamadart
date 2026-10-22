@@ -30,6 +30,15 @@ LiteRT-LM models on macOS x86_64, Windows arm64 and the x86_64 iOS simulator,
 which have no LiteRT-LM runtime, and an explicit `device` the platform's
 LiteRT-LM lacks, such as `gpu` on Linux arm64, also fail before any download.
 
+### LiteRT-LM native runtime `v0.18.1`
+
+The native-assets hook and the LiteRT-LM Apple companion source pin
+`v0.18.1`. A Flutter macOS app loads LiteRT-LM from its own bundle only with
+the companion release that pins `v0.18.1`; a companion pinning a `v0.18.0`
+build keeps macOS LiteRT-LM in the hook cache with a build warning. The app
+API is unchanged, and native GPU embeddings still throw
+`LlamaUnsupportedException`.
+
 <a id="014x-to-0150-upgrade-guide"></a>
 
 ## `0.14.x` -> `0.15.0`: upgrade guide
