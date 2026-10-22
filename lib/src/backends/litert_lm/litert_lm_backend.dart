@@ -654,19 +654,27 @@ class LiteRtLmBackend
     ).layers;
   }
 
-  /// Reports the stream batching thresholds the worker applies, none of the
-  /// sampling controls, and speculative decoding through the LiteRT-LM
-  /// runtime switch, which [SpeculativeDecodingStrategy.backendDefault] and
+  /// Reports the stream batching thresholds the worker applies; penalty and
+  /// presence penalty when the native runtime exports LiteRT-LM's repetition
+  /// penalty API; a thinking budget when it also exports the thinking config
+  /// API and the loaded bundle declares a thinking channel; no Min-P; and
+  /// speculative decoding through the LiteRT-LM runtime switch, which
+  /// [SpeculativeDecodingStrategy.backendDefault] and
   /// [SpeculativeDecodingStrategy.mtp] turn on, unless the loaded bundle
   /// declares no speculative decoding drafter. The declaration can
   /// under-report; see `LiteRtLmRuntimeClient.bundleCapabilities`.
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     final bundle = await _bundleCapabilities();
+    final controls = _expect<LiteRtLmGenerationControlsResponse>(
+      await _sendRequest(LiteRtLmGenerationControlsRequest.new),
+      'generation control lookup',
+    );
     return BackendGenerationCapabilities(
-      presencePenalty: false,
+      penalty: controls.penalties,
+      presencePenalty: controls.penalties,
       minP: false,
-      thinkingBudget: false,
+      thinkingBudget: controls.thinkingBudget,
       speculativeDecodingStrategies: bundle?.speculativeDecoding == false
           ? const <SpeculativeDecodingStrategy>{}
           : const <SpeculativeDecodingStrategy>{

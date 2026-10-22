@@ -371,6 +371,15 @@ void runLiteRtLmWorkerForTesting(
               LiteRtLmBundleCapabilitiesResponse(service.bundleCapabilities()),
             );
 
+          case LiteRtLmGenerationControlsRequest():
+            final controls = service.generationControls();
+            message.sendPort.send(
+              LiteRtLmGenerationControlsResponse(
+                penalties: controls.penalties,
+                thinkingBudget: controls.thinkingBudget,
+              ),
+            );
+
           case LiteRtLmSystemInfoRequest():
             final info = service.getVramInfo();
             message.sendPort.send(

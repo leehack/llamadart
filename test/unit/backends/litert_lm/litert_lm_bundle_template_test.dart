@@ -176,6 +176,73 @@ void main() {
     });
   });
 
+  group('readLiteRtLmBundleFirstChannel', () {
+    // LlmMetadata.channels is field 8; Channel holds channel_name (1), start
+    // (2), end (3) and the optional is_reasoning_channel varint (4).
+    // https://github.com/google-ai-edge/LiteRT-LM/blob/v0.18.0/runtime/proto/llm_metadata.proto
+    Uint8List channel(String name, {bool? reasoning}) => _protoField(8, [
+      ..._protoField(1, utf8.encode(name)),
+      ..._protoField(2, utf8.encode('<|channel>$name')),
+      ..._protoField(3, utf8.encode('<channel|>')),
+      if (reasoning != null) ...[0x20, reasoning ? 1 : 0],
+    ]);
+
+    String bundleWith(List<int> channels) => write(
+      _bundle([
+        (
+          type: _llmMetadata,
+          data: Uint8List.fromList([
+            ..._metadata('{{ messages }}'),
+            ...channels,
+          ]),
+        ),
+      ]),
+    );
+
+    test('reads the first declared channel', () {
+      final path = bundleWith([
+        ...channel('thought'),
+        ...channel('tool', reasoning: false),
+      ]);
+
+      expect(readLiteRtLmBundleFirstChannel(path), (
+        name: 'thought',
+        isReasoning: null,
+      ));
+      expect(readLiteRtLmBundleChatTemplate(path), '{{ messages }}');
+    });
+
+    test('reads the reasoning flag', () {
+      expect(
+        readLiteRtLmBundleFirstChannel(
+          bundleWith(channel('analysis', reasoning: true)),
+        ),
+        (name: 'analysis', isReasoning: true),
+      );
+      expect(
+        readLiteRtLmBundleFirstChannel(
+          bundleWith(channel('thought', reasoning: false)),
+        ),
+        (name: 'thought', isReasoning: false),
+      );
+    });
+
+    test('is null without a named channel or readable metadata', () {
+      expect(readLiteRtLmBundleFirstChannel(bundleWith(const [])), isNull);
+      expect(readLiteRtLmBundleFirstChannel(bundleWith(channel(''))), isNull);
+      expect(
+        readLiteRtLmBundleFirstChannel(
+          bundleWith(_protoField(8, [0x0a, 0x7f])),
+        ),
+        isNull,
+      );
+      expect(
+        readLiteRtLmBundleFirstChannel(write(utf8.encode('not a bundle'))),
+        isNull,
+      );
+    });
+  });
+
   group('readLiteRtLmBundleChatTemplate', () {
     test('reads the template of the LlmMetadata section', () {
       const template = '{{ messages[0].content }} 안녕';

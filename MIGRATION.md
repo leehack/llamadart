@@ -30,6 +30,21 @@ LiteRT-LM models on macOS x86_64, Windows arm64 and the x86_64 iOS simulator,
 which have no LiteRT-LM runtime, and an explicit `device` the platform's
 LiteRT-LM lacks, such as `gpu` on Linux arm64, also fail before any download.
 
+### Native LiteRT-LM penalty and thinking-budget errors
+
+Native LiteRT-LM now applies `GenerationParams.penalty`, `presencePenalty`
+and `thinkingBudget` where `engine.capabilities` reports them. A value it
+cannot apply, such as a `penalty` below `1.0`, a zero `ThinkingBudget`, a
+budget on a bundle without a thinking channel or on a runtime without the
+API, throws `LlamaUnsupportedException` instead of the `UnsupportedError`
+these options threw before. Catch `LlamaUnsupportedException`, or check
+`supportsPenalty`, `supportsPresencePenalty` and `supportsThinkingBudget`
+first. Other LiteRT-LM options it does not apply, such as `minP` and
+grammars, still throw `UnsupportedError`.
+
+`LiteRtLmRuntimeClient.generate` and `generateMessageJson` take new optional
+named parameters; subclasses that override them must declare them.
+
 ### LiteRT-LM native runtime `v0.18.1`
 
 The native-assets hook and the LiteRT-LM Apple companion source pin

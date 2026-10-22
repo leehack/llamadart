@@ -1386,9 +1386,11 @@ void main() {
         const ModelParams(),
       );
       final liteRt = await backend.generationCapabilities();
-      expect(liteRt.presencePenalty, isFalse);
+      // Penalty and thinking support depend on whether this host's LiteRT-LM
+      // runtime exports those APIs.
+      expect(liteRt.presencePenalty, liteRtLmCapabilities.presencePenalty);
       expect(liteRt.minP, isFalse);
-      expect(liteRt.thinkingBudget, isFalse);
+      expect(liteRt.thinkingBudget, liteRtLmCapabilities.thinkingBudget);
       expect(
         liteRt.speculativeDecodingStrategies,
         <SpeculativeDecodingStrategy>{

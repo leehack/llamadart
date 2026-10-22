@@ -864,6 +864,9 @@ class GenerationParams {
 
   /// Penalty applied to tokens that have already appeared in the sequence.
   /// 1.0 means no penalty.
+  ///
+  /// Native LiteRT-LM counts only the tokens of the current send, leaves the
+  /// default value unapplied and rejects values below 1.0.
   final double penalty;
 
   /// Additive penalty applied once to tokens that appear in the sampler's
@@ -871,7 +874,8 @@ class GenerationParams {
   ///
   /// `0.0` disables the penalty. This is distinct from [penalty], which scales
   /// logits using llama.cpp's repeat-penalty sampler. Native llama.cpp supports
-  /// this option; backends without an equivalent sampler reject nonzero values
+  /// this option; native LiteRT-LM applies it to the tokens of the current
+  /// send only. Backends without an equivalent sampler reject nonzero values
   /// instead of silently ignoring them.
   final double presencePenalty;
 
@@ -899,8 +903,11 @@ class GenerationParams {
   ///
   /// The native llama.cpp backend pauses grammar constraints while budgeted
   /// reasoning is active, then resumes tool-call or structured-output grammar
-  /// after reasoning has ended. Other backends reject this setting rather than
-  /// silently ignoring it.
+  /// after reasoning has ended. Native LiteRT-LM applies it to chat
+  /// generation on bundles with a thinking channel, which it closes with the
+  /// bundle's own end marker; it rejects a zero budget and
+  /// [ThinkingBudget.forcedMessage]. Other backends reject this setting rather
+  /// than silently ignoring it.
   final ThinkingBudget? thinkingBudget;
 
   /// Lazy grammar activation triggers.
