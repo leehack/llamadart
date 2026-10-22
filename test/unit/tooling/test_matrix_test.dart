@@ -52,7 +52,7 @@ void main() {
       (row) => row.id == 'native-sync-python-suites',
     );
     final ciSuites = RegExp(
-      r'run: python3 (tool/native/test_[\w]+\.py)\s*$',
+      r'^\s*run: python3 (tool/native/test_[\w]+\.py)\s*$',
       multiLine: true,
     ).allMatches(File('.github/workflows/ci.yml').readAsStringSync());
     final expected = [for (final m in ciSuites) 'python3 ${m.group(1)}'];
