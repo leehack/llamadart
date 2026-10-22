@@ -458,6 +458,7 @@ class NativeLlamaBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
+    checkModelParamsTypeFor(params, LlamaRuntime.llamaCpp);
     if (params.liteRtLmEmbeddingEngine) {
       throw LlamaUnsupportedException(
         'ModelParams.liteRtLmEmbeddingEngine is LiteRT-LM-only; '

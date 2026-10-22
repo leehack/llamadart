@@ -22,13 +22,59 @@ releases loaded the model and dropped these fields:
 An app that shares one `ModelParams` across GGUF and `.litertlm` models, or
 across native and Web, sets these fields only for the runtime that applies
 them, for example with `copyWith` and the matching `clear*` flags.
-`LlamaBackend()` rejects them before any download when `ModelSource.format`
-or the file name names the model format; a model known only from its file
-header is rejected when it loads, before the runtime starts.
+`LlamaEngine.load` and `setModel` on `LlamaBackend()` reject them before any
+download when `ModelSource.format` or the file name names the model format;
+the deprecated `loadModelSource` and a model known only from its file header
+reject them when the model loads, before the runtime starts.
 
 LiteRT-LM models on macOS x86_64, Windows arm64 and the x86_64 iOS simulator,
 which have no LiteRT-LM runtime, and an explicit `device` the platform's
 LiteRT-LM lacks, such as `gpu` on Linux arm64, also fail before any download.
+
+### Runtime-specific parameter types; `liteRtLm*` arguments deprecated
+
+`LlamaCppModelParams` and `LiteRtLmModelParams` are `ModelParams` whose
+constructors take only the fields their runtime applies, so every API that
+takes `ModelParams` takes them. A load throws `LlamaUnsupportedException`
+when one is used for the other runtime, and their `copyWith` keeps the type
+and throws `LlamaArgumentException` for the other runtime's fields and
+`clear*` flags.
+
+The `liteRtLm*` arguments of the `ModelParams` constructor and `copyWith`,
+and the matching `clearLiteRtLm*` flags, are deprecated until 1.0. They still
+work. The fields keep their names, so reads such as `params.liteRtLmCacheDir`
+are unchanged.
+
+```dart
+// Before
+const params = ModelParams(
+  liteRtLmCacheDir: '/data/litert-cache',
+  liteRtLmEmbeddingEngine: true,
+  device: ComputeDevice.cpu,
+);
+
+// After
+const params = LiteRtLmModelParams(
+  cacheDir: '/data/litert-cache',
+  embeddingEngine: true,
+  device: ComputeDevice.cpu,
+);
+```
+
+| Deprecated `ModelParams` argument | `LiteRtLmModelParams` argument |
+| --- | --- |
+| `liteRtLmEmbeddingEngine` | `embeddingEngine` |
+| `liteRtLmActivationDataType` | `activationDataType` |
+| `liteRtLmPrefillChunkSize` | `prefillChunkSize` |
+| `liteRtLmParallelFileSectionLoading` | `parallelFileSectionLoading` |
+| `liteRtLmDispatchLibDir` | `dispatchLibDir` |
+| `liteRtLmCacheDir` | `cacheDir` |
+| `liteRtLmMaxProgramCacheBytes` | `maxProgramCacheBytes` |
+
+`copyWith` takes the same names and `clear*` flags (`clearCacheDir`). As on
+`ModelParams.copyWith`, a clear flag wins over a value for the same field,
+whichever spelling either uses. Errors name a `LiteRtLmModelParams` option
+without the prefix. `liteRtLmBackend` stays deprecated in favor of `device`.
 
 ### Native LiteRT-LM penalty and thinking-budget errors
 

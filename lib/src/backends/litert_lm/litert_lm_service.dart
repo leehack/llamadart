@@ -267,7 +267,7 @@ class LiteRtLmService {
   void _requireConversationEngine() {
     if (_modelParams?.liteRtLmEmbeddingEngine ?? false) {
       throw LlamaUnsupportedException(
-        'Conversation and tokenizer APIs are unavailable on a LiteRT-LM embedding engine; load with liteRtLmEmbeddingEngine: false for conversation.',
+        'Conversation and tokenizer APIs are unavailable on a LiteRT-LM embedding engine; load with embeddingEngine: false for conversation.',
       );
     }
   }
@@ -275,7 +275,7 @@ class LiteRtLmService {
   Future<LiteRtLmEmbeddingSession> _ensureEmbedding() async {
     if (!(_modelParams?.liteRtLmEmbeddingEngine ?? false)) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM embeddings require loading with liteRtLmEmbeddingEngine: true; the active model is a conversation engine.',
+        'LiteRT-LM embeddings require loading with LiteRtLmModelParams(embeddingEngine: true); the active model is a conversation engine.',
       );
     }
     final existing = _embedding;
@@ -1267,13 +1267,14 @@ class LiteRtLmService {
       if (modelParams.liteRtLmCacheDir != null) {
         cacheHint =
             ' Engine creation also fails when the runtime cannot write '
-            'ModelParams.liteRtLmCacheDir.';
+            '${modelParamsTypeName(modelParams)}.'
+            '${liteRtLmOptionName(modelParams, 'liteRtLmCacheDir')}.';
       } else if (runtimeCacheDir != null &&
           runtimeCacheDir != liteRtLmNoCacheDirectory) {
         cacheHint =
             ' Engine creation also fails when the runtime cannot write its '
-            'cache directory; set ModelParams.liteRtLmCacheDir to one it can '
-            'write.';
+            'cache directory; set LiteRtLmModelParams.cacheDir '
+            '(ModelParams.liteRtLmCacheDir) to one it can write.';
       } else {
         cacheHint = '';
       }
@@ -1544,19 +1545,29 @@ class LiteRtLmService {
 
   void _validateModelParams(ModelParams params) {
     params.validate();
+    checkModelParamsTypeFor(params, LlamaRuntime.liteRtLm);
 
     if (params.liteRtLmEmbeddingEngine) {
       final ignored = <String>[
         if (params.loras.isNotEmpty) 'loras',
         if (params.chatTemplate != null) 'chatTemplate',
-        if (params.liteRtLmActivationDataType != null)
-          'liteRtLmActivationDataType',
-        if (params.liteRtLmPrefillChunkSize != null) 'liteRtLmPrefillChunkSize',
-        if (params.liteRtLmParallelFileSectionLoading != null)
-          'liteRtLmParallelFileSectionLoading',
-        if (params.liteRtLmDispatchLibDir != null) 'liteRtLmDispatchLibDir',
-        if (params.liteRtLmMaxProgramCacheBytes != null)
-          'liteRtLmMaxProgramCacheBytes',
+        for (final (field, isSet) in [
+          (
+            'liteRtLmActivationDataType',
+            params.liteRtLmActivationDataType != null,
+          ),
+          ('liteRtLmPrefillChunkSize', params.liteRtLmPrefillChunkSize != null),
+          (
+            'liteRtLmParallelFileSectionLoading',
+            params.liteRtLmParallelFileSectionLoading != null,
+          ),
+          ('liteRtLmDispatchLibDir', params.liteRtLmDispatchLibDir != null),
+          (
+            'liteRtLmMaxProgramCacheBytes',
+            params.liteRtLmMaxProgramCacheBytes != null,
+          ),
+        ])
+          if (isSet) liteRtLmOptionName(params, field),
         if (params.loadMtp) 'loadMtp',
         if (params.speculativeRollbackTokenMax != 0)
           'speculativeRollbackTokenMax',
@@ -1566,7 +1577,9 @@ class LiteRtLmService {
       if (ignored.isNotEmpty) {
         throw LlamaUnsupportedException(
           'LiteRT-LM embedding mode does not apply: ${ignored.join(', ')}. '
-          'Use contextSize (encoder signature), numberOfThreads, liteRtLmCacheDir and CPU device selection.',
+          'Use contextSize (encoder signature), numberOfThreads, '
+          '${liteRtLmOptionName(params, 'liteRtLmCacheDir')} and CPU device '
+          'selection.',
         );
       }
     }

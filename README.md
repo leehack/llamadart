@@ -281,7 +281,7 @@ API-version-1 embedding modality probe. The default pin is qualified with
 EmbeddingGemma-2 on Chrome CPU wasm memory64 against native CPU/Metal; repeated
 media batches require memory64. Hardware WebGPU remains unqualified. LiteRT-LM
 supports text, image and audio embeddings (qualified on macOS arm64 CPU only)
-with `ModelParams(liteRtLmEmbeddingEngine: true)`. Select `ComputeDevice.cpu`
+with `LiteRtLmModelParams(embeddingEngine: true)`. Select `ComputeDevice.cpu`
 on native; native GPU and all LiteRT-LM Web paths throw
 `LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
 llama.cpp text-only content follows `embed`, including causal unpooled models.
@@ -441,9 +441,10 @@ checks and known limits.
 
 `LlamaBackend()` routes by model file type. Use `ModelParams` for load-time
 controls such as context size, GPU layers, backend preference, LiteRT-LM backend
-selection, and WebGPU mem64 hints. A load throws `LlamaUnsupportedException`
-for a field set that the model's runtime does not apply, before any download
-when the format is known. See
+selection, and WebGPU mem64 hints, or `LlamaCppModelParams` and
+`LiteRtLmModelParams`, which take only the fields their runtime applies. A load
+throws `LlamaUnsupportedException` for a field set that the model's runtime
+does not apply, before any download when the format is known. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
 

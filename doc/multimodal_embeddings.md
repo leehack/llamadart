@@ -67,7 +67,7 @@ supply its projector through the existing `LlamaModel.projector` source (or
 loading/unloading. No second projector parameter or alternate chat engine is
 introduced. B and D/E must use the context's existing projector handle.
 
-For LiteRT-LM, `ModelParams(liteRtLmEmbeddingEngine: true)` explicitly selects the
+For LiteRT-LM, `LiteRtLmModelParams(embeddingEngine: true)` explicitly selects the
 separate embedding engine. The default false continues conversation loading.
 The LiteRT-LM-only flag selects an engine for `.litertlm`; llama.cpp GGUF
 loaders reject true with `LlamaUnsupportedException` and keep their existing

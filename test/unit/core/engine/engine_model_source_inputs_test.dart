@@ -763,6 +763,31 @@ void main() {
       expect(backend.modelLoadCalls, 0);
     });
 
+    test('LiteRtLmModelParams names the embedding option as it spells '
+        'it', () async {
+      final backend = _RuntimeBackend(LlamaRuntime.liteRtLm);
+      final manager = _CacheManager({hfAdapter: '/cache/style.gguf'});
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      await expectLater(
+        engine.loadModel(
+          '/models/model',
+          modelParams: LiteRtLmModelParams(
+            embeddingEngine: true,
+            loras: [LoraAdapterConfig.source(hfAdapter)],
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('empty with embeddingEngine.'),
+          ),
+        ),
+      );
+      expect(manager.calls, isEmpty);
+    });
+
     test('a URL-loading LiteRT-LM backend rejects even one adapter at scale '
         '1.0 before it resolves it', () async {
       final backend = _RuntimeBackend(

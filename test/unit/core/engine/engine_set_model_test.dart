@@ -193,6 +193,20 @@ void main() {
         expect(engine.isReady, isTrue);
       }
 
+      test('a runtime-specific ModelParams for the other runtime', () async {
+        await expectRejected(
+          () => engine.setModel(
+            LlamaModel(remoteModel),
+            params: const LiteRtLmModelParams(embeddingEngine: true),
+          ),
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('Use LlamaCppModelParams.'),
+          ),
+        );
+      });
+
       test('an invalid ModelParams', () async {
         await expectRejected(
           () => engine.setModel(

@@ -105,9 +105,9 @@ Future<List<double>> embedOrderedText(LlamaEngine engine) async {
 Image/audio embeddings are available only when `embeddingCapabilities` reports
 them: native llama.cpp with EmbeddingGemma-2 and its projector, Web llama.cpp with
 bridge assets v0.1.64+, or a LiteRT-LM embedding bundle loaded with
-`ModelParams(liteRtLmEmbeddingEngine: true)` on native CPU (see
+`LiteRtLmModelParams(embeddingEngine: true)` on native CPU (see
 [LiteRT-LM image embeddings](#litert-lm-image-embeddings)). Chat media support does
-not enable them. `ModelParams.liteRtLmEmbeddingEngine` is LiteRT-LM-only; GGUF
+not enable them. `LiteRtLmModelParams.embeddingEngine` is LiteRT-LM-only; GGUF
 loaders reject true.
 
 By default, embedding CLIs use

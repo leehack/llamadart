@@ -252,10 +252,10 @@ With some models on the LiteRT-LM GPU backend, each engine create appends to
 `*_mldrift_program_cache.bin`
 ([#552](https://github.com/leehack/llamadart/issues/552)). Before each create,
 llamadart prunes the program cache files of the cache directory to
-`ModelParams.liteRtLmMaxProgramCacheBytes`, 1 GiB by default. Without a cache
-directory, as on Linux, Windows and iOS when `liteRtLmCacheDir` is unset, the
+`LiteRtLmModelParams.maxProgramCacheBytes`, 1 GiB by default. Without a cache
+directory, as on Linux, Windows and iOS when `cacheDir` is unset, the
 runtime writes them next to the model file and nothing is pruned; set
-`liteRtLmCacheDir` there. An engine protects its model's caches from other
+`cacheDir` there. An engine protects its model's caches from other
 engines' pruning only from its first generation, tokenization or
 detokenization, not from `loadModel`, so a prune before then can cost one
 recompile. See

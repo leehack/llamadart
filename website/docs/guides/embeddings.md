@@ -95,7 +95,7 @@ observers receive only ordered part kinds/counts, with no text, paths, URLs
 or media payloads; old string calls retain their existing text observations.
 
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
-`loadMultimodalProjector` loading path. `ModelParams(liteRtLmEmbeddingEngine: true)`
+`loadMultimodalProjector` loading path. `LiteRtLmModelParams(embeddingEngine: true)`
 selects the separate LiteRT-LM embedding engine. Use `ComputeDevice.cpu` on
 native. Native GPU and all LiteRT-LM Web paths throw `LlamaUnsupportedException`. This flag
 is LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
@@ -115,8 +115,8 @@ import 'package:llamadart/llamadart.dart';
 Future<List<double>> embedLiteRtImage(LlamaEngine engine, Uint8List png) async {
   await engine.setModel(
     LlamaModel(ModelSource.path('embeddinggemma-2-740m.litertlm')),
-    params: const ModelParams(
-      liteRtLmEmbeddingEngine: true,
+    params: const LiteRtLmModelParams(
+      embeddingEngine: true,
       device: ComputeDevice.cpu,
       contextSize: 1024,
     ),
@@ -366,7 +366,7 @@ request never enters native inference. Reuse waits for any active native item to
 settle.
 
 `contextSize` selects the model's encoder signature without truncating inputs.
-Embedding mode applies `numberOfThreads`, `liteRtLmCacheDir` and CPU selection;
+Embedding mode applies `numberOfThreads`, `cacheDir` and CPU selection;
 LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths,
 program cache limits, MTP/rollback and Web memory hints throw
 `LlamaUnsupportedException` before model I/O. Native CPU qualification is limited

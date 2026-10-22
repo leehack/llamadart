@@ -1112,6 +1112,7 @@ class WebGpuLlamaBackend
     void Function(double progress)? onProgress,
   ) {
     params.validate();
+    checkModelParamsTypeFor(params, LlamaRuntime.llamaCpp);
     if (params.liteRtLmEmbeddingEngine) {
       throw LlamaUnsupportedException(
         'ModelParams.liteRtLmEmbeddingEngine is LiteRT-LM-only; '

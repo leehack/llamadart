@@ -196,7 +196,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   (Direct3D 12) through `dart run` and a `dart build cli` bundle; a Flutter
   Windows app has not been run with it.
 - Android NPU depends on the device SoC, the `.litertlm` bundle and the LiteRT
-  dispatch libraries (`ModelParams.liteRtLmDispatchLibDir`). If native
+  dispatch libraries (`LiteRtLmModelParams.dispatchLibDir`). If native
   LiteRT-LM cannot create an NPU engine, use `cpu` or `gpu`.
 - Android llama.cpp Vulkan is experimental and device-dependent. `auto` runs
   llama.cpp on the CPU there; Vulkan runs only when the app asks for

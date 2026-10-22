@@ -46,7 +46,7 @@ description: >-
   backend, including within mixed inputs. Add no separators or task prefixes.
   The modality enum may gain values; include a default in switches.
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
-- `ModelParams(liteRtLmEmbeddingEngine: true)` is the explicit LiteRT-LM
+- `LiteRtLmModelParams(embeddingEngine: true)` is the explicit LiteRT-LM
   embedding-engine selector. Select `ComputeDevice.cpu` on native. Native GPU
   and all LiteRT-LM Web paths throw typed unsupported errors. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use

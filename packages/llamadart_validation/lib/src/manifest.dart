@@ -595,19 +595,28 @@ class ValidationProfile {
         : ComputeDevice.auto;
     final requiresAccelerator =
         device == ComputeDevice.gpu || device == ComputeDevice.npu;
-    return ModelParams(
+    final gpuLayers = backend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
+    if (runtime == 'litert') {
+      return LiteRtLmModelParams(
+        contextSize: contextSize,
+        device: device,
+        gpuLayers: gpuLayers,
+        preferredBackend: requiresAccelerator
+            ? GpuBackend.auto
+            : GpuBackend.cpu,
+        numberOfThreads: threads,
+      );
+    }
+    return LlamaCppModelParams(
       contextSize: contextSize,
-      device: device,
-      gpuLayers: backend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
-      preferredBackend: runtime != 'gguf'
-          ? (requiresAccelerator ? GpuBackend.auto : GpuBackend.cpu)
-          : backend == 'webgpu'
+      gpuLayers: gpuLayers,
+      preferredBackend: backend == 'webgpu'
           ? GpuBackend.auto
           : GpuBackend.values.byName(backend),
       batchSize: isEmbedding ? 2048 : 0,
       microBatchSize: isEmbedding ? 2048 : 0,
       numberOfThreads: threads,
-      numberOfThreadsBatch: runtime == 'litert' ? 0 : threads,
+      numberOfThreadsBatch: threads,
     );
   }
 

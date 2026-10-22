@@ -4,6 +4,7 @@ import '../config/flash_attention.dart';
 import '../config/gpu_backend.dart';
 import '../config/kv_cache_type.dart';
 import '../config/lora_config.dart';
+import 'model_params_runtime_support.dart';
 
 /// Strategy for distributing model tensors across GPU devices.
 ///
@@ -91,6 +92,9 @@ enum LiteRtLmActivationDataType {
 /// `liteRtLm*` field for a GGUF model, instead of ignoring it. `LlamaBackend()`
 /// checks this before any download when `ModelSource.format` or the file
 /// name names the model format.
+///
+/// [LlamaCppModelParams] and [LiteRtLmModelParams] take only the fields
+/// their runtime applies; prefer them when the model's runtime is known.
 ///
 /// Context batching fields in this class mirror llama.cpp semantics:
 /// `n_batch` is the logical max decode batch, and `n_ubatch` is the
@@ -488,6 +492,10 @@ class ModelParams {
   /// Creates configuration for the model. Use [validate] to check for
   /// llama.cpp-incompatible combinations before passing to a load call.
   const ModelParams({
+    @Deprecated(
+      'Use LiteRtLmModelParams(embeddingEngine: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmEmbeddingEngine = false,
     this.contextSize = 4096,
     this.device = ComputeDevice.auto,
@@ -498,11 +506,35 @@ class ModelParams {
       '1.0.',
     )
     this.liteRtLmBackend = LiteRtLmBackendPreference.auto,
+    @Deprecated(
+      'Use LiteRtLmModelParams(activationDataType: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmActivationDataType,
+    @Deprecated(
+      'Use LiteRtLmModelParams(prefillChunkSize: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmPrefillChunkSize,
+    @Deprecated(
+      'Use LiteRtLmModelParams(parallelFileSectionLoading: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmParallelFileSectionLoading,
+    @Deprecated(
+      'Use LiteRtLmModelParams(dispatchLibDir: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmDispatchLibDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams(cacheDir: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmCacheDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams(maxProgramCacheBytes: ...). This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmMaxProgramCacheBytes,
     this.splitMode = ModelSplitMode.layer,
     this.mainGpu = 0,
@@ -526,6 +558,42 @@ class ModelParams {
     this.preferMemory64,
     this.modelBytesHint,
   });
+
+  ModelParams._copy(ModelParams other)
+    : liteRtLmEmbeddingEngine = other.liteRtLmEmbeddingEngine,
+      contextSize = other.contextSize,
+      device = other.device,
+      gpuLayers = other.gpuLayers,
+      preferredBackend = other.preferredBackend,
+      liteRtLmBackend = other.liteRtLmBackend,
+      liteRtLmActivationDataType = other.liteRtLmActivationDataType,
+      liteRtLmPrefillChunkSize = other.liteRtLmPrefillChunkSize,
+      liteRtLmParallelFileSectionLoading =
+          other.liteRtLmParallelFileSectionLoading,
+      liteRtLmDispatchLibDir = other.liteRtLmDispatchLibDir,
+      liteRtLmCacheDir = other.liteRtLmCacheDir,
+      liteRtLmMaxProgramCacheBytes = other.liteRtLmMaxProgramCacheBytes,
+      splitMode = other.splitMode,
+      mainGpu = other.mainGpu,
+      loras = other.loras,
+      chatTemplate = other.chatTemplate,
+      numberOfThreads = other.numberOfThreads,
+      numberOfThreadsBatch = other.numberOfThreadsBatch,
+      batchSize = other.batchSize,
+      microBatchSize = other.microBatchSize,
+      maxParallelSequences = other.maxParallelSequences,
+      speculativeRollbackTokenMax = other.speculativeRollbackTokenMax,
+      useMmap = other.useMmap,
+      useMlock = other.useMlock,
+      loadMtp = other.loadMtp,
+      flashAttention = other.flashAttention,
+      cacheTypeK = other.cacheTypeK,
+      cacheTypeV = other.cacheTypeV,
+      kvUnified = other.kvUnified,
+      ropeFrequencyBase = other.ropeFrequencyBase,
+      ropeFrequencyScale = other.ropeFrequencyScale,
+      preferMemory64 = other.preferMemory64,
+      modelBytesHint = other.modelBytesHint;
 
   /// Validates the parameter combination. Throws [LlamaArgumentException]
   /// when a value is out of range or the combination is incompatible with
@@ -650,15 +718,20 @@ class ModelParams {
     }
   }
 
-  static LlamaArgumentException _invalid(
+  LlamaArgumentException _invalid(
     String name,
     Object? value,
     String requirement,
-  ) => LlamaArgumentException(
-    'ModelParams.$name $requirement (got $value).',
-    name: name,
-    invalidValue: value,
-  );
+  ) {
+    final option = name.startsWith('liteRtLm')
+        ? liteRtLmOptionName(this, name)
+        : name;
+    return LlamaArgumentException(
+      '${modelParamsTypeName(this)}.$option $requirement (got $value).',
+      name: option,
+      invalidValue: value,
+    );
+  }
 
   /// Creates a copy of this [ModelParams] with updated fields.
   ///
@@ -668,6 +741,10 @@ class ModelParams {
   /// `clear*: true` flag. Without the sentinel, `null` would be
   /// indistinguishable from "argument omitted, keep current value".
   ModelParams copyWith({
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(embeddingEngine: ...). This will be removed in '
+      '1.0.',
+    )
     bool? liteRtLmEmbeddingEngine,
     int? contextSize,
     ComputeDevice? device,
@@ -678,17 +755,65 @@ class ModelParams {
       '1.0.',
     )
     LiteRtLmBackendPreference? liteRtLmBackend,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(activationDataType: ...). This will be removed in '
+      '1.0.',
+    )
     LiteRtLmActivationDataType? liteRtLmActivationDataType,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearActivationDataType: true). This will be removed in '
+      '1.0.',
+    )
     bool clearLiteRtLmActivationDataType = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(prefillChunkSize: ...). This will be removed in '
+      '1.0.',
+    )
     int? liteRtLmPrefillChunkSize,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearPrefillChunkSize: true). This will be removed in '
+      '1.0.',
+    )
     bool clearLiteRtLmPrefillChunkSize = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(parallelFileSectionLoading: ...). This will be removed in '
+      '1.0.',
+    )
     bool? liteRtLmParallelFileSectionLoading,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearParallelFileSectionLoading: true). This will be removed in '
+      '1.0.',
+    )
     bool clearLiteRtLmParallelFileSectionLoading = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(dispatchLibDir: ...). This will be removed in '
+      '1.0.',
+    )
     String? liteRtLmDispatchLibDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearDispatchLibDir: true). This will be removed in '
+      '1.0.',
+    )
     bool clearLiteRtLmDispatchLibDir = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(cacheDir: ...). This will be removed in '
+      '1.0.',
+    )
     String? liteRtLmCacheDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearCacheDir: true). This will be removed in '
+      '1.0.',
+    )
     bool clearLiteRtLmCacheDir = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(maxProgramCacheBytes: ...). This will be removed in '
+      '1.0.',
+    )
     int? liteRtLmMaxProgramCacheBytes,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearMaxProgramCacheBytes: true). This will be removed in '
+      '1.0.',
+    )
     bool clearLiteRtLmMaxProgramCacheBytes = false,
     ModelSplitMode? splitMode,
     int? mainGpu,
@@ -780,6 +905,505 @@ class ModelParams {
           : (modelBytesHint ?? this.modelBytesHint),
     );
   }
+}
+
+/// [ModelParams] for a GGUF model, which llama.cpp runs natively and on the
+/// Web through the WebGPU bridge.
+///
+/// It takes only the fields llama.cpp applies, so a LiteRT-LM option cannot
+/// be set by mistake, and a load of a LiteRT-LM model with it throws
+/// `LlamaUnsupportedException`. Each field means what it does on
+/// [ModelParams]. [useMmap] and [useMlock] apply natively only, and
+/// [preferMemory64] and [modelBytesHint] on the Web only; a load elsewhere
+/// throws `LlamaUnsupportedException` naming them.
+///
+/// ```dart
+/// final engine = await LlamaEngine.load(
+///   LlamaModel(ModelSource.path('path/to/model.gguf')),
+///   params: const LlamaCppModelParams(contextSize: 8192, batchSize: 512),
+/// );
+/// ```
+class LlamaCppModelParams extends ModelParams {
+  /// Creates llama.cpp load parameters with [ModelParams]' defaults.
+  const LlamaCppModelParams({
+    super.contextSize,
+    super.device,
+    super.gpuLayers,
+    super.preferredBackend,
+    super.splitMode,
+    super.mainGpu,
+    super.loras,
+    super.chatTemplate,
+    super.numberOfThreads,
+    super.numberOfThreadsBatch,
+    super.batchSize,
+    super.microBatchSize,
+    super.maxParallelSequences,
+    super.speculativeRollbackTokenMax,
+    super.useMmap,
+    super.useMlock,
+    super.loadMtp,
+    super.flashAttention,
+    super.cacheTypeK,
+    super.cacheTypeV,
+    super.kvUnified,
+    super.ropeFrequencyBase,
+    super.ropeFrequencyScale,
+    super.preferMemory64,
+    super.modelBytesHint,
+  });
+
+  LlamaCppModelParams._copy(super.other) : super._copy();
+
+  /// Creates a copy with updated fields, as [ModelParams.copyWith] does.
+  ///
+  /// The `liteRtLm*` arguments and `clearLiteRtLm*` flags exist only to
+  /// override [ModelParams.copyWith]: passing any of them, or setting a flag
+  /// to true, throws [LlamaArgumentException], since llama.cpp does not
+  /// apply them.
+  @override
+  LlamaCppModelParams copyWith({
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(embeddingEngine: ...). This will be '
+      'removed in 1.0.',
+    )
+    bool? liteRtLmEmbeddingEngine,
+    int? contextSize,
+    ComputeDevice? device,
+    int? gpuLayers,
+    GpuBackend? preferredBackend,
+    @Deprecated(
+      'Use device, which applies to every runtime. This will be removed in '
+      '1.0.',
+    )
+    LiteRtLmBackendPreference? liteRtLmBackend,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(activationDataType: ...). This will '
+      'be removed in 1.0.',
+    )
+    LiteRtLmActivationDataType? liteRtLmActivationDataType,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearActivationDataType: true). This '
+      'will be removed in 1.0.',
+    )
+    bool clearLiteRtLmActivationDataType = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(prefillChunkSize: ...). This will be '
+      'removed in 1.0.',
+    )
+    int? liteRtLmPrefillChunkSize,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearPrefillChunkSize: true). This '
+      'will be removed in 1.0.',
+    )
+    bool clearLiteRtLmPrefillChunkSize = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(parallelFileSectionLoading: ...). '
+      'This will be removed in 1.0.',
+    )
+    bool? liteRtLmParallelFileSectionLoading,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearParallelFileSectionLoading: '
+      'true). This will be removed in 1.0.',
+    )
+    bool clearLiteRtLmParallelFileSectionLoading = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(dispatchLibDir: ...). This will be '
+      'removed in 1.0.',
+    )
+    String? liteRtLmDispatchLibDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearDispatchLibDir: true). This '
+      'will be removed in 1.0.',
+    )
+    bool clearLiteRtLmDispatchLibDir = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(cacheDir: ...). This will be removed '
+      'in 1.0.',
+    )
+    String? liteRtLmCacheDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearCacheDir: true). This will be '
+      'removed in 1.0.',
+    )
+    bool clearLiteRtLmCacheDir = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(maxProgramCacheBytes: ...). This '
+      'will be removed in 1.0.',
+    )
+    int? liteRtLmMaxProgramCacheBytes,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearMaxProgramCacheBytes: true). '
+      'This will be removed in 1.0.',
+    )
+    bool clearLiteRtLmMaxProgramCacheBytes = false,
+    ModelSplitMode? splitMode,
+    int? mainGpu,
+    List<LoraAdapterConfig>? loras,
+    String? chatTemplate,
+    bool clearChatTemplate = false,
+    int? numberOfThreads,
+    int? numberOfThreadsBatch,
+    int? batchSize,
+    int? microBatchSize,
+    int? maxParallelSequences,
+    int? speculativeRollbackTokenMax,
+    bool? useMmap,
+    bool? useMlock,
+    bool? loadMtp,
+    FlashAttention? flashAttention,
+    KvCacheType? cacheTypeK,
+    KvCacheType? cacheTypeV,
+    bool? kvUnified,
+    bool clearKvUnified = false,
+    double? ropeFrequencyBase,
+    bool clearRopeFrequencyBase = false,
+    double? ropeFrequencyScale,
+    bool clearRopeFrequencyScale = false,
+    bool? preferMemory64,
+    bool clearPreferMemory64 = false,
+    int? modelBytesHint,
+    bool clearModelBytesHint = false,
+  }) {
+    _rejectCopyArguments('LlamaCppModelParams', 'LiteRtLmModelParams', {
+      'liteRtLmEmbeddingEngine': liteRtLmEmbeddingEngine,
+      'liteRtLmBackend': liteRtLmBackend,
+      'liteRtLmActivationDataType': liteRtLmActivationDataType,
+      'liteRtLmPrefillChunkSize': liteRtLmPrefillChunkSize,
+      'liteRtLmParallelFileSectionLoading': liteRtLmParallelFileSectionLoading,
+      'liteRtLmDispatchLibDir': liteRtLmDispatchLibDir,
+      'liteRtLmCacheDir': liteRtLmCacheDir,
+      'liteRtLmMaxProgramCacheBytes': liteRtLmMaxProgramCacheBytes,
+      if (clearLiteRtLmActivationDataType)
+        'clearLiteRtLmActivationDataType': true,
+      if (clearLiteRtLmPrefillChunkSize) 'clearLiteRtLmPrefillChunkSize': true,
+      if (clearLiteRtLmParallelFileSectionLoading)
+        'clearLiteRtLmParallelFileSectionLoading': true,
+      if (clearLiteRtLmDispatchLibDir) 'clearLiteRtLmDispatchLibDir': true,
+      if (clearLiteRtLmCacheDir) 'clearLiteRtLmCacheDir': true,
+      if (clearLiteRtLmMaxProgramCacheBytes)
+        'clearLiteRtLmMaxProgramCacheBytes': true,
+    });
+    return LlamaCppModelParams._copy(
+      super.copyWith(
+        contextSize: contextSize,
+        device: device,
+        gpuLayers: gpuLayers,
+        preferredBackend: preferredBackend,
+        splitMode: splitMode,
+        mainGpu: mainGpu,
+        loras: loras,
+        chatTemplate: chatTemplate,
+        clearChatTemplate: clearChatTemplate,
+        numberOfThreads: numberOfThreads,
+        numberOfThreadsBatch: numberOfThreadsBatch,
+        batchSize: batchSize,
+        microBatchSize: microBatchSize,
+        maxParallelSequences: maxParallelSequences,
+        speculativeRollbackTokenMax: speculativeRollbackTokenMax,
+        useMmap: useMmap,
+        useMlock: useMlock,
+        loadMtp: loadMtp,
+        flashAttention: flashAttention,
+        cacheTypeK: cacheTypeK,
+        cacheTypeV: cacheTypeV,
+        kvUnified: kvUnified,
+        clearKvUnified: clearKvUnified,
+        ropeFrequencyBase: ropeFrequencyBase,
+        clearRopeFrequencyBase: clearRopeFrequencyBase,
+        ropeFrequencyScale: ropeFrequencyScale,
+        clearRopeFrequencyScale: clearRopeFrequencyScale,
+        preferMemory64: preferMemory64,
+        clearPreferMemory64: clearPreferMemory64,
+        modelBytesHint: modelBytesHint,
+        clearModelBytesHint: clearModelBytesHint,
+      ),
+    );
+  }
+}
+
+/// [ModelParams] for a LiteRT-LM (`.litertlm`) model, native or on the Web.
+///
+/// It takes only the fields LiteRT-LM applies, with the LiteRT-LM options
+/// named without the `liteRtLm` prefix they carry on [ModelParams], and a
+/// load of a GGUF model with it throws `LlamaUnsupportedException`.
+/// [gpuLayers] is an all-or-CPU hint: `0` or [ModelParams.maxGpuLayers].
+/// LiteRT-LM Web takes only [contextSize], [device], [gpuLayers],
+/// [preferredBackend] and [chatTemplate]; a Web load with any other field
+/// set throws `LlamaUnsupportedException` naming it.
+///
+/// ```dart
+/// final engine = await LlamaEngine.load(
+///   LlamaModel(ModelSource.path('path/to/model.litertlm')),
+///   params: const LiteRtLmModelParams(
+///     device: ComputeDevice.gpu,
+///     cacheDir: '/path/to/cache',
+///   ),
+/// );
+/// ```
+class LiteRtLmModelParams extends ModelParams {
+  /// Creates LiteRT-LM load parameters with [ModelParams]' defaults.
+  ///
+  /// [embeddingEngine], [activationDataType], [prefillChunkSize],
+  /// [parallelFileSectionLoading], [dispatchLibDir], [cacheDir] and
+  /// [maxProgramCacheBytes] set the matching `liteRtLm*` field of
+  /// [ModelParams].
+  const LiteRtLmModelParams({
+    super.contextSize,
+    super.device,
+    super.gpuLayers,
+    super.preferredBackend,
+    super.loras,
+    super.chatTemplate,
+    super.numberOfThreads,
+    bool embeddingEngine = false,
+    LiteRtLmActivationDataType? activationDataType,
+    int? prefillChunkSize,
+    bool? parallelFileSectionLoading,
+    String? dispatchLibDir,
+    String? cacheDir,
+    int? maxProgramCacheBytes,
+  }) : super(
+         liteRtLmEmbeddingEngine: embeddingEngine,
+         liteRtLmActivationDataType: activationDataType,
+         liteRtLmPrefillChunkSize: prefillChunkSize,
+         liteRtLmParallelFileSectionLoading: parallelFileSectionLoading,
+         liteRtLmDispatchLibDir: dispatchLibDir,
+         liteRtLmCacheDir: cacheDir,
+         liteRtLmMaxProgramCacheBytes: maxProgramCacheBytes,
+       );
+
+  LiteRtLmModelParams._copy(super.other) : super._copy();
+
+  /// Whether the load creates LiteRT-LM's embedding engine; see
+  /// [ModelParams.liteRtLmEmbeddingEngine].
+  bool get embeddingEngine => liteRtLmEmbeddingEngine;
+
+  /// See [ModelParams.liteRtLmActivationDataType].
+  LiteRtLmActivationDataType? get activationDataType =>
+      liteRtLmActivationDataType;
+
+  /// See [ModelParams.liteRtLmPrefillChunkSize].
+  int? get prefillChunkSize => liteRtLmPrefillChunkSize;
+
+  /// See [ModelParams.liteRtLmParallelFileSectionLoading].
+  bool? get parallelFileSectionLoading => liteRtLmParallelFileSectionLoading;
+
+  /// See [ModelParams.liteRtLmDispatchLibDir].
+  String? get dispatchLibDir => liteRtLmDispatchLibDir;
+
+  /// See [ModelParams.liteRtLmCacheDir].
+  String? get cacheDir => liteRtLmCacheDir;
+
+  /// See [ModelParams.liteRtLmMaxProgramCacheBytes].
+  int? get maxProgramCacheBytes => liteRtLmMaxProgramCacheBytes;
+
+  /// Creates a copy with updated fields, as [ModelParams.copyWith] does.
+  ///
+  /// Use the unprefixed arguments, such as `cacheDir` and `clearCacheDir`;
+  /// the deprecated `liteRtLm*` ones set the same fields. An unprefixed
+  /// value wins over its `liteRtLm*` twin, and a clear flag of either
+  /// spelling wins over any value for its field, as on
+  /// [ModelParams.copyWith]. The llama.cpp-only arguments and `clear*` flags
+  /// exist only to override [ModelParams.copyWith]: passing any of them, or
+  /// setting a flag to true, throws [LlamaArgumentException], since
+  /// LiteRT-LM does not apply them.
+  @override
+  LiteRtLmModelParams copyWith({
+    bool? embeddingEngine,
+    LiteRtLmActivationDataType? activationDataType,
+    bool clearActivationDataType = false,
+    int? prefillChunkSize,
+    bool clearPrefillChunkSize = false,
+    bool? parallelFileSectionLoading,
+    bool clearParallelFileSectionLoading = false,
+    String? dispatchLibDir,
+    bool clearDispatchLibDir = false,
+    String? cacheDir,
+    bool clearCacheDir = false,
+    int? maxProgramCacheBytes,
+    bool clearMaxProgramCacheBytes = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(embeddingEngine: ...). This will be '
+      'removed in 1.0.',
+    )
+    bool? liteRtLmEmbeddingEngine,
+    int? contextSize,
+    ComputeDevice? device,
+    int? gpuLayers,
+    GpuBackend? preferredBackend,
+    @Deprecated(
+      'Use device, which applies to every runtime. This will be removed in '
+      '1.0.',
+    )
+    LiteRtLmBackendPreference? liteRtLmBackend,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(activationDataType: ...). This will '
+      'be removed in 1.0.',
+    )
+    LiteRtLmActivationDataType? liteRtLmActivationDataType,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearActivationDataType: true). This '
+      'will be removed in 1.0.',
+    )
+    bool clearLiteRtLmActivationDataType = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(prefillChunkSize: ...). This will be '
+      'removed in 1.0.',
+    )
+    int? liteRtLmPrefillChunkSize,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearPrefillChunkSize: true). This '
+      'will be removed in 1.0.',
+    )
+    bool clearLiteRtLmPrefillChunkSize = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(parallelFileSectionLoading: ...). '
+      'This will be removed in 1.0.',
+    )
+    bool? liteRtLmParallelFileSectionLoading,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearParallelFileSectionLoading: '
+      'true). This will be removed in 1.0.',
+    )
+    bool clearLiteRtLmParallelFileSectionLoading = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(dispatchLibDir: ...). This will be '
+      'removed in 1.0.',
+    )
+    String? liteRtLmDispatchLibDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearDispatchLibDir: true). This '
+      'will be removed in 1.0.',
+    )
+    bool clearLiteRtLmDispatchLibDir = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(cacheDir: ...). This will be removed '
+      'in 1.0.',
+    )
+    String? liteRtLmCacheDir,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearCacheDir: true). This will be '
+      'removed in 1.0.',
+    )
+    bool clearLiteRtLmCacheDir = false,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(maxProgramCacheBytes: ...). This '
+      'will be removed in 1.0.',
+    )
+    int? liteRtLmMaxProgramCacheBytes,
+    @Deprecated(
+      'Use LiteRtLmModelParams.copyWith(clearMaxProgramCacheBytes: true). '
+      'This will be removed in 1.0.',
+    )
+    bool clearLiteRtLmMaxProgramCacheBytes = false,
+    ModelSplitMode? splitMode,
+    int? mainGpu,
+    List<LoraAdapterConfig>? loras,
+    String? chatTemplate,
+    bool clearChatTemplate = false,
+    int? numberOfThreads,
+    int? numberOfThreadsBatch,
+    int? batchSize,
+    int? microBatchSize,
+    int? maxParallelSequences,
+    int? speculativeRollbackTokenMax,
+    bool? useMmap,
+    bool? useMlock,
+    bool? loadMtp,
+    FlashAttention? flashAttention,
+    KvCacheType? cacheTypeK,
+    KvCacheType? cacheTypeV,
+    bool? kvUnified,
+    bool clearKvUnified = false,
+    double? ropeFrequencyBase,
+    bool clearRopeFrequencyBase = false,
+    double? ropeFrequencyScale,
+    bool clearRopeFrequencyScale = false,
+    bool? preferMemory64,
+    bool clearPreferMemory64 = false,
+    int? modelBytesHint,
+    bool clearModelBytesHint = false,
+  }) {
+    _rejectCopyArguments('LiteRtLmModelParams', 'LlamaCppModelParams', {
+      'splitMode': splitMode,
+      'mainGpu': mainGpu,
+      'numberOfThreadsBatch': numberOfThreadsBatch,
+      'batchSize': batchSize,
+      'microBatchSize': microBatchSize,
+      'maxParallelSequences': maxParallelSequences,
+      'speculativeRollbackTokenMax': speculativeRollbackTokenMax,
+      'useMmap': useMmap,
+      'useMlock': useMlock,
+      'loadMtp': loadMtp,
+      'flashAttention': flashAttention,
+      'cacheTypeK': cacheTypeK,
+      'cacheTypeV': cacheTypeV,
+      'kvUnified': kvUnified,
+      'ropeFrequencyBase': ropeFrequencyBase,
+      'ropeFrequencyScale': ropeFrequencyScale,
+      'preferMemory64': preferMemory64,
+      'modelBytesHint': modelBytesHint,
+      if (clearKvUnified) 'clearKvUnified': true,
+      if (clearRopeFrequencyBase) 'clearRopeFrequencyBase': true,
+      if (clearRopeFrequencyScale) 'clearRopeFrequencyScale': true,
+      if (clearPreferMemory64) 'clearPreferMemory64': true,
+      if (clearModelBytesHint) 'clearModelBytesHint': true,
+    });
+    return LiteRtLmModelParams._copy(
+      super.copyWith(
+        liteRtLmEmbeddingEngine: embeddingEngine ?? liteRtLmEmbeddingEngine,
+        contextSize: contextSize,
+        device: device,
+        gpuLayers: gpuLayers,
+        preferredBackend: preferredBackend,
+        liteRtLmBackend: liteRtLmBackend,
+        liteRtLmActivationDataType:
+            activationDataType ?? liteRtLmActivationDataType,
+        clearLiteRtLmActivationDataType:
+            clearActivationDataType || clearLiteRtLmActivationDataType,
+        liteRtLmPrefillChunkSize: prefillChunkSize ?? liteRtLmPrefillChunkSize,
+        clearLiteRtLmPrefillChunkSize:
+            clearPrefillChunkSize || clearLiteRtLmPrefillChunkSize,
+        liteRtLmParallelFileSectionLoading:
+            parallelFileSectionLoading ?? liteRtLmParallelFileSectionLoading,
+        clearLiteRtLmParallelFileSectionLoading:
+            clearParallelFileSectionLoading ||
+            clearLiteRtLmParallelFileSectionLoading,
+        liteRtLmDispatchLibDir: dispatchLibDir ?? liteRtLmDispatchLibDir,
+        clearLiteRtLmDispatchLibDir:
+            clearDispatchLibDir || clearLiteRtLmDispatchLibDir,
+        liteRtLmCacheDir: cacheDir ?? liteRtLmCacheDir,
+        clearLiteRtLmCacheDir: clearCacheDir || clearLiteRtLmCacheDir,
+        liteRtLmMaxProgramCacheBytes:
+            maxProgramCacheBytes ?? liteRtLmMaxProgramCacheBytes,
+        clearLiteRtLmMaxProgramCacheBytes:
+            clearMaxProgramCacheBytes || clearLiteRtLmMaxProgramCacheBytes,
+        loras: loras,
+        chatTemplate: chatTemplate,
+        clearChatTemplate: clearChatTemplate,
+        numberOfThreads: numberOfThreads,
+      ),
+    );
+  }
+}
+
+void _rejectCopyArguments(
+  String type,
+  String alternative,
+  Map<String, Object?> arguments,
+) {
+  final given = [
+    for (final MapEntry(:key, :value) in arguments.entries)
+      if (value != null) key,
+  ];
+  if (given.isEmpty) return;
+  throw LlamaArgumentException(
+    '$type.copyWith does not take ${given.join(', ')}: its runtime does not '
+    'apply them. Use $alternative for the other runtime.',
+    name: given.first,
+    invalidValue: arguments[given.first],
+  );
 }
 
 /// Resolves llama.cpp-compatible context batch parameters.

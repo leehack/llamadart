@@ -5,7 +5,10 @@ description: The ModelParams and GenerationParams settings that matter most, nat
 ---
 
 `ModelParams` apply at model load; `GenerationParams` apply per generation
-call. To decide which knob to change and what to measure, see
+call. `LlamaCppModelParams` (GGUF) and `LiteRtLmModelParams` (`.litertlm`) are
+`ModelParams` that take only the fields their runtime applies; prefer them
+when you know the model's runtime. A load throws `LlamaUnsupportedException`
+when one is used for the other runtime. To decide which knob to change and what to measure, see
 [Performance tuning](../guides/performance-tuning).
 
 ## ModelParams essentials
@@ -13,7 +16,7 @@ call. To decide which knob to change and what to measure, see
 ```dart
 await engine.setModel(
   LlamaModel(ModelSource.path('/path/to/model.gguf')),
-  params: const ModelParams(
+  params: const LlamaCppModelParams(
     contextSize: 4096,
     gpuLayers: ModelParams.maxGpuLayers,
     preferredBackend: GpuBackend.vulkan,
@@ -126,8 +129,9 @@ Important fields:
   (mem64) bridge core; see
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).
   Native loads reject them.
-- `liteRtLm*` fields: native LiteRT-LM `.litertlm` loads only; see
-  [LiteRT-LM runtime controls](#litert-lm-runtime-controls). llama.cpp loads
+- LiteRT-LM options: set them with `LiteRtLmModelParams`; see
+  [LiteRT-LM runtime controls](#litert-lm-runtime-controls). The matching
+  `liteRtLm*` arguments of `ModelParams` are deprecated, and llama.cpp loads
   reject them.
 - `useMmap` / `useMlock` (native llama.cpp only): the WebGPU bridge rejects
   `useMmap: false` and `useMlock: true`.
@@ -147,19 +151,22 @@ For runtime LoRA control (`setLoraSource`, `removeLoraSource`, `clearLoras`), se
 
 ## LiteRT-LM runtime controls
 
-Native `.litertlm` loads accept `contextSize`, `chatTemplate` and the fields
-below. The `liteRtLm*` tuning fields default to `null`, which keeps the pinned
-runtime default.
+Native `.litertlm` loads accept `contextSize`, `chatTemplate` and the
+`LiteRtLmModelParams` arguments below. The LiteRT-LM tuning options default to
+`null`, which keeps the pinned runtime default. Each one sets the
+`ModelParams` field with a `liteRtLm` prefix (`cacheDir` sets
+`liteRtLmCacheDir`); the prefixed `ModelParams` and `copyWith` arguments are
+deprecated until 1.0.
 
-| Field | Effect |
+| Argument | Effect |
 | --- | --- |
 | `device` | `ComputeDevice.auto` (default), `cpu`, `gpu`, or `npu` (Android). `auto` uses `cpu` when `gpuLayers` is `0`, otherwise it maps `preferredBackend`. |
-| `liteRtLmBackend` | Deprecated until 1.0: use `device`. Under `device: auto` it still selects the LiteRT-LM backend alone. |
-| `liteRtLmActivationDataType` | Activation type override: `float32`, `float16`, `int16`, or `int8`. Forwarded to `litert_lm_engine_settings_set_activation_data_type`. |
-| `liteRtLmPrefillChunkSize` | Prefill chunk size for CPU dynamic models. Must be positive. |
-| `liteRtLmParallelFileSectionLoading` | `false` disables parallel `.litertlm` file-section loading, for diagnostics. `null` keeps parallel loading. |
-| `liteRtLmDispatchLibDir` | LiteRT dispatch library directory for Android NPU deployments. Must be non-empty. |
-| `liteRtLmCacheDir`, `liteRtLmMaxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
+| `ModelParams.liteRtLmBackend` | Deprecated until 1.0: use `device`. Under `device: auto` it still selects the LiteRT-LM backend alone. |
+| `activationDataType` | Activation type override: `float32`, `float16`, `int16`, or `int8`. Forwarded to `litert_lm_engine_settings_set_activation_data_type`. |
+| `prefillChunkSize` | Prefill chunk size for CPU dynamic models. Must be positive. |
+| `parallelFileSectionLoading` | `false` disables parallel `.litertlm` file-section loading, for diagnostics. `null` keeps parallel loading. |
+| `dispatchLibDir` | LiteRT dispatch library directory for Android NPU deployments. Must be non-empty. |
+| `cacheDir`, `maxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
 | `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
 | `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
 
@@ -184,7 +191,7 @@ The native LiteRT-LM runtime writes cache files such as
 `*_mldrift_program_cache.bin` (GPU programs), `*_mldrift_weight_cache.bin`
 (GPU weights) and `*.xnnpack_cache`. llamadart only chooses the directory:
 
-| `liteRtLmCacheDir` | macOS, Android | Other native platforms |
+| `cacheDir` | macOS, Android | Other native platforms |
 | --- | --- | --- |
 | `null` (default) | `llamadart_litert_lm` under `Directory.systemTemp` | No directory is passed; the runtime caches next to the model file |
 | A path | That directory, created when missing | That directory, created when missing |
@@ -197,11 +204,11 @@ which reads caches already next to the file and otherwise runs uncached. On
 the GPU backend it reads the text model's weight and program caches already
 there for that exact file, and runs uncached when they are missing, when the
 runtime rejects them, or when the engine also runs vision, audio or
-speculative decoding. Set `liteRtLmCacheDir` to a writable directory to keep
-every cache. Windows has no such check: set `liteRtLmCacheDir` there when the
+speculative decoding. Set `cacheDir` to a writable directory to keep
+every cache. Windows has no such check: set `cacheDir` there when the
 model's directory is read-only.
 
-`liteRtLmMaxProgramCacheBytes` caps the GPU program cache files of one cache
+`maxProgramCacheBytes` caps the GPU program cache files of one cache
 directory. `null` (default) applies
 `ModelParams.defaultLiteRtLmMaxProgramCacheBytes`, 1 GiB. Before each engine
 create, llamadart deletes regular files directly inside the effective cache
@@ -210,21 +217,21 @@ size is at most the cap: files larger than the cap on their own first, then
 the least recently modified ones. `0` deletes every non-empty program cache
 file. Weight and XNNPACK caches, subdirectories and symbolic links are left
 alone. When no directory is passed to the runtime, nothing is pruned; set
-`liteRtLmCacheDir` to enable pruning there. A directory named `:nocache` is
+`cacheDir` to enable pruning there. A directory named `:nocache` is
 never pruned either. Each deletion, and each prune failure, logs a Dart `warn`
 record and never fails the load (see [Logging](./logging)).
 
-| `liteRtLmMaxProgramCacheBytes` | Before each engine create |
+| `maxProgramCacheBytes` | Before each engine create |
 | --- | --- |
 | `null` (default) | Prune to 1 GiB |
 | `0` or more | Prune to that many bytes |
 | `ModelParams.unlimitedLiteRtLmProgramCacheBytes` (`-1`) | Delete nothing |
 
 ```dart
-const params = ModelParams(
-  liteRtLmCacheDir: '/data/app/litert-cache',
+const params = LiteRtLmModelParams(
+  cacheDir: '/data/app/litert-cache',
   // Raise the cap, or pass ModelParams.unlimitedLiteRtLmProgramCacheBytes.
-  liteRtLmMaxProgramCacheBytes: 4 * 1024 * 1024 * 1024,
+  maxProgramCacheBytes: 4 * 1024 * 1024 * 1024,
 );
 ```
 
@@ -273,13 +280,13 @@ previous runtime wrote. Over a `v0.17.0-8` cache, `v0.18.0` leaves the weight
 cache at its size and appends its own programs to the program cache, which
 keeps the bytes the older runtime wrote. To reclaim them, delete the
 `*_mldrift_program_cache.bin` files once after updating, or run once with
-`liteRtLmMaxProgramCacheBytes: 0`; the runtime rebuilds the file. In a
+`maxProgramCacheBytes: 0`; the runtime rebuilds the file. In a
 directory llamadart prunes, the default cap deletes them once their total
 exceeds 1 GiB.
 
 From `v0.18.0` the runtime fails engine creation when it cannot write the
 cache directory, on the CPU backend too: `v0.17.0-8` ran the CPU backend
-uncached there. A missing `liteRtLmCacheDir` is created, so this affects a
+uncached there. A missing `cacheDir` is created, so this affects a
 directory that exists and is read-only. The first generation then throws
 `LlamaModelException`, or `LlamaUnsupportedException` when
 `ComputeDevice.gpu` or `ComputeDevice.npu` was requested.

@@ -409,6 +409,82 @@ void main() {
     },
   );
 
+  test(
+    'embedding without an embedding engine names the option to set',
+    () async {
+      final backend = LiteRtLmBackend();
+      try {
+        await expectLater(
+          backend.embed(1, 'text'),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('LiteRtLmModelParams(embeddingEngine: true)'),
+            ),
+          ),
+        );
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
+  test('embedding mode names options the way LiteRtLmModelParams spells '
+      'them', () async {
+    final backend = LiteRtLmBackend();
+    try {
+      await expectLater(
+        backend.modelLoad(
+          modelFile.path,
+          const LiteRtLmModelParams(embeddingEngine: true, prefillChunkSize: 8),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'LiteRT-LM embedding mode does not apply: prefillChunkSize. Use '
+                'contextSize (encoder signature), numberOfThreads, cacheDir '
+                'and CPU device selection.',
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('direct modelLoad rejects LlamaCppModelParams', () async {
+    final backend = LiteRtLmBackend();
+    try {
+      await expectLater(
+        backend.modelLoad(modelFile.path, const LlamaCppModelParams()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Use LiteRtLmModelParams.'),
+          ),
+        ),
+      );
+      await expectLater(
+        backend.modelLoad(
+          modelFile.path,
+          const LiteRtLmModelParams(contextSize: 0),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('contextSize=0'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('direct modelLoad keeps invalid ModelParams typed', () async {
     final backend = LiteRtLmBackend();
 
