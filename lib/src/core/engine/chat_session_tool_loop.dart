@@ -246,8 +246,11 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// message, including those a synchronous listener adds from inside the
   /// override, belong to the turn: a rollback removes them too, and they are
   /// neither in [LlamaToolLoopResult.messages] nor reported to
-  /// [onMessageAdded]. Older turns that context trimming dropped stay
-  /// dropped, as after [ChatSession.create].
+  /// [onMessageAdded]. Copies such an override stores in place of
+  /// messages from before the turn stay, and so does a message it places before the turn
+  /// without growing the history, such as a summary of earlier turns. Older
+  /// turns that context trimming dropped stay dropped, as after
+  /// [ChatSession.create].
   /// [LlamaToolLoopResult.rolledBack] reports a rollback,
   /// [LlamaToolLoopResult.messages] keeps the turn, and [onMessageAdded] has
   /// already reported the messages this call added.
@@ -491,36 +494,81 @@ class _ToolLoopTurn {
 
   /// Adds [message] with [ChatSession.addMessage] and reports it.
   ///
-  /// The instances the call put into the stored history are also removed on
-  /// a rollback, since an override may store a copy, store [message] twice
-  /// or append more messages. Instances it only moved stay, and at most as
-  /// many are taken as the history grew, so an override that stores copies
-  /// of earlier messages does not lose earlier turns.
+  /// What the call put into the stored history goes on a rollback too: the
+  /// stored [message] or a copy of it, copies of the turn's earlier
+  /// messages, and new messages placed after the turn's first message or
+  /// within how much the history grew. A copy of a message from outside the
+  /// turn that the call replaced stays, and so does a new message placed
+  /// before the turn while the history did not grow, such as a summary of
+  /// earlier turns. Instances the call only moved stay.
   void add(LlamaChatMessage message) {
-    final before = HashMap<LlamaChatMessage, int>.identity();
-    final countBefore = _storedHistory.length;
-    for (final stored in _storedHistory) {
-      before.update(stored, (count) => count + 1, ifAbsent: () => 1);
+    final before = _storedHistory.toList();
+    final leftover = HashMap<LlamaChatMessage, int>.identity();
+    for (final stored in before) {
+      leftover.update(stored, (count) => count + 1, ifAbsent: () => 1);
     }
     _session.addMessage(message);
     final after = _storedHistory;
-    final added = <LlamaChatMessage>[];
-    for (final stored in after) {
-      final count = before[stored] ?? 0;
+    final added = <int>[];
+    for (final (index, stored) in after.indexed) {
+      final count = leftover[stored] ?? 0;
       if (count > 0) {
-        before[stored] = count - 1;
+        leftover[stored] = count - 1;
       } else {
-        added.add(stored);
+        added.add(index);
       }
     }
-    final grown = after.length - countBefore;
-    if (grown > 0) {
-      final appended = added.sublist(max(0, added.length - grown));
-      final same = _sameMessage();
-      final own = appended.indexWhere((stored) => same(stored, message));
-      if (own >= 0) appended.removeAt(own);
-      _appended.addAll(appended);
+    final replaced = <LlamaChatMessage>[];
+    for (final stored in before) {
+      final count = leftover[stored] ?? 0;
+      if (count > 0) {
+        leftover[stored] = count - 1;
+        replaced.add(stored);
+      }
     }
+
+    var own = [
+      for (final index in added)
+        if (identical(after[index], message)) index,
+    ];
+    if (own.isEmpty) {
+      final copy = added.lastWhere(
+        (index) => _sameContent(after[index], message),
+        orElse: () => -1,
+      );
+      if (copy >= 0) own = [copy];
+    }
+    final members = [...messages, ..._appended];
+    bool isMember(LlamaChatMessage stored) =>
+        members.any((member) => identical(member, stored));
+    final turn = {...own};
+    final fresh = <int>[];
+    for (final index in added) {
+      if (own.contains(index)) continue;
+      final original = replaced.indexWhere(
+        (stored) => _sameContent(stored, after[index]),
+      );
+      if (original < 0) {
+        fresh.add(index);
+      } else if (isMember(replaced.removeAt(original))) {
+        turn.add(index);
+      }
+    }
+    final same = _sameMessage();
+    if (fresh.isNotEmpty) {
+      final start = [
+        ...turn,
+        ..._turnIndices(after, members, same),
+      ].fold(after.length, min);
+      final grown = after.length - before.length;
+      for (final (position, index) in fresh.indexed) {
+        if (index > start || position >= fresh.length - grown) turn.add(index);
+      }
+    }
+    final appended = [for (final index in turn.toList()..sort()) after[index]];
+    final reported = appended.indexWhere((stored) => same(stored, message));
+    if (reported >= 0) appended.removeAt(reported);
+    _appended.addAll(appended);
     report(message);
   }
 
@@ -580,16 +628,29 @@ void _removeTurn(
   List<LlamaChatMessage> turn, [
   bool Function(LlamaChatMessage, LlamaChatMessage) same = identical,
 ]) {
+  for (final index in _turnIndices(history, turn, same)) {
+    history.removeAt(index);
+  }
+}
+
+/// The indices in [history] that [_removeTurn] removes, from the last one.
+List<int> _turnIndices(
+  List<LlamaChatMessage> history,
+  List<LlamaChatMessage> turn,
+  bool Function(LlamaChatMessage, LlamaChatMessage) same,
+) {
   final remaining = List.of(turn);
+  final indices = <int>[];
   for (var index = history.length - 1; index >= 0; index--) {
-    if (remaining.isEmpty) return;
+    if (remaining.isEmpty) break;
     final match = remaining.lastIndexWhere(
       (message) => same(message, history[index]),
     );
     if (match < 0) continue;
     remaining.removeAt(match);
-    history.removeAt(index);
+    indices.add(index);
   }
+  return indices;
 }
 
 bool _sameContent(LlamaChatMessage a, LlamaChatMessage b) {

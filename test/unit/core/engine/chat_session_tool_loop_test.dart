@@ -150,6 +150,75 @@ class _TrimmingSession extends ChatSession {
   }
 }
 
+/// A [ChatSession] subclass that drops its oldest message when a tool result
+/// is added, then stores the result, or a copy of it, with an audit note.
+/// With [keepsLength] it drops two messages, so the history does not grow.
+class _AuditingSession extends ChatSession {
+  _AuditingSession(
+    super.engine, {
+    this.copiesResult = false,
+    this.noteFirst = false,
+    this.keepsLength = false,
+  }) : super(maxContextTokens: 0);
+
+  final bool copiesResult;
+  final bool noteFirst;
+  final bool keepsLength;
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final kept = history.skip(keepsLength ? 2 : 1).toList();
+    final result = copiesResult ? _copyOf(message) : message;
+    final note = _text(LlamaChatRole.system, 'Audit');
+    reset();
+    [
+      ...kept,
+      if (noteFirst) note,
+      result,
+      if (!noteFirst) note,
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that keeps an app-owned note last by replacing
+/// it with a fresh copy on every add.
+class _RenotingSession extends ChatSession {
+  _RenotingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    final kept = [
+      for (final stored in history)
+        if (stored.content != 'Note') stored,
+    ];
+    reset();
+    [
+      ...kept,
+      message,
+      _text(LlamaChatRole.system, 'Note'),
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that replaces the two oldest messages with a
+/// summary when a tool result is added.
+class _SummarizingSession extends ChatSession {
+  _SummarizingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final kept = history.skip(2).toList();
+    reset();
+    [
+      _text(LlamaChatRole.system, 'Summary'),
+      ...kept,
+      message,
+    ].forEach(super.addMessage);
+  }
+}
+
 /// A [ChatSession] subclass that stores a shared marker after each tool
 /// result.
 class _MarkingSession extends ChatSession {
@@ -1471,10 +1540,9 @@ void main() {
 
       expect(result.rolledBack, isTrue);
       expect(
-        [for (final message in rewriting.history.take(2)) message.content],
+        [for (final message in rewriting.history) message.content],
         ['Hi', 'Hello'],
       );
-      expect(_toolResults(rewriting), isEmpty);
     });
 
     test('whose addMessage drops the oldest message removes the note it '
@@ -1493,6 +1561,90 @@ void main() {
         ['Hello'],
       );
     });
+
+    for (final (description, session) in [
+      (
+        'stores a copy of the result removes the copy and the note',
+        (LlamaEngine engine) => _AuditingSession(engine, copiesResult: true),
+      ),
+      (
+        'stores a note before the result removes the note',
+        (LlamaEngine engine) => _AuditingSession(engine, noteFirst: true),
+      ),
+    ]) {
+      test(
+        'whose addMessage drops the oldest message and $description',
+        () async {
+          final auditing = session(engine);
+          [
+            _text(LlamaChatRole.user, 'Hi'),
+            _text(LlamaChatRole.assistant, 'Hello'),
+          ].forEach(auditing.addMessage);
+
+          final result = await stopAtMaxRounds(auditing);
+
+          expect(result.rolledBack, isTrue);
+          expect(
+            [for (final message in auditing.history) message.content],
+            ['Hello'],
+          );
+        },
+      );
+    }
+
+    test(
+      'whose addMessage keeps the length removes the note it appended',
+      () async {
+        final windowed = _AuditingSession(engine, keepsLength: true);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(windowed.addMessage);
+
+        final result = await stopAtMaxRounds(windowed);
+
+        expect(result.rolledBack, isTrue);
+        expect(windowed.history, isEmpty);
+      },
+    );
+
+    test(
+      'whose addMessage replaces a note with a copy keeps the note',
+      () async {
+        final renoting = _RenotingSession(engine);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(renoting.addMessage);
+
+        final result = await stopAtMaxRounds(renoting);
+
+        expect(result.rolledBack, isTrue);
+        expect(
+          [for (final message in renoting.history) message.content],
+          ['Hi', 'Hello', 'Note'],
+        );
+      },
+    );
+
+    test(
+      'whose addMessage summarizes earlier turns keeps the summary',
+      () async {
+        final summarizing = _SummarizingSession(engine);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(summarizing.addMessage);
+
+        final result = await stopAtMaxRounds(summarizing);
+
+        expect(result.rolledBack, isTrue);
+        expect(
+          [for (final message in summarizing.history) message.content],
+          ['Summary'],
+        );
+      },
+    );
 
     test('removes an instance its addMessage appended that an earlier turn '
         'holds, and keeps the earlier one', () async {
