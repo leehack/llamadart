@@ -191,8 +191,10 @@ seed 42. The public Dart API and a direct native control agreed in every case:
 | Full 2.6 GB legacy `.pth` | Rejected by both; the pinned native pickle scanner truncates a remaining span above 2 GiB to a signed integer |
 | Local Safetensors index referencing one complete sibling weight file | Passed with an explicit `checkpoint` role; identical pixels to direct loading |
 
-These are container checks, not qualification of every model, dtype, device or
-multi-shard layout. In particular, the large PyTorch failures are also present
+`v0.3.0` carries the pickle reader fix for the legacy `.pth` row
+([stable-diffusion-native#23](https://github.com/leehack/stable-diffusion-native/issues/23));
+the 2.6 GB load has not been repeated through llamadart. These are container
+checks, not qualification of every model, dtype, device or multi-shard layout. In particular, the large PyTorch failures are also present
 without Dart; small component success does not remove those limits. The
 [basic example's local format checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
 can repeat same-weight comparisons without downloading models.
@@ -921,13 +923,9 @@ final engine = await ImageGenerationEngine.load(model);
 - A `stable_diffusion` runtime older than `stable-diffusion-native`
   `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
-Older Apple SD companions pinning `v0.2.0-3` remain supported by the
-patch-compatible core with an upgrade warning. Updating core alone keeps that
-native payload. The `0.15.2` companion requires core `>=0.15.2 <0.16.0`
-and selects `v0.2.0-4`, which adds native Metal failure propagation. The core
-also rejects recognized recorded Metal failures before returning images from
-older wrappers, even when display logging is off. This backstop does not
-prevent GPU watchdog resets or replace the newer native guard.
+The core accepts only an Apple SD companion pinning its own runtime
+(`v0.3.0`): earlier runtimes have a smaller `sd_ctx_params_t`. Upgrade the
+core and `llamadart_stable_diffusion_flutter` together.
 
 ## Errors
 

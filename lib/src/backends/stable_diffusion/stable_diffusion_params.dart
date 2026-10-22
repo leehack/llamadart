@@ -34,11 +34,53 @@ void applyStableDiffusionContextParams(
     // progress during generation is only sampling. A model that does not fit
     // the device does not fail the load: the runtime's automatic fit keeps
     // some weights in host memory or on disk, which makes sampling slower.
-    ..eager_load = true;
+    ..eager_load = true
+    // Batched CFG returns wrong images as success on Metal
+    // (leejet/stable-diffusion.cpp#2149) and is unqualified on other GPUs.
+    ..batched_cfg = false;
+  // A null or empty mode makes the runtime probe each module and choose for
+  // itself, which changes images and is not seed-reproducible on Metal.
+  params.ref
+    ..flash_attn_mode = text(
+      stableDiffusionFlashAttentionMode(
+        all: params.ref.flash_attn,
+        diffusion: params.ref.diffusion_flash_attn,
+      ),
+    )
+    ..conv_direct_mode = text(
+      stableDiffusionConvDirectMode(
+        diffusion: params.ref.diffusion_conv_direct,
+        vae: params.ref.vae_conv_direct,
+      ),
+    );
   if (config.threads > 0) {
     params.ref.n_threads = config.threads;
   }
 }
+
+/// The `flash_attn_mode` the legacy `flash_attn` ([all]) and
+/// `diffusion_flash_attn` ([diffusion]) flags selected before the runtime
+/// added modes. ControlNet stays off, as it was with [all].
+String stableDiffusionFlashAttentionMode({
+  required bool all,
+  required bool diffusion,
+}) {
+  if (all) return 'off,te=on,clip_vision=on,vae=on,diffusion=on';
+  if (diffusion) return 'off,diffusion=on';
+  return 'off';
+}
+
+/// The `conv_direct_mode` the legacy `diffusion_conv_direct` ([diffusion])
+/// and `vae_conv_direct` ([vae]) flags selected before the runtime added
+/// modes.
+String stableDiffusionConvDirectMode({
+  required bool diffusion,
+  required bool vae,
+}) => [
+  'off',
+  if (diffusion) 'diffusion=on,control_net=on',
+  if (vae) 'vae=on',
+].join(',');
 
 /// Writes [request] into [params], which `sd_img_gen_params_init` has filled
 /// with the runtime defaults. Strings are allocated with [allocator] and must

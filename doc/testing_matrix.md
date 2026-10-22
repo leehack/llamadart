@@ -397,7 +397,7 @@ two distinct short SDXS/CLIP prompts with the same padded encoder shape and
 identical sampling, dimensions and seed, so both measured requests miss the
 conditioning cache. Repeating one prompt would compare uncached conditioning
 with a cache hit; see the pinned stable-diffusion.cpp
-[conditioning cache](https://github.com/leejet/stable-diffusion.cpp/blob/3f8527a46c54ecf4cb4ed6003da8e8982283c73c/src/conditioning/conditioning_cache.h).
+[conditioning cache](https://github.com/leejet/stable-diffusion.cpp/blob/0518b34374761cb82aeda5ad3c2f0686fdad2cec/src/conditioning/conditioning_cache.h).
 The original `first < second * 2 + 250ms` budget is unchanged. CPU/BLAS warm-up
 validates state and performs no GPU compile, so it has no GPU latency assertion;
 other image-generation smoke checks still run on those backends. Durable fake

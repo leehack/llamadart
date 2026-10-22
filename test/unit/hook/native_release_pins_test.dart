@@ -222,13 +222,13 @@ void main() {
     }
   });
 
-  test('stable_diffusion pins the qualified v0.2.0-4 release artifacts', () {
+  test('stable_diffusion pins the qualified v0.3.0 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_2_0_4_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
@@ -256,7 +256,7 @@ void main() {
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.2.0-4.zip',
+          'stable-diffusion-native-apple-xcframework-v0.3.0.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
@@ -266,29 +266,55 @@ void main() {
     expect(swift, contains(apple['sha256'] as String));
   });
 
-  test('Apple SD compatibility is bound to the verified artifact pair', () {
-    final proof =
+  // v0.3.0 grew sd_ctx_params_t, so no XCFramework of an older pin matches
+  // the bindings.
+  test('the SD hook accepts only the pinned Apple companion artifact', () {
+    final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_apple_compatibility.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
-    expect(proof['previous_tag'], 'v0.2.0-3');
-    expect(proof['current_tag'], stableDiffusionReleaseTag);
-    expect(stableDiffusionCompatibleAppleCompanionTags.keys, ['v0.2.0-3']);
-    expect(
-      stableDiffusionAppleCompanionChecksums,
-      proof['xcframework_checksums'],
-    );
-    expect(proof['slices'], hasLength(5));
-    for (final row in proof['slices'] as List) {
-      expect(row['declarations_equal'], isTrue);
-      expect(row['exported_symbols_equal'], isTrue);
-      expect(row['exported_symbol_count'], 86);
-      expect(row['binary_byte_identical'], isFalse);
+    final apple = (manifest['artifacts'] as List)
+        .cast<Map<String, dynamic>>()
+        .singleWhere((artifact) => artifact['kind'] == 'xcframework');
+    expect(stableDiffusionCompatibleAppleCompanionTags, isEmpty);
+    expect(stableDiffusionAppleCompanionChecksums, {
+      stableDiffusionReleaseTag: apple['sha256'],
+    });
+  });
+
+  test('Apple SD companion version is the first release pinning '
+      'stableDiffusionReleaseTag', () {
+    const companion = 'packages/llamadart_stable_diffusion_flutter';
+    final version = RegExp(
+      r'^version: (\d+)\.(\d+)\.(\d+)$',
+      multiLine: true,
+    ).firstMatch(File('$companion/pubspec.yaml').readAsStringSync())!;
+    final changelog = File('$companion/CHANGELOG.md').readAsStringSync();
+    final sections = RegExp(
+      r'^## (.+)$',
+      multiLine: true,
+    ).allMatches(changelog).toList();
+    String? firstPinning;
+    for (final (index, section) in sections.indexed) {
+      final end = index + 1 < sections.length
+          ? sections[index + 1].start
+          : changelog.length;
+      if (changelog
+          .substring(section.end, end)
+          .contains(
+            'leehack/stable-diffusion-native@$stableDiffusionReleaseTag`',
+          )) {
+        firstPinning = section.group(1);
+      }
     }
-    expect(stableDiffusionAppleCompanionVersion, '0.15.2');
+    final expected = firstPinning == 'Unreleased'
+        ? '${version.group(1)}.${version.group(2)}.'
+              '${int.parse(version.group(3)!) + 1}'
+        : firstPinning;
+    expect(stableDiffusionAppleCompanionVersion, expected);
   });
 
   test('stable_diffusion cache version is the release tag without its v', () {

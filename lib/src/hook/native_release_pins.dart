@@ -210,10 +210,10 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 
 /// `leehack/stable-diffusion-native` release tag downloaded for the opt-in
 /// stable-diffusion.cpp runtime.
-const stableDiffusionReleaseTag = 'v0.2.0-4';
+const stableDiffusionReleaseTag = 'v0.3.0';
 
 /// First Apple companion release containing [stableDiffusionReleaseTag].
-const stableDiffusionAppleCompanionVersion = '0.15.2';
+const stableDiffusionAppleCompanionVersion = '0.15.3';
 
 /// Explicitly qualified older Apple SD pins that preserve existing app locks.
 ///
@@ -221,24 +221,16 @@ const stableDiffusionAppleCompanionVersion = '0.15.2';
 /// code. The Dart worker rejects recorded Metal backend failures even when
 /// native generation returns images; the newer native guard remains preferred.
 /// Clear and requalify this map whenever [stableDiffusionReleaseTag] changes.
-const stableDiffusionCompatibleAppleCompanionTags = <String, String>{
-  'v0.2.0-3':
-      'the native Metal command-buffer/VAE failure guard in v0.2.0-4; '
-      'Dart rejects recorded Metal backend errors, but this older native '
-      'payload is not upgraded by updating the core alone',
-};
+const stableDiffusionCompatibleAppleCompanionTags = <String, String>{};
 
 /// Checksums of the exact published XCFrameworks accepted by the SD hook.
 const stableDiffusionAppleCompanionChecksums = <String, String>{
-  'v0.2.0-3':
-      '0d496cb8f16cf11c99ac4612b47781e1f01cfe727b402936c6a2308e628688f5',
-  'v0.2.0-4':
-      '24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b',
+  'v0.3.0': '3b83a0c21a00f6418890b679ea45b00c20d012da0a57fe989635b793e09f096a',
 };
 
 /// stable_diffusion cache directory version derived from
 /// [stableDiffusionReleaseTag].
-const stableDiffusionVersion = '0.2.0-4';
+const stableDiffusionVersion = '0.3.0';
 
 /// A published stable-diffusion-native runtime archive and the library it must
 /// contain under `lib/`.
@@ -265,62 +257,62 @@ class StableDiffusionBundleSpec {
 const stableDiffusionBundleSpecs = <StableDiffusionBundleSpec>[
   StableDiffusionBundleSpec(
     'android-arm64',
-    sha256: 'b46613bc6ec68e13d81fa6247b4620effccee882b008164bf31040b34e4d175d',
+    sha256: 'a505480ada6a5f8af1fb1195b60320c5b263d86e9e320e46b97dd5d1c00b7bb0',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'ios-arm64',
-    sha256: '1045743a2cd1465ea0c9140502ea9819b746f1ec2185ad16fe2e49691e04f646',
+    sha256: 'ca9cf1efbf2592131d4703f08a5de66b9f6d869ffe4719ef64f98a50e3e2f5ea',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'ios-arm64-sim',
-    sha256: '9d4f1b9523e72d854866fb66ca73ceaa41dc07bedad1bc772c9ac77b25c94a65',
+    sha256: 'f153335a912f1038b3a7263404e5512d3d5dec836fa33b03ef522540aa3e4c2b',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'ios-x64-sim',
-    sha256: '1f2999fd7dea328429e521628bc738067e7a4051aac1ffc2472936fde7ffece9',
+    sha256: '73b74129d3a4db6b165eb0aa080b9f8f4a523c1e0848dd9ae7e20832864fc984',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'macos-arm64',
-    sha256: '840df6e27e1cac6d378dd5529f7c3b8d3b176417f950ef523c3535c09c92f528',
+    sha256: '6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'macos-x64',
-    sha256: 'b90cf445c63e5d00197ae11b2d554dd25c982046fe1f3da3a043cbd43dc9cf1c',
+    sha256: '35e77cadf496b002413106c292e9df31abec489ee37e35fd3243973485985438',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'linux-arm64',
-    sha256: 'a563cf3b90cba8517d35b16d8f7c5899e889e396a9274fe40d8d81339b5c26ac',
+    sha256: '6a65294706cb8766abe508730c1494ff85fe9e526d86f4a6f126af82b1aa7bf4',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-arm64-vulkan',
-    sha256: 'f84350026774769a55114324b089c1d7955e70e1565206b3e896fa9c0f77edbf',
+    sha256: 'a57c9cfe939f50f4ecd72a688193e5fbf87bc34637daef88105c3e28a8400049',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-x64',
-    sha256: '35a5ad38b801f8e04f440509f526b7c396809608181400238b0adbc0a4941b95',
+    sha256: 'da16772f26f2f3d8921e8d0b98f9e8d7e351c2e6c1d255df51b6d5eb559e4e34',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-x64-vulkan',
-    sha256: 'fd49fc570fb02fecacfcaefd2bb8de66f205797b7b7795960deb983c9d298b20',
+    sha256: '1bb2cc9308bf4a63c212cc44d42d54e4397762fb8dacd90470be70635c628492',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'windows-x64',
-    sha256: '94a26f128a97f7a94ea645ecf3fc83b303ef51a1a184c3a3c77c8466f1ebe4c2',
+    sha256: '6abc9fe2eecea7f7deffde32a8d519c757b7675ce627cdb22545130a481c6b07',
     requiredLibraries: {'stable-diffusion.dll'},
   ),
   StableDiffusionBundleSpec(
     'windows-x64-vulkan',
-    sha256: '67cdb87c47be5e8878d1dab065c3c1311abd1e9b72a893610c9130dfecdd3c5b',
+    sha256: '8a243beb1c59afd94e932b6b914916ebabe7a2b2c1bedfd6fad1da56d6122ec3',
     requiredLibraries: {'stable-diffusion.dll'},
   ),
 ];
