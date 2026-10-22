@@ -2,7 +2,33 @@
 
 This document covers the major breaking upgrade paths.
 
+<a id="015x-to-0160-upgrade-guide"></a>
+
 ## `0.15.x` -> `0.16.0`: upgrade guide
+
+### Runtime-specific `ModelParams` fields are rejected, not ignored
+
+A load throws `LlamaUnsupportedException` naming each `ModelParams` field set
+away from its default that the model's runtime does not apply. Earlier
+releases loaded the model and dropped these fields:
+
+| Runtime | Newly rejected fields |
+| --- | --- |
+| llama.cpp, native and Web | `liteRtLmBackend`, `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`, `liteRtLmParallelFileSectionLoading`, `liteRtLmDispatchLibDir`, `liteRtLmCacheDir`, `liteRtLmMaxProgramCacheBytes` |
+| llama.cpp, native | `preferMemory64`, `modelBytesHint` |
+| llama.cpp, WebGPU bridge | `useMmap: false`, `useMlock: true` |
+| LiteRT-LM, native and Web | `loadMtp`, `speculativeRollbackTokenMax`, `preferMemory64`, `modelBytesHint` |
+
+An app that shares one `ModelParams` across GGUF and `.litertlm` models, or
+across native and Web, sets these fields only for the runtime that applies
+them, for example with `copyWith` and the matching `clear*` flags.
+`LlamaBackend()` rejects them before any download when `ModelSource.format`
+or the file name names the model format; a model known only from its file
+header is rejected when it loads, before the runtime starts.
+
+LiteRT-LM models on macOS x86_64, Windows arm64 and the x86_64 iOS simulator,
+which have no LiteRT-LM runtime, and an explicit `device` the platform's
+LiteRT-LM lacks, such as `gpu` on Linux arm64, also fail before any download.
 
 ### Native LiteRT-LM penalty and thinking-budget errors
 

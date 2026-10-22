@@ -125,9 +125,18 @@ Important fields:
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
   (mem64) bridge core; see
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).
-  Ignored on native backends.
+  Native loads reject them.
 - `liteRtLm*` fields: native LiteRT-LM `.litertlm` loads only; see
-  [LiteRT-LM runtime controls](#litert-lm-runtime-controls).
+  [LiteRT-LM runtime controls](#litert-lm-runtime-controls). llama.cpp loads
+  reject them.
+- `useMmap` / `useMlock` (native llama.cpp only): the WebGPU bridge rejects
+  `useMmap: false` and `useMlock: true`.
+
+No runtime ignores a field you set. A load throws `LlamaUnsupportedException`
+naming each field set away from its default that the model's runtime does
+not apply. When `ModelSource.format` or the model's file name names the
+format, `LlamaBackend()` rejects them before any file resolves or downloads;
+otherwise the load rejects them before the runtime starts.
 
 - `loras` (llama.cpp, native and WebGPU): LoRA adapters applied at their
   scales once the model loads; an adapter that cannot be applied fails the
@@ -159,9 +168,10 @@ value, which means all layers like `maxGpuLayers`. Native
 LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
 `numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
-tuning profile never appears to apply silently. LiteRT-LM web
-accepts `device` or `liteRtLmBackend` for CPU or GPU selection and rejects
-every other field in the table the same way.
+tuning profile never appears to apply silently. That includes `loadMtp`,
+`speculativeRollbackTokenMax`, `preferMemory64` and `modelBytesHint`.
+LiteRT-LM web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
+and rejects every other field in the table the same way.
 
 Benchmark load time, prefill and decode throughput, and output quality on the
 deployment device after changing the activation type or prefill chunk size.

@@ -70,6 +70,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - Pass `ModelParams.modelBytesHint` (web-only) when the size is known: at 2 GiB
   or more llamadart picks the memory64 core up front instead of retrying after
   an out-of-memory failure. `preferMemory64: true`/`false` forces the choice.
+  Both are GGUF-on-Web only: native and LiteRT-LM loads throw
+  `LlamaUnsupportedException` when either is set, so set them only under
+  `kIsWeb` for a GGUF model.
 - Gate optional features on probes, not on the browser or the asset tag:
   - `await engine.capabilities` for `supportsPresencePenalty`,
     `supportsMinP`, `supportsThinkingBudget` and

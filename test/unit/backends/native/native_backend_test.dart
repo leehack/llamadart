@@ -2,12 +2,14 @@
 library;
 
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
@@ -20,6 +22,7 @@ import 'package:llamadart/src/core/llama_logging.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -258,6 +261,113 @@ void main() {
     } finally {
       await backend.dispose();
     }
+  });
+
+  group('checkModelParams before any download', () {
+    void onAbi(Abi abi) {
+      debugLiteRtLmAbiOverride = abi;
+      addTearDown(() => debugLiteRtLmAbiOverride = null);
+    }
+
+    Matcher unsupported(String message) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        contains(message),
+      ),
+    );
+
+    test('rejects fields the runtime of a named format ignores', () {
+      final backend = NativeAutoBackend();
+      expect(
+        () => backend.checkModelParams(
+          const ModelParams(liteRtLmCacheDir: '/cache'),
+          ModelFormat.gguf,
+        ),
+        unsupported(
+          'llama.cpp does not apply these ModelParams natively: '
+          'liteRtLmCacheDir.',
+        ),
+      );
+      expect(
+        () => backend.checkModelParams(
+          const ModelParams(loadMtp: true),
+          ModelFormat.liteRtLm,
+        ),
+        unsupported(
+          'does not support llama.cpp-specific ModelParams: loadMtp.',
+        ),
+      );
+      backend.checkModelParams(
+        const ModelParams(liteRtLmCacheDir: '/cache'),
+        ModelFormat.liteRtLm,
+      );
+      backend.checkModelParams(
+        const ModelParams(batchSize: 256),
+        ModelFormat.gguf,
+      );
+    });
+
+    test('leaves a format only the file can tell to the load', () {
+      NativeAutoBackend().checkModelParams(
+        const ModelParams(liteRtLmCacheDir: '/cache', loadMtp: true),
+        null,
+      );
+    });
+
+    test('rejects LiteRT-LM where no runtime is published', () {
+      final cases = {
+        Abi.macosX64: 'LiteRT-LM is not available on macOS x86_64',
+        Abi.windowsArm64: 'LiteRT-LM is not available on Windows arm64',
+        Abi.iosX64: 'LiteRT-LM is not available on the x86_64 iOS simulator',
+      };
+      for (final MapEntry(key: abi, value: message) in cases.entries) {
+        onAbi(abi);
+        expect(
+          () => NativeAutoBackend().checkModelParams(
+            const ModelParams(),
+            ModelFormat.liteRtLm,
+          ),
+          unsupported(message),
+        );
+        NativeAutoBackend().checkModelParams(
+          const ModelParams(),
+          ModelFormat.gguf,
+        );
+        // A custom LiteRT-LM factory can bring its own runtime library.
+        NativeAutoBackend(
+          liteRtLmFactory: () => _FakeBackend(handle: 22),
+        ).checkModelParams(const ModelParams(), ModelFormat.liteRtLm);
+      }
+    });
+
+    test('rejects an explicit LiteRT-LM device the target lacks', () {
+      onAbi(Abi.linuxArm64);
+      expect(
+        () => NativeAutoBackend().checkModelParams(
+          const ModelParams(device: ComputeDevice.gpu),
+          ModelFormat.liteRtLm,
+        ),
+        unsupported('ComputeDevice.gpu is not available for LiteRT-LM on '),
+      );
+      expect(
+        () => NativeAutoBackend().checkModelParams(
+          const ModelParams(device: ComputeDevice.gpu),
+          ModelFormat.liteRtLm,
+        ),
+        unsupported('(linux_arm64)'),
+      );
+      NativeAutoBackend().checkModelParams(
+        const ModelParams(device: ComputeDevice.cpu),
+        ModelFormat.liteRtLm,
+      );
+
+      onAbi(Abi.linuxX64);
+      NativeAutoBackend().checkModelParams(
+        const ModelParams(device: ComputeDevice.gpu),
+        ModelFormat.liteRtLm,
+      );
+    });
   });
 
   test('pre-load router reports defaults and rejects direct calls', () async {

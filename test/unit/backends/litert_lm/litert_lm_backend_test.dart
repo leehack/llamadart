@@ -377,6 +377,38 @@ void main() {
     }
   });
 
+  test(
+    'direct modelLoad rejects llama.cpp-only fields it would ignore',
+    () async {
+      final backend = LiteRtLmBackend();
+
+      try {
+        for (final (params, field) in [
+          (const ModelParams(loadMtp: true), 'loadMtp'),
+          (
+            const ModelParams(speculativeRollbackTokenMax: 4),
+            'speculativeRollbackTokenMax',
+          ),
+          (const ModelParams(preferMemory64: true), 'preferMemory64'),
+          (const ModelParams(modelBytesHint: 1), 'modelBytesHint'),
+        ]) {
+          await expectLater(
+            backend.modelLoad(modelFile.path, params),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('llama.cpp-specific ModelParams: $field.'),
+              ),
+            ),
+          );
+        }
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
   test('direct modelLoad keeps invalid ModelParams typed', () async {
     final backend = LiteRtLmBackend();
 

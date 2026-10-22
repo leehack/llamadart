@@ -36,6 +36,44 @@ import '../../core/engine/engine_test.dart';
 import '../../core/engine/multimodal_embeddings_test.dart';
 
 void main() {
+  test('checkModelParams rejects fields the named runtime ignores', () {
+    final backend = WebAutoBackend();
+    expect(
+      () => backend.checkModelParams(
+        const ModelParams(useMlock: true),
+        ModelFormat.gguf,
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains(
+            'llama.cpp on the Web does not apply these ModelParams: '
+            'useMlock.',
+          ),
+        ),
+      ),
+    );
+    expect(
+      () => backend.checkModelParams(
+        const ModelParams(liteRtLmCacheDir: '/cache'),
+        ModelFormat.liteRtLm,
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('liteRtLmCacheDir'),
+        ),
+      ),
+    );
+    backend.checkModelParams(
+      const ModelParams(modelBytesHint: 1 << 30),
+      ModelFormat.gguf,
+    );
+    backend.checkModelParams(const ModelParams(useMlock: true), null);
+  });
+
   test('router cancels content during its own capability probe', () async {
     final delegate = ContentBackend()..probeGate = Completer<void>();
     final router = WebAutoBackend(webGpuFactory: () => delegate);

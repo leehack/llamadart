@@ -17,6 +17,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
@@ -463,6 +464,7 @@ class NativeLlamaBackend
         'llama.cpp GGUF embeddings use the existing per-call mode.',
       );
     }
+    checkModelParamsSupportedBy(params, LlamaRuntime.llamaCpp, web: false);
     await _ensureIsolate();
     final rp = _openResponsePort();
     _dispatchRequest(rp, ModelLoadRequest(path, params, rp.sendPort));

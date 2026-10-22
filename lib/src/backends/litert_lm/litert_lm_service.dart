@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/llama_logger.dart';
@@ -11,13 +12,12 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/chat_role.dart';
 import '../../core/models/config/compute_device.dart';
-import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
-import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
 import '../../core/template/chat_template_engine.dart';
@@ -1505,17 +1505,8 @@ class LiteRtLmService {
           'Set only ModelParams.device.',
         );
       }
-      final backend = _deviceBackendName(device)!;
-      liteRtLmEnsureNativeBackendSupported(backend);
-      final available = getAvailableBackendInfo();
-      if (!available.contains(backend)) {
-        throw LlamaUnsupportedException(
-          'ComputeDevice.${device.name} is not available for LiteRT-LM on '
-          '${Platform.operatingSystem}. Available LiteRT-LM backends: '
-          '${available.join(', ')}. Use ComputeDevice.auto or cpu.',
-        );
-      }
-      return backend;
+      liteRtLmEnsureDeviceAvailable(device);
+      return _deviceBackendName(device)!;
     }
     final backend =
         normalizeLiteRtLmNativeBackendOverride(backendOverride) ??
@@ -1579,75 +1570,20 @@ class LiteRtLmService {
         );
       }
     }
-    final unsupported = <String>[];
-    if (params.contextSize <= 0) {
-      unsupported.add('contextSize=${params.contextSize}');
-    }
-    if (params.gpuLayers > 0 && params.gpuLayers != ModelParams.maxGpuLayers) {
-      unsupported.add('gpuLayers=${params.gpuLayers}');
-    }
-    if (params.splitMode != ModelSplitMode.layer) {
-      unsupported.add('splitMode');
-    }
-    if (params.mainGpu != 0) {
-      unsupported.add('mainGpu');
-    }
-    if (params.loras.length > 1) {
-      unsupported.add('loras.length=${params.loras.length}');
-    }
-    if (params.loras.any((lora) => lora.scale != 1.0)) {
-      unsupported.add('loras.scale');
-    }
-    if (params.numberOfThreadsBatch != 0) {
-      unsupported.add('numberOfThreadsBatch');
-    }
-    if (params.batchSize > 0) {
-      unsupported.add('batchSize');
-    }
-    if (params.microBatchSize > 0) {
-      unsupported.add('microBatchSize');
-    }
-    if (params.maxParallelSequences != 1) {
-      unsupported.add('maxParallelSequences');
-    }
-    if (!params.useMmap) {
-      unsupported.add('useMmap=false');
-    }
-    if (params.useMlock) {
-      unsupported.add('useMlock');
-    }
-    if (params.flashAttention != FlashAttention.auto) {
-      unsupported.add('flashAttention');
-    }
-    if (params.cacheTypeK != KvCacheType.f16) {
-      unsupported.add('cacheTypeK');
-    }
-    if (params.cacheTypeV != KvCacheType.f16) {
-      unsupported.add('cacheTypeV');
-    }
-    if (params.kvUnified != null) {
-      unsupported.add('kvUnified');
-    }
-    if (params.ropeFrequencyBase != null) {
-      unsupported.add('ropeFrequencyBase');
-    }
-    if (params.ropeFrequencyScale != null) {
-      unsupported.add('ropeFrequencyScale');
-    }
-
+    final unsupported = [
+      ...modelParamsUnsupportedBy(params, LlamaRuntime.liteRtLm, web: false),
+      if (params.loras.length > 1) 'loras.length=${params.loras.length}',
+      if (params.loras.any((lora) => lora.scale != 1.0)) 'loras.scale',
+    ];
     if (unsupported.isEmpty) {
       return;
     }
     throw LlamaUnsupportedException(
-      'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
-      '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
-      'contextSize, chatTemplate, device or the deprecated liteRtLmBackend '
-      'for explicit CPU/GPU/NPU selection, preferredBackend, all-or-CPU '
-      'gpuLayers hints, '
-      'numberOfThreads, one default-scale initial LoRA adapter, '
-      'liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
-      'liteRtLmParallelFileSectionLoading, liteRtLmDispatchLibDir, '
-      'liteRtLmCacheDir, and liteRtLmMaxProgramCacheBytes.',
+      unsupportedModelParamsMessage(
+        unsupported,
+        LlamaRuntime.liteRtLm,
+        web: false,
+      ),
     );
   }
 
