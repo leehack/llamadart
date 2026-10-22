@@ -858,7 +858,7 @@ without the memory check.
 `integration_test/litert_lm_read_only_bundle_e2e_test.dart` hard-links the
 locked `chat-litert-*` validation model into directories it sets to mode 555
 and loads it through `LlamaEngine(LlamaBackend())` with
-`ModelParams.liteRtLmCacheDir` unset, as an app that ships a model in its
+`LiteRtLmModelParams.cacheDir` unset, as an app that ships a model in its
 bundle does. Four cases run in one process, in this order:
 
 | Case | Bundle name | Backend |

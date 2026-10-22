@@ -10,8 +10,8 @@ Future<void> main(List<String> arguments) async {
   try {
     await engine.setModel(
       LlamaModel(ModelSource.path(modelPath)),
-      params: const ModelParams(
-        liteRtLmEmbeddingEngine: true,
+      params: const LiteRtLmModelParams(
+        embeddingEngine: true,
         device: ComputeDevice.cpu,
         contextSize: 1024,
       ),

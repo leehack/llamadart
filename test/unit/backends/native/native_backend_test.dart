@@ -308,6 +308,25 @@ void main() {
       );
     });
 
+    test('rejects a runtime-specific subtype for the other runtime', () {
+      final backend = NativeAutoBackend();
+      expect(
+        () => backend.checkModelParams(
+          const LlamaCppModelParams(),
+          ModelFormat.liteRtLm,
+        ),
+        unsupported('LlamaCppModelParams configures llama.cpp (GGUF) models'),
+      );
+      expect(
+        () => backend.checkModelParams(
+          const LiteRtLmModelParams(),
+          ModelFormat.gguf,
+        ),
+        unsupported('LiteRtLmModelParams configures LiteRT-LM (.litertlm)'),
+      );
+      backend.checkModelParams(const LlamaCppModelParams(), ModelFormat.gguf);
+    });
+
     test('leaves a format only the file can tell to the load', () {
       NativeAutoBackend().checkModelParams(
         const ModelParams(liteRtLmCacheDir: '/cache', loadMtp: true),

@@ -702,4 +702,140 @@ void main() {
       },
     );
   });
+
+  group('runtime-specific subtypes', () {
+    Matcher rejectsArgument(String name, String message) => throwsA(
+      isA<LlamaArgumentException>()
+          .having((e) => e.name, 'name', name)
+          .having((e) => e.message, 'message', contains(message)),
+    );
+
+    test('LlamaCppModelParams sets llama.cpp fields only', () {
+      const params = LlamaCppModelParams(
+        contextSize: 8192,
+        batchSize: 512,
+        loadMtp: true,
+        cacheTypeK: KvCacheType.q8_0,
+        preferMemory64: true,
+      );
+      expect(params.contextSize, 8192);
+      expect(params.batchSize, 512);
+      expect(params.loadMtp, isTrue);
+      expect(params.cacheTypeK, KvCacheType.q8_0);
+      expect(params.preferMemory64, isTrue);
+      expect(params.liteRtLmEmbeddingEngine, isFalse);
+      expect(params.liteRtLmCacheDir, isNull);
+      expect(params.gpuLayers, ModelParams.maxGpuLayers);
+    });
+
+    test('LiteRtLmModelParams maps unprefixed options to liteRtLm* fields', () {
+      const params = LiteRtLmModelParams(
+        contextSize: 2048,
+        device: ComputeDevice.cpu,
+        numberOfThreads: 4,
+        embeddingEngine: true,
+        activationDataType: LiteRtLmActivationDataType.float16,
+        prefillChunkSize: 128,
+        parallelFileSectionLoading: false,
+        dispatchLibDir: '/vendor/litert',
+        cacheDir: '/data/cache',
+        maxProgramCacheBytes: 1024,
+      );
+      expect(params.liteRtLmEmbeddingEngine, isTrue);
+      expect(
+        params.liteRtLmActivationDataType,
+        LiteRtLmActivationDataType.float16,
+      );
+      expect(params.liteRtLmPrefillChunkSize, 128);
+      expect(params.liteRtLmParallelFileSectionLoading, isFalse);
+      expect(params.liteRtLmDispatchLibDir, '/vendor/litert');
+      expect(params.liteRtLmCacheDir, '/data/cache');
+      expect(params.liteRtLmMaxProgramCacheBytes, 1024);
+      expect(params.cacheDir, '/data/cache');
+      expect(params.embeddingEngine, isTrue);
+      expect(params.numberOfThreads, 4);
+      expect(params.batchSize, 0);
+      expect(params.useMmap, isTrue);
+    });
+
+    test('copyWith keeps the subtype, also through a ModelParams type', () {
+      const ModelParams llamaCpp = LlamaCppModelParams(batchSize: 256);
+      final copied = llamaCpp.copyWith(contextSize: 1024, kvUnified: true);
+      expect(copied, isA<LlamaCppModelParams>());
+      expect(copied.contextSize, 1024);
+      expect(copied.batchSize, 256);
+      expect(copied.kvUnified, isTrue);
+      final LlamaCppModelParams cleared = (copied as LlamaCppModelParams)
+          .copyWith(clearKvUnified: true);
+      expect(cleared.kvUnified, isNull);
+
+      const ModelParams liteRtLm = LiteRtLmModelParams(cacheDir: '/cache');
+      final copiedLiteRtLm = liteRtLm.copyWith(contextSize: 1024);
+      expect(copiedLiteRtLm, isA<LiteRtLmModelParams>());
+      expect(copiedLiteRtLm.contextSize, 1024);
+      expect(copiedLiteRtLm.liteRtLmCacheDir, '/cache');
+    });
+
+    test('LiteRtLmModelParams.copyWith sets and clears unprefixed options', () {
+      const params = LiteRtLmModelParams(
+        cacheDir: '/cache',
+        prefillChunkSize: 64,
+      );
+      final updated = params.copyWith(
+        cacheDir: '/other',
+        clearPrefillChunkSize: true,
+        dispatchLibDir: '/vendor',
+        embeddingEngine: true,
+      );
+      expect(updated.cacheDir, '/other');
+      expect(updated.prefillChunkSize, isNull);
+      expect(updated.dispatchLibDir, '/vendor');
+      expect(updated.embeddingEngine, isTrue);
+      expect(updated.copyWith(clearCacheDir: true).cacheDir, isNull);
+    });
+
+    test('deprecated liteRtLm* arguments keep working', () {
+      const base = ModelParams(liteRtLmCacheDir: '/cache');
+      expect(
+        base.copyWith(liteRtLmPrefillChunkSize: 32).liteRtLmCacheDir,
+        '/cache',
+      );
+      expect(
+        base.copyWith(clearLiteRtLmCacheDir: true).liteRtLmCacheDir,
+        isNull,
+      );
+
+      const params = LiteRtLmModelParams(cacheDir: '/cache');
+      final aliased = params.copyWith(
+        liteRtLmDispatchLibDir: '/vendor',
+        clearLiteRtLmCacheDir: true,
+      );
+      expect(aliased, isA<LiteRtLmModelParams>());
+      expect(aliased.dispatchLibDir, '/vendor');
+      expect(aliased.cacheDir, isNull);
+      expect(
+        params.copyWith(cacheDir: '/new', liteRtLmCacheDir: '/old').cacheDir,
+        '/new',
+      );
+    });
+
+    test('copyWith rejects the other runtime\'s fields', () {
+      const ModelParams llamaCpp = LlamaCppModelParams();
+      expect(
+        () => llamaCpp.copyWith(liteRtLmCacheDir: '/cache'),
+        rejectsArgument(
+          'liteRtLmCacheDir',
+          'LlamaCppModelParams.copyWith does not take liteRtLmCacheDir',
+        ),
+      );
+      const ModelParams liteRtLm = LiteRtLmModelParams();
+      expect(
+        () => liteRtLm.copyWith(batchSize: 256, loadMtp: false),
+        rejectsArgument(
+          'batchSize',
+          'LiteRtLmModelParams.copyWith does not take batchSize, loadMtp',
+        ),
+      );
+    });
+  });
 }

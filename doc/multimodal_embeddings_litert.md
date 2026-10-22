@@ -5,7 +5,7 @@ Contract: [Multimodal embeddings](multimodal_embeddings.md).
 
 ## Shipped boundary
 
-`ModelParams(liteRtLmEmbeddingEngine: true, device: ComputeDevice.cpu)` selects
+`LiteRtLmModelParams(embeddingEngine: true, device: ComputeDevice.cpu)` selects
 LiteRT-LM's separate native embedding engine. The default false preserves
 conversation loading. Both string and content embedding APIs use this engine;
 generation and tokenizer APIs reject embedding mode. GGUF loaders still reject

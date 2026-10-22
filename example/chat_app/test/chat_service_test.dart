@@ -33,6 +33,7 @@ void main() {
         eagerLoadMultimodalProjector: false,
       );
 
+      expect(engine.lastModelParams, isA<LlamaCppModelParams>());
       expect(engine.lastModelParams!.batchSize, 512);
       expect(engine.lastModelParams!.microBatchSize, 128);
     });
@@ -259,7 +260,7 @@ void main() {
         eagerLoadMultimodalProjector: false,
       );
 
-      expect(engine.lastModelParams, isNotNull);
+      expect(engine.lastModelParams, isA<LiteRtLmModelParams>());
       expect(engine.lastModelParams!.contextSize, 4096);
       expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
       expect(engine.lastModelParams!.preferredBackend, GpuBackend.auto);

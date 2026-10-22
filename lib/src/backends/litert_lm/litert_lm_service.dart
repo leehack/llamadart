@@ -1493,6 +1493,7 @@ class LiteRtLmService {
 
   void _validateModelParams(ModelParams params) {
     params.validate();
+    checkModelParamsTypeFor(params, LlamaRuntime.liteRtLm);
 
     if (params.liteRtLmEmbeddingEngine) {
       final ignored = <String>[

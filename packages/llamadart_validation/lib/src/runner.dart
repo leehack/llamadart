@@ -107,9 +107,12 @@ class PublicValidationEngine
         ModelSource.parse(location),
         projector: projector == null ? null : ModelSource.parse(projector!),
       ),
-      params: profile.loadParams.copyWith(
-        liteRtLmDispatchLibDir: npu?.dispatchDirectory,
-      ),
+      params: switch ((profile.loadParams, npu)) {
+        (final LiteRtLmModelParams params, final npu?) => params.copyWith(
+          dispatchLibDir: npu.dispatchDirectory,
+        ),
+        (final params, _) => params,
+      },
     );
     if (!_engine.isReady) {
       throw StateError('setModel returned without readiness');

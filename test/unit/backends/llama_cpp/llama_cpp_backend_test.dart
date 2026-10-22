@@ -84,6 +84,20 @@ void main() {
       expect(harness.received, isEmpty);
     });
 
+    test('rejects LiteRtLmModelParams before any worker request', () async {
+      await expectLater(
+        backend.modelLoad('ok.gguf', const LiteRtLmModelParams()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('Use LlamaCppModelParams.'),
+          ),
+        ),
+      );
+      expect(harness.received, isEmpty);
+    });
+
     test('setLogLevel forwards request through worker port', () async {
       await backend.setLogLevel(LlamaLogLevel.info);
 

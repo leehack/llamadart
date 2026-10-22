@@ -63,10 +63,37 @@ void checkModelParamsSupportedBy(
   LlamaRuntime runtime, {
   required bool web,
 }) {
+  checkModelParamsTypeFor(params, runtime);
   final unsupported = modelParamsUnsupportedBy(params, runtime, web: web);
   if (unsupported.isEmpty) return;
   throw LlamaUnsupportedException(
     unsupportedModelParamsMessage(unsupported, runtime, web: web),
+  );
+}
+
+/// Throws [LlamaUnsupportedException] when [params] is a runtime-specific
+/// subtype for another runtime than [runtime].
+void checkModelParamsTypeFor(ModelParams params, LlamaRuntime runtime) {
+  final (type, typeRuntime, model) = switch (params) {
+    LlamaCppModelParams() => (
+      'LlamaCppModelParams',
+      LlamaRuntime.llamaCpp,
+      'llama.cpp (GGUF)',
+    ),
+    LiteRtLmModelParams() => (
+      'LiteRtLmModelParams',
+      LlamaRuntime.liteRtLm,
+      'LiteRT-LM (.litertlm)',
+    ),
+    _ => (null, null, null),
+  };
+  if (type == null || typeRuntime == runtime) return;
+  final (other, otherModel) = runtime == LlamaRuntime.liteRtLm
+      ? ('LiteRtLmModelParams', 'LiteRT-LM (.litertlm)')
+      : ('LlamaCppModelParams', 'llama.cpp (GGUF)');
+  throw LlamaUnsupportedException(
+    '$type configures $model models, but this model runs on $otherModel. '
+    'Use $other.',
   );
 }
 

@@ -218,7 +218,7 @@ class ChatService {
       final liteRtLmGpuLayers = settings.preferredBackend == GpuBackend.cpu
           ? 0
           : ModelParams.maxGpuLayers;
-      return ModelParams(
+      return LiteRtLmModelParams(
         gpuLayers: liteRtLmGpuLayers,
         preferredBackend: settings.preferredBackend,
         contextSize: safeContextSize,
@@ -285,7 +285,7 @@ class ChatService {
     final hint = settings.modelBytesHint ?? 0;
     final int? modelBytesHint = kIsWeb && hint > 0 ? hint : null;
 
-    return ModelParams(
+    return LlamaCppModelParams(
       gpuLayers: resolvedGpuLayers,
       preferredBackend: settings.preferredBackend,
       contextSize: settings.contextSize,

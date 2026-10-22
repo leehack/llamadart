@@ -30,6 +30,48 @@ LiteRT-LM models on macOS x86_64, Windows arm64 and the x86_64 iOS simulator,
 which have no LiteRT-LM runtime, and an explicit `device` the platform's
 LiteRT-LM lacks, such as `gpu` on Linux arm64, also fail before any download.
 
+### Runtime-specific parameter types; `liteRtLm*` arguments deprecated
+
+`LlamaCppModelParams` and `LiteRtLmModelParams` are `ModelParams` whose
+constructors take only the fields their runtime applies, so every API that
+takes `ModelParams` takes them. A load throws `LlamaUnsupportedException`
+when one is used for the other runtime, and their `copyWith` keeps the type
+and throws `LlamaArgumentException` for the other runtime's fields.
+
+The `liteRtLm*` arguments of the `ModelParams` constructor and `copyWith`,
+and the matching `clearLiteRtLm*` flags, are deprecated until 1.0. They still
+work. The fields keep their names, so reads such as `params.liteRtLmCacheDir`
+are unchanged.
+
+```dart
+// Before
+const params = ModelParams(
+  liteRtLmCacheDir: '/data/litert-cache',
+  liteRtLmEmbeddingEngine: true,
+  device: ComputeDevice.cpu,
+);
+
+// After
+const params = LiteRtLmModelParams(
+  cacheDir: '/data/litert-cache',
+  embeddingEngine: true,
+  device: ComputeDevice.cpu,
+);
+```
+
+| Deprecated `ModelParams` argument | `LiteRtLmModelParams` argument |
+| --- | --- |
+| `liteRtLmEmbeddingEngine` | `embeddingEngine` |
+| `liteRtLmActivationDataType` | `activationDataType` |
+| `liteRtLmPrefillChunkSize` | `prefillChunkSize` |
+| `liteRtLmParallelFileSectionLoading` | `parallelFileSectionLoading` |
+| `liteRtLmDispatchLibDir` | `dispatchLibDir` |
+| `liteRtLmCacheDir` | `cacheDir` |
+| `liteRtLmMaxProgramCacheBytes` | `maxProgramCacheBytes` |
+
+`copyWith` takes the same names and `clear*` flags (`clearCacheDir`).
+`liteRtLmBackend` stays deprecated in favor of `device`.
+
 <a id="014x-to-0150-upgrade-guide"></a>
 
 ## `0.14.x` -> `0.15.0`: upgrade guide

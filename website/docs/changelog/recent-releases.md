@@ -10,6 +10,7 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Reject `ModelParams` fields the model's runtime would ignore, such as `liteRtLm*` fields on a GGUF model or `preferMemory64` off the Web, with `LlamaUnsupportedException` naming each one; `LlamaBackend()` also rejects these and LiteRT-LM platform gaps before any download when the model format is known ([#858](https://github.com/leehack/llamadart/issues/858), [#861](https://github.com/leehack/llamadart/issues/861)).
+- Add `LlamaCppModelParams` and `LiteRtLmModelParams`, `ModelParams` that take only the fields their runtime applies and are rejected for the other runtime; the `liteRtLm*` arguments of `ModelParams` are deprecated in favor of `LiteRtLmModelParams` ([#858](https://github.com/leehack/llamadart/issues/858)).
 
 ## 0.15.6
 

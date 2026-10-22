@@ -409,6 +409,37 @@ void main() {
     },
   );
 
+  test('direct modelLoad rejects LlamaCppModelParams', () async {
+    final backend = LiteRtLmBackend();
+    try {
+      await expectLater(
+        backend.modelLoad(modelFile.path, const LlamaCppModelParams()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Use LiteRtLmModelParams.'),
+          ),
+        ),
+      );
+      await expectLater(
+        backend.modelLoad(
+          modelFile.path,
+          const LiteRtLmModelParams(contextSize: 0),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('contextSize=0'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('direct modelLoad keeps invalid ModelParams typed', () async {
     final backend = LiteRtLmBackend();
 

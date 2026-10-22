@@ -74,6 +74,27 @@ void main() {
     backend.checkModelParams(const ModelParams(useMlock: true), null);
   });
 
+  test('checkModelParams rejects a subtype for the other runtime', () {
+    final backend = WebAutoBackend();
+    expect(
+      () => backend.checkModelParams(
+        const LiteRtLmModelParams(),
+        ModelFormat.gguf,
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('Use LlamaCppModelParams.'),
+        ),
+      ),
+    );
+    backend.checkModelParams(
+      const LiteRtLmModelParams(contextSize: 2048),
+      ModelFormat.liteRtLm,
+    );
+  });
+
   test('router cancels content during its own capability probe', () async {
     final delegate = ContentBackend()..probeGate = Completer<void>();
     final router = WebAutoBackend(webGpuFactory: () => delegate);

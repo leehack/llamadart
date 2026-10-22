@@ -219,4 +219,51 @@ void main() {
       web: true,
     );
   });
+
+  test('a runtime-specific subtype is rejected by the other runtime', () {
+    for (final web in [false, true]) {
+      checkModelParamsSupportedBy(
+        const LlamaCppModelParams(),
+        LlamaRuntime.llamaCpp,
+        web: web,
+      );
+      checkModelParamsSupportedBy(
+        const LiteRtLmModelParams(),
+        LlamaRuntime.liteRtLm,
+        web: web,
+      );
+      expect(
+        () => checkModelParamsSupportedBy(
+          const LlamaCppModelParams(),
+          LlamaRuntime.liteRtLm,
+          web: web,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            'LlamaCppModelParams configures llama.cpp (GGUF) models, but this '
+                'model runs on LiteRT-LM (.litertlm). Use LiteRtLmModelParams.',
+          ),
+        ),
+      );
+      expect(
+        () => checkModelParamsSupportedBy(
+          const LiteRtLmModelParams(),
+          LlamaRuntime.llamaCpp,
+          web: web,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            'LiteRtLmModelParams configures LiteRT-LM (.litertlm) models, but '
+                'this model runs on llama.cpp (GGUF). Use LlamaCppModelParams.',
+          ),
+        ),
+      );
+    }
+    checkModelParamsTypeFor(const ModelParams(), LlamaRuntime.llamaCpp);
+    checkModelParamsTypeFor(const ModelParams(), LlamaRuntime.liteRtLm);
+  });
 }
