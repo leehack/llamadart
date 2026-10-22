@@ -37,6 +37,8 @@ void main() {
       addTearDown(runtime.dispose);
       const params = ModelParams(
         device: ComputeDevice.cpu,
+        // LiteRtLmModelParams needs llamadart 0.16.0; keep ^0.15.0 working (#858).
+        // ignore: deprecated_member_use
         liteRtLmEmbeddingEngine: true,
       );
       await runtime.initialize(
