@@ -272,6 +272,9 @@ class _RuntimeClient extends LiteRtLmRuntimeClient {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+    int? thinkingTokenBudget,
   }) {
     this.messageJson = messageJson;
     return Stream.value('A cat.');

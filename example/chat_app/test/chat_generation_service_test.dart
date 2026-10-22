@@ -128,6 +128,26 @@ void main() {
       });
     }
 
+    test('sends a LiteRT-LM penalty only from 1.0 up', () {
+      const defaults = GenerationParams();
+      for (final (penalty, expected) in [
+        (1.3, 1.3),
+        (1.0, 1.0),
+        (0.9, defaults.penalty),
+      ]) {
+        final params = service.buildParams(
+          ChatSettings(penalty: penalty),
+          capabilities: const LlamaEngineCapabilities(
+            isSupported: true,
+            runtime: LlamaRuntime.liteRtLm,
+            supportsPenalty: true,
+          ),
+        );
+
+        expect(params.penalty, expected, reason: '$penalty');
+      }
+    });
+
     test('accumulates stream updates and metrics', () async {
       final updates = <GenerationStreamUpdate>[];
       final result = await service.consumeStream(

@@ -68,7 +68,7 @@ class ChatGenerationService {
       topK: settings.topK,
       topP: settings.topP,
       minP: capabilities.supportsMinP ? settings.minP : defaults.minP,
-      penalty: capabilities.supportsPenalty
+      penalty: _appliesPenalty(settings.penalty, capabilities)
           ? settings.penalty
           : defaults.penalty,
       stopSequences: const <String>[],
@@ -77,6 +77,14 @@ class ChatGenerationService {
           : defaults.streamBatchTokenThreshold,
     );
   }
+
+  // LiteRT-LM rejects repetition penalties below 1.0 instead of raising them.
+  static bool _appliesPenalty(
+    double penalty,
+    LlamaEngineCapabilities capabilities,
+  ) =>
+      capabilities.supportsPenalty &&
+      (capabilities.runtime != LlamaRuntime.liteRtLm || penalty >= 1.0);
 
   List<LlamaContentPart> buildChatParts({
     required String text,
