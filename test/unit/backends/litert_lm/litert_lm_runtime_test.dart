@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -370,7 +371,7 @@ void main() {
     );
     expect(legacyAbiError, contains('not stream-chunk compatible'));
     expect(legacyAbiError, contains('Expected callback ABI 2'));
-    expect(legacyAbiError, contains('v0.18.0'));
+    expect(legacyAbiError, contains('litert-lm-native $liteRtLmReleaseTag;'));
     expect(legacyAbiError, contains('detected 1'));
   });
 
