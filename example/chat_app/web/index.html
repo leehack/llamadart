@@ -116,12 +116,6 @@
         ? Math.max(1, Math.trunc(configuredThreadPoolSize))
         : inferredThreadPoolSize;
     window.__llamadartBridgeThreadPoolSize = bridgeThreadPoolSize;
-    const safariMinPacked = 170400;
-    const safariUnsupportedNeedle =
-      'if(currentSafariVersion<TARGET_NOT_SUPPORTED){throw new Error(`This page was compiled without support for Safari browser. Pass -sMIN_SAFARI_VERSION=${currentSafariVersion} or lower to enable support for this browser.`)}';
-    const safariMinPattern =
-      /if\(currentSafariVersion<\d+\)\{throw new Error\(`This emscripten-generated code requires Safari v\$\{packedVersionToHumanReadable\(\d+\)\} \(detected v\$\{currentSafariVersion\}\)`\)\}/;
-    let patchedCoreBlobUrl = null;
 
     function bridgeBootstrapLog(level, ...args) {
       if (!bridgeBootstrapVerbose || typeof console === 'undefined') {
@@ -134,26 +128,6 @@
       }
     }
 
-    function isSafariBrowser() {
-      const ua = navigator.userAgent || '';
-      return (
-        /Safari\//.test(ua) &&
-        !/(Chrome|Chromium|CriOS|Edg|OPR|Firefox|FxiOS)/.test(ua)
-      );
-    }
-
-    function patchCoreForSafari(source) {
-      let patched = source;
-      if (patched.includes(safariUnsupportedNeedle)) {
-        patched = patched.replace(safariUnsupportedNeedle, '');
-      }
-
-      const safariVersionCheck =
-        `if(currentSafariVersion<${safariMinPacked}){throw new Error(\`This emscripten-generated code requires Safari v\${packedVersionToHumanReadable(${safariMinPacked})} (detected v\${currentSafariVersion})\`)}`;
-      patched = patched.replace(safariMinPattern, safariVersionCheck);
-      return patched;
-    }
-
     async function resolveCoreModuleUrl(moduleUrl) {
       const bridgeUrl = new URL(moduleUrl, window.location.href);
       const coreUrl = new URL('./llama_webgpu_core.js', bridgeUrl);
@@ -162,36 +136,8 @@
         coreUrl.searchParams.set('v', version);
       }
       const coreUrlString = coreUrl.toString();
-      if (!isSafariBrowser()) {
-        window.__llamadartBridgeCoreModuleUrl = coreUrlString;
-        return coreUrlString;
-      }
-
-      const response = await fetch(coreUrlString);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch bridge core for Safari patch: ${response.status} ${response.statusText}`,
-        );
-      }
-
-      const originalSource = await response.text();
-      const patchedSource = patchCoreForSafari(originalSource);
-
-      if (patchedSource === originalSource) {
-        window.__llamadartBridgeCoreModuleUrl = coreUrlString;
-        return coreUrlString;
-      }
-
-      if (patchedCoreBlobUrl) {
-        URL.revokeObjectURL(patchedCoreBlobUrl);
-      }
-
-      patchedCoreBlobUrl = URL.createObjectURL(
-        new Blob([patchedSource], { type: 'text/javascript' }),
-      );
-      window.__llamadartBridgeCoreModuleUrl = patchedCoreBlobUrl;
-      bridgeBootstrapLog('info', 'llamadart: applied Safari core compatibility patch');
-      return patchedCoreBlobUrl;
+      window.__llamadartBridgeCoreModuleUrl = coreUrlString;
+      return coreUrlString;
     }
 
     function deriveCoreWasmUrl(moduleUrl, memory64 = false) {
@@ -272,26 +218,6 @@
       } catch (_) {
         return null;
       }
-    }
-
-    function trimUnstableUtf8Tail(text) {
-      if (typeof text !== 'string' || text.length === 0) {
-        return '';
-      }
-
-      let end = text.length;
-      while (end > 0 && text.charCodeAt(end - 1) === 0xfffd) {
-        end -= 1;
-      }
-
-      if (end > 0) {
-        const tail = text.charCodeAt(end - 1);
-        if (tail >= 0xd800 && tail <= 0xdbff) {
-          end -= 1;
-        }
-      }
-
-      return end === text.length ? text : text.slice(0, end);
     }
 
     function createMockBridgeClass({ scenario, responseText, delayMs }) {
@@ -498,89 +424,6 @@
       };
     }
 
-    function applyUtf8StreamingHotfix(BridgeClass) {
-      if (
-        !BridgeClass ||
-        BridgeClass.__llamadartUtf8StreamingHotfixApplied === true
-      ) {
-        return;
-      }
-
-      const originalCreateRuntime = BridgeClass.prototype?._createRuntime;
-      if (typeof originalCreateRuntime !== 'function') {
-        return;
-      }
-
-      BridgeClass.prototype._createRuntime = function patchedCreateRuntime(...args) {
-        const runtime = originalCreateRuntime.apply(this, args);
-        if (
-          !runtime ||
-          runtime.__llamadartUtf8StreamingHotfixApplied === true
-        ) {
-          return runtime;
-        }
-
-        const originalCreateCompletion = runtime.createCompletion;
-        if (typeof originalCreateCompletion !== 'function') {
-          return runtime;
-        }
-
-        runtime.createCompletion = async function patchedCreateCompletion(
-          prompt,
-          options = {},
-        ) {
-          const core = this?._core;
-          if (!core || typeof core.ccall !== 'function') {
-            return originalCreateCompletion.call(this, prompt, options);
-          }
-
-          const originalCcall = core.ccall.bind(core);
-          let emittedStableText = '';
-          core.ccall = function patchedCcall(
-            identifier,
-            returnType,
-            argTypes,
-            args,
-            opts,
-          ) {
-            if (
-              identifier === 'llamadart_webgpu_last_piece' &&
-              returnType === 'string'
-            ) {
-              const fullText =
-                originalCcall(
-                  'llamadart_webgpu_last_output',
-                  'string',
-                  [],
-                  [],
-                  opts,
-                ) || '';
-              const stableText = trimUnstableUtf8Tail(fullText);
-              if (!stableText.startsWith(emittedStableText)) {
-                emittedStableText = '';
-              }
-              const deltaText = stableText.slice(emittedStableText.length);
-              emittedStableText = stableText;
-              return deltaText;
-            }
-
-            return originalCcall(identifier, returnType, argTypes, args, opts);
-          };
-
-          try {
-            return await originalCreateCompletion.call(this, prompt, options);
-          } finally {
-            core.ccall = originalCcall;
-          }
-        };
-
-        runtime.__llamadartUtf8StreamingHotfixApplied = true;
-        return runtime;
-      };
-
-      BridgeClass.__llamadartUtf8StreamingHotfixApplied = true;
-    }
-
     // Deterministic bridge-readiness signal awaited by the Dart app so it never
     // races the asynchronous bridge import. Previously the app could observe a
     // missing `LlamaWebGpuBridge` global and silently fall back to a fake
@@ -635,7 +478,6 @@
       const wasmUrlMem64 = deriveCoreWasmUrl(runtimeAssetModuleUrl, true);
       const preferMemory64 = window.__llamadartBridgeEnableMem64 === true;
 
-      applyUtf8StreamingHotfix(mod.LlamaWebGpuBridge);
       window.LlamaWebGpuBridge = mod.LlamaWebGpuBridge;
       window.__llamadartBridgeAdaptiveSafariGpu =
         mod.LlamaWebGpuBridge?.supportsSafariAdaptiveGpu === true;

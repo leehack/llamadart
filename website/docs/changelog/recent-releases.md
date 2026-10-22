@@ -17,6 +17,7 @@ For canonical full release notes, use:
 - Seed-OSS, MiniMax M2, Apriel 1.5, Xiaomi MiMo and EXAONE MoE return a thought opened by the prompt as reasoning until its end tag, as llama.cpp does, and stream it once instead of as content or twice ([#742](https://github.com/leehack/llamadart/issues/742)).
 - Let DeepSeek V3, Seed-OSS, MiniMax M2, Apriel 1.5 and EXAONE MoE templates that open a thought in the prompt reason before a `ToolChoice.required` tool call and end the thought, so the call is not parsed as reasoning and lost ([#742](https://github.com/leehack/llamadart/issues/742)).
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.18.1`, built from upstream LiteRT-LM `v0.18.1` with the same ASR and stream finish-reason fixes as `v0.18.0-3`. Flutter Apple apps get it with the next `llamadart_litert_lm_flutter` release; native GPU embeddings still throw `LlamaUnsupportedException` because EmbeddingGemma 2 still crashes in the prebuilt WebGPU accelerator.
+- Remove the chat app's Safari patching of the web bridge and the `WEBGPU_BRIDGE_PATCH_SAFARI_COMPAT` and `WEBGPU_BRIDGE_MIN_SAFARI_VERSION` fetch-script options. The default bridge already contains both fixes; overrides to older asset tags no longer get them.
 
 ## 0.15.6
 
