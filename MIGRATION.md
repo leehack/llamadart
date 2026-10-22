@@ -22,9 +22,10 @@ releases loaded the model and dropped these fields:
 An app that shares one `ModelParams` across GGUF and `.litertlm` models, or
 across native and Web, sets these fields only for the runtime that applies
 them, for example with `copyWith` and the matching `clear*` flags.
-`LlamaBackend()` rejects them before any download when `ModelSource.format`
-or the file name names the model format; a model known only from its file
-header is rejected when it loads, before the runtime starts.
+`LlamaEngine.load` and `setModel` on `LlamaBackend()` reject them before any
+download when `ModelSource.format` or the file name names the model format;
+the deprecated `loadModelSource` and a model known only from its file header
+reject them when the model loads, before the runtime starts.
 
 LiteRT-LM models on macOS x86_64, Windows arm64 and the x86_64 iOS simulator,
 which have no LiteRT-LM runtime, and an explicit `device` the platform's
