@@ -172,7 +172,8 @@ class _TrimmingSession extends ChatSession {
 /// is added, then stores the result, or a copy of it, with an audit note.
 /// With [keepsLength] it drops two messages, so the history does not grow;
 /// with [atFront] it stores the result and note before the kept messages;
-/// with [copiesAll] it stores copies of the kept messages.
+/// with [copiesAll] it stores copies of the kept messages; with [allRoles] it
+/// does this for every message, not only tool results.
 class _AuditingSession extends ChatSession {
   _AuditingSession(
     super.engine, {
@@ -181,6 +182,7 @@ class _AuditingSession extends ChatSession {
     this.keepsLength = false,
     this.atFront = false,
     this.copiesAll = false,
+    this.allRoles = false,
   }) : super(maxContextTokens: 0);
 
   final bool copiesResult;
@@ -188,10 +190,13 @@ class _AuditingSession extends ChatSession {
   final bool keepsLength;
   final bool atFront;
   final bool copiesAll;
+  final bool allRoles;
 
   @override
   void addMessage(LlamaChatMessage message) {
-    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    if (!allRoles && message.role != LlamaChatRole.tool) {
+      return super.addMessage(message);
+    }
     final kept = [
       for (final stored in history.skip(keepsLength ? 2 : 1))
         copiesAll ? _copyOf(stored) : stored,
@@ -2456,6 +2461,47 @@ void main() {
         expect(contents(prepending), ['Hi', 'Hello']);
       },
     );
+
+    test('keeps earlier messages its addMessage moves after a system message '
+        'it moves first', () async {
+      final heading = _CopyingHeaderSession(engine, systemFirst: true);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+        _text(LlamaChatRole.system, 'Rule'),
+      ].forEach(heading.addMessage);
+
+      final result = await stopAtMaxRounds(_CopyingDelegateSession(heading));
+
+      expect(result.rolledBack, isTrue);
+      expect(contents(heading), ['Rule', 'Hi', 'Hello']);
+    });
+
+    test('rolls back two rounds of an addMessage that drops the oldest '
+        'message and puts a note before each message', () async {
+      final auditing = _AuditingSession(
+        engine,
+        noteFirst: true,
+        allRoles: true,
+      );
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(auditing.addMessage);
+      for (var round = 0; round <= 2; round++) {
+        engine.replies.add(scriptedCalls([('c$round', 'weather', '{}')]));
+      }
+
+      final result = await _CopyingDelegateSession(auditing).sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 2,
+      );
+
+      expect(result.rolledBack, isTrue);
+      // The rollback rebuilds through this addMessage, which adds one note.
+      expect(contents(auditing), ['Audit', 'Hello']);
+    });
 
     test('rolls back a turn whose parts are rebuilt on each read', () async {
       [

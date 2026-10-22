@@ -150,8 +150,9 @@ A class that `implements ChatSession` is rolled back through `reset` and
 instances for the same message, the turn's messages are matched by role and
 content rather than identity, so an equal message that other code added during
 the loop can be removed in place of the turn's own, and a message from before
-the turn that an `addMessage` override moves after the turn's first message
-counts as one it stored, so the rollback removes it. A `history` that returns
+the turn that an `addMessage` override moves after the message it stores counts
+as one it stored, so the rollback removes it; one moved only past earlier
+messages of the turn stays. A `history` that returns
 copies cached until the next mutation gives the same instances on both reads,
 so identity matching applies and the turn is not rolled back.
 
