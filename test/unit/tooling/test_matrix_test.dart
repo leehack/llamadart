@@ -47,19 +47,19 @@ void main() {
     },
   );
 
-  test('native sync Python suites row runs every CI suite on Python 3.10+', () {
+  test('native sync Python suites row mirrors the CI Analyze & Lint steps', () {
     final row = testMatrixRows.singleWhere(
       (row) => row.id == 'native-sync-python-suites',
     );
-    for (final suite in [
-      'test_sync_native_release_pins.py',
-      'test_native_header_archive.py',
-      'test_sync_native_headers_and_bindings.py',
-      'test_sync_stable_diffusion_bindings.py',
-    ]) {
-      expect(row.command, contains('python3 tool/native/$suite'));
-      expect(File('tool/native/$suite').existsSync(), isTrue);
-    }
+    final ciSuites = RegExp(
+      r'run: python3 (tool/native/test_[\w]+\.py)\s*$',
+      multiLine: true,
+    ).allMatches(File('.github/workflows/ci.yml').readAsStringSync());
+    final expected = [for (final m in ciSuites) 'python3 ${m.group(1)}'];
+
+    expect(expected, hasLength(greaterThanOrEqualTo(4)));
+    expect(row.tier, 'targeted');
+    expect(row.command.split(' (').first.split(' && '), expected);
     expect(row.command, contains('Python 3.10+'));
     expect(row.useWhen, contains('native_release_pins.dart'));
     expect(row.useWhen, contains('tool/native/'));

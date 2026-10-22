@@ -335,7 +335,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'tests with KeyError \'file\')',
     useWhen:
         'Any edit under tool/native/, lib/src/hook/native_release_pins.dart, '
-        'or the generated native bindings and headers.',
+        '.github/workflows/sync_native_bindings.yml, an Apple companion '
+        'Package.swift, or a runtime pin constant (pubspec.yaml, LiteRT-LM '
+        'runtime or prepare script).',
   ),
   TestMatrixRow(
     id: 'examples-tests',
