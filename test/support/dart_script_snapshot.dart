@@ -4,11 +4,12 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 /// Compiles the Dart [script] to a kernel snapshot and returns its path; the
-/// snapshot is deleted when the calling group's tests finish.
+/// snapshot is deleted after the calling test, or after the group when called
+/// from `setUpAll`.
 ///
 /// `dart <script>` recompiles the script and all of its imports on every
-/// launch, which costs seconds per run on CI. Call this from `setUpAll` and
-/// pass the snapshot to `dart` in place of the script to run the same program.
+/// launch, which costs seconds per run on CI. Pass the snapshot to `dart` in
+/// place of the script to run the same program.
 Future<String> compileDartScript(String script) async {
   final directory = await Directory.systemTemp.createTemp('dart_script_');
   addTearDown(() => directory.delete(recursive: true));

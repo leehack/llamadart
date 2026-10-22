@@ -1486,13 +1486,14 @@ void main() {
       final repoRoot = Directory.current;
       final manifest = utf8.encode(_approvedManifestJson);
 
-      for (final secret in const <String>[
+      const secrets = <String>[
         'bogus-audit\nsecretpart',
         'bogus-audit\r\nX-Injected: secretpart',
         'bogus-audit\u0000secretpart',
         'bogus-audit secretpart',
         'bogus-auditésecretpart',
-      ]) {
+      ];
+      for (final secret in secrets) {
         for (final name in const <String>['GH_TOKEN', 'GITHUB_TOKEN']) {
           final environment = <String, String>{name: secret};
           final direct = await verifyPublishedRelease(
@@ -1502,16 +1503,20 @@ void main() {
             apiBase: Uri.parse('http://127.0.0.1:${server.port}'),
             environment: environment,
           );
-          final aggregate = await findBridgeProblems(
-            repoRoot,
-            readPinnedBridgeTag(repoRoot),
-            verifyPublishedManifest: true,
-            manifestFetcher: (_) async =>
-                ManifestResponse(HttpStatus.ok, manifest),
-            environment: environment,
-          );
+          // The aggregate scans the whole repository first, so it checks one
+          // secret per name; `direct` covers every malformed value.
+          final aggregate = secret == secrets.first
+              ? await findBridgeProblems(
+                  repoRoot,
+                  readPinnedBridgeTag(repoRoot),
+                  verifyPublishedManifest: true,
+                  manifestFetcher: (_) async =>
+                      ManifestResponse(HttpStatus.ok, manifest),
+                  environment: environment,
+                )
+              : null;
 
-          for (final problems in <List<String>>[direct, aggregate]) {
+          for (final problems in <List<String>>[direct, ?aggregate]) {
             expect(problems, <String>[
               '$name is not a valid bearer token, so no GitHub API request '
                   'was sent; its value is not shown',
