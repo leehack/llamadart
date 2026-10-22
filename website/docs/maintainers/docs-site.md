@@ -59,6 +59,34 @@ different source layouts even after the same dependency bootstrap.
 Use targeted test commands when iterating quickly, then run full checks before
 release-related merges.
 
+## Validating changes
+
+Package changes run the commands above plus the platform lanes:
+
+```bash
+dart test -p vm -j 1 --exclude-tags local-only
+dart test -p chrome --exclude-tags local-only
+```
+
+Docs changes also run:
+
+```bash
+dart run tool/testing/verify_release_docs_versions.dart
+./tool/docs/build_site.sh
+./tool/docs/validate_links.sh
+```
+
+For heavier local model checks, list the discoverable scenarios:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/test_matrix.dart --list
+```
+
+Keep public behavior, examples, README, website docs, support matrices, and
+changelog entries aligned. For non-trivial PRs, record the relevant testing
+matrix rows and exact validation evidence in the PR body.
+
 ## Docs site
 
 `website/` is a [Jaspr](https://jaspr.site) static site. It is its own Dart

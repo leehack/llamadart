@@ -37,6 +37,176 @@ Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.
 | Try the Flutter demo | [Hosted chat app](https://leehack-llamadart.static.hf.space) |
 | Generate images on device (Preview) | [Image generation](https://llamadart.leehack.com/docs/guides/image-generation) |
 
+## Requirements
+
+- Dart SDK `>=3.10.7`
+- Flutter SDK `>=3.38.0` for Flutter apps
+- iOS deployment target `16.4` or newer for Flutter iOS apps. For LiteRT-LM
+  this is a declared floor, not a tested one: on a device it has run only on
+  iOS 18.3.2 ([#831](https://github.com/leehack/llamadart/issues/831))
+- macOS deployment target `14.0` or newer for Flutter macOS apps
+- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
+  architecture (x64 or arm64) on every machine that runs it, at least as new
+  as the build tools of the bundled DLLs; stock Windows Server lacks it
+
+Consumers do not need a local C++ toolchain. Native runtime archives are
+resolved by the package build hook on first build or run.
+
+## Install
+
+For Dart or Flutter apps:
+
+```yaml
+dependencies:
+  llamadart: ^0.15.6
+```
+
+Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
+Package Manager should also add the runtime companion packages they need:
+
+Use companion `0.15.2` with core `>=0.15.6 <0.16.0` for llama.cpp `v0.7.0-2`.
+Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with core `0.15.6`
+with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
+Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
+Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
+for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
+for `v0.6.0-2`.
+Keep companion `0.0.21` with core `0.11.1` and `0.11.0` for llama.cpp v0.5.0
+bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
+core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
+`0.0.17`.
+
+A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
+companions' 14.0 requirement needs the
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap).
+Keep Runner at 14.0+; the procedure preserves companion artifact verification.
+
+Apple builds verify the resolved companion's SwiftPM runtime pin before native
+symbol lookup. Incompatible companions or unverified local `Artifacts`
+overrides fail the build; resolve the matching companion and rerun
+`flutter pub get`. Core native overrides do not replace SPM frameworks.
+
+```yaml
+dependencies:
+  llamadart: ^0.15.6
+  llamadart_llama_cpp_flutter: ^0.15.2 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.15.2 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.15.2 # Apple image generation, opt-in
+```
+
+Use `llamadart_stable_diffusion_flutter` `0.15.2` with core `>=0.15.2 <0.16.0`.
+Locked `0.15.0`/`0.15.1` SD companions keep their older runtime and work with core
+`0.15.2` with an upgrade warning. Pair `0.14.0` with core `0.14.x`,
+`0.13.0` with core `0.13.x`, and
+`0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
+`0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
+older cores, including `0.9.x`,
+ignore it. Adding it opts iOS and macOS builds into the image generation
+runtime (about 37 MB per Apple target), so leave it out unless the app uses
+`ImageGenerationEngine`.
+
+Use LiteRT-LM companion `0.15.2` with core `>=0.15.6 <0.16.0` for native
+`v0.18.0-3`, which also loads dedicated ASR `.litertlm` containers such as
+Whisper tiny. Locked `0.15.0`/`0.15.1` companions keep `v0.18.0-2` and work
+with core `0.15.6` with a macOS upgrade warning; pair `0.14.0` with core
+`0.14.x`. From `v0.18.0-2`, the runtime reduces duplicated words at untimed ASR
+window boundaries with the default overlap. Other boundary and recognition
+errors can remain.
+
+The LiteRT-LM companion manifest links the complete iOS and macOS SwiftPM
+runtime, including the macOS WebGPU accelerator, so a sandboxed or distributed
+Flutter macOS app loads LiteRT-LM from its own bundle. A Flutter macOS app
+without the companion, or with companion `0.0.14` or earlier, needs the
+[LiteRT-LM build phase](https://llamadart.leehack.com/docs/getting-started/installation#flutter-macos-litert-lm-build-phase).
+
+The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
+Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
+
+An app bound for the App Store should use the companion for each runtime it
+ships: an Apple privacy manifest reaches an app inside a SwiftPM XCFramework,
+never in the dylibs the build hook bundles. The llama.cpp XCFramework carries
+one from `llamadart-native` `v0.5.0-1`, which `llamadart_llama_cpp_flutter`
+releases after `0.0.20` link; the stable_diffusion XCFramework carries one
+from `stable-diffusion-native` `v0.2.0-1`, which
+`llamadart_stable_diffusion_flutter` releases after `0.0.1` link. An app that
+runs llama.cpp or stable_diffusion on the hook path, or
+whose embedded `llama.framework` or `stable_diffusion.framework` has no
+`PrivacyInfo.xcprivacy`, declares
+`NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`
+with reason `C617.1`, plus `3B52.1` only when it ships stable_diffusion. The
+LiteRT-LM iOS frameworks carry their own manifests from `litert-lm-native`
+`v0.17.0-8`, which `llamadart_litert_lm_flutter` releases after `0.0.12` link.
+An app that runs LiteRT-LM on the hook path, or whose embedded LiteRT-LM
+frameworks have no `PrivacyInfo.xcprivacy`, declares File Timestamp
+(`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
+(`CA92.1`) itself. See
+[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks#apple-privacy-manifest).
+
+Then run:
+
+```bash
+dart pub get
+# or
+flutter pub get
+```
+
+### AI agent skills
+
+llamadart ships [agent skills](https://dart.dev/tools/pub/package-skills) that
+teach coding agents its APIs. Install them into your agent's skills directory
+from your app's root:
+
+```bash
+dart run skills@ get
+```
+
+## First Generation
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> main() async {
+  final engine = await LlamaEngine.load(
+    LlamaModel(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+    ),
+  );
+
+  try {
+    final reply = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Explain local inference in one sentence.',
+        ),
+      ],
+      params: const GenerationParams(maxTokens: 48),
+    ).text();
+    print(reply);
+  } finally {
+    await engine.dispose();
+  }
+}
+```
+
+If an engine's owner goes away during `setModel` or deprecated
+`loadModelSource`, dispose the engine: the load throws `LlamaStateException`
+and model/LoRA downloads receive cancellation without changing caller-owned
+tokens. See [Model lifecycle](https://llamadart.leehack.com/docs/guides/model-lifecycle)
+for lifecycle and cancellation details.
+
+Before a native host calls C `exit()`, await every engine's `dispose()`,
+stop and join any other native workers, and shut down its Dart isolates or
+Flutter engine. llama.cpp and image-worker disposal wait for worker exit;
+requesting an isolate kill alone does not stop an in-flight native call.
+
+For multi-turn chat, wrap the same engine in `ChatSession` and let it maintain
+history:
+[First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session).
+
 ## What It Supports
 
 Chat-template errors name the selected source, including the built-in ChatML
@@ -258,176 +428,6 @@ engine downloads each `ModelSource` (local path, URL or `hf://`) like
 for the files and settings of each validated model, download options, memory
 checks and known limits.
 
-## Requirements
-
-- Dart SDK `>=3.10.7`
-- Flutter SDK `>=3.38.0` for Flutter apps
-- iOS deployment target `16.4` or newer for Flutter iOS apps. For LiteRT-LM
-  this is a declared floor, not a tested one: on a device it has run only on
-  iOS 18.3.2 ([#831](https://github.com/leehack/llamadart/issues/831))
-- macOS deployment target `14.0` or newer for Flutter macOS apps
-- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
-  architecture (x64 or arm64) on every machine that runs it, at least as new
-  as the build tools of the bundled DLLs; stock Windows Server lacks it
-
-Consumers do not need a local C++ toolchain. Native runtime archives are
-resolved by the package build hook on first build or run.
-
-## Install
-
-For Dart or Flutter apps:
-
-```yaml
-dependencies:
-  llamadart: ^0.15.6
-```
-
-Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
-Package Manager should also add the runtime companion packages they need:
-
-Use companion `0.15.2` with core `>=0.15.6 <0.16.0` for llama.cpp `v0.7.0-2`.
-Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with core `0.15.6`
-with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
-Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
-Use companion `0.13.0` with core `0.13.x`, or `0.0.23` with core `0.12.2`,
-for llama.cpp `v0.6.0-3`. Keep `0.0.22` with core `0.12.1` and `0.12.0`
-for `v0.6.0-2`.
-Keep companion `0.0.21` with core `0.11.1` and `0.11.0` for llama.cpp v0.5.0
-bindings, and core `0.10.0` and `0.9.0` with companion `0.0.20`,
-core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
-`0.0.17`.
-
-A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
-companions' 14.0 requirement needs the
-[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap).
-Keep Runner at 14.0+; the procedure preserves companion artifact verification.
-
-Apple builds verify the resolved companion's SwiftPM runtime pin before native
-symbol lookup. Incompatible companions or unverified local `Artifacts`
-overrides fail the build; resolve the matching companion and rerun
-`flutter pub get`. Core native overrides do not replace SPM frameworks.
-
-```yaml
-dependencies:
-  llamadart: ^0.15.6
-  llamadart_llama_cpp_flutter: ^0.15.2 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.15.2 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.15.2 # Apple image generation, opt-in
-```
-
-Use `llamadart_stable_diffusion_flutter` `0.15.2` with core `>=0.15.2 <0.16.0`.
-Locked `0.15.0`/`0.15.1` SD companions keep their older runtime and work with core
-`0.15.2` with an upgrade warning. Pair `0.14.0` with core `0.14.x`,
-`0.13.0` with core `0.13.x`, and
-`0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep
-`0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`;
-older cores, including `0.9.x`,
-ignore it. Adding it opts iOS and macOS builds into the image generation
-runtime (about 37 MB per Apple target), so leave it out unless the app uses
-`ImageGenerationEngine`.
-
-Use LiteRT-LM companion `0.15.2` with core `>=0.15.6 <0.16.0` for native
-`v0.18.0-3`, which also loads dedicated ASR `.litertlm` containers such as
-Whisper tiny. Locked `0.15.0`/`0.15.1` companions keep `v0.18.0-2` and work
-with core `0.15.6` with a macOS upgrade warning; pair `0.14.0` with core
-`0.14.x`. From `v0.18.0-2`, the runtime reduces duplicated words at untimed ASR
-window boundaries with the default overlap. Other boundary and recognition
-errors can remain.
-
-The LiteRT-LM companion manifest links the complete iOS and macOS SwiftPM
-runtime, including the macOS WebGPU accelerator, so a sandboxed or distributed
-Flutter macOS app loads LiteRT-LM from its own bundle. A Flutter macOS app
-without the companion, or with companion `0.0.14` or earlier, needs the
-[LiteRT-LM build phase](https://llamadart.leehack.com/docs/getting-started/installation#flutter-macos-litert-lm-build-phase).
-
-The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
-Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
-
-An app bound for the App Store should use the companion for each runtime it
-ships: an Apple privacy manifest reaches an app inside a SwiftPM XCFramework,
-never in the dylibs the build hook bundles. The llama.cpp XCFramework carries
-one from `llamadart-native` `v0.5.0-1`, which `llamadart_llama_cpp_flutter`
-releases after `0.0.20` link; the stable_diffusion XCFramework carries one
-from `stable-diffusion-native` `v0.2.0-1`, which
-`llamadart_stable_diffusion_flutter` releases after `0.0.1` link. An app that
-runs llama.cpp or stable_diffusion on the hook path, or
-whose embedded `llama.framework` or `stable_diffusion.framework` has no
-`PrivacyInfo.xcprivacy`, declares
-`NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`
-with reason `C617.1`, plus `3B52.1` only when it ships stable_diffusion. The
-LiteRT-LM iOS frameworks carry their own manifests from `litert-lm-native`
-`v0.17.0-8`, which `llamadart_litert_lm_flutter` releases after `0.0.12` link.
-An app that runs LiteRT-LM on the hook path, or whose embedded LiteRT-LM
-frameworks have no `PrivacyInfo.xcprivacy`, declares File Timestamp
-(`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
-(`CA92.1`) itself. See
-[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks#apple-privacy-manifest).
-
-Then run:
-
-```bash
-dart pub get
-# or
-flutter pub get
-```
-
-### AI agent skills
-
-llamadart ships [agent skills](https://dart.dev/tools/pub/package-skills) that
-teach coding agents its APIs. Install them into your agent's skills directory
-from your app's root:
-
-```bash
-dart run skills@ get
-```
-
-## First Generation
-
-```dart
-import 'package:llamadart/llamadart.dart';
-
-Future<void> main() async {
-  final engine = await LlamaEngine.load(
-    LlamaModel(
-      ModelSource.parse(
-        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
-        'SmolLM2-135M-Instruct-Q2_K.gguf',
-      ),
-    ),
-  );
-
-  try {
-    final reply = await engine.create(
-      const [
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'Explain local inference in one sentence.',
-        ),
-      ],
-      params: const GenerationParams(maxTokens: 48),
-    ).text();
-    print(reply);
-  } finally {
-    await engine.dispose();
-  }
-}
-```
-
-If an engine's owner goes away during `setModel` or deprecated
-`loadModelSource`, dispose the engine: the load throws `LlamaStateException`
-and model/LoRA downloads receive cancellation without changing caller-owned
-tokens. See [Model lifecycle](https://llamadart.leehack.com/docs/guides/model-lifecycle)
-for lifecycle and cancellation details.
-
-Before a native host calls C `exit()`, await every engine's `dispose()`,
-stop and join any other native workers, and shut down its Dart isolates or
-Flutter engine. llama.cpp and image-worker disposal wait for worker exit;
-requesting an isolate kill alone does not stop an in-flight native call.
-
-For multi-turn chat, wrap the same engine in `ChatSession` and let it maintain
-history:
-[First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session).
-
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |
@@ -538,37 +538,6 @@ archive; the smaller console examples remain packaged.
 - [HTTP server example](https://github.com/leehack/llamadart/tree/main/example/llamadart_server)
 - [TUI coding agent example](https://github.com/leehack/llamadart/tree/main/example/tui_coding_agent)
 
-## Validate Changes
-
-For package changes:
-
-Use the Flutter SDK pinned in `.flutter-version` (`3.47.1`), the same version
-CI installs, for repository-wide quality gates. Older Dart formatters produce
-different source layouts.
-
-```bash
-dart run tool/prepare_workspace.dart
-dart format --output=none --set-exit-if-changed .
-dart analyze
-dart test -p vm -j 1 --exclude-tags local-only
-dart test -p chrome --exclude-tags local-only
-```
-
-For docs changes:
-
-```bash
-dart run tool/testing/verify_release_docs_versions.dart
-./tool/docs/build_site.sh
-./tool/docs/validate_links.sh
-```
-
-For heavier local model checks, list the discoverable scenarios:
-
-```bash
-dart run tool/testing/run_local_e2e.dart --list
-dart run tool/testing/test_matrix.dart --list
-```
-
 ## Observability
 
 Use optional engine observers for tracing and metrics without adding an OTel
@@ -577,9 +546,9 @@ includes a runnable OpenTelemetry adapter and Langfuse/Grafana recipes.
 
 ## Contributing
 
-Keep public behavior, examples, README, website docs, support matrices, and
-changelog entries aligned. For non-trivial PRs, record the relevant testing
-matrix rows and exact validation evidence in the PR body.
+Repository checks, validation commands, and PR expectations are in
+[AGENTS.md](https://github.com/leehack/llamadart/blob/main/AGENTS.md) and the
+[maintainer docs](https://llamadart.leehack.com/docs/next/maintainers/docs-site#validating-changes).
 
 ## License
 
