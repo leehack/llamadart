@@ -152,18 +152,21 @@ class _TrimmingSession extends ChatSession {
 
 /// A [ChatSession] subclass that drops its oldest message when a tool result
 /// is added, then stores the result, or a copy of it, with an audit note.
-/// With [keepsLength] it drops two messages, so the history does not grow.
+/// With [keepsLength] it drops two messages, so the history does not grow;
+/// with [atFront] it stores the result and note before the kept messages.
 class _AuditingSession extends ChatSession {
   _AuditingSession(
     super.engine, {
     this.copiesResult = false,
     this.noteFirst = false,
     this.keepsLength = false,
+    this.atFront = false,
   }) : super(maxContextTokens: 0);
 
   final bool copiesResult;
   final bool noteFirst;
   final bool keepsLength;
+  final bool atFront;
 
   @override
   void addMessage(LlamaChatMessage message) {
@@ -173,10 +176,11 @@ class _AuditingSession extends ChatSession {
     final note = _text(LlamaChatRole.system, 'Audit');
     reset();
     [
-      ...kept,
+      if (!atFront) ...kept,
       if (noteFirst) note,
       result,
       if (!noteFirst) note,
+      if (atFront) ...kept,
     ].forEach(super.addMessage);
   }
 }
@@ -1618,6 +1622,11 @@ void main() {
       (
         'stores a note before the result removes the note',
         (LlamaEngine engine) => _AuditingSession(engine, noteFirst: true),
+      ),
+      (
+        'stores a copy of the result and the note first removes both',
+        (LlamaEngine engine) =>
+            _AuditingSession(engine, copiesResult: true, atFront: true),
       ),
     ]) {
       test(
