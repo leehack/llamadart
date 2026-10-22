@@ -818,55 +818,49 @@ dependencies:
     );
   }
 
-  test('core 0.15.2 accepts the qualified locked SD companion and warns '
-      'that its native payload needs an explicit upgrade', () async {
+  // v0.3.0 grew sd_ctx_params_t: the bindings would overrun the
+  // allocation of a v0.2.0-4 runtime.
+  test('rejects a locked companion pinning the published v0.2.0-4 '
+      'XCFramework', () async {
     final defines = await _flutterAppleApp(
       companions: const [_stableDiffusionCompanionName],
       editManifest: (manifest) => manifest
-          .replaceFirst(stableDiffusionReleaseTag, 'v0.2.0-3')
+          .replaceFirst(
+            'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+            'let stableDiffusionTag = "v0.2.0-4"',
+          )
           .replaceFirst(
             stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
-            stableDiffusionAppleCompanionChecksums['v0.2.0-3']!,
+            '24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b',
           ),
     );
-    final records = await _captureHookLog(
-      () => withHookCoreVersion(
-        '0.15.2',
-        () => testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: OS.iOS,
-          targetArchitecture: Architecture.arm64,
-          targetIOSSdk: IOSSdk.iPhoneOS,
-          userDefines: defines,
-          check: (_, output) {
-            final assets = output.assets.encodedAssets
-                .map((asset) => asset.asCodeAsset)
-                .toList();
-            expect(
-              assets
-                  .singleWhere((asset) => asset.id == _stableDiffusionAssetId)
-                  .linkMode,
-              isA<LookupInProcess>(),
-            );
-          },
-        ),
+    await expectLater(
+      testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: defines,
+        check: (_, _) => fail('Must not emit in-process assets'),
       ),
-    );
-    expect(
-      records.join('\n'),
-      allOf(
-        contains('v0.2.0-3'),
-        contains('native Metal command-buffer/VAE failure guard'),
-        contains('not upgraded by updating the core alone'),
-        contains('llamadart_stable_diffusion_flutter: ^0.15.2'),
+      throwsA(
+        predicate(
+          (error) =>
+              error.toString().contains(
+                'Incompatible Apple stable_diffusion companion',
+              ) &&
+              error.toString().contains(
+                'does not uniquely pin the required native runtime '
+                '$stableDiffusionReleaseTag',
+              ),
+        ),
       ),
     );
   });
 
   for (final (core, constraint) in [
-    ('0.15.1', '^0.15.2'),
-    ('0.15.2', '^0.15.2'),
     ('0.16.0', '^0.16.0'),
+    ('0.16.1', '^0.16.0'),
   ]) {
     final requirement =
         'Depend on `llamadart_stable_diffusion_flutter: $constraint`';

@@ -186,10 +186,10 @@ the tag explicitly, since `latest` skips GitHub prereleases.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-4 \
+  --stable-diffusion-tag v0.3.0 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-4
+  --stable-diffusion-tag v0.3.0
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 
@@ -297,26 +297,13 @@ core `0.11.1` and `0.11.0`. The iOS
 artifacts meet the declared 16.4 deployment floor, but runtime execution at
 16.4 remains unqualified; keep [#831](https://github.com/leehack/llamadart/issues/831) open.
 
-The SD `v0.2.0-4` adoption can ship in core `0.15.2` after the matching
-SD companion patch is prepared with `llamadart: '>=0.15.2 <0.16.0'`. Earlier
-cores reject its pin. Existing locked `0.15.0`/`0.15.1` SD companions remain
-accepted only for the explicitly verified `v0.2.0-3` artifact; the hook warns
-that the older native payload is still linked and names the new companion.
-Updating core alone does not upgrade an immutable companion XCFramework.
-
-The two published Apple artifacts have identical C declarations (the wrapper
-header differs only in comments), 86 identical exported symbols on each of
-five architecture slices, matching deployment targets and the same upstream
-commit. Exact ZIP checksums and the comparison record live in
-`test/fixtures/native/stable_diffusion_apple_compatibility.json`. This is
-ABI compatibility, not identical machine code or universal GPU qualification.
-
-The Dart worker checks the native call's recorded Metal errors before copying
-any returned pixels, even if the old wrapper reports success. It frees such
-images and requires a fresh engine. This is a backstop for recognized recorded
-errors: the old recorder is bounded and concurrent calls conservatively share
-its error window. It does not replace the `v0.2.0-4` native guard or prove
-watchdog prevention. Prefer the updated core/companion pair.
+Core `0.16.0` moves SD to `v0.3.0`, whose `sd_ctx_params_t` grew from 320 to
+336 bytes, so it accepts no older Apple SD companion and `0.15.x` cores reject
+the companion pinning `v0.3.0`. The runtime treats a null `flash_attn_mode` or
+`conv_direct_mode` as automatic per-module selection, which changes images and
+is not seed-reproducible on Metal; `applyStableDiffusionContextParams` always
+writes both modes from the legacy flags, and `batched_cfg=false`. Map any new
+field whose initializer selects automatic behavior the same way.
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version

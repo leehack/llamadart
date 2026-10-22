@@ -145,7 +145,133 @@ void main() {
         }
       });
     });
+
+    // A null or empty mode makes stable-diffusion.cpp probe each module and
+    // pick flash attention and direct convolution itself, which changes
+    // images and is not seed-reproducible on Metal.
+    test('always writes explicit flash attention and direct convolution '
+        'modes', () {
+      using((arena) {
+        for (final (flashAttention, vaeDirectConvolution, flash, conv) in [
+          (false, false, 'off', 'off'),
+          (true, false, 'off,diffusion=on', 'off'),
+          (false, true, 'off', 'off,vae=on'),
+          (true, true, 'off,diffusion=on', 'off,vae=on'),
+        ]) {
+          final params = apply(
+            arena,
+            ImageGenerationSessionConfig(
+              files: const {'model': '/m/sdxs.gguf'},
+              backend: null,
+              threads: 0,
+              flashAttention: flashAttention,
+              vaeDirectConvolution: vaeDirectConvolution,
+            ),
+          ).ref;
+
+          final reason = 'fa $flashAttention, vcd $vaeDirectConvolution';
+          expect(_text(params.flash_attn_mode), flash, reason: reason);
+          expect(_text(params.conv_direct_mode), conv, reason: reason);
+        }
+      });
+    });
+
+    test('maps the runtime-wide legacy flags it does not set itself', () {
+      using((arena) {
+        final params = arena<sd.sd_ctx_params_t>();
+        params.ref
+          ..flash_attn = true
+          ..diffusion_conv_direct = true;
+        applyStableDiffusionContextParams(
+          params,
+          const ImageGenerationSessionConfig(
+            files: {'model': '/m/sdxs.gguf'},
+            backend: null,
+            threads: 0,
+            vaeDirectConvolution: true,
+          ),
+          arena,
+        );
+
+        expect(
+          _text(params.ref.flash_attn_mode),
+          'off,te=on,clip_vision=on,vae=on,diffusion=on',
+        );
+        expect(
+          _text(params.ref.conv_direct_mode),
+          'off,diffusion=on,control_net=on,vae=on',
+        );
+      });
+    });
+
+    // Batched CFG returns wrong images as success on Metal
+    // (leejet/stable-diffusion.cpp#2149) and is unqualified on other GPUs.
+    test('runs the CFG branches unbatched although the runtime default '
+        'batches them', () {
+      using((arena) {
+        final params = arena<sd.sd_ctx_params_t>();
+        params.ref.batched_cfg = true;
+        applyStableDiffusionContextParams(
+          params,
+          const ImageGenerationSessionConfig(
+            files: {'model': '/m/sdxs.gguf'},
+            backend: null,
+            threads: 0,
+          ),
+          arena,
+        );
+
+        expect(params.ref.batched_cfg, isFalse);
+      });
+    });
   });
+
+  test('flash attention modes follow the legacy flags', () {
+    expect(
+      {
+        for (final all in [false, true])
+          for (final diffusion in [false, true])
+            (all, diffusion): stableDiffusionFlashAttentionMode(
+              all: all,
+              diffusion: diffusion,
+            ),
+      },
+      {
+        (false, false): 'off',
+        (false, true): 'off,diffusion=on',
+        (true, false): 'off,te=on,clip_vision=on,vae=on,diffusion=on',
+        (true, true): 'off,te=on,clip_vision=on,vae=on,diffusion=on',
+      },
+    );
+  });
+
+  test('direct convolution modes follow the legacy flags', () {
+    expect(
+      {
+        for (final diffusion in [false, true])
+          for (final vae in [false, true])
+            (diffusion, vae): stableDiffusionConvDirectMode(
+              diffusion: diffusion,
+              vae: vae,
+            ),
+      },
+      {
+        (false, false): 'off',
+        (false, true): 'off,vae=on',
+        (true, false): 'off,diffusion=on,control_net=on',
+        (true, true): 'off,diffusion=on,control_net=on,vae=on',
+      },
+    );
+  });
+
+  // sd_ctx_params_init writes the whole struct of the pinned runtime, so a
+  // shorter Dart allocation would be overrun.
+  test('the bound structs match the pinned runtime layout', () {
+    expect(sizeOf<sd.sd_ctx_params_t>(), 336);
+    expect(sizeOf<sd.sd_img_gen_params_t>(), 552);
+    expect(sizeOf<sd.sd_sample_params_t>(), 96);
+    expect(sizeOf<sd.sd_image_t>(), 24);
+  }, testOn: 'mac-os || linux');
 
   group('applyStableDiffusionGenerationParams', () {
     const request = ImageGenerationSessionRequest(
