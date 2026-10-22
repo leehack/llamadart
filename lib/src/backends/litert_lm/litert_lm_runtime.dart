@@ -140,17 +140,28 @@ String _withNativeError(String message, String? nativeError) =>
 /// macOS x86_64 has none: litert-lm-native publishes arm64-only macOS runtimes
 /// ([leehack/litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)),
 /// so an x86_64 process, including an Apple-silicon app under Rosetta, gets a
-/// [LlamaUnsupportedException] instead of a library lookup failure.
+/// [LlamaUnsupportedException] instead of a library lookup failure. Windows
+/// arm64 and the x86_64 iOS simulator have no published runtime either, so
+/// the build hook bundles none there.
 LlamaUnsupportedException? liteRtLmUnsupportedAbiException(Abi abi) {
-  if (abi != Abi.macosX64) {
-    return null;
-  }
-  return LlamaUnsupportedException(
-    'LiteRT-LM is not available on macOS x86_64; litert-lm-native publishes '
-    'arm64-only macOS runtimes (leehack/litert-lm-native#72). Run the app '
-    'natively on Apple silicon, not under Rosetta, or use the llama.cpp '
-    'backend.',
-  );
+  return switch (abi) {
+    Abi.macosX64 => LlamaUnsupportedException(
+      'LiteRT-LM is not available on macOS x86_64; litert-lm-native publishes '
+      'arm64-only macOS runtimes (leehack/litert-lm-native#72). Run the app '
+      'natively on Apple silicon, not under Rosetta, or use the llama.cpp '
+      'backend.',
+    ),
+    Abi.windowsArm64 => LlamaUnsupportedException(
+      'LiteRT-LM is not available on Windows arm64; litert-lm-native '
+      'publishes Windows x86_64 runtimes only. Use the llama.cpp backend.',
+    ),
+    Abi.iosX64 => LlamaUnsupportedException(
+      'LiteRT-LM is not available on the x86_64 iOS simulator; '
+      'litert-lm-native publishes arm64 iOS runtimes only. Use an arm64 '
+      'simulator on Apple silicon, a device, or the llama.cpp backend.',
+    ),
+    _ => null,
+  };
 }
 
 /// Test-only ABI that the macOS x86_64 LiteRT-LM gate and the desktop

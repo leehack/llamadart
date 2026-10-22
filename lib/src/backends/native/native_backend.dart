@@ -9,6 +9,7 @@ import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
@@ -18,6 +19,8 @@ import '../../core/template/handlers/translate_gemma_handler.dart';
 import '../../core/template/media_placeholders.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend.dart';
+import '../litert_lm/litert_lm_platform.dart';
+import '../litert_lm/litert_lm_runtime.dart';
 import '../llama_cpp/llama_cpp_backend.dart';
 import 'model_format_probe.dart';
 
@@ -35,6 +38,7 @@ class NativeAutoBackend
         BackendRuntimeIdentity,
         BackendModelFormatRouting,
         BackendModelFormatDetection,
+        BackendModelParamsCheck,
         LlamaBackend,
         BackendAvailability,
         BackendDirectMediaInput,
@@ -64,6 +68,7 @@ class NativeAutoBackend
         BackendDartLogLevel {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
+  final bool _defaultLiteRtLm;
 
   LlamaBackend? _delegate;
   int _embeddingCancelEpoch = 0;
@@ -77,7 +82,8 @@ class NativeAutoBackend
     LlamaBackend Function()? llamaCppFactory,
     LlamaBackend Function()? liteRtLmFactory,
   }) : _llamaCppFactory = llamaCppFactory ?? (() => NativeLlamaBackend()),
-       _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend());
+       _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend()),
+       _defaultLiteRtLm = liteRtLmFactory == null;
 
   @override
   String? get generationLimitUnsupportedReason {
@@ -131,6 +137,19 @@ class NativeAutoBackend
     final format = await resolveLocalModelFormat(path);
     final delegate = await _delegateFor(format.runtime);
     return delegate.modelLoad(path, params);
+  }
+
+  @override
+  void checkModelParams(ModelParams params, ModelFormat? format) {
+    if (format == null) return;
+    checkModelParamsSupportedBy(params, format.runtime, web: false);
+    if (format.runtime != LlamaRuntime.liteRtLm) return;
+    // A custom LiteRT-LM factory may bring its own runtime library.
+    if (_defaultLiteRtLm) {
+      final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
+      if (unsupported != null) throw unsupported;
+    }
+    liteRtLmEnsureDeviceAvailable(params.device);
   }
 
   @override

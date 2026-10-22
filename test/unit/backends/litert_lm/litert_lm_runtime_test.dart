@@ -268,6 +268,31 @@ void main() {
       );
     });
 
+    test('names each ABI without a published runtime', () {
+      for (final (abi, message) in [
+        (Abi.windowsArm64, 'LiteRT-LM is not available on Windows arm64'),
+        (Abi.iosX64, 'LiteRT-LM is not available on the x86_64 iOS simulator'),
+      ]) {
+        runOn(abi);
+        final client = LiteRtLmRuntimeClient();
+        addTearDown(client.dispose);
+
+        expect(
+          () => client.bundleCapabilities('/missing/model.litertlm'),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains(message),
+            ),
+          ),
+        );
+      }
+      for (final abi in [Abi.linuxArm64, Abi.windowsX64, Abi.iosArm64]) {
+        expect(liteRtLmUnsupportedAbiException(abi), isNull, reason: '$abi');
+      }
+    });
+
     test('lets an explicit libraryPath through', () {
       runOn(Abi.macosX64);
       final client = LiteRtLmRuntimeClient(

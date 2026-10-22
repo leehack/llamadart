@@ -1025,6 +1025,20 @@ void main() {
       await expectLater(
         () => backend.contextCreate(
           modelHandle,
+          const ModelParams(loadMtp: true, modelBytesHint: 1),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('ModelParams: loadMtp, modelBytesHint.'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => backend.contextCreate(
+          modelHandle,
           const ModelParams(contextSize: 0),
         ),
         throwsA(

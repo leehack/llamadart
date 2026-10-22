@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Reject `ModelParams` fields the model's runtime would silently ignore with `LlamaUnsupportedException` naming each one: `liteRtLm*` fields on llama.cpp, `preferMemory64` and `modelBytesHint` on native loads, `useMmap: false` and `useMlock` on the WebGPU bridge, and `loadMtp` or `speculativeRollbackTokenMax` on LiteRT-LM. `LlamaBackend()` checks these, LiteRT-LM's llama.cpp-only fields, a LiteRT-LM model on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and an explicit LiteRT-LM `device` the platform lacks before any download when the format or file name is known ([#858](https://github.com/leehack/llamadart/issues/858), [#861](https://github.com/leehack/llamadart/issues/861)).
+
 ## 0.15.6
 
 - Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.7.0-2`: a fixed `TextToSpeechRequest.seed` gives the same Qwen3-TTS audio on every synthesis of a loaded engine, including after a cancelled one ([#632](https://github.com/leehack/llamadart/issues/632)), and Windows arm64 bundles no longer ship `libomp140.aarch64.dll`, a Visual Studio debug DLL that apps may not redistribute. Apple apps get it with `llamadart_llama_cpp_flutter` `0.15.2`; companions `0.15.0` and `0.15.1` keep building with an upgrade warning.
