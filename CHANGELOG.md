@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Reject `ModelParams` fields the model's runtime would silently ignore with `LlamaUnsupportedException` naming each one: `liteRtLm*` fields on llama.cpp, `preferMemory64` and `modelBytesHint` on native loads, `useMmap: false` and `useMlock` on the WebGPU bridge, and `loadMtp` or `speculativeRollbackTokenMax` on LiteRT-LM. `LlamaBackend()` checks these, LiteRT-LM's llama.cpp-only fields, a LiteRT-LM model on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and an explicit LiteRT-LM `device` the platform lacks before any download when the format or file name is known ([#858](https://github.com/leehack/llamadart/issues/858), [#861](https://github.com/leehack/llamadart/issues/861)).
+- Reject `ModelParams` fields the model's runtime would ignore, such as `liteRtLm*` fields on a GGUF model or `preferMemory64` off the Web, with `LlamaUnsupportedException` naming each one; `LlamaBackend()` also rejects these and LiteRT-LM platform gaps before any download when the model format is known ([#858](https://github.com/leehack/llamadart/issues/858), [#861](https://github.com/leehack/llamadart/issues/861)).
 
 ## 0.15.6
 

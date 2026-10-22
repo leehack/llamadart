@@ -170,9 +170,8 @@ LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
 `speculativeRollbackTokenMax`, `preferMemory64` and `modelBytesHint`.
-LiteRT-LM web
-accepts `device` or `liteRtLmBackend` for CPU or GPU selection and rejects
-every other field in the table the same way.
+LiteRT-LM web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
+and rejects every other field in the table the same way.
 
 Benchmark load time, prefill and decode throughput, and output quality on the
 deployment device after changing the activation type or prefill chunk size.

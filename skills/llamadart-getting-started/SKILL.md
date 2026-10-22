@@ -86,13 +86,13 @@ Linux and web. Full docs: https://llamadart.leehack.com
   throws `LlamaModelException` there. Leave `device` at `auto` for each
   runtime's default.
   `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are
-  deprecated.
+  deprecated. Keep `contextSize` no larger than the app needs: memory grows
+  with it.
 - A load throws `LlamaUnsupportedException` naming every `ModelParams` field
   the model's runtime would ignore: `liteRtLm*` fields on a GGUF model,
   llama.cpp tuning such as `batchSize` or `loadMtp` on a `.litertlm` model,
   `preferMemory64` / `modelBytesHint` off the Web. Build one `ModelParams`
-  per runtime instead of sharing one. Keep `contextSize` no larger than the app needs: memory grows
-  with it.
+  per runtime instead of sharing one.
 - Import only `package:llamadart/llamadart.dart` in app code. Custom
   backends and backend test fakes (`implements LlamaBackend,
   BackendTextToSpeech`, ...) and direct LiteRT-LM runtime access also import
