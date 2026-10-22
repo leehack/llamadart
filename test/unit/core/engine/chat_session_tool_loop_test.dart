@@ -358,6 +358,57 @@ class _CopyingHeaderSession extends ChatSession {
   }
 }
 
+/// A [ChatSession] subclass that moves user messages ahead of the others
+/// when a tool result is added.
+class _UserFirstSession extends ChatSession {
+  _UserFirstSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final stored = history.toList();
+    reset();
+    [
+      ...stored.where((stored) => stored.role == LlamaChatRole.user),
+      ...stored.where((stored) => stored.role != LlamaChatRole.user),
+      message,
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that puts a note first when a tool result is
+/// first added and, on later ones, keeps that note first and replaces the
+/// oldest other message with a summary after it.
+class _NoteThenSummarySession extends ChatSession {
+  _NoteThenSummarySession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final stored = history.toList();
+    final notes = [
+      for (final note in stored)
+        if (note.content == 'Note') note,
+    ];
+    final others = [
+      for (final other in stored)
+        if (other.content != 'Note') other,
+    ];
+    reset();
+    [
+      if (notes.isEmpty) ...[
+        _text(LlamaChatRole.system, 'Note'),
+        ...others,
+      ] else ...[
+        notes.first,
+        _text(LlamaChatRole.system, 'Summary'),
+        ...others.skip(1),
+      ],
+      message,
+    ].forEach(super.addMessage);
+  }
+}
+
 /// A [ChatSession] subclass that swaps its two latest messages when a tool
 /// result is added.
 class _SwappingSession extends ChatSession {
@@ -1961,6 +2012,30 @@ void main() {
       });
     }
 
+    test('whose addMessage puts a summary after a note it added in an earlier '
+        'round keeps the summary', () async {
+      final summarizing = _NoteThenSummarySession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(summarizing.addMessage);
+      for (var round = 0; round <= 2; round++) {
+        engine.replies.add(scriptedCalls([('c$round', 'weather', '{}')]));
+      }
+
+      final result = await summarizing.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 2,
+      );
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in summarizing.history) message.content],
+        ['Summary', 'Hello'],
+      );
+    });
+
     test('whose addMessage copies earlier messages and adds another equal '
         'header removes the new one', () async {
       final heading = _CopyingHeaderSession(engine, keepsHeaders: true);
@@ -2297,6 +2372,10 @@ void main() {
         ' when its addMessage swaps the turn\'s messages',
         (ChatSession session) => _SwappingSession(session.engine),
       ),
+      (
+        ' when its addMessage moves the user messages first',
+        (ChatSession session) => _UserFirstSession(session.engine),
+      ),
     ]) {
       test(
         'keeps an earlier tool turn with the same content$description',
@@ -2326,6 +2405,57 @@ void main() {
         },
       );
     }
+
+    test('keeps earlier messages that repeat each other', () async {
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(session.addMessage);
+
+      final result = await stopAtMaxRounds(_CopyingDelegateSession(session));
+
+      expect(result.rolledBack, isTrue);
+      expect(contents(session), ['Hi', 'Hello', 'Hi', 'Hello']);
+    });
+
+    test('rolls back the note its addMessage moves after the result', () async {
+      final renoting = _RenotingSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(renoting.addMessage);
+
+      final result = await stopAtMaxRounds(_CopyingDelegateSession(renoting));
+
+      expect(result.rolledBack, isTrue);
+      // The rollback rebuilds through this addMessage, which adds one note.
+      expect(contents(renoting), ['Hi', 'Hello', 'Note']);
+    });
+
+    test(
+      'rolls back the notes its addMessage puts first over two rounds',
+      () async {
+        final prepending = _PrependingSession(engine);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(prepending.addMessage);
+        for (var round = 0; round <= 2; round++) {
+          engine.replies.add(scriptedCalls([('c$round', 'weather', '{}')]));
+        }
+
+        final result = await _CopyingDelegateSession(prepending).sendWithTools(
+          'Weather',
+          tools: [_tool('weather', (_) async => 'sunny')],
+          maxRounds: 2,
+        );
+
+        expect(result.rolledBack, isTrue);
+        expect(contents(prepending), ['Hi', 'Hello']);
+      },
+    );
 
     test('rolls back a turn whose parts are rebuilt on each read', () async {
       [

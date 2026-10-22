@@ -511,10 +511,10 @@ class _ToolLoopTurn {
     _session.addMessage(message);
     final after = _storedHistory;
 
-    final (added, removed) = byContent
-        ? _diffInOrder(before, after)
-        : _diffInstances(before, after);
     final members = [...messages, ..._appended];
+    final (added, removed) = byContent
+        ? _diffInOrder(before, after, members, message)
+        : _diffInstances(before, after);
     final unmatched = [...members];
     final replacedTurn = <LlamaChatMessage>[];
     final removedOutside = <LlamaChatMessage>[];
@@ -557,9 +557,7 @@ class _ToolLoopTurn {
       }
     }
     final fresh = freshFromEnd.reversed.toList();
-    // A rollback finds the turn's messages by content in a history that
-    // returns copies, so their copies there must not be removed twice.
-    if (!byContent) turn.addAll(turnCopies);
+    turn.addAll(turnCopies);
     if (fresh.isNotEmpty) {
       // The turn starts at its first loop message; notes the override added
       // earlier in the turn may sit before it.
@@ -699,29 +697,45 @@ Set<int> _copiesOf(
   return copies;
 }
 
-/// [_diffInstances] for a history that returns copies: messages match by
-/// content and in order, so an equal message that moved past others counts
-/// as new.
+/// [_diffInstances] for a history that returns copies: the turn's [members]
+/// are found by content in both lists and left out, and the other messages
+/// match by content and in order, so one that moved past another counts as
+/// new, and so does every message after the stored [message].
 (List<int>, List<LlamaChatMessage>) _diffInOrder(
   List<LlamaChatMessage> before,
   List<LlamaChatMessage> after,
+  List<LlamaChatMessage> members,
+  LlamaChatMessage message,
 ) {
+  final turnBefore = _turnIndices(before, members, _sameContent).toSet();
+  final turnAfter = _turnIndices(after, members, _sameContent).toSet();
+  var stored = after.length - 1;
+  while (stored >= 0 &&
+      (turnAfter.contains(stored) || !_sameContent(after[stored], message))) {
+    stored--;
+  }
+  final newest = stored < 0 ? after.length : stored;
+  final olds = [
+    for (final (index, stored) in before.indexed)
+      if (!turnBefore.contains(index)) stored,
+  ];
   final added = <int>[];
   final removed = <LlamaChatMessage>[];
   var next = 0;
   for (final (index, stored) in after.indexed) {
-    var match = next;
-    while (match < before.length && !_sameContent(before[match], stored)) {
+    if (turnAfter.contains(index)) continue;
+    var match = index >= newest ? olds.length : next;
+    while (match < olds.length && !_sameContent(olds[match], stored)) {
       match++;
     }
-    if (match == before.length) {
+    if (match == olds.length) {
       added.add(index);
     } else {
-      removed.addAll(before.sublist(next, match));
+      removed.addAll(olds.sublist(next, match));
       next = match + 1;
     }
   }
-  removed.addAll(before.sublist(next));
+  removed.addAll(olds.sublist(next));
   return (added, removed);
 }
 
