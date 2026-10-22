@@ -306,7 +306,9 @@ Map<String, String>? _parseLocalSources(List<String> args) {
 /// Runs the check and returns its exit code, writing to [out] and [err]
 /// (stdout and stderr by default).
 ///
-/// [fetch] replaces every network read.
+/// [fetch] replaces every network read; it receives the GitHub API token,
+/// the first non-empty `GH_TOKEN` or `GITHUB_TOKEN` in [environment] (the
+/// process environment by default), for the GitHub API read only.
 ///
 /// Tests call this in-process: a child `dart run` re-bundles native assets
 /// that the test VM holds open, which Windows refuses to overwrite.
@@ -314,7 +316,8 @@ Future<int> run(
   List<String> args, {
   StringSink? out,
   StringSink? err,
-  Future<String> Function(Uri url)? fetch,
+  Future<String> Function(Uri url, {String? token})? fetch,
+  Map<String, String>? environment,
 }) async {
   out ??= stdout;
   err ??= stderr;
@@ -326,9 +329,14 @@ Future<int> run(
     );
     return 64;
   }
-  final token =
-      Platform.environment['GH_TOKEN'] ?? Platform.environment['GITHUB_TOKEN'];
-  var failed = false;
+  environment ??= Platform.environment;
+  final token = [environment['GH_TOKEN'], environment['GITHUB_TOKEN']]
+      .firstWhere(
+        (value) => value != null && value.isNotEmpty,
+        orElse: () => null,
+      );
+  var readFailed = false;
+  var mismatched = false;
   for (final check in _checks) {
     final label = '${check.repository} ${check.tag} ${check.sourceName}';
     final localPath = localSources[check.flag];
@@ -341,19 +349,16 @@ Future<int> run(
       } else {
         final url = check.url;
         source = url.toString();
-        text =
-            await (fetch?.call(url) ??
-                switch (check.kind) {
-                  _SourceKind.sha256Sums => fetchSha256Sums(url),
-                  _SourceKind.githubRelease => fetchGitHubRelease(
-                    url,
-                    token: token,
-                  ),
-                });
+        text = await switch (check.kind) {
+          _SourceKind.sha256Sums => fetch?.call(url) ?? fetchSha256Sums(url),
+          _SourceKind.githubRelease =>
+            fetch?.call(url, token: token) ??
+                fetchGitHubRelease(url, token: token),
+        };
       }
     } on Exception catch (error) {
       err.writeln('Could not read $label: $error');
-      failed = true;
+      readFailed = true;
       continue;
     }
     final problems = check.problems(text, source);
@@ -364,21 +369,20 @@ Future<int> run(
       );
       continue;
     }
-    failed = true;
+    mismatched = true;
     err
       ..writeln(
         '${check.pinName} does not match ${check.tag} ${check.sourceName}:',
       )
       ..writeAll(problems.map((problem) => '  $problem\n'));
   }
-  if (!failed) {
-    return 0;
+  if (mismatched) {
+    err.writeln(
+      'Regenerate the pins with tool/native/sync_native_release_pins.py '
+      'instead of editing them.',
+    );
   }
-  err.writeln(
-    'Regenerate the pins with tool/native/sync_native_release_pins.py '
-    'instead of editing them.',
-  );
-  return 1;
+  return readFailed || mismatched ? 1 : 0;
 }
 
 Future<void> main(List<String> args) async {

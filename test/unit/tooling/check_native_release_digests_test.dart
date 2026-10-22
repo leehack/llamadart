@@ -225,6 +225,7 @@ void main() {
     late StringBuffer err;
     late Map<String, String> bodies;
     late List<Uri> fetched;
+    late Map<String, String?> tokens;
 
     const llamaCppSumsUrl =
         'https://github.com/leehack/llamadart-native/releases/download/'
@@ -236,8 +237,9 @@ void main() {
         'https://api.github.com/repos/leehack/litert-lm-native/releases/tags/'
         '$liteRtLmReleaseTag';
 
-    Future<String> fetch(Uri url) async {
+    Future<String> fetch(Uri url, {String? token}) async {
       fetched.add(url);
+      tokens['$url'] = token;
       final body = bodies['$url'];
       if (body == null) {
         throw HttpException('HTTP 404', uri: url);
@@ -246,13 +248,14 @@ void main() {
     }
 
     Future<int> runCli([List<String> args = const []]) =>
-        run(args, out: out, err: err, fetch: fetch);
+        run(args, out: out, err: err, fetch: fetch, environment: const {});
 
     setUp(() {
       scratch = Directory.systemTemp.createTempSync('native-digests-');
       out = StringBuffer();
       err = StringBuffer();
       fetched = [];
+      tokens = {};
       bodies = {
         llamaCppSumsUrl: sums(llamaCppBundleSha256),
         stableDiffusionSumsUrl: stableDiffusionSums(stableDiffusionPins),
@@ -377,7 +380,74 @@ void main() {
         ),
       );
       expect(out.toString(), contains('llamaCppBundleSha256 matches'));
+      expect(err.toString(), isNot(contains('Regenerate')));
     });
+
+    test('checks every pinned bundle of every runtime', () async {
+      final sources = <String, String Function(String bundle)>{
+        for (final bundle in llamaCppBundleSha256.keys)
+          'llama.cpp $bundle': (bundle) => bodies[llamaCppSumsUrl] = sums({
+            ...llamaCppBundleSha256,
+            bundle: 'f' * 64,
+          }),
+        for (final bundle in stableDiffusionPins.keys)
+          'stable_diffusion $bundle': (bundle) =>
+              bodies[stableDiffusionSumsUrl] = stableDiffusionSums({
+                ...stableDiffusionPins,
+                bundle: 'f' * 64,
+              }),
+        for (final bundle in liteRtLmPins.keys)
+          'LiteRT-LM $bundle': (bundle) => bodies[liteRtLmReleaseUrl] = release(
+            {...liteRtLmPins, bundle: 'f' * 64},
+          ),
+      };
+      expect(
+        sources,
+        hasLength(
+          llamaCppBundleSha256.length +
+              stableDiffusionBundleSpecs.length +
+              liteRtLmBundleSpecs.length,
+        ),
+      );
+      final original = Map.of(bodies);
+      for (final MapEntry(key: name, value: flip) in sources.entries) {
+        bodies = Map.of(original);
+        err.clear();
+        final bundle = name.split(' ').last;
+        flip(bundle);
+        expect(await runCli(), 1, reason: name);
+        expect(err.toString(), contains('$bundle pins'), reason: name);
+      }
+    });
+
+    test(
+      'passes the first non-empty GitHub token to the API read only',
+      () async {
+        for (final (environment, expected) in [
+          (<String, String>{}, null),
+          ({'GH_TOKEN': 'gh'}, 'gh'),
+          ({'GITHUB_TOKEN': 'github'}, 'github'),
+          ({'GH_TOKEN': 'gh', 'GITHUB_TOKEN': 'github'}, 'gh'),
+          ({'GH_TOKEN': '', 'GITHUB_TOKEN': 'github'}, 'github'),
+          ({'GH_TOKEN': '', 'GITHUB_TOKEN': ''}, null),
+        ]) {
+          tokens.clear();
+          final code = await run(
+            const [],
+            out: out,
+            err: err,
+            fetch: fetch,
+            environment: environment,
+          );
+          expect(code, 0, reason: '$environment');
+          expect(tokens, {
+            llamaCppSumsUrl: null,
+            stableDiffusionSumsUrl: null,
+            liteRtLmReleaseUrl: expected,
+          }, reason: '$environment');
+        }
+      },
+    );
 
     test('reads local copies instead of fetching them', () async {
       final code = await runCli([
@@ -515,8 +585,11 @@ void main() {
 
     test('fetchGitHubRelease sends no authorization without a token', () async {
       body = '{}';
-      await fetchGitHubRelease(url);
-      expect(headers?.value('authorization'), isNull);
+      for (final token in [null, '']) {
+        headers = null;
+        await fetchGitHubRelease(url, token: token);
+        expect(headers?.value('authorization'), isNull, reason: '$token');
+      }
     });
 
     test('fetchGitHubRelease does not follow redirects', () async {
@@ -535,8 +608,15 @@ void main() {
       );
     });
 
+    test('fetchGitHubRelease reads a release body of up to 1 MiB', () async {
+      for (final size in [64 * 1024 + 1, 512 * 1024, 1024 * 1024]) {
+        body = 'a' * size;
+        expect(await fetchGitHubRelease(url), hasLength(size));
+      }
+    });
+
     test('fetchGitHubRelease rejects a body over its size limit', () async {
-      body = 'a' * (maxGitHubReleaseBytes + 1);
+      body = 'a' * (1024 * 1024 + 1);
       await expectLater(
         fetchGitHubRelease(url),
         throwsA(
