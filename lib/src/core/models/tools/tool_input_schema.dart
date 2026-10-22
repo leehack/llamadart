@@ -249,16 +249,6 @@ void _validate(
         depth + 1,
       );
     }
-    final required = schema.containsKey('required')
-        ? schema['required']
-        : const <String>[];
-    if (required is! List ||
-        required.toSet().length != required.length ||
-        required.any((key) => key is! String || !properties.containsKey(key))) {
-      throw LlamaArgumentException(
-        'required at $path must uniquely name declared properties.',
-      );
-    }
     final additional = schema.putIfAbsent('additionalProperties', () => true);
     if (additional is Map<String, dynamic>) {
       _validate(additional, '$path.additionalProperties', budget, depth + 1);
@@ -266,6 +256,29 @@ void _validate(
       throw LlamaArgumentException(
         'additionalProperties at $path needs a boolean or schema.',
       );
+    }
+    final required = schema.containsKey('required')
+        ? schema['required']
+        : const <String>[];
+    if (required is! List ||
+        required.toSet().length != required.length ||
+        required.any((key) => key is! String || key.isEmpty)) {
+      throw LlamaArgumentException(
+        'required at $path must list unique nonempty property names.',
+      );
+    }
+    for (final name in required.cast<String>()) {
+      if (properties.containsKey(name)) continue;
+      if (additional == false) {
+        throw LlamaArgumentException(
+          'required at $path names "$name", which additionalProperties: false forbids.',
+        );
+      }
+      if (name.runes.length > _maxPropertyNameLength) {
+        throw LlamaUnsupportedException(
+          'Property names at $path may have at most $_maxPropertyNameLength characters.',
+        );
+      }
     }
   }
   if (array) {

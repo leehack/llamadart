@@ -322,8 +322,8 @@ tool permissions and side effects.
 Active schema tools cannot be combined with `responseFormat`, which would
 replace the tool grammar. Use separate requests. Undeclared calls and malformed
 tool envelopes fail the turn before handlers run. In an open object, an extra
-property cannot reuse a declared property name, so declared properties keep
-their own schema. Escaped spellings of a declared name (such as `\u0063ity`)
+property cannot reuse a declared or required property name, so those
+properties keep their own schema. Escaped spellings of a declared name (such as `\u0063ity`)
 are rejected too: where a declared name continues with a character, an extra
 name cannot spell that character as a `\u` escape. Where a declared name needs
 a JSON escape (such as `a"b`), the grammar also rejects extra names with a
@@ -343,7 +343,12 @@ When a Hermes template forces reasoning open (such as QwQ), the
 `ToolChoice.required` grammar accepts reasoning closed by `</think>` before the
 calls, for schema and `ToolParam` tools.
 
-Known gap: `required` may only name declared properties.
+`required` may name a property that `properties` does not declare: the
+grammar requires that key, with a value matching `additionalProperties` (any
+JSON value when it is `true`). In a closed object (`additionalProperties:
+false`) such a name throws `LlamaArgumentException`, because no object can
+satisfy it. Response schemas still require `required` to name declared
+properties.
 
 On WebGPU, an automatic tool loop changes to `auto` after its first tool round.
 Hermes and Mistral then need lazy grammars, so their schema-backed automatic
