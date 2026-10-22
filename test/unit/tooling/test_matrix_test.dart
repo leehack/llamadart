@@ -47,6 +47,24 @@ void main() {
     },
   );
 
+  test('native sync Python suites row mirrors the CI Analyze & Lint steps', () {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'native-sync-python-suites',
+    );
+    final ciSuites = RegExp(
+      r'^\s*run: python3 (tool/native/test_[\w]+\.py)\s*$',
+      multiLine: true,
+    ).allMatches(File('.github/workflows/ci.yml').readAsStringSync());
+    final expected = [for (final m in ciSuites) 'python3 ${m.group(1)}'];
+
+    expect(expected, hasLength(greaterThanOrEqualTo(4)));
+    expect(row.tier, 'targeted');
+    expect(row.command.split(' (').first.split(' && '), expected);
+    expect(row.command, contains('Python 3.10+'));
+    expect(row.useWhen, contains('native_release_pins.dart'));
+    expect(row.useWhen, contains('tool/native/'));
+  });
+
   group('test_matrix', () {
     test('has unique row ids', () {
       final ids = testMatrixRows.map((row) => row.id).toList();
