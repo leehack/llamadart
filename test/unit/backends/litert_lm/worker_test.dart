@@ -96,10 +96,6 @@ void main() {
     },
   );
 
-  test('liteRtLmWorkerEntry function is available', () {
-    expect(liteRtLmWorkerEntry, isA<Function>());
-  });
-
   group('liteRtLmWorkerEntry isolate routing', () {
     test('handles control and info requests', () async {
       final worker = await _spawnWorker();

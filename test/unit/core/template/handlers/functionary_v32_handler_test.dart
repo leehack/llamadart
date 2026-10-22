@@ -1,14 +1,8 @@
-import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/functionary_v32_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('FunctionaryV32Handler', () {
-    test('exposes chat format', () {
-      final handler = FunctionaryV32Handler();
-      expect(handler.format, isA<ChatFormat>());
-    });
-
     test('parses JSON tool calls with >>>name markers', () {
       final handler = FunctionaryV32Handler();
       final parsed = handler.parse('>>>weather\n{"city":"Seoul"}');

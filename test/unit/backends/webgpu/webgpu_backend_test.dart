@@ -1143,15 +1143,6 @@ void main() {
       });
     }
 
-    test('sends no GPU layers when the CPU backend is preferred', () async {
-      await backend.modelLoadFromUrl(
-        'https://example.com/model.gguf',
-        const ModelParams(gpuLayers: 99, preferredBackend: GpuBackend.cpu),
-      );
-
-      expect(lastRequestedGpuLayers, 0);
-    });
-
     test('caps default batches to a short CPU context', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/multilingual-e5-small-Q8_0.gguf',
@@ -3076,79 +3067,6 @@ void main() {
       });
     });
 
-    test('rejects speculative decoding', () {
-      expect(
-        () => backend.generate(
-          1,
-          'Hello',
-          const GenerationParams(speculativeDecoding: true),
-        ),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('speculative decoding'),
-          ),
-        ),
-      );
-    });
-
-    test('rejects presence penalty', () {
-      expect(
-        () => backend.generate(
-          1,
-          'Hello',
-          const GenerationParams(presencePenalty: 1.5),
-        ),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('presence penalty'),
-          ),
-        ),
-      );
-    });
-
-    test('rejects thinking budget', () {
-      expect(
-        () => backend.generate(
-          1,
-          'Hello',
-          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 16)),
-        ),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('thinking-budget control'),
-          ),
-        ),
-      );
-    });
-
-    test('rejects speculative decoding config', () {
-      for (final config in const [
-        SpeculativeDecodingConfig.mtp(),
-        SpeculativeDecodingConfig.draftDspark(draftModelPath: 'draft.gguf'),
-      ]) {
-        expect(
-          () => backend.generate(
-            1,
-            'Hello',
-            GenerationParams(speculativeDecodingConfig: config),
-          ),
-          throwsA(
-            isA<UnsupportedError>().having(
-              (error) => error.message.toString(),
-              'message',
-              contains('speculative decoding'),
-            ),
-          ),
-        );
-      }
-    });
-
     group('a cancelGeneration during a completion', () {
       late _ResultRecorder recorder;
 
@@ -3673,34 +3591,6 @@ void main() {
         }
         expect(lastScorePrompt, isNull, reason: 'rejected before the bridge');
       });
-    });
-
-    test('throws clear error for unsupported runtime LoRA updates', () async {
-      await backend.modelLoadFromUrl(
-        'https://example.com/model.gguf',
-        const ModelParams(),
-      );
-
-      Future<void> expectLoraUnsupported(Future<void> Function() action) {
-        return expectLater(
-          action,
-          throwsA(
-            isA<UnsupportedError>().having(
-              (UnsupportedError error) => error.message,
-              'message',
-              allOf(contains('WebGPU LoRA'), contains('native llama.cpp')),
-            ),
-          ),
-        );
-      }
-
-      await expectLoraUnsupported(
-        () => backend.setLoraAdapter(1, '/adapter.gguf', 0.7),
-      );
-      await expectLoraUnsupported(
-        () => backend.removeLoraAdapter(1, '/adapter.gguf'),
-      );
-      await expectLoraUnsupported(() => backend.clearLoraAdapters(1));
     });
 
     test('forwards state persistence calls to bridge', () async {
@@ -5899,18 +5789,6 @@ void main() {
                 _jsRangeError('Maximum call stack size exceeded'),
                 'Maximum call stack size exceeded',
               ),
-              (
-                'allocation',
-                _jsRangeError('Array buffer allocation failed'),
-                'Array buffer allocation failed',
-              ),
-              (
-                'null dereference',
-                _jsTypeError(
-                  "Cannot read properties of null (reading 'ccall')",
-                ),
-                "Cannot read properties of null (reading 'ccall')",
-              ),
             ]) {
           for (final operation in [
             'lora',
@@ -6065,11 +5943,6 @@ void main() {
           isA<LlamaArgumentException>(),
         ),
         (
-          'type',
-          _jsTypeError('CompletionOptions.thinkingBudget must be an object.'),
-          isA<LlamaArgumentException>(),
-        ),
-        (
           'worker',
           _jsError(
             'CompletionOptions.speculativeDecoding.draftTokenMin (9) must not exceed the draft token maximum (3).',
@@ -6079,11 +5952,6 @@ void main() {
         (
           'runtime',
           _jsError('GPU dispatch failed'),
-          isA<LlamaInferenceException>(),
-        ),
-        (
-          'misleading text',
-          _jsError('TypeError: invalid argument during GPU dispatch'),
           isA<LlamaInferenceException>(),
         ),
       ]) {

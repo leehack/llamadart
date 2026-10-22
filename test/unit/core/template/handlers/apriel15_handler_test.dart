@@ -3,15 +3,9 @@ import 'dart:convert';
 import 'package:llamadart/src/core/template/handlers/apriel15_handler.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
-import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('Apriel15Handler exposes chat format', () {
-    final handler = Apriel15Handler();
-    expect(handler.format, isA<ChatFormat>());
-  });
-
   test('Apriel15Handler emits xml-style grammar for tools', () {
     final handler = Apriel15Handler();
     final tools = [

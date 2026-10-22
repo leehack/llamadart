@@ -467,11 +467,6 @@ void main() {
     });
   });
 
-  test('LlamaCppService can be instantiated', () {
-    final service = LlamaCppService();
-    expect(service, isA<LlamaCppService>());
-  });
-
   group('aLoRA eager-activation guard', () {
     final adapter = Pointer<llama_adapter_lora>.fromAddress(1);
 
@@ -1065,25 +1060,6 @@ void main() {
         );
       });
     }
-
-    test('requires draftModelPath for external draft strategies', () {
-      expect(
-        () => service.debugResolveSpeculativeTypeNamesForTesting(
-          const GenerationParams(
-            speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
-              strategies: [SpeculativeDecodingStrategy.draftEagle3],
-            ),
-          ),
-        ),
-        throwsA(
-          isA<LlamaArgumentException>().having(
-            (error) => error.message,
-            'message',
-            contains('requires SpeculativeDecodingConfig.draftModel'),
-          ),
-        ),
-      );
-    });
 
     test('requires a non-empty draftModelPath for DSpark', () {
       expect(

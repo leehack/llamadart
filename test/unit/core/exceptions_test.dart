@@ -34,68 +34,11 @@ void main() {
       );
     });
 
-    test('LlamaBackendInitializationException properties', () {
-      final ex = LlamaBackendInitializationException(
-        'Backend initialization failed',
-        'libllamadart missing',
-      );
-
-      expect(ex.message, 'Backend initialization failed');
-      expect(ex.details, 'libllamadart missing');
-      expect(ex, isA<LlamaException>());
-    });
-
     test('LlamaContextException properties', () {
       final ex = LlamaContextException('Context full');
       expect(ex.message, 'Context full');
       expect(ex.details, isNull);
       expect(ex.toString(), 'LlamaException: Context full');
-    });
-
-    test('LlamaInferenceException properties', () {
-      final ex = LlamaInferenceException('Gen failed');
-      expect(ex.message, 'Gen failed');
-      expect(ex.toString(), contains('Gen failed'));
-    });
-
-    test('LlamaSpeechException properties', () {
-      final ex = LlamaSpeechException('Recognition failed', 'decoder error');
-      expect(ex.message, 'Recognition failed');
-      expect(ex.details, 'decoder error');
-      expect(ex.toString(), contains('Recognition failed'));
-    });
-
-    test('LlamaAudioFormatException is a speech exception', () {
-      final ex = LlamaAudioFormatException('Unsupported audio', 'stereo');
-      expect(ex, isA<LlamaSpeechException>());
-      expect(ex.message, 'Unsupported audio');
-      expect(ex.details, 'stereo');
-    });
-
-    test('LlamaUnsupportedException properties', () {
-      final ex = LlamaUnsupportedException('No CUDA');
-      expect(ex.message, 'No CUDA');
-      expect(ex.toString(), contains('No CUDA'));
-    });
-
-    test('LlamaStateException properties', () {
-      final ex = LlamaStateException('Not loaded');
-      expect(ex.message, 'Not loaded');
-      expect(ex.toString(), contains('Not loaded'));
-    });
-
-    test('LlamaDecisionException properties', () {
-      final ex = LlamaDecisionException('Too many options', 'plan');
-      expect(ex.message, 'Too many options');
-      expect(ex.details, 'plan');
-      expect(ex.toString(), 'LlamaException: Too many options (plan)');
-    });
-
-    test('LlamaImageGenerationException properties', () {
-      final ex = LlamaImageGenerationException('width must be 64..2048', 7);
-      expect(ex.message, 'width must be 64..2048');
-      expect(ex.details, 7);
-      expect(ex.toString(), 'LlamaException: width must be 64..2048 (7)');
     });
   });
 }

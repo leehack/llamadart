@@ -54,6 +54,9 @@ class LiteRtLmBackend
   final Set<int> _stalePerformanceContexts = {};
   final Map<ReceivePort, Completer<Object?>> _pendingRequests = {};
   final Duration _embeddingTimeout;
+  final Duration _workerStartupTimeout;
+  final Duration _freeTimeout;
+  final Duration _cancelAcknowledgementTimeout;
   final String? _preferredBackend;
   final void Function(SendPort) _workerEntryPoint;
 
@@ -75,13 +78,24 @@ class LiteRtLmBackend
   /// Expiry cancels only that request; other queued calls keep their deadlines.
   /// Explicit cancellation, context/model teardown and disposal cancel all embeds.
   /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
+  /// [workerStartupTimeout] bounds the worker handshake.
+  /// [freeTimeout] bounds native context and model frees; on expiry the worker
+  /// is killed and native settlement is reported as unverified.
+  /// [cancelAcknowledgementTimeout] bounds the wait for the worker to
+  /// acknowledge a cancellation, which is best-effort.
   LiteRtLmBackend({
     SendPort? initialSendPort,
     Duration embeddingTimeout = const Duration(minutes: 10),
     @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
     String? preferredBackend,
     void Function(SendPort)? workerEntryPoint,
+    Duration workerStartupTimeout = const Duration(seconds: 5),
+    Duration freeTimeout = const Duration(seconds: 5),
+    Duration cancelAcknowledgementTimeout = const Duration(seconds: 1),
   }) : _embeddingTimeout = embeddingTimeout,
+       _workerStartupTimeout = workerStartupTimeout,
+       _freeTimeout = freeTimeout,
+       _cancelAcknowledgementTimeout = cancelAcknowledgementTimeout,
        _preferredBackend = preferredBackend,
        _workerEntryPoint = workerEntryPoint ?? liteRtLmWorkerEntry {
     if (initialSendPort != null) {
@@ -254,7 +268,7 @@ class LiteRtLmBackend
     try {
       await _sendRequest(
         (sendPort) => LiteRtLmModelFreeRequest(modelHandle, sendPort),
-        timeout: const Duration(seconds: 5),
+        timeout: _freeTimeout,
       );
     } on TimeoutException {
       _nativeSettlementUnverified = true;
@@ -294,7 +308,7 @@ class LiteRtLmBackend
     try {
       await _sendRequest(
         (sendPort) => LiteRtLmContextFreeRequest(contextHandle, sendPort),
-        timeout: const Duration(seconds: 5),
+        timeout: _freeTimeout,
       );
       _embeddingContext = null;
       _stalePerformanceContexts.remove(contextHandle);
@@ -957,7 +971,7 @@ class LiteRtLmBackend
       }
       _isolate = isolate;
       await completer.future.timeout(
-        const Duration(seconds: 5),
+        _workerStartupTimeout,
         onTimeout: () {
           throw TimeoutException('Timed out starting LiteRT-LM worker.');
         },
@@ -1092,7 +1106,7 @@ class LiteRtLmBackend
                 responsePort.sendPort,
               ),
       );
-      await responsePort.first.timeout(const Duration(seconds: 1));
+      await responsePort.first.timeout(_cancelAcknowledgementTimeout);
     } catch (_) {
       // Cancellation is best-effort because this method is also used by
       // StreamController.onCancel and dispose paths.

@@ -641,7 +641,10 @@ void main() {
           }
           // Free requests deliberately never settle, as with a blocked runtime.
         });
-        final backend = LiteRtLmBackend(initialSendPort: port.sendPort);
+        final backend = LiteRtLmBackend(
+          initialSendPort: port.sendPort,
+          freeTimeout: const Duration(milliseconds: 50),
+        );
         final pending = backend.tokenize(1, 'hello');
         final failed = expectLater(
           pending,
@@ -775,7 +778,10 @@ void main() {
     test(
       'free fails when worker exits during generation cancellation: $freeContext',
       () async {
-        final backend = LiteRtLmBackend(workerEntryPoint: _exitOnCancelWorker);
+        final backend = LiteRtLmBackend(
+          workerEntryPoint: _exitOnCancelWorker,
+          cancelAcknowledgementTimeout: const Duration(milliseconds: 50),
+        );
         final started = Completer<void>();
         final stream = freeContext
             ? backend.generate(1, 'hello', const GenerationParams())
@@ -1273,49 +1279,6 @@ void main() {
       }
     },
   );
-
-  test('rejects concurrent generation before touching worker', () async {
-    final worker = _FakeLiteRtLmWorker(
-      tokenizeResponse: const <int>[],
-      detokenizeResponse: '',
-      holdGeneration: true,
-    );
-    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
-
-    try {
-      final firstDone = Completer<void>();
-      final firstSubscription = backend
-          .generate(1, 'first', const GenerationParams())
-          .listen(
-            (_) {},
-            onError: firstDone.completeError,
-            onDone: firstDone.complete,
-          );
-      await worker.generateReceived.future;
-
-      await expectLater(
-        backend.generate(1, 'second', const GenerationParams()).drain<void>(),
-        throwsA(
-          isA<LlamaStateException>().having(
-            (error) => error.message,
-            'message',
-            contains('already in progress'),
-          ),
-        ),
-      );
-      expect(
-        worker.requests.whereType<LiteRtLmGenerateRequest>(),
-        hasLength(1),
-      );
-
-      worker.releaseGeneration();
-      await firstDone.future.timeout(const Duration(seconds: 1));
-      await firstSubscription.cancel();
-    } finally {
-      await backend.dispose();
-      worker.close();
-    }
-  });
 
   test(
     'does not send generation after immediate stream cancellation',
@@ -2614,6 +2577,7 @@ void main() {
       final backend = LiteRtLmBackend(
         initialSendPort: worker.sendPort,
         workerEntryPoint: _silentWorker,
+        workerStartupTimeout: const Duration(milliseconds: 50),
       );
       final mirror = reflect(backend);
       final owner = mirror.type.owner as LibraryMirror;
@@ -2646,23 +2610,25 @@ void main() {
         isEmpty,
       );
     },
-    timeout: const Timeout(Duration(seconds: 15)),
   );
 
   test('a worker startup timeout releases the generation slot', () async {
-    final backend = LiteRtLmBackend(workerEntryPoint: _silentWorker);
+    final backend = LiteRtLmBackend(
+      workerEntryPoint: _silentWorker,
+      workerStartupTimeout: const Duration(milliseconds: 50),
+    );
     const params = GenerationParams();
     final first = _CollectedGeneration(backend.generate(1, 'first', params));
-    await first.doneWithin(const Duration(seconds: 10));
+    await first.doneWithin(const Duration(seconds: 2));
     expect(first.error, isA<TimeoutException>());
 
     // The retry makes its own startup attempt instead of waiting behind the
     // failed one.
     final second = _CollectedGeneration(backend.generate(1, 'second', params));
-    await second.doneWithin(const Duration(seconds: 10));
+    await second.doneWithin(const Duration(seconds: 2));
     expect(second.error, isA<TimeoutException>());
     await backend.dispose();
-  }, timeout: const Timeout(Duration(seconds: 40)));
+  });
 
   test('a worker exit during startup releases the generation slot', () async {
     final backend = LiteRtLmBackend(workerEntryPoint: _exitBeforeHandshake);

@@ -1729,7 +1729,8 @@ class HighRiskReadinessEvaluator {
       path.startsWith('lib/') ||
       path.startsWith('tool/') ||
       path.startsWith('hook/') ||
-      path.startsWith('packages/genkit_llamadart/lib/');
+      path.startsWith('packages/genkit_llamadart/lib/') ||
+      isWorkflowPath(path);
 
   static bool _isProductionTestPath(String path) {
     if (path.startsWith('/') ||

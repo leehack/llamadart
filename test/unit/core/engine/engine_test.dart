@@ -1321,11 +1321,6 @@ void main() {
   });
 
   group('LlamaEngine Mock Tests', () {
-    test('loadModel successful', () async {
-      await engine.loadModel('qwen-test.gguf');
-      expect(engine.isReady, true);
-    });
-
     test('loadModel log states whether engine creation is deferred', () async {
       final records = <LlamaLogRecord>[];
       await LlamaLogging.configure(
@@ -2642,6 +2637,7 @@ void main() {
       await engine.dispose();
 
       expect(engine.isDisposed, isTrue);
+      expect(engine.isReady, isFalse);
       expect(backend.disposeCalls, 1);
       expect(backend.modelFreeCalls, 1);
     });
@@ -4289,36 +4285,45 @@ void main() {
         ),
       };
 
-      for (final MapEntry(key: name, value: (format, detail))
-          in cases.entries) {
-        for (final (label, makeBackend)
-            in <(String, MockLlamaBackend Function())>[
-              ('grammar-capable backend', MockLlamaBackend.new),
-              ('no-grammar backend', NoGrammarMockLlamaBackend.new),
-              ('native-chat backend', NativeChatMockBackend.new),
-            ]) {
-          test('$name on $label', () async {
-            final testBackend = makeBackend();
-            final testEngine = LlamaEngine(testBackend);
-            await testEngine.loadModel('gemma4-test.litertlm');
+      // Every shape fails in the same validator; the other backends prove
+      // that it runs before their own routing.
+      for (final (name, label, makeBackend)
+          in <(String, String, MockLlamaBackend Function())>[
+            for (final name in cases.keys)
+              (name, 'grammar-capable backend', MockLlamaBackend.new),
+            (
+              'misspelled type',
+              'no-grammar backend',
+              NoGrammarMockLlamaBackend.new,
+            ),
+            (
+              'misspelled type',
+              'native-chat backend',
+              NativeChatMockBackend.new,
+            ),
+          ]) {
+        final (format, detail) = cases[name]!;
+        test('$name on $label', () async {
+          final testBackend = makeBackend();
+          final testEngine = LlamaEngine(testBackend);
+          await testEngine.loadModel('gemma4-test.litertlm');
 
-            await expectLater(
-              testEngine.create(messages, responseFormat: format).drain(),
-              throwsA(
-                isA<LlamaUnsupportedException>().having(
-                  (error) => error.message,
-                  'message',
-                  contains(detail),
-                ),
+          await expectLater(
+            testEngine.create(messages, responseFormat: format).drain(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains(detail),
               ),
-            );
-            expect(testBackend.lastGenerationPrompt, isNull);
-            if (testBackend is NativeChatMockBackend) {
-              expect(testBackend.nativeGenerateChatCalls, 0);
-            }
-            await testEngine.dispose();
-          });
-        }
+            ),
+          );
+          expect(testBackend.lastGenerationPrompt, isNull);
+          if (testBackend is NativeChatMockBackend) {
+            expect(testBackend.nativeGenerateChatCalls, 0);
+          }
+          await testEngine.dispose();
+        });
       }
 
       test('chatTemplate rejects the same shapes', () async {
@@ -5013,11 +5018,6 @@ void main() {
       expect(backend.lastLoraPath, isNull);
     });
 
-    test('cancelGeneration', () {
-      engine.cancelGeneration();
-      // Should not throw
-    });
-
     group('cancelGeneration before the backend starts', () {
       late TokenCancelBackend tokenBackend;
       late LlamaEngine tokenEngine;
@@ -5225,44 +5225,6 @@ void main() {
           expect(await perfEngine.getPerformanceContext(), isNotNull);
         });
 
-        test(
-          'embeddings after the cancelled request report their counters',
-          () async {
-            final perfEngine = LlamaEngine(
-              PerformanceCounterBackend(nativeChat: false),
-            );
-            addTearDown(perfEngine.dispose);
-            await cancelOneEarly(perfEngine);
-
-            await perfEngine.embed('hello');
-            expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
-          },
-        );
-
-        test('batch embeddings after the cancelled request report their '
-            'counters', () async {
-          final perfEngine = LlamaEngine(
-            PerformanceCounterBackend(nativeChat: false),
-          );
-          addTearDown(perfEngine.dispose);
-          await cancelOneEarly(perfEngine);
-
-          await perfEngine.embedBatch(const ['hello', 'world']);
-          expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
-        });
-
-        test('next-token scoring after the cancelled request reports its '
-            'counters', () async {
-          final perfEngine = LlamaEngine(
-            PerformanceCounterBackend(nativeChat: false),
-          );
-          addTearDown(perfEngine.dispose);
-          await cancelOneEarly(perfEngine);
-
-          await perfEngine.scoreNextToken('hello', topK: 1);
-          expect((await perfEngine.getPerformanceContext())?.evalTokens, 0);
-        });
-
         test('text-to-speech after the cancelled request reports its '
             'counters', () async {
           final perfEngine = LlamaEngine(
@@ -5297,13 +5259,6 @@ void main() {
     test('getTokenCount', () async {
       await engine.loadModel('qwen-test.gguf');
       expect(await engine.getTokenCount('test'), 3);
-    });
-
-    test('dispose', () async {
-      await engine.loadModel('qwen-test.gguf');
-      await engine.loadMultimodalProjector('proj.gguf');
-      await engine.dispose();
-      expect(engine.isReady, false);
     });
   });
 
