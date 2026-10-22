@@ -569,6 +569,9 @@ jobs:
           flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart \
             test/unit_test.dart test/conversation_state_service_test.dart
 
+      - name: Restore the chat app pubspec
+        run: git checkout -- example/chat_app/pubspec.yaml
+
       - name: Build and validate deployable Web artifact
         env:
           CHAT_APP_BASE_HREF: /
