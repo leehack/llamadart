@@ -169,7 +169,20 @@ Re-syncing the exact current tag remains idempotent for recovery and validation;
 the owning native release workflow is responsible for rejecting publication
 collisions.
 
-After sync, run analyze/tests/docs checks before merge. For Apple SPM pin
+After sync, run analyze/tests/docs checks before merge. Also run the Python
+suites that only CI's Analyze & Lint job runs, since the Dart checks do not
+cover a pin change:
+
+```bash
+python3 tool/native/test_sync_native_release_pins.py
+python3 tool/native/test_native_header_archive.py
+python3 tool/native/test_sync_native_headers_and_bindings.py
+python3 tool/native/test_sync_stable_diffusion_bindings.py
+```
+
+CI runs them with the Ubuntu runner's `python3` (3.12). Use Python 3.10 or
+newer: under macOS's system Python 3.9 the pin suite reports three
+`KeyError: 'file'` errors in `ReleaseTransportFailureTest`. For Apple SPM pin
 changes, verify the companion package changes under `packages/`, then run at
 least one Flutter iOS build and one macOS build with those packages enabled.
 Inspect the packaged frameworks to confirm the expected native release artifacts

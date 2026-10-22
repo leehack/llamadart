@@ -85,8 +85,9 @@ budget on a bundle without a thinking channel or on a runtime without the
 API, throws `LlamaUnsupportedException` instead of the `UnsupportedError`
 these options threw before. Catch `LlamaUnsupportedException`, or check
 `supportsPenalty`, `supportsPresencePenalty` and `supportsThinkingBudget`
-first. Other LiteRT-LM options it does not apply, such as `minP` and
-grammars, still throw `UnsupportedError`.
+first. A non-finite `penalty` or `presencePenalty` (NaN or infinity) throws
+`ArgumentError` instead. Other LiteRT-LM options it does not apply, such as
+`minP` and grammars, still throw `UnsupportedError`.
 
 `LiteRtLmRuntimeClient.generate` and `generateMessageJson` take new optional
 named parameters; subclasses that override them must declare them.
@@ -104,8 +105,11 @@ API is unchanged, and native GPU embeddings still throw
 
 The hook and the stable_diffusion Apple companion source pin `v0.3.0`, whose
 `sd_ctx_params_t` is larger than in `v0.2.0-4`. A Flutter iOS or macOS build
-fails with `Incompatible Apple stable_diffusion companion` until the app
-depends on the companion release that pins `v0.3.0`; upgrade both together.
+needs the companion release that pins `v0.3.0`; upgrade both together. Apps
+that depend on a published companion hit pub resolution first, because
+companions before `0.16.0` constrain `llamadart` below `0.16.0`. Apps that
+depend on `llamadart` or the companion from git or a path and keep an older
+companion fail with `Incompatible Apple stable_diffusion companion`.
 `ImageModelParams` is unchanged, and flash attention and direct convolution
 stay as it selects them.
 

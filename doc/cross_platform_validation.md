@@ -1079,8 +1079,8 @@ LiteRT GPU on Android has load-time evidence only. Given a bound device log,
 the reporter verifies placement as
 `gpu_delegate_initialized_per_load_execution_unobserved` when the journal's
 environment is Android and states `web: false`, its LiteRT-LM tag is
-source-qualified (`0.18.0`, `0.18.0-1`, `0.18.0-2` or `0.18.0-3`), every expected load
-case passes exactly once reporting a GPU backend, and the log holds N GPU
+source-qualified (`0.18.0`, `0.18.0-1`, `0.18.0-2`, `0.18.0-3` or `0.18.1`), every
+expected load case passes exactly once reporting a GPU backend, and the log holds N GPU
 delegate initializations for the N expected load cases. Each of them has:
 
 - one `Selected adapter` record, identical across loads, naming a recognized
@@ -1114,8 +1114,14 @@ The evidence rests on two source rules read at LiteRT-LM
 `26895c9fbcc25c43faa8c1a98cd1fd28951602c3`: the GPU executor requests the GPU
 accelerator alone (`runtime/executor/llm_executor_settings_utils.cc`), and
 LiteRT refuses to compile a model that leaves a node undelegated unless the CPU
-accelerator was requested (`litert/runtime/compiled_model.cc`). Re-read both
-before qualifying another LiteRT-LM tag. It therefore shows that the main model
+accelerator was requested (`litert/runtime/compiled_model.cc`). Both were
+re-read for `0.18.1` at LiteRT-LM `bda624851d74be34d4e1f7fac1fc4155939539c7` and
+LiteRT `ca21dc99de51c76bdcc572afeea1dd937d3c9e5c`: the LiteRT-LM file is
+unchanged, and LiteRT now counts every node that is neither a delegate nor a
+dispatch op as undelegated, which can only fail more compilations. The
+`0.18.1` Android WebGPU accelerator and Dawn libraries are byte-identical to
+`0.18.0-3`. Re-read both rules before qualifying another LiteRT-LM tag. It
+therefore shows that the main model
 was fully delegated to that adapter at every expected load. The delegate-kernel
 count is a consistency check on top of that compile rule, not proof by itself:
 a `Loaded:` record does not name its model, so the main model is recognized by
