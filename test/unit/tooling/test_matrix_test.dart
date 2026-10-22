@@ -47,6 +47,24 @@ void main() {
     },
   );
 
+  test('native sync Python suites row runs every CI suite on Python 3.10+', () {
+    final row = testMatrixRows.singleWhere(
+      (row) => row.id == 'native-sync-python-suites',
+    );
+    for (final suite in [
+      'test_sync_native_release_pins.py',
+      'test_native_header_archive.py',
+      'test_sync_native_headers_and_bindings.py',
+      'test_sync_stable_diffusion_bindings.py',
+    ]) {
+      expect(row.command, contains('python3 tool/native/$suite'));
+      expect(File('tool/native/$suite').existsSync(), isTrue);
+    }
+    expect(row.command, contains('Python 3.10+'));
+    expect(row.useWhen, contains('native_release_pins.dart'));
+    expect(row.useWhen, contains('tool/native/'));
+  });
+
   group('test_matrix', () {
     test('has unique row ids', () {
       final ids = testMatrixRows.map((row) => row.id).toList();

@@ -319,6 +319,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'Any edit to lib/src/hook/native_release_pins.dart.',
   ),
   TestMatrixRow(
+    id: 'native-sync-python-suites',
+    tier: 'targeted',
+    mode: 'CI + local',
+    covers:
+        'native release pin policy, header archive, native header/binding '
+        'sync and stable-diffusion binding sync Python suites that CI runs '
+        'only in Analyze & Lint',
+    command:
+        'python3 tool/native/test_sync_native_release_pins.py && '
+        'python3 tool/native/test_native_header_archive.py && '
+        'python3 tool/native/test_sync_native_headers_and_bindings.py && '
+        'python3 tool/native/test_sync_stable_diffusion_bindings.py '
+        '(needs Python 3.10+; macOS system python3 3.9 fails transport '
+        'tests with KeyError \'file\')',
+    useWhen:
+        'Any edit under tool/native/, lib/src/hook/native_release_pins.dart, '
+        'or the generated native bindings and headers.',
+  ),
+  TestMatrixRow(
     id: 'examples-tests',
     tier: 'targeted',
     mode: 'local',
