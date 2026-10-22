@@ -201,18 +201,66 @@ class _RenotingSession extends ChatSession {
   }
 }
 
-/// A [ChatSession] subclass that replaces the two oldest messages with a
-/// summary when a tool result is added.
+/// A [ChatSession] subclass that replaces its [summarized] oldest messages
+/// with a summary when a tool result, or a copy of it, is added.
 class _SummarizingSession extends ChatSession {
-  _SummarizingSession(super.engine) : super(maxContextTokens: 0);
+  _SummarizingSession(
+    super.engine, {
+    this.summarized = 2,
+    this.copiesResult = false,
+  }) : super(maxContextTokens: 0);
+
+  final int summarized;
+  final bool copiesResult;
 
   @override
   void addMessage(LlamaChatMessage message) {
     if (message.role != LlamaChatRole.tool) return super.addMessage(message);
-    final kept = history.skip(2).toList();
+    final kept = history.skip(summarized).toList();
     reset();
     [
       _text(LlamaChatRole.system, 'Summary'),
+      ...kept,
+      copiesResult ? _copyOf(message) : message,
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that keeps one header first, replacing it with
+/// a new numbered one on every add.
+class _HeaderSession extends ChatSession {
+  _HeaderSession(super.engine) : super(maxContextTokens: 0);
+
+  int headers = 0;
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    final kept = [
+      for (final stored in history)
+        if (!stored.content.startsWith('Header')) stored,
+    ];
+    headers += 1;
+    reset();
+    [
+      _text(LlamaChatRole.system, 'Header $headers'),
+      ...kept,
+      message,
+    ].forEach(super.addMessage);
+  }
+}
+
+/// A [ChatSession] subclass that puts a new note first when a tool result
+/// is added.
+class _PrependingSession extends ChatSession {
+  _PrependingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return super.addMessage(message);
+    final kept = history.toList();
+    reset();
+    [
+      _text(LlamaChatRole.system, 'Note'),
       ...kept,
       message,
     ].forEach(super.addMessage);
@@ -1627,10 +1675,26 @@ void main() {
       },
     );
 
-    test(
-      'whose addMessage summarizes earlier turns keeps the summary',
-      () async {
-        final summarizing = _SummarizingSession(engine);
+    for (final (description, session, kept) in [
+      (
+        'summarizes earlier turns',
+        (LlamaEngine engine) => _SummarizingSession(engine),
+        ['Summary'],
+      ),
+      (
+        'summarizes the oldest message while the history grows',
+        (LlamaEngine engine) => _SummarizingSession(engine, summarized: 1),
+        ['Summary', 'Hello'],
+      ),
+      (
+        'summarizes the oldest message and stores a copy of the result',
+        (LlamaEngine engine) =>
+            _SummarizingSession(engine, summarized: 1, copiesResult: true),
+        ['Summary', 'Hello'],
+      ),
+    ]) {
+      test('whose addMessage $description keeps the summary', () async {
+        final summarizing = session(engine);
         [
           _text(LlamaChatRole.user, 'Hi'),
           _text(LlamaChatRole.assistant, 'Hello'),
@@ -1639,12 +1703,46 @@ void main() {
         final result = await stopAtMaxRounds(summarizing);
 
         expect(result.rolledBack, isTrue);
+        expect([
+          for (final message in summarizing.history) message.content,
+        ], kept);
+      });
+    }
+
+    test(
+      'whose addMessage replaces a header first keeps the latest header',
+      () async {
+        final heading = _HeaderSession(engine);
+        [
+          _text(LlamaChatRole.user, 'Hi'),
+          _text(LlamaChatRole.assistant, 'Hello'),
+        ].forEach(heading.addMessage);
+
+        final result = await stopAtMaxRounds(heading);
+
+        expect(result.rolledBack, isTrue);
         expect(
-          [for (final message in summarizing.history) message.content],
-          ['Summary'],
+          [for (final message in heading.history) message.content],
+          ['Header ${heading.headers}', 'Hi', 'Hello'],
         );
       },
     );
+
+    test('whose addMessage puts a new note first removes the note', () async {
+      final prepending = _PrependingSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(prepending.addMessage);
+
+      final result = await stopAtMaxRounds(prepending);
+
+      expect(result.rolledBack, isTrue);
+      expect(
+        [for (final message in prepending.history) message.content],
+        ['Hi', 'Hello'],
+      );
+    });
 
     test('removes an instance its addMessage appended that an earlier turn '
         'holds, and keeps the earlier one', () async {

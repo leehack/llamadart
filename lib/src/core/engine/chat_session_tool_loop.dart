@@ -246,9 +246,9 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// message, including those a synchronous listener adds from inside the
   /// override, belong to the turn: a rollback removes them too, and they are
   /// neither in [LlamaToolLoopResult.messages] nor reported to
-  /// [onMessageAdded]. Copies such an override stores in place of
-  /// messages from before the turn stay, and so does a message it places before the turn
-  /// without growing the history, such as a summary of earlier turns. Older
+  /// [onMessageAdded]. Copies such an override stores in place of messages
+  /// from before the turn stay, and so does a message it places before the
+  /// turn in place of another, such as a summary of earlier turns. Older
   /// turns that context trimming dropped stay dropped, as after
   /// [ChatSession.create].
   /// [LlamaToolLoopResult.rolledBack] reports a rollback,
@@ -497,10 +497,10 @@ class _ToolLoopTurn {
   /// What the call put into the stored history goes on a rollback too: the
   /// stored [message] or a copy of it, copies of the turn's earlier
   /// messages, and new messages placed after the turn's first message or
-  /// within how much the history grew. A copy of a message from outside the
-  /// turn that the call replaced stays, and so does a new message placed
-  /// before the turn while the history did not grow, such as a summary of
-  /// earlier turns. Instances the call only moved stay.
+  /// within how much the history grew beyond the stored [message]. A copy of
+  /// a message from outside the turn that the call replaced stays, and so
+  /// does a new message placed before the turn in place of another, such as
+  /// a summary of earlier turns. Instances the call only moved stay.
   void add(LlamaChatMessage message) {
     final before = _storedHistory.toList();
     final leftover = HashMap<LlamaChatMessage, int>.identity();
@@ -560,7 +560,7 @@ class _ToolLoopTurn {
         ...turn,
         ..._turnIndices(after, members, same),
       ].fold(after.length, min);
-      final grown = after.length - before.length;
+      final grown = after.length - before.length - own.length;
       for (final (position, index) in fresh.indexed) {
         if (index > start || position >= fresh.length - grown) turn.add(index);
       }

@@ -138,12 +138,12 @@ the loop stay, except those an `addMessage` override appends while the loop
 adds a message (or that a listener adds from inside that override): the
 rollback removes them with the turn, and they are neither in
 `result.messages` nor reported to `onMessageAdded`. Copies such an override
-stores in place of messages from before the turn stay, and so does a message it places
-before the turn without growing the history, such as a summary of earlier
+stores in place of messages from before the turn stay, and so does a message
+it places before the turn in place of another, such as a summary of earlier
 turns. Older turns that context trimming dropped stay dropped, as after
-`create`. A rollback edits the history
-without calling `addMessage` or `reset`, so a `ChatSession` subclass that
-mirrors the history should check `result.rolledBack`.
+`create`. A rollback edits the history without calling `addMessage` or
+`reset`, so a `ChatSession` subclass that mirrors the history should check
+`result.rolledBack`.
 
 A class that `implements ChatSession` is rolled back through `reset` and
 `addMessage` instead. If two consecutive `history` reads return different
