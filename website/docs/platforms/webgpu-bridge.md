@@ -112,7 +112,7 @@ whose message contains
 or `Web bridge is unavailable: <load error>`.
 
 `example/chat_app/web/index.html` is a fuller bootstrap: CDN-first loading with
-local fallback, Safari patching and a readiness promise; see
+local fallback and a readiness promise; see
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
 
 ## Check readiness

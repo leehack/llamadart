@@ -6,8 +6,6 @@ OUT_DIR="${WEBGPU_BRIDGE_OUT_DIR:-$ROOT_DIR/example/chat_app/web/webgpu_bridge}"
 ASSETS_REPO="${WEBGPU_BRIDGE_ASSETS_REPO:-leehack/llama-web-bridge-assets}"
 ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.69}"
 CDN_BASE="${WEBGPU_BRIDGE_CDN_BASE:-https://cdn.jsdelivr.net/gh/${ASSETS_REPO}@${ASSETS_TAG}}"
-PATCH_SAFARI_COMPAT="${WEBGPU_BRIDGE_PATCH_SAFARI_COMPAT:-1}"
-MIN_SAFARI_VERSION="${WEBGPU_BRIDGE_MIN_SAFARI_VERSION:-170400}"
 CURL_DOWNLOAD_ARGS=(
   --connect-timeout 15
   --max-time 300
@@ -28,8 +26,6 @@ Environment variables:
   WEBGPU_BRIDGE_ASSETS_TAG    Asset version/tag (recommended: pinned release tag)
   WEBGPU_BRIDGE_CDN_BASE      Full base URL override (advanced)
   WEBGPU_BRIDGE_OUT_DIR       Destination directory
-  WEBGPU_BRIDGE_PATCH_SAFARI_COMPAT  Patch legacy core for Safari support (1/0)
-  WEBGPU_BRIDGE_MIN_SAFARI_VERSION   Packed minimum Safari version (default: 170400)
 
 Usage:
   ./scripts/fetch_webgpu_bridge_assets.sh
@@ -143,73 +139,6 @@ if [[ -f "$OUT_DIR/sha256sums.txt" ]]; then
     fi
     rm -f "$filtered_sums"
   )
-fi
-
-if [[ "$PATCH_SAFARI_COMPAT" == "1" ]]; then
-  CORE_JS="$OUT_DIR/llama_webgpu_core.js"
-  BRIDGE_JS="$OUT_DIR/llama_webgpu_bridge.js"
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "[webgpu-assets] warning: python3 not found; skipping Safari compatibility patch"
-  elif [[ -f "$CORE_JS" ]]; then
-    echo "[webgpu-assets] applying Safari compatibility patch (min=$MIN_SAFARI_VERSION)"
-    python3 - "$CORE_JS" "$MIN_SAFARI_VERSION" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-core_path = Path(sys.argv[1])
-min_safari = int(sys.argv[2])
-text = core_path.read_text(errors='ignore')
-original = text
-
-unsupported_guard = (
-    'if(currentSafariVersion<TARGET_NOT_SUPPORTED){throw new Error(`This page was '
-    'compiled without support for Safari browser. Pass -sMIN_SAFARI_VERSION='
-    '${currentSafariVersion} or lower to enable support for this browser.`)}'
-)
-if unsupported_guard in text:
-    text = text.replace(unsupported_guard, '', 1)
-
-pattern = re.compile(
-    r'if\(currentSafariVersion<\d+\)\{throw new Error\(`This emscripten-generated '
-    r'code requires Safari v\$\{packedVersionToHumanReadable\(\d+\)\} '
-    r'\(detected v\$\{currentSafariVersion\}\)`\)\}'
-)
-replacement = (
-    f'if(currentSafariVersion<{min_safari}){{throw new Error(`This emscripten-generated '
-    f'code requires Safari v${{packedVersionToHumanReadable({min_safari})}} '
-    f'(detected v${{currentSafariVersion}})`)}}'
-)
-text, _ = pattern.subn(replacement, text, count=1)
-
-if text != original:
-    core_path.write_text(text)
-PY
-  fi
-
-  if [[ -f "$BRIDGE_JS" ]]; then
-    echo "[webgpu-assets] applying stream chunk copy compatibility patch"
-    python3 - "$BRIDGE_JS" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-bridge_path = Path(sys.argv[1])
-text = bridge_path.read_text(errors='ignore')
-original = text
-
-pattern = re.compile(r'chunks\.push\(value\);\s*loaded \+= value\.length;')
-replacement = (
-    'const chunk = value.slice ? value.slice() : new Uint8Array(value);\n'
-    '    chunks.push(chunk);\n'
-    '    loaded += chunk.length;'
-)
-text, _ = pattern.subn(replacement, text, count=1)
-
-if text != original:
-    bridge_path.write_text(text)
-PY
-  fi
 fi
 
 if command -v shasum >/dev/null 2>&1 || command -v sha256sum >/dev/null 2>&1; then

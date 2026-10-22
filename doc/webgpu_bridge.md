@@ -185,14 +185,9 @@ and the partial transcript when this signal arrives.
 
 ## Safari compatibility
 
-`scripts/fetch_webgpu_bridge_assets.sh` patches legacy cores to a universal
-Safari gate (`MIN_SAFARI_VERSION=170400`) and makes legacy stream chunk
-assembly clone read chunks, so Safari reader buffer reuse cannot corrupt
-downloaded model bytes. `example/chat_app/web/index.html` applies the same
-Safari gate patch at runtime, covering CDN loads.
-
-- `WEBGPU_BRIDGE_PATCH_SAFARI_COMPAT=1|0` (default `1`)
-- `WEBGPU_BRIDGE_MIN_SAFARI_VERSION=<packed>` (default `170400`)
+The fetch script and `example/chat_app/web/index.html` no longer patch bridge
+assets for Safari; the bridge assets own the Safari gate and stream chunk
+handling.
 
 `WebGpuLlamaBackend` forces CPU on Safari when GPU layers are requested and the
 assets lack the adaptive Safari probe (`__llamadartBridgeAdaptiveSafariGpu`).
@@ -204,7 +199,7 @@ layers or fall back to CPU when output looks unstable.
 
 - Chrome 128+
 - Firefox 129+
-- Safari 17.4+ (patched universal gate)
+- Safari 17.4+
 
 WebGPU availability still depends on the device and browser settings; CPU runs
 through the same bridge.
