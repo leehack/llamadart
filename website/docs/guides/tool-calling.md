@@ -134,19 +134,25 @@ which some templates, such as Ministral 3's and Mistral Small 3.2's, cannot
 render before a new user turn. `completeWithTools(const [], ...)` continues
 the open turn, so its rollback also removes that turn's earlier messages,
 including the tool results you added. Messages that other code added during
-the loop stay, except those an `addMessage` override appends while the loop
-adds a message (or that a listener adds from inside that override): the
-rollback removes them with the turn, and they are neither in
-`result.messages` nor reported to `onMessageAdded`. Older turns that context
-trimming dropped stay dropped, as after `create`. A rollback edits the history
-without calling `addMessage` or `reset`, so a `ChatSession` subclass that
-mirrors the history should check `result.rolledBack`.
+the loop stay. Every message an `addMessage` override stores while the loop
+adds a message (including a copy of that message, and messages a listener
+adds from inside the override) belongs to the turn: the rollback removes it,
+and it is neither in `result.messages` nor reported to `onMessageAdded`. The
+one exception is a message the override places before the turn in place of a
+message from before the turn that it removed, such as a summary of earlier
+turns. Messages from before the turn that the override kept stay, even if it
+moved them; those it removed stay removed, as after `create`. A rollback
+edits the history without calling `addMessage` or `reset`, so a `ChatSession`
+subclass that mirrors the history should check `result.rolledBack`.
 
 A class that `implements ChatSession` is rolled back through `reset` and
 `addMessage` instead. If two consecutive `history` reads return different
 instances for the same message, the turn's messages are matched by role and
 content rather than identity, so an equal message that other code added during
-the loop can be removed in place of the turn's own. A `history` that returns
+the loop can be removed in place of the turn's own, and a message from before
+the turn that an `addMessage` override moves after the message it stores counts
+as one it stored, so the rollback removes it; one moved only past earlier
+messages of the turn stays. A `history` that returns
 copies cached until the next mutation gives the same instances on both reads,
 so identity matching applies and the turn is not rolled back.
 
