@@ -123,7 +123,32 @@ fi
 ''',
 };
 
-/// A scratch directory with logging stubs for [_stubs] first on `PATH`.
+/// Directory of the [_stubs], which every sandbox shares: they keep all state
+/// under the sandbox's `$STUB_LOG` and `$STUB_STATE`.
+late final String _stubBin;
+
+/// Writes the [_stubs] once for the suite: a `chmod` per stub for every
+/// sandbox would spawn more processes than the workflow scripts themselves.
+String _writeStubs() {
+  final bin = Directory.systemTemp
+      .createTempSync('companion_release_workflow_stubs_')
+      .resolveSymbolicLinksSync();
+  addTearDown(() => Directory(bin).deleteSync(recursive: true));
+  final paths = [
+    for (final stub in _stubs.entries)
+      (File('$bin/${stub.key}')..writeAsStringSync(
+            '#!/usr/bin/env bash\n'
+            'printf \'%s\\n\' "${stub.key} \$*" >> "\$STUB_LOG"\n'
+            '${stub.value}',
+          ))
+          .path,
+  ];
+  final chmod = Process.runSync('chmod', ['+x', ...paths]);
+  if (chmod.exitCode != 0) throw StateError('chmod failed: ${chmod.stderr}');
+  return bin;
+}
+
+/// A scratch directory whose commands resolve to the [_stubs] first.
 class _Sandbox {
   _Sandbox._(this.root);
 
@@ -132,25 +157,14 @@ class _Sandbox {
         .createTempSync('companion_release_workflow_')
         .resolveSymbolicLinksSync();
     final sandbox = _Sandbox._(root);
-    Directory(sandbox.bin).createSync();
     Directory('${sandbox.state}/pub').createSync(recursive: true);
     File('${sandbox.state}/remote_tags').writeAsStringSync('');
-    for (final stub in _stubs.entries) {
-      final path = '${sandbox.bin}/${stub.key}';
-      File(path).writeAsStringSync(
-        '#!/usr/bin/env bash\n'
-        'printf \'%s\\n\' "${stub.key} \$*" >> "\$STUB_LOG"\n'
-        '${stub.value}',
-      );
-      Process.runSync('chmod', ['+x', path]);
-    }
     addTearDown(() => Directory(root).deleteSync(recursive: true));
     return sandbox;
   }
 
   final String root;
 
-  String get bin => '$root/bin';
   String get state => '$root/state';
   String get log => '$root/stub.log';
 
@@ -194,7 +208,7 @@ class _Sandbox {
       ],
       workingDirectory: workingDirectory,
       environment: {
-        'PATH': '$bin:${Platform.environment['PATH']}',
+        'PATH': '$_stubBin:${Platform.environment['PATH']}',
         'STUB_LOG': log,
         'STUB_STATE': state,
         'STUB_HEAD': _releaseSha,
@@ -895,6 +909,10 @@ List<String> _ciDryRunProblems(String workflow) {
 }
 
 void main() {
+  setUpAll(() {
+    if (!Platform.isWindows) _stubBin = _writeStubs();
+  });
+
   group('release_on_prep_merge.yml', () {
     final workflow = _read(_releaseWorkflow);
 

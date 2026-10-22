@@ -8,10 +8,18 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../../support/dart_script_snapshot.dart';
+
 void main() {
+  late String smoke;
   late Directory directory;
   late String modelPath;
   late String tokenizerPath;
+
+  setUpAll(
+    () async =>
+        smoke = await compileDartScript('tool/litert_lm_asr_smoke.dart'),
+  );
 
   setUp(() {
     directory = Directory.systemTemp.createTempSync('litert_asr_smoke_');
@@ -54,7 +62,7 @@ void main() {
 
   Future<ProcessResult> runSmoke(List<String> args) => Process.run(
     Platform.resolvedExecutable,
-    <String>['--disable-dart-dev', 'tool/litert_lm_asr_smoke.dart', ...args],
+    <String>['--disable-dart-dev', smoke, ...args],
   );
 
   test('prints usage and exits 64 with fewer than five arguments', () async {
