@@ -5,12 +5,18 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../support/dart_script_snapshot.dart';
+
 void main() {
-  final verifier = File(
-    'tool/testing/verify_release_docs_versions.dart',
-  ).absolute.path;
   final packages = File('.dart_tool/package_config.json').absolute.path;
+  late String verifier;
   late Directory root;
+
+  setUpAll(
+    () async => verifier = await compileDartScript(
+      'tool/testing/verify_release_docs_versions.dart',
+    ),
+  );
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('release-prep-heading-');

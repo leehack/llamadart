@@ -9,13 +9,21 @@ import 'package:test/test.dart';
 
 import '../../../tool/testing/llama_cpp_speculative_benchmark.dart'
     as speculative_benchmark;
+import '../../support/dart_script_snapshot.dart';
 
 void main() {
   group('llama_cpp_speculative_benchmark', () {
+    late String benchmark;
+    setUpAll(
+      () async => benchmark = await compileDartScript(
+        'tool/testing/llama_cpp_speculative_benchmark.dart',
+      ),
+    );
+
     test('documents flash-attention runtime option', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',
-        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        benchmark,
         '--help',
       ]);
 
@@ -79,7 +87,7 @@ void main() {
     test('lists all case aliases in invalid cases errors', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',
-        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        benchmark,
         '--model',
         'missing.gguf',
         '--cases',
@@ -246,7 +254,7 @@ void main() {
     test('requires an external draft model for DSpark', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',
-        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        benchmark,
         '--model',
         'target.gguf',
         '--cases',
@@ -263,7 +271,7 @@ void main() {
     test('rejects non-positive ngram token max', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',
-        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        benchmark,
         '--model',
         'missing.gguf',
         '--ngram-token-max',
@@ -280,7 +288,7 @@ void main() {
     test('rejects invalid flash-attention values', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',
-        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        benchmark,
         '--model',
         'missing.gguf',
         '--flash-attention',
@@ -295,7 +303,7 @@ void main() {
     test('rejects ngram cache build text without output path', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',
-        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        benchmark,
         '--model',
         'missing.gguf',
         '--cases',
@@ -328,7 +336,7 @@ void main() {
 
         final result = await Process.run(Platform.resolvedExecutable, [
           '--disable-dart-dev',
-          'tool/testing/llama_cpp_speculative_benchmark.dart',
+          benchmark,
           '--model',
           'missing.gguf',
           '--cases',
