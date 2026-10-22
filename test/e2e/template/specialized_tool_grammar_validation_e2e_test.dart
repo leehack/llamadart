@@ -1269,7 +1269,6 @@ void main() {
 
   test('required grammars end a forced-open thought before the calls', () {
     const seoul = '{"city": "Seoul"}';
-    // EXAONE MoE gets no valid call: its grammar does not quote the tool name.
     for (final (format, call) in [
       (
         ChatFormat.deepseekV3,
@@ -1295,7 +1294,10 @@ void main() {
         ChatFormat.apriel15,
         '<tool_calls>[{"name": "weather", "arguments": $seoul}]</tool_calls>',
       ),
-      (ChatFormat.exaoneMoe, null),
+      (
+        ChatFormat.exaoneMoe,
+        '<tool_call>{"name": "weather", "arguments": $seoul}</tool_call>',
+      ),
     ]) {
       final handler = ChatTemplateEngine.handlerFor(format);
       final rendered = handler.render(
@@ -1309,23 +1311,73 @@ void main() {
       );
       expect(rendered.thinkingForcedOpen, isTrue, reason: '$format');
       final end = handler.thinkingEndTag;
-      const exaoneCall = '<tool_call>{"name": "weather", "arguments": {}}';
       _expectGrammar(
         validator,
         rendered.grammar!,
         valid: [
-          if (call != null) ...[
-            '$end$call',
-            'Plan <${end.substring(0, end.length - 1)}.$end\n\n$call',
-          ],
+          '$end$call',
+          'Plan <${end.substring(0, end.length - 1)}.$end\n\n$call',
         ],
+        invalid: ['Plan.$end\nNo tool', 'Plan.', 'Plan.$end more $end$call'],
+      );
+    }
+  });
+
+  test('EXAONE MoE grammars require the JSON-quoted tool name', () {
+    String call(String nameJson) =>
+        '<tool_call>{"name": $nameJson, "arguments": {"city": "Seoul"}}'
+        '</tool_call>';
+
+    ToolDefinition tool(String name) => ToolDefinition(
+      name: name,
+      description: 'Tool',
+      parameters: [ToolParam.string('city')],
+      handler: (_) async => null,
+    );
+
+    final handler = ChatTemplateEngine.handlerFor(ChatFormat.exaoneMoe);
+
+    for (final name in ['weather', 'a"b']) {
+      _expectGrammar(
+        validator,
+        handler.buildGrammar([tool(name)])!,
+        valid: [call(jsonEncode(name))],
         invalid: [
-          call ?? exaoneCall,
-          'Plan.$end\nNo tool',
-          'Plan.',
-          if (call != null) 'Plan.$end more $end$call',
+          call(name),
+          if (name.contains('"')) call('"$name"'),
+          call('"other"'),
+          call("'$name'"),
         ],
       );
+    }
+
+    for (final required in [true, false]) {
+      for (final parallel in [true, false]) {
+        final rendered = handler.render(
+          templateSource: '{{ messages[0]["content"] }}',
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ],
+          metadata: {
+            if (required)
+              internalToolChoiceMetadataKey: ToolChoice.required.name,
+            internalParallelToolCallsMetadataKey: '$parallel',
+          },
+          tools: [tool('weather')],
+        );
+        _expectGrammar(
+          validator,
+          rendered.grammar!,
+          valid: [
+            call('"weather"'),
+            if (parallel) '${call('"weather"')}${call('"weather"')}',
+          ],
+          invalid: [
+            call('weather'),
+            if (!parallel) '${call('"weather"')}${call('"weather"')}',
+          ],
+        );
+      }
     }
   });
 

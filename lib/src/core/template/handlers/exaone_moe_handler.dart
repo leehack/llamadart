@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dinja/dinja.dart';
 
 import '../../grammar/json_schema_converter.dart';
@@ -217,7 +219,7 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
 
       final ruleName = 'tool-$i-call';
       converter.rules[ruleName] =
-          '"{" space "\\"name\\"" space ":" space ${ToolCallGrammarUtils.literal(tool.name)} space "," space "\\"arguments\\"" space ":" space $argsRule "}" space';
+          '"{" space "\\"name\\"" space ":" space ${ToolCallGrammarUtils.literal(jsonEncode(tool.name))} space "," space "\\"arguments\\"" space ":" space $argsRule "}" space';
       toolRuleNames.add(ruleName);
     }
 
