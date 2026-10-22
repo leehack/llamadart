@@ -596,6 +596,10 @@ class LlamaEngine {
       );
     }
     if (source.format case final declared?) _checkBackendLoads(declared);
+    final candidate = backend;
+    if (candidate is BackendModelParamsCheck) {
+      (candidate as BackendModelParamsCheck).checkModelParams(params, format);
+    }
   }
 
   /// Where the backend loads each of [sources] from, in order, and [params]

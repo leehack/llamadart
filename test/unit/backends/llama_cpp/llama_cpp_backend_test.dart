@@ -67,6 +67,23 @@ void main() {
       },
     );
 
+    test('rejects LiteRT-LM-only fields before any worker request', () async {
+      await expectLater(
+        backend.modelLoad(
+          'ok.gguf',
+          const ModelParams(liteRtLmPrefillChunkSize: 128),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('natively: liteRtLmPrefillChunkSize.'),
+          ),
+        ),
+      );
+      expect(harness.received, isEmpty);
+    });
+
     test('setLogLevel forwards request through worker port', () async {
       await backend.setLogLevel(LlamaLogLevel.info);
 

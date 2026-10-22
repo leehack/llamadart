@@ -437,7 +437,9 @@ checks and known limits.
 
 `LlamaBackend()` routes by model file type. Use `ModelParams` for load-time
 controls such as context size, GPU layers, backend preference, LiteRT-LM backend
-selection, and WebGPU mem64 hints. See
+selection, and WebGPU mem64 hints. A load throws `LlamaUnsupportedException`
+for a field set that the model's runtime does not apply, before any download
+when the format is known. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
 

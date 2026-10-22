@@ -20,6 +20,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/media_placeholders.dart';
 import '../backend.dart';
@@ -1124,6 +1125,7 @@ class WebGpuLlamaBackend
         'Android has an NPU backend. Use ComputeDevice.auto, cpu or gpu.',
       );
     }
+    checkModelParamsSupportedBy(params, LlamaRuntime.llamaCpp, web: true);
     final requireGpu = params.device == ComputeDevice.gpu;
     _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;

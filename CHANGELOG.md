@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Fix tool-loop rollbacks on `ChatSession` subclasses whose `addMessage` stores a copy of a tool result, adds a note before it or keeps the history length fixed: the rollback could leave an orphaned tool result or note behind ([#1268](https://github.com/leehack/llamadart/issues/1268)).
+- Reject `ModelParams` fields the model's runtime would ignore, such as `liteRtLm*` fields on a GGUF model or `preferMemory64` off the Web, with `LlamaUnsupportedException` naming each one; `LlamaBackend()` also rejects these and LiteRT-LM platform gaps before any download when the model format is known ([#858](https://github.com/leehack/llamadart/issues/858), [#861](https://github.com/leehack/llamadart/issues/861)).
 - Fix the EXAONE MoE tool-call grammar emitting the tool name unquoted, so constrained tool calls are valid JSON ([#1312](https://github.com/leehack/llamadart/issues/1312)).
 - Seed-OSS, MiniMax M2, Apriel 1.5, Xiaomi MiMo and EXAONE MoE return a thought opened by the prompt as reasoning until its end tag, as llama.cpp does, and stream it once instead of as content or twice ([#742](https://github.com/leehack/llamadart/issues/742)).
 - Let DeepSeek V3, Seed-OSS, MiniMax M2, Apriel 1.5 and EXAONE MoE templates that open a thought in the prompt reason before a `ToolChoice.required` tool call and end the thought, so the call is not parsed as reasoning and lost ([#742](https://github.com/leehack/llamadart/issues/742)).

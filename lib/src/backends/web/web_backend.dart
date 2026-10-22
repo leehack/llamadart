@@ -5,6 +5,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/model_format.dart';
@@ -26,6 +27,7 @@ class WebAutoBackend
     implements
         BackendRuntimeIdentity,
         BackendModelFormatRouting,
+        BackendModelParamsCheck,
         LlamaBackend,
         BackendAvailability,
         BackendChatScope,
@@ -78,6 +80,12 @@ class WebAutoBackend
 
   @override
   bool get isReady => _delegate?.isReady ?? false;
+
+  @override
+  void checkModelParams(ModelParams params, ModelFormat? format) {
+    if (format == null) return;
+    checkModelParamsSupportedBy(params, format.runtime, web: true);
+  }
 
   @override
   bool get supportsStatePersistence {

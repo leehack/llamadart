@@ -14,13 +14,12 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/config/compute_device.dart';
-import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
-import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/model_format.dart';
 import '../../core/url_redaction.dart';
 import '../backend.dart';
@@ -1241,91 +1240,7 @@ class LiteRtLmBackend
     }
 
     params.validate();
-    final unsupported = <String>[];
-    if (params.contextSize <= 0) {
-      unsupported.add('contextSize=${params.contextSize}');
-    }
-    if (params.gpuLayers > 0 && params.gpuLayers != ModelParams.maxGpuLayers) {
-      unsupported.add('gpuLayers=${params.gpuLayers}');
-    }
-    if (params.splitMode != ModelSplitMode.layer) {
-      unsupported.add('splitMode');
-    }
-    if (params.mainGpu != 0) {
-      unsupported.add('mainGpu');
-    }
-    if (params.loras.isNotEmpty) {
-      unsupported.add('loras');
-    }
-    if (params.liteRtLmActivationDataType != null) {
-      unsupported.add('liteRtLmActivationDataType');
-    }
-    if (params.liteRtLmPrefillChunkSize != null) {
-      unsupported.add('liteRtLmPrefillChunkSize');
-    }
-    if (params.liteRtLmParallelFileSectionLoading != null) {
-      unsupported.add('liteRtLmParallelFileSectionLoading');
-    }
-    if (params.liteRtLmDispatchLibDir != null) {
-      unsupported.add('liteRtLmDispatchLibDir');
-    }
-    if (params.liteRtLmCacheDir != null) {
-      unsupported.add('liteRtLmCacheDir');
-    }
-    if (params.liteRtLmMaxProgramCacheBytes != null) {
-      unsupported.add('liteRtLmMaxProgramCacheBytes');
-    }
-    if (params.numberOfThreads != 0) {
-      unsupported.add('numberOfThreads');
-    }
-    if (params.numberOfThreadsBatch != 0) {
-      unsupported.add('numberOfThreadsBatch');
-    }
-    if (params.batchSize > 0) {
-      unsupported.add('batchSize');
-    }
-    if (params.microBatchSize > 0) {
-      unsupported.add('microBatchSize');
-    }
-    if (params.maxParallelSequences != 1) {
-      unsupported.add('maxParallelSequences');
-    }
-    if (!params.useMmap) {
-      unsupported.add('useMmap=false');
-    }
-    if (params.useMlock) {
-      unsupported.add('useMlock');
-    }
-    if (params.flashAttention != FlashAttention.auto) {
-      unsupported.add('flashAttention');
-    }
-    if (params.cacheTypeK != KvCacheType.f16) {
-      unsupported.add('cacheTypeK');
-    }
-    if (params.cacheTypeV != KvCacheType.f16) {
-      unsupported.add('cacheTypeV');
-    }
-    if (params.kvUnified != null) {
-      unsupported.add('kvUnified');
-    }
-    if (params.ropeFrequencyBase != null) {
-      unsupported.add('ropeFrequencyBase');
-    }
-    if (params.ropeFrequencyScale != null) {
-      unsupported.add('ropeFrequencyScale');
-    }
-
-    if (unsupported.isEmpty) {
-      return;
-    }
-    throw LlamaUnsupportedException(
-      'LiteRtLmBackend web does not support these native or '
-      'llama.cpp-specific ModelParams: '
-      '${unsupported.join(', ')}. Supported LiteRT-LM web load options are '
-      'contextSize, chatTemplate, device or the deprecated liteRtLmBackend '
-      'for CPU/GPU selection, preferredBackend, and all-or-CPU gpuLayers '
-      'hints.',
-    );
+    checkModelParamsSupportedBy(params, LlamaRuntime.liteRtLm, web: true);
   }
 
   void _validateContextParams(ModelParams params) {

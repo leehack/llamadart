@@ -86,6 +86,12 @@ enum LiteRtLmActivationDataType {
 /// These parameters affect the initial model loading and context allocation.
 /// Most of these cannot be changed once the model is loaded.
 ///
+/// A load throws `LlamaUnsupportedException` naming each field set away
+/// from its default that the model's runtime does not apply, such as a
+/// `liteRtLm*` field for a GGUF model, instead of ignoring it. `LlamaBackend()`
+/// checks this before any download when `ModelSource.format` or the file
+/// name names the model format.
+///
 /// Context batching fields in this class mirror llama.cpp semantics:
 /// `n_batch` is the logical max decode batch, and `n_ubatch` is the
 /// physical micro-batch size.
@@ -182,7 +188,7 @@ class ModelParams {
   /// Native LiteRT-LM activation data type override.
   ///
   /// `null` keeps the runtime/model default. This option is only applied by the
-  /// native LiteRT-LM `.litertlm` backend.
+  /// native LiteRT-LM `.litertlm` backend; other runtimes reject it.
   final LiteRtLmActivationDataType? liteRtLmActivationDataType;
 
   /// Native LiteRT-LM prefill chunk size for CPU dynamic models.
@@ -399,11 +405,13 @@ class ModelParams {
   /// Whether llama.cpp should memory-map model weights. Default `true`.
   ///
   /// Combined with [useMlock] and mapped to `llama_model_params.load_mode`.
+  /// The WebGPU bridge and LiteRT-LM reject `false`.
   final bool useMmap;
 
   /// Whether llama.cpp should lock model weights in memory. Default `false`.
   ///
   /// Combined with [useMmap] and mapped to `llama_model_params.load_mode`.
+  /// The WebGPU bridge and LiteRT-LM reject `true`.
   final bool useMlock;
 
   /// Whether llama.cpp should load bundled multi-token prediction tensors.
@@ -443,13 +451,14 @@ class ModelParams {
   /// need headroom for the KV cache and intermediate buffers. `null` (default)
   /// lets llamadart auto-decide from [modelBytesHint] using the current
   /// wasm32-safe ceiling; `true` forces the mem64 core; `false` forces wasm32.
-  /// Ignored on every non-web backend (native llama.cpp uses the host address
-  /// space).
+  /// Native llama.cpp, which uses the host address space, and LiteRT-LM
+  /// reject a non-null value.
   final bool? preferMemory64;
 
   /// Web/WebGPU only: approximate model size in bytes, used to decide whether
   /// to load the mem64 core up front (instead of waiting for an out-of-memory
-  /// failure and retrying). Ignored on non-web backends. `null` when unknown.
+  /// failure and retrying). `null` when unknown. Native llama.cpp and
+  /// LiteRT-LM reject a non-null value.
   final int? modelBytesHint;
 
   /// Maximum number of GPU layers to safely offload all layers.

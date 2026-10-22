@@ -2,6 +2,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import '../../core/exceptions.dart';
+import '../../core/models/config/compute_device.dart';
 import 'litert_lm_runtime.dart';
 
 /// CPU backend selector accepted by the native LiteRT-LM runtime.
@@ -67,6 +68,26 @@ void liteRtLmEnsureNativeBackendSupported(String backend) {
     'available there; litert-lm-native publishes arm64-only macOS runtimes '
     '(leehack/litert-lm-native#72). Run the app natively on Apple silicon, '
     'not under Rosetta, or use the llama.cpp backend.',
+  );
+}
+
+/// Throws a [LlamaUnsupportedException] naming the ABI when this target has
+/// no native LiteRT-LM backend for an explicit [device].
+void liteRtLmEnsureDeviceAvailable(ComputeDevice device) {
+  final backend = switch (device) {
+    ComputeDevice.auto => null,
+    ComputeDevice.cpu => liteRtLmCpuBackend,
+    ComputeDevice.gpu => liteRtLmGpuBackend,
+    ComputeDevice.npu => liteRtLmNpuBackend,
+  };
+  if (backend == null) return;
+  liteRtLmEnsureNativeBackendSupported(backend);
+  final available = liteRtLmAvailableNativeBackendsForCurrentPlatform();
+  if (available.contains(backend)) return;
+  throw LlamaUnsupportedException(
+    'ComputeDevice.${device.name} is not available for LiteRT-LM on '
+    '${Platform.operatingSystem} (${liteRtLmGateAbi()}). Available LiteRT-LM '
+    'backends: ${available.join(', ')}. Use ComputeDevice.auto or cpu.',
   );
 }
 

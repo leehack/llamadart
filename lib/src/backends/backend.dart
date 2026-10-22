@@ -399,6 +399,16 @@ abstract class BackendModelFormatDetection {
   Future<ModelFormat?> detectModelFormat(String path);
 }
 
+/// Internal backend probe that rejects a load before any model file resolves
+/// or downloads.
+abstract class BackendModelParamsCheck {
+  /// Throws [LlamaUnsupportedException] when loading a model in [format] with
+  /// [params] would ignore an explicitly set field, or needs a runtime or
+  /// device this platform lacks. [format] is null when only the model file
+  /// can tell it; the backend then checks again when it loads the file.
+  void checkModelParams(ModelParams params, ModelFormat? format);
+}
+
 /// Internal backend probe for the usage of a finished generation stream.
 abstract class BackendGenerationUsageReporting {
   /// The usage of [generation], a stream this backend returned from
