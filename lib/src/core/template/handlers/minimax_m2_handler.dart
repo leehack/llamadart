@@ -67,7 +67,11 @@ class MinimaxM2Handler extends ChatTemplateHandler {
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: buildGrammar(tools),
+      grammar: requiredGrammarAfterThought(
+        buildGrammar(tools),
+        metadata: metadata,
+        thinkingForcedOpen: thinkingForcedOpen,
+      ),
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
@@ -99,6 +103,7 @@ class MinimaxM2Handler extends ChatTemplateHandler {
       startThink: '<think>',
       endThink: '</think>',
       parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
     );
     return ChatParseResult(
       content: result.content.trim(),

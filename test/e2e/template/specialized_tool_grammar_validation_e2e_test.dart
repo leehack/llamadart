@@ -16,6 +16,7 @@ import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/template/response_format.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -1264,6 +1265,68 @@ void main() {
         ),
       ],
     );
+  });
+
+  test('required grammars end a forced-open thought before the calls', () {
+    const seoul = '{"city": "Seoul"}';
+    // EXAONE MoE gets no valid call: its grammar does not quote the tool name.
+    for (final (format, call) in [
+      (
+        ChatFormat.deepseekV3,
+        '<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>'
+            '$seoul<｜tool▁call▁end｜><｜tool▁calls▁end｜>',
+      ),
+      (
+        ChatFormat.hermes,
+        '<tool_call>{"name": "weather", "arguments": $seoul}</tool_call>',
+      ),
+      (
+        ChatFormat.seedOss,
+        '<seed:tool_call><function=weather><parameter=city>Seoul'
+            '</parameter></function></seed:tool_call>',
+      ),
+      (
+        ChatFormat.minimaxM2,
+        '<minimax:tool_call>\n<invoke name="weather">\n'
+            '<parameter name="city">Seoul</parameter>\n</invoke>\n'
+            '</minimax:tool_call>',
+      ),
+      (
+        ChatFormat.apriel15,
+        '<tool_calls>[{"name": "weather", "arguments": $seoul}]</tool_calls>',
+      ),
+      (ChatFormat.exaoneMoe, null),
+    ]) {
+      final handler = ChatTemplateEngine.handlerFor(format);
+      final rendered = handler.render(
+        templateSource:
+            '{{ messages[0]["content"] }}${handler.thinkingStartTag}\n',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: {internalToolChoiceMetadataKey: ToolChoice.required.name},
+        tools: [_weatherWithCityTool],
+      );
+      expect(rendered.thinkingForcedOpen, isTrue, reason: '$format');
+      final end = handler.thinkingEndTag;
+      const exaoneCall = '<tool_call>{"name": "weather", "arguments": {}}';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          if (call != null) ...[
+            '$end$call',
+            'Plan <${end.substring(0, end.length - 1)}.$end\n\n$call',
+          ],
+        ],
+        invalid: [
+          call ?? exaoneCall,
+          'Plan.$end\nNo tool',
+          'Plan.',
+          if (call != null) 'Plan.$end more $end$call',
+        ],
+      );
+    }
   });
 
   test('required grammars accept prefixes but still require a tool call', () {

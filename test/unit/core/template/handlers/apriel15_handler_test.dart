@@ -72,6 +72,22 @@ void main() {
     expect(partial.content, truncated);
     expect(partial.toolCalls, isEmpty);
   });
+
+  test('Apriel15Handler returns a forced-open thought as reasoning', () {
+    const call =
+        '<tool_calls>[{"name": "weather", '
+        '"arguments": {"city": "Paris"}}]</tool_calls>';
+    for (final (output, reasoning, calls) in [
+      ('Plan.', 'Plan.', 0),
+      ('Plan. $call', 'Plan. $call', 0),
+      ('Plan.</thinking>\n$call', 'Plan.', 1),
+    ]) {
+      final parsed = Apriel15Handler().parse(output, thinkingForcedOpen: true);
+      expect(parsed.content, isEmpty, reason: output);
+      expect(parsed.reasoningContent, reasoning, reason: output);
+      expect(parsed.toolCalls, hasLength(calls), reason: output);
+    }
+  });
 }
 
 Future<Object?> _noop(_) async {

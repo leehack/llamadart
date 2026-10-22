@@ -109,6 +109,44 @@ class ToolCallGrammarUtils {
     return '${lines.join('\n')}\n';
   }
 
+  /// Lets a required-call [grammar] start inside a forced-open thought.
+  ///
+  /// The grammar applies from the first token, which is reasoning when the
+  /// prompt ends with a thinking start tag. As in llama.cpp's reasoning
+  /// parser, any text without [endTag] may precede the calls; the end tag is
+  /// required because forced-open parsing treats unclosed output as
+  /// reasoning.
+  static String afterForcedOpenThought(String grammar, String endTag) => [
+    for (final line in grammar.trimRight().split('\n'))
+      line.startsWith('root ::= ')
+          ? 'root ::= think-body ${_literal(endTag)} think-space '
+                '(${line.substring('root ::= '.length)})'
+          : line,
+    ..._excludingRules('think-body', endTag),
+    r'think-space ::= | " " | "\n"{1,2} [ \t]{0,20}',
+  ].join('\n');
+
+  /// Rules for [name] matching text without [delimiter], as llama.cpp's
+  /// `gbnf_excluding_grammar` emits them for a delimiter whose first
+  /// character does not recur in it.
+  static List<String> _excludingRules(String name, String delimiter) {
+    assert(
+      delimiter.length > 1 && !delimiter.substring(1).contains(delimiter[0]),
+    );
+    String state(int i) => i == 0 ? name : '$name-$i';
+    String chars(String value) =>
+        value.replaceAllMapped(RegExp(r'[\\\]\[^-]'), (m) => '\\${m[0]}');
+    final first = chars(delimiter[0]);
+    final last = delimiter.length - 1;
+    return [
+      for (var i = 0; i < delimiter.length; i++)
+        '${state(i)} ::= '
+            '${i == 0 || i == last ? '' : '| [${chars(delimiter[i])}] ${state(i + 1)} '}'
+            '| [$first] ${state(1)} '
+            '| [^${i == 0 ? '' : chars(delimiter[i])}$first] $name',
+    ];
+  }
+
   static Map<String, dynamic> _buildToolArraySchema(
     List<ToolDefinition> tools, {
     required String nameKey,

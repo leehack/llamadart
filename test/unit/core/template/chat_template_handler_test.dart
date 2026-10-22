@@ -4,12 +4,14 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/chat_template_handler.dart';
 import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -74,6 +76,59 @@ void main() {
         );
 
     expect(result.prompt, 'user:[Weather?];assistant:[];');
+  });
+
+  group('required calls after a forced-open thought', () {
+    final tools = [
+      ToolDefinition(
+        name: 'weather',
+        description: 'w',
+        parameters: [ToolParam.string('city', required: true)],
+      ),
+    ];
+
+    for (final format in [
+      ChatFormat.deepseekV3,
+      ChatFormat.hermes,
+      ChatFormat.seedOss,
+      ChatFormat.minimaxM2,
+      ChatFormat.apriel15,
+      ChatFormat.exaoneMoe,
+    ]) {
+      final handler = ChatTemplateEngine.handlerFor(format);
+      LlamaChatTemplateResult render(
+        String toolChoice, {
+        bool thinking = true,
+      }) => handler.render(
+        templateSource:
+            '{{ messages[0]["content"] }}${handler.thinkingStartTag}\n',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: {internalToolChoiceMetadataKey: toolChoice},
+        tools: tools,
+        enableThinking: thinking,
+      );
+
+      test('${format.name} grammar closes the thought before the calls', () {
+        final required = render('required');
+        expect(required.thinkingForcedOpen, isTrue);
+        expect(
+          required.grammar,
+          contains(
+            'root ::= think-body '
+            '${ToolCallGrammarUtils.literal(handler.thinkingEndTag)} '
+            'think-space (',
+          ),
+        );
+        for (final other in [
+          render('auto'),
+          render('required', thinking: false),
+        ]) {
+          expect(other.grammar, isNot(contains('think-body')));
+        }
+      });
+    }
   });
 
   group('templates that read tool-call arguments as objects', () {
