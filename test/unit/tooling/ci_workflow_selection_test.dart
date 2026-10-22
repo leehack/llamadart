@@ -491,6 +491,23 @@ void main() {
     },
   );
 
+  test('Web Chat Contract opts the chat app out of stable_diffusion', () {
+    final steps =
+        readWorkflow('ci')['jobs']['web-chat-contract']['steps'] as List;
+    final optOut = steps.indexWhere(
+      (s) => '${s['run']}'.contains('llamadart_native_runtimes'),
+    );
+    final install = steps.indexWhere(
+      (s) => '${s['run']}'.contains('flutter pub get'),
+    );
+    expect(optOut, isNonNegative);
+    expect(optOut, lessThan(install));
+    expect(
+      '${steps[optOut]['run']}',
+      contains('llamadart_native_runtimes: both'),
+    );
+  });
+
   test(
     'runtime lanes retain full OS tests, model smoke, and coverage threshold',
     () {

@@ -551,6 +551,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Skip the stable_diffusion runtime download
+        working-directory: example/chat_app
+        run: |
+          sed -i 's/^\( *llamadart_native_runtimes:\) all$/\1 both/' pubspec.yaml
+          grep -q '^ *llamadart_native_runtimes: both$' pubspec.yaml
+
       - name: Install dependencies
         run: |
           flutter pub get
