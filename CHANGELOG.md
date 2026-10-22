@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Native LiteRT-LM applies `GenerationParams.penalty` (other than the default), `presencePenalty` and, in chat on bundles with a thinking channel such as Gemma 4, `thinkingBudget`; penalties count only the tokens of the current send, `capabilities` reports each control, and a value it cannot apply throws `LlamaUnsupportedException` instead of `UnsupportedError` ([#1155](https://github.com/leehack/llamadart/issues/1155)).
+- Fix the EXAONE MoE tool-call grammar emitting the tool name unquoted, so constrained tool calls are valid JSON ([#1312](https://github.com/leehack/llamadart/issues/1312)).
 - Seed-OSS, MiniMax M2, Apriel 1.5, Xiaomi MiMo and EXAONE MoE return a thought opened by the prompt as reasoning until its end tag, as llama.cpp does, and stream it once instead of as content or twice ([#742](https://github.com/leehack/llamadart/issues/742)).
 - Let DeepSeek V3, Seed-OSS, MiniMax M2, Apriel 1.5 and EXAONE MoE templates that open a thought in the prompt reason before a `ToolChoice.required` tool call and end the thought, so the call is not parsed as reasoning and lost ([#742](https://github.com/leehack/llamadart/issues/742)).
 
