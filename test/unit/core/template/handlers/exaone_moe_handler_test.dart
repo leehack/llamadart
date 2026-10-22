@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/exaone_moe_handler.dart';
 import 'package:test/test.dart';
 
@@ -43,6 +45,38 @@ void main() {
       jsonDecode(parsed.toolCalls.first.function!.arguments!),
       containsPair('city', 'Seoul'),
     );
+  });
+
+  group('ExaoneMoeHandler.buildGrammar', () {
+    Future<Object?> noop(_) async => null;
+
+    String grammarFor(String name) => ExaoneMoeHandler().buildGrammar([
+      ToolDefinition(
+        name: name,
+        description: 'Tool',
+        parameters: [ToolParam.string('city')],
+        handler: noop,
+      ),
+    ])!;
+
+    test('quotes the tool name as a JSON string', () {
+      expect(
+        grammarFor('weather'),
+        contains(r'"\"name\"" space ":" space "\"weather\"" space'),
+      );
+    });
+
+    test('escapes tool names that need JSON escaping', () {
+      expect(grammarFor('a"b'), contains(r'space "\"a\\\"b\"" space'));
+    });
+
+    test('parses a call body with a quoted name', () {
+      final parsed = ExaoneMoeHandler().parse(
+        '<tool_call>{"name":"weather","arguments":{"city":"Seoul"}}</tool_call>',
+      );
+
+      expect(parsed.toolCalls.single.function?.name, 'weather');
+    });
   });
 
   test('ExaoneMoeHandler keeps malformed tool blocks as content', () {
