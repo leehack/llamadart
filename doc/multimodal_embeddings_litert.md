@@ -98,12 +98,15 @@ unsupported. These observations do not establish the cause of the numerical gap.
 
 ## Unsupported paths and upstream gaps
 
-- **Native GPU:** fail before native engine creation. Pinned `v0.18.0-3` has a
+- **Native GPU:** fail before native engine creation. `v0.18.0-3` has a
   WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
-  as well as the prototype. The upstream repair is after v0.18.0 in
+  as well as the prototype. The upstream repair is
   [LiteRT dd3db31236](https://github.com/google-ai-edge/LiteRT/commit/dd3db31236).
-  A newer released owner runtime and requalification are required; no unsafe
-  accelerator call or silent CPU fallback is made. NPU embeddings are unqualified.
+  Pinned `v0.18.1` builds `libLiteRtLm` with it but ships the same prebuilt
+  macOS WebGPU accelerator, and EmbeddingGemma 2 still crashes on GPU there.
+  A runtime with a repaired accelerator and requalification are required; no
+  unsafe accelerator call or silent CPU fallback is made. NPU embeddings are
+  unqualified.
 - **Web CPU host weights:** fail before I/O. The pinned source streams text-encoder
   weights only for WebGPU ([upstream lines 794–818](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/embedding_engine_impl.cc#L794-L818)).
   The upstream-only CPU creation error is `Failed to get external weight for
@@ -142,7 +145,7 @@ LITERT_LM_EMBEDDING_MODEL=/path/model.litertlm LITERT_LM_EMBEDDING_OUTPUT="$TMPD
 Compare the exported inputs against the upstream C API directly (macOS arm64):
 
 ```bash
-python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.0-3/macos/arm64 --output "$TMPDIR/qualification"
+python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.1/macos/arm64 --output "$TMPDIR/qualification"
 ```
 
 Serve the existing weights with Range and CORS on a free port other than 8080:

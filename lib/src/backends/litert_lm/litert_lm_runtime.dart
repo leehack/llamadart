@@ -21,8 +21,8 @@ export 'litert_lm_asr_types.dart';
 
 part 'litert_lm_embedding_native.dart';
 
-const _litertLmReleaseTag = 'v0.18.0-3';
-const _litertLmVersion = '0.18.0-3';
+const _litertLmReleaseTag = 'v0.18.1';
+const _litertLmVersion = '0.18.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';

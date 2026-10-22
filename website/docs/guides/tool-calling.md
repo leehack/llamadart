@@ -13,7 +13,7 @@ the calls, and your code runs them.
 Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
 runtime termination reporting. On LiteRT-LM, llamadart cannot yet distinguish
 normal completion from a per-request token cutoff: it does not read the stream
-finish reason that native `v0.18.0-3` reports
+finish reason that native runtimes from `v0.18.0-3` report
 ([#919](https://github.com/leehack/llamadart/issues/919)), and Web
 `@litert-lm/core@0.18.0` reports none. These loops throw
 `LlamaUnsupportedException` there before starting the loop or modifying its history, including when resuming a turn or
