@@ -109,6 +109,9 @@ class _RecordingClient extends LiteRtLmRuntimeClient {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+    int? thinkingTokenBudget,
   }) {
     try {
       sentPrompts.add(
@@ -122,6 +125,9 @@ class _RecordingClient extends LiteRtLmRuntimeClient {
       extraContext: extraContext,
       visualTokenBudget: visualTokenBudget,
       maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
+      thinkingTokenBudget: thinkingTokenBudget,
     );
   }
 }

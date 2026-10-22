@@ -337,6 +337,13 @@ class LiteRtLmBundleCapabilitiesRequest extends LiteRtLmWorkerRequest {
   LiteRtLmBundleCapabilitiesRequest(super.sendPort);
 }
 
+/// Request for the per-send decode controls the runtime and loaded bundle
+/// apply.
+class LiteRtLmGenerationControlsRequest extends LiteRtLmWorkerRequest {
+  /// Creates a generation controls request.
+  LiteRtLmGenerationControlsRequest(super.sendPort);
+}
+
 /// Request for system information.
 class LiteRtLmSystemInfoRequest extends LiteRtLmWorkerRequest {
   /// Creates a system info request.
@@ -429,6 +436,22 @@ class LiteRtLmBundleCapabilitiesResponse {
 
   /// Creates a bundle capabilities response.
   LiteRtLmBundleCapabilitiesResponse(this.capabilities);
+}
+
+/// Response containing the per-send decode controls the runtime and loaded
+/// bundle apply, as `LiteRtLmService.generationControls` reports them.
+class LiteRtLmGenerationControlsResponse {
+  /// Whether repetition and presence penalties are applied.
+  final bool penalties;
+
+  /// Whether a thinking budget is applied.
+  final bool thinkingBudget;
+
+  /// Creates a generation controls response.
+  LiteRtLmGenerationControlsResponse({
+    required this.penalties,
+    required this.thinkingBudget,
+  });
 }
 
 /// Response containing an error.

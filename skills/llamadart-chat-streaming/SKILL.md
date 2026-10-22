@@ -85,6 +85,15 @@ description: >-
   can still return empty content after renaming. Generic thinking markers are
   insufficient. Other families keep native bundle templates and adapters;
   overrides still drive Dart-side metadata and parsing. Media routing is unchanged.
+- Gate `penalty`, `presencePenalty` and `thinkingBudget` on
+  `await engine.capabilities` (`supportsPenalty`, `supportsPresencePenalty`,
+  `supportsThinkingBudget`); an unsupported value throws
+  `LlamaUnsupportedException`. Native LiteRT-LM penalties count only the
+  tokens of the current send, leave the default `penalty` unapplied and
+  reject values below `1.0`. Its thinking budget applies to `engine.create`
+  on bundles with a thinking channel (Gemma 4), closes that channel with the
+  bundle's own marker, and rejects `0`, `forcedMessage` and speculative
+  decoding. Min-P stays unsupported there.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),

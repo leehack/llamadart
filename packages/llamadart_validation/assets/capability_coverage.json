@@ -233,7 +233,7 @@
       ],
       "exemption": {
         "id": "sampler-controls",
-        "reason": "Thinking-output cases do not establish sampler-control or thinking-budget semantics. Dedicated positive/unsupported/runtime-skew pack coverage remains.",
+        "reason": "Thinking-output cases do not establish sampler-control or thinking-budget semantics. Native LiteRT-LM penalties and thinking budgets are qualified by a local-only real-model test (test/e2e/backends/litert_lm_generation_controls_e2e_test.dart); dedicated positive/unsupported/runtime-skew pack coverage remains.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

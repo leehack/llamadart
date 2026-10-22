@@ -49,6 +49,25 @@ typedef LiteRtLmBundleCapabilitiesReader =
 /// [readLiteRtLmBundleChatTemplate] does.
 typedef LiteRtLmBundleChatTemplateReader = String? Function(String modelPath);
 
+/// Reads the first response channel of the `.litertlm` bundle at a path, as
+/// [readLiteRtLmBundleFirstChannel] does.
+typedef LiteRtLmBundleFirstChannelReader =
+    ({String name, bool? isReasoning})? Function(String modelPath);
+
+/// The per-send decode controls a request resolves to.
+typedef _LiteRtLmGenerationControls = ({
+  double? repetitionPenalty,
+  double? presencePenalty,
+  int? thinkingTokenBudget,
+});
+
+const _liteRtLmThinkingChannelNames = {
+  'thought',
+  'thinking',
+  'think',
+  'reasoning',
+};
+
 /// Worker-owned service for the LiteRT-LM backend.
 ///
 /// This keeps all LiteRT-LM FFI state inside the backend worker isolate. The
@@ -65,8 +84,9 @@ class LiteRtLmService {
   /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
   /// and Android. [createLink] replaces [Link.create] for those links in
   /// tests. [readBundleCapabilities] replaces
-  /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client, and
-  /// [readBundleChatTemplate] replaces [readLiteRtLmBundleChatTemplate].
+  /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client,
+  /// [readBundleChatTemplate] replaces [readLiteRtLmBundleChatTemplate], and
+  /// [readBundleFirstChannel] replaces [readLiteRtLmBundleFirstChannel].
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
@@ -74,6 +94,7 @@ class LiteRtLmService {
     LiteRtLmLinkCreator? createLink,
     LiteRtLmBundleCapabilitiesReader? readBundleCapabilities,
     LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
+    LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
        _readBundleCapabilities =
            readBundleCapabilities ??
@@ -81,6 +102,8 @@ class LiteRtLmService {
                LiteRtLmRuntimeClient().bundleCapabilities(modelPath)),
        _readBundleChatTemplate =
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
+       _readBundleFirstChannel =
+           readBundleFirstChannel ?? readLiteRtLmBundleFirstChannel,
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
@@ -89,6 +112,7 @@ class LiteRtLmService {
   final LiteRtLmRuntimeClient Function() _clientFactory;
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
+  final LiteRtLmBundleFirstChannelReader _readBundleFirstChannel;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
@@ -114,6 +138,8 @@ class LiteRtLmService {
   bool _bundleTemplateProbed = false;
   String? _bundleTemplateAdapter;
   bool _bundleTemplateMisreadsContent = false;
+  ({bool penalties, bool thinkingBudget})? _runtimeGenerationControls;
+  bool? _bundleDeclaresThinkingChannel;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
@@ -171,6 +197,7 @@ class LiteRtLmService {
     _bundleTemplateProbed = false;
     _bundleTemplateAdapter = null;
     _bundleTemplateMisreadsContent = false;
+    _bundleDeclaresThinkingChannel = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -196,6 +223,7 @@ class LiteRtLmService {
     _bundleTemplateProbed = false;
     _bundleTemplateAdapter = null;
     _bundleTemplateMisreadsContent = false;
+    _bundleDeclaresThinkingChannel = null;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -356,6 +384,15 @@ class LiteRtLmService {
       throw UnsupportedError('LiteRtLmBackend does not support media parts.');
     }
     _validateGenerationParams(params);
+    if (params.thinkingBudget != null) {
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackend applies GenerationParams.thinkingBudget only to native '
+        'chat generation, where LiteRT-LM renders the prompt and tracks the '
+        "bundle's thinking channel; raw prompt generation has no thinking "
+        'budget.',
+      );
+    }
+    final controls = _resolveGenerationControls(params, enableThinking: false);
 
     _cancelRequested = false;
     if (params.maxTokens <= 0) {
@@ -396,10 +433,17 @@ class LiteRtLmService {
     var outputStarted = false;
     try {
       final stream = _applyStopSequences(
-        client.generate(prompt, maxOutputTokens: params.maxTokens).map((chunk) {
-          outputStarted = true;
-          return chunk;
-        }),
+        client
+            .generate(
+              prompt,
+              maxOutputTokens: params.maxTokens,
+              repetitionPenalty: controls.repetitionPenalty,
+              presencePenalty: controls.presencePenalty,
+            )
+            .map((chunk) {
+              outputStarted = true;
+              return chunk;
+            }),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -492,6 +536,10 @@ class LiteRtLmService {
       );
     }
     _validateGenerationParams(params);
+    final controls = _resolveGenerationControls(
+      params,
+      enableThinking: enableThinking,
+    );
 
     _cancelRequested = false;
     if (params.maxTokens <= 0) {
@@ -587,6 +635,9 @@ class LiteRtLmService {
                   ? null
                   : _gemma4DefaultVisualTokenBudget,
               maxOutputTokens: params.maxTokens,
+              repetitionPenalty: controls.repetitionPenalty,
+              presencePenalty: controls.presencePenalty,
+              thinkingTokenBudget: controls.thinkingTokenBudget,
             )
             .map((chunk) {
               outputStarted = true;
@@ -1594,20 +1645,11 @@ class LiteRtLmService {
     if (params.minP != defaults.minP) {
       unsupported.add('minP');
     }
-    if (params.penalty != defaults.penalty) {
-      unsupported.add('penalty');
-    }
-    if (params.presencePenalty != defaults.presencePenalty) {
-      unsupported.add('presencePenalty');
-    }
     if (params.grammar != null) {
       unsupported.add('grammar');
     }
     if (params.grammarLazy) {
       unsupported.add('grammarLazy');
-    }
-    if (params.thinkingBudget != null) {
-      unsupported.add('thinkingBudget');
     }
     if (params.grammarTriggers.isNotEmpty) {
       unsupported.add('grammarTriggers');
@@ -1626,9 +1668,146 @@ class LiteRtLmService {
     throw UnsupportedError(
       'LiteRtLmBackend does not support llama.cpp-specific GenerationParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM generation options are '
-      'maxTokens, temp, topK, topP, seed, stopSequences, '
-      'speculativeDecoding, speculativeDecodingConfig, and native stream '
-      'batching thresholds.',
+      'maxTokens, temp, topK, topP, seed, stopSequences, penalty, '
+      'presencePenalty, thinkingBudget, speculativeDecoding, '
+      'speculativeDecodingConfig, and native stream batching thresholds.',
+    );
+  }
+
+  /// Which per-send decode controls the LiteRT-LM runtime and the loaded
+  /// bundle apply: repetition and presence penalties when the runtime
+  /// exports the repetition penalty API, and a thinking budget when it also
+  /// exports the thinking config API and the bundle declares a thinking
+  /// channel for the runtime to bound.
+  ({bool penalties, bool thinkingBudget}) generationControls() {
+    final runtime = _readRuntimeGenerationControls();
+    return (
+      penalties: runtime.penalties,
+      thinkingBudget: runtime.thinkingBudget && _bundleBoundsThinking(),
+    );
+  }
+
+  ({bool penalties, bool thinkingBudget}) _readRuntimeGenerationControls() {
+    final cached = _runtimeGenerationControls;
+    if (cached != null) {
+      return cached;
+    }
+    final client = _client ?? _clientFactory();
+    return _runtimeGenerationControls = (
+      penalties: client.supportsSamplingPenalties,
+      thinkingBudget: client.supportsThinkingBudget,
+    );
+  }
+
+  bool _bundleBoundsThinking() {
+    final cached = _bundleDeclaresThinkingChannel;
+    if (cached != null) {
+      return cached;
+    }
+    final modelPath = _modelPath;
+    if (!_modelLoaded || modelPath == null) {
+      return false;
+    }
+    final channel = _readBundleFirstChannel(_modelLink?.path ?? modelPath);
+    return _bundleDeclaresThinkingChannel =
+        channel != null &&
+        (channel.isReasoning ??
+            _liteRtLmThinkingChannelNames.contains(channel.name.toLowerCase()));
+  }
+
+  /// Maps [params] to LiteRT-LM per-send decode controls, or throws when the
+  /// runtime, the bundle or the request cannot apply one as asked.
+  ///
+  /// The default [GenerationParams.penalty] stays unapplied, as it was before
+  /// LiteRT-LM applied penalties, so default requests keep their output.
+  _LiteRtLmGenerationControls _resolveGenerationControls(
+    GenerationParams params, {
+    required bool enableThinking,
+  }) {
+    const defaults = GenerationParams();
+    final penalty = params.penalty;
+    final presencePenalty = params.presencePenalty;
+    final appliesPenalty = penalty != defaults.penalty;
+    final appliesPresencePenalty = presencePenalty != defaults.presencePenalty;
+    final budget = params.thinkingBudget;
+    if (!appliesPenalty && !appliesPresencePenalty && budget == null) {
+      return (
+        repetitionPenalty: null,
+        presencePenalty: null,
+        thinkingTokenBudget: null,
+      );
+    }
+    if (appliesPenalty && !penalty.isFinite) {
+      throw ArgumentError.value(penalty, 'penalty', 'must be finite');
+    }
+    if (appliesPresencePenalty && !presencePenalty.isFinite) {
+      throw ArgumentError.value(
+        presencePenalty,
+        'presencePenalty',
+        'must be finite',
+      );
+    }
+    if (appliesPenalty && penalty < 1.0) {
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackend cannot apply GenerationParams.penalty $penalty: '
+        'LiteRT-LM repetition penalties start at 1.0 (no penalty) and the '
+        'runtime raises smaller values to 1.0.',
+      );
+    }
+    if (params.isSpeculativeDecodingEnabled) {
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackend does not combine speculative decoding with '
+        'GenerationParams.penalty, presencePenalty or thinkingBudget; this '
+        'LiteRT-LM combination is not qualified.',
+      );
+    }
+    final runtime = _readRuntimeGenerationControls();
+    if ((appliesPenalty || appliesPresencePenalty) && !runtime.penalties) {
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackend cannot apply GenerationParams.penalty or '
+        'presencePenalty: the loaded LiteRT-LM runtime does not export the '
+        'repetition penalty API (litert-lm-native v0.18.0 or newer).',
+      );
+    }
+    int? thinkingTokenBudget;
+    if (budget != null) {
+      if (budget.forcedMessage != null) {
+        throw LlamaUnsupportedException(
+          'LiteRtLmBackend cannot apply ThinkingBudget.forcedMessage: '
+          'LiteRT-LM closes an exhausted thinking channel with its end marker '
+          'only.',
+        );
+      }
+      if (budget.maxTokens == 0) {
+        throw LlamaUnsupportedException(
+          'LiteRtLmBackend cannot apply a zero ThinkingBudget: LiteRT-LM '
+          'treats a zero thinking token budget as no budget. Disable '
+          'thinking instead, or use a budget of at least 1.',
+        );
+      }
+      if (!runtime.thinkingBudget) {
+        throw LlamaUnsupportedException(
+          'LiteRtLmBackend cannot apply GenerationParams.thinkingBudget: the '
+          'loaded LiteRT-LM runtime does not export the thinking config API '
+          '(litert-lm-native v0.18.0 or newer).',
+        );
+      }
+      if (!_bundleBoundsThinking()) {
+        throw LlamaUnsupportedException(
+          'LiteRtLmBackend cannot apply GenerationParams.thinkingBudget to '
+          'this model: LiteRT-LM bounds thinking with the first response '
+          'channel a bundle declares, and this bundle declares no thinking '
+          'channel.',
+        );
+      }
+      if (enableThinking) {
+        thinkingTokenBudget = budget.maxTokens;
+      }
+    }
+    return (
+      repetitionPenalty: appliesPenalty ? penalty : null,
+      presencePenalty: appliesPresencePenalty ? presencePenalty : null,
+      thinkingTokenBudget: thinkingTokenBudget,
     );
   }
 

@@ -6050,6 +6050,295 @@ void main() {
     },
   );
 
+  group('generation controls', () {
+    late _FakeLiteRtLmRuntimeClient client;
+    late ({String name, bool? isReasoning})? firstChannel;
+    late LiteRtLmService service;
+    late int context;
+
+    setUp(() async {
+      client = _FakeLiteRtLmRuntimeClient();
+      firstChannel = (name: 'thought', isReasoning: null);
+      service = LiteRtLmService(
+        clientFactory: () => client,
+        readBundleFirstChannel: (_) => firstChannel,
+      );
+      final model = await service.loadModel(
+        modelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu),
+      );
+      context = service.createContext(model, const ModelParams());
+    });
+
+    tearDown(() => service.dispose());
+
+    Future<void> answer() async {
+      await client.generateStarted.future;
+      client.generated.add('A');
+      await client.generated.close();
+    }
+
+    Future<void> raw(GenerationParams params) async {
+      final done = service.generate(context, 'Hello', params).drain<void>();
+      await answer();
+      await done;
+    }
+
+    Future<void> chat(GenerationParams params, {bool enableThinking = true}) {
+      final done = service
+          .generateChat(
+            context,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+            ],
+            params,
+            enableThinking: enableThinking,
+          )
+          .drain<void>();
+      return answer().then((_) => done);
+    }
+
+    test('leaves the default penalty unapplied', () async {
+      await raw(const GenerationParams(maxTokens: 8));
+
+      expect(client.lastRepetitionPenalty, isNull);
+      expect(client.lastPresencePenalty, isNull);
+      expect(client.lastThinkingTokenBudget, isNull);
+    });
+
+    test('passes non-default penalties to raw generation', () async {
+      await raw(const GenerationParams(penalty: 1.3, presencePenalty: -0.4));
+
+      expect(client.lastRepetitionPenalty, 1.3);
+      expect(client.lastPresencePenalty, -0.4);
+    });
+
+    test('passes only the penalty that differs from its default', () async {
+      await chat(const GenerationParams(presencePenalty: 0.6));
+
+      expect(client.lastRepetitionPenalty, isNull);
+      expect(client.lastPresencePenalty, 0.6);
+    });
+
+    test('passes a thinking budget to native chat generation', () async {
+      await chat(
+        const GenerationParams(
+          penalty: 1.2,
+          thinkingBudget: ThinkingBudget(
+            maxTokens: 32,
+            startTag: '<think>',
+            endTag: '</think>',
+          ),
+        ),
+      );
+
+      expect(client.lastThinkingTokenBudget, 32);
+      expect(client.lastRepetitionPenalty, 1.2);
+    });
+
+    test('sends no budget when thinking is disabled', () async {
+      await chat(
+        const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 32)),
+        enableThinking: false,
+      );
+
+      expect(client.lastThinkingTokenBudget, isNull);
+    });
+
+    test('accepts a first channel flagged as reasoning', () async {
+      firstChannel = (name: 'analysis', isReasoning: true);
+
+      await chat(
+        const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 4)),
+      );
+
+      expect(client.lastThinkingTokenBudget, 4);
+    });
+
+    test('reports the controls the runtime and bundle apply', () {
+      expect(service.generationControls(), (
+        penalties: true,
+        thinkingBudget: true,
+      ));
+    });
+
+    test('reports no thinking budget for a bundle without a thinking '
+        'channel', () async {
+      firstChannel = (name: 'tool', isReasoning: null);
+      final other = LiteRtLmService(
+        clientFactory: () => client,
+        readBundleFirstChannel: (_) => firstChannel,
+      );
+      addTearDown(other.dispose);
+
+      expect(other.generationControls().thinkingBudget, isFalse);
+      await other.loadModel(modelFile.path, const ModelParams());
+      expect(other.generationControls(), (
+        penalties: true,
+        thinkingBudget: false,
+      ));
+    });
+
+    test('rereads the thinking channel when another bundle loads', () async {
+      expect(service.generationControls().thinkingBudget, isTrue);
+
+      firstChannel = null;
+      final model = await service.loadModel(
+        modelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu),
+      );
+      final reloaded = service.createContext(model, const ModelParams());
+
+      expect(service.generationControls(), (
+        penalties: true,
+        thinkingBudget: false,
+      ));
+      await expectLater(
+        service.generateChat(
+          reloaded,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ],
+          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 8)),
+        ),
+        emitsError(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('declares no thinking channel'),
+          ),
+        ),
+      );
+      expect(client.generateCount, 0);
+    });
+
+    test('reports no controls for a runtime without their APIs', () {
+      client
+        ..samplingPenalties = false
+        ..thinkingBudget = false;
+
+      expect(service.generationControls(), (
+        penalties: false,
+        thinkingBudget: false,
+      ));
+    });
+
+    Matcher unsupported(String fragment) => emitsError(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        contains(fragment),
+      ),
+    );
+
+    for (final (name, params, fragment) in [
+      (
+        'a penalty below 1.0',
+        const GenerationParams(penalty: 0.9),
+        'start at 1.0',
+      ),
+      (
+        'penalties with speculative decoding',
+        const GenerationParams(presencePenalty: 0.5, speculativeDecoding: true),
+        'speculative decoding',
+      ),
+      (
+        'a thinking budget with speculative decoding',
+        const GenerationParams(
+          thinkingBudget: ThinkingBudget(maxTokens: 8),
+          speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+        ),
+        'speculative decoding',
+      ),
+      (
+        'a forced thinking message',
+        const GenerationParams(
+          thinkingBudget: ThinkingBudget(maxTokens: 8, forcedMessage: 'Done.'),
+        ),
+        'forcedMessage',
+      ),
+      (
+        'a zero thinking budget',
+        const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 0)),
+        'zero thinking token budget as no budget',
+      ),
+    ]) {
+      test('refuses $name before sending', () async {
+        await expectLater(
+          service.generateChat(context, const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ], params),
+          unsupported(fragment),
+        );
+        expect(client.generateCount, 0);
+      });
+    }
+
+    test('refuses penalties on a runtime without the penalty API', () async {
+      client.samplingPenalties = false;
+
+      await expectLater(
+        service.generate(context, 'Hi', const GenerationParams(penalty: 1.0)),
+        unsupported('does not export the repetition penalty API'),
+      );
+      expect(client.generateCount, 0);
+    });
+
+    test('refuses a thinking budget on a runtime without the thinking '
+        'API', () async {
+      client.thinkingBudget = false;
+
+      await expectLater(
+        service.generateChat(
+          context,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ],
+          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 8)),
+        ),
+        unsupported('does not export the thinking config API'),
+      );
+      expect(client.generateCount, 0);
+    });
+
+    for (final channel in <({String name, bool? isReasoning})?>[
+      null,
+      (name: 'tool', isReasoning: null),
+      (name: 'thought', isReasoning: false),
+    ]) {
+      test('refuses a thinking budget when the first channel is '
+          '$channel', () async {
+        firstChannel = channel;
+
+        await expectLater(
+          service.generateChat(
+            context,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+            ],
+            const GenerationParams(
+              thinkingBudget: ThinkingBudget(maxTokens: 8),
+            ),
+          ),
+          unsupported('declares no thinking channel'),
+        );
+        expect(client.generateCount, 0);
+      });
+    }
+
+    test('rejects non-finite penalties', () async {
+      await expectLater(
+        service.generate(
+          context,
+          'Hi',
+          const GenerationParams(presencePenalty: double.nan),
+        ),
+        emitsError(isArgumentError),
+      );
+      expect(client.generateCount, 0);
+    });
+  });
+
   test('rejects unsupported LiteRT-LM generation params', () async {
     final service = LiteRtLmService();
 
@@ -6108,10 +6397,10 @@ void main() {
           const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 16)),
         ),
         emitsError(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
-            contains('thinkingBudget'),
+            contains('raw prompt generation has no thinking budget'),
           ),
         ),
       );
@@ -6121,8 +6410,6 @@ void main() {
           contextHandle,
           'hello',
           const GenerationParams(
-            penalty: 1.0,
-            presencePenalty: 1.5,
             grammarLazy: true,
             grammarTriggers: [
               GenerationGrammarTrigger.typed(
@@ -6139,8 +6426,7 @@ void main() {
             (error) => error.message.toString(),
             'message',
             allOf(
-              contains('penalty'),
-              contains('presencePenalty'),
+              contains('GenerationParams: grammarLazy,'),
               contains('grammarLazy'),
               contains('grammarTriggers'),
               contains('preservedTokens'),
@@ -6418,6 +6704,11 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   Map<String, dynamic>? lastMessageExtraContext;
   int? lastVisualTokenBudget;
   int? lastMaxOutputTokens;
+  double? lastRepetitionPenalty;
+  double? lastPresencePenalty;
+  int? lastThinkingTokenBudget;
+  bool samplingPenalties = true;
+  bool thinkingBudget = true;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
@@ -6567,9 +6858,23 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   @override
-  Stream<String> generate(String prompt, {int? maxOutputTokens}) {
+  bool get supportsSamplingPenalties => samplingPenalties;
+
+  @override
+  bool get supportsThinkingBudget => thinkingBudget;
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+  }) {
     _checkNotDisposed();
     lastMaxOutputTokens = maxOutputTokens;
+    lastRepetitionPenalty = repetitionPenalty;
+    lastPresencePenalty = presencePenalty;
+    lastThinkingTokenBudget = null;
     generateCount += 1;
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
@@ -6583,9 +6888,15 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+    int? thinkingTokenBudget,
   }) {
     _checkNotDisposed();
     lastMessageJson = messageJson;
+    lastRepetitionPenalty = repetitionPenalty;
+    lastPresencePenalty = presencePenalty;
+    lastThinkingTokenBudget = thinkingTokenBudget;
     lastMessageExtraContext = extraContext == null
         ? null
         : Map<String, dynamic>.from(extraContext);
