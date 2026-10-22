@@ -71,9 +71,10 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: _buildGrammarWithOptions(
-        tools,
-        parallelToolCalls: parallelToolCalls,
+      grammar: requiredGrammarAfterThought(
+        _buildGrammarWithOptions(tools, parallelToolCalls: parallelToolCalls),
+        metadata: metadata,
+        thinkingForcedOpen: thinkingForcedOpen,
       ),
       grammarLazy: hasTools && !toolChoiceRequired,
       thinkingForcedOpen: thinkingForcedOpen,

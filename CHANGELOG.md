@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Seed-OSS, MiniMax M2, Apriel 1.5, Xiaomi MiMo and EXAONE MoE return a thought opened by the prompt as reasoning until its end tag, as llama.cpp does, and stream it once instead of as content or twice ([#742](https://github.com/leehack/llamadart/issues/742)).
+- Let DeepSeek V3, Seed-OSS, MiniMax M2, Apriel 1.5 and EXAONE MoE templates that open a thought in the prompt reason before a `ToolChoice.required` tool call and end the thought, so the call is not parsed as reasoning and lost ([#742](https://github.com/leehack/llamadart/issues/742)).
 
 ## 0.15.6
 

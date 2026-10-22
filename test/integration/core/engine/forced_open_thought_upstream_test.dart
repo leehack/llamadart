@@ -8,6 +8,7 @@ import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -41,21 +42,24 @@ void main() {
     group(templatePath.split('/').last, () {
       late LlamaChatTemplateResult rendered;
 
-      setUpAll(() {
-        rendered = ChatTemplateEngine.render(
-          templateSource: File(templatePath).readAsStringSync(),
-          messages: [
-            LlamaChatMessage.fromText(
-              role: LlamaChatRole.user,
-              text: _fixture['user_prompt'] as String,
-            ),
-          ],
-          metadata: const {},
-          tools: [_weatherTool],
-          chatTemplateKwargs:
-              entry['chat_template_kwargs'] as Map<String, dynamic>?,
-        );
-      });
+      LlamaChatTemplateResult render({
+        ToolChoice toolChoice = ToolChoice.auto,
+      }) => ChatTemplateEngine.render(
+        templateSource: File(templatePath).readAsStringSync(),
+        messages: [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: _fixture['user_prompt'] as String,
+          ),
+        ],
+        metadata: const {},
+        tools: [_weatherTool],
+        toolChoice: toolChoice,
+        chatTemplateKwargs:
+            entry['chat_template_kwargs'] as Map<String, dynamic>?,
+      );
+
+      setUpAll(() => rendered = render());
 
       test('forces the thought open as llama.cpp does', () {
         expect(
@@ -64,6 +68,18 @@ void main() {
         );
         expect(rendered.prompt, endsWith(entry['generation_prompt'] as String));
         expect(rendered.thinkingForcedOpen, isTrue);
+      });
+
+      // An unended thought parses as reasoning, so a required call that the
+      // grammar let the model start inside it would be lost.
+      test('a required call must end the thought first', () {
+        final required = render(toolChoice: ToolChoice.required);
+        expect(required.thinkingForcedOpen, isTrue);
+        expect(required.grammarLazy, isFalse);
+        expect(
+          required.grammar,
+          startsWith('root ::= think-body "</think>" think-space ('),
+        );
       });
 
       for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
