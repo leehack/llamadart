@@ -4,6 +4,7 @@ import '../config/flash_attention.dart';
 import '../config/gpu_backend.dart';
 import '../config/kv_cache_type.dart';
 import '../config/lora_config.dart';
+import 'model_params_runtime_support.dart';
 
 /// Strategy for distributing model tensors across GPU devices.
 ///
@@ -717,15 +718,20 @@ class ModelParams {
     }
   }
 
-  static LlamaArgumentException _invalid(
+  LlamaArgumentException _invalid(
     String name,
     Object? value,
     String requirement,
-  ) => LlamaArgumentException(
-    'ModelParams.$name $requirement (got $value).',
-    name: name,
-    invalidValue: value,
-  );
+  ) {
+    final option = name.startsWith('liteRtLm')
+        ? liteRtLmOptionName(this, name)
+        : name;
+    return LlamaArgumentException(
+      '${modelParamsTypeName(this)}.$option $requirement (got $value).',
+      name: option,
+      invalidValue: value,
+    );
+  }
 
   /// Creates a copy of this [ModelParams] with updated fields.
   ///
@@ -951,9 +957,10 @@ class LlamaCppModelParams extends ModelParams {
 
   /// Creates a copy with updated fields, as [ModelParams.copyWith] does.
   ///
-  /// The `liteRtLm*` arguments exist only to override
-  /// [ModelParams.copyWith]: passing any of them throws
-  /// [LlamaArgumentException], since llama.cpp does not apply them.
+  /// The `liteRtLm*` arguments and `clearLiteRtLm*` flags exist only to
+  /// override [ModelParams.copyWith]: passing any of them, or setting a flag
+  /// to true, throws [LlamaArgumentException], since llama.cpp does not
+  /// apply them.
   @override
   LlamaCppModelParams copyWith({
     @Deprecated(
@@ -1067,6 +1074,15 @@ class LlamaCppModelParams extends ModelParams {
       'liteRtLmDispatchLibDir': liteRtLmDispatchLibDir,
       'liteRtLmCacheDir': liteRtLmCacheDir,
       'liteRtLmMaxProgramCacheBytes': liteRtLmMaxProgramCacheBytes,
+      if (clearLiteRtLmActivationDataType)
+        'clearLiteRtLmActivationDataType': true,
+      if (clearLiteRtLmPrefillChunkSize) 'clearLiteRtLmPrefillChunkSize': true,
+      if (clearLiteRtLmParallelFileSectionLoading)
+        'clearLiteRtLmParallelFileSectionLoading': true,
+      if (clearLiteRtLmDispatchLibDir) 'clearLiteRtLmDispatchLibDir': true,
+      if (clearLiteRtLmCacheDir) 'clearLiteRtLmCacheDir': true,
+      if (clearLiteRtLmMaxProgramCacheBytes)
+        'clearLiteRtLmMaxProgramCacheBytes': true,
     });
     return LlamaCppModelParams._copy(
       super.copyWith(
@@ -1185,10 +1201,13 @@ class LiteRtLmModelParams extends ModelParams {
   /// Creates a copy with updated fields, as [ModelParams.copyWith] does.
   ///
   /// Use the unprefixed arguments, such as `cacheDir` and `clearCacheDir`;
-  /// the deprecated `liteRtLm*` ones set the same fields, and an unprefixed
-  /// argument wins over its `liteRtLm*` twin. The llama.cpp-only arguments
-  /// exist only to override [ModelParams.copyWith]: passing any of them
-  /// throws [LlamaArgumentException], since LiteRT-LM does not apply them.
+  /// the deprecated `liteRtLm*` ones set the same fields. An unprefixed
+  /// value wins over its `liteRtLm*` twin, and a clear flag of either
+  /// spelling wins over any value for its field, as on
+  /// [ModelParams.copyWith]. The llama.cpp-only arguments and `clear*` flags
+  /// exist only to override [ModelParams.copyWith]: passing any of them, or
+  /// setting a flag to true, throws [LlamaArgumentException], since
+  /// LiteRT-LM does not apply them.
   @override
   LiteRtLmModelParams copyWith({
     bool? embeddingEngine,
@@ -1325,6 +1344,11 @@ class LiteRtLmModelParams extends ModelParams {
       'ropeFrequencyScale': ropeFrequencyScale,
       'preferMemory64': preferMemory64,
       'modelBytesHint': modelBytesHint,
+      if (clearKvUnified) 'clearKvUnified': true,
+      if (clearRopeFrequencyBase) 'clearRopeFrequencyBase': true,
+      if (clearRopeFrequencyScale) 'clearRopeFrequencyScale': true,
+      if (clearPreferMemory64) 'clearPreferMemory64': true,
+      if (clearModelBytesHint) 'clearModelBytesHint': true,
     });
     return LiteRtLmModelParams._copy(
       super.copyWith(

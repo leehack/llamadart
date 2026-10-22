@@ -26,6 +26,7 @@ import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 import '../llama_logging.dart';
 import '../models/inference/model_params.dart';
+import '../models/inference/model_params_runtime_support.dart';
 import '../models/inference/embedding.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/generation_usage.dart';
@@ -589,6 +590,7 @@ class LlamaEngine {
         'ComputeDevice.auto, cpu or gpu.',
       );
     }
+    if (format != null) checkModelParamsTypeFor(params, format.runtime);
     if (params.liteRtLmEmbeddingEngine && format == ModelFormat.gguf) {
       throw LlamaUnsupportedException(
         'ModelParams.liteRtLmEmbeddingEngine applies only to LiteRT-LM '
@@ -3180,8 +3182,8 @@ class LlamaEngine {
     }
     if (params.liteRtLmEmbeddingEngine) {
       return 'LiteRT-LM embedding mode takes no LoRA adapter, so no adapter '
-          'was downloaded. Leave ModelParams.loras empty with '
-          'liteRtLmEmbeddingEngine.';
+          'was downloaded. Leave loras empty with '
+          '${liteRtLmOptionName(params, 'liteRtLmEmbeddingEngine')}.';
     }
     final scales = {
       for (final lora in loras)

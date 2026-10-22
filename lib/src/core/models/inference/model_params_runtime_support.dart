@@ -122,9 +122,8 @@ String unsupportedModelParamsMessage(
           'chatTemplate, device or the deprecated liteRtLmBackend for '
           'explicit CPU/GPU/NPU selection, preferredBackend, all-or-CPU '
           'gpuLayers hints, numberOfThreads, one default-scale initial LoRA '
-          'adapter, liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
-          'liteRtLmParallelFileSectionLoading, liteRtLmDispatchLibDir, '
-          'liteRtLmCacheDir, and liteRtLmMaxProgramCacheBytes.',
+          'adapter, and the LiteRT-LM options of LiteRtLmModelParams '
+          '(liteRtLm* fields on ModelParams).',
     (LlamaRuntime.liteRtLm, true) =>
       'LiteRtLmBackend web does not support these native or '
           'llama.cpp-specific ModelParams: $fields. Supported LiteRT-LM web '
@@ -134,6 +133,20 @@ String unsupportedModelParamsMessage(
   };
 }
 
+/// The name of the type [params] was built with, as messages name it.
+String modelParamsTypeName(ModelParams params) => switch (params) {
+  LlamaCppModelParams() => 'LlamaCppModelParams',
+  LiteRtLmModelParams() => 'LiteRtLmModelParams',
+  _ => 'ModelParams',
+};
+
+/// The LiteRT-LM option [field], a `liteRtLm*` field of [ModelParams], as
+/// [params] spells it: without the prefix on [LiteRtLmModelParams].
+String liteRtLmOptionName(ModelParams params, String field) =>
+    params is LiteRtLmModelParams
+    ? '${field[8].toLowerCase()}${field.substring(9)}'
+    : field;
+
 List<String> _liteRtLmOnlyFields(ModelParams params) => [
   if (params.liteRtLmBackend != LiteRtLmBackendPreference.auto)
     'liteRtLmBackend',
@@ -141,12 +154,19 @@ List<String> _liteRtLmOnlyFields(ModelParams params) => [
 ];
 
 List<String> _liteRtLmNativeOnlyFields(ModelParams params) => [
-  if (params.liteRtLmActivationDataType != null) 'liteRtLmActivationDataType',
-  if (params.liteRtLmPrefillChunkSize != null) 'liteRtLmPrefillChunkSize',
-  if (params.liteRtLmParallelFileSectionLoading != null)
-    'liteRtLmParallelFileSectionLoading',
-  if (params.liteRtLmDispatchLibDir != null) 'liteRtLmDispatchLibDir',
-  if (params.liteRtLmCacheDir != null) 'liteRtLmCacheDir',
-  if (params.liteRtLmMaxProgramCacheBytes != null)
-    'liteRtLmMaxProgramCacheBytes',
+  for (final (field, isSet) in [
+    ('liteRtLmActivationDataType', params.liteRtLmActivationDataType != null),
+    ('liteRtLmPrefillChunkSize', params.liteRtLmPrefillChunkSize != null),
+    (
+      'liteRtLmParallelFileSectionLoading',
+      params.liteRtLmParallelFileSectionLoading != null,
+    ),
+    ('liteRtLmDispatchLibDir', params.liteRtLmDispatchLibDir != null),
+    ('liteRtLmCacheDir', params.liteRtLmCacheDir != null),
+    (
+      'liteRtLmMaxProgramCacheBytes',
+      params.liteRtLmMaxProgramCacheBytes != null,
+    ),
+  ])
+    if (isSet) liteRtLmOptionName(params, field),
 ];

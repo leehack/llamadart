@@ -409,6 +409,30 @@ void main() {
     },
   );
 
+  test('embedding mode names options the way LiteRtLmModelParams spells '
+      'them', () async {
+    final backend = LiteRtLmBackend();
+    try {
+      await expectLater(
+        backend.modelLoad(
+          modelFile.path,
+          const LiteRtLmModelParams(embeddingEngine: true, prefillChunkSize: 8),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'LiteRT-LM embedding mode does not apply: prefillChunkSize. Use '
+                'contextSize (encoder signature), numberOfThreads, cacheDir '
+                'and CPU device selection.',
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('direct modelLoad rejects LlamaCppModelParams', () async {
     final backend = LiteRtLmBackend();
     try {

@@ -2187,7 +2187,8 @@ void main() {
                 'message',
                 'no engine. Engine creation also fails when the runtime '
                     'cannot write its cache directory; set '
-                    'ModelParams.liteRtLmCacheDir to one it can write.',
+                    'LiteRtLmModelParams.cacheDir '
+                    '(ModelParams.liteRtLmCacheDir) to one it can write.',
               ),
             ),
           );

@@ -266,4 +266,24 @@ void main() {
     checkModelParamsTypeFor(const ModelParams(), LlamaRuntime.llamaCpp);
     checkModelParamsTypeFor(const ModelParams(), LlamaRuntime.liteRtLm);
   });
+
+  test('LiteRT-LM Web names options the way LiteRtLmModelParams spells '
+      'them', () {
+    expect(
+      unsupported(
+        const LiteRtLmModelParams(cacheDir: '/c', prefillChunkSize: 8),
+        LlamaRuntime.liteRtLm,
+        web: true,
+      ),
+      ['prefillChunkSize', 'cacheDir'],
+    );
+    expect(
+      unsupported(
+        const ModelParams(liteRtLmCacheDir: '/c'),
+        LlamaRuntime.liteRtLm,
+        web: true,
+      ),
+      ['liteRtLmCacheDir'],
+    );
+  });
 }

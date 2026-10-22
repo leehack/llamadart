@@ -175,7 +175,7 @@ class LiteRtLmBackend
     }
     if (!_embeddingEngine) {
       throw LlamaUnsupportedException(
-        'LiteRT-LM embeddings require liteRtLmEmbeddingEngine: true; a conversation engine is loaded.',
+        'LiteRT-LM embeddings require LiteRtLmModelParams(embeddingEngine: true); a conversation engine is loaded.',
       );
     }
     final cancellationSerial = _embeddingCancellationSerial;

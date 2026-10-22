@@ -3,6 +3,7 @@ import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/kv_cache_type.dart';
+import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
@@ -834,6 +835,301 @@ void main() {
         rejectsArgument(
           'batchSize',
           'LiteRtLmModelParams.copyWith does not take batchSize, loadMtp',
+        ),
+      );
+    });
+  });
+
+  group('runtime-specific subtypes keep every field', () {
+    Map<String, Object?> fieldsOf(ModelParams p) => {
+      'liteRtLmEmbeddingEngine': p.liteRtLmEmbeddingEngine,
+      'contextSize': p.contextSize,
+      'device': p.device,
+      'gpuLayers': p.gpuLayers,
+      'preferredBackend': p.preferredBackend,
+      'liteRtLmBackend': p.liteRtLmBackend,
+      'liteRtLmActivationDataType': p.liteRtLmActivationDataType,
+      'liteRtLmPrefillChunkSize': p.liteRtLmPrefillChunkSize,
+      'liteRtLmParallelFileSectionLoading':
+          p.liteRtLmParallelFileSectionLoading,
+      'liteRtLmDispatchLibDir': p.liteRtLmDispatchLibDir,
+      'liteRtLmCacheDir': p.liteRtLmCacheDir,
+      'liteRtLmMaxProgramCacheBytes': p.liteRtLmMaxProgramCacheBytes,
+      'splitMode': p.splitMode,
+      'mainGpu': p.mainGpu,
+      'loras': p.loras.map((lora) => lora.path).toList(),
+      'chatTemplate': p.chatTemplate,
+      'numberOfThreads': p.numberOfThreads,
+      'numberOfThreadsBatch': p.numberOfThreadsBatch,
+      'batchSize': p.batchSize,
+      'microBatchSize': p.microBatchSize,
+      'maxParallelSequences': p.maxParallelSequences,
+      'speculativeRollbackTokenMax': p.speculativeRollbackTokenMax,
+      'useMmap': p.useMmap,
+      'useMlock': p.useMlock,
+      'loadMtp': p.loadMtp,
+      'flashAttention': p.flashAttention,
+      'cacheTypeK': p.cacheTypeK,
+      'cacheTypeV': p.cacheTypeV,
+      'kvUnified': p.kvUnified,
+      'ropeFrequencyBase': p.ropeFrequencyBase,
+      'ropeFrequencyScale': p.ropeFrequencyScale,
+      'preferMemory64': p.preferMemory64,
+      'modelBytesHint': p.modelBytesHint,
+    };
+
+    const llamaCpp = LlamaCppModelParams(
+      contextSize: 1001,
+      device: ComputeDevice.gpu,
+      gpuLayers: 12,
+      preferredBackend: GpuBackend.vulkan,
+      splitMode: ModelSplitMode.row,
+      mainGpu: 1,
+      loras: [LoraAdapterConfig(path: '/a.gguf')],
+      chatTemplate: 'template',
+      numberOfThreads: 3,
+      numberOfThreadsBatch: 4,
+      batchSize: 256,
+      microBatchSize: 64,
+      maxParallelSequences: 2,
+      speculativeRollbackTokenMax: 5,
+      useMmap: false,
+      useMlock: true,
+      loadMtp: true,
+      flashAttention: FlashAttention.enabled,
+      cacheTypeK: KvCacheType.q8_0,
+      cacheTypeV: KvCacheType.q4_0,
+      kvUnified: true,
+      ropeFrequencyBase: 10000,
+      ropeFrequencyScale: 0.5,
+      preferMemory64: true,
+      modelBytesHint: 123,
+    );
+
+    const liteRtLm = LiteRtLmModelParams(
+      contextSize: 2002,
+      device: ComputeDevice.cpu,
+      gpuLayers: 0,
+      preferredBackend: GpuBackend.cpu,
+      loras: [LoraAdapterConfig(path: '/a.bin')],
+      chatTemplate: 'template',
+      numberOfThreads: 3,
+      embeddingEngine: true,
+      activationDataType: LiteRtLmActivationDataType.int8,
+      prefillChunkSize: 64,
+      parallelFileSectionLoading: true,
+      dispatchLibDir: '/dispatch',
+      cacheDir: '/cache',
+      maxProgramCacheBytes: 77,
+    );
+
+    test('copyWith() copies every field', () {
+      expect(fieldsOf(llamaCpp.copyWith()), fieldsOf(llamaCpp));
+      expect(fieldsOf(liteRtLm.copyWith()), fieldsOf(liteRtLm));
+    });
+
+    test('LiteRtLmModelParams getters read their own fields', () {
+      expect(liteRtLm.embeddingEngine, isTrue);
+      expect(liteRtLm.activationDataType, LiteRtLmActivationDataType.int8);
+      expect(liteRtLm.prefillChunkSize, 64);
+      expect(liteRtLm.parallelFileSectionLoading, isTrue);
+      expect(liteRtLm.dispatchLibDir, '/dispatch');
+      expect(liteRtLm.cacheDir, '/cache');
+      expect(liteRtLm.maxProgramCacheBytes, 77);
+    });
+
+    test('LlamaCppModelParams.copyWith replaces each field it takes', () {
+      final replaced = llamaCpp.copyWith(
+        contextSize: 2,
+        device: ComputeDevice.cpu,
+        gpuLayers: 0,
+        preferredBackend: GpuBackend.cpu,
+        splitMode: ModelSplitMode.layer,
+        mainGpu: 0,
+        loras: const [LoraAdapterConfig(path: '/b.gguf')],
+        chatTemplate: 'other',
+        numberOfThreads: 6,
+        numberOfThreadsBatch: 7,
+        batchSize: 128,
+        microBatchSize: 32,
+        maxParallelSequences: 3,
+        speculativeRollbackTokenMax: 8,
+        useMmap: true,
+        useMlock: false,
+        loadMtp: false,
+        flashAttention: FlashAttention.disabled,
+        cacheTypeK: KvCacheType.f16,
+        cacheTypeV: KvCacheType.f16,
+        kvUnified: false,
+        ropeFrequencyBase: 20000,
+        ropeFrequencyScale: 0.25,
+        preferMemory64: false,
+        modelBytesHint: 456,
+      );
+      expect(fieldsOf(replaced), {
+        ...fieldsOf(const ModelParams()),
+        'contextSize': 2,
+        'device': ComputeDevice.cpu,
+        'gpuLayers': 0,
+        'preferredBackend': GpuBackend.cpu,
+        'loras': ['/b.gguf'],
+        'chatTemplate': 'other',
+        'numberOfThreads': 6,
+        'numberOfThreadsBatch': 7,
+        'batchSize': 128,
+        'microBatchSize': 32,
+        'maxParallelSequences': 3,
+        'speculativeRollbackTokenMax': 8,
+        'flashAttention': FlashAttention.disabled,
+        'kvUnified': false,
+        'ropeFrequencyBase': 20000.0,
+        'ropeFrequencyScale': 0.25,
+        'preferMemory64': false,
+        'modelBytesHint': 456,
+      });
+    });
+
+    test('LiteRtLmModelParams.copyWith replaces each field it takes', () {
+      final replaced = liteRtLm.copyWith(
+        contextSize: 3,
+        device: ComputeDevice.gpu,
+        gpuLayers: ModelParams.maxGpuLayers,
+        preferredBackend: GpuBackend.auto,
+        loras: const [LoraAdapterConfig(path: '/b.bin')],
+        chatTemplate: 'other',
+        numberOfThreads: 6,
+        embeddingEngine: false,
+        activationDataType: LiteRtLmActivationDataType.float32,
+        prefillChunkSize: 32,
+        parallelFileSectionLoading: false,
+        dispatchLibDir: '/dispatch2',
+        cacheDir: '/cache2',
+        maxProgramCacheBytes: 88,
+      );
+      expect(fieldsOf(replaced), {
+        ...fieldsOf(const ModelParams()),
+        'contextSize': 3,
+        'device': ComputeDevice.gpu,
+        'loras': ['/b.bin'],
+        'chatTemplate': 'other',
+        'numberOfThreads': 6,
+        'liteRtLmActivationDataType': LiteRtLmActivationDataType.float32,
+        'liteRtLmPrefillChunkSize': 32,
+        'liteRtLmParallelFileSectionLoading': false,
+        'liteRtLmDispatchLibDir': '/dispatch2',
+        'liteRtLmCacheDir': '/cache2',
+        'liteRtLmMaxProgramCacheBytes': 88,
+      });
+    });
+
+    test('copyWith rejects each argument and clear flag of the other '
+        'runtime', () {
+      const llamaCppOnly = <Symbol, Object>{
+        #numberOfThreadsBatch: 1,
+        #batchSize: 1,
+        #microBatchSize: 1,
+        #maxParallelSequences: 1,
+        #speculativeRollbackTokenMax: 0,
+        #splitMode: ModelSplitMode.layer,
+        #mainGpu: 0,
+        #useMmap: true,
+        #useMlock: false,
+        #loadMtp: false,
+        #flashAttention: FlashAttention.auto,
+        #cacheTypeK: KvCacheType.f16,
+        #cacheTypeV: KvCacheType.f16,
+        #kvUnified: true,
+        #clearKvUnified: true,
+        #ropeFrequencyBase: 1.0,
+        #clearRopeFrequencyBase: true,
+        #ropeFrequencyScale: 1.0,
+        #clearRopeFrequencyScale: true,
+        #preferMemory64: true,
+        #clearPreferMemory64: true,
+        #modelBytesHint: 1,
+        #clearModelBytesHint: true,
+      };
+      const liteRtLmOnly = <Symbol, Object>{
+        #liteRtLmEmbeddingEngine: false,
+        #liteRtLmBackend: LiteRtLmBackendPreference.auto,
+        #liteRtLmActivationDataType: LiteRtLmActivationDataType.int8,
+        #clearLiteRtLmActivationDataType: true,
+        #liteRtLmPrefillChunkSize: 1,
+        #clearLiteRtLmPrefillChunkSize: true,
+        #liteRtLmParallelFileSectionLoading: true,
+        #clearLiteRtLmParallelFileSectionLoading: true,
+        #liteRtLmDispatchLibDir: '/d',
+        #clearLiteRtLmDispatchLibDir: true,
+        #liteRtLmCacheDir: '/c',
+        #clearLiteRtLmCacheDir: true,
+        #liteRtLmMaxProgramCacheBytes: 1,
+        #clearLiteRtLmMaxProgramCacheBytes: true,
+      };
+      for (final (ModelParams params, arguments) in [
+        (liteRtLm, llamaCppOnly),
+        (llamaCpp, liteRtLmOnly),
+      ]) {
+        for (final MapEntry(key: argument, :value) in arguments.entries) {
+          final name = argument.toString().split('"')[1];
+          expect(
+            () => Function.apply(params.copyWith, const [], {argument: value}),
+            throwsA(
+              isA<LlamaArgumentException>().having((e) => e.name, 'name', name),
+            ),
+            reason: '${params.runtimeType}.copyWith($name)',
+          );
+        }
+      }
+      expect(
+        fieldsOf(llamaCpp.copyWith(clearKvUnified: false)),
+        fieldsOf(llamaCpp),
+      );
+    });
+
+    test('a clear flag of either spelling wins over a value for its field', () {
+      expect(
+        liteRtLm.copyWith(cacheDir: '/x', clearCacheDir: true).cacheDir,
+        isNull,
+      );
+      expect(
+        liteRtLm.copyWith(cacheDir: '/x', clearLiteRtLmCacheDir: true).cacheDir,
+        isNull,
+      );
+      expect(
+        liteRtLm.copyWith(liteRtLmCacheDir: '/x', clearCacheDir: true).cacheDir,
+        isNull,
+      );
+      expect(
+        liteRtLm
+            .copyWith(activationDataType: LiteRtLmActivationDataType.float16)
+            .activationDataType,
+        LiteRtLmActivationDataType.float16,
+      );
+    });
+
+    test('validation names a LiteRT-LM option as the type spells it', () {
+      expect(
+        () => const LiteRtLmModelParams(prefillChunkSize: 0).validate(),
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', 'prefillChunkSize')
+              .having(
+                (e) => e.message,
+                'message',
+                startsWith('LiteRtLmModelParams.prefillChunkSize must be'),
+              ),
+        ),
+      );
+      expect(
+        () => const ModelParams(liteRtLmPrefillChunkSize: 0).validate(),
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', 'liteRtLmPrefillChunkSize')
+              .having(
+                (e) => e.message,
+                'message',
+                startsWith('ModelParams.liteRtLmPrefillChunkSize must be'),
+              ),
         ),
       );
     });

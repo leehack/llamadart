@@ -37,7 +37,8 @@ LiteRT-LM lacks, such as `gpu` on Linux arm64, also fail before any download.
 constructors take only the fields their runtime applies, so every API that
 takes `ModelParams` takes them. A load throws `LlamaUnsupportedException`
 when one is used for the other runtime, and their `copyWith` keeps the type
-and throws `LlamaArgumentException` for the other runtime's fields.
+and throws `LlamaArgumentException` for the other runtime's fields and
+`clear*` flags.
 
 The `liteRtLm*` arguments of the `ModelParams` constructor and `copyWith`,
 and the matching `clearLiteRtLm*` flags, are deprecated until 1.0. They still
@@ -70,8 +71,10 @@ const params = LiteRtLmModelParams(
 | `liteRtLmCacheDir` | `cacheDir` |
 | `liteRtLmMaxProgramCacheBytes` | `maxProgramCacheBytes` |
 
-`copyWith` takes the same names and `clear*` flags (`clearCacheDir`).
-`liteRtLmBackend` stays deprecated in favor of `device`.
+`copyWith` takes the same names and `clear*` flags (`clearCacheDir`). As on
+`ModelParams.copyWith`, a clear flag wins over a value for the same field,
+whichever spelling either uses. Errors name a `LiteRtLmModelParams` option
+without the prefix. `liteRtLmBackend` stays deprecated in favor of `device`.
 
 <a id="014x-to-0150-upgrade-guide"></a>
 
