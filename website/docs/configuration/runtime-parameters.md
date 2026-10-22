@@ -314,14 +314,26 @@ Important fields:
 - `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
   existing behavior. WebGPU applies it only with bridge assets whose
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
-  and LiteRT-LM reject non-zero values rather than silently ignoring them.
+  and LiteRT-LM web reject non-zero values rather than silently ignoring them.
+- Native LiteRT-LM applies `penalty` and `presencePenalty` through its
+  per-send repetition penalty API (litert-lm-native v0.18.0 or newer). They
+  count only the tokens the current send generates, not the prompt or
+  earlier turns, so outputs differ from llama.cpp. The default `penalty` of
+  `1.1` stays unapplied so default requests keep their output; a `penalty`
+  below `1.0` or combined with speculative decoding throws
+  `LlamaUnsupportedException`.
 - `thinkingBudget`: llama.cpp reasoning-token cap, native with the
   reasoning-budget API exported, or WebGPU with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget`.
   Use `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use
   template delimiters automatically, or specify `startTag` and `endTag` for
   raw generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
   is incompatible with speculative decoding, and unsupported backends reject
-  it explicitly.
+  it explicitly. Native LiteRT-LM applies it to native chat generation on
+  bundles whose first response channel is a thinking channel, such as Gemma
+  4: it caps the tokens in that channel, then closes it with the bundle's own
+  end marker, so `startTag` and `endTag` do not apply. It rejects `0`
+  (LiteRT-LM reads a zero budget as none), `forcedMessage` and raw prompt
+  generation. `maxTokens` still counts thinking tokens.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in speculative
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
@@ -340,10 +352,10 @@ than the default throws `LlamaUnsupportedException`:
 
 | Option | `LlamaEngineCapabilities` field | llama.cpp native | WebGPU | LiteRT-LM native | LiteRT-LM web |
 | --- | --- | --- | --- | --- | --- |
-| `penalty` | `supportsPenalty` | Yes | Yes | No | No |
-| `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | No | No |
+| `penalty` | `supportsPenalty` | Yes | Yes | Runtime export resolves | No |
+| `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | Runtime export resolves | No |
 | `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
-| `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | No | No |
+| `thinkingBudget` | `supportsThinkingBudget` | Runtime export resolves | Bridge reports | Runtime export resolves and the bundle declares a thinking channel | No |
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
 | `grammarLazy` | `supportsLazyGrammar` | Yes | No | No | No |
 | Stream batching thresholds | `supportsStreamBatching` | Yes | Ignored | Yes | No |

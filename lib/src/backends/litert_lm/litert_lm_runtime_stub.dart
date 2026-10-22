@@ -81,6 +81,17 @@ class LiteRtLmRuntimeClient {
   /// Dedicated native ASR is unavailable without `dart:ffi`.
   bool get supportsAsrBridge => false;
 
+  /// Sampling penalties are unavailable without `dart:ffi`.
+  bool get supportsSamplingPenalties => false;
+
+  /// Thinking budgets are unavailable without `dart:ffi`.
+  bool get supportsThinkingBudget => false;
+
+  /// Bundle thinking queries are unavailable without `dart:ffi`.
+  bool? bundleSupportsThinking(String modelPath) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
   /// Bundle capability queries are unavailable without `dart:ffi`.
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
     String modelPath,
@@ -151,7 +162,12 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Streams generated text from the active conversation.
-  Stream<String> generate(String prompt, {int? maxOutputTokens}) {
+  Stream<String> generate(
+    String prompt, {
+    int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+  }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 
@@ -161,6 +177,9 @@ class LiteRtLmRuntimeClient {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+    int? thinkingTokenBudget,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }

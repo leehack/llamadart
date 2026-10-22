@@ -507,6 +507,10 @@ final class _LiteRtLmSamplerParams extends Opaque {}
 
 final class _LiteRtLmLoadedFile extends Opaque {}
 
+final class _LiteRtLmRepetitionPenaltyConfig extends Opaque {}
+
+final class _LiteRtLmThinkingConfig extends Opaque {}
+
 final class _LegacyLiteRtLmSamplerParams extends Struct {
   @Int32()
   external int type;
@@ -582,6 +586,13 @@ class LiteRtLmRuntimeResult {
   const LiteRtLmRuntimeResult({required this.text, required this.metrics});
 }
 
+/// Per-send decode controls: penalties over the tokens this send generates
+/// and a thinking token budget.
+typedef _GenerationControls = ({
+  ({double repetition, double presence})? penalties,
+  int? thinkingTokenBudget,
+});
+
 // coverage:ignore-start
 // Native FFI boundary: exercised by LiteRT-LM smoke tests with real libraries.
 final class _BlockingSendMessageRequest {
@@ -594,6 +605,7 @@ final class _BlockingSendMessageRequest {
     this.extraContextJson,
     this.visualTokenBudget,
     this.maxOutputTokens,
+    this.generationControls,
   });
 
   final String libraryPath;
@@ -604,6 +616,7 @@ final class _BlockingSendMessageRequest {
   final String? extraContextJson;
   final int? visualTokenBudget;
   final int? maxOutputTokens;
+  final _GenerationControls? generationControls;
 }
 
 /// Low-level native LiteRT-LM runtime client.
@@ -643,6 +656,65 @@ class LiteRtLmRuntimeClient {
       return true;
     } on Object {
       return false;
+    }
+  }
+
+  /// Whether the active native runtime exports the per-send repetition
+  /// penalty API that [generateMessageJson] uses for `repetitionPenalty` and
+  /// `presencePenalty`.
+  ///
+  /// Runtime load failures are reported as unsupported rather than thrown so
+  /// callers can use this as a capability probe.
+  bool get supportsSamplingPenalties {
+    try {
+      _ensureLibrariesLoaded();
+      return _bindings!.penaltyApi != null;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Whether the active native runtime exports the per-send thinking config
+  /// API that [generateMessageJson] uses for `thinkingTokenBudget`.
+  ///
+  /// Runtime load failures are reported as unsupported rather than thrown so
+  /// callers can use this as a capability probe.
+  bool get supportsThinkingBudget {
+    try {
+      _ensureLibrariesLoaded();
+      return _bindings!.thinkingApi != null;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Whether the `.litertlm` bundle at [modelPath] declares thinking support
+  /// in its metadata, read without creating an engine.
+  ///
+  /// Returns null when the runtime lacks the loaded-file API or cannot read
+  /// the bundle.
+  bool? bundleSupportsThinking(String modelPath) {
+    _ensureLibrariesLoaded();
+    final bindings = _bindings!;
+    final create = bindings.loadedFileCreate;
+    final delete = bindings.loadedFileDelete;
+    final supportsThinking = bindings.loadedFileSupportsThinking;
+    if (create == null || delete == null || supportsThinking == null) {
+      return null;
+    }
+    final modelPathPtr = modelPath.toNativeUtf8(allocator: calloc);
+    try {
+      final loadedFile = create(modelPathPtr.cast());
+      if (loadedFile == nullptr) {
+        return null;
+      }
+      try {
+        return supportsThinking(loadedFile);
+      } finally {
+        delete(loadedFile);
+      }
+    } finally {
+      calloc.free(modelPathPtr);
     }
   }
 
@@ -1167,10 +1239,20 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Streams generated text from the active conversation.
-  Stream<String> generate(String prompt, {int? maxOutputTokens}) {
+  ///
+  /// [repetitionPenalty] and [presencePenalty] apply as in
+  /// [generateMessageJson].
+  Stream<String> generate(
+    String prompt, {
+    int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+  }) {
     return generateMessageJson(
       _messageJson(prompt),
       maxOutputTokens: maxOutputTokens,
+      repetitionPenalty: repetitionPenalty,
+      presencePenalty: presencePenalty,
     );
   }
 
@@ -1178,13 +1260,63 @@ class LiteRtLmRuntimeClient {
   ///
   /// [visualTokenBudget] configures the native image-token budget for
   /// multimodal messages.
+  ///
+  /// [repetitionPenalty] (at least 1.0) and [presencePenalty] penalize tokens
+  /// that this send has already generated; prompt and history tokens are not
+  /// counted. [thinkingTokenBudget] (at least 1) caps the tokens generated
+  /// inside the thinking channel of the bundle before the runtime forces the
+  /// channel closed, and enables thinking for this send. Both throw
+  /// [LlamaUnsupportedException] when the runtime does not export their API;
+  /// see [supportsSamplingPenalties] and [supportsThinkingBudget].
   Stream<String> generateMessageJson(
     String messageJson, {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    double? repetitionPenalty,
+    double? presencePenalty,
+    int? thinkingTokenBudget,
   }) {
     final resolvedMaxOutputTokens = maxOutputTokens ?? _defaultMaxOutputTokens;
+    if (repetitionPenalty != null &&
+        !(repetitionPenalty.isFinite && repetitionPenalty >= 1.0)) {
+      throw ArgumentError.value(
+        repetitionPenalty,
+        'repetitionPenalty',
+        'must be finite and at least 1.0',
+      );
+    }
+    if (presencePenalty != null && !presencePenalty.isFinite) {
+      throw ArgumentError.value(
+        presencePenalty,
+        'presencePenalty',
+        'must be finite',
+      );
+    }
+    if (thinkingTokenBudget != null && thinkingTokenBudget <= 0) {
+      throw ArgumentError.value(
+        thinkingTokenBudget,
+        'thinkingTokenBudget',
+        'must be positive when provided',
+      );
+    }
+    final _GenerationControls? generationControls =
+        repetitionPenalty == null &&
+            presencePenalty == null &&
+            thinkingTokenBudget == null
+        ? null
+        : (
+            penalties: repetitionPenalty == null && presencePenalty == null
+                ? null
+                : (
+                    repetition: repetitionPenalty ?? 1.0,
+                    presence: presencePenalty ?? 0.0,
+                  ),
+            thinkingTokenBudget: thinkingTokenBudget,
+          );
+    if (generationControls != null) {
+      _checkGenerationControls(_requireBindings(), generationControls);
+    }
     if (visualTokenBudget != null && visualTokenBudget <= 0) {
       throw ArgumentError.value(
         visualTokenBudget,
@@ -1211,6 +1343,7 @@ class LiteRtLmRuntimeClient {
         extraContextJson: extraContextJson,
         visualTokenBudget: visualTokenBudget,
         maxOutputTokens: resolvedMaxOutputTokens,
+        generationControls: generationControls,
       );
     }
     return _generateStreamingMessageJson(
@@ -1218,6 +1351,7 @@ class LiteRtLmRuntimeClient {
       extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
       maxOutputTokens: resolvedMaxOutputTokens,
+      generationControls: generationControls,
     );
   }
 
@@ -1226,6 +1360,7 @@ class LiteRtLmRuntimeClient {
     String? extraContextJson,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    _GenerationControls? generationControls,
   }) {
     final conversation = _requireConversation();
     final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
@@ -1239,6 +1374,7 @@ class LiteRtLmRuntimeClient {
       extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
       maxOutputTokens: maxOutputTokens,
+      generationControls: generationControls,
     );
 
     unawaited(() async {
@@ -1273,6 +1409,7 @@ class LiteRtLmRuntimeClient {
     String? extraContextJson,
     int? visualTokenBudget,
     int? maxOutputTokens,
+    _GenerationControls? generationControls,
   }) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
@@ -1399,6 +1536,7 @@ class LiteRtLmRuntimeClient {
         optionalArgs,
         visualTokenBudget: visualTokenBudget,
         maxOutputTokens: maxOutputTokens,
+        generationControls: generationControls,
       );
 
       final lastError = bindings.lastError;
@@ -2111,6 +2249,7 @@ void _setConversationOptionalArgs(
   Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs, {
   int? visualTokenBudget,
   int? maxOutputTokens,
+  _GenerationControls? generationControls,
 }) {
   if (visualTokenBudget != null) {
     bindings.conversationOptionalArgsSetVisualTokenBudget(
@@ -2130,7 +2269,77 @@ void _setConversationOptionalArgs(
     }
     setter(optionalArgs, maxOutputTokens);
   }
+  final penalties = generationControls?.penalties;
+  if (penalties != null) {
+    final api = bindings.penaltyApi;
+    if (api == null) {
+      throw LlamaUnsupportedException(_liteRtLmPenaltiesUnavailable);
+    }
+    final config = api.create();
+    if (config == nullptr) {
+      throw StateError(
+        'litert_lm_repetition_penalty_config_create returned null',
+      );
+    }
+    try {
+      api.setRepetitionPenalty(config, penalties.repetition);
+      api.setPresencePenalty(config, penalties.presence);
+      // The runtime deep-copies the config, so it can be freed right away.
+      api.setOnOptionalArgs(optionalArgs, config);
+    } finally {
+      api.delete(config);
+    }
+  }
+  final thinkingTokenBudget = generationControls?.thinkingTokenBudget;
+  if (thinkingTokenBudget != null) {
+    final api = bindings.thinkingApi;
+    if (api == null) {
+      throw LlamaUnsupportedException(_liteRtLmThinkingBudgetUnavailable);
+    }
+    final config = api.create();
+    if (config == nullptr) {
+      throw StateError('litert_lm_thinking_config_create returned null');
+    }
+    try {
+      api.setEnableThinking(config, true);
+      api.setTokenBudget(config, thinkingTokenBudget);
+      api.setOnOptionalArgs(optionalArgs, config);
+    } finally {
+      api.delete(config);
+    }
+  }
 }
+
+void _checkGenerationControls(
+  _LiteRtLmBindings bindings,
+  _GenerationControls controls,
+) {
+  if (controls.penalties != null && bindings.penaltyApi == null) {
+    throw LlamaUnsupportedException(_liteRtLmPenaltiesUnavailable);
+  }
+  if (controls.thinkingTokenBudget != null && bindings.thinkingApi == null) {
+    throw LlamaUnsupportedException(_liteRtLmThinkingBudgetUnavailable);
+  }
+}
+
+const _liteRtLmPenaltiesUnavailable =
+    'LiteRT-LM repetition and presence penalties need a native runtime that '
+    'exports the repetition penalty API (litert-lm-native v0.18.0 or newer); '
+    'the loaded runtime lacks one of: '
+    'litert_lm_repetition_penalty_config_create, '
+    'litert_lm_repetition_penalty_config_delete, '
+    'litert_lm_repetition_penalty_config_set_repetition_penalty, '
+    'litert_lm_repetition_penalty_config_set_presence_penalty, '
+    'litert_lm_conversation_optional_args_set_repetition_penalty_config.';
+
+const _liteRtLmThinkingBudgetUnavailable =
+    'LiteRT-LM thinking budgets need a native runtime that exports the '
+    'thinking config API (litert-lm-native v0.18.0 or newer); the loaded '
+    'runtime lacks one of: litert_lm_thinking_config_create, '
+    'litert_lm_thinking_config_delete, '
+    'litert_lm_thinking_config_set_enable_thinking, '
+    'litert_lm_thinking_config_set_thinking_token_budget, '
+    'litert_lm_conversation_optional_args_set_thinking_config.';
 
 void _setSessionSamplerParams(
   _LiteRtLmBindings bindings,
@@ -2249,6 +2458,7 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
         optionalArgs,
         visualTokenBudget: request.visualTokenBudget,
         maxOutputTokens: request.maxOutputTokens,
+        generationControls: request.generationControls,
       );
 
       final lastError = bindings.lastError;
@@ -3632,6 +3842,185 @@ class _LiteRtLmBindings {
         Double Function(Pointer<_LiteRtLmBenchmarkInfo>, Int),
         double Function(Pointer<_LiteRtLmBenchmarkInfo>, int)
       >('litert_lm_benchmark_info_get_decode_tokens_per_sec_at');
+
+  late final loadedFileSupportsThinking =
+      _lookupOptionalNative<Bool Function(Pointer<_LiteRtLmLoadedFile>)>(
+        'litert_lm_loaded_file_supports_thinking',
+      )?.asFunction<bool Function(Pointer<_LiteRtLmLoadedFile>)>();
+
+  late final _LiteRtLmPenaltyApi? penaltyApi = _LiteRtLmPenaltyApi.lookup(this);
+
+  late final _LiteRtLmThinkingApi? thinkingApi = _LiteRtLmThinkingApi.lookup(
+    this,
+  );
+}
+
+/// The per-send repetition penalty setters, present only when the runtime
+/// exports all of them.
+final class _LiteRtLmPenaltyApi {
+  const _LiteRtLmPenaltyApi({
+    required this.create,
+    required this.delete,
+    required this.setRepetitionPenalty,
+    required this.setPresencePenalty,
+    required this.setOnOptionalArgs,
+  });
+
+  static const symbols = <String>[
+    'litert_lm_repetition_penalty_config_create',
+    'litert_lm_repetition_penalty_config_delete',
+    'litert_lm_repetition_penalty_config_set_repetition_penalty',
+    'litert_lm_repetition_penalty_config_set_presence_penalty',
+    'litert_lm_conversation_optional_args_set_repetition_penalty_config',
+  ];
+
+  static _LiteRtLmPenaltyApi? lookup(_LiteRtLmBindings bindings) {
+    final create = bindings
+        ._lookupOptionalNative<
+          Pointer<_LiteRtLmRepetitionPenaltyConfig> Function()
+        >(symbols[0])
+        ?.asFunction<Pointer<_LiteRtLmRepetitionPenaltyConfig> Function()>();
+    final delete = bindings
+        ._lookupOptionalNative<
+          Void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>)
+        >(symbols[1])
+        ?.asFunction<
+          void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>)
+        >();
+    final setRepetitionPenalty = bindings
+        ._lookupOptionalNative<
+          Void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>, Float)
+        >(symbols[2])
+        ?.asFunction<
+          void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>, double)
+        >();
+    final setPresencePenalty = bindings
+        ._lookupOptionalNative<
+          Void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>, Float)
+        >(symbols[3])
+        ?.asFunction<
+          void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>, double)
+        >();
+    final setOnOptionalArgs = bindings
+        ._lookupOptionalNative<
+          Void Function(
+            Pointer<_LiteRtLmConversationOptionalArgs>,
+            Pointer<_LiteRtLmRepetitionPenaltyConfig>,
+          )
+        >(symbols[4])
+        ?.asFunction<
+          void Function(
+            Pointer<_LiteRtLmConversationOptionalArgs>,
+            Pointer<_LiteRtLmRepetitionPenaltyConfig>,
+          )
+        >();
+    if (create == null ||
+        delete == null ||
+        setRepetitionPenalty == null ||
+        setPresencePenalty == null ||
+        setOnOptionalArgs == null) {
+      return null;
+    }
+    return _LiteRtLmPenaltyApi(
+      create: create,
+      delete: delete,
+      setRepetitionPenalty: setRepetitionPenalty,
+      setPresencePenalty: setPresencePenalty,
+      setOnOptionalArgs: setOnOptionalArgs,
+    );
+  }
+
+  final Pointer<_LiteRtLmRepetitionPenaltyConfig> Function() create;
+  final void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>) delete;
+  final void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>, double)
+  setRepetitionPenalty;
+  final void Function(Pointer<_LiteRtLmRepetitionPenaltyConfig>, double)
+  setPresencePenalty;
+  final void Function(
+    Pointer<_LiteRtLmConversationOptionalArgs>,
+    Pointer<_LiteRtLmRepetitionPenaltyConfig>,
+  )
+  setOnOptionalArgs;
+}
+
+/// The per-send thinking budget setters, present only when the runtime
+/// exports all of them.
+final class _LiteRtLmThinkingApi {
+  const _LiteRtLmThinkingApi({
+    required this.create,
+    required this.delete,
+    required this.setEnableThinking,
+    required this.setTokenBudget,
+    required this.setOnOptionalArgs,
+  });
+
+  static const symbols = <String>[
+    'litert_lm_thinking_config_create',
+    'litert_lm_thinking_config_delete',
+    'litert_lm_thinking_config_set_enable_thinking',
+    'litert_lm_thinking_config_set_thinking_token_budget',
+    'litert_lm_conversation_optional_args_set_thinking_config',
+  ];
+
+  static _LiteRtLmThinkingApi? lookup(_LiteRtLmBindings bindings) {
+    final create = bindings
+        ._lookupOptionalNative<Pointer<_LiteRtLmThinkingConfig> Function()>(
+          symbols[0],
+        )
+        ?.asFunction<Pointer<_LiteRtLmThinkingConfig> Function()>();
+    final delete = bindings
+        ._lookupOptionalNative<Void Function(Pointer<_LiteRtLmThinkingConfig>)>(
+          symbols[1],
+        )
+        ?.asFunction<void Function(Pointer<_LiteRtLmThinkingConfig>)>();
+    final setEnableThinking = bindings
+        ._lookupOptionalNative<
+          Void Function(Pointer<_LiteRtLmThinkingConfig>, Bool)
+        >(symbols[2])
+        ?.asFunction<void Function(Pointer<_LiteRtLmThinkingConfig>, bool)>();
+    final setTokenBudget = bindings
+        ._lookupOptionalNative<
+          Void Function(Pointer<_LiteRtLmThinkingConfig>, Int)
+        >(symbols[3])
+        ?.asFunction<void Function(Pointer<_LiteRtLmThinkingConfig>, int)>();
+    final setOnOptionalArgs = bindings
+        ._lookupOptionalNative<
+          Void Function(
+            Pointer<_LiteRtLmConversationOptionalArgs>,
+            Pointer<_LiteRtLmThinkingConfig>,
+          )
+        >(symbols[4])
+        ?.asFunction<
+          void Function(
+            Pointer<_LiteRtLmConversationOptionalArgs>,
+            Pointer<_LiteRtLmThinkingConfig>,
+          )
+        >();
+    if (create == null ||
+        delete == null ||
+        setEnableThinking == null ||
+        setTokenBudget == null ||
+        setOnOptionalArgs == null) {
+      return null;
+    }
+    return _LiteRtLmThinkingApi(
+      create: create,
+      delete: delete,
+      setEnableThinking: setEnableThinking,
+      setTokenBudget: setTokenBudget,
+      setOnOptionalArgs: setOnOptionalArgs,
+    );
+  }
+
+  final Pointer<_LiteRtLmThinkingConfig> Function() create;
+  final void Function(Pointer<_LiteRtLmThinkingConfig>) delete;
+  final void Function(Pointer<_LiteRtLmThinkingConfig>, bool) setEnableThinking;
+  final void Function(Pointer<_LiteRtLmThinkingConfig>, int) setTokenBudget;
+  final void Function(
+    Pointer<_LiteRtLmConversationOptionalArgs>,
+    Pointer<_LiteRtLmThinkingConfig>,
+  )
+  setOnOptionalArgs;
 }
 
 // coverage:ignore-end

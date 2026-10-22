@@ -1651,6 +1651,33 @@ void main() {
     });
   }
 
+  for (final controls in [
+    (penalties: true, thinkingBudget: true),
+    (penalties: true, thinkingBudget: false),
+    (penalties: false, thinkingBudget: false),
+  ]) {
+    test('reports the generation controls the worker applies: '
+        '$controls', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        generationControlsResponse: controls,
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+      try {
+        final capabilities = await backend.generationCapabilities();
+        expect(capabilities.penalty, controls.penalties);
+        expect(capabilities.presencePenalty, controls.penalties);
+        expect(capabilities.thinkingBudget, controls.thinkingBudget);
+        expect(capabilities.minP, isFalse);
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    });
+  }
+
   test('routes multimodal capability methods through the worker', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],
@@ -2728,6 +2755,7 @@ class _FakeLiteRtLmWorker {
     this.supportsVisionResponse,
     this.supportsAudioResponse,
     this.bundleCapabilitiesResponse,
+    this.generationControlsResponse = (penalties: false, thinkingBudget: false),
   }) {
     _receivePort.listen(_handleMessage);
   }
@@ -2750,6 +2778,7 @@ class _FakeLiteRtLmWorker {
   final bool? supportsAudioResponse;
   final ({bool vision, bool audio, bool speculativeDecoding})?
   bundleCapabilitiesResponse;
+  final ({bool penalties, bool thinkingBudget}) generationControlsResponse;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
   final Completer<LiteRtLmGenerateRequest> generateReceived =
@@ -2855,6 +2884,13 @@ class _FakeLiteRtLmWorker {
       case LiteRtLmBundleCapabilitiesRequest():
         message.sendPort.send(
           LiteRtLmBundleCapabilitiesResponse(bundleCapabilitiesResponse),
+        );
+      case LiteRtLmGenerationControlsRequest():
+        message.sendPort.send(
+          LiteRtLmGenerationControlsResponse(
+            penalties: generationControlsResponse.penalties,
+            thinkingBudget: generationControlsResponse.thinkingBudget,
+          ),
         );
       case LiteRtLmMultimodalContextCreateRequest():
         final handle = multimodalHandleResponse;

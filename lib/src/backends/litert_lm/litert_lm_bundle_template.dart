@@ -12,6 +12,9 @@ const int _llmMetadataSectionType = 5;
 // `LlmMetadata.jinja_prompt_template` in `runtime/proto/llm_metadata.proto`.
 const int _jinjaPromptTemplateField = 7;
 
+// `LlmMetadata.channels` in `runtime/proto/llm_metadata.proto`.
+const int _channelsField = 8;
+
 /// The text of [liteRtLmContentShapeProbeMessage].
 const String liteRtLmContentShapeProbeText = 'llamadart-content-shape-probe';
 
@@ -90,6 +93,74 @@ String? readLiteRtLmBundleChatTemplate(String path) =>
 ({String? chatTemplate, bool isQwen3})? readLiteRtLmBundleMetadata(
   String path,
 ) {
+  final metadata = _readLlmMetadata(path);
+  if (metadata == null) {
+    return null;
+  }
+  try {
+    final fields = {
+      for (final (field, value) in _protoFields(metadata)) field: value,
+    };
+    final template = fields[_jinjaPromptTemplateField];
+    final modelType = fields[6];
+    var isQwen3 = false;
+    try {
+      isQwen3 =
+          modelType != null && _protoFields(modelType).lastOrNull?.$1 == 5;
+    } on FormatException {
+      // An invalid optional family declaration must not hide a usable template.
+      if (template == null) return null;
+    }
+    return (
+      chatTemplate: template == null ? null : utf8.decode(template),
+      isQwen3: isQwen3,
+    );
+  } on FormatException {
+    return null;
+  }
+}
+
+/// The first response channel that the `.litertlm` bundle at [path]
+/// declares, or null when it declares none or cannot be read.
+///
+/// LiteRT-LM v0.18 bounds a thinking token budget with the start and end
+/// markers of this channel and applies no budget without one
+/// (`Conversation::CreateDecodeConfig`). `isReasoning` is the channel's
+/// optional `is_reasoning_channel` flag, null when the bundle omits it.
+({String name, bool? isReasoning})? readLiteRtLmBundleFirstChannel(
+  String path,
+) {
+  final metadata = _readLlmMetadata(path);
+  if (metadata == null) {
+    return null;
+  }
+  try {
+    for (final (field, channel) in _protoFields(metadata)) {
+      if (field != _channelsField) {
+        continue;
+      }
+      String? name;
+      bool? isReasoning;
+      for (final (channelField, bytes, value) in _protoEntries(channel)) {
+        if (channelField == 1 && bytes != null) {
+          name = utf8.decode(bytes);
+        } else if (channelField == 4 && value != null) {
+          isReasoning = value != 0;
+        }
+      }
+      return name == null || name.isEmpty
+          ? null
+          : (name: name, isReasoning: isReasoning);
+    }
+    return null;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// The serialized `LlmMetadata` section of the bundle at [path], or null when
+/// the file cannot be read or is not a bundle this reader understands.
+Uint8List? _readLlmMetadata(String path) {
   RandomAccessFile? file;
   try {
     file = File(path).openSync();
@@ -125,26 +196,7 @@ String? readLiteRtLmBundleChatTemplate(String path) =>
       if (length <= 0 || length > _maxMetadataBytes) {
         return null;
       }
-      final fields = {
-        for (final (field, value) in _protoFields(
-          _read(file, beginOffset, length),
-        ))
-          field: value,
-      };
-      final template = fields[_jinjaPromptTemplateField];
-      final modelType = fields[6];
-      var isQwen3 = false;
-      try {
-        isQwen3 =
-            modelType != null && _protoFields(modelType).lastOrNull?.$1 == 5;
-      } on FormatException {
-        // An invalid optional family declaration must not hide a usable template.
-        if (template == null) return null;
-      }
-      return (
-        chatTemplate: template == null ? null : utf8.decode(template),
-        isQwen3: isQwen3,
-      );
+      return _read(file, beginOffset, length);
     }
     return null;
   } on FileSystemException {
@@ -166,6 +218,14 @@ Uint8List _read(RandomAccessFile file, int offset, int length) {
 }
 
 Iterable<(int, Uint8List)> _protoFields(Uint8List metadata) sync* {
+  for (final (field, bytes, _) in _protoEntries(metadata)) {
+    if (bytes != null) yield (field, bytes);
+  }
+}
+
+/// The fields of a serialized protobuf message: length-delimited ones with
+/// their bytes, varint ones with their value.
+Iterable<(int, Uint8List?, int?)> _protoEntries(Uint8List metadata) sync* {
   var offset = 0;
 
   int varint() {
@@ -195,14 +255,14 @@ Iterable<(int, Uint8List)> _protoFields(Uint8List metadata) sync* {
     final field = key >> 3;
     switch (key & 0x7) {
       case 0:
-        varint();
+        yield (field, null, varint());
       case 1:
         skip(8);
       case 2:
         final length = varint();
         final start = offset;
         skip(length);
-        yield (field, Uint8List.sublistView(metadata, start, offset));
+        yield (field, Uint8List.sublistView(metadata, start, offset), null);
       case 5:
         skip(4);
       default:

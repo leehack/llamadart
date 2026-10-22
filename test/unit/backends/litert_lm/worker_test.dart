@@ -149,6 +149,19 @@ void main() {
             isNull,
           ),
         );
+
+        final controls = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmGenerationControlsRequest.new,
+        );
+        expect(
+          controls,
+          isA<LiteRtLmGenerationControlsResponse>().having(
+            (response) => response.thinkingBudget,
+            'thinking budget before a load',
+            isFalse,
+          ),
+        );
       } finally {
         await _disposeWorker(worker);
       }

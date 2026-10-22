@@ -226,7 +226,8 @@ fallback when model template metadata is empty. See
   WebGPU rejects invalid request arguments with `LlamaArgumentException`;
   `scoreNextToken` vocabulary and int32 bounds retain `RangeError`.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
-- Streaming chat completions, llama.cpp thinking budgets, tool-call parsing
+- Streaming chat completions, llama.cpp and native LiteRT-LM thinking
+  budgets, tool-call parsing
   and a `ChatSession.sendWithTools` loop that runs tool handlers,
   multimodal GGUF projectors, structured JSON output, embeddings, next-token
   log-probabilities, LoRA, state persistence, per-request token usage and
@@ -261,7 +262,10 @@ tools, structured output and grammars, each sampling control
 (`penalty`, `presencePenalty`, `minP`, `thinkingBudget`), and the speculative
 decoding strategies it runs. Branch on these instead of the model's file
 extension or backend name. Native llama.cpp reports thinking-budget support
-only when the runtime exports its reasoning-budget API. Its `mtp` strategy can
+only when the runtime exports its reasoning-budget API. Native LiteRT-LM
+reports `penalty` and `presencePenalty`, which count only the tokens of the
+current send, and a thinking budget for bundles with a thinking channel, such
+as Gemma 4; it has no Min-P. The llama.cpp `mtp` strategy can
 use an external draft model; in-file MTP needs an MTP head and `loadMtp: true`.
 Other draft strategies require `draftModel` and throw `LlamaArgumentException`
 at generation start when it is missing.
