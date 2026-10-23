@@ -54,19 +54,22 @@ void main() {
           'genkit-embedding-proof-',
         );
         addTearDown(() => cache.delete(recursive: true));
-        final params = ModelParams(
-          device: ComputeDevice.cpu,
-          // LiteRtLmModelParams needs llamadart 0.16.0; keep ^0.15.0 working (#858).
-          // ignore: deprecated_member_use
-          liteRtLmEmbeddingEngine: liteRt,
-          // ignore: deprecated_member_use
-          liteRtLmCacheDir: cache.path,
-          contextSize: 2048,
-          batchSize: liteRt ? 0 : 2048,
-          microBatchSize: liteRt ? 0 : 2048,
-          numberOfThreads: 4,
-          numberOfThreadsBatch: liteRt ? 0 : 4,
-        );
+        final params = liteRt
+            ? LiteRtLmModelParams(
+                device: ComputeDevice.cpu,
+                embeddingEngine: true,
+                cacheDir: cache.path,
+                contextSize: 2048,
+                numberOfThreads: 4,
+              )
+            : const LlamaCppModelParams(
+                device: ComputeDevice.cpu,
+                contextSize: 2048,
+                batchSize: 2048,
+                microBatchSize: 2048,
+                numberOfThreads: 4,
+                numberOfThreadsBatch: 4,
+              );
         final png = Uint8List.fromList(
           image.encodePng(image.Image(width: 224, height: 224)),
         );

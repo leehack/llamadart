@@ -59,6 +59,7 @@ void main() {
           draftTokenMin: 2,
           minProbability: 0.5,
           draftSplitProbability: 0.2,
+          draftMicroBatchSize: 64,
           draftModel: source,
           draftModelDownload: ModelLoadOptions(sha256: 'a' * 64),
           ngramSize: 3,
@@ -80,6 +81,7 @@ void main() {
       expect(spec['draftTokenMin'], 2);
       expect(spec['minProbability'], 0.5);
       expect(spec['draftSplitProbability'], 0.2);
+      expect(spec['draftMicroBatchSize'], 64);
       expect(spec['ngramSize'], 3);
       expect(spec['ngramSizeN'], 4);
       expect(spec['ngramSizeM'], 5);
