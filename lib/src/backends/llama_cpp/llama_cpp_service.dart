@@ -511,6 +511,31 @@ const String _minimumDsparkNativeTag = 'b10356';
 /// llama.cpp's DFlash block size when a draft model has no `dflash.block_size`.
 const int _llamaCppDefaultDflashBlockSize = 16;
 
+/// A draft context's micro-batch size, and whether it is inherited from the
+/// target context because `draftMicroBatchSize` is unset.
+typedef _DraftMicroBatch = ({int size, bool inherited});
+
+LlamaArgumentException _draftMicroBatchTooSmall(
+  _DraftMicroBatch microBatch,
+  String requirement,
+) {
+  final size = microBatch.size;
+  return LlamaArgumentException(
+    microBatch.inherited
+        ? 'ModelParams.microBatchSize (resolved to $size; the draft context '
+              'inherits it while SpeculativeDecodingConfig.draftMicroBatchSize '
+              'is unset) must be at least $requirement'
+        : 'SpeculativeDecodingConfig.draftMicroBatchSize ($size) must be at '
+              'least $requirement',
+    name: microBatch.inherited ? 'microBatchSize' : 'draftMicroBatchSize',
+    invalidValue: size,
+  );
+}
+
+const String _draftBlockRequirement =
+    'for llama.cpp draft-dflash and draft-dspark, which decode a whole draft '
+    'block in one micro-batch.';
+
 class _LlamaCppThinkingBudgetConfig {
   const _LlamaCppThinkingBudgetConfig({
     required this.maxTokens,
@@ -4710,14 +4735,10 @@ class LlamaCppService {
           uniqueStrategies.contains(SpeculativeDecodingStrategy.draftDflash) ||
           uniqueStrategies.contains(SpeculativeDecodingStrategy.draftDspark);
       if (usesBlockDraft && draftMicroBatchSize < blockSize) {
-        throw LlamaArgumentException(
-          'SpeculativeDecodingConfig.draftMicroBatchSize ($draftMicroBatchSize) '
-          'must be at least draftTokenMax + 1 ($blockSize) for llama.cpp '
-          'draft-dflash and draft-dspark, which decode a whole draft block in '
-          'one micro-batch.',
-          name: 'draftMicroBatchSize',
-          invalidValue: draftMicroBatchSize,
-        );
+        throw _draftMicroBatchTooSmall((
+          size: draftMicroBatchSize,
+          inherited: false,
+        ), 'draftTokenMax + 1 ($blockSize) $_draftBlockRequirement');
       }
     }
 
@@ -4798,50 +4819,103 @@ class LlamaCppService {
     }
   }
 
-  void _validateLiliCorrDraftMicroBatchSize(
+  /// Resolves the draft context's micro-batch: `draftMicroBatchSize`, or the
+  /// target context parameters' `n_ubatch` as `llama_init_from_model`
+  /// resolves it.
+  _DraftMicroBatch _resolveDraftMicroBatch(
+    _LlamaCppSpeculativeConfig config, {
+    required int targetBatchSize,
+    required int targetMicroBatchSize,
+  }) {
+    final draftMicroBatchSize = config.draftMicroBatchSize;
+    if (draftMicroBatchSize != null) {
+      return (size: draftMicroBatchSize, inherited: false);
+    }
+    return (
+      size: targetMicroBatchSize == 0
+          ? targetBatchSize
+          : math.min(targetBatchSize, targetMicroBatchSize),
+      inherited: true,
+    );
+  }
+
+  /// Rejects a draft micro-batch smaller than the block llama.cpp
+  /// draft-dflash and draft-dspark decode in one micro-batch, which it sizes
+  /// from the draft model's metadata (`common/speculative.cpp`).
+  void _validateDraftBlockFitsMicroBatch(
     _LlamaCppSpeculativeConfig config,
+    _DraftMicroBatch microBatch,
     String? Function(String key) draftMetadata,
   ) {
-    final draftMicroBatchSize = config.draftMicroBatchSize;
-    if (draftMicroBatchSize == null || !config.usesBlockDraft) {
+    if (!config.usesBlockDraft) {
       return;
     }
     int? metadataInt(String key) =>
         int.tryParse(draftMetadata(key)?.trim() ?? '');
-    // llama.cpp decodes a LiliCorr draft's whole trained block, whatever
-    // draftTokenMax is, and aborts when it does not fit one micro-batch.
-    final liliCorrTopK = metadataInt('lilicorr.candidate_topk') ?? 0;
-    if (liliCorrTopK <= 0) {
-      return;
-    }
     final blockSize =
         metadataInt('dflash.block_size') ?? _llamaCppDefaultDflashBlockSize;
-    if (draftMicroBatchSize < blockSize) {
-      throw LlamaArgumentException(
-        'SpeculativeDecodingConfig.draftMicroBatchSize ($draftMicroBatchSize) '
-        'must be at least the draft model block size dflash.block_size '
-        '($blockSize) for a LiliCorr draft model (lilicorr.candidate_topk '
-        '$liliCorrTopK), which llama.cpp draft-dflash and draft-dspark decode '
-        'as a whole block in one micro-batch.',
-        name: 'draftMicroBatchSize',
-        invalidValue: draftMicroBatchSize,
+    // llama.cpp decodes a LiliCorr draft's whole trained block, whatever
+    // draftTokenMax is.
+    final liliCorrTopK = metadataInt('lilicorr.candidate_topk') ?? 0;
+    if (liliCorrTopK > 0) {
+      if (microBatch.size < blockSize) {
+        throw _draftMicroBatchTooSmall(
+          microBatch,
+          'the draft model block size dflash.block_size ($blockSize) for a '
+          'LiliCorr draft model (lilicorr.candidate_topk $liliCorrTopK), '
+          'which llama.cpp draft-dflash and draft-dspark decode as a whole '
+          'block in one micro-batch.',
+        );
+      }
+      return;
+    }
+    // Otherwise the block is the draft length, clamped to what the trained
+    // block yields, plus the anchor token, which anchor-first DSpark drafts
+    // too. llama.cpp reads sample_from_anchor as true unless it is "false".
+    final anchorFirst =
+        config.usesDspark &&
+        (draftMetadata('dflash.sample_from_anchor') ?? 'true') == 'true';
+    final draftLength = math.min(
+      config.draftTokenMax,
+      anchorFirst ? blockSize : blockSize - 1,
+    );
+    final block = anchorFirst ? draftLength : draftLength + 1;
+    if (microBatch.size < block) {
+      throw _draftMicroBatchTooSmall(
+        microBatch,
+        'the $block-token draft block (draftTokenMax ${config.draftTokenMax} '
+        'within dflash.block_size $blockSize'
+        '${anchorFirst ? ', anchor-first DSpark' : ', plus the anchor token'}) '
+        '$_draftBlockRequirement',
       );
     }
   }
 
-  /// Validates a speculative draft micro-batch size against a block draft
-  /// model's metadata for unit tests.
-  void debugValidateLiliCorrDraftMicroBatchSizeForTesting(
-    GenerationParams params,
-    Map<String, String> draftMetadata,
-  ) {
+  /// Validates a block draft's micro-batch, set or inherited from target
+  /// context parameters, against the block the draft model's metadata gives
+  /// for unit tests.
+  void debugValidateDraftBlockMicroBatchForTesting(
+    GenerationParams params, {
+    Map<String, String> draftMetadata = const {},
+    int targetBatchSize = 2048,
+    int targetMicroBatchSize = 512,
+  }) {
     final config = _resolveLlamaCppSpeculativeConfig(
       params,
       hasMediaParts: false,
     );
-    if (config != null) {
-      _validateLiliCorrDraftMicroBatchSize(config, (key) => draftMetadata[key]);
+    if (config == null) {
+      return;
     }
+    _validateDraftBlockFitsMicroBatch(
+      config,
+      _resolveDraftMicroBatch(
+        config,
+        targetBatchSize: targetBatchSize,
+        targetMicroBatchSize: targetMicroBatchSize,
+      ),
+      (key) => draftMetadata[key],
+    );
   }
 
   /// Validates a speculative draft micro-batch size against a context's
@@ -5189,8 +5263,13 @@ class LlamaCppService {
                 loadMtp: speculativeConfig.usesMtp,
               );
         if (draftModel != null) {
-          _validateLiliCorrDraftMicroBatchSize(
+          _validateDraftBlockFitsMicroBatch(
             speculativeConfig,
+            _resolveDraftMicroBatch(
+              speculativeConfig,
+              targetBatchSize: modelParams.n_batch,
+              targetMicroBatchSize: modelParams.n_ubatch,
+            ),
             (key) => _readModelMetadataValue(draftModel.pointer, key),
           );
         }
