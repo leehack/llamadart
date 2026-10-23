@@ -2204,21 +2204,42 @@ void main() {
 
       // On a CPU-only host the model's GPU placement is written into the
       // service, and the GPU device a load selects is the CPU device, so the
-      // head runs on the CPU while its scheduler still gets the GPU choice.
-      for (final (name, :android, :onGpu, :gpuDevice, :opOffload) in [
+      // head runs on the CPU while its context and scheduler still get the
+      // GPU choices.
+      final offloaded = (
+        offloadKqv: true,
+        opOffload: true,
+        flashAttnType: llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_AUTO.value,
+      );
+      final cpuOnly = (
+        offloadKqv: false,
+        opOffload: false,
+        flashAttnType:
+            llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value,
+      );
+      for (final (name, :android, :onGpu, :gpuDevice, :context, :opOffload) in [
         (
           'CPU',
           android: false,
           onGpu: false,
           gpuDevice: true,
+          context: cpuOnly,
           opOffload: false,
         ),
-        ('GPU', android: false, onGpu: true, gpuDevice: true, opOffload: true),
+        (
+          'GPU',
+          android: false,
+          onGpu: true,
+          gpuDevice: true,
+          context: offloaded,
+          opOffload: true,
+        ),
         (
           'GPU backend without a device',
           android: false,
           onGpu: true,
           gpuDevice: false,
+          context: offloaded,
           opOffload: false,
         ),
         (
@@ -2226,16 +2247,22 @@ void main() {
           android: true,
           onGpu: true,
           gpuDevice: true,
+          context: cpuOnly,
           opOffload: false,
         ),
       ]) {
-        test('passes the $name op offload choice to the head scheduler', () {
+        test('passes the $name offload choices to the head context and '
+            'scheduler', () {
           final cpu = GgmlGraphApi.current.devByType(
             ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
           );
           final schedulerOpOffload = <bool>[];
+          final recorder = RecordingExitTeardown(
+            ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+          );
           service = LlamaCppService(
             isAndroid: android,
+            objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
             decisionHeadGraphApi: _withGgmlOverrides(GgmlGraphApi.current, {
               #schedNew:
                   (
@@ -2301,6 +2328,7 @@ void main() {
 
           service.loadDecisionHead(model, headPath, configPath);
 
+          expect(recorder.contextOffload, [context]);
           expect(schedulerOpOffload, [opOffload]);
         });
       }

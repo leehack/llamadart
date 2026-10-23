@@ -22,6 +22,7 @@ const _configPathKey = 'LLAMADART_DECISION_CONFIG_PATH';
 const _backendKey = 'LLAMADART_DECISION_BACKEND';
 const _logitToleranceKey = 'LLAMADART_DECISION_LOGIT_TOLERANCE';
 const _probToleranceKey = 'LLAMADART_DECISION_PROB_TOLERANCE';
+const _actLogitToleranceKey = 'LLAMADART_DECISION_ACT_LOGIT_TOLERANCE';
 const _gpuBackendNames = {'Metal', 'CUDA', 'HIP', 'Vulkan', 'OpenCL'};
 
 void main() {
@@ -35,6 +36,7 @@ void main() {
     final backend = _backend();
     final logitTolerance = _tolerance(_logitToleranceKey, 0.25);
     final probTolerance = _tolerance(_probToleranceKey, 0.05);
+    final actLogitTolerance = _tolerance(_actLogitToleranceKey, 0.05);
     final fixture = DecisionFixture.load();
     final failures = <String>[];
 
@@ -129,11 +131,29 @@ void main() {
             );
           }
         }
+        if (output.actLogits.length != row.rawActLogits.length) {
+          failures.add(
+            '${row.id}: ${output.actLogits.length} action logits, expected '
+            '${row.rawActLogits.length}',
+          );
+          continue;
+        }
+        // The official head saturates its action logits (about ±4000), so
+        // act_probability hides a wrong action head, and quantization error
+        // grows with the logits: bound each relative to the row's largest.
+        final actScale = row.rawActLogits.fold(
+          0.0,
+          (scale, logit) => math.max(scale, logit.abs()),
+        );
         for (var i = 0; i < row.rawActLogits.length; i++) {
-          if (i < output.actLogits.length) {
-            actLogitDiff.record(
-              (output.actLogits[i] - row.rawActLogits[i]).abs(),
-              row.id,
+          final diff = (output.actLogits[i] - row.rawActLogits[i]).abs();
+          final relative = diff / actScale;
+          actLogitDiff.record(relative, row.id);
+          if (!(relative <= actLogitTolerance)) {
+            failures.add(
+              '${row.id}: action logit $i ${output.actLogits[i]} vs '
+              '${row.rawActLogits[i]} (relative diff $relative > '
+              '$actLogitTolerance)',
             );
           }
         }
@@ -218,7 +238,7 @@ void main() {
         'rows=$questions '
         'failures=${failures.length} '
         'worstLogitDiff=${logitDiff.describe()} '
-        'worstActLogitDiff=${actLogitDiff.describe()} '
+        'worstActLogitRelDiff=${actLogitDiff.describe()} '
         'worstProbDiff=${probDiff.describe()} '
         'worstScoreDiff=${scoreDiff.describe()} '
         'rawMsPerQuestion=${_ms(rawWatch, questions)} '
