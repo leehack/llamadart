@@ -845,6 +845,32 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         self.assertIn("--allow-litert-channel-transition", workflow)
         self.assertIn("--allow-litert-development-line-transition", workflow)
         self.assertIn("legacy vX.Y.Z-native.N, latest, or keep", workflow)
+
+    def test_sync_workflow_captures_every_stable_diffusion_surface(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "sync_native_bindings.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("stable_diffusion_tag:", workflow)
+        self.assertEqual(
+            workflow.count('--stable-diffusion-tag "${STABLE_DIFFUSION_TAG}"'), 2
+        )
+        self.assertIn("tool/native/sync_stable_diffusion_bindings.py", workflow)
+        self.assertIn(
+            "resolved_stable_diffusion_tag != 'keep'", workflow
+        )
+        self.assertIn(
+            "lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart",
+            workflow,
+        )
+        self.assertIn(
+            "packages/llamadart_stable_diffusion_flutter/darwin/"
+            "llamadart_stable_diffusion_flutter/Package.swift",
+            workflow,
+        )
+        self.assertIn('-sd-${RESOLVED_STABLE_DIFFUSION_TAG}', workflow)
         allowlist = (
             Path(__file__).resolve().parent
             / "fixtures"
