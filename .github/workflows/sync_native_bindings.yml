@@ -16,6 +16,10 @@ on:
         description: 'LiteRT tag: vX.Y.Z, vX.Y.Z-N, g<12hex>[-N], legacy vX.Y.Z-native.N, latest, or keep'
         required: true
         default: 'keep'
+      stable_diffusion_tag:
+        description: 'stable-diffusion-native tag: vX.Y.Z, vX.Y.Z-N, latest, or keep'
+        required: true
+        default: 'keep'
       allow_litert_channel_transition:
         description: 'Approve owner-validated stable/development ancestry transition'
         required: false
@@ -71,6 +75,7 @@ jobs:
           ALLOW_LITERT_DEVELOPMENT_LINE_TRANSITION: ${{ inputs.allow_litert_development_line_transition }}
           NATIVE_TAG: ${{ inputs.native_tag }}
           LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
+          STABLE_DIFFUSION_TAG: ${{ inputs.stable_diffusion_tag }}
         run: |
           transition_args=()
           if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
@@ -85,6 +90,7 @@ jobs:
           python3 tool/native/sync_native_release_pins.py \
             --llama-cpp-tag "${NATIVE_TAG}" \
             --litert-lm-tag "${LITERT_LM_TAG}" \
+            --stable-diffusion-tag "${STABLE_DIFFUSION_TAG}" \
             "${transition_args[@]}" \
             --dry-run
 
@@ -105,6 +111,7 @@ jobs:
           ALLOW_LITERT_DEVELOPMENT_LINE_TRANSITION: ${{ inputs.allow_litert_development_line_transition }}
           RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
           LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
+          STABLE_DIFFUSION_TAG: ${{ inputs.stable_diffusion_tag }}
         run: |
           transition_args=()
           if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
@@ -119,16 +126,25 @@ jobs:
           python3 tool/native/sync_native_release_pins.py \
             --llama-cpp-tag "${RESOLVED_NATIVE_TAG}" \
             --litert-lm-tag "${LITERT_LM_TAG}" \
+            --stable-diffusion-tag "${STABLE_DIFFUSION_TAG}" \
             "${transition_args[@]}"
+
+      - name: Regenerate stable_diffusion bindings
+        if: steps.sync_pins.outputs.resolved_stable_diffusion_tag != 'keep'
+        run: python3 tool/native/sync_stable_diffusion_bindings.py
 
       - name: Prepare fast-forward automation head
         id: prepare_pr_head
         env:
           RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
+          RESOLVED_STABLE_DIFFUSION_TAG: ${{ steps.sync_pins.outputs.resolved_stable_diffusion_tag }}
         run: |
           set -euo pipefail
           zero_oid="0000000000000000000000000000000000000000"
           branch="automation/native-sync-${RESOLVED_NATIVE_TAG}"
+          if [[ "${RESOLVED_STABLE_DIFFUSION_TAG}" != "keep" ]]; then
+            branch="${branch}-sd-${RESOLVED_STABLE_DIFFUSION_TAG}"
+          fi
           target_ref="refs/heads/${branch}"
           git check-ref-format --branch "${branch}" >/dev/null
 
@@ -147,6 +163,11 @@ jobs:
             lib/src/backends/litert_lm/litert_lm_runtime.dart \
             tool/macos_litert_lm_prepare_app.sh \
             lib/src/backends/llama_cpp/bindings.dart \
+            lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart \
+            packages/llamadart_stable_diffusion_flutter/darwin/llamadart_stable_diffusion_flutter/Package.swift \
+            packages/llamadart_stable_diffusion_flutter/pubspec.yaml \
+            packages/llamadart_stable_diffusion_flutter/CHANGELOG.md \
+            packages/llamadart_stable_diffusion_flutter/README.md \
             CHANGELOG.md \
             README.md \
             website/docs/getting-started/installation.md \
@@ -251,6 +272,7 @@ jobs:
           HAS_CHANGES: ${{ steps.prepare_pr_head.outputs.has_changes }}
           RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
           RESOLVED_LITERT_LM_TAG: ${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}
+          RESOLVED_STABLE_DIFFUSION_TAG: ${{ steps.sync_pins.outputs.resolved_stable_diffusion_tag }}
         run: |
           set -euo pipefail
           open_pr="$(gh pr list --state open --base main --head "${BRANCH}" \
@@ -274,6 +296,7 @@ jobs:
             "Native version checklist:" \
             "- [ ] Confirm the native release includes all required native-assets archives." \
             "- [ ] If LiteRT-LM sync was requested, confirm release \`${RESOLVED_LITERT_LM_TAG}\` includes all required runtime archives." \
+            "- [ ] If stable_diffusion sync was requested, confirm release \`${RESOLVED_STABLE_DIFFUSION_TAG}\` includes every pinned runtime archive and the Apple XCFramework." \
             "- [ ] Confirm manifest provenance, ABI/capabilities, bundle coverage, checksums, and real-model evidence." \
             "- [ ] Confirm Apple SPM pins and current README/website/changelog surfaces are aligned." \
             "- [ ] A moved llama.cpp pin clears \`llamaCppCompatibleAppleCompanionTags\`, so apps on the previous companion fail the Apple build. For a wrapper rebuild of the same upstream llama.cpp, re-list the previous pin only after confirming identical headers and thin binaries." \

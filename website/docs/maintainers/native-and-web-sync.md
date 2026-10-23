@@ -195,10 +195,14 @@ fixes a replacement runtime must provide are listed in
 
 ## stable_diffusion runtime sync
 
-The opt-in `stable_diffusion` runtime is not wired into
-`sync_native_bindings.yml` yet; sync it by hand. `stable-diffusion-native`
-tags are `vMAJOR.MINOR.PATCH`, or `vMAJOR.MINOR.PATCH-N` for a rebuild; name
-the tag explicitly, since `latest` skips GitHub prereleases.
+The opt-in `stable_diffusion` runtime syncs through the
+`stable_diffusion_tag` input of `sync_native_bindings.yml` (default `keep`). A
+non-`keep` tag runs the pin sync, then `sync_stable_diffusion_bindings.py`, and
+puts the bindings and companion files in the automation commit; its branch is
+`automation/native-sync-<native tag>-sd-<stable_diffusion tag>`.
+`stable-diffusion-native` tags are `vMAJOR.MINOR.PATCH`, or
+`vMAJOR.MINOR.PATCH-N` for a rebuild; name the tag explicitly, since `latest`
+skips GitHub prereleases. By hand:
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
