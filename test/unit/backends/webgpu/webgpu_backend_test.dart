@@ -4452,6 +4452,51 @@ void main() {
           expect(sentPenaltyPromptTokens(), isFalse);
         });
 
+        test('ToolChoice.auto keeps the prompt out when draft resolution '
+            'copies the params', () async {
+          bridge.setProperty(
+            'getCompletionCapabilities'.toJS,
+            (() => Future<JSObject>.value(
+              JSObject()
+                ..setProperty('penaltyPromptTokens'.toJS, true.toJS)
+                ..setProperty(
+                  'speculativeDecoding'.toJS,
+                  JSObject()..setProperty('ngram-simple'.toJS, true.toJS),
+                ),
+            ).toJS).toJS,
+          );
+          final engine = await loadHermesEngine();
+
+          await engine
+              .create(
+                <LlamaChatMessage>[
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'Say hello in French. Do not use tools.',
+                  ),
+                ],
+                params: GenerationParams(
+                  speculativeDecodingConfig: SpeculativeDecodingConfig(
+                    strategy: SpeculativeDecodingStrategy.ngramSimple,
+                    strategies: const [SpeculativeDecodingStrategy.ngramSimple],
+                    draftModelDownload: ModelLoadOptions(),
+                  ),
+                ),
+                tools: <ToolDefinition>[weatherTool],
+                toolChoice: ToolChoice.auto,
+              )
+              .drain<void>();
+
+          expect(lastGrammar, isNull);
+          expect(sentPenaltyPromptTokens(), isTrue);
+          expect(
+            lastCompletionOptions!.getProperty<JSAny?>(
+              'penaltyPromptTokens'.toJS,
+            ),
+            false.toJS,
+          );
+        });
+
         test('ToolChoice.auto sends no penaltyPromptTokens on assets that do '
             'not report it', () async {
           for (final reported in <JSAny?>[
