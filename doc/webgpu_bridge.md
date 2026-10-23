@@ -142,9 +142,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   the core's bytes. A character split across tokens, including at the start of
   a response, streams once complete and no longer comes out as a wrong
   character; `onToken`'s `currentText` leaves out the held-back tail. Invalid
-  bytes and a tail still incomplete when generation ends become U+FFFD, a
-  leading U+FEFF is kept, and output after a NUL byte is delivered. Older
-  assets keep the previous string reads
+  bytes and a tail still incomplete when generation ends become U+FFFD,
+  `detokenize` keeps a leading U+FEFF (Dart's streamed text still drops it),
+  and output after a NUL byte is delivered. Older assets keep the previous
+  string reads
   ([llama-web-bridge#177](https://github.com/leehack/llama-web-bridge/pull/177)).
 
 ### Media embeddings

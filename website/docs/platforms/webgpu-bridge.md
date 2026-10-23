@@ -243,10 +243,9 @@ The feature-by-runtime table is in the
 - With bridge assets `v0.1.70+`, a character split across tokens, including at
   the start of a response, streams once complete instead of as a wrong
   character, and `detokenize` returns U+FFFD for invalid bytes or an incomplete
-  tail instead of wrong characters. A held-back tail is left out of
-  `onToken`'s `currentText`, a tail still incomplete when generation ends
-  becomes U+FFFD, a leading U+FEFF is kept, and output after a NUL byte is
-  delivered. Older assets keep the previous behavior
+  tail instead of wrong characters. A tail still incomplete when generation
+  ends becomes U+FFFD, `detokenize` keeps a leading U+FEFF, and output after a
+  NUL byte is delivered. Older assets keep the previous behavior
   ([llama-web-bridge#177](https://github.com/leehack/llama-web-bridge/pull/177)).
 - The runtime fetches the model and projector itself. `ModelSource.parse`
   takes a remote `https://` URL; a `ModelSource.path` is a URL relative to the
