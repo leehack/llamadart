@@ -108,6 +108,7 @@ void main() {
       expect(ids, contains('llama-cpp-speculative-benchmark'));
       expect(ids, contains('web-mock-chat-smoke'));
       expect(ids, contains('web-real-model-smoke'));
+      expect(ids, contains('web-tool-penalty-smoke'));
       expect(ids, contains('webgpu-multimodal-regression'));
       expect(ids, contains('gemma4-webgpu-mem64'));
       expect(ids, contains('physical-ios-speech-e2e'));
@@ -115,6 +116,16 @@ void main() {
       expect(ids, contains('image-generation-smoke'));
       expect(ids, contains('image-exit-teardown'));
       expect(ids, contains('chat-app-image-generation-smoke'));
+    });
+
+    test('Web tool penalty row is a targeted local-only scenario row', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-tool-penalty-smoke',
+      );
+
+      expect(row.tier, 'targeted');
+      expect(row.mode, 'local-only');
+      expect(row.command, contains('chat-app-web-tool-penalty-smoke'));
     });
 
     test('Firebase image row builds a maintained image profile', () {

@@ -1093,6 +1093,20 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Web chat app, web model loading, or WebGPU bridge runtime changes.',
   ),
   TestMatrixRow(
+    id: 'web-tool-penalty-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'built Flutter web chat app tool chat on a tool-capable GGUF: '
+        'ToolChoice.auto sends penaltyPromptTokens: false',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-web-tool-penalty-smoke --model-url <tool-capable-gguf-url> '
+        '--allow-any-response',
+    useWhen:
+        'Web penalty, tool-call grammar, or bridge completion option changes.',
+  ),
+  TestMatrixRow(
     id: 'web-speech-to-text-smoke',
     tier: 'targeted',
     mode: 'local-only',

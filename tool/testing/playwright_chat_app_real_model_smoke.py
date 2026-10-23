@@ -175,6 +175,21 @@ def wait_for_bridge_response(
     raise TimeoutError(f"Timed out waiting for model response: {expected}")
 
 
+WEATHER_TOOL_DECLARATIONS = json.dumps(
+    [
+        {
+            "name": "getWeather",
+            "description": "Get the current weather for a city.",
+            "parameters": {
+                "type": "object",
+                "properties": {"city": {"type": "string"}},
+                "required": ["city"],
+            },
+        }
+    ]
+)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("app_url")
@@ -213,6 +228,23 @@ def main() -> int:
     parser.add_argument("--context-size", type=int, default=1024)
     parser.add_argument("--max-tokens", type=int, default=32)
     parser.add_argument("--penalty", type=float, default=1.0)
+    parser.add_argument(
+        "--tools",
+        action="store_true",
+        help="Enable the chat app's tools with a getWeather declaration.",
+    )
+    parser.add_argument(
+        "--expect-penalty-prompt-tokens-probe",
+        action="store_true",
+        help="Require getCompletionCapabilities() to report "
+        "penaltyPromptTokens: true.",
+    )
+    parser.add_argument(
+        "--expect-penalty-prompt-tokens-option",
+        choices=("absent", "false"),
+        help="Require the completion call to carry no penaltyPromptTokens "
+        "option, or penaltyPromptTokens: false.",
+    )
     parser.add_argument("--threads", type=int, default=2)
     parser.add_argument("--thread-pool-size", type=int, default=2)
     parser.add_argument("--load-timeout-ms", type=int, default=20 * 60 * 1000)
@@ -313,8 +345,10 @@ def main() -> int:
         "flutter.top_p": json.dumps(1.0),
         "flutter.min_p": json.dumps(0.0),
         "flutter.penalty": json.dumps(args.penalty),
-        "flutter.tools_enabled": json.dumps(False),
-        "flutter.tool_declarations": json.dumps("[]"),
+        "flutter.tools_enabled": json.dumps(args.tools),
+        "flutter.tool_declarations": json.dumps(
+            WEATHER_TOOL_DECLARATIONS if args.tools else "[]"
+        ),
         "flutter.thinking_enabled": json.dumps(False),
         "flutter.thinking_budget_tokens": json.dumps(0),
         "flutter.single_turn_mode": json.dumps(True),
@@ -338,6 +372,7 @@ def main() -> int:
         window.__llamadartRealBridgeLastError = null;
         window.__llamadartRealBridgeLastPrompt = null;
         window.__llamadartRealBridgeLastOptions = null;
+        window.__llamadartRealBridgeCompletionCapabilities = null;
         window.__llamadartRealBridgeTokenEvents = 0;
         window.__llamadartRealBridgeTokenBytes = 0;
         window.__llamadartRealBridgeLastPieceType = null;
@@ -371,6 +406,11 @@ def main() -> int:
               topK: options?.topK ?? null,
               topP: options?.topP ?? null,
               penalty: options?.penalty ?? null,
+              presencePenalty: options?.presencePenalty ?? null,
+              penaltyPromptTokens:
+                options && 'penaltyPromptTokens' in options
+                  ? options.penaltyPromptTokens
+                  : '<absent>',
               seed: options?.seed ?? null,
               partTypes: Array.from(options?.parts ?? []).map(
                 part => String(part?.type ?? ''),
@@ -400,6 +440,18 @@ def main() -> int:
               throw error;
             }}
           }};
+          const originalCapabilities =
+            BridgeClass.prototype?.getCompletionCapabilities;
+          if (typeof originalCapabilities === 'function') {{
+            BridgeClass.prototype.getCompletionCapabilities = function(...args) {{
+              const result = originalCapabilities.apply(this, args);
+              Promise.resolve(result).then(capabilities => {{
+                window.__llamadartRealBridgeCompletionCapabilities =
+                  JSON.parse(JSON.stringify(capabilities ?? null));
+              }});
+              return result;
+            }};
+          }}
           BridgeClass.__llamadartRealE2ePatched = true;
           clearInterval(window.__llamadartRealBridgePatchTimer);
         }}, 20);
@@ -788,6 +840,12 @@ def main() -> int:
                 ),
             )
             body_after_response = safe_body_text(page)
+        completion_check = page.evaluate(
+            """() => ({
+              capabilities: window.__llamadartRealBridgeCompletionCapabilities,
+              options: window.__llamadartRealBridgeLastOptions,
+            })"""
+        )
         bridge_globals = page.evaluate(
             """() => ({
               crossOriginIsolated: window.crossOriginIsolated,
@@ -812,6 +870,26 @@ def main() -> int:
                 window.__llamadartBridgeSpeechToTextSupported ?? null,
             })"""
         )
+        if args.expect_penalty_prompt_tokens_probe:
+            capabilities = completion_check["capabilities"] or {}
+            if capabilities.get("penaltyPromptTokens") is not True:
+                raise RuntimeError(
+                    "getCompletionCapabilities() did not report "
+                    f"penaltyPromptTokens: true: {capabilities!r}"
+                )
+        if args.expect_penalty_prompt_tokens_option:
+            options = completion_check["options"] or {}
+            expected = (
+                "<absent>"
+                if args.expect_penalty_prompt_tokens_option == "absent"
+                else False
+            )
+            if options.get("penaltyPromptTokens") != expected:
+                raise RuntimeError(
+                    "Completion call carried penaltyPromptTokens "
+                    f"{options.get('penaltyPromptTokens')!r}, expected "
+                    f"{expected!r}: {options!r}"
+                )
         if args.expect_mmproj_cache_hit and len(mmproj_requests) != 1:
             raise RuntimeError(
                 "Expected one mmproj network request from CacheStorage prefetch, "
@@ -843,6 +921,7 @@ def main() -> int:
             mmprojRequestCount=len(mmproj_requests),
             liteRtLmRuntimeRequests=litert_lm_runtime_requests,
             bridgeGlobals=bridge_globals,
+            completionCheck=completion_check,
             bodyTail=body_after_response[-1200:],
             consoleTail=console_logs[-30:],
             pageErrors=page_errors[-10:],

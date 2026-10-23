@@ -371,6 +371,223 @@ void main() {
         pageState: {'liteRtLmResponse': '4'},
       );
 
+      Future<({ProcessResult result, Map<String, dynamic> capture})>
+      runPenaltyCheck(
+        String name,
+        List<String> flags, {
+        required Object? capabilities,
+        required Object? options,
+      }) async {
+        final capturePath = p.join(tempDir.path, '$name.json');
+        final result = await _runProcess(
+          Platform.isWindows ? 'python' : 'python3',
+          [
+            _script,
+            'http://127.0.0.1:1/',
+            '--model-url',
+            modelUrl,
+            '--allow-any-response',
+            '--load-timeout-ms',
+            '4000',
+            ...flags,
+          ],
+          environment: {
+            'PYTHONPATH': tempDir.path,
+            'LLAMADART_FAKE_PLAYWRIGHT_SCENARIO': jsonEncode({
+              'capturePath': capturePath,
+              'body': 'Model loaded successfully! Ready to chat.',
+              'pageState': {
+                'bridgeResponse': 'ok',
+                'capabilities': capabilities,
+                'options': options,
+              },
+              'requests': [modelUrl],
+            }),
+          },
+        );
+        return (
+          result: result,
+          capture:
+              jsonDecode(File(capturePath).readAsStringSync())
+                  as Map<String, dynamic>,
+        );
+      }
+
+      group('penaltyPromptTokens checks', () {
+        const probe = '--expect-penalty-prompt-tokens-probe';
+        const option = '--expect-penalty-prompt-tokens-option';
+
+        test('the probe flag passes when the probe reports true', () async {
+          final run = await runPenaltyCheck(
+            'probe_pass',
+            [probe],
+            capabilities: {'penaltyPromptTokens': true},
+            options: {},
+          );
+          expect(run.result.exitCode, 0, reason: '${run.result.stderr}');
+        });
+
+        for (final capabilities in <Object?>[
+          {'penaltyPromptTokens': false},
+          <String, Object?>{},
+          null,
+        ]) {
+          test('the probe flag fails on $capabilities', () async {
+            final run = await runPenaltyCheck(
+              'probe_fail',
+              [probe],
+              capabilities: capabilities,
+              options: {},
+            );
+            expect(run.result.exitCode, isNot(0));
+            expect(
+              run.result.stderr,
+              contains('did not report penaltyPromptTokens: true'),
+            );
+          });
+        }
+
+        test('the absent option passes and fails', () async {
+          final pass = await runPenaltyCheck(
+            'absent_pass',
+            [option, 'absent'],
+            capabilities: null,
+            options: {'penaltyPromptTokens': '<absent>'},
+          );
+          expect(pass.result.exitCode, 0, reason: '${pass.result.stderr}');
+
+          final fail = await runPenaltyCheck(
+            'absent_fail',
+            [option, 'absent'],
+            capabilities: null,
+            options: {'penaltyPromptTokens': false},
+          );
+          expect(fail.result.exitCode, isNot(0));
+          expect(
+            fail.result.stderr,
+            contains('Completion call carried penaltyPromptTokens'),
+          );
+        });
+
+        test('the false option passes and fails', () async {
+          final pass = await runPenaltyCheck(
+            'false_pass',
+            [option, 'false'],
+            capabilities: null,
+            options: {'penaltyPromptTokens': false},
+          );
+          expect(pass.result.exitCode, 0, reason: '${pass.result.stderr}');
+
+          for (final carried in <Object?>['<absent>', true]) {
+            final fail = await runPenaltyCheck(
+              'false_fail',
+              [option, 'false'],
+              capabilities: null,
+              options: {'penaltyPromptTokens': carried},
+            );
+            expect(fail.result.exitCode, isNot(0), reason: '$carried');
+          }
+        });
+
+        test('the init script records the option and the probe', () async {
+          final initScript =
+              (await runPenaltyCheck(
+                    'init',
+                    const [],
+                    capabilities: null,
+                    options: {},
+                  )).capture['initScript']
+                  as String;
+          expect(initScript, contains("'penaltyPromptTokens' in options"));
+          expect(initScript, contains('getCompletionCapabilities'));
+          expect(initScript, contains("'<absent>'"));
+        });
+
+        test(
+          'the patched bridge records the option, its absence and the probe',
+          testOn: '!windows',
+          () async {
+            final initScript =
+                (await runPenaltyCheck(
+                      'node_init',
+                      const [],
+                      capabilities: null,
+                      options: {},
+                    )).capture['initScript']
+                    as String;
+            final scriptFile = File(p.join(tempDir.path, 'init.js'))
+              ..writeAsStringSync(initScript);
+            final harness = File(p.join(tempDir.path, 'penalty_harness.mjs'))
+              ..writeAsStringSync(r"""
+import fs from 'node:fs';
+globalThis.window = globalThis;
+globalThis.localStorage = { setItem() {}, removeItem() {} };
+class LlamaWebGpuBridge {
+  async createCompletion() { return 'ok'; }
+  getCompletionCapabilities() {
+    return Promise.resolve({ penaltyPromptTokens: true });
+  }
+}
+globalThis.LlamaWebGpuBridge = LlamaWebGpuBridge;
+(0, eval)(fs.readFileSync(process.argv[2], 'utf8'));
+await new Promise(resolve => setTimeout(resolve, 100));
+const bridge = new LlamaWebGpuBridge();
+await bridge.createCompletion('p', { penalty: 1.1 });
+const absent = window.__llamadartRealBridgeLastOptions.penaltyPromptTokens;
+await bridge.createCompletion('p', { penaltyPromptTokens: false });
+const falseValue = window.__llamadartRealBridgeLastOptions.penaltyPromptTokens;
+await bridge.createCompletion('p', { penaltyPromptTokens: true });
+const trueValue = window.__llamadartRealBridgeLastOptions.penaltyPromptTokens;
+await bridge.getCompletionCapabilities();
+await new Promise(resolve => setTimeout(resolve, 20));
+console.log(JSON.stringify({
+  absent, falseValue, trueValue,
+  capabilities: window.__llamadartRealBridgeCompletionCapabilities,
+}));
+process.exit(0);
+""");
+            final node = await _runProcess('node', [
+              harness.path,
+              scriptFile.path,
+            ]);
+
+            expect(node.exitCode, 0, reason: '${node.stderr}');
+            expect(jsonDecode((node.stdout as String).trim()), {
+              'absent': '<absent>',
+              'falseValue': false,
+              'trueValue': true,
+              'capabilities': {'penaltyPromptTokens': true},
+            });
+          },
+        );
+
+        test('--tools seeds the tools setting and a declaration', () async {
+          const emptyDeclarations = r'"flutter.tool_declarations": "\"[]\""';
+          final off =
+              (await runPenaltyCheck(
+                    'tools_off',
+                    const [],
+                    capabilities: null,
+                    options: {},
+                  )).capture['initScript']
+                  as String;
+          expect(off, contains('"flutter.tools_enabled": "false"'));
+          expect(off, contains(emptyDeclarations));
+
+          final on =
+              (await runPenaltyCheck(
+                    'tools_on',
+                    const ['--tools'],
+                    capabilities: null,
+                    options: {},
+                  )).capture['initScript']
+                  as String;
+          expect(on, contains('"flutter.tools_enabled": "true"'));
+          expect(on, contains(r'getWeather'));
+          expect(on, isNot(contains(emptyDeclarations)));
+        });
+      });
+
       List<Map<String, dynamic>> events(ProcessResult result) => [
         for (final line in const LineSplitter().convert(
           result.stdout as String,
