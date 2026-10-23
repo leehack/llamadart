@@ -718,6 +718,13 @@ void main() {
             'playwright_chat_app_real_model_smoke.py http://127.0.0.1:7358/',
           ),
         );
+        expect(
+          output,
+          contains(
+            '--expect-penalty-prompt-tokens-probe '
+            '--expect-penalty-prompt-tokens-option absent',
+          ),
+        );
         final reuse = await runLocalE2e(
           const [
             '--scenario',
