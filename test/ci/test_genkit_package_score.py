@@ -48,9 +48,10 @@ class CandidateScoreTest(unittest.TestCase):
         self.git('checkout', '--quiet', 'main')
         self.git('merge', '--quiet', '--no-ff', '-m', 'tested merge', 'candidate')
         self.merge = self.git('rev-parse', 'HEAD').strip()
+        self.git('update-ref', 'refs/remotes/origin/main', 'main')
         (self.package / 'pubspec.yaml').write_bytes(self.metadata.read_bytes())
         self.event = {'repository': {'full_name': score.REPOSITORY}, 'pull_request': {
-            'base': {'sha': base, 'repo': {'full_name': score.REPOSITORY}},
+            'base': {'ref': 'main', 'sha': base, 'repo': {'full_name': score.REPOSITORY}},
             'head': {'sha': head, 'repo': {'full_name': score.REPOSITORY}}}}
         self.event_file = self.folder / 'event.json'
         self.env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
@@ -159,6 +160,55 @@ class CandidateScoreTest(unittest.TestCase):
                 parents = self.git('show', '-s', '--format=%P', self.merge).split()
                 self.event['pull_request']['base']['sha'] = parents[0]
                 self.event['pull_request']['head']['sha'] = parents[1]
+
+    def advance_base(self):
+        """Merge candidate onto a base that moved after the PR recorded it."""
+        pr = self.event['pull_request']
+        head = pr['head']['sha']
+        self.git('checkout', '--quiet', '-B', 'moved', pr['base']['sha'])
+        (self.root / 'other.txt').write_text('main moved\n')
+        self.git('add', '.')
+        self.git('commit', '--quiet', '-m', 'main moved')
+        moved = self.git('rev-parse', 'HEAD').strip()
+        self.git('update-ref', 'refs/remotes/origin/main', moved)
+        return moved, head
+
+    def set_merge(self, tree_from, *parents):
+        args = [item for parent in parents for item in ('-p', parent)]
+        self.merge = self.git('commit-tree', self.git('rev-parse', tree_from + '^{tree}').strip(),
+                              *args, '-m', 'fixture merge').strip()
+        self.git('update-ref', 'HEAD', self.merge)
+        self.env['GITHUB_SHA'] = self.merge
+
+    def test_stale_recorded_base_that_is_an_ancestor_is_accepted(self):
+        moved, head = self.advance_base()
+        self.set_merge('main', moved, head)
+        self.assertEqual(self.execute(), 0)
+
+    def test_merge_with_wrong_head_is_rejected(self):
+        moved, head = self.advance_base()
+        self.set_merge('main', moved, moved)
+        with self.assertRaisesRegex(ValueError, 'does not match GitHub PR base and head'):
+            self.execute()
+        self.assertFalse(self.calls)
+
+    def test_first_parent_not_descending_from_recorded_base_is_rejected(self):
+        moved, head = self.advance_base()
+        orphan = self.git('commit-tree', self.git('rev-parse', 'main^{tree}').strip(),
+                          '-m', 'unrelated').strip()
+        self.git('update-ref', 'refs/remotes/origin/main', orphan)
+        self.set_merge('main', orphan, head)
+        with self.assertRaisesRegex(ValueError, 'does not match GitHub PR base and head'):
+            self.execute()
+        self.assertFalse(self.calls)
+
+    def test_first_parent_outside_base_branch_is_rejected(self):
+        moved, head = self.advance_base()
+        self.git('update-ref', 'refs/remotes/origin/main', self.event['pull_request']['base']['sha'])
+        self.set_merge('main', moved, head)
+        with self.assertRaisesRegex(ValueError, 'does not match GitHub PR base and head'):
+            self.execute()
+        self.assertFalse(self.calls)
 
     def test_invalid_sha_or_repository_stops_before_pana(self):
         for value in ('0' * 40, 'not-a-sha', None):
