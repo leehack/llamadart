@@ -26,6 +26,7 @@ class ChatCompletionRequestPlan {
     required this.mediaParts,
     required this.nativeChatBackend,
     required this.parseToolCallsEnabled,
+    this.excludesPromptFromPenalties = false,
   });
 
   /// Rendered template and parser metadata.
@@ -44,6 +45,11 @@ class ChatCompletionRequestPlan {
 
   /// Whether final streaming output should be parsed for tool calls.
   final bool parseToolCallsEnabled;
+
+  /// Whether the plan dropped a lazy template grammar the backend cannot
+  /// apply, so the backend should keep the prompt out of its penalty window as
+  /// llama.cpp does under that grammar.
+  final bool excludesPromptFromPenalties;
 
   /// Whether this plan should call the backend-native chat API.
   bool get usesNativeChatGeneration => nativeChatBackend != null;
@@ -196,6 +202,7 @@ class ChatCompletionRequestPlanner {
       mediaParts: mediaParts,
       nativeChatBackend: nativeChatBackend,
       parseToolCallsEnabled: parseToolCallsEnabled,
+      excludesPromptFromPenalties: skipsLazyTemplateGrammar,
     );
   }
 

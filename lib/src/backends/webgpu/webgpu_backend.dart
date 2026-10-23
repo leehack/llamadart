@@ -43,6 +43,7 @@ typedef _WebGpuCompletionCapabilities = ({
   bool presencePenalty,
   bool minP,
   bool thinkingBudget,
+  bool penaltyPromptTokens,
   Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
 
@@ -85,6 +86,7 @@ class WebGpuLlamaBackend
     presencePenalty: false,
     minP: false,
     thinkingBudget: false,
+    penaltyPromptTokens: false,
     speculativeDecoding: <SpeculativeDecodingStrategy>{},
   );
   static const int _maxThinkingBudgetTokens = 0x7fffffff;
@@ -1066,6 +1068,7 @@ class WebGpuLlamaBackend
         presencePenalty: reported(capabilities.presencePenalty),
         minP: reported(capabilities.minP),
         thinkingBudget: reported(capabilities.thinkingBudget),
+        penaltyPromptTokens: reported(capabilities.penaltyPromptTokens),
         speculativeDecoding: webGpuSpeculativeStrategiesFrom(
           capabilities.speculativeDecoding,
           hasDraftModelApi:
@@ -2090,6 +2093,12 @@ class WebGpuLlamaBackend
       parts: mediaParts,
       signal: abortController.signal,
     );
+    // A core without the capability never counts the prompt, so there the
+    // mark needs no option.
+    if (capabilities.penaltyPromptTokens &&
+        isPromptExcludedFromPenalties(params)) {
+      options.penaltyPromptTokens = false;
+    }
 
     unawaited(
       Future<void>(() async {

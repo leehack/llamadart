@@ -102,6 +102,7 @@ void main() {
       expect(plan.generationParams.preservedTokens, ['<tool>', '<caller>']);
       expect(plan.nativeChatBackend, same(backend));
       expect(plan.parseToolCallsEnabled, isTrue);
+      expect(plan.excludesPromptFromPenalties, isFalse);
     });
 
     test('maps each template grammar trigger to its typed trigger', () {
@@ -498,6 +499,46 @@ void main() {
         expect(plan.generationParams.grammarTriggers, isEmpty);
         expect(plan.generationParams.preservedTokens, ['<caller>']);
         expect(plan.parseToolCallsEnabled, isTrue);
+        expect(plan.excludesPromptFromPenalties, isTrue);
+      });
+
+      test('keeps a caller grammar, empty included, when it skips one', () {
+        for (final grammar in <String?>[null, '', 'root ::= "ok"']) {
+          final plan = ChatCompletionRequestPlanner.build(
+            backend: _EagerGrammarBackend(),
+            templateResult: lazyHermesResult,
+            messages: messages,
+            params: GenerationParams(grammar: grammar),
+            tools: [_weatherTool],
+            toolChoice: ToolChoice.auto,
+            parallelToolCalls: false,
+          );
+
+          expect(plan.generationParams.grammar, grammar);
+          expect(plan.excludesPromptFromPenalties, isTrue);
+        }
+      });
+
+      test('marks no plan whose lazy grammar it did not skip', () {
+        const noGrammar = LlamaChatTemplateResult(prompt: 'p');
+        for (final (backend, templateResult, toolChoice) in [
+          (_EagerGrammarBackend(), noGrammar, ToolChoice.auto),
+          (_EagerGrammarBackend(), noGrammar, ToolChoice.none),
+          (_NoGrammarBackend(), lazyHermesResult, ToolChoice.auto),
+          (_BaseBackend(), lazyHermesResult, ToolChoice.auto),
+        ]) {
+          final plan = ChatCompletionRequestPlanner.build(
+            backend: backend,
+            templateResult: templateResult,
+            messages: messages,
+            params: const GenerationParams(grammar: ''),
+            tools: [_weatherTool],
+            toolChoice: toolChoice,
+            parallelToolCalls: false,
+          );
+
+          expect(plan.excludesPromptFromPenalties, isFalse);
+        }
       });
 
       test('keeps a strict template grammar', () {
@@ -516,6 +557,7 @@ void main() {
 
         expect(plan.generationParams.grammar, 'root ::= tool_call');
         expect(plan.generationParams.grammarLazy, isFalse);
+        expect(plan.excludesPromptFromPenalties, isFalse);
       });
 
       test('rejects ToolChoice.required with a lazy template grammar', () {

@@ -299,7 +299,7 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `unloadMultimodalProjector()`
 - `supportsVision()`
 - `supportsAudio()`
-- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, seed, grammar, thinkingBudget, speculativeDecoding, onToken, parts, signal })`
+- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, penaltyPromptTokens, seed, grammar, thinkingBudget, speculativeDecoding, onToken, parts, signal })`
 - `getCompletionCapabilities()`
 - `loadDraftModel(url, { useCache, signal })`
 - `unloadDraftModel()`
@@ -341,6 +341,16 @@ tag:
   reports the same flags.
   Source: [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)
   and [#144](https://github.com/leehack/llama-web-bridge/pull/144).
+- A core whose probe reports `penaltyPromptTokens: true` counts a text
+  prompt without a `grammar` in the `penalty` and `presencePenalty` window, as
+  native does. When `ToolChoice.auto` drops a lazy tool-call grammar, the
+  engine marks the request and the backend sends `penaltyPromptTokens: false`,
+  because native keeps that grammar and so never counts the prompt. On cores
+  without the flag it sends nothing: they never count the prompt and never
+  reject. `grammar` passes through unchanged; an empty string counts as a
+  grammar there, so it is never normalized to `null`. No public capability
+  reports this. Source:
+  [llama-web-bridge#187](https://github.com/leehack/llama-web-bridge/pull/187).
 - Every `setLoraAdapter`, `removeLoraAdapter` and `clearLoraAdapters` call
   first checks that all five LoRA methods exist and that
   `getLoraAdapterCapabilities()` reports `apiVersion: 1` and

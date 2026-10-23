@@ -159,6 +159,10 @@ class FakeFeatureBridge {
     return value?.dartify();
   }
 
+  /// Whether [lastCompletionOptions] has [name], even as `null`.
+  bool hasCompletionOption(String name) =>
+      lastCompletionOptions?.hasProperty(name.toJS).toDart ?? false;
+
   void _installModelApi() {
     object
       ..setProperty(
@@ -232,6 +236,7 @@ class FakeFeatureBridge {
           'presencePenalty',
           'minP',
           'thinkingBudget',
+          'penaltyPromptTokens',
         ]) {
           flags.setProperty(
             name.toJS,
