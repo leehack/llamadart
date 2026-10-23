@@ -298,9 +298,12 @@ void main() {
         ),
         inherited(3, 4),
       );
-      // Without anchor-first sampling DSpark, like DFlash, adds the anchor.
+      // Without anchor-first sampling DSpark, like DFlash, adds the anchor;
+      // llama.cpp reads only the exact string "true" as true.
       for (final (strategy, metadata) in [
         (dspark, {'dflash.sample_from_anchor': 'false'}),
+        (dspark, {'dflash.sample_from_anchor': '1'}),
+        (dspark, {'dflash.sample_from_anchor': 'TRUE'}),
         (dflash, <String, String>{}),
         (dflash, {'dflash.sample_from_anchor': 'true'}),
       ]) {
