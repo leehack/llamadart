@@ -66,13 +66,33 @@ native processor on the caller isolate.
 Model: `litert-community/embeddinggemma-2-740m.litertlm`, supplied revision
 `24d962e9`. SHA-256:
 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`.
-Native: hook-prepared `v0.18.0-2`, upstream LiteRT-LM
-`b2f686e2ed4718fb84ec398a61dd59ca0f0aff27`, macOS arm64 CPU, both processors
-on CPU, max input length 1024. No model download or pin change is involved.
-All six normalized native CPU vectors have width 768 and match the standalone
-upstream C API reference with cosine 1.0 and relative L2 0.0. Tests also cover
+Native: hook-prepared `v0.18.1-2` (upstream LiteRT-LM `v0.18.1`, with the
+XNNPACK PF32 SME2 kernels of `v0.18.0-2` restored and its int4 `pqs8_qc4w` SME2 path
+gated off), macOS arm64 (M4 Max, SME2)
+CPU, both processors on CPU, max input length 1024. No model download is
+involved. All six normalized native CPU vectors have width 768 and match the
+standalone upstream C API reference with cosine 1.0 and relative L2 0.0. Ten
+embeddings of each of the six inputs on one engine are bit-identical (the
+`repeated CPU embeddings` test); `v0.18.1` made audio vectors nondeterministic
+([litert-lm-native#82](https://github.com/leehack/litert-lm-native/issues/82),
+[#1340](https://github.com/leehack/llamadart/issues/1340)). Tests also cover
 raw/normalized direction, media sensitivity, reverse batch order, string/content
 and adjacent-text parity, overflow, cancellation/reuse and engine separation.
+
+Image, audio and mixed vectors still differ from those of `v0.18.0-2`; text is
+unchanged. The cause of the remaining shift in all `v0.18.1` builds is not
+attributed ([litert-lm-native#82](https://github.com/leehack/litert-lm-native/issues/82)).
+Versus core `0.16.0` (`v0.18.1`) image and audio vectors shift slightly (cosine
+about 0.997-0.999), so re-embed stored media vectors before comparing them.
+
+| Input | v0.18.1-2 vs v0.18.0-2 cosine | Relative L2 |
+| --- | ---: | ---: |
+| `hello world` | 1.0000000000 | 0% |
+| Black PNG | 0.9983847075 | 5.68% |
+| Checkerboard PNG | 0.9988759362 | 4.74% |
+| One-second 16 kHz silence | 0.9998176891 | 1.91% |
+| One-second 440 Hz tone | 0.9996702551 | 2.57% |
+| Interleaved text/image/audio | 0.9988463550 | 4.80% |
 
 Web: Chrome 155.0.8059.40, headless with `--enable-unsafe-webgpu --use-angle=metal`
 and the test runner's GPU-disable flags removed. `navigator.gpu.requestAdapter()`
@@ -84,7 +104,7 @@ adjacent-text checks passed in the prototype, but the required native parity
 gate failed for every input. That integration was removed; the durable local-only
 Web qualification test calls the upstream package directly.
 
-| Input | WebGPU vs native CPU cosine | Relative L2 |
+| Input | WebGPU vs `v0.18.0-2` native CPU cosine | Relative L2 |
 | --- | ---: | ---: |
 | `hello world` | 0.9981586925 | 6.06845% |
 | Black PNG | 0.9983765510 | 5.69816% |
@@ -102,7 +122,7 @@ unsupported. These observations do not establish the cause of the numerical gap.
   WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
   as well as the prototype. The upstream repair is
   [LiteRT dd3db31236](https://github.com/google-ai-edge/LiteRT/commit/dd3db31236).
-  Pinned `v0.18.1` builds `libLiteRtLm` with it but ships the same prebuilt
+  Pinned `v0.18.1-2` builds `libLiteRtLm` with it but ships the same prebuilt
   macOS WebGPU accelerator, and EmbeddingGemma 2 still crashes on GPU there.
   A runtime with a repaired accelerator and requalification are required; no
   unsafe accelerator call or silent CPU fallback is made. NPU embeddings are
@@ -145,7 +165,7 @@ LITERT_LM_EMBEDDING_MODEL=/path/model.litertlm LITERT_LM_EMBEDDING_OUTPUT="$TMPD
 Compare the exported inputs against the upstream C API directly (macOS arm64):
 
 ```bash
-python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.1/macos/arm64 --output "$TMPDIR/qualification"
+python3 test/e2e/backends/multimodal_embedding_litert_reference.py --model-path /path/model.litertlm --runtime-dir .dart_tool/llamadart/litert_lm/0.18.1-2/macos/arm64 --output "$TMPDIR/qualification"
 ```
 
 Serve the existing weights with Range and CORS on a free port other than 8080:

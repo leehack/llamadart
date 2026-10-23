@@ -61,6 +61,30 @@ void main() {
     },
     skip: model == null ? 'Set LITERT_LM_EMBEDDING_MODEL.' : false,
   );
+  test('repeated CPU embeddings of every input are bit-identical '
+      '(litert-lm-native#82, llamadart#1340)', () async {
+    final engine = LlamaEngine(LlamaBackend());
+    addTearDown(engine.dispose);
+    await engine.loadModel(
+      model!,
+      modelParams: ModelParams(
+        liteRtLmEmbeddingEngine: true,
+        device: ComputeDevice.cpu,
+        contextSize: 1024,
+        liteRtLmCacheDir: temp().path,
+      ),
+    );
+    for (final entry in liteRtEmbeddingInputs().entries) {
+      final first = await engine.embedContent(entry.value, normalize: false);
+      for (var i = 1; i < 10; i++) {
+        expect(
+          await engine.embedContent(entry.value, normalize: false),
+          orderedEquals(first),
+          reason: '${entry.key} call $i',
+        );
+      }
+    }
+  }, skip: model == null ? 'Set LITERT_LM_EMBEDDING_MODEL.' : false);
   test('LiteRT embedding-only model text/media/batch/limits/reuse', () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);

@@ -657,6 +657,8 @@ void main() {
         '0.18.0-2',
         '0.18.0-3',
         '0.18.1',
+        '0.18.1-1',
+        '0.18.1-2',
       ]) {
         final placement = inspect(pixel, of: on({'litert_tag': tag}));
         expect(placement['verified'], isTrue, reason: tag);
@@ -665,7 +667,7 @@ void main() {
       for (final tag in [
         '0.19.0',
         '0.18.2',
-        '0.18.1-1',
+        '0.18.1-3',
         '0.18.0-4',
         '0.18.0-',
         '0.17.0-8',

@@ -1079,7 +1079,7 @@ LiteRT GPU on Android has load-time evidence only. Given a bound device log,
 the reporter verifies placement as
 `gpu_delegate_initialized_per_load_execution_unobserved` when the journal's
 environment is Android and states `web: false`, its LiteRT-LM tag is
-source-qualified (`0.18.0`, `0.18.0-1`, `0.18.0-2`, `0.18.0-3` or `0.18.1`), every
+source-qualified (`0.18.0`, `0.18.0-1`, `0.18.0-2`, `0.18.0-3`, `0.18.1`, `0.18.1-1` or `0.18.1-2`), every
 expected load case passes exactly once reporting a GPU backend, and the log holds N GPU
 delegate initializations for the N expected load cases. Each of them has:
 
@@ -1120,7 +1120,7 @@ LiteRT `ca21dc99de51c76bdcc572afeea1dd937d3c9e5c`: the LiteRT-LM file is
 unchanged, and LiteRT now counts every node that is neither a delegate nor a
 dispatch op as undelegated, which can only fail more compilations. The
 `0.18.1` Android WebGPU accelerator and Dawn libraries are byte-identical to
-`0.18.0-3`. Re-read both rules before qualifying another LiteRT-LM tag. It
+`0.18.0-3`; `0.18.1-1` and `0.18.1-2` add only XNNPACK CPU kernel patches. Re-read both rules before qualifying another LiteRT-LM tag. It
 therefore shows that the main model
 was fully delegated to that adapter at every expected load. The delegate-kernel
 count is a consistency check on top of that compile rule, not proof by itself:
