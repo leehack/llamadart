@@ -299,7 +299,8 @@ The script finds the resolved `llamadart` package through
 dependencies and in pub workspaces, and runs that package's
 `tool/macos_litert_lm_prepare_app.sh`. That script copies the arm64 libraries
 into `Contents/Frameworks/LiteRtLmRuntime` and signs them with the build's
-signing identity. It picks the architecture from Xcode's `ARCHS`, or from the
+signing identity, and replaces a runtime already copied by an earlier
+version. It picks the architecture from Xcode's `ARCHS`, or from the
 build Mac when `ARCHS` is unset, so a universal build on an Intel Mac gets the
 arm64 runtime. A build for x86_64 only, such as a Debug build on an Intel Mac,
 gets a `warning:` line naming

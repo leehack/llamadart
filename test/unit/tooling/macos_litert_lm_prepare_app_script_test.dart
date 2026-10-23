@@ -194,29 +194,133 @@ void main() {
       skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
     );
 
-    test('skips when a complete fallback runtime is already bundled', () async {
+    test(
+      'skips on the second run although signing rewrote the bytes',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_signed_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = await _arm64LibraryDir(root);
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+
+        final first = await _runPrepareApp(
+          appDir,
+          libDir,
+          arch: 'arm64',
+          fakeSigning: true,
+        );
+        expect(first.stdout, contains('Prepared LiteRT-LM macOS'));
+        final signed = File(
+          path.join(_stagedRuntime(appDir).path, _arm64Libraries.first),
+        );
+        expect(signed.readAsBytesSync(), isNotEmpty);
+
+        final second = await _runPrepareApp(
+          appDir,
+          libDir,
+          arch: 'arm64',
+          fakeSigning: true,
+        );
+
+        expect(second.exitCode, 0, reason: second.stderr.toString());
+        expect(second.stdout, contains('Complete LiteRT-LM runtime detected'));
+        expect(second.stdout, isNot(contains('Prepared LiteRT-LM macOS')));
+      },
+      skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
+    );
+
+    test('replaces the runtime when the prepared one changes', () async {
       final root = await Directory.systemTemp.createTemp(
-        'litert_prepare_skip_bundled_',
+        'litert_prepare_skew_',
       );
       addTearDown(() => root.delete(recursive: true));
 
-      final libDir = Directory(path.join(root.path, 'litert'))..createSync();
-      for (final library in _arm64Libraries) {
-        await File(path.join(libDir.path, library)).create();
-      }
-
+      final libDir = await _arm64LibraryDir(root);
       final appDir = Directory(path.join(root.path, 'Test.app'));
-      final runtimeDir = Directory(
-        path.join(appDir.path, 'Contents', 'Frameworks', 'LiteRtLmRuntime'),
-      )..createSync(recursive: true);
-      for (final library in _arm64Libraries) {
-        await File(path.join(runtimeDir.path, library)).create();
-      }
+      await _runPrepareApp(appDir, libDir, arch: 'arm64');
 
+      for (final library in _arm64Libraries) {
+        await File(path.join(libDir.path, library)).writeAsString('new');
+      }
       final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
 
       expect(result.exitCode, 0, reason: result.stderr.toString());
+      expect(result.stdout, contains('replacing it'));
+      expect(result.stdout, contains('Prepared LiteRT-LM macOS'));
+      for (final library in _arm64Libraries) {
+        expect(
+          File(
+            path.join(_stagedRuntime(appDir).path, library),
+          ).readAsStringSync(),
+          'new',
+          reason: library,
+        );
+      }
+      final third = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+      expect(third.stdout, contains('Complete LiteRT-LM runtime detected'));
+    }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
+
+    test('replaces a runtime without a stamp once', () async {
+      final root = await Directory.systemTemp.createTemp(
+        'litert_prepare_nostamp_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final libDir = await _arm64LibraryDir(root);
+      final appDir = Directory(path.join(root.path, 'Test.app'));
+      final runtimeDir = _stagedRuntime(appDir)..createSync(recursive: true);
+      for (final library in _arm64Libraries) {
+        await File(path.join(runtimeDir.path, library)).writeAsString('old');
+      }
+
+      final first = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+      expect(first.stdout, contains('Prepared LiteRT-LM macOS'));
+      expect(
+        File(
+          path.join(runtimeDir.path, _arm64Libraries.first),
+        ).readAsStringSync(),
+        isEmpty,
+      );
+
+      final second = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+      expect(second.stdout, contains('Complete LiteRT-LM runtime detected'));
+    }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
+
+    test('keeps a bundled runtime when no prepared one resolves', () async {
+      final root = await Directory.systemTemp.createTemp(
+        'litert_prepare_unresolved_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final tool = Directory(path.join(root.path, 'pkg', 'tool'))
+        ..createSync(recursive: true);
+      final script =
+          File(path.join(tool.path, 'macos_litert_lm_prepare_app.sh'))
+            ..writeAsStringSync(
+              File('tool/macos_litert_lm_prepare_app.sh').readAsStringSync(),
+            );
+      final appDir = Directory(path.join(root.path, 'Test.app'));
+      final runtimeDir = _stagedRuntime(appDir)..createSync(recursive: true);
+      for (final library in _arm64Libraries) {
+        await File(path.join(runtimeDir.path, library)).writeAsString('old');
+      }
+
+      final result = await Process.run(
+        'bash',
+        [script.path, appDir.path],
+        environment: {'LLAMADART_LITERT_LM_ARCH': 'arm64'},
+      );
+
+      expect(result.exitCode, 0, reason: result.stderr.toString());
       expect(result.stdout, contains('Complete LiteRT-LM runtime detected'));
+      expect(
+        File(
+          path.join(runtimeDir.path, _arm64Libraries.first),
+        ).readAsStringSync(),
+        'old',
+      );
     }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
 
     test(
@@ -399,6 +503,7 @@ Future<ProcessResult> _runPrepareApp(
   String? arch,
   String? archs,
   String? hostArch,
+  bool fakeSigning = false,
 }) async {
   final environment = {'LLAMADART_LITERT_LM_LIB_DIR': libDir.path};
   final removed = <String>{'LLAMADART_LITERT_LM_ARCH', 'ARCHS'};
@@ -410,11 +515,26 @@ Future<ProcessResult> _runPrepareApp(
     environment['ARCHS'] = archs;
     removed.remove('ARCHS');
   }
+  final bin = Directory(path.join(libDir.parent.path, 'bin'))..createSync();
+  if (fakeSigning) {
+    File(
+      path.join(bin.path, 'file'),
+    ).writeAsStringSync('#!/bin/sh\necho Mach-O\n');
+    File(path.join(bin.path, 'codesign')).writeAsStringSync(
+      '#!/bin/sh\nfor last; do :; done\necho signed >>"\$last"\n',
+    );
+    await Process.run('chmod', [
+      '+x',
+      path.join(bin.path, 'file'),
+      path.join(bin.path, 'codesign'),
+    ]);
+  }
   if (hostArch != null) {
-    final bin = Directory(path.join(libDir.parent.path, 'bin'))..createSync();
     final uname = File(path.join(bin.path, 'uname'))
       ..writeAsStringSync('#!/bin/sh\necho $hostArch\n');
     await Process.run('chmod', ['+x', uname.path]);
+  }
+  if (hostArch != null || fakeSigning) {
     environment['PATH'] = '${bin.path}:${Platform.environment['PATH']}';
   }
   return Process.run(
