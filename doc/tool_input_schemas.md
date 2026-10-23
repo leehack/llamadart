@@ -61,7 +61,7 @@ limit, when a schema exceeds one:
 | --- | --- |
 | JSON nesting of the schema document, including `default`/`examples` values | 128 levels |
 | Subschema nesting | 32 levels |
-| Subschemas per tool | 1024 |
+| Subschemas plus undeclared `required` names per tool | 1024 |
 | `anyOf` alternatives | 64 |
 | `enum` values | 1024 |
 | Property name length | 128 characters |
