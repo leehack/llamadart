@@ -4871,7 +4871,8 @@ class LlamaCppService {
     }
     // Otherwise the block is the draft length, clamped to what the trained
     // block yields, plus the anchor token, which anchor-first DSpark drafts
-    // too. llama.cpp reads sample_from_anchor as true unless it is "false".
+    // too. llama.cpp treats sample_from_anchor as true when absent and otherwise
+    // only when the value is exactly "true".
     final anchorFirst =
         config.usesDspark &&
         (draftMetadata('dflash.sample_from_anchor') ?? 'true') == 'true';
