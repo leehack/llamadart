@@ -256,6 +256,10 @@ fallback when model template metadata is empty. See
   WebGPU bridge assets `v0.1.47+`, which the default Web pin includes; checked
   only in headless Chromium on macOS.
 
+Embedded and custom Jinja templates accept hexadecimal `\xHH` string
+escapes. See [chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing)
+for rendering and runtime requirements.
+
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
 a specific model format or platform. After a model loads, `engine.runtime`

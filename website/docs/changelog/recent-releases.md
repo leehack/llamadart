@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fix hexadecimal string escapes in embedded and custom chat templates, including Flint's template ([#1335](https://github.com/leehack/llamadart/issues/1335)).
 - `SpeculativeDecodingConfig.draftMicroBatchSize` must be at least a LiliCorr draft model's `dflash.block_size` (16 when absent) for llama.cpp `draftDflash` and `draftDspark`: generation throws `LlamaArgumentException` instead of aborting the process when the block does not fit one draft micro-batch ([#1330](https://github.com/leehack/llamadart/issues/1330)).
 
 ## 0.16.0

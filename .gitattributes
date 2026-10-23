@@ -2,6 +2,10 @@
 packages/llamadart_validation/assets/embeddings/v1/** -text
 packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json -text
 
+# Flint captures must match their upstream hashes and browser fixture bytes.
+test/fixtures/flint/Flint.jinja -text
+test/fixtures/flint/render_upstream.json -text
+
 # Keep both sides' `## Unreleased` bullets in local merges and rebases. Union
 # keeps both sides of any conflicting edit too, so resolve release-prep edits
 # by hand (see website/docs/maintainers/release-workflow.md).

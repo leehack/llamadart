@@ -84,6 +84,10 @@ the ABI. This applies when `ModelSource.format` or the file name says
 `.litertlm`; a model known only from its file header is rejected when it
 loads.
 
+Dart-side chat-template rendering accepts Jinja `\xHH` string escapes on
+native and web. Model architecture support depends on the pinned runtime; see
+[chat templates](../guides/chat-template-and-parsing).
+
 ## Features by runtime
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
