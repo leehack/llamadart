@@ -311,8 +311,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'CI + local (network)',
     covers:
-        'every llamaCppBundleSha256 pin matches the pinned llama.cpp '
-        'release SHA256SUMS',
+        'every llama.cpp, stable_diffusion and LiteRT-LM archive digest pin '
+        'matches what its pinned release publishes',
     command:
         'CI workflow "Native Release Digests", or dart run '
         'tool/testing/check_native_release_digests.dart',

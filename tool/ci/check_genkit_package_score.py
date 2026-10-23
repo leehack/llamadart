@@ -25,6 +25,12 @@ def git(root, *arguments):
     return subprocess.check_output(['git', '-C', str(root), *arguments])
 
 
+def is_ancestor(root, ancestor, descendant):
+    return subprocess.run(
+        ['git', '-C', str(root), 'merge-base', '--is-ancestor', ancestor, descendant],
+        stderr=subprocess.DEVNULL).returncode == 0
+
+
 def candidate_commit(root, environment):
     """Only a matching same-repository PR merge may replace source lookup."""
     if environment.get('GITHUB_EVENT_NAME') != 'pull_request':
@@ -48,7 +54,12 @@ def candidate_commit(root, environment):
     if git(root, 'rev-parse', '--is-shallow-repository').decode().strip() != 'false':
         raise ValueError('Candidate source needs complete checkout; use fetch-depth: 0')
     parents = git(root, 'show', '-s', '--format=%P', merge).decode().split()
-    if parents != [base, head]:
+    # GitHub leaves pull_request.base.sha stale when the base branch advances
+    # after the PR opens, so accept any first parent between it and the base tip.
+    tip = 'refs/remotes/origin/' + str(pr['base']['ref'])
+    if (len(parents) != 2 or parents[1] != head
+            or not is_ancestor(root, base, parents[0])
+            or not is_ancestor(root, parents[0], tip)):
         raise ValueError('Tested merge does not match GitHub PR base and head')
     return merge
 

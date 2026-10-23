@@ -7,9 +7,11 @@ class DecisionModelParams {
   ///
   /// [ComputeDevice.auto] offloads every layer to the best GPU the backend
   /// loads, otherwise uses the CPU; on Android and on an iOS simulator it
-  /// uses the CPU. [ComputeDevice.gpu] runs on a GPU (Vulkan on Android,
-  /// Metal on an iOS simulator, where llama.cpp's output is incorrect, and
-  /// WebGPU on the Web) or `DecisionEngine.load` throws
+  /// uses the CPU. [ComputeDevice.gpu] runs on the best GPU backend that
+  /// loads: Vulkan on Android, Metal on an iOS simulator (where llama.cpp's
+  /// output is incorrect), WebGPU on the Web, and on other native platforms
+  /// the GPU backend the runtime provides, such as Metal on macOS and iOS
+  /// devices. With none available, `DecisionEngine.load` throws
   /// `LlamaUnsupportedException` from the encoder load. [ComputeDevice.npu]
   /// is not supported and throws `LlamaUnsupportedException`.
   final ComputeDevice device;
