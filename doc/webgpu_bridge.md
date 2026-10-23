@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.70`.
+Default pinned tag in the example is `v0.1.71`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.70 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.71 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,17 +81,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.70';
+  window.__llamadartBridgeAssetsTag = 'v0.1.71';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-2`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.70` differs from the native runtime tag
-`v0.7.0-2`. Provenance for this immutable consumer artifact: release `421329647`,
-tag commit `b2e03c102d2cee8507976a5c2577c37ae4745b12`, bridge source
-`3d78c7420b7ddeca6f5779315d9b7d98015c21b2`, and manifest SHA-256
-`7ac4e6e88205396f7221cd4e9e863bdf284df3498ced58cae2ffa1840996a8bf`. The bridge
+even though the bridge asset tag `v0.1.71` differs from the native runtime tag
+`v0.7.0-2`. Provenance for this immutable consumer artifact: release `421941767`,
+tag commit `006efca27b032e6f613b95d5ae6b55b59c3324d8`, bridge source
+`24b1b5f14ea6c20e001b18af42c4568b7dbba025`, and manifest SHA-256
+`cceac41a66a6e0e9658e05a6cdf3f7511ab5069471a1293af5a5071b67b430ba`. The bridge
 manifest records native `v0.7.0-2`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
@@ -147,6 +147,13 @@ physical playback, intelligibility or speaker-reference fidelity.
   and output after a NUL byte is delivered. Older assets keep the previous
   string reads
   ([llama-web-bridge#177](https://github.com/leehack/llama-web-bridge/pull/177)).
+- `v0.1.71+`: in worker mode, `cancel()` right after a call starts stops it
+  instead of letting it run to the end, because each cancel names the
+  operation it targets; a bare `cancel()` streams the pieces generated before
+  the worker yields, so they add up to the returned text. Older assets can run
+  such a completion to the end
+  ([llama-web-bridge#179](https://github.com/leehack/llama-web-bridge/pull/179),
+  [#181](https://github.com/leehack/llama-web-bridge/pull/181)).
 
 ### Media embeddings
 

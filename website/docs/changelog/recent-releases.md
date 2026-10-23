@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Aligned default WebGPU bridge assets to `v0.1.71`: a character split across tokens streams once complete instead of as a wrong one, and `detokenize` returns U+FFFD for invalid or incomplete bytes; in worker mode, Stop right after a generation starts now stops it, and a bare `cancel()` streams the text generated before the worker yields. Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native `v0.7.0-2`, which the manifest records; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `cceac41a66a6e0e9658e05a6cdf3f7511ab5069471a1293af5a5071b67b430ba`.
 - Fix hexadecimal string escapes in embedded and custom chat templates, including Flint's template ([#1335](https://github.com/leehack/llamadart/issues/1335)).
 - `SpeculativeDecodingConfig.draftMicroBatchSize` must be at least a LiliCorr draft model's `dflash.block_size` (16 when absent) for llama.cpp `draftDflash` and `draftDspark`: generation throws `LlamaArgumentException` instead of aborting the process when the block does not fit one draft micro-batch ([#1330](https://github.com/leehack/llamadart/issues/1330)).
 - With `SpeculativeDecodingConfig.draftMicroBatchSize` unset, llama.cpp `draftDflash` and `draftDspark` generation throws `LlamaArgumentException` naming `ModelParams.microBatchSize` instead of aborting the process when the inherited micro-batch is smaller than the draft block ([#1341](https://github.com/leehack/llamadart/issues/1341)).
