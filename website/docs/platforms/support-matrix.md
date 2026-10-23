@@ -175,9 +175,9 @@ output and grammars, sampling controls and speculative decoding. Guides:
   on the simulator's Metal device. Under `ComputeDevice.auto`, another
   explicit GPU backend, such as `GpuBackend.vulkan`, also loads its GPU
   layers on Metal and warns, since the Apple runtime has no other GPU
-  backend. The x86_64 simulator gets the same CPU
-  default and has not been run. iOS devices and macOS are unchanged: `auto`
-  uses Metal.
+  backend. The x86_64 (Rosetta) simulator behaves the same. iOS devices and
+  macOS are unchanged: `auto` uses Metal, and on an iPhone 16 Pro its output
+  matches the CPU's.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).
