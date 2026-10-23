@@ -46,6 +46,8 @@ export 'package:llamadart/llamadart.dart'
         LlamaNextTokenScores,
         LlamaTokenLogprob,
         LiteRtLmActivationDataType,
+        LiteRtLmModelParams,
+        LlamaCppModelParams,
         LoraAdapterConfig,
         ModelCacheEntry,
         ModelCachePolicy,

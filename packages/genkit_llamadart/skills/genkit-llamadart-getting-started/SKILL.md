@@ -83,7 +83,7 @@ description: >-
   and accept ordered text/image/audio parts when embedding-specific probes allow
   them. Each document produces one vector and retains its metadata. GGUF media
   embeddings need the matching projector; native LiteRT-LM requires CPU and
-  `ModelParams(liteRtLmEmbeddingEngine: true)`. Web LiteRT-LM is unsupported.
+  `LiteRtLmModelParams(embeddingEngine: true)`. Web LiteRT-LM is unsupported.
   Inspect `prepared.inspect()` / `plugin.inspectModel(name)` for
   `embeddingCapabilities`; never infer these from chat vision/audio flags.
   Media codecs/size limits remain runtime-specific; video is rejected.

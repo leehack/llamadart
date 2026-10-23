@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:genkit_llamadart/genkit_llamadart.dart';
+import 'package:genkit_llamadart/src/integration/genkit/generation_config_schema.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -59,6 +60,7 @@ void main() {
           draftTokenMin: 2,
           minProbability: 0.5,
           draftSplitProbability: 0.2,
+          draftMicroBatchSize: 64,
           draftModel: source,
           draftModelDownload: ModelLoadOptions(sha256: 'a' * 64),
           ngramSize: 3,
@@ -80,6 +82,7 @@ void main() {
       expect(spec['draftTokenMin'], 2);
       expect(spec['minProbability'], 0.5);
       expect(spec['draftSplitProbability'], 0.2);
+      expect(spec['draftMicroBatchSize'], 64);
       expect(spec['ngramSize'], 3);
       expect(spec['ngramSizeN'], 4);
       expect(spec['ngramSizeM'], 5);
@@ -107,7 +110,53 @@ void main() {
     }
   });
 
+  test('speculative codec keys match the published generation schema', () {
+    final config = LlamaDartGenerationConfig(
+      speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+        strategies: [
+          SpeculativeDecodingStrategy.draftSimple,
+          SpeculativeDecodingStrategy.ngramSimple,
+        ],
+        draftTokenMax: 8,
+        draftTokenMin: 2,
+        minProbability: 0.5,
+        draftSplitProbability: 0.2,
+        draftMicroBatchSize: 64,
+        draftModel: ModelSource.path('/models/draft.gguf'),
+        ngramSize: 3,
+        ngramSizeN: 4,
+        ngramSizeM: 5,
+        ngramMinHits: 2,
+        ngramMatch: 6,
+        ngramTokenMin: 1,
+        ngramTokenMax: 7,
+        ngramCacheStaticPath: '/cache/static',
+        ngramCacheDynamicPath: '/cache/dynamic',
+      ),
+    );
+    final emitted = (config.toJson()['speculativeDecodingConfig'] as Map).keys
+        .toSet();
+    final schema =
+        (generationConfigSchema()['properties']
+                as Map)['speculativeDecodingConfig']
+            as Map;
+    expect((schema['properties'] as Map).keys.toSet(), containsAll(emitted));
+    expect(schema['additionalProperties'], false);
+  });
+
   final invalid = <Map<String, dynamic>>[
+    {
+      'speculativeDecodingConfig': {
+        'strategies': ['draftSimple'],
+        'draftMicroBatchSize': 0,
+      },
+    },
+    {
+      'speculativeDecodingConfig': {
+        'strategies': ['draftSimple'],
+        'draftMicroBatchSize': 1.5,
+      },
+    },
     {'presencePenalty': double.nan},
     {
       'speculativeDecodingConfig': {

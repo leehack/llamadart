@@ -1,5 +1,20 @@
 # Migration guide
 
+## Upgrading to llamadart 0.16
+
+The current plugin requires llamadart `^0.16.0`. Genkit 1.0, Schemantic 1.0
+and the Dart 3.12 minimum are unchanged. Flutter iOS and macOS apps must use
+matching `^0.16.0` runtime companions.
+
+Core 0.16 rejects `ModelParams` fields the model's runtime would ignore, such
+as `liteRtLm*` fields on a GGUF model, instead of dropping them. The
+`liteRtLm*` arguments are deprecated: use `LiteRtLmModelParams` for LiteRT-LM
+and `LlamaCppModelParams` for GGUF-only settings such as batch sizes. Both are
+exported from `package:genkit_llamadart/genkit_llamadart.dart`.
+
+Generation controls decoded from JSON now carry
+`SpeculativeDecodingConfig.draftMicroBatchSize` as `draftMicroBatchSize`.
+
 ## Upgrading to llamadart 0.15
 
 The current plugin requires llamadart `^0.15.0`. Genkit 1.0, Schemantic 1.0

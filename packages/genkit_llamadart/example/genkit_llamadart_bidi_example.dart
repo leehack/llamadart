@@ -20,7 +20,7 @@ Future<void> main(List<String> args) async {
       LlamaModelDefinition(
         name: 'local',
         modelPath: modelPath,
-        modelParams: const ModelParams(
+        modelParams: const LlamaCppModelParams(
           device: ComputeDevice.cpu,
           contextSize: 1024,
           numberOfThreads: 1,

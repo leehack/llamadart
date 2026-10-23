@@ -129,6 +129,7 @@ const _specKeys = {
   'draftTokenMin',
   'minProbability',
   'draftSplitProbability',
+  'draftMicroBatchSize',
   'draftModel',
   'draftModelDownload',
   'ngramSize',
@@ -182,6 +183,7 @@ llama.SpeculativeDecodingConfig? speculativeConfigFromJson(Object? value) {
       'draftSplitProbability',
       probability: true,
     ),
+    draftMicroBatchSize: controlInt(map, 'draftMicroBatchSize', minimum: 1),
     draftModel: map['draftModel'] == null
         ? null
         : _sourceFromJson(map['draftModel']),
@@ -245,6 +247,8 @@ Map<String, dynamic> speculativeConfigToJson(
     if (config.minProbability != null) 'minProbability': config.minProbability,
     if (config.draftSplitProbability != null)
       'draftSplitProbability': config.draftSplitProbability,
+    if (config.draftMicroBatchSize != null)
+      'draftMicroBatchSize': config.draftMicroBatchSize,
     if (config.draftModel != null)
       'draftModel': _sourceToJson(config.draftModel!),
     if (config.draftModel != null)

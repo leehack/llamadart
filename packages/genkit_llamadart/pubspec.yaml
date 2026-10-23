@@ -29,7 +29,7 @@ dependencies:
   crypto: ^3.0.7
   genkit: ^1.0.0
   http: ^1.6.0
-  llamadart: ^0.15.0
+  llamadart: ^0.16.0
   schemantic: ^1.0.0
 
 dev_dependencies:

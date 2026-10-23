@@ -38,15 +38,18 @@ Future<void> main(List<String> args) async {
         ? null
         : ModelSource.parse(hasModelOverrides ? paths[1] : projectorSource),
     downloadManager: exampleDownloads,
-    modelParams: ModelParams(
-      device: ComputeDevice.cpu,
-      // LiteRtLmModelParams needs llamadart 0.16.0; keep ^0.15.0 working (#858).
-      // ignore: deprecated_member_use
-      liteRtLmEmbeddingEngine: liteRt,
-      contextSize: 2048,
-      batchSize: liteRt ? 0 : 2048,
-      microBatchSize: liteRt ? 0 : 2048,
-    ),
+    modelParams: liteRt
+        ? const LiteRtLmModelParams(
+            device: ComputeDevice.cpu,
+            embeddingEngine: true,
+            contextSize: 2048,
+          )
+        : const LlamaCppModelParams(
+            device: ComputeDevice.cpu,
+            contextSize: 2048,
+            batchSize: 2048,
+            microBatchSize: 2048,
+          ),
     supportsTools: false,
     supportsConstrainedOutput: false,
   );
