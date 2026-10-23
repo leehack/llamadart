@@ -108,7 +108,8 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Use LiteRT-LM companion `0.16.0` with core `0.16.x` for native `v0.18.1-2`, or
+Use LiteRT-LM companion `0.16.0` with core `0.16.x` (it pins native `v0.18.1`; the
+companion pinning `v0.18.1-2` comes with release prep), or
 `0.15.2` with core `>=0.15.6 <0.16.0` for `v0.18.0-3`; both load dedicated ASR
 `.litertlm` containers such as Whisper tiny. Locked `0.15.0`/`0.15.1`
 companions keep `v0.18.0-2` and work with core `0.15.6` with a macOS upgrade

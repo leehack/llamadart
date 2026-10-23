@@ -82,6 +82,8 @@ and adjacent-text parity, overflow, cancellation/reuse and engine separation.
 Image, audio and mixed vectors still differ from those of `v0.18.0-2`; text is
 unchanged. The cause of the remaining shift in all `v0.18.1` builds is not
 attributed ([litert-lm-native#82](https://github.com/leehack/litert-lm-native/issues/82)).
+Versus core `0.16.0` (`v0.18.1`) image and audio vectors shift slightly (cosine
+about 0.997-0.999), so re-embed stored media vectors before comparing them.
 
 | Input | v0.18.1-2 vs v0.18.0-2 cosine | Relative L2 |
 | --- | ---: | ---: |
