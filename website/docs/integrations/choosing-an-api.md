@@ -21,8 +21,8 @@ Checked on 2026-10-18:
 
 | Route | Available combination | Qualification boundary |
 | --- | --- | --- |
-| Direct | Published `llamadart 0.15.x`; matching `0.15.x` Apple companions for each selected runtime | See the [runtime support matrix](../platforms/support-matrix); devices, models and backends have separate limits. |
-| Genkit | Published `genkit_llamadart 3.5.0`, `genkit 1.0.0`, `llamadart 0.16.0`; Dart 3.12+ | Adapter fake/browser guards and selected native model tests cover specific paths. They do not qualify every Genkit Web deployment. |
+| Direct | Published `llamadart 0.16.x`; matching `0.16.x` Apple companions for each selected runtime | See the [runtime support matrix](../platforms/support-matrix); devices, models and backends have separate limits. |
+| Genkit | Published `genkit_llamadart 3.4.1`, `genkit 1.0.0`, `llamadart 0.15.1`; Dart 3.12+ | Adapter fake/browser guards and selected native model tests cover specific paths. They do not qualify every Genkit Web deployment. |
 | Flutter Edge AI | Upstream source connector `0.0.1`, core `2.4.0`, `llamadart 0.13.1`, GGUF Apple companion `0.13.0` | Connector remains `publish_to: none`. Use its pinned source example. The `0.15.0` upgrade [PR #684](https://github.com/DenisovAV/flutter_edge_ai/pull/684) and embedding SPI [PR #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685) are pending, not released setup. |
 
 The Genkit package now lives under `packages/genkit_llamadart` in this repository.
