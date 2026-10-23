@@ -289,6 +289,14 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+After core `0.16.0`, the LiteRT-LM pin moved to `v0.18.1-1`, which restores
+deterministic CPU output on SME2 CPUs. Published core `0.16.0` hands macOS
+LiteRT-LM to a companion only when it pins `v0.18.1`, so the release that ships
+this pin bumps `llamadart_litert_lm_flutter` by a patch and raises its core
+lower bound past `0.16.0`. Core `0.16.0` and the new core still accept the
+published `0.16.0` companion (pinning `v0.18.1`), the latter with an upgrade
+warning. The release-prep verifier reports this pending bump.
+
 Core `0.16.0` preparation pairs all three Apple companions at `0.16.0`, with
 SwiftPM pins `v0.7.0-2`, `v0.18.1` and `v0.3.0`, and constrains them to
 `llamadart: '>=0.16.0 <0.17.0'`. Merge remains the approval boundary for

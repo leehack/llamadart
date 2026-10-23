@@ -4,6 +4,7 @@
 - Fix hexadecimal string escapes in embedded and custom chat templates, including Flint's template ([#1335](https://github.com/leehack/llamadart/issues/1335)).
 - `SpeculativeDecodingConfig.draftMicroBatchSize` must be at least a LiliCorr draft model's `dflash.block_size` (16 when absent) for llama.cpp `draftDflash` and `draftDspark`: generation throws `LlamaArgumentException` instead of aborting the process when the block does not fit one draft micro-batch ([#1330](https://github.com/leehack/llamadart/issues/1330)).
 - With `SpeculativeDecodingConfig.draftMicroBatchSize` unset, llama.cpp `draftDflash` and `draftDspark` generation throws `LlamaArgumentException` naming `ModelParams.microBatchSize` instead of aborting the process when the inherited micro-batch is smaller than the draft block ([#1341](https://github.com/leehack/llamadart/issues/1341)).
+- Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.18.1-1`: LiteRT-LM CPU output (chat, ASR, embeddings) is deterministic again on SME2 CPUs such as Apple M4 ([#1340](https://github.com/leehack/llamadart/issues/1340)). Flutter Apple apps get it with the next `llamadart_litert_lm_flutter` release.
 
 ## 0.16.0
 
