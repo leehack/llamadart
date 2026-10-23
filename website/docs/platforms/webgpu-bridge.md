@@ -240,6 +240,13 @@ The feature-by-runtime table is in the
   state file throws `LlamaStateException` and the runtime stays usable;
   older assets abort the runtime. With `v0.1.69+`, a truncated state snapshot
   rejects too and the current context state is kept.
+- With bridge assets `v0.1.70+`, a character split across tokens, including at
+  the start of a response, streams once complete instead of as a wrong
+  character, and `detokenize` returns U+FFFD for invalid bytes or an incomplete
+  tail instead of wrong characters. A tail still incomplete when generation
+  ends becomes U+FFFD, `detokenize` keeps a leading U+FEFF, and output after a
+  NUL byte is delivered. Older assets keep the previous behavior
+  ([llama-web-bridge#177](https://github.com/leehack/llama-web-bridge/pull/177)).
 - The runtime fetches the model and projector itself. `ModelSource.parse`
   takes a remote `https://` URL; a `ModelSource.path` is a URL relative to the
   document, or a `blob:` URL. `download` must stay at its defaults, and
@@ -312,25 +319,23 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.69`, with local vendored assets
-identified as `v0.1.69-local-v0.7.0`.
+The example currently pins bridge assets to `v0.1.70`, with local vendored assets
+identified as `v0.1.70-local-v0.7.0`.
 
-- The pinned `v0.1.69` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
+- The pinned `v0.1.70` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
   (`v0.7.0-2`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-  even though the bridge asset tag `v0.1.69` differs from the native runtime tag
-  `v0.7.0-2`. Pinned artifact provenance: release `419562436`, tag commit
-  `84ca5bfd436a778ea9371eb5f432c58a181a6052`, bridge source
-  `31cbb98fc1821d85eecc99d20e30273fbcff9cb5`, manifest SHA-256
-  `994e798389d440a256f103f3789a1f56da2ab00dd6bb6e52f334ed4e58867c46`. The
-  bridge manifest records native `v0.7.0-1`; native `v0.7.0-2` changes nothing
-  the bridge build reads
-  ([llama-web-bridge#171](https://github.com/leehack/llama-web-bridge/issues/171)). They include the API-version-1 media embedding contract.
+  even though the bridge asset tag `v0.1.70` differs from the native runtime tag
+  `v0.7.0-2`. Pinned artifact provenance: release `421329647`, tag commit
+  `b2e03c102d2cee8507976a5c2577c37ae4745b12`, bridge source
+  `3d78c7420b7ddeca6f5779315d9b7d98015c21b2`, manifest SHA-256
+  `7ac4e6e88205396f7221cd4e9e863bdf284df3498ced58cae2ffa1840996a8bf`. The
+  bridge manifest records native `v0.7.0-2`. They include the API-version-1 media embedding contract.
   Extraction and state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.69 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.70 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -338,7 +343,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.69';
+  window.__llamadartBridgeAssetsTag = 'v0.1.70';
 </script>
 ```
 
