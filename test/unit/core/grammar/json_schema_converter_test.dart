@@ -852,6 +852,47 @@ void main() {
         }
       });
 
+      test('force required keys that only additionalProperties describes', () {
+        for (final additional in <Object>[
+          true,
+          {'type': 'integer'},
+        ]) {
+          final grammar = JsonSchemaConverter.convert({
+            ...schema,
+            'required': ['units', 'city', '*'],
+            'additionalProperties': additional,
+          });
+          final rules = {
+            for (final line in const LineSplitter().convert(grammar))
+              line.substring(0, line.indexOf(' ::= ')): line.substring(
+                line.indexOf(' ::= ') + 5,
+              ),
+          };
+          final extraValue = rules['root-additional-kv']!.split(' ').last;
+          expect(
+            extraValue,
+            additional == true ? 'value' : isNot('value'),
+            reason: '$additional',
+          );
+          final forced = RegExp(
+            r'^"\{" space (\S+) "," space (\S+) "," space (\S+) \(',
+          ).firstMatch(rules['root']!)!;
+          expect(rules[forced[1]], startsWith(r'"\"city\"" space ":" space'));
+          expect(
+            rules[forced[2]],
+            r'"\"units\"" space ":" space ' + extraValue,
+          );
+          expect(rules[forced[3]], r'"\"*\"" space ":" space ' + extraValue);
+          final key = _ruleRegExp(grammar, 'root-additional-k');
+          for (final name in ['units', '*', 'city']) {
+            expect(key.hasMatch(jsonEncode(name)), isFalse, reason: name);
+          }
+          for (final name in ['unit', 'unitsx', '**', 'other']) {
+            expect(key.hasMatch(jsonEncode(name)), isTrue, reason: name);
+          }
+        }
+      });
+
       test('keep closed objects free of an extra-key slot', () {
         final grammar = JsonSchemaConverter.convert({
           ...schema,

@@ -54,8 +54,18 @@ const _maxGrammarLength = 256 * 1024;
 /// the parser silently drop an upper bound.
 const _maxRepetition = 2000;
 
+/// Undeclared required names share the subschema budget: each adds a grammar
+/// rule, and rule naming slows down quadratically when names collide.
 final class _SchemaBudget {
-  int nodes = 0;
+  int _nodes = 0;
+
+  void spend() {
+    if (++_nodes > _maxSchemaNodes) {
+      throw LlamaUnsupportedException(
+        'Tool input schemas may contain at most $_maxSchemaNodes subschemas and undeclared required property names combined.',
+      );
+    }
+  }
 }
 
 const _types = {
@@ -108,11 +118,7 @@ void _validate(
   _SchemaBudget budget,
   int depth,
 ) {
-  if (++budget.nodes > _maxSchemaNodes) {
-    throw LlamaUnsupportedException(
-      'Tool input schemas may contain at most $_maxSchemaNodes subschemas.',
-    );
-  }
+  budget.spend();
   if (depth > _maxSchemaDepth) {
     throw LlamaUnsupportedException(
       'Tool input schema at $path nests deeper than $_maxSchemaDepth levels.',
@@ -249,16 +255,6 @@ void _validate(
         depth + 1,
       );
     }
-    final required = schema.containsKey('required')
-        ? schema['required']
-        : const <String>[];
-    if (required is! List ||
-        required.toSet().length != required.length ||
-        required.any((key) => key is! String || !properties.containsKey(key))) {
-      throw LlamaArgumentException(
-        'required at $path must uniquely name declared properties.',
-      );
-    }
     final additional = schema.putIfAbsent('additionalProperties', () => true);
     if (additional is Map<String, dynamic>) {
       _validate(additional, '$path.additionalProperties', budget, depth + 1);
@@ -266,6 +262,30 @@ void _validate(
       throw LlamaArgumentException(
         'additionalProperties at $path needs a boolean or schema.',
       );
+    }
+    final required = schema.containsKey('required')
+        ? schema['required']
+        : const <String>[];
+    if (required is! List ||
+        required.toSet().length != required.length ||
+        required.any((key) => key is! String || key.isEmpty)) {
+      throw LlamaArgumentException(
+        'required at $path must list unique nonempty property names.',
+      );
+    }
+    for (final name in required.cast<String>()) {
+      if (properties.containsKey(name)) continue;
+      budget.spend();
+      if (additional == false) {
+        throw LlamaArgumentException(
+          'required at $path names "$name", which additionalProperties: false forbids.',
+        );
+      }
+      if (name.runes.length > _maxPropertyNameLength) {
+        throw LlamaUnsupportedException(
+          'Property names at $path may have at most $_maxPropertyNameLength characters.',
+        );
+      }
     }
   }
   if (array) {

@@ -188,6 +188,19 @@ void main() {
     {
       'type': 'object',
       'required': ['missing'],
+      'additionalProperties': false,
+    },
+    {
+      'type': 'object',
+      'required': [''],
+    },
+    {
+      'type': 'object',
+      'required': [1],
+    },
+    {
+      'type': 'object',
+      'required': ['x', 'x'],
     },
     {
       'type': 'object',
@@ -405,6 +418,114 @@ void main() {
     },
   );
 
+  test(
+    'required may name properties that only additionalProperties describes',
+    () async {
+      final source = <String, dynamic>{
+        'type': 'object',
+        'properties': {
+          'city': {'type': 'string'},
+          'nested': {
+            'type': 'object',
+            'required': ['id'],
+            'additionalProperties': {'type': 'string'},
+          },
+        },
+        'required': ['city', 'units', 'nested'],
+      };
+      Map<String, dynamic>? received;
+      final tool = ToolDefinition.fromJsonSchema(
+        name: 'lookup',
+        description: 'Lookup',
+        schema: source,
+        handler: (params) async => received = params.raw,
+      );
+      final schema = tool.toJsonSchema();
+      expect(schema['required'], ['city', 'units', 'nested']);
+      expect((schema['properties'] as Map).keys, ['city', 'nested']);
+
+      final args = <String, dynamic>{
+        'city': 'Seoul',
+        'units': {
+          'scale': ['c'],
+        },
+        'nested': {'id': 'x'},
+      };
+      expect(await tool.invoke(args), args);
+      expect(received, args);
+      for (final units in [null, 1, 'c', true]) {
+        expect(
+          validateToolInputValue({...args, 'units': units}, schema).valid,
+          isTrue,
+          reason: '$units',
+        );
+      }
+      for (final invalid in <Map<String, dynamic>>[
+        {'city': 'Seoul', 'nested': args['nested']},
+        {'city': 'Seoul', 'units': 'c', 'nested': <String, dynamic>{}},
+        {
+          'city': 'Seoul',
+          'units': 'c',
+          'nested': {'id': 1},
+        },
+      ]) {
+        expect(
+          validateToolInputValue(invalid, schema).valid,
+          isFalse,
+          reason: '$invalid',
+        );
+        await expectLater(
+          tool.invoke(invalid),
+          throwsA(isA<LlamaArgumentException>()),
+        );
+      }
+    },
+  );
+
+  test('closed objects cannot require an undeclared property', () {
+    for (final (schema, path) in <(Map<String, dynamic>, String)>[
+      (
+        {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+          },
+          'required': ['city', 'units'],
+          'additionalProperties': false,
+        },
+        'input',
+      ),
+      (
+        {
+          'type': 'object',
+          'properties': {
+            'nested': {
+              'type': 'object',
+              'required': ['id'],
+              'additionalProperties': false,
+            },
+          },
+        },
+        'input.nested',
+      ),
+    ]) {
+      expect(
+        () => ToolDefinition.fromJsonSchema(
+          name: 'closed',
+          description: 'Closed',
+          schema: schema,
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('required at $path'), contains('false')),
+          ),
+        ),
+      );
+    }
+  });
+
   test('non-JSON values fail with a typed argument error', () {
     final cycle = <Object?>[];
     cycle.add(cycle);
@@ -517,6 +638,43 @@ void main() {
         ),
         unsupported('at most 128 characters'),
       );
+      expect(
+        () => build({
+          'type': 'object',
+          'required': ['😀' * 128],
+        }),
+        returnsNormally,
+      );
+      expect(
+        () => build({
+          'type': 'object',
+          'required': ['a' * 129],
+        }),
+        unsupported('at most 128 characters'),
+      );
+    });
+
+    test('undeclared required names share the subschema budget', () {
+      // Every name maps to the same grammar rule name, the worst case for
+      // rule-name collision handling.
+      List<String> colliding(int count) => [
+        for (var i = 0; i < count; i++)
+          'a${i.toRadixString(2).replaceAll('0', '!').replaceAll('1', '#')}',
+      ];
+      Map<String, dynamic> open(int declared, int undeclared) => {
+        'type': 'object',
+        'properties': {
+          for (var i = 0; i < declared; i++) 'p$i': {'type': 'string'},
+        },
+        'required': colliding(undeclared),
+      };
+      const limit = 'at most 1024 subschemas and undeclared required';
+
+      expect(() => build(open(0, 1023)), returnsNormally);
+      expect(() => build(open(0, 1024)), unsupported(limit));
+      expect(() => build(open(512, 511)), returnsNormally);
+      expect(() => build(open(512, 512)), unsupported(limit));
+      expect(() => build(open(0, 8000)), unsupported(limit));
     });
 
     test('generated grammar size is bounded', () {

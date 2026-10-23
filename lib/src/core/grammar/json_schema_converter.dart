@@ -792,24 +792,40 @@ class JsonSchemaConverter {
       );
     }
 
-    final requiredProps = sortedPropNames
-        .where((k) => required.contains(k))
+    final subName = '${name.isNotEmpty ? '$name-' : ''}additional';
+    String? additionalValueRule;
+    String additionalValue() =>
+        additionalValueRule ??= additionalProperties is Map<String, dynamic>
+        ? visit(additionalProperties, '$subName-value')
+        : _addPrimitive('value', _primitiveRules['value']!);
+
+    // llama.cpp drops required names that `properties` does not declare, so
+    // its grammar could omit a key that tool validation requires.
+    final undeclaredRequired = required
+        .where((k) => !propKvRuleNames.containsKey(k))
         .toList();
+    for (final propName in undeclaredRequired) {
+      propKvRuleNames[propName] = _addRule(
+        '${name.isNotEmpty ? '$name-' : ''}$propName-kv',
+        '${_formatLiteral(jsonEncode(propName))} space ":" space ${additionalValue()}',
+      );
+    }
+    final keyNames = [...sortedPropNames, ...undeclaredRequired];
+
+    final requiredProps = keyNames.where((k) => required.contains(k)).toList();
     final optionalProps = sortedPropNames
         .where((k) => !required.contains(k))
         .toList();
 
-    // Keep the extra-property slot separate from every declared wire key.
+    // Keep the extra-property slot separate from every required or declared
+    // wire key.
     String? additionalKey;
     // Handle additionalProperties
     if (additionalProperties != null && additionalProperties != false) {
-      final subName = '${name.isNotEmpty ? '$name-' : ''}additional';
-      final valueRule = additionalProperties is Map<String, dynamic>
-          ? visit(additionalProperties, '$subName-value')
-          : _addPrimitive('value', _primitiveRules['value']!);
-      final keyRule = sortedPropNames.isEmpty
+      final valueRule = additionalValue();
+      final keyRule = keyNames.isEmpty
           ? null
-          : _notStrings(sortedPropNames, '$subName-k');
+          : _notStrings(keyNames, '$subName-k');
 
       var extraKey = '*';
       while (propKvRuleNames.containsKey(extraKey)) {

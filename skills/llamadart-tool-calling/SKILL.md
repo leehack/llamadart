@@ -143,7 +143,9 @@ factory owns a deep copy and exposes fresh canonical copies through
 `toJsonSchema()`; `parameters` is empty. The root must be an object. Missing
 `additionalProperties` means true; legacy helper tools retain closed behavior.
 The supported subset includes nested objects/arrays, scalar enum/const,
-nullable type lists, anyOf and length/item bounds. Nonempty annotation-only
+nullable type lists, anyOf and length/item bounds. `required` may name an
+undeclared property of an open object; its value must match
+`additionalProperties`, and a closed object rejects such a name. Nonempty annotation-only
 untyped properties accept any JSON value; annotations and `x-*` metadata are
 preserved. Decoded tool-call arguments deeper than 128 containers throw
 `LlamaInferenceException` during final and partial parsing. References, patterns,

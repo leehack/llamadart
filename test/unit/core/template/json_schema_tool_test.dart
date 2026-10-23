@@ -276,6 +276,72 @@ void main() {
     });
   }
 
+  for (final format in [
+    ChatFormat.generic,
+    ChatFormat.mistralNemo,
+    ChatFormat.hermes,
+  ]) {
+    test('$format requires keys that only additionalProperties describes', () {
+      final tool = ToolDefinition.fromJsonSchema(
+        name: 'lookup',
+        description: 'Lookup',
+        schema: {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+          },
+          'required': ['city', 'units'],
+          'additionalProperties': {'type': 'string'},
+        },
+      );
+      final grammar = switch (format) {
+        ChatFormat.mistralNemo => MistralHandler().buildGrammar([tool])!,
+        ChatFormat.hermes => HermesHandler().buildGrammar([tool])!,
+        _ => ChatTemplateEngine.render(
+          templateSource: null,
+          messages: const [],
+          metadata: const {},
+          tools: [tool],
+          toolChoice: ToolChoice.required,
+        ).grammar!,
+      };
+      expect(grammar, contains(r'"\"units\"" space ":" space'));
+
+      String output(Map<String, dynamic> args) {
+        final encoded = jsonEncode(args);
+        return switch (format) {
+          ChatFormat.mistralNemo =>
+            '[TOOL_CALLS][{"id":"abcdefghi","name":"lookup","arguments":$encoded}]',
+          ChatFormat.hermes =>
+            '<tool_call>{"name":"lookup","arguments":$encoded}</tool_call>',
+          _ => '{"tool_call":{"name":"lookup","arguments":$encoded}}',
+        };
+      }
+
+      final args = {'city': 'Seoul', 'units': 'c'};
+      final parsed = ChatTemplateEngine.parse(
+        format.index,
+        output(args),
+        tools: [tool],
+      );
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), args);
+      for (final invalid in [
+        {'city': 'Seoul'},
+        {'city': 'Seoul', 'units': 1},
+      ]) {
+        expect(
+          () => ChatTemplateEngine.parse(
+            format.index,
+            output(invalid),
+            tools: [tool],
+          ),
+          throwsA(isA<LlamaInferenceException>()),
+          reason: '$invalid',
+        );
+      }
+    });
+  }
+
   test(
     'GLM/Laguna and Hunyuan grammar read properties from the canonical schema',
     () {

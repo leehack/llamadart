@@ -1876,6 +1876,78 @@ void main() {
     }
   });
 
+  test('open objects force required keys they leave undeclared', () {
+    final tool = ToolDefinition.fromJsonSchema(
+      name: 'spec',
+      description: 'Spec',
+      schema: {
+        'type': 'object',
+        'properties': {
+          'city': {'type': 'string'},
+          'nested': {
+            'type': 'object',
+            'properties': {
+              'a': {'type': 'integer'},
+            },
+            'required': ['id', 'a'],
+            'additionalProperties': {'type': 'string'},
+          },
+        },
+        'required': ['units', 'city', 'nested'],
+      },
+    );
+    for (final (grammar, output) in <(String, String Function(String))>[
+      (
+        HermesHandler().buildGrammar([tool])!,
+        (args) => '<tool_call>{"name":"spec","arguments":$args}</tool_call>',
+      ),
+      (
+        MistralHandler().buildGrammar([tool])!,
+        (args) =>
+            '[TOOL_CALLS][{"name":"spec","arguments":$args,"id":"abcdefghi"}]',
+      ),
+      (
+        ChatTemplateEngine.render(
+          templateSource: null,
+          messages: const [],
+          metadata: const {},
+          tools: [tool],
+          toolChoice: ToolChoice.required,
+        ).grammar!,
+        (args) => '{"tool_call":{"name":"spec","arguments":$args}}',
+      ),
+    ]) {
+      const nested = '"nested":{"a":1,"id":"x"}';
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: [
+          output('{"city":"Seoul",$nested,"units":"c"}'),
+          output('{"city":"Seoul",$nested,"units":null}'),
+          output('{"city":"Seoul",$nested,"units":{"scale":["c",1]}}'),
+          output(
+            '{"city":"Seoul","nested":{"a":1,"id":"x","note":"y"},'
+            '"units":1,"extra":true}',
+          ),
+        ],
+        invalid: [
+          output('{"city":"Seoul",$nested}'),
+          output('{"city":"Seoul","nested":{"a":1},"units":"c"}'),
+          output('{"city":"Seoul","nested":{"a":1,"id":2},"units":"c"}'),
+          output('{"city":"Seoul",$nested,"units":"c","units":"f"}'),
+          output(
+            r'{"city":"Seoul",'
+            '$nested'
+            r',"units":"c","units":1}',
+          ),
+          output(
+            '{"city":"Seoul","nested":{"a":1,"id":"x","id":"y"},"units":"c"}',
+          ),
+        ],
+      );
+    }
+  });
+
   test('Hermes required calls may follow forced-open reasoning', () {
     final template = File(
       'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja',
