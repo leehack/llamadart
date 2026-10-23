@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.69`.
+Default pinned tag in the example is `v0.1.70`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.69 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.70 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,19 +81,18 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.69';
+  window.__llamadartBridgeAssetsTag = 'v0.1.70';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-2`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.69` differs from the native runtime tag
-`v0.7.0-2`. Provenance for this immutable consumer artifact: release `419562436`,
-tag commit `84ca5bfd436a778ea9371eb5f432c58a181a6052`, bridge source
-`31cbb98fc1821d85eecc99d20e30273fbcff9cb5`, and manifest SHA-256
-`994e798389d440a256f103f3789a1f56da2ab00dd6bb6e52f334ed4e58867c46`. The bridge
-manifest records native `v0.7.0-1`; native `v0.7.0-2` changes nothing the bridge
-build reads ([llama-web-bridge#171](https://github.com/leehack/llama-web-bridge/issues/171)).
+even though the bridge asset tag `v0.1.70` differs from the native runtime tag
+`v0.7.0-2`. Provenance for this immutable consumer artifact: release `421329647`,
+tag commit `b2e03c102d2cee8507976a5c2577c37ae4745b12`, bridge source
+`3d78c7420b7ddeca6f5779315d9b7d98015c21b2`, and manifest SHA-256
+`7ac4e6e88205396f7221cd4e9e863bdf284df3498ced58cae2ffa1840996a8bf`. The bridge
+manifest records native `v0.7.0-2`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
@@ -139,6 +138,14 @@ physical playback, intelligibility or speaker-reference fidelity.
   the worker; teardown awaits the WebGPU model free and shutdown.
 - `v0.1.69+`: loading a truncated or mismatched state snapshot rejects and
   keeps the current context state instead of aborting the runtime.
+- `v0.1.70+`: streamed completion pieces and `detokenize` decode UTF-8 from
+  the core's bytes. A character split across tokens, including at the start of
+  a response, streams once complete and no longer comes out as a wrong
+  character; `onToken`'s `currentText` leaves out the held-back tail. Invalid
+  bytes and a tail still incomplete when generation ends become U+FFFD, a
+  leading U+FEFF is kept, and output after a NUL byte is delivered. Older
+  assets keep the previous string reads
+  ([llama-web-bridge#177](https://github.com/leehack/llama-web-bridge/pull/177)).
 
 ### Media embeddings
 
