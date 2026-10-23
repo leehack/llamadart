@@ -233,6 +233,44 @@ LocalE2eCommandStep _prepareValidationPackage(LocalE2eRunContext context) =>
       description: 'Prepare private suite',
     );
 
+List<LocalE2eCommandStep> _webRealModelSmokeSteps(
+  LocalE2eRunContext context,
+  List<String> extraSmokeArguments,
+) {
+  return [
+    _prepareChatAppWebBuild(context),
+    LocalE2eCommandStep(
+      workingDirectory: context.projectRoot,
+      executable: context.python,
+      arguments: [
+        'tool/testing/serve_static_with_headers.py',
+        '--directory',
+        '.',
+        '--port',
+        '${context.port}',
+      ],
+      description: 'Serve repo root with COOP/COEP headers',
+      background: true,
+      waitForPort: context.port,
+    ),
+    LocalE2eCommandStep(
+      workingDirectory: context.projectRoot,
+      executable: context.python,
+      arguments: [
+        'tool/testing/playwright_chat_app_real_model_smoke.py',
+        context.webBuildUrl,
+        '--model-url',
+        context.modelUrl ?? context.defaultModelUrl,
+        '--expect',
+        context.expect,
+        if (context.allowAnyResponse) '--allow-any-response',
+        ...extraSmokeArguments,
+      ],
+      description: 'Run Playwright real-model chat app smoke',
+    ),
+  ];
+}
+
 LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
     LocalE2eCommandStep(
       workingDirectory: context.projectRoot,
@@ -1459,6 +1497,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.modelUrl ??
                 'http://127.0.0.1:${context.port + 1}/.dart_tool/test_models/stories15M.gguf',
             '--allow-any-response',
+            '--expect-penalty-prompt-tokens-probe',
+            '--expect-penalty-prompt-tokens-option',
+            'absent',
           ],
           description:
               'Run real worker/GGUF smoke on the same production artifact',
@@ -1469,43 +1510,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'chat-app-web-real-model-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
-          'Build chat_app web and run the real-model Playwright smoke.',
+          'Build chat_app web and run the real-model Playwright smoke; '
+          'plain chat must run without a penaltyPromptTokens option and the '
+          'probe must report it.',
       requiresDevice: false,
-      stepsBuilder: (context) {
-        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
-        final smokeArguments = <String>[
-          'tool/testing/playwright_chat_app_real_model_smoke.py',
-          context.webBuildUrl,
-          '--model-url',
-          context.modelUrl ?? context.defaultModelUrl,
-          '--expect',
-          context.expect,
-          if (context.allowAnyResponse) '--allow-any-response',
-        ];
-        steps.addAll([
-          LocalE2eCommandStep(
-            workingDirectory: context.projectRoot,
-            executable: context.python,
-            arguments: [
-              'tool/testing/serve_static_with_headers.py',
-              '--directory',
-              '.',
-              '--port',
-              '${context.port}',
-            ],
-            description: 'Serve repo root with COOP/COEP headers',
-            background: true,
-            waitForPort: context.port,
-          ),
-          LocalE2eCommandStep(
-            workingDirectory: context.projectRoot,
-            executable: context.python,
-            arguments: smokeArguments,
-            description: 'Run Playwright real-model chat app smoke',
-          ),
-        ]);
-        return steps;
-      },
+      stepsBuilder: (context) => _webRealModelSmokeSteps(context, const [
+        '--expect-penalty-prompt-tokens-probe',
+        '--expect-penalty-prompt-tokens-option',
+        'absent',
+      ]),
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-tool-penalty-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Build chat_app web and run a ToolChoice.auto chat on a '
+          'tool-capable --model-url; the completion call must send '
+          'penaltyPromptTokens: false.',
+      requiresDevice: false,
+      stepsBuilder: (context) => _webRealModelSmokeSteps(context, const [
+        '--tools',
+        '--expect-penalty-prompt-tokens-probe',
+        '--expect-penalty-prompt-tokens-option',
+        'false',
+      ]),
     ),
     LocalE2eScenario(
       name: 'chat-app-web-speech-to-text-smoke',
@@ -1920,6 +1948,15 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --tokenizer-path, --audio-path, and a nonempty '
           '--expect are required for litert-lm-asr-smoke.\n',
+    );
+  }
+  if (scenario.name == 'chat-app-web-tool-penalty-smoke' &&
+      parsed.modelUrl == null) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-url <tool-capable.gguf> is required for '
+          'chat-app-web-tool-penalty-smoke.\n',
     );
   }
   if (scenario.name == 'image-generation-smoke' && parsed.modelPath == null) {

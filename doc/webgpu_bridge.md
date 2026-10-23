@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.71`.
+Default pinned tag in the example is `v0.1.72`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.71 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.72 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,17 +81,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.71';
+  window.__llamadartBridgeAssetsTag = 'v0.1.72';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-2`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.71` differs from the native runtime tag
-`v0.7.0-2`. Provenance for this immutable consumer artifact: release `421941767`,
-tag commit `006efca27b032e6f613b95d5ae6b55b59c3324d8`, bridge source
-`24b1b5f14ea6c20e001b18af42c4568b7dbba025`, and manifest SHA-256
-`cceac41a66a6e0e9658e05a6cdf3f7511ab5069471a1293af5a5071b67b430ba`. The bridge
+even though the bridge asset tag `v0.1.72` differs from the native runtime tag
+`v0.7.0-2`. Provenance for this immutable consumer artifact: release `422332916`,
+tag commit `5a8ae4b2c6c8324ee50dc84e960791fb20a999f8`, bridge source
+`22fd92f359c2dcdf56f50688f23043553731f143`, and manifest SHA-256
+`85075d7d278bcacab706b79cda65c4a1bf8098a90f1e9fdbd504c198b8c8b03a`. The bridge
 manifest records native `v0.7.0-2`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
@@ -154,6 +154,14 @@ physical playback, intelligibility or speaker-reference fidelity.
   such a completion to the end
   ([llama-web-bridge#179](https://github.com/leehack/llama-web-bridge/pull/179),
   [#181](https://github.com/leehack/llama-web-bridge/pull/181)).
+- `v0.1.72+`: repeat and presence penalties count a text prompt without a
+  grammar, and the probe reports `penaltyPromptTokens: true`; text containing
+  U+0000 is no longer truncated in tokenize, embed, score and prompts, and
+  speech text containing U+0000 is rejected. Older assets count only generated
+  tokens and truncate at the NUL
+  ([llama-web-bridge#187](https://github.com/leehack/llama-web-bridge/pull/187),
+  [#184](https://github.com/leehack/llama-web-bridge/pull/184),
+  [#190](https://github.com/leehack/llama-web-bridge/pull/190)).
 
 ### Media embeddings
 
@@ -274,6 +282,12 @@ The runner builds the chat app with `scripts/build_chat_app_web.sh` (matching
 headers through `tool/testing/serve_static_with_headers.py`, and runs the
 Playwright helper. When running helpers by hand, keep `--base-href` aligned
 with the URL path.
+
+The real-model smoke also requires `getCompletionCapabilities()` to report
+`penaltyPromptTokens: true` and a plain chat call to carry no
+`penaltyPromptTokens` option. `chat-app-web-tool-penalty-smoke` runs a
+`ToolChoice.auto` chat on a tool-capable `--model-url` and requires
+`penaltyPromptTokens: false` on the completion call.
 
 On macOS headless Chromium, keep the smoke script's default
 `--browser-angle auto` or pass `--browser-angle metal`. Without Metal ANGLE the

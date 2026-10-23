@@ -179,6 +179,7 @@ void main() {
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
+      expect(result.stdout, contains('chat-app-web-tool-penalty-smoke'));
       expect(result.stdout, contains('chat-app-web-speech-to-text-smoke'));
       expect(result.stdout, contains('chat-app-web-text-to-speech-smoke'));
       expect(result.stdout, contains('chat-app-web-mock-smoke'));
@@ -781,8 +782,47 @@ void main() {
         );
         expect(result.stdout, contains('--expect ok'));
         expect(result.stdout, contains('--allow-any-response'));
+        expect(
+          result.stdout,
+          contains(
+            '--expect-penalty-prompt-tokens-probe '
+            '--expect-penalty-prompt-tokens-option absent',
+          ),
+        );
+        expect(result.stdout, isNot(contains('--tools')));
       },
     );
+
+    test('dry-runs the Web tool penalty smoke and requires a model', () async {
+      final missing = await runLocalE2e(
+        const ['--scenario', 'chat-app-web-tool-penalty-smoke', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(missing.exitCode, 64);
+      expect(missing.stderr, contains('--model-url'));
+
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'chat-app-web-tool-penalty-smoke',
+          '--model-url',
+          'http://127.0.0.1:7358/models/tools.gguf',
+          '--allow-any-response',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          '--tools --expect-penalty-prompt-tokens-probe '
+          '--expect-penalty-prompt-tokens-option false',
+        ),
+      );
+    });
 
     test(
       'dry-runs Web mock smoke with build, serve, and Playwright steps',
