@@ -202,7 +202,9 @@ puts the bindings and companion files in the automation commit; its branch is
 `automation/native-sync-<native tag>-sd-<stable_diffusion tag>`.
 `stable-diffusion-native` tags are `vMAJOR.MINOR.PATCH`, or
 `vMAJOR.MINOR.PATCH-N` for a rebuild; name the tag explicitly, since `latest`
-skips GitHub prereleases. By hand:
+skips GitHub prereleases. For a stable_diffusion-only sync, pass the current
+llama.cpp tag as `native_tag`: it defaults to `latest` and cannot be `keep`.
+By hand:
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
