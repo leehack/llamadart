@@ -1134,6 +1134,196 @@ void main() {
     });
   });
 
+  group('error classification', () {
+    Future<Object?> loadError() async {
+      try {
+        await heads.load(fake.bridge, 'laya-head.safetensors');
+      } catch (error) {
+        return error;
+      }
+      return null;
+    }
+
+    test('maps each code on load, whatever the message says', () async {
+      const message = 'Reworded bridge message.';
+      final cases = <(String, Matcher)>[
+        ('head-lost', isA<LlamaStateException>()),
+        ('no-model', isA<LlamaStateException>()),
+        ('disposed', isA<LlamaStateException>()),
+        ('cancelled', isA<LlamaStateException>()),
+        ('busy', isA<LlamaStateException>()),
+        ('invalid-state', isA<LlamaStateException>()),
+        ('context', isA<LlamaContextException>()),
+        ('unsupported', isA<LlamaUnsupportedException>()),
+        (
+          'model',
+          isA<LlamaModelException>().having(
+            (error) => error.details,
+            'details',
+            pageUrl('laya-head.safetensors'),
+          ),
+        ),
+        ('inference', isA<LlamaInferenceException>()),
+        ('invalid-argument', isA<LlamaModelException>()),
+        ('runtime', isA<LlamaModelException>()),
+        ('future-code', isA<LlamaModelException>()),
+      ];
+      for (final (code, matcher) in cases) {
+        fake
+          ..errorCode = code.toJS
+          ..loadError = message;
+        final error = await loadError();
+        expect(error, matcher, reason: code);
+        expect((error! as LlamaException).message, message, reason: code);
+      }
+    });
+
+    test('maps each code on every other decision call', () async {
+      final head = await heads.load(fake.bridge, 'laya-head.safetensors');
+      fake.errorCode = 'inference'.toJS;
+      fake.runError = 'x';
+      await expectLater(
+        heads.run(fake.bridge, head.handle, [
+          sequence([1], [0]),
+        ]),
+        throwsTyped<LlamaInferenceException>('x'),
+      );
+      fake.runError = 'y';
+      fake.errorCode = 'runtime'.toJS;
+      await expectLater(
+        heads.run(fake.bridge, head.handle, [
+          sequence([1], [0]),
+        ]),
+        throwsTyped<LlamaInferenceException>('y'),
+      );
+      fake.errorCode = 'unsupported'.toJS;
+      fake.capabilitiesError = 'z';
+      final capabilities = await heads.capabilities(fake.bridge);
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        'The Web decision capability probe failed: z',
+      );
+      fake.errorCode = 'busy'.toJS;
+      await expectLater(
+        heads.capabilities(fake.bridge),
+        throwsTyped<LlamaStateException>('z'),
+      );
+      fake.freeError = 'w';
+      fake.errorCode = 'runtime'.toJS;
+      await expectLater(
+        heads.free(fake.bridge, head.handle),
+        throwsTyped<LlamaStateException>('w'),
+      );
+    });
+
+    test('a code wins over a conflicting message', () async {
+      fake
+        ..errorCode = 'inference'.toJS
+        ..loadError = 'No model loaded. Call loadModelFromUrl first.';
+      expect(await loadError(), isA<LlamaInferenceException>());
+      fake
+        ..errorCode = 'runtime'.toJS
+        ..loadError = 'Bridge has been disposed.';
+      expect(await loadError(), isA<LlamaModelException>());
+    });
+
+    test('classifies by message when the bridge sends no code', () async {
+      final cases = <(String, Matcher)>[
+        (
+          'Decision head 1 is not loaded; Load the decision head again.',
+          isA<LlamaStateException>(),
+        ),
+        (
+          'No model loaded. Call loadModelFromUrl first.',
+          isA<LlamaStateException>(),
+        ),
+        ('Bridge has been disposed.', isA<LlamaStateException>()),
+        ('Decision head load was cancelled.', isA<LlamaStateException>()),
+        (
+          'Decision heads cannot be loaded or run during active generation.',
+          isA<LlamaStateException>(),
+        ),
+        (
+          'Failed to load decision head: Failed to create the decision '
+              'encoder context of 512 tokens.',
+          isA<LlamaContextException>(),
+        ),
+        ('Something else failed.', isA<LlamaModelException>()),
+      ];
+      for (final (message, matcher) in cases) {
+        fake.loadError = message;
+        expect(await loadError(), matcher, reason: message);
+      }
+    });
+
+    test('ignores the numeric code of a cancellation DOMException', () async {
+      fake
+        ..errorAsAbort = true
+        ..loadError = 'Decision head load was cancelled.';
+      expect(await loadError(), isA<LlamaStateException>());
+
+      fake.loadError = 'Reworded.';
+      expect(await loadError(), isA<LlamaModelException>());
+
+      fake
+        ..errorCode = 'cancelled'.toJS
+        ..loadError = 'Reworded.';
+      expect(await loadError(), isA<LlamaStateException>());
+    });
+
+    test('drops the head on head-lost, not on the message alone', () async {
+      var head = await heads.load(fake.bridge, 'a.safetensors');
+      fake
+        ..errorCode = 'head-lost'.toJS
+        ..runError = 'Reworded.';
+      await expectLater(
+        heads.run(fake.bridge, head.handle, [
+          sequence([1], [0]),
+        ]),
+        throwsTyped<LlamaStateException>('Reworded.'),
+      );
+      fake
+        ..errorCode = null
+        ..runError = null;
+      await expectLater(
+        heads.run(fake.bridge, head.handle, [
+          sequence([1], [0]),
+        ]),
+        throwsTyped<LlamaStateException>(contains('on this Web runtime')),
+      );
+
+      head = await heads.load(fake.bridge, 'b.safetensors');
+      fake
+        ..errorCode = 'busy'.toJS
+        ..runError = 'Load the decision head again.';
+      await expectLater(
+        heads.run(fake.bridge, head.handle, [
+          sequence([1], [0]),
+        ]),
+        throwsTyped<LlamaStateException>(contains('Load the decision')),
+      );
+      fake
+        ..errorCode = null
+        ..runError = null;
+      expect(
+        await heads.run(fake.bridge, head.handle, [
+          sequence([1], [0]),
+        ]),
+        hasLength(1),
+      );
+    });
+
+    test('keeps redaction when classifying by code', () async {
+      fake
+        ..errorCode = 'model'.toJS
+        ..loadError = 'Cannot read https://u:secret@example.com/h.bin?sig=abc';
+      final error = await loadError() as LlamaModelException;
+      expect(error.message, isNot(contains('secret')));
+      expect(error.message, isNot(contains('sig=abc')));
+    });
+  });
+
   group('free', () {
     test('frees once and never reuses handles', () async {
       final first = await heads.load(fake.bridge, 'a.safetensors');

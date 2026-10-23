@@ -59,6 +59,7 @@ class WebGpuDecisionHeads {
     } catch (error) {
       final exception = _bridgeException(
         _errorText(error),
+        code: _errorCode(error),
         fallback: LlamaUnsupportedException.new,
       );
       if (exception is LlamaStateException) throw exception;
@@ -152,11 +153,13 @@ class WebGpuDecisionHeads {
           'config in ${_sourceDisplayUrl(resolvedConfigUrl)} ',
         );
       }
+      final sourceUrl = _sourceDisplayUrl(resolvedHeadUrl);
       throw _bridgeException(
         message,
+        code: _errorCode(error),
         classifiedText: _coreMessage(_bridgeErrorMessage(error)),
-        fallback: (message) =>
-            LlamaModelException(message, _sourceDisplayUrl(resolvedHeadUrl)),
+        modelSource: sourceUrl,
+        fallback: (message) => LlamaModelException(message, sourceUrl),
       );
     }
 
@@ -247,11 +250,14 @@ class WebGpuDecisionHeads {
     try {
       raw = await _settle(bridge.runDecision(head.bridgeHandle, input));
     } catch (error) {
+      final code = _errorCode(error);
       final exception = _bridgeException(
         _errorText(error),
+        code: code,
         fallback: LlamaInferenceException.new,
       );
-      if (exception.message.contains(_reloadHint)) {
+      if (code == 'head-lost' ||
+          (code == null && exception.message.contains(_reloadHint))) {
         _heads.remove(handle);
       }
       throw exception;
@@ -273,6 +279,7 @@ class WebGpuDecisionHeads {
     } catch (error) {
       throw _bridgeException(
         _errorText(error),
+        code: _errorCode(error),
         fallback: LlamaStateException.new,
       );
     }
@@ -366,11 +373,47 @@ class WebGpuDecisionHeads {
     }
   }
 
+  // The bridge's decision error codes are the stable contract; assets older
+  // than v0.1.72 reject without one, so only then does the message decide.
+  // DOMException's legacy numeric `code` is not a string and is ignored.
+  static String? _errorCode(Object error) {
+    try {
+      final code = (error as JSObject).getProperty<JSAny?>('code'.toJS);
+      if (code != null && code.isA<JSString>()) {
+        return (code as JSString).toDart;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static LlamaException _bridgeException(
     String message, {
+    String? code,
     String? classifiedText,
+    String? modelSource,
     required LlamaException Function(String message) fallback,
   }) {
+    if (code != null) {
+      switch (code) {
+        case 'head-lost':
+        case 'no-model':
+        case 'disposed':
+        case 'cancelled':
+        case 'busy':
+        case 'invalid-state':
+          return LlamaStateException(message);
+        case 'context':
+          return LlamaContextException(message);
+        case 'unsupported':
+          return LlamaUnsupportedException(message);
+        case 'model':
+          return LlamaModelException(message, modelSource);
+        case 'inference':
+          return LlamaInferenceException(message);
+        default:
+          return fallback(message);
+      }
+    }
     final text = classifiedText ?? message;
     if (text.contains(_reloadHint) ||
         text.startsWith('No model loaded') ||
