@@ -104,6 +104,7 @@ Map<String, dynamic> generationConfigSchema() {
             'ngramSizeM',
             'ngramMinHits',
             'ngramMatch',
+            'draftMicroBatchSize',
           ])
             key: integer(minimum: 1),
           for (final key in ['minProbability', 'draftSplitProbability'])

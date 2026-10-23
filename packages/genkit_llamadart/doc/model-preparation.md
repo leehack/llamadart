@@ -111,9 +111,9 @@ Future<void> main() async {
   final prepared = await llamaDart.prepareModel(
     name: 'litert-chat',
     source: ModelSource.path('/models/chat.litertlm', format: ModelFormat.liteRtLm),
-    modelParams: const ModelParams(
+    modelParams: const LiteRtLmModelParams(
       device: ComputeDevice.cpu,
-      liteRtLmActivationDataType: LiteRtLmActivationDataType.float32,
+      activationDataType: LiteRtLmActivationDataType.float32,
     ),
     supportsEmbeddings: false,
     supportsConstrainedOutput: false,

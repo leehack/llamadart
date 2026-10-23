@@ -17,7 +17,7 @@ make a model support tools, strict JSON, images or embeddings.
 
 ## Versions and availability
 
-Checked on 2026-10-18:
+Checked on 2026-10-23:
 
 | Route | Available combination | Qualification boundary |
 | --- | --- | --- |
