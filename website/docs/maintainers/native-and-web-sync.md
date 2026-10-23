@@ -158,10 +158,13 @@ digests before any pin files are written. The sync rewrites
 `llamaCppBundleSha256` from each bundle archive's release digest and fails
 without writing when the release lacks a pinned bundle.
 Any PR or push that changes the pin file also runs the Native Release Digests
-workflow, which compares `llamaCppBundleSha256` with the pinned release's
-`SHA256SUMS`. That catches a manual edit or conflict resolution that left stale
-digests. Run it locally with
-`dart run tool/testing/check_native_release_digests.dart`.
+workflow. It compares `llamaCppBundleSha256` and `stableDiffusionBundleSpecs`
+with their pinned releases' `SHA256SUMS`, and `liteRtLmBundleSpecs` with the
+pinned LiteRT-LM release's GitHub asset digests, since that release's
+`SHA256SUMS` lists only the extracted libraries. That catches a manual edit or
+conflict resolution that left stale digests. Run it locally with
+`dart run tool/testing/check_native_release_digests.dart`; set `GH_TOKEN` if
+the unauthenticated GitHub API rate limit is exhausted.
 Re-syncing the exact current tag remains idempotent for recovery and validation;
 the owning native release workflow is responsible for rejecting publication
 collisions.
