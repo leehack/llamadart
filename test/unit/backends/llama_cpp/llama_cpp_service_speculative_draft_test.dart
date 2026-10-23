@@ -1,12 +1,8 @@
 @TestOn('vm')
 library;
 
-import 'dart:ffi';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart';
-import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
-import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -14,18 +10,17 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:test/test.dart';
 
-import '../../../support/synthetic_embedding_gguf.dart';
-
 final _draft = ModelSource.path('draft.gguf');
 
 GenerationParams _speculative(SpeculativeDecodingConfig config) =>
     GenerationParams(speculativeDecodingConfig: config);
 
-Matcher _argumentError(String message) => throwsA(
-  isA<LlamaArgumentException>()
-      .having((error) => error.name, 'name', 'draftMicroBatchSize')
-      .having((error) => error.message, 'message', contains(message)),
-);
+Matcher _argumentError(String message, {String name = 'draftMicroBatchSize'}) =>
+    throwsA(
+      isA<LlamaArgumentException>()
+          .having((error) => error.name, 'name', name)
+          .having((error) => error.message, 'message', contains(message)),
+    );
 
 void main() {
   group('draftMicroBatchSize', () {
@@ -154,7 +149,7 @@ void main() {
         SpeculativeDecodingStrategy.draftDspark,
       ]) {
         void validate(int size, Map<String, String> metadata) =>
-            service.debugValidateLiliCorrDraftMicroBatchSizeForTesting(
+            service.debugValidateDraftBlockMicroBatchForTesting(
               _speculative(
                 SpeculativeDecodingConfig.mixed(
                   strategies: [strategy],
@@ -163,7 +158,7 @@ void main() {
                   draftMicroBatchSize: size,
                 ),
               ),
-              metadata,
+              draftMetadata: metadata,
             );
 
         const liliCorr = {
@@ -201,14 +196,141 @@ void main() {
       }
       // Other draft-model strategies do not decode a block.
       expect(
-        () => service.debugValidateLiliCorrDraftMicroBatchSizeForTesting(
+        () => service.debugValidateDraftBlockMicroBatchForTesting(
           _speculative(
             SpeculativeDecodingConfig.draftSimple(
               draftModel: _draft,
               draftMicroBatchSize: 1,
             ),
           ),
-          {'lilicorr.candidate_topk': '4', 'dflash.block_size': '8'},
+          draftMetadata: {
+            'lilicorr.candidate_topk': '4',
+            'dflash.block_size': '8',
+          },
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('the inherited target micro-batch needs a whole draft block', () {
+      void validate(
+        SpeculativeDecodingStrategy strategy, {
+        required int batch,
+        required int microBatch,
+        Map<String, String> metadata = const {},
+      }) => service.debugValidateDraftBlockMicroBatchForTesting(
+        _speculative(
+          SpeculativeDecodingConfig.mixed(
+            strategies: [strategy],
+            draftModel: _draft,
+            draftTokenMax: 4,
+          ),
+        ),
+        draftMetadata: metadata,
+        targetBatchSize: batch,
+        targetMicroBatchSize: microBatch,
+      );
+      Matcher inherited(int size, String requirement) => _argumentError(
+        'ModelParams.microBatchSize (resolved to $size; the draft context '
+        'inherits it while SpeculativeDecodingConfig.draftMicroBatchSize is '
+        'unset) must be at least $requirement',
+        name: 'microBatchSize',
+      );
+      const liliCorr = {'lilicorr.candidate_topk': '4'};
+
+      for (final strategy in [
+        SpeculativeDecodingStrategy.draftDflash,
+        SpeculativeDecodingStrategy.draftDspark,
+      ]) {
+        expect(
+          () => validate(strategy, batch: 64, microBatch: 4),
+          inherited(4, 'draftTokenMax + 1 (5)'),
+          reason: '$strategy',
+        );
+        expect(
+          () => validate(strategy, batch: 64, microBatch: 5),
+          returnsNormally,
+        );
+        // llama.cpp clamps n_ubatch to n_batch and takes n_batch for zero.
+        expect(
+          () => validate(strategy, batch: 4, microBatch: 512),
+          inherited(4, 'draftTokenMax + 1 (5)'),
+          reason: '$strategy',
+        );
+        expect(
+          () => validate(strategy, batch: 4, microBatch: 0),
+          inherited(4, 'draftTokenMax + 1 (5)'),
+          reason: '$strategy',
+        );
+        expect(
+          () => validate(strategy, batch: 5, microBatch: 0),
+          returnsNormally,
+        );
+        expect(
+          () =>
+              validate(strategy, batch: 64, microBatch: 15, metadata: liliCorr),
+          inherited(15, 'the draft model block size dflash.block_size (16)'),
+          reason: '$strategy',
+        );
+        expect(
+          () =>
+              validate(strategy, batch: 64, microBatch: 16, metadata: liliCorr),
+          returnsNormally,
+        );
+      }
+
+      // The target context stores ModelParams resolved by the same helper.
+      for (final (params, size) in [
+        (const ModelParams(microBatchSize: 4), 4),
+        (const ModelParams(batchSize: 4), 4),
+      ]) {
+        final target = LlamaCppService.resolveContextBatchSizes(params, 4096);
+        expect(
+          () => validate(
+            SpeculativeDecodingStrategy.draftDflash,
+            batch: target.batchSize,
+            microBatch: target.microBatchSize,
+          ),
+          inherited(size, 'draftTokenMax + 1 (5)'),
+        );
+      }
+      final defaults = LlamaCppService.resolveContextBatchSizes(
+        const ModelParams(),
+        4096,
+      );
+      expect(
+        () => validate(
+          SpeculativeDecodingStrategy.draftDflash,
+          batch: defaults.batchSize,
+          microBatch: defaults.microBatchSize,
+          metadata: liliCorr,
+        ),
+        returnsNormally,
+      );
+
+      // A set draftMicroBatchSize replaces the target's.
+      expect(
+        () => service.debugValidateDraftBlockMicroBatchForTesting(
+          _speculative(
+            SpeculativeDecodingConfig.draftDflash(
+              draftModel: _draft,
+              draftTokenMax: 4,
+              draftMicroBatchSize: 16,
+            ),
+          ),
+          draftMetadata: liliCorr,
+          targetBatchSize: 64,
+          targetMicroBatchSize: 1,
+        ),
+        returnsNormally,
+      );
+      // Other draft-model strategies do not decode a block.
+      expect(
+        () => validate(
+          SpeculativeDecodingStrategy.draftSimple,
+          batch: 64,
+          microBatch: 1,
+          metadata: liliCorr,
         ),
         returnsNormally,
       );
@@ -240,111 +362,14 @@ void main() {
     });
   });
 
-  // Runs the real llama.cpp runtime on the CPU: a draft-simple session whose
-  // synthetic draft model is the target's own file.
-  group('draft context', () {
-    late Directory dir;
-    late LlamaCppService service;
-    late int context;
-    late List<int> draftMicroBatches;
-
-    setUp(() {
-      dir = Directory.systemTemp.createTempSync('llamadart_draft_ubatch_');
-      writeSyntheticLlamaGguf('${dir.path}/model.gguf');
-      service = LlamaCppService(objectCalls: LlamaCppObjectCalls.upstream)
-        ..initializeBackend();
-      const params = ModelParams(
-        gpuLayers: 0,
-        contextSize: 64,
-        batchSize: 64,
-        microBatchSize: 32,
-      );
-      final model = service.loadModel('${dir.path}/model.gguf', params);
-      context = service.createContext(model, params);
-      draftMicroBatches = [];
-      service.debugOnSpeculativeDraftContextForTesting = (draft) =>
-          draftMicroBatches.add(llama_n_ubatch(draft));
-    });
-
-    tearDown(() {
-      service.dispose();
-      dir.deleteSync(recursive: true);
-    });
-
-    Future<List<int>> generate(
-      int? draftMicroBatchSize, {
-      SpeculativeDecodingConfig? speculative,
-    }) async {
-      final cancel = calloc<Int8>();
-      try {
-        final bytes = <int>[];
-        await for (final chunk in service.generate(
-          context,
-          'abababab',
-          GenerationParams(
-            maxTokens: 12,
-            temp: 0,
-            topK: 1,
-            seed: 1,
-            penalty: 1,
-            speculativeDecodingConfig:
-                speculative ??
-                SpeculativeDecodingConfig.draftSimple(
-                  draftModel: ModelSource.path('${dir.path}/model.gguf'),
-                  draftTokenMax: 4,
-                  draftMicroBatchSize: draftMicroBatchSize,
-                ),
-          ),
-          cancel.address,
-        )) {
-          bytes.addAll(chunk);
-        }
-        return bytes;
-      } finally {
-        calloc.free(cancel);
-      }
-    }
-
-    test('takes the draft micro-batch size, and the target size unset, '
-        'with the same output', () async {
-      final unset = await generate(null);
-      final reduced = await generate(2);
-
-      expect(draftMicroBatches, [32, 2]);
-      expect(unset, isNotEmpty);
-      expect(reduced, unset);
-    });
-
-    test("rejects a size above the context's logical batch before creating "
-        'a session', () async {
-      await expectLater(generate(65), _argumentError('(64)'));
-      expect(draftMicroBatches, isEmpty);
-    });
-
-    // A Llama draft cannot start a DFlash session, so this covers only
-    // rejections, which must come before llama.cpp aborts on the block.
-    test('reads the LiliCorr block size from the draft model before creating '
-        'a session', () async {
-      for (final (metadata, size, blockSize) in [
-        (const {'lilicorr.candidate_topk': 4, 'dflash.block_size': 8}, 7, 8),
-        (const {'lilicorr.candidate_topk': 4}, 15, 16),
-      ]) {
-        final draftPath = '${dir.path}/lilicorr_${metadata.length}.gguf';
-        writeSyntheticLlamaGguf(draftPath, uint32Metadata: metadata);
-        await expectLater(
-          generate(
-            null,
-            speculative: SpeculativeDecodingConfig.draftDflash(
-              draftModel: ModelSource.path(draftPath),
-              draftTokenMax: 4,
-              draftMicroBatchSize: size,
-            ),
-          ),
-          _argumentError('dflash.block_size ($blockSize)'),
-          reason: '$metadata',
-        );
-      }
-      expect(draftMicroBatches, isEmpty);
-    });
-  });
+  // A regression in the real runtime aborts at a GGML_ASSERT, so its suite
+  // runs in a child process to fail this test rather than the whole runner.
+  test('draft context runtime suite passes in a child process', () async {
+    final result = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      'test/fixtures/llama_cpp_draft_context_suite.dart',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('All tests passed!'));
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
