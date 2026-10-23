@@ -268,7 +268,9 @@ current send, and a thinking budget for bundles with a thinking channel, such
 as Gemma 4; it has no Min-P. The llama.cpp `mtp` strategy can
 use an external draft model; in-file MTP needs an MTP head and `loadMtp: true`.
 Other draft strategies require `draftModel` and throw `LlamaArgumentException`
-at generation start when it is missing.
+at generation start when it is missing. Native llama.cpp also takes
+`draftMicroBatchSize` to give the draft context a smaller micro-batch than the
+target; WebGPU and LiteRT-LM reject it.
 
 For ordered embedding content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check

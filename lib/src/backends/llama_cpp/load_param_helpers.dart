@@ -130,6 +130,25 @@ FlashAttention applyContextParams(
   return resolvedFlashAttn;
 }
 
+/// The context parameters a speculative session creates its draft context
+/// from, for a target context created with [targetParams].
+///
+/// Returns [targetParams] itself when [draftMicroBatchSize] is null, so the
+/// draft context keeps the target's micro-batch size. Otherwise copies
+/// [targetParams] into [scratch], which the caller allocates and frees, and
+/// sets its `n_ubatch` to [draftMicroBatchSize].
+llama_context_params speculativeDraftContextParams(
+  llama_context_params targetParams,
+  int? draftMicroBatchSize,
+  Pointer<llama_context_params> scratch,
+) {
+  if (draftMicroBatchSize == null) {
+    return targetParams;
+  }
+  scratch.ref = targetParams;
+  return scratch.ref..n_ubatch = draftMicroBatchSize;
+}
+
 /// Configures a decision head's private encoder context.
 ///
 /// One sequence of up to [maxTokens] tokens runs in one ubatch, with

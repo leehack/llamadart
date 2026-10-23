@@ -530,6 +530,7 @@ class _LlamaCppSpeculativeConfig {
     required this.draftTokenMin,
     required this.minProbability,
     required this.draftSplitProbability,
+    required this.draftMicroBatchSize,
     required this.draftModelPath,
     required this.ngramSizeN,
     required this.ngramSizeM,
@@ -547,6 +548,7 @@ class _LlamaCppSpeculativeConfig {
   final int draftTokenMin;
   final double? minProbability;
   final double? draftSplitProbability;
+  final int? draftMicroBatchSize;
   final String? draftModelPath;
   final int? ngramSizeN;
   final int? ngramSizeM;
@@ -795,6 +797,12 @@ class LlamaCppService {
   final Map<int, Pointer<llama_sampler>> _samplers = {};
   final Map<int, llama_batch> _batches = {};
   final Map<int, llama_context_params> _contextParams = {};
+
+  /// Called for unit tests with the draft context of each speculative session
+  /// a generation creates, or `nullptr` for a strategy without one.
+  void Function(Pointer<llama_context> draftContext)?
+  debugOnSpeculativeDraftContextForTesting;
+
   final Map<int, Map<String, _LlamaLoraWrapper>> _loraAdapters = {};
   final Map<int, Map<String, double>> _activeLoras = {};
   final Map<int, String> _modelBackendNames = <int, String>{};
@@ -4674,6 +4682,38 @@ class LlamaCppService {
       );
     }
 
+    final draftMicroBatchSize = speculativeConfig.draftMicroBatchSize;
+    if (draftMicroBatchSize != null) {
+      if (draftStrategyCount == 0) {
+        throw LlamaUnsupportedException(
+          'llama.cpp n-gram speculative decoding creates no draft context, so '
+          'draftMicroBatchSize needs a draft-model or MTP strategy.',
+        );
+      }
+      if (draftMicroBatchSize < 1) {
+        throw LlamaArgumentException(
+          'SpeculativeDecodingConfig.draftMicroBatchSize must be at least 1, '
+          'or null to keep the target micro-batch size.',
+          name: 'draftMicroBatchSize',
+          invalidValue: draftMicroBatchSize,
+        );
+      }
+      final blockSize = draftTokenMax + 1;
+      final usesBlockDraft =
+          uniqueStrategies.contains(SpeculativeDecodingStrategy.draftDflash) ||
+          uniqueStrategies.contains(SpeculativeDecodingStrategy.draftDspark);
+      if (usesBlockDraft && draftMicroBatchSize < blockSize) {
+        throw LlamaArgumentException(
+          'SpeculativeDecodingConfig.draftMicroBatchSize ($draftMicroBatchSize) '
+          'must be at least draftTokenMax + 1 ($blockSize) for llama.cpp '
+          'draft-dflash and draft-dspark, which decode a whole draft block in '
+          'one micro-batch.',
+          name: 'draftMicroBatchSize',
+          invalidValue: draftMicroBatchSize,
+        );
+      }
+    }
+
     final typeNames = uniqueStrategies
         .map((strategy) => _llamaCppSpeculativeTypeNames[strategy]!)
         .join(',');
@@ -4686,6 +4726,7 @@ class LlamaCppService {
       draftTokenMin: draftTokenMin,
       minProbability: speculativeConfig.minProbability,
       draftSplitProbability: speculativeConfig.draftSplitProbability,
+      draftMicroBatchSize: draftMicroBatchSize,
       draftModelPath: draftModelPath,
       ngramSizeN: speculativeConfig.ngramSizeN ?? speculativeConfig.ngramSize,
       ngramSizeM: speculativeConfig.ngramSizeM,
@@ -4726,6 +4767,42 @@ class LlamaCppService {
         'tensors enabled, or provide a compatible external draftModel.',
       );
     }
+  }
+
+  void _validateDraftMicroBatchSizeFitsContext(
+    _LlamaCppSpeculativeConfig? config, {
+    required int batchSize,
+    required int contextSize,
+  }) {
+    final draftMicroBatchSize = config?.draftMicroBatchSize;
+    if (draftMicroBatchSize == null) {
+      return;
+    }
+    final limit = math.min(batchSize, contextSize);
+    if (draftMicroBatchSize > limit) {
+      throw LlamaArgumentException(
+        'SpeculativeDecodingConfig.draftMicroBatchSize ($draftMicroBatchSize) '
+        "must not exceed the draft context's logical batch size ($limit): "
+        'the resolved ModelParams.batchSize, bounded by '
+        'ModelParams.contextSize.',
+        name: 'draftMicroBatchSize',
+        invalidValue: draftMicroBatchSize,
+      );
+    }
+  }
+
+  /// Validates a speculative draft micro-batch size against a context's
+  /// resolved logical batch and context sizes for unit tests.
+  void debugValidateDraftMicroBatchSizeForTesting(
+    GenerationParams params, {
+    required int batchSize,
+    required int contextSize,
+  }) {
+    _validateDraftMicroBatchSizeFitsContext(
+      _resolveLlamaCppSpeculativeConfig(params, hasMediaParts: false),
+      batchSize: batchSize,
+      contextSize: contextSize,
+    );
   }
 
   /// Validates bundled MTP model-loading requirements for unit tests.
@@ -4772,6 +4849,7 @@ class LlamaCppService {
     return <String, Object?>{
       'typeNames': config?.typeNames,
       'draftTokenMax': config?.draftTokenMax,
+      'draftMicroBatchSize': config?.draftMicroBatchSize,
       'ngramSizeN': config?.ngramSizeN,
       'ngramSizeM': config?.ngramSizeM,
       'ngramTokenMax': config?.ngramTokenMax,
@@ -5021,6 +5099,11 @@ class LlamaCppService {
         speculativeConfig,
         _modelLoadParams[modelHandle] ?? const ModelParams(),
       );
+      _validateDraftMicroBatchSizeFitsContext(
+        speculativeConfig,
+        batchSize: modelParams.n_batch,
+        contextSize: modelParams.n_ctx,
+      );
       final reasoningBudgetApi = thinkingBudgetConfig == null
           ? null
           : _resolveReasoningBudgetApi();
@@ -5072,6 +5155,9 @@ class LlamaCppService {
           );
           throw _speculativeInitFailure(speculativeConfig);
         }
+        debugOnSpeculativeDraftContextForTesting?.call(
+          speculativeApi.getDraftContext(speculativeSession),
+        );
         if (speculativeApi.needEmbd(speculativeSession)) {
           llama_set_embeddings(ctx.pointer, true);
         }
@@ -10659,6 +10745,7 @@ class _SpeculativeApi {
     required _LlamaCppSpeculativeConfig config,
   }) {
     final params = malloc<llama_dart_speculative_params>();
+    final draftContextParams = malloc<llama_context_params>();
     final typeNamesPtr = config.typeNames.toNativeUtf8();
     final staticCachePathPtr = config.ngramCacheStaticPath?.toNativeUtf8();
     final dynamicCachePathPtr = config.ngramCacheDynamicPath?.toNativeUtf8();
@@ -10688,11 +10775,16 @@ class _SpeculativeApi {
         targetModel,
         draftModel ?? nullptr.cast<llama_model>(),
         targetContext,
-        contextParams,
+        speculativeDraftContextParams(
+          contextParams,
+          config.draftMicroBatchSize,
+          draftContextParams,
+        ),
         params,
       );
     } finally {
       malloc.free(params);
+      malloc.free(draftContextParams);
       malloc.free(typeNamesPtr);
       if (staticCachePathPtr != null) {
         malloc.free(staticCachePathPtr);

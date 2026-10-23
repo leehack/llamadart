@@ -37,6 +37,21 @@ void main() {
       expect(result.stdout, contains('--include-output'));
       expect(result.stdout, contains('draft-dspark'));
       expect(result.stdout, contains('DSpark is experimental and opt-in'));
+      expect(result.stdout, contains('--draft-micro-batch-size <n>'));
+    });
+
+    test('rejects a draft micro-batch size below one', () async {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        '--disable-dart-dev',
+        benchmark,
+        '--model',
+        'missing.gguf',
+        '--draft-micro-batch-size',
+        '0',
+      ]);
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--draft-micro-batch-size'));
     });
 
     test('builds llama.cpp static ngram cache bytes', () {

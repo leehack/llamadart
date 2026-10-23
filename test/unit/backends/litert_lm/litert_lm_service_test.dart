@@ -6475,6 +6475,7 @@ void main() {
             speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
               draftTokenMax: 3,
               draftModelPath: 'draft.gguf',
+              draftMicroBatchSize: 8,
             ),
           ),
         ),
@@ -6484,6 +6485,7 @@ void main() {
             'message',
             allOf(
               contains('speculativeDecodingConfig.draftTokenMax'),
+              contains('speculativeDecodingConfig.draftMicroBatchSize'),
               contains('speculativeDecodingConfig.draftModel'),
               isNot(contains('draftModelPath')),
             ),
