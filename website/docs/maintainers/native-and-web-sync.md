@@ -289,8 +289,8 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-After core `0.16.0`, the LiteRT-LM pin moved to `v0.18.1-1`, which restores
-deterministic CPU output on SME2 CPUs. Published core `0.16.0` hands macOS
+After core `0.16.0`, the LiteRT-LM pin moved to `v0.18.1-2`, which restores
+deterministic CPU output and Gemma 4 CPU decode speed on SME2 CPUs. Published core `0.16.0` hands macOS
 LiteRT-LM to a companion only when it pins `v0.18.1`, so the release that ships
 this pin bumps `llamadart_litert_lm_flutter` by a patch and raises its core
 lower bound past `0.16.0`. Core `0.16.0` and the new core still accept the
