@@ -121,25 +121,31 @@ List<File> coverageJsonFiles(String input) {
 ///
 /// One [Resolver] and one ignored-lines cache are shared across all input
 /// files, so each source is read and scanned for ignore comments at most once.
+///
+/// Throws a [FormatException] for a `.json` input that is not a
+/// `{"coverage": [...]}` report, as `format_coverage` does.
 Future<String> formatLcovReport(FormatLcovOptions options) async {
   final resolver = await Resolver.create(packagePath: options.packagePath);
   final ignoredLinesInFilesCache = <String, List<List<int>>?>{};
   final globalHitmap = <String, HitMap>{};
 
   for (final file in coverageJsonFiles(options.input)) {
-    final jsonMap =
-        json.decode(file.readAsStringSync()) as Map<String, dynamic>;
-    if (!jsonMap.containsKey('coverage')) {
-      continue;
+    switch (json.decode(file.readAsStringSync())) {
+      case {'coverage': final List entries}:
+        globalHitmap.merge(
+          HitMap.parseJsonSync(
+            entries.whereType<Map<String, dynamic>>().toList(),
+            checkIgnoredLines: options.checkIgnore,
+            ignoredLinesInFilesCache: ignoredLinesInFilesCache,
+            resolver: resolver,
+          ),
+        );
+      case final decoded:
+        throw FormatException(
+          'Unrecognized coverage JSON in "${file.path}". Expected a '
+          '{"coverage": [...]} report, but got ${decoded.runtimeType}.',
+        );
     }
-    globalHitmap.merge(
-      HitMap.parseJsonSync(
-        (jsonMap['coverage'] as List).cast<Map<String, dynamic>>(),
-        checkIgnoredLines: options.checkIgnore,
-        ignoredLinesInFilesCache: ignoredLinesInFilesCache,
-        resolver: resolver,
-      ),
-    );
   }
 
   return globalHitmap.formatLcov(resolver, reportOn: options.reportOn);
