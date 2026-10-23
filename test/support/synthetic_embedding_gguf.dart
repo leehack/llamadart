@@ -68,9 +68,11 @@ File writeSyntheticModernBertGguf(
 /// [eosTokenId] overrides the tokenizer default for special-token compatibility
 /// tests. [architecture] also accepts `llada`, whose tensors share this layout and
 /// whose runtime forces non-causal attention even with a true metadata value.
+/// [uint32Metadata] adds keys the architecture loader ignores.
 File writeSyntheticLlamaGguf(
   String path, {
   String architecture = 'llama',
+  Map<String, int> uint32Metadata = const {},
   int? eosTokenId,
   int? poolingType,
   bool? causalAttention,
@@ -95,6 +97,8 @@ File writeSyntheticLlamaGguf(
         '$arch.attention.causal': _GgufValue.boolean(causalAttention),
       if (poolingType != null)
         '$arch.pooling_type': _GgufValue.uint32(poolingType),
+      for (final MapEntry(:key, :value) in uint32Metadata.entries)
+        key: _GgufValue.uint32(value),
     },
     tensors: {
       'token_embd.weight': _weights(random, [_embd, _tokens.length]),

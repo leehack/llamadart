@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- `SpeculativeDecodingConfig.draftMicroBatchSize` must be at least a LiliCorr draft model's `dflash.block_size` (16 when absent) for llama.cpp `draftDflash` and `draftDspark`: generation throws `LlamaArgumentException` instead of aborting the process when the block does not fit one draft micro-batch ([#1330](https://github.com/leehack/llamadart/issues/1330)).
+
 ## 0.16.0
 
 - Add `LlamaCppModelParams` and `LiteRtLmModelParams`, `ModelParams` that take only the fields their runtime applies; the `liteRtLm*` arguments of `ModelParams` are deprecated in favor of `LiteRtLmModelParams`. Loads reject `ModelParams` fields the model's runtime would ignore, such as `liteRtLm*` fields on a GGUF model or `preferMemory64` off the Web, and either type used for the other runtime, with `LlamaUnsupportedException` naming each field; `LlamaBackend()` also rejects these and LiteRT-LM platform gaps before any download when the model format is known ([#858](https://github.com/leehack/llamadart/issues/858), [#861](https://github.com/leehack/llamadart/issues/861)).

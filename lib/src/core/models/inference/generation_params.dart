@@ -201,7 +201,11 @@ class SpeculativeDecodingConfig {
   /// resolved `ModelParams.batchSize` (bounded by `ModelParams.contextSize`),
   /// or, for `draftDflash` and `draftDspark`, below the effective
   /// [draftTokenMax] plus one, since those decode a whole draft block in one
-  /// micro-batch. Strategies without a draft context and WebGPU throw
+  /// micro-batch. With a LiliCorr draft model (GGUF
+  /// `lilicorr.candidate_topk` above zero) that block is the model's
+  /// `dflash.block_size` (16 when absent), whatever [draftTokenMax] is, and
+  /// generation throws before the draft session starts when the size is
+  /// below it. Strategies without a draft context and WebGPU throw
   /// [LlamaUnsupportedException]; LiteRT-LM rejects it with its other
   /// llama.cpp-specific speculative options.
   final int? draftMicroBatchSize;
