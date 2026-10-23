@@ -617,8 +617,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'real native ModernBERT GGUF plus Laya decision head: exact fixture '
-        'token ids and markers from the engine tokenizer, raw marker logits '
-        'and DecisionEngine answers within the tolerances of '
+        'token ids and markers from the engine tokenizer, raw marker and '
+        'action logits and DecisionEngine answers within the tolerances of '
         'doc/testing_matrix.md against the Laya 0.3.5 reference, CPU head '
         'placement without offloaded layers, and a clean exit after engine '
         'dispose with a head loaded',

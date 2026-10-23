@@ -61,6 +61,11 @@ final class RecordingExitTeardown {
   /// `llama_dart_model_load_from_file` so far.
   final List<int> loadGpuLayers = <int>[];
 
+  /// Whether each `llama_dart_init_from_model` so far offloads the KV cache
+  /// and ops, and its flash attention type.
+  final List<({bool offloadKqv, bool opOffload, int flashAttnType})>
+  contextOffload = [];
+
   /// Token count of the batch of each `llama_dart_decode` so far.
   final List<int> decodedTokens = <int>[];
 
@@ -151,6 +156,11 @@ final class RecordingExitTeardown {
       return model;
     },
     initFromModel: (model, params) {
+      contextOffload.add((
+        offloadKqv: params.offload_kqv,
+        opOffload: params.op_offload,
+        flashAttnType: params.flash_attn_typeAsInt,
+      ));
       if (!_proceeds('llama_dart_init_from_model')) return nullptr;
       final context = real.initFromModel(model, params);
       owned.add(context.address);

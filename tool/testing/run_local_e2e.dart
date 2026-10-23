@@ -2325,6 +2325,9 @@ Direct environment for test/e2e/backends/decision_engine_e2e_test.dart:
                                  Largest probability, confidence and noul difference
                                  (default: 0.05); scores get twice this, and a choice
                                  may differ when Laya's top-2 gap is within it.
+  LLAMADART_DECISION_ACT_LOGIT_TOLERANCE
+                                 Largest raw action-logit difference relative to the
+                                 row's largest reference action logit (default: 0.05).
 ''';
 }
 

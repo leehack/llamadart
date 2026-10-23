@@ -334,7 +334,9 @@ dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
 # probabilities, confidence, act probability and noul within
 # LLAMADART_DECISION_PROB_TOLERANCE (default 0.05). Scores may differ by twice
 # that tolerance, and a choice may differ from Laya's when Laya's top two
-# probabilities are within the tolerance. It also checks that the head runs on
+# probabilities are within the tolerance. Raw action logits must be within
+# LLAMADART_DECISION_ACT_LOGIT_TOLERANCE (default 0.05) of each row's largest
+# reference action logit, since act_probability saturates. It also checks that the head runs on
 # the CPU when the model offloads no layers, and disposes an engine with a head
 # still loaded; a leaked Metal buffer then aborts the exit and fails the run.
 # The E2E uses CPU unless --backend is given. For the official checkpoint, pass
