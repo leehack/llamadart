@@ -3647,11 +3647,12 @@ void main() {
         final checked = <GpuBackend>[];
         final service = LlamaCppService(
           isIosSimulator: true,
-          // Pins a Metal device, so a macOS host without one still loads.
+          // Pins a Metal device, so a host without one still loads and warns.
           deviceTypes: (backend) {
             checked.add(backend);
             return [ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value];
           },
+          registeredDevices: () => const <GgmlDeviceEntry>[],
         );
         addTearDown(service.dispose);
 
@@ -3663,7 +3664,7 @@ void main() {
         expect(checked, [GpuBackend.metal]);
         expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
         expect(simulatorWarnings(), hasLength(1));
-      }, testOn: 'mac-os');
+      });
 
       test('gpu with auto throws naming Metal off macOS', () {
         final service = LlamaCppService(isIosSimulator: true);
