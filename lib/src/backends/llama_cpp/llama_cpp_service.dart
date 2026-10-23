@@ -508,6 +508,9 @@ final RegExp _linuxLlamadartProcMapsPattern = RegExp(
 const int _maxLlamaCppReasoningBudgetTokens = 0x7fffffff;
 const String _minimumDsparkNativeTag = 'b10356';
 
+/// llama.cpp's DFlash block size when a draft model has no `dflash.block_size`.
+const int _llamaCppDefaultDflashBlockSize = 16;
+
 class _LlamaCppThinkingBudgetConfig {
   const _LlamaCppThinkingBudgetConfig({
     required this.maxTokens,
@@ -579,6 +582,10 @@ class _LlamaCppSpeculativeConfig {
   bool get usesMtp => strategies.contains(SpeculativeDecodingStrategy.mtp);
 
   bool get usesDspark =>
+      strategies.contains(SpeculativeDecodingStrategy.draftDspark);
+
+  bool get usesBlockDraft =>
+      strategies.contains(SpeculativeDecodingStrategy.draftDflash) ||
       strategies.contains(SpeculativeDecodingStrategy.draftDspark);
 
   bool get suppressDraftProcessLogits => strategies.any(
@@ -4791,6 +4798,52 @@ class LlamaCppService {
     }
   }
 
+  void _validateLiliCorrDraftMicroBatchSize(
+    _LlamaCppSpeculativeConfig config,
+    String? Function(String key) draftMetadata,
+  ) {
+    final draftMicroBatchSize = config.draftMicroBatchSize;
+    if (draftMicroBatchSize == null || !config.usesBlockDraft) {
+      return;
+    }
+    int? metadataInt(String key) =>
+        int.tryParse(draftMetadata(key)?.trim() ?? '');
+    // llama.cpp decodes a LiliCorr draft's whole trained block, whatever
+    // draftTokenMax is, and aborts when it does not fit one micro-batch.
+    final liliCorrTopK = metadataInt('lilicorr.candidate_topk') ?? 0;
+    if (liliCorrTopK <= 0) {
+      return;
+    }
+    final blockSize =
+        metadataInt('dflash.block_size') ?? _llamaCppDefaultDflashBlockSize;
+    if (draftMicroBatchSize < blockSize) {
+      throw LlamaArgumentException(
+        'SpeculativeDecodingConfig.draftMicroBatchSize ($draftMicroBatchSize) '
+        'must be at least the draft model block size dflash.block_size '
+        '($blockSize) for a LiliCorr draft model (lilicorr.candidate_topk '
+        '$liliCorrTopK), which llama.cpp draft-dflash and draft-dspark decode '
+        'as a whole block in one micro-batch.',
+        name: 'draftMicroBatchSize',
+        invalidValue: draftMicroBatchSize,
+      );
+    }
+  }
+
+  /// Validates a speculative draft micro-batch size against a block draft
+  /// model's metadata for unit tests.
+  void debugValidateLiliCorrDraftMicroBatchSizeForTesting(
+    GenerationParams params,
+    Map<String, String> draftMetadata,
+  ) {
+    final config = _resolveLlamaCppSpeculativeConfig(
+      params,
+      hasMediaParts: false,
+    );
+    if (config != null) {
+      _validateLiliCorrDraftMicroBatchSize(config, (key) => draftMetadata[key]);
+    }
+  }
+
   /// Validates a speculative draft micro-batch size against a context's
   /// resolved logical batch and context sizes for unit tests.
   void debugValidateDraftMicroBatchSizeForTesting(
@@ -5135,6 +5188,12 @@ class LlamaCppService {
                 'speculative draft model',
                 loadMtp: speculativeConfig.usesMtp,
               );
+        if (draftModel != null) {
+          _validateLiliCorrDraftMicroBatchSize(
+            speculativeConfig,
+            (key) => _readModelMetadataValue(draftModel.pointer, key),
+          );
+        }
         speculativeSession = speculativeApi.initSession(
           targetModel: model.pointer,
           draftModel: draftModel?.pointer,
@@ -7807,22 +7866,22 @@ class LlamaCppService {
   /// Returns one metadata value without enumerating the full model metadata.
   String? _getModelMetadataValue(int modelHandle, String key) {
     final model = _models[modelHandle];
-    if (model == null || key.isEmpty) return null;
+    if (model == null) return null;
+    return _readModelMetadataValue(model.pointer, key);
+  }
+
+  String? _readModelMetadataValue(Pointer<llama_model> model, String key) {
+    if (key.isEmpty) return null;
 
     final keyPtr = key.toNativeUtf8();
     try {
-      final length = llama_model_meta_val_str(
-        model.pointer,
-        keyPtr.cast(),
-        nullptr,
-        0,
-      );
+      final length = llama_model_meta_val_str(model, keyPtr.cast(), nullptr, 0);
       if (length < 0) return null;
 
       final valueBuf = malloc<Int8>(length + 1);
       try {
         final written = llama_model_meta_val_str(
-          model.pointer,
+          model,
           keyPtr.cast(),
           valueBuf.cast(),
           length + 1,
