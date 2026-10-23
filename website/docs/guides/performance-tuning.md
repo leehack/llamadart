@@ -249,8 +249,10 @@ Knobs:
   whole draft block in one micro-batch. With a LiliCorr draft model (GGUF
   `lilicorr.candidate_topk` above zero) that block is the model's
   `dflash.block_size` (16 when absent), so it must also be at least that.
-  Unset, the target's resolved `microBatchSize` must meet the same block
-  bounds. N-gram-only configurations, WebGPU and LiteRT-LM reject it.
+  Unset, the target's resolved `microBatchSize` must hold the block llama.cpp
+  actually decodes: the LiliCorr block, or else `draftTokenMax` capped by the
+  draft model's `dflash.block_size`, plus one except for anchor-first DSpark.
+  N-gram-only configurations, WebGPU and LiteRT-LM reject it.
 - `loadMtp` (`ModelParams`): keep it `false` unless bundled MTP tensors will
   be used, because loading them costs memory. An external MTP draft model
   loads as MTP automatically.

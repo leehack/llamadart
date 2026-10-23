@@ -143,7 +143,7 @@ void main() {
         'before creating a session', () async {
       final smallContext = service.createContext(
         model,
-        _contextParams(microBatchSize: 4),
+        _contextParams(microBatchSize: 3),
       );
       await expectLater(
         generate(
@@ -154,7 +154,7 @@ void main() {
             draftTokenMax: 4,
           ),
         ),
-        _argumentError('draftTokenMax + 1 (5)', name: 'microBatchSize'),
+        _argumentError('the 4-token draft block', name: 'microBatchSize'),
       );
       await expectLater(
         generate(
