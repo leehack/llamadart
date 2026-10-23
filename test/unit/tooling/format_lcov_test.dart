@@ -106,7 +106,6 @@ _Fixture _fixture() {
       'hits': [4, 5],
     },
   ]);
-  _write('$coverageDir/not_coverage.json', jsonEncode({'hello': 1}));
   _write('$coverageDir/notes.txt', 'not json');
 
   return _Fixture(root, libDir, coverageDir);
@@ -184,6 +183,37 @@ void main() {
     expect(actual, contains('DA:1,1'));
     expect(actual, contains('DA:4,7'));
     expect(actual, isNot(contains('DA:3,')));
+  });
+
+  test('a .json input that is not a coverage report fails like the pinned '
+      'formatter', () async {
+    for (final contents in [
+      {'hello': 1},
+      {'coverage': 'not a list'},
+      <Object>[],
+    ]) {
+      final fixture = _fixture();
+      _write(
+        '${fixture.coverageDir}/nested/not_coverage.json',
+        jsonEncode(contents),
+      );
+      final unrecognized = isA<FormatException>().having(
+        (e) => e.message,
+        'message',
+        contains('not_coverage.json'),
+      );
+
+      await expectLater(
+        _referenceLcov(fixture, checkIgnore: true),
+        throwsA(unrecognized),
+        reason: '$contents',
+      );
+      await expectLater(
+        format_lcov.formatLcovReport(fixture.options(checkIgnore: true)),
+        throwsA(unrecognized),
+        reason: '$contents',
+      );
+    }
   });
 
   test('the CI command line parses to the CI semantics', () {

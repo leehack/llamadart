@@ -703,4 +703,4 @@ void main() {
 
 /// `coverage` version `pubspec.yaml` pins and the LCOV formatter was verified
 /// against.
-const _pinnedCoverageVersion = '1.15.1';
+const _pinnedCoverageVersion = '1.16.0';
