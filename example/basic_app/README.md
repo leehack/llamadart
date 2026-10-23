@@ -27,6 +27,10 @@ start if `draftModel` is missing.
 
 ## Usage
 
+Custom Jinja chat templates accept `\xHH` string escapes. Use
+`engine.chatTemplate(...)` to inspect the rendered prompt before generation;
+see [chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing).
+
 To try an imported JSON Schema with nested array arguments, run:
 
 ```bash

@@ -20,6 +20,10 @@ description: >-
     every call and append the assistant reply yourself.
   - `engine.generate(prompt)` only for an already-rendered raw prompt; it skips
     the chat template.
+- Embedded and custom Jinja templates accept `\xHH` string escapes;
+  `\x00` matches NUL, and `\\x41` preserves literal `\x41`. A malformed
+  escape raises `LlamaException` naming the template source. A valid template
+  also needs a runtime that supports the model architecture.
 - Every API returns a `Stream`. Read `chunk.text` for answer text and
   `chunk.thinking` for reasoning (empty strings when a chunk has none), and
   render the channels separately. `chunk.finishReason` is a typed
