@@ -107,11 +107,6 @@ has_complete_native_spm_runtime() {
   done < <(required_native_spm_files)
 }
 
-has_complete_embedded_runtime() {
-  validate_litert_dir "$RUNTIME_DIR" && return 0
-  has_complete_native_spm_runtime
-}
-
 resolve_litert_dir() {
   if [[ -n "${LLAMADART_LITERT_LM_LIB_DIR:-}" ]]; then
     validate_litert_dir "$LLAMADART_LITERT_LM_LIB_DIR" "explicit"
@@ -157,10 +152,28 @@ install_library() {
   sign_if_needed "$target"
 }
 
-if [[ "${LLAMADART_FORCE_LITERT_LM_PREPARE:-}" != "1" ]] && \
-   has_complete_embedded_runtime; then
-  echo "Complete LiteRT-LM runtime detected; skipping legacy macOS runtime copy."
-  exit 0
+embedded_runtime_matches() {
+  local source_dir="$1"
+  local library
+
+  while IFS= read -r library; do
+    cmp -s "$source_dir/$library" "$RUNTIME_DIR/$library" || return 1
+  done < <(required_libraries)
+}
+
+if [[ "${LLAMADART_FORCE_LITERT_LM_PREPARE:-}" != "1" ]]; then
+  if validate_litert_dir "$RUNTIME_DIR"; then
+    # An incremental build after a core upgrade must not keep the old runtime.
+    if ! PREPARED_DIR="$(resolve_litert_dir 2>/dev/null)" ||
+       embedded_runtime_matches "$PREPARED_DIR"; then
+      echo "Complete LiteRT-LM runtime detected; skipping legacy macOS runtime copy."
+      exit 0
+    fi
+    echo "Embedded LiteRT-LM runtime differs from $PREPARED_DIR; replacing it."
+  elif has_complete_native_spm_runtime; then
+    echo "Complete LiteRT-LM runtime detected; skipping legacy macOS runtime copy."
+    exit 0
+  fi
 fi
 
 LITERT_DIR="$(resolve_litert_dir)"

@@ -220,6 +220,72 @@ void main() {
     }, skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false);
 
     test(
+      'replaces a bundled runtime that differs from the prepared one',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_skew_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = Directory(path.join(root.path, 'litert'))..createSync();
+        for (final library in _arm64Libraries) {
+          await File(path.join(libDir.path, library)).writeAsString('new');
+        }
+
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        final runtimeDir = Directory(
+          path.join(appDir.path, 'Contents', 'Frameworks', 'LiteRtLmRuntime'),
+        )..createSync(recursive: true);
+        for (final library in _arm64Libraries) {
+          await File(path.join(runtimeDir.path, library)).writeAsString('old');
+        }
+
+        final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(result.stdout, contains('differs from'));
+        expect(result.stdout, contains('Prepared LiteRT-LM macOS'));
+        for (final library in _arm64Libraries) {
+          expect(
+            File(path.join(runtimeDir.path, library)).readAsStringSync(),
+            'new',
+            reason: library,
+          );
+        }
+      },
+      skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
+    );
+
+    test(
+      'skips when the bundled runtime bytes match the prepared one',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_match_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = Directory(path.join(root.path, 'litert'))..createSync();
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        final runtimeDir = Directory(
+          path.join(appDir.path, 'Contents', 'Frameworks', 'LiteRtLmRuntime'),
+        )..createSync(recursive: true);
+        for (final library in _arm64Libraries) {
+          await File(path.join(libDir.path, library)).writeAsString('same');
+          await File(path.join(runtimeDir.path, library)).writeAsString('same');
+        }
+        final marker = File(path.join(runtimeDir.path, 'untouched'))
+          ..createSync();
+
+        final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(result.stdout, contains('Complete LiteRT-LM runtime detected'));
+        expect(marker.existsSync(), isTrue);
+      },
+      skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
+    );
+
+    test(
       'does not treat partial arm64 native SPM runtime as complete',
       () async {
         final root = await Directory.systemTemp.createTemp(
