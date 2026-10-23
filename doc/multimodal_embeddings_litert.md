@@ -49,7 +49,10 @@ that no partial result is returned and the engine remains reusable.
 setting; it is not a token truncation limit. Available signatures depend on the
 bundle, so a small value may select a larger supported signature. Overflow still
 fails the whole call. `numberOfThreads`, `liteRtLmCacheDir`, and native CPU device
-selection are applied. Explicit LoRA, chat templates, activation type, prefill chunk
+selection are applied. The audio encoder always runs on one CPU thread: with
+more threads, XNNPACK's SME2 GEMM path makes audio vectors nondeterministic
+([google/XNNPACK#11789](https://github.com/google/XNNPACK/issues/11789)).
+Runtimes without the audio thread setter keep their default. Explicit LoRA, chat templates, activation type, prefill chunk
 size, parallel section loading, dispatch library directory, program cache limits,
 MTP/rollback settings and Web memory hints are rejected with
 `LlamaUnsupportedException` naming the option and embedding mode before model I/O.
@@ -66,13 +69,33 @@ native processor on the caller isolate.
 Model: `litert-community/embeddinggemma-2-740m.litertlm`, supplied revision
 `24d962e9`. SHA-256:
 `e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c`.
-Native: hook-prepared `v0.18.0-2`, upstream LiteRT-LM
-`b2f686e2ed4718fb84ec398a61dd59ca0f0aff27`, macOS arm64 CPU, both processors
-on CPU, max input length 1024. No model download or pin change is involved.
-All six normalized native CPU vectors have width 768 and match the standalone
-upstream C API reference with cosine 1.0 and relative L2 0.0. Tests also cover
-raw/normalized direction, media sensitivity, reverse batch order, string/content
-and adjacent-text parity, overflow, cancellation/reuse and engine separation.
+Native: hook-prepared `v0.18.1` (upstream LiteRT-LM `v0.18.1`), macOS arm64
+(M4 Max, SME2) CPU, both processors on CPU, max input length 1024, audio
+encoder on one thread. No model download or pin change is involved. All six normalized native CPU vectors have
+width 768 and match the standalone upstream C API reference
+(`multimodal_embedding_litert_reference.py`, also at one audio thread) with
+cosine 1.0 and relative L2 0.0. Ten embeddings of the same audio on one engine
+are bit-identical. Tests also cover raw/normalized direction, media sensitivity,
+reverse batch order, string/content and adjacent-text parity, overflow,
+cancellation/reuse and engine separation.
+
+Image, audio and mixed vectors differ from those of `v0.18.0-2`/`v0.18.0-3`
+(0.15.x); text is unchanged. The upstream numerics change behind this is not
+attributed yet
+([litert-lm-native#82](https://github.com/leehack/litert-lm-native/issues/82)).
+
+| Input | v0.18.1 vs v0.18.0-2 cosine | Relative L2 |
+| --- | ---: | ---: |
+| `hello world` | 1.0000000000 | 0% |
+| Black PNG | 0.9985080097 | 5.46% |
+| Checkerboard PNG | 0.9991620869 | 4.09% |
+| One-second 16 kHz silence | 0.9998176891 | 1.91% |
+| One-second 440 Hz tone | 0.9984945472 | 5.49% |
+| Interleaved text/image/audio | 0.9989242453 | 4.64% |
+
+One audio thread raises the median one-second audio embedding latency from
+about 76 ms to 111 ms (about 1.4×) on this host; image and text latency is
+unchanged.
 
 Web: Chrome 155.0.8059.40, headless with `--enable-unsafe-webgpu --use-angle=metal`
 and the test runner's GPU-disable flags removed. `navigator.gpu.requestAdapter()`
@@ -84,7 +107,7 @@ adjacent-text checks passed in the prototype, but the required native parity
 gate failed for every input. That integration was removed; the durable local-only
 Web qualification test calls the upstream package directly.
 
-| Input | WebGPU vs native CPU cosine | Relative L2 |
+| Input | WebGPU vs `v0.18.0-2` native CPU cosine | Relative L2 |
 | --- | ---: | ---: |
 | `hello world` | 0.9981586925 | 6.06845% |
 | Black PNG | 0.9983765510 | 5.69816% |

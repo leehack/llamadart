@@ -61,6 +61,32 @@ void main() {
     },
     skip: model == null ? 'Set LITERT_LM_EMBEDDING_MODEL.' : false,
   );
+  test(
+    'repeated CPU audio embeddings are bit-identical (google/XNNPACK#11789)',
+    () async {
+      final engine = LlamaEngine(LlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModel(
+        model!,
+        modelParams: ModelParams(
+          liteRtLmEmbeddingEngine: true,
+          device: ComputeDevice.cpu,
+          contextSize: 1024,
+          liteRtLmCacheDir: temp().path,
+        ),
+      );
+      final tone = liteRtEmbeddingInputs()['tone']!;
+      final first = await engine.embedContent(tone, normalize: false);
+      for (var i = 1; i < 10; i++) {
+        expect(
+          await engine.embedContent(tone, normalize: false),
+          orderedEquals(first),
+          reason: 'call $i',
+        );
+      }
+    },
+    skip: model == null ? 'Set LITERT_LM_EMBEDDING_MODEL.' : false,
+  );
   test('LiteRT embedding-only model text/media/batch/limits/reuse', () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);

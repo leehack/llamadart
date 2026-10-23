@@ -725,6 +725,49 @@ void main() {
     );
   }
 
+  test('CPU engines run the audio encoder on one thread', () async {
+    final session = await create();
+    addTearDown(session.dispose);
+    final audioThreads = DynamicLibrary.open(
+      library,
+    ).lookupFunction<Int Function(), int Function()>('audio_num_threads');
+    expect(session.capabilities.audio, isTrue);
+    expect(audioThreads(), 1);
+  });
+
+  test('runtimes without the audio thread setter keep their default', () async {
+    const symbol = 'litert_lm_embedding_engine_settings_set_audio_num_threads';
+    final source = File('${suite().path}/no-audio-threads.c');
+    await source.writeAsString(_source.replaceAll(symbol, 'unused_audio'));
+    final path =
+        '${suite().path}/no-audio-threads${Platform.isMacOS ? '.dylib' : '.so'}';
+    final built = await Process.run('cc', [
+      Platform.isMacOS ? '-dynamiclib' : '-shared',
+      '-fPIC',
+      source.path,
+      '-o',
+      path,
+    ]);
+    expect(built.exitCode, 0, reason: '${built.stderr}');
+    final lib = DynamicLibrary.open(path);
+    expect(lib.providesSymbol(symbol), isFalse);
+    final session = await create(libraryPath: path);
+    try {
+      expect(session.capabilities.audio, isTrue);
+      expect(await session.compute(input(), normalize: false), [3, 4]);
+    } finally {
+      session.dispose();
+    }
+    expect(
+      lib.lookupFunction<Int Function(), int Function()>('audio_num_threads')(),
+      -1,
+    );
+    expect(
+      lib.lookupFunction<Int Function(), int Function()>('allocations')(),
+      0,
+    );
+  });
+
   const batchOnly = [
     'engine_compute_embedding_batch',
     'responses_delete',
@@ -841,8 +884,9 @@ void* litert_lm_engine_settings_create(void){return NULL;}
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
-static int mode=0, processors=0, signature=0;
+static int mode=0, processors=0, signature=0, audio_threads=-1;
 int signature_limit(void){return signature;}
+int audio_num_threads(void){return audio_threads;}
 static atomic_int live=0;
 static atomic_int compute_count=0, released=0;
 int compute_calls(void){return compute_count;}
@@ -854,11 +898,12 @@ static void* alloc(void){live++;return calloc(1,16);}
 static void del(void*p){if(p){live--;free(p);}}
 void* tracked_alloc(size_t n){live++;return calloc(1,n);}
 void tracked_free(void*p){del(p);}
-void* litert_lm_embedding_engine_settings_create(const char*m,const char*b,const char*v,const char*a){processors=(v&&strcmp(v,"cpu")==0?1:0)|(a&&strcmp(a,"cpu")==0?2:0);return mode==9||strcmp(b,"cpu")!=0?NULL:alloc();}
+void* litert_lm_embedding_engine_settings_create(const char*m,const char*b,const char*v,const char*a){audio_threads=-1;processors=(v&&strcmp(v,"cpu")==0?1:0)|(a&&strcmp(a,"cpu")==0?2:0);return mode==9||strcmp(b,"cpu")!=0?NULL:alloc();}
 void litert_lm_embedding_engine_settings_delete(void*p){del(p);}
 void litert_lm_embedding_engine_settings_set_cache_dir(void*p,const char*s){}
 void litert_lm_embedding_engine_settings_set_max_input_length(void*p,int n){signature=n;}
 void litert_lm_embedding_engine_settings_set_num_threads(void*p,int n){((int*)p)[0]=n;}
+void litert_lm_embedding_engine_settings_set_audio_num_threads(void*p,int n){audio_threads=n;}
 void* litert_lm_embedding_engine_create(void*p){if(mode==12){compute_count++;while(!released)usleep(1000);}return mode==10||((int*)p)[0]!=2?NULL:alloc();}
 void litert_lm_embedding_engine_delete(void*p){del(p);}
 void* litert_lm_embedding_options_create(void){return mode==1?NULL:alloc();}

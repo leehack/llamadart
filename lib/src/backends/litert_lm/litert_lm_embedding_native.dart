@@ -134,6 +134,17 @@ int _createEmbeddingEngine(
         threads,
       );
     }
+    // Multi-threaded XNNPACK PF32 SME2 GEMMs make audio embeddings
+    // nondeterministic (google/XNNPACK#11789). The setter no-ops without an
+    // audio encoder, and older runtimes lacking it keep their default.
+    const audioThreads =
+        'litert_lm_embedding_engine_settings_set_audio_num_threads';
+    if (lib.providesSymbol(audioThreads)) {
+      api.litert_lm_embedding_engine_settings_set_audio_num_threads(
+        settings,
+        1,
+      );
+    }
     final engine = api.litert_lm_embedding_engine_create(settings);
     if (engine == nullptr) {
       throw LlamaUnsupportedException(

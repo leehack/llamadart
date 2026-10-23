@@ -366,7 +366,9 @@ request never enters native inference. Reuse waits for any active native item to
 settle.
 
 `contextSize` selects the model's encoder signature without truncating inputs.
-Embedding mode applies `numberOfThreads`, `cacheDir` and CPU selection;
+Embedding mode applies `numberOfThreads`, `cacheDir` and CPU selection; the
+audio encoder runs on one thread so that audio vectors are deterministic
+([google/XNNPACK#11789](https://github.com/google/XNNPACK/issues/11789)).
 LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths,
 program cache limits, MTP/rollback and Web memory hints throw
 `LlamaUnsupportedException` before model I/O. Native CPU qualification is limited

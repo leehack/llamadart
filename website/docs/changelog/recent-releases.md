@@ -11,6 +11,7 @@ For canonical full release notes, use:
 
 - Fix hexadecimal string escapes in embedded and custom chat templates, including Flint's template ([#1335](https://github.com/leehack/llamadart/issues/1335)).
 - `SpeculativeDecodingConfig.draftMicroBatchSize` must be at least a LiliCorr draft model's `dflash.block_size` (16 when absent) for llama.cpp `draftDflash` and `draftDspark`: generation throws `LlamaArgumentException` instead of aborting the process when the block does not fit one draft micro-batch ([#1330](https://github.com/leehack/llamadart/issues/1330)).
+- LiteRT-LM native audio embeddings are deterministic again on CPUs with SME2, such as Apple M4: the audio encoder runs on one thread, which makes audio embedding about 1.4× slower ([#1340](https://github.com/leehack/llamadart/issues/1340)). Image, audio and mixed vectors from runtime `v0.18.1` still differ slightly from 0.15.x (cosine about 0.998), an upstream change tracked in [litert-lm-native#82](https://github.com/leehack/litert-lm-native/issues/82).
 
 ## 0.16.0
 
