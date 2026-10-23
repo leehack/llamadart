@@ -261,6 +261,11 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
     JSArray? parts,
     JSAny? signal,
   });
+
+  /// `false` keeps the prompt out of the penalty window; set only when the
+  /// core reports `penaltyPromptTokens`.
+  @JS('penaltyPromptTokens')
+  external set penaltyPromptTokens(bool value);
 }
 
 /// Reasoning-block budget in [WebGpuCompletionOptions].
@@ -291,6 +296,11 @@ extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
   /// Whether the loaded core applies `thinkingBudget`.
   @JS('thinkingBudget')
   external JSAny? get thinkingBudget;
+
+  /// Whether the loaded core counts the prompt in its penalty window and
+  /// applies `penaltyPromptTokens`.
+  @JS('penaltyPromptTokens')
+  external JSAny? get penaltyPromptTokens;
 
   /// Whether the loaded models can run each speculative strategy, by its
   /// llama.cpp name.

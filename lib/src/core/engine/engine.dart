@@ -1736,6 +1736,7 @@ class LlamaEngine {
                 params: plan.generationParams,
                 parts: plan.mediaParts,
                 chatMediaMarker: chatMediaMarker,
+                excludePromptFromPenalties: plan.excludesPromptFromPenalties,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
                 request: request,
@@ -2043,6 +2044,7 @@ class LlamaEngine {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
     String? chatMediaMarker,
+    bool excludePromptFromPenalties = false,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
     required GenerationRequest request,
@@ -2056,6 +2058,9 @@ class LlamaEngine {
       if (request.isCancelled()) return;
       final resolvedParams = await _resolveDraftModel(params, request);
       if (resolvedParams == null) return;
+      if (excludePromptFromPenalties) {
+        markPromptExcludedFromPenalties(resolvedParams);
+      }
       _ensureReady();
 
       try {

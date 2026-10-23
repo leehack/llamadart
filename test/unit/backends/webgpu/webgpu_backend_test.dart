@@ -83,6 +83,7 @@ void main() {
     String? lastMmprojPath;
     String? lastPrompt;
     String? lastGrammar;
+    JSObject? lastCompletionOptions;
     String? lastStateSavePath;
     List<int>? lastStateSaveTokens;
     String? lastStateLoadPath;
@@ -278,6 +279,7 @@ void main() {
       lastMmprojPath = null;
       lastPrompt = null;
       lastGrammar = null;
+      lastCompletionOptions = null;
       lastStateSavePath = null;
       lastStateSaveTokens = null;
       lastStateLoadPath = null;
@@ -305,6 +307,7 @@ void main() {
         ((String prompt, JSObject opts) {
           createCompletionCallCount += 1;
           lastPrompt = prompt;
+          lastCompletionOptions = opts;
           final grammarRaw = opts.getProperty('grammar'.toJS);
           lastGrammar = grammarRaw.isA<JSString>()
               ? (grammarRaw as JSString).toDart
@@ -4411,6 +4414,64 @@ void main() {
         expect(lastGrammar, contains('get_weather'));
       });
 
+      group('prompt penalty window', () {
+        void reportPenaltyPromptTokens(JSAny? reported) {
+          bridge.setProperty(
+            'getCompletionCapabilities'.toJS,
+            (() => Future<JSObject>.value(
+              JSObject()..setProperty('penaltyPromptTokens'.toJS, reported),
+            ).toJS).toJS,
+          );
+        }
+
+        bool sentPenaltyPromptTokens() => lastCompletionOptions!
+            .hasProperty('penaltyPromptTokens'.toJS)
+            .toDart;
+
+        test('ToolChoice.auto keeps the prompt out on assets that report '
+            'penaltyPromptTokens', () async {
+          reportPenaltyPromptTokens(true.toJS);
+          final engine = await loadHermesEngine();
+
+          await createWithTools(engine, ToolChoice.auto);
+          expect(lastGrammar, isNull);
+          expect(sentPenaltyPromptTokens(), isTrue);
+          expect(
+            lastCompletionOptions!.getProperty<JSAny?>(
+              'penaltyPromptTokens'.toJS,
+            ),
+            false.toJS,
+          );
+
+          await createWithTools(engine, ToolChoice.required);
+          expect(sentPenaltyPromptTokens(), isFalse);
+
+          await engine.create(<LlamaChatMessage>[
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ]).drain<void>();
+          expect(sentPenaltyPromptTokens(), isFalse);
+        });
+
+        test('ToolChoice.auto sends no penaltyPromptTokens on assets that do '
+            'not report it', () async {
+          for (final reported in <JSAny?>[
+            null,
+            false.toJS,
+            'true'.toJS,
+            1.toJS,
+          ]) {
+            if (reported != null) reportPenaltyPromptTokens(reported);
+            final engine = await loadHermesEngine();
+
+            await createWithTools(engine, ToolChoice.auto);
+
+            expect(lastGrammar, isNull);
+            expect(sentPenaltyPromptTokens(), isFalse, reason: '$reported');
+            await engine.unloadModel();
+          }
+        });
+      });
+
       test(
         'generate rejects lazy grammar and a non-root start symbol',
         () async {
@@ -6194,6 +6255,69 @@ void main() {
           }
           await backend.modelFree(1);
         }
+      });
+
+      group('penaltyPromptTokens', () {
+        GenerationParams marked([String? grammar]) {
+          final params = GenerationParams(grammar: grammar);
+          markPromptExcludedFromPenalties(params);
+          return params;
+        }
+
+        FakeFeatureBridge reportingBridge() => FakeFeatureBridge()
+          ..completionCapabilities = <String, bool>{
+            'penaltyPromptTokens': true,
+          };
+
+        test('sends false only for a marked request', () async {
+          newBridge = reportingBridge;
+          await loadModel();
+
+          await generate(marked());
+          expect(fake().hasCompletionOption('penaltyPromptTokens'), isTrue);
+          expect(fake().completionOption('penaltyPromptTokens'), isFalse);
+
+          await generate(const GenerationParams());
+          expect(fake().hasCompletionOption('penaltyPromptTokens'), isFalse);
+        });
+
+        test('sends nothing on assets that do not report it', () async {
+          final unreported = <FakeFeatureBridge Function()>[
+            () => FakeFeatureBridge(withCompletionProbe: false),
+            FakeFeatureBridge.new,
+            () =>
+                FakeFeatureBridge()
+                  ..completionCapabilitiesResult = (JSObject()
+                    ..setProperty('penaltyPromptTokens'.toJS, 'true'.toJS)),
+          ];
+          for (final (index, create) in unreported.indexed) {
+            newBridge = create;
+            await loadModel();
+
+            expect(await generate(marked()), 'Hello');
+            expect(
+              fake().hasCompletionOption('penaltyPromptTokens'),
+              isFalse,
+              reason: 'bridge $index',
+            );
+            await backend.modelFree(1);
+          }
+        });
+
+        test('passes the grammar through unchanged, empty included', () async {
+          newBridge = reportingBridge;
+          await loadModel();
+
+          for (final grammar in <String?>[null, '', 'root ::= "a"']) {
+            for (final params in <GenerationParams>[
+              marked(grammar),
+              GenerationParams(grammar: grammar),
+            ]) {
+              await generate(params);
+              expect(fake().completionOption('grammar'), grammar);
+            }
+          }
+        });
       });
 
       test('rejects every option on assets without the probe', () async {

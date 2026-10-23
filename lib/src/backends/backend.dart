@@ -179,6 +179,25 @@ abstract class BackendLazyGrammarSupport {
   bool get supportsLazyGrammar;
 }
 
+final Expando<bool> _promptExcludedFromPenalties = Expando<bool>(
+  'llamadart.promptExcludedFromPenalties',
+);
+
+/// Marks [params] of a request whose lazy grammar the engine dropped because
+/// the backend cannot apply one.
+///
+/// llama.cpp keeps the prompt out of the repetition and presence penalty
+/// window while a lazy grammar is set. A backend that would otherwise count
+/// the prompt keeps it out for marked params, so its output matches native for
+/// the same seed. Internal engine plumbing, not part of the backend SPI.
+void markPromptExcludedFromPenalties(GenerationParams params) {
+  _promptExcludedFromPenalties[params] = true;
+}
+
+/// Whether [markPromptExcludedFromPenalties] marked [params].
+bool isPromptExcludedFromPenalties(GenerationParams params) =>
+    _promptExcludedFromPenalties[params] ?? false;
+
 /// Optional backend capability for native structured chat generation.
 ///
 /// Backends that implement this can receive chat messages and tools directly
