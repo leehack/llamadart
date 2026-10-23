@@ -42,6 +42,16 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.16.x: runtime-specific parameters and Apple companions
+
+For the 0.15-to-0.16 changes, follow the
+[0.16 migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#015x-to-0160-upgrade-guide).
+`ModelParams` fields the model's runtime would ignore now throw
+`LlamaUnsupportedException`; move LiteRT-LM options to `LiteRtLmModelParams`.
+Upgrade core and every Apple companion to `0.16.x` together: companions
+`0.16.0` require `>=0.16.0 <0.17.0`, and core `0.16.x` accepts no earlier
+stable_diffusion companion.
+
 ### 0.15.x: media embeddings and Apple companions
 
 For the breaking 0.14-to-0.15 changes, follow the

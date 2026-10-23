@@ -1,6 +1,7 @@
-## Unreleased
+## 0.16.0
 
-* Updated Apple SwiftPM native pin to `leehack/stable-diffusion-native@v0.3.0`.
+* Pair with core `0.16.x`; update Apple SwiftPM to `leehack/stable-diffusion-native@v0.3.0`, which loads legacy
+  checkpoints above 2 GiB.
 
 ## 0.15.2
 

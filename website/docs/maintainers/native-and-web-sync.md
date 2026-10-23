@@ -283,6 +283,11 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+Core `0.16.0` preparation pairs all three Apple companions at `0.16.0`, with
+SwiftPM pins `v0.7.0-2`, `v0.18.1` and `v0.3.0`, and constrains them to
+`llamadart: '>=0.16.0 <0.17.0'`. Merge remains the approval boundary for
+publication.
+
 Core `0.15.6` preparation pairs the llama.cpp and LiteRT-LM companions at
 `0.15.2`, with SwiftPM pins `v0.7.0-2` and `v0.18.0-3`, and constrains both to
 `llamadart: '>=0.15.6 <0.16.0'`: cores `0.15.0` to `0.15.5` reject the

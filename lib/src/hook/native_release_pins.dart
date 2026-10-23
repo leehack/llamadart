@@ -213,7 +213,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 const stableDiffusionReleaseTag = 'v0.3.0';
 
 /// First Apple companion release containing [stableDiffusionReleaseTag].
-const stableDiffusionAppleCompanionVersion = '0.15.3';
+const stableDiffusionAppleCompanionVersion = '0.16.0';
 
 /// Explicitly qualified older Apple SD pins that preserve existing app locks.
 ///

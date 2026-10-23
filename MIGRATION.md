@@ -6,6 +6,11 @@ This document covers the major breaking upgrade paths.
 
 ## `0.15.x` -> `0.16.0`: upgrade guide
 
+Upgrade core and every Apple companion used by the app to `0.16.x` together.
+Companions now constrain core to `'>=0.16.0 <0.17.0'`. The llama.cpp companion
+keeps `v0.7.0-2`; LiteRT-LM and stable_diffusion move to `v0.18.1` and
+`v0.3.0`.
+
 ### Runtime-specific `ModelParams` fields are rejected, not ignored
 
 A load throws `LlamaUnsupportedException` naming each `ModelParams` field set
@@ -96,7 +101,7 @@ named parameters; subclasses that override them must declare them.
 
 The native-assets hook and the LiteRT-LM Apple companion source pin
 `v0.18.1`. A Flutter macOS app loads LiteRT-LM from its own bundle only with
-the companion release that pins `v0.18.1`; a companion pinning a `v0.18.0`
+companion `0.16.0`, which pins `v0.18.1`; a companion pinning a `v0.18.0`
 build keeps macOS LiteRT-LM in the hook cache with a build warning. The app
 API is unchanged, and native GPU embeddings still throw
 `LlamaUnsupportedException`.
@@ -105,7 +110,7 @@ API is unchanged, and native GPU embeddings still throw
 
 The hook and the stable_diffusion Apple companion source pin `v0.3.0`, whose
 `sd_ctx_params_t` is larger than in `v0.2.0-4`. A Flutter iOS or macOS build
-needs the companion release that pins `v0.3.0`; upgrade both together. Apps
+needs companion `0.16.0`, which pins `v0.3.0`; upgrade both together. Apps
 that depend on a published companion hit pub resolution first, because
 companions before `0.16.0` constrain `llamadart` below `0.16.0`. Apps that
 depend on `llamadart` or the companion from git or a path and keep an older
