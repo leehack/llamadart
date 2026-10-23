@@ -417,12 +417,15 @@ companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
 an earlier build is accepted only when the core explicitly lists it as
-ABI-compatible. Core `0.15.6` pairs with companion `0.15.2` and native
-`v0.7.0-2`, and lists `v0.7.0-1` (companions `0.15.0` and `0.15.1`), which
-builds with an upgrade warning. Cores `0.15.0` to `0.15.5` list no earlier
+ABI-compatible. Core `0.16.x` pairs with companion `0.16.0` and core `0.15.6`
+with companion `0.15.2`, both for native `v0.7.0-2`. Both cores list
+`v0.7.0-1` (companions `0.15.0` and `0.15.1`), which builds with an upgrade
+warning. Cores `0.15.0` to `0.15.5` list no earlier
 companion pins: use companion `0.15.0` or `0.15.1` with native `v0.7.0-1`.
 Core `0.14.x` pairs with companion
-`0.14.0` and native `v0.7.0`. Earlier companion pins are rejected. The tag,
+`0.14.0` and native `v0.7.0`. Earlier companion pins are rejected. The
+stable_diffusion check lists no earlier pins: core `0.16.x` requires companion
+`0.16.0` (`v0.3.0`). The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. On macOS the hook hands LiteRT-LM to the companion
@@ -436,8 +439,9 @@ LiteRT-LM release, such as `v0.18.1` before a `v0.18.1-1` core, still embeds
 the complete macOS runtime, which the app loads from its bundle, so the build
 only warns to upgrade the companion. A maintained manifest pinning any other
 LiteRT-LM release or a later build of the same release warns to upgrade the
-core and companion together. Companions `0.0.15` to `0.15.2` pin `v0.18.0`
-to `v0.18.0-3`, a different release from this core's `v0.18.1`.
+core and companion together. Companion `0.16.0` pins `v0.18.1`; companions
+`0.0.15` to `0.15.2` pin `v0.18.0` to `v0.18.0-3`, a different release from
+this core's `v0.18.1`.
 Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
 

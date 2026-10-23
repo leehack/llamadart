@@ -1,3 +1,7 @@
+## 0.16.0
+
+* Pair with core `0.16.x`; Apple SwiftPM stays pinned to `leehack/llamadart-native@v0.7.0-2`.
+
 ## 0.15.2
 
 - Update Apple SwiftPM to `leehack/llamadart-native@v0.7.0-2`, which seeds
