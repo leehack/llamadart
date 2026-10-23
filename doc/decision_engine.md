@@ -438,6 +438,12 @@ PyTorch reference; time is `systemOne` wall time per question.
 | F32 (local conversion) | official `model.safetensors` + config | CPU | CPU | 0.0129 | 0.0029 | 0.0019 | 188 |
 | `laya-Q8_0.gguf` | official `model.safetensors` + config | Metal | MTL0 | 0.1642 | 0.0436 | 0.0253 | 14.2 |
 
+The action logits are about ±4000 and saturate `act_probability`, so the smoke
+bounds them relative to each row's largest reference action logit
+(`LLAMADART_DECISION_ACT_LOGIT_TOLERANCE`, default 0.05). `laya-Q8_0.gguf`
+measured 0.0167 on the CPU and 0.0126 on Metal; constant action logits fail at
+0.79.
+
 The official checkpoint's F16 head tensors give the same differences as the F32
 head file. On these 24 fixture rows, in every configuration, no choice changed,
 no noul crossed 0.5 and no score rounded to a different level.
@@ -532,8 +538,9 @@ guide.
   through a recording ggml function table that checks every create has its
   free, the teardown order, the thread count and the scheduler's backend
   order; the service's load-time check helpers, head device choice, the
-  scheduler's `op_offload` for CPU, GPU, GPU-backend-without-device and
-  conservative Android Vulkan loads through a recording ggml function table,
+  encoder context's offload and flash-attention flags and the scheduler's
+  `op_offload` for CPU, GPU, GPU-backend-without-device and conservative
+  Android Vulkan loads through recording function tables,
   the encoder context freed after a failed head init (exit-teardown suite),
   sequence validation, and run order through a substituted encoder; worker,
   backend-client and router routing with fakes; engine hooks and facade with a
@@ -543,7 +550,8 @@ guide.
   several heads, probe before download, `sha256`, unload during download).
 - Unit (Chrome): `WebGpuDecisionHeads` against a fake bridge
   (`test/support/fake_webgpu_decision_bridge.dart`): the capability probe for
-  old assets, API version skew, bridge reasons and state rejections; head
+  old assets, a bridge missing any one decision method, API version skew, a
+  response without `supported`, bridge reasons and state rejections; head
   loading with page-fetched configs, unreadable ones, URLs resolved against a
   `<base href>`, and credentials and queries kept out of errors; error mapping,
   including the `configJson` wording; handle scoping to the loading bridge;
@@ -560,10 +568,10 @@ guide.
   reported unsupported and the head load fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
   and head, the 24 fixture rows, exact token ids and markers from the engine
-  tokenizer, raw logits and `systemOne` answers within tolerance (see
-  `doc/testing_matrix.md` for the tolerance rules); an owned `load` with
-  `ComputeDevice.cpu`, whose head runs on the CPU, and off it for a model on a
-  GPU backend; two heads attached to one encoder; the
+  tokenizer, raw marker and action logits and `systemOne` answers within
+  tolerance (see `doc/testing_matrix.md` for the tolerance rules); an owned
+  `load` with `ComputeDevice.cpu`, whose head runs on the CPU, and off it for
+  a model on a GPU backend; two heads attached to one encoder; the
   requested backend itself, not a CPU fallback; a config longer than the
   encoder was trained for, which load rejects; and an engine disposed with a
   head still loaded, whose process must then exit cleanly (on Metal a leaked

@@ -56,6 +56,7 @@ void main() {
       expect(result.stdout, contains('--config-path <path>'));
       expect(result.stdout, contains('LLAMADART_DECISION_LOGIT_TOLERANCE'));
       expect(result.stdout, contains('LLAMADART_DECISION_PROB_TOLERANCE'));
+      expect(result.stdout, contains('LLAMADART_DECISION_ACT_LOGIT_TOLERANCE'));
       expect(
         result.stdout,
         contains('defaults to the resolved benchmark prompt'),

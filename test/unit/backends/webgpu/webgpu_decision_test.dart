@@ -93,10 +93,17 @@ void main() {
 
     test('names the required assets for bridges without the API', () async {
       final old = FakeDecisionBridge(withDecisionApi: false);
-      final partial = FakeDecisionBridge();
-      partial.object.delete('freeDecisionHead'.toJS);
+      final partials = [
+        for (final method in [
+          'getDecisionCapabilities',
+          'loadDecisionHead',
+          'runDecision',
+          'freeDecisionHead',
+        ])
+          FakeDecisionBridge()..object.delete(method.toJS),
+      ];
 
-      for (final bridge in [old, partial]) {
+      for (final bridge in [old, ...partials]) {
         final capabilities = await heads.capabilities(bridge.bridge);
 
         expect(capabilities.isSupported, isFalse);
@@ -106,8 +113,8 @@ void main() {
           'the decision API (apiVersion 1); the loaded bridge does not expose '
           'it.',
         );
+        expect(bridge.calls, isEmpty);
       }
-      expect(partial.calls, isEmpty);
     });
 
     test('reports another decision API version as unsupported', () async {
@@ -142,6 +149,19 @@ void main() {
       );
       expect(
         withoutReason.unsupportedReason,
+        'The loaded Web model does not support decision heads.',
+      );
+    });
+
+    test('reports a response without supported as unsupported', () async {
+      fake.capabilitiesResult = JSObject()
+        ..setProperty('apiVersion'.toJS, 1.toJS);
+
+      final capabilities = await heads.capabilities(fake.bridge);
+
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
         'The loaded Web model does not support decision heads.',
       );
     });
