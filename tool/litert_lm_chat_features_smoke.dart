@@ -67,7 +67,9 @@ Future<void> main(List<String> args) async {
       ],
       tools: const [],
       enableThinking: true,
-      maxTokens: 256,
+      // Greedy Qwen3-0.6B needs about 300 tokens on deterministic CPU kernels;
+      // headroom keeps small numerics changes from truncating the answer.
+      maxTokens: 1024,
     );
 
     final textHistory = await _runScenario(
