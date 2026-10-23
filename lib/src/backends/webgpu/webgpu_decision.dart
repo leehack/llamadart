@@ -373,8 +373,8 @@ class WebGpuDecisionHeads {
     }
   }
 
-  // The bridge's decision error codes are the stable contract; assets older
-  // than v0.1.72 reject without one, so only then does the message decide.
+  // The bridge's decision error codes (`v0.1.72+`) are the stable contract;
+  // older assets reject without one, so only then does the message decide.
   // DOMException's legacy numeric `code` is not a string and is ignored.
   static String? _errorCode(Object error) {
     try {
