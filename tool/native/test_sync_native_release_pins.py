@@ -845,6 +845,16 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         self.assertIn("--allow-litert-channel-transition", workflow)
         self.assertIn("--allow-litert-development-line-transition", workflow)
         self.assertIn("legacy vX.Y.Z-native.N, latest, or keep", workflow)
+        allowlist = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "legacy_release_allowlist.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(allowlist.read_bytes()).hexdigest(),
+            "23ba56a9b11d60410b45398e5b3410f67ffca53d282deac74dd44102d15ec674",
+        )
+        self.assertEqual(len(LEGACY_SCHEMA1_RELEASES), 13)
 
     def test_sync_workflow_captures_every_stable_diffusion_surface(self) -> None:
         workflow = (
@@ -857,30 +867,46 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         self.assertEqual(
             workflow.count('--stable-diffusion-tag "${STABLE_DIFFUSION_TAG}"'), 2
         )
-        self.assertIn("tool/native/sync_stable_diffusion_bindings.py", workflow)
-        self.assertIn(
-            "resolved_stable_diffusion_tag != 'keep'", workflow
-        )
-        self.assertIn(
-            "lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart",
-            workflow,
-        )
-        self.assertIn(
-            "packages/llamadart_stable_diffusion_flutter/darwin/"
-            "llamadart_stable_diffusion_flutter/Package.swift",
-            workflow,
-        )
-        self.assertIn('-sd-${RESOLVED_STABLE_DIFFUSION_TAG}', workflow)
-        allowlist = (
-            Path(__file__).resolve().parent
-            / "fixtures"
-            / "legacy_release_allowlist.json"
+        self.assertEqual(
+            workflow.count(
+                "          STABLE_DIFFUSION_TAG: "
+                "${{ inputs.stable_diffusion_tag }}\n"
+            ),
+            2,
         )
         self.assertEqual(
-            hashlib.sha256(allowlist.read_bytes()).hexdigest(),
-            "23ba56a9b11d60410b45398e5b3410f67ffca53d282deac74dd44102d15ec674",
+            workflow.count("${{ inputs.stable_diffusion_tag }}"),
+            2,
+            "inputs.stable_diffusion_tag must only reach run: blocks via env",
         )
-        self.assertEqual(len(LEGACY_SCHEMA1_RELEASES), 13)
+        self.assertIn("tool/native/sync_stable_diffusion_bindings.py", workflow)
+        self.assertIn(
+            "        if: steps.sync_pins.outputs.resolved_stable_diffusion_tag"
+            " != 'keep'\n",
+            workflow,
+        )
+        self.assertEqual(
+            workflow.count(
+                "RESOLVED_STABLE_DIFFUSION_TAG: "
+                "${{ steps.sync_pins.outputs.resolved_stable_diffusion_tag }}"
+            ),
+            2,
+        )
+        self.assertIn(
+            'if [[ "${RESOLVED_STABLE_DIFFUSION_TAG}" != "keep" ]]; then\n'
+            '            branch="${branch}-sd-${RESOLVED_STABLE_DIFFUSION_TAG}"',
+            workflow,
+        )
+        for path in (
+            "lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart",
+            "packages/llamadart_stable_diffusion_flutter/darwin/"
+            "llamadart_stable_diffusion_flutter/Package.swift",
+            "packages/llamadart_stable_diffusion_flutter/pubspec.yaml",
+            "packages/llamadart_stable_diffusion_flutter/CHANGELOG.md",
+            "packages/llamadart_stable_diffusion_flutter/README.md",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(f"            {path} \\\n", workflow)
 
     def test_litert_tag_grammar_preserves_new_and_legacy_forms(self) -> None:
         expected = {
