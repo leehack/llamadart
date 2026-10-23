@@ -246,8 +246,10 @@ Knobs:
   greedy sampling; the target still verifies every accepted token.
   It must be between 1 and the context's resolved `batchSize`, and at least
   `draftTokenMax + 1` for `draftDflash` and `draftDspark`, which decode a
-  whole draft block in one micro-batch. N-gram-only configurations, WebGPU and
-  LiteRT-LM reject it.
+  whole draft block in one micro-batch. With a LiliCorr draft model (GGUF
+  `lilicorr.candidate_topk` above zero) that block is the model's
+  `dflash.block_size` (16 when absent), so it must also be at least that.
+  N-gram-only configurations, WebGPU and LiteRT-LM reject it.
 - `loadMtp` (`ModelParams`): keep it `false` unless bundled MTP tensors will
   be used, because loading them costs memory. An external MTP draft model
   loads as MTP automatically.

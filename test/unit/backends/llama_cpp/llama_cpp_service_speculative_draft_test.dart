@@ -148,6 +148,72 @@ void main() {
       );
     });
 
+    test('needs the whole trained block for a LiliCorr draft model', () {
+      for (final strategy in [
+        SpeculativeDecodingStrategy.draftDflash,
+        SpeculativeDecodingStrategy.draftDspark,
+      ]) {
+        void validate(int size, Map<String, String> metadata) =>
+            service.debugValidateLiliCorrDraftMicroBatchSizeForTesting(
+              _speculative(
+                SpeculativeDecodingConfig.mixed(
+                  strategies: [strategy],
+                  draftModel: _draft,
+                  draftTokenMax: 4,
+                  draftMicroBatchSize: size,
+                ),
+              ),
+              metadata,
+            );
+
+        const liliCorr = {
+          'lilicorr.candidate_topk': '4',
+          'dflash.block_size': '8',
+        };
+        expect(
+          () => validate(7, liliCorr),
+          _argumentError('dflash.block_size (8)'),
+          reason: '$strategy',
+        );
+        expect(() => validate(8, liliCorr), returnsNormally);
+        // llama.cpp's block size without the key.
+        expect(
+          () => validate(15, {'lilicorr.candidate_topk': '4'}),
+          _argumentError('dflash.block_size (16)'),
+          reason: '$strategy',
+        );
+        expect(
+          () => validate(16, {'lilicorr.candidate_topk': '4'}),
+          returnsNormally,
+        );
+        // Without LiliCorr the block is draftTokenMax + 1.
+        for (final metadata in <Map<String, String>>[
+          {},
+          {'dflash.block_size': '8'},
+          {'lilicorr.candidate_topk': '0', 'dflash.block_size': '8'},
+        ]) {
+          expect(
+            () => validate(5, metadata),
+            returnsNormally,
+            reason: '$strategy $metadata',
+          );
+        }
+      }
+      // Other draft-model strategies do not decode a block.
+      expect(
+        () => service.debugValidateLiliCorrDraftMicroBatchSizeForTesting(
+          _speculative(
+            SpeculativeDecodingConfig.draftSimple(
+              draftModel: _draft,
+              draftMicroBatchSize: 1,
+            ),
+          ),
+          {'lilicorr.candidate_topk': '4', 'dflash.block_size': '8'},
+        ),
+        returnsNormally,
+      );
+    });
+
     test("must fit the context's logical batch and context size", () {
       void validate(int? size, {required int batch, required int context}) =>
           service.debugValidateDraftMicroBatchSizeForTesting(
@@ -205,7 +271,10 @@ void main() {
       dir.deleteSync(recursive: true);
     });
 
-    Future<List<int>> generate(int? draftMicroBatchSize) async {
+    Future<List<int>> generate(
+      int? draftMicroBatchSize, {
+      SpeculativeDecodingConfig? speculative,
+    }) async {
       final cancel = calloc<Int8>();
       try {
         final bytes = <int>[];
@@ -218,11 +287,13 @@ void main() {
             topK: 1,
             seed: 1,
             penalty: 1,
-            speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
-              draftModel: ModelSource.path('${dir.path}/model.gguf'),
-              draftTokenMax: 4,
-              draftMicroBatchSize: draftMicroBatchSize,
-            ),
+            speculativeDecodingConfig:
+                speculative ??
+                SpeculativeDecodingConfig.draftSimple(
+                  draftModel: ModelSource.path('${dir.path}/model.gguf'),
+                  draftTokenMax: 4,
+                  draftMicroBatchSize: draftMicroBatchSize,
+                ),
           ),
           cancel.address,
         )) {
@@ -247,6 +318,32 @@ void main() {
     test("rejects a size above the context's logical batch before creating "
         'a session', () async {
       await expectLater(generate(65), _argumentError('(64)'));
+      expect(draftMicroBatches, isEmpty);
+    });
+
+    // A Llama draft cannot start a DFlash session, so this covers only
+    // rejections, which must come before llama.cpp aborts on the block.
+    test('reads the LiliCorr block size from the draft model before creating '
+        'a session', () async {
+      for (final (metadata, size, blockSize) in [
+        (const {'lilicorr.candidate_topk': 4, 'dflash.block_size': 8}, 7, 8),
+        (const {'lilicorr.candidate_topk': 4}, 15, 16),
+      ]) {
+        final draftPath = '${dir.path}/lilicorr_${metadata.length}.gguf';
+        writeSyntheticLlamaGguf(draftPath, uint32Metadata: metadata);
+        await expectLater(
+          generate(
+            null,
+            speculative: SpeculativeDecodingConfig.draftDflash(
+              draftModel: ModelSource.path(draftPath),
+              draftTokenMax: 4,
+              draftMicroBatchSize: size,
+            ),
+          ),
+          _argumentError('dflash.block_size ($blockSize)'),
+          reason: '$metadata',
+        );
+      }
       expect(draftMicroBatches, isEmpty);
     });
   });
