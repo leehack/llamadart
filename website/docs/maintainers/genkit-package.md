@@ -78,7 +78,7 @@ The main adapter lane first resolves published dependencies and checks docs,
 tests and publication. It then creates an ignored `pubspec_overrides.yaml` to
 test against checkout core, analyzes/tests again, and checks browser contracts.
 It deletes that override even on failure. The lower-bound lane uses Dart 3.12.0
-and exact runtime dependency minima, including published llamadart 0.15.0.
+and exact runtime dependency minima, including published llamadart 0.16.0.
 Neither override nor package lockfile ships in either archive.
 
 For model-backed qualification, reuse the adapter's existing real-model tests

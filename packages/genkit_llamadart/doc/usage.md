@@ -48,7 +48,7 @@ Future<void> main() async {
 Use an embedding model with the required encoders. A chat model's vision/audio
 capabilities do not establish embedding support. Native GGUF needs a matching
 projector; native LiteRT-LM needs a dedicated CPU embedding engine selected with
-`ModelParams(device: ComputeDevice.cpu, liteRtLmEmbeddingEngine: true)` and no
+`LiteRtLmModelParams(device: ComputeDevice.cpu, embeddingEngine: true)` and no
 projector. Leave llama.cpp-only batch and batch-thread parameters at their
 defaults for LiteRT-LM. Conversation engines and Web LiteRT-LM do not support
 embeddings.

@@ -11,13 +11,16 @@ and its guides are canonical for adapter behavior.
 
 ## Install the published combination
 
-This example targets published **genkit_llamadart 3.4.0**, **Genkit 1.0.0** and
+This example targets published **genkit_llamadart 3.4.1**, **Genkit 1.0.0** and
 **llamadart 0.15.1**, on Dart **3.12+**. The adapter remains independently
 versioned after its source moves into this repository. Core's Dart floor remains
 3.10.7; installing this optional adapter raises the application requirement.
 
+The next `genkit_llamadart` release is planned to target llamadart 0.16; it is
+not published yet.
+
 ```bash
-dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.4.0' 'llamadart:0.15.1'
+dart pub add 'genkit:1.0.0' 'genkit_llamadart:3.4.1' 'llamadart:0.15.1'
 ```
 
 For a Flutter app use `flutter pub add`. Apple SwiftPM apps using GGUF also add

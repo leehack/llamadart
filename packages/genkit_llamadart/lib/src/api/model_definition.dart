@@ -57,7 +57,7 @@ class LlamaModelDefinition {
   /// The loaded runtime must also report embedding support to accept requests.
   /// Image/audio documents additionally require embedding-specific modality
   /// probes; chat vision/audio support alone is insufficient. Native LiteRT-LM
-  /// needs an explicit CPU `ModelParams.liteRtLmEmbeddingEngine` configuration.
+  /// needs an explicit CPU `LiteRtLmModelParams(embeddingEngine: true)` configuration.
   final bool supportsEmbeddings;
 
   /// Whether this definition permits Genkit tool requests and tool history.

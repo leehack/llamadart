@@ -35,11 +35,9 @@ void main() {
       final engine = _RecordingEngine();
       final runtime = LlamaEngineRuntime(engine: engine);
       addTearDown(runtime.dispose);
-      const params = ModelParams(
+      const params = LiteRtLmModelParams(
         device: ComputeDevice.cpu,
-        // LiteRtLmModelParams needs llamadart 0.16.0; keep ^0.15.0 working (#858).
-        // ignore: deprecated_member_use
-        liteRtLmEmbeddingEngine: true,
+        embeddingEngine: true,
       );
       await runtime.initialize(
         const LlamaModelDefinition(
