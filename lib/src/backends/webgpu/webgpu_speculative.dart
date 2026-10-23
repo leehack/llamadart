@@ -185,6 +185,13 @@ WebGpuSpeculativeRequest? resolveWebGpuSpeculativeRequest(
       'native llama.cpp.',
     );
   }
+  if (config.draftMicroBatchSize != null) {
+    throw LlamaUnsupportedException(
+      'WebGPU speculative decoding does not support draftMicroBatchSize: the '
+      'bridge takes no draft micro-batch option and creates its draft context '
+      'with the target micro-batch size.',
+    );
+  }
 
   final strategies = <SpeculativeDecodingStrategy>[];
   for (final requested in config.effectiveStrategies) {

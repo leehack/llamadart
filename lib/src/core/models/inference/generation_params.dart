@@ -185,6 +185,27 @@ class SpeculativeDecodingConfig {
   /// `null` lets the backend choose its default.
   final double? draftSplitProbability;
 
+  /// Physical micro-batch size (`n_ubatch`) of the speculative draft context.
+  ///
+  /// Mirrors upstream llama.cpp `--spec-draft-n-ubatch`. A value below the
+  /// target's `ModelParams.microBatchSize` shrinks the draft context's compute
+  /// buffer. Chunked draft prefill can change the draft model's numerics, so
+  /// it may change which tokens the draft proposes, and with them speed,
+  /// acceptance and sometimes the output, even with greedy sampling. The
+  /// target model still verifies every accepted token. `null` keeps the
+  /// draft context on the target context's micro-batch size.
+  ///
+  /// Native llama.cpp applies it to the draft context of `draftSimple`,
+  /// `draftEagle3`, `mtp`, `draftDflash` and `draftDspark`, and throws
+  /// [LlamaArgumentException] when it is below one, above the context's
+  /// resolved `ModelParams.batchSize` (bounded by `ModelParams.contextSize`),
+  /// or, for `draftDflash` and `draftDspark`, below the effective
+  /// [draftTokenMax] plus one, since those decode a whole draft block in one
+  /// micro-batch. Strategies without a draft context and WebGPU throw
+  /// [LlamaUnsupportedException]; LiteRT-LM rejects it with its other
+  /// llama.cpp-specific speculative options.
+  final int? draftMicroBatchSize;
+
   final String? _draftModelPath;
 
   /// Optional draft model for speculative decoding modes that use a separate
@@ -277,6 +298,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -324,6 +346,7 @@ class SpeculativeDecodingConfig {
       draftTokenMin = null,
       minProbability = null,
       draftSplitProbability = null,
+      draftMicroBatchSize = null,
       _draftModelPath = null,
       draftModel = null,
       draftModelDownload = ModelLoadOptions.defaults,
@@ -343,6 +366,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -383,6 +407,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -423,6 +448,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -463,6 +489,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -511,6 +538,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -560,6 +588,7 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
+       draftMicroBatchSize = null,
        _draftModelPath = null,
        draftModel = null,
        draftModelDownload = ModelLoadOptions.defaults,
@@ -588,6 +617,7 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
+       draftMicroBatchSize = null,
        _draftModelPath = null,
        draftModel = null,
        draftModelDownload = ModelLoadOptions.defaults,
@@ -616,6 +646,7 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
+       draftMicroBatchSize = null,
        _draftModelPath = null,
        draftModel = null,
        draftModelDownload = ModelLoadOptions.defaults,
@@ -643,6 +674,7 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
+       draftMicroBatchSize = null,
        _draftModelPath = null,
        draftModel = null,
        draftModelDownload = ModelLoadOptions.defaults,
@@ -667,6 +699,7 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
+       draftMicroBatchSize = null,
        _draftModelPath = null,
        draftModel = null,
        draftModelDownload = ModelLoadOptions.defaults,
@@ -689,6 +722,7 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
+    this.draftMicroBatchSize,
     @Deprecated(
       'Use draftModel with ModelSource.path(path) or another ModelSource. '
       'This parameter will be removed in a future release.',
@@ -768,6 +802,7 @@ class SpeculativeDecodingConfig {
        draftTokenMin = config.draftTokenMin,
        minProbability = config.minProbability,
        draftSplitProbability = config.draftSplitProbability,
+       draftMicroBatchSize = config.draftMicroBatchSize,
        _draftModelPath = draftModelPath,
        ngramSize = config.ngramSize,
        ngramSizeN = config.ngramSizeN,

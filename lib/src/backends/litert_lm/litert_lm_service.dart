@@ -1855,6 +1855,9 @@ class LiteRtLmService {
     if (config.draftSplitProbability != null) {
       unsupported.add('speculativeDecodingConfig.draftSplitProbability');
     }
+    if (config.draftMicroBatchSize != null) {
+      unsupported.add('speculativeDecodingConfig.draftMicroBatchSize');
+    }
     if (config.draftModelPath != null) {
       unsupported.add('speculativeDecodingConfig.draftModel');
     }

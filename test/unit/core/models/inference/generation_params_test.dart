@@ -232,6 +232,7 @@ void main() {
         SpeculativeDecodingStrategy.draftSimple,
       ],
       draftTokenMax: 6,
+      draftMicroBatchSize: 16,
       draftModelPath: 'old.gguf',
       ngramMatch: 3,
     );
@@ -248,6 +249,7 @@ void main() {
     expect(fromLegacy.draftModelPath, '/models/new.gguf');
     expect(fromLegacy.strategies, legacy.strategies);
     expect(fromLegacy.draftTokenMax, 6);
+    expect(fromLegacy.draftMicroBatchSize, 16);
     expect(fromLegacy.ngramMatch, 3);
     expect(fromRemote.draftModelPath, '/models/new.gguf');
     expect(fromRemote.draftModelDownload, same(ModelLoadOptions.defaults));
@@ -268,6 +270,7 @@ void main() {
       draftModel: source,
       draftModelDownload: options,
       draftTokenMax: 3,
+      draftMicroBatchSize: 8,
     ).withDraftModelDownload(ModelLoadOptions.defaults);
     final withPath = const SpeculativeDecodingConfig.mtp(
       draftModelPath: 'relative/mtp.gguf',
@@ -276,6 +279,7 @@ void main() {
     expect(withSource.draftModel, same(source));
     expect(withSource.draftModelDownload, same(ModelLoadOptions.defaults));
     expect(withSource.draftTokenMax, 3);
+    expect(withSource.draftMicroBatchSize, 8);
     expect(withPath.draftModel, isNull);
     expect(withPath.draftModelPath, 'relative/mtp.gguf');
     expect(withPath.draftModelDownload, same(options));

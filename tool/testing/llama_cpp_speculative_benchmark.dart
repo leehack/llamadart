@@ -113,6 +113,7 @@ Future<void> main(List<String> arguments) async {
         'options': options.toJson(),
         'results': results.map((result) => result.toJson()).toList(),
         'summary': _summarize(results),
+        'maxRssBytes': ProcessInfo.maxRss,
       }),
     );
   } finally {
@@ -636,6 +637,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
           ),
         );
       case 'draft-eagle3':
@@ -649,6 +651,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
           ),
         );
       case 'draft-mtp':
@@ -662,6 +665,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
           ),
         );
       case 'draft-dflash':
@@ -675,6 +679,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
           ),
         );
       case 'draft-dspark':
@@ -688,6 +693,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
           ),
         );
       case 'ngram-simple':
@@ -780,6 +786,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
             ngramMatch: options.ngramMatch,
             ngramTokenMin: options.ngramTokenMin,
             ngramTokenMax: options.ngramTokenMax,
@@ -800,6 +807,7 @@ class _BenchmarkCase {
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
             draftSplitProbability: options.draftSplitProbability,
+            draftMicroBatchSize: options.draftMicroBatchSize,
             ngramMatch: options.ngramMatch,
             ngramTokenMin: options.ngramTokenMin,
             ngramTokenMax: options.ngramTokenMax,
@@ -942,6 +950,7 @@ class _BenchmarkOptions {
     required this.draftTokenMin,
     required this.minProbability,
     required this.draftSplitProbability,
+    required this.draftMicroBatchSize,
     required this.ngramSizeN,
     required this.ngramSizeMValues,
     required this.ngramMinHits,
@@ -987,6 +996,13 @@ class _BenchmarkOptions {
     );
     if (ngramSizeMValues.any((value) => value <= 0)) {
       stderr.writeln('--ngram-size-m values must be greater than zero.');
+      exit(64);
+    }
+    final draftMicroBatchSize = _parseOptionalInt(
+      map['draft-micro-batch-size'],
+    );
+    if (draftMicroBatchSize != null && draftMicroBatchSize <= 0) {
+      stderr.writeln('--draft-micro-batch-size must be greater than zero.');
       exit(64);
     }
     final ngramTokenMax = _parseOptionalInt(map['ngram-token-max']);
@@ -1061,6 +1077,7 @@ class _BenchmarkOptions {
       draftSplitProbability: _parseOptionalDouble(
         map['draft-split-probability'],
       ),
+      draftMicroBatchSize: draftMicroBatchSize,
       ngramSizeN: _parseOptionalInt(map['ngram-size-n'] ?? map['ngram-size']),
       ngramSizeMValues: ngramSizeMValues,
       ngramMinHits: _parseOptionalInt(map['ngram-min-hits']),
@@ -1122,6 +1139,7 @@ class _BenchmarkOptions {
   final int? draftTokenMin;
   final double? minProbability;
   final double? draftSplitProbability;
+  final int? draftMicroBatchSize;
   final int? ngramSizeN;
   final List<int> ngramSizeMValues;
   final int? ngramMinHits;
@@ -1176,6 +1194,7 @@ class _BenchmarkOptions {
       'draftTokenMin': draftTokenMin,
       'minProbability': minProbability,
       'draftSplitProbability': draftSplitProbability,
+      'draftMicroBatchSize': draftMicroBatchSize,
       'ngramSizeN': ngramSizeN,
       'ngramSizeM': ngramSizeMValues.length == 1
           ? ngramSizeMValues.single
@@ -1611,6 +1630,8 @@ Speculative knobs:
   --draft-token-min <n>
   --min-probability <n>
   --draft-split-probability <n>
+  --draft-micro-batch-size <n>         Draft context n_ubatch for draft-model
+                                       and MTP cases. Default: target's.
   --ngram-size-n <n>                   Also accepts --ngram-size.
   --ngram-size-m <list>                Comma-separated effective draft lengths
                                        for ngram-simple/map-k/map-k4v.

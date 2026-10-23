@@ -176,6 +176,44 @@ void main() {
     });
   });
 
+  group('speculativeDraftContextParams', () {
+    late Pointer<llama_context_params> target;
+    late Pointer<llama_context_params> scratch;
+
+    setUp(() {
+      target = calloc<llama_context_params>();
+      target.ref
+        ..n_ctx = 2048
+        ..n_batch = 512
+        ..n_ubatch = 256
+        ..n_seq_max = 1;
+      scratch = calloc<llama_context_params>();
+    });
+
+    tearDown(() {
+      calloc.free(target);
+      calloc.free(scratch);
+    });
+
+    test('returns the target params unchanged when unset', () {
+      final draft = speculativeDraftContextParams(target.ref, null, scratch);
+
+      expect(draft.n_ubatch, 256);
+      expect(draft.n_batch, 512);
+      expect(scratch.ref.n_ubatch, 0, reason: 'nothing is copied');
+    });
+
+    test('copies the target params with the draft micro-batch size', () {
+      final draft = speculativeDraftContextParams(target.ref, 32, scratch);
+
+      expect(draft.n_ubatch, 32);
+      expect(draft.n_batch, 512);
+      expect(draft.n_ctx, 2048);
+      expect(draft.n_seq_max, 1);
+      expect(target.ref.n_ubatch, 256, reason: 'the target keeps its own');
+    });
+  });
+
   group('createSuppressTokensSampler', () {
     test('returns nullptr for an empty token list', () {
       expect(createSuppressTokensSampler(4, const []), nullptr);
