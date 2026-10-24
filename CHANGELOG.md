@@ -6,6 +6,7 @@
 - LiteRT-LM native embedding loads throw `LlamaUnsupportedException` on Linux, Windows and Android x86_64 instead of failing at engine creation or crashing the process; they stay available on macOS arm64, iOS arm64 and Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators) ([#1367](https://github.com/leehack/llamadart/issues/1367)).
 - Native llama.cpp `usage.promptTokens` counts the tokens of an image or audio prompt, as llama-server does, instead of its positions, which M-RoPE vision models such as Qwen3.5 report far fewer of ([#696](https://github.com/leehack/llamadart/issues/696)).
 - Linux and Windows apps built with `dart build cli`, `flutter build linux` or `flutter build windows` load LiteRT-LM from their own bundle, so a copied or installed app no longer fails with `Failed to load dynamic library 'package:llamadart/litert_lm_LiteRtLm'` once the project's hook cache is out of reach ([#1397](https://github.com/leehack/llamadart/issues/1397)).
+- Add `dart run llamadart:web_setup`: it downloads the Web bridge files this version pins into `web/webgpu_bridge/`, checks each against the pinned release manifest and adds the loader to `web/index.html`; reruns keep current files, `--check` verifies offline, and with that loader a page whose files are missing fails the first model load at once instead of after 12 seconds ([#855](https://github.com/leehack/llamadart/issues/855)).
 
 ## 0.16.1
 

@@ -214,7 +214,9 @@ pins it or later
 The WebGPU backend throws
 `Web bridge is unavailable. Ensure LlamaWebGpuBridge assets are loaded and reachable.`
 or `Web bridge is unavailable: <load error>` when the bridge script did not
-load. Add the bridge assets to the app and check that they are served; see
+load. Run `dart run llamadart:web_setup` (or `--check` to list what is
+missing without changing anything) and check that `web/webgpu_bridge/` is
+served; see
 [Add the bridge to your app](../platforms/webgpu-bridge#add-the-bridge-to-your-app).
 In the browser console, `window.LlamaWebGpuBridge` should exist and
 `window.__llamadartBridgeLoadError` should be empty.

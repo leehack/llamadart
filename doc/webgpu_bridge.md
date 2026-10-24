@@ -75,7 +75,16 @@ WEBGPU_BRIDGE_ASSETS_TAG=v0.1.73 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
-`sha256sums.txt` when the release provides it. To load another CDN release in
+`sha256sums.txt` when the release provides it.
+
+Apps use `dart run llamadart:web_setup` (`bin/web_setup.dart`) instead. It
+pins the tag and the manifest SHA-256 in
+`lib/src/web_setup/web_bridge_setup.dart`, verifies every runtime file against
+that manifest's `files` digests and sizes before replacing anything, and keeps
+a marked bootstrap block in the app's `index.html`. Unlike the chat app
+bootstrap it loads only the local assets, with no CDN fallback.
+`tool/testing/check_webgpu_bridge_tag.dart` registers its tag as a pin and
+reads its manifest SHA-256, so a repin cannot leave it behind. To load another CDN release in
 the chat app, set the bootstrap globals before the bootstrap runs:
 
 ```html
