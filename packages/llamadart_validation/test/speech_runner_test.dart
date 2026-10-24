@@ -537,6 +537,8 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
   SynthesisSpeechEngine({
     this.decodeHonoursCancel = true,
     this.teardownCancels = true,
+    this.frameStep = frameDelay,
+    this.decodeStep = decodeDelay,
   }) {
     speechBackend
       ..textToSpeech = qwen3TtsCapabilities
@@ -545,6 +547,8 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
   }
   final bool decodeHonoursCancel;
   final bool teardownCancels;
+  final Duration frameStep;
+  final Duration decodeStep;
   static const naturalFrames = 20;
   static const frameDelay = Duration(milliseconds: 4);
   static const decodeDelay = Duration(milliseconds: 300);
@@ -592,7 +596,7 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
     final frames = math.min(naturalFrames, request.maxFrames);
     var generated = 0;
     while (generated < frames && !_cancelled) {
-      await _wait(frameDelay);
+      await _wait(frameStep);
       if (_cancelled) break;
       generated++;
       onProgress?.call(
@@ -605,7 +609,7 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
       );
     }
     if (!_cancelled) {
-      await _wait(decodeDelay, interruptible: decodeHonoursCancel);
+      await _wait(decodeStep, interruptible: decodeHonoursCancel);
     }
     cancelledRuns.add(_cancelled);
     return BackendTextToSpeechResult(
@@ -2336,6 +2340,79 @@ void main() {
     expect(cancelled['cancel_after_ms'], greaterThanOrEqualTo(reference * 0.5));
     expect(cancelled['cancel_latency_ms'], isA<double>());
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
+  });
+
+  test('the TTS adapter records where a cancel landed', () async {
+    Future<Map<String, Object?>> cancelInto(
+      SynthesisSpeechEngine engine,
+    ) async {
+      final adapter = edgeAdapter(pack: 'tts', engine: engine);
+      await adapter.load();
+      final reference = await adapter.execute();
+      expect(reference.containsKey('progress_events_before_cancel'), isFalse);
+      final cancelled = await adapter.execute(cancel: true);
+      await adapter.dispose();
+      return cancelled;
+    }
+
+    final inFinalStep = await cancelInto(
+      SynthesisSpeechEngine(
+        frameStep: const Duration(milliseconds: 4),
+        decodeStep: const Duration(milliseconds: 600),
+      ),
+    );
+    expect(
+      inFinalStep['reference_progress_events'],
+      SynthesisSpeechEngine.naturalFrames,
+    );
+    expect(
+      inFinalStep['progress_events_before_cancel'],
+      SynthesisSpeechEngine.naturalFrames,
+    );
+    expect(inFinalStep['cancel_after_reference_last_progress'], isTrue);
+    expect(inFinalStep['ms_since_last_progress_at_cancel'], greaterThan(100));
+
+    final inFrameStep = await cancelInto(
+      SynthesisSpeechEngine(
+        frameStep: const Duration(milliseconds: 40),
+        decodeStep: const Duration(milliseconds: 4),
+      ),
+    );
+    expect(
+      inFrameStep['progress_events_before_cancel'] as int,
+      lessThan(SynthesisSpeechEngine.naturalFrames),
+    );
+    expect(inFrameStep['cancel_after_reference_last_progress'], isFalse);
+    expect(inFrameStep['ms_since_last_progress_at_cancel'], lessThan(40));
+  });
+
+  test('the TTS cancel check journals where each cancel landed', () async {
+    final adapter = edgeAdapter(
+      pack: 'tts',
+      engine: SynthesisSpeechEngine(
+        frameStep: const Duration(milliseconds: 2),
+        decodeStep: const Duration(milliseconds: 30),
+      ),
+    );
+    final journal = await runSpeechValidation(
+      adapter,
+      footprintBytes: stableFootprintBytes,
+    );
+    final bound =
+        (journal['bounds']! as Map)['cancel_latency_ms']!
+            as Map<String, Object?>;
+    final samples = (bound['samples'] as List).length;
+    expect(bound['progress_events_before_cancel'], hasLength(samples));
+    expect(bound['after_reference_last_progress'], hasLength(samples));
+    expect(
+      (bound['progress_events_before_cancel'] as List).every((n) => n is int),
+      isTrue,
+    );
+    final cycle = (journal['checks'] as List).cast<Map>().firstWhere(
+      (check) => check['id'] == 'cleanup_cycle_1',
+    );
+    expect(cycle['progress_events_before_cancel'], isA<int>());
+    expect(cycle['cancel_after_reference_last_progress'], isA<bool>());
   });
 
   test(

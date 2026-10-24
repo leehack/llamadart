@@ -49,7 +49,16 @@ The single-shot checks and every cycle each cancel twice:
   report `cancel_in_flight`, which is true only if it had not seen the task
   finish when it cancelled; the dedicated LiteRT adapter also requires that at
   least one PCM chunk was accepted. It cannot show that the generation had
-  begun.
+  begun. The `tts` adapter also records where the cancel landed:
+  `progress_events_before_cancel`, `ms_since_last_progress_at_cancel`,
+  `reference_progress_events` and `cancel_after_reference_last_progress`. The
+  worker emits no progress event for its final step, which on Metal includes
+  the code2wav decode and is 18-36% of a synthesis
+  ([#627](https://github.com/leehack/llamadart/issues/627)), so the last flag
+  is true when the cancel came after as many events as the reference
+  generation emitted. The bounds list the counts and flags per sample as
+  `progress_events_before_cancel` and `after_reference_last_progress`, with
+  `null` for `stt`. Journals from older runs lack these fields.
 
 Both record the time from the start of the call to the cancellation as
 `cancel_after_ms`, and the cancelled task must emit no result. Cancellation
