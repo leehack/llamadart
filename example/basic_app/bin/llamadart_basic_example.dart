@@ -50,6 +50,13 @@ void main(List<String> arguments) async {
       help: 'Enable a sample "get_weather" tool for testing tool calls.',
       defaultsTo: false,
     )
+    ..addFlag(
+      'thinking',
+      help:
+          'Let reasoning models think before answering and print the '
+          'reasoning ahead of the answer.',
+      defaultsTo: false,
+    )
     ..addOption(
       'temp',
       help: 'Generation temperature (default: 0.7)',
@@ -91,6 +98,7 @@ void main(List<String> arguments) async {
   final singlePrompt = results['prompt'] as String?;
   final grammar = results['grammar'] as String?;
   final enableToolTest = results['tool-test'] as bool;
+  final enableThinking = results['thinking'] as bool;
   final isInteractive = results['interactive'] as bool && singlePrompt == null;
 
   final modelService = ModelService();
@@ -169,12 +177,14 @@ void main(List<String> arguments) async {
         singlePrompt,
         generationParams,
         toolChoice: enableToolTest ? ToolChoice.required : null,
+        enableThinking: enableThinking,
       );
     } else if (isInteractive) {
       await _runInteractiveMode(
         llamaService,
         generationParams,
         toolChoice: enableToolTest ? ToolChoice.required : null,
+        enableThinking: enableThinking,
       );
     }
   } catch (e) {
@@ -191,12 +201,14 @@ Future<void> _runSingleResponse(
   String prompt,
   GenerationParams params, {
   ToolChoice? toolChoice,
+  bool enableThinking = false,
 }) async {
   stdout.write('\nAssistant: ');
   await for (final token in service.chatStream(
     prompt,
     params: params,
     toolChoice: toolChoice,
+    enableThinking: enableThinking,
   )) {
     stdout.write(token);
   }
@@ -207,6 +219,7 @@ Future<void> _runInteractiveMode(
   LlamaCliService service,
   GenerationParams params, {
   ToolChoice? toolChoice,
+  bool enableThinking = false,
 }) async {
   print('Starting interactive mode. Type "exit" or "quit" to stop.\n');
 
@@ -225,6 +238,7 @@ Future<void> _runInteractiveMode(
       input,
       params: params,
       toolChoice: toolChoice,
+      enableThinking: enableThinking,
     )) {
       stdout.write(token);
     }
