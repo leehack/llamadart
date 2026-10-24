@@ -59,8 +59,37 @@ offload; the GPU, driver, OS, flags and memory pressure all matter.
 app origin: the bridge core starts its worker threads from its own URL, and a
 cross-origin isolated page cannot start workers from a CDN URL.
 
-Download the assets into `web/webgpu_bridge/`, with `TAG` set to the tag in
-[Pinned bridge assets](#pinned-bridge-assets):
+From the app root, run:
+
+```bash
+dart run llamadart:web_setup
+```
+
+It downloads the bridge assets your `llamadart` version pins
+([Pinned bridge assets](#pinned-bridge-assets)) into `web/webgpu_bridge/`,
+checks every file against the release manifest whose SHA-256 the package pins,
+and adds a marked bootstrap block to `web/index.html` before
+`flutter_bootstrap.js`. Files that already match are kept and an up-to-date
+`index.html` is left alone, so rerun it after each `llamadart` upgrade. Nothing
+is replaced unless it verifies.
+
+| Option | Effect |
+| --- | --- |
+| `--web-dir <dir>` | Web directory of the app; default `web` |
+| `--no-index-html` | Fetch the assets but leave `index.html` unchanged |
+| `--check` | Verify the assets and bootstrap offline and change nothing; exits `1` with each problem, for CI before `flutter build web` |
+
+It exits `64` for a usage error, `66` when the web directory or `index.html`
+is missing, and `1` for a failed download, a checksum mismatch or a page with
+neither a `flutter_bootstrap.js` script nor `</head>`. If the bridge module
+then fails to load in the browser, the generated bootstrap sets
+`__llamadartBridgeLoadError`, so the first model load throws
+`LlamaUnsupportedException` at once instead of waiting.
+
+### Manual setup
+
+Without the tool, download the assets into `web/webgpu_bridge/`, with `TAG`
+set to the tag in [Pinned bridge assets](#pinned-bridge-assets):
 
 ```bash
 TAG=vX.Y.Z
@@ -73,9 +102,10 @@ for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
 done
 ```
 
-In a llamadart checkout, `scripts/fetch_webgpu_bridge_assets.sh` with
+This loop does not verify checksums. In a llamadart checkout,
+`scripts/fetch_webgpu_bridge_assets.sh` with
 `WEBGPU_BRIDGE_OUT_DIR=<app>/web/webgpu_bridge` does the same and verifies
-checksums.
+them.
 
 Then load the bridge in `web/index.html`, before `flutter_bootstrap.js`:
 
@@ -312,7 +342,7 @@ When retries run out, the load throws an error with runtime hints such as
 
 | Symptom | Likely class | Next check |
 | --- | --- | --- |
-| `Web bridge is unavailable` | Bridge not loaded | [Add the bridge to your app](#add-the-bridge-to-your-app); check `window.__llamadartBridgeLoadError` and asset URLs. |
+| `Web bridge is unavailable` | Bridge not loaded | Run `dart run llamadart:web_setup --check`, then [Add the bridge to your app](#add-the-bridge-to-your-app); check `window.__llamadartBridgeLoadError` and asset URLs. |
 | `navigator.gpu` missing or no adapter | Browser or device | Use a secure context, update browser and drivers, or run CPU or native. |
 | `thread constructor failed`, `error 138`, or `Browser runtime blocked worker thread creation` | Cross-origin isolation | Send COOP/COEP headers and check `window.crossOriginIsolated`, or use a smaller or sharded model. |
 | Memory, OOM, `bad_alloc` or abort during load | Model or config pressure | Reduce model size, context, threads or GPU layers; use memory64. |

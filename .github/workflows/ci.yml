@@ -373,7 +373,8 @@ jobs:
           - shard: tooling
             paths: >-
               test/unit/tooling test/unit/hook test/unit/platform
-              test/unit/test_structure test/unit/public_entrypoints_test.dart
+              test/unit/test_structure test/unit/web_setup
+              test/unit/public_entrypoints_test.dart
               test/unit/public_entrypoints_web_test.dart
           - shard: runtime
             paths: test/unit/backends test/integration test/e2e

@@ -1,0 +1,397 @@
+@TestOn('vm')
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+import 'package:llamadart/src/web_setup/web_bridge_setup.dart';
+
+const String _flutterIndexHtml = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <title>app</title>
+</head>
+<body>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+''';
+
+final class _FakeRelease {
+  _FakeRelease({String tag = 'v9.9.9', Map<String, List<int>>? files})
+    : files =
+          files ??
+          <String, List<int>>{
+            for (final String name in webBridgeRuntimeFiles)
+              name: utf8.encode('contents of $name for $tag'),
+          } {
+    manifestBytes = utf8.encode(
+      jsonEncode(<String, Object?>{
+        'release_tag': tag,
+        'files': <String, Object?>{
+          for (final MapEntry<String, List<int>> file in this.files.entries)
+            file.key: <String, Object?>{
+              'sha256': sha256.convert(file.value).toString(),
+              'size_bytes': file.value.length,
+            },
+        },
+      }),
+    );
+    pin = WebBridgePin(
+      repository: 'example/assets',
+      tag: tag,
+      manifestSha256: sha256.convert(manifestBytes).toString(),
+    );
+  }
+
+  final Map<String, List<int>> files;
+  late final List<int> manifestBytes;
+  late final WebBridgePin pin;
+
+  /// Bodies served instead of the published bytes, keyed by file name.
+  final Map<String, List<int>> served = <String, List<int>>{};
+  final List<String> requests = <String>[];
+  final List<Uri> urls = <Uri>[];
+
+  Future<Stream<List<int>>> fetch(Uri url) async {
+    final String name = url.pathSegments.last;
+    urls.add(url);
+    requests.add(name);
+    final List<int>? body =
+        served[name] ?? (name == 'manifest.json' ? manifestBytes : files[name]);
+    if (body == null) throw const HttpException('404');
+    return Stream<List<int>>.fromIterable(<List<int>>[
+      body.sublist(0, body.length ~/ 2),
+      body.sublist(body.length ~/ 2),
+    ]);
+  }
+}
+
+void main() {
+  late Directory tempDir;
+  late Directory webDir;
+  late File indexHtml;
+  late _FakeRelease release;
+
+  String assetPath(String name) =>
+      p.join(webDir.path, webBridgeAssetsDirName, name);
+
+  setUp(() {
+    tempDir = Directory.systemTemp.createTempSync('web_bridge_setup_');
+    webDir = Directory(p.join(tempDir.path, 'web'))..createSync();
+    indexHtml = File(p.join(webDir.path, 'index.html'))
+      ..writeAsStringSync(_flutterIndexHtml);
+    release = _FakeRelease();
+  });
+
+  tearDown(() => tempDir.deleteSync(recursive: true));
+
+  Future<WebSetupResult> runSetup({bool patchIndexHtml = true}) =>
+      setUpWebBridge(
+        webDir: webDir,
+        pin: release.pin,
+        fetch: release.fetch,
+        patchIndexHtml: patchIndexHtml,
+      );
+
+  test('vendors every verified asset and adds the bootstrap once', () async {
+    final WebSetupResult result = await runSetup();
+
+    expect(result.downloaded, webBridgeRuntimeFiles);
+    expect(result.unchanged, isEmpty);
+    expect(result.indexHtmlUpdated, isTrue);
+    expect(release.urls, <Uri>[
+      for (final String name in <String>[
+        'manifest.json',
+        ...webBridgeRuntimeFiles,
+      ])
+        Uri.parse('https://cdn.jsdelivr.net/gh/example/assets@v9.9.9/$name'),
+    ]);
+    for (final String name in webBridgeRuntimeFiles) {
+      expect(File(assetPath(name)).readAsBytesSync(), release.files[name]);
+    }
+    expect(
+      File(assetPath('manifest.json')).readAsBytesSync(),
+      release.manifestBytes,
+    );
+    final String html = indexHtml.readAsStringSync();
+    expect(
+      html.indexOf("searchParams.set('v', 'v9.9.9')"),
+      allOf(
+        greaterThan(html.indexOf('</head>')),
+        lessThan(html.indexOf('<script src="flutter_bootstrap.js"')),
+      ),
+    );
+    expect(html, contains("import(asset('llama_webgpu_bridge.js'))"));
+    expect(html, contains('window.__llamadartBridgeLoadError ='));
+    expect(
+      Directory(
+        p.join(webDir.path, webBridgeAssetsDirName),
+      ).listSync().map((FileSystemEntity e) => p.basename(e.path)),
+      unorderedEquals(<String>[...webBridgeRuntimeFiles, 'manifest.json']),
+    );
+  });
+
+  test('a rerun fetches nothing and leaves index.html untouched', () async {
+    await runSetup();
+    final String html = indexHtml.readAsStringSync();
+    final DateTime modified = indexHtml.lastModifiedSync();
+    release.requests.clear();
+
+    final WebSetupResult result = await runSetup();
+
+    expect(release.requests, isEmpty);
+    expect(result.downloaded, isEmpty);
+    expect(result.unchanged, webBridgeRuntimeFiles);
+    expect(result.indexHtmlUpdated, isFalse);
+    expect(indexHtml.readAsStringSync(), html);
+    expect(indexHtml.lastModifiedSync(), modified);
+  });
+
+  test('re-fetches only a file that no longer matches', () async {
+    await runSetup();
+    File(assetPath('llama_webgpu_core.js')).writeAsStringSync('edited');
+    release.requests.clear();
+
+    final WebSetupResult result = await runSetup();
+
+    expect(release.requests, <String>['llama_webgpu_core.js']);
+    expect(result.downloaded, <String>['llama_webgpu_core.js']);
+    expect(
+      File(assetPath('llama_webgpu_core.js')).readAsBytesSync(),
+      release.files['llama_webgpu_core.js'],
+    );
+  });
+
+  test('rejects a manifest whose bytes differ from the pin', () async {
+    release.served['manifest.json'] = <int>[...release.manifestBytes, 0x20];
+
+    await expectLater(
+      runSetup(),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          allOf(contains(release.pin.manifestSha256), contains('v9.9.9')),
+        ),
+      ),
+    );
+    expect(release.requests, <String>['manifest.json']);
+    expect(Directory(assetPath('')).listSync(), isEmpty);
+    expect(indexHtml.readAsStringSync(), _flutterIndexHtml);
+  });
+
+  test('a tampered asset never replaces the existing file', () async {
+    await runSetup();
+    final File core = File(assetPath('llama_webgpu_core.wasm'))
+      ..writeAsStringSync('stale');
+    final List<int> published = release.files['llama_webgpu_core.wasm']!;
+    release.served['llama_webgpu_core.wasm'] = <int>[
+      ...published.sublist(1),
+      0,
+    ];
+
+    await expectLater(
+      runSetup(),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          allOf(contains('llama_webgpu_core.wasm'), contains('SHA-256')),
+        ),
+      ),
+    );
+    expect(core.readAsStringSync(), 'stale');
+    expect(File('${core.path}.download').existsSync(), isFalse);
+  });
+
+  test('stops reading an asset larger than its manifest size', () async {
+    final List<int> published = release.files['llama_webgpu_bridge.js']!;
+    release.served['llama_webgpu_bridge.js'] = <int>[...published, 1, 2, 3];
+
+    await expectLater(
+      runSetup(),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          contains('larger than the ${published.length} bytes'),
+        ),
+      ),
+    );
+    expect(File(assetPath('llama_webgpu_bridge.js')).existsSync(), isFalse);
+    expect(
+      File(assetPath('llama_webgpu_bridge.js.download')).existsSync(),
+      isFalse,
+    );
+  });
+
+  test('reports a transport failure with the URL', () async {
+    final WebBridgePin pin = release.pin;
+    Future<Stream<List<int>>> failing(Uri url) =>
+        Future<Stream<List<int>>>.error(const SocketException('offline'));
+
+    await expectLater(
+      setUpWebBridge(webDir: webDir, pin: pin, fetch: failing),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          allOf(contains('${pin.baseUri}manifest.json'), contains('offline')),
+        ),
+      ),
+    );
+  });
+
+  test('rejects a manifest for another release or missing a file', () async {
+    final _FakeRelease mislabeled = _FakeRelease(tag: 'v1.0.0');
+    final WebBridgePin claimed = WebBridgePin(
+      repository: mislabeled.pin.repository,
+      tag: 'v9.9.9',
+      manifestSha256: mislabeled.pin.manifestSha256,
+    );
+    await expectLater(
+      setUpWebBridge(webDir: webDir, pin: claimed, fetch: mislabeled.fetch),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          contains('does not describe release v9.9.9'),
+        ),
+      ),
+    );
+
+    final _FakeRelease partial = _FakeRelease(
+      files: <String, List<int>>{
+        'llama_webgpu_bridge.js': <int>[1],
+      },
+    );
+    await expectLater(
+      setUpWebBridge(webDir: webDir, pin: partial.pin, fetch: partial.fetch),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          contains('llama_webgpu_bridge_worker.js'),
+        ),
+      ),
+    );
+  });
+
+  test('requires the web directory and, unless skipped, index.html', () async {
+    webDir.deleteSync(recursive: true);
+    await expectLater(
+      runSetup(),
+      throwsA(
+        isA<WebSetupException>().having(
+          (WebSetupException e) => e.message,
+          'message',
+          contains('--web-dir'),
+        ),
+      ),
+    );
+
+    webDir.createSync();
+    await expectLater(runSetup(), throwsA(isA<WebSetupException>()));
+
+    final WebSetupResult result = await runSetup(patchIndexHtml: false);
+    expect(result.downloaded, webBridgeRuntimeFiles);
+    expect(result.indexHtmlUpdated, isFalse);
+    expect(indexHtml.existsSync(), isFalse);
+  });
+
+  group('checkWebBridgeSetup', () {
+    Future<List<String>> check({bool checkIndexHtml = true}) =>
+        checkWebBridgeSetup(
+          webDir: webDir,
+          pin: release.pin,
+          checkIndexHtml: checkIndexHtml,
+        );
+
+    test('passes after setup without any network access', () async {
+      await runSetup();
+      expect(await check(), isEmpty);
+    });
+
+    test('names the missing manifest of a fresh app', () async {
+      expect(await check(), <Matcher>[
+        allOf(contains('manifest.json'), contains('v9.9.9')),
+      ]);
+    });
+
+    test('names each missing or changed asset and a stale index', () async {
+      await runSetup();
+      File(assetPath('llama_webgpu_core.js')).deleteSync();
+      File(assetPath('llama_webgpu_core_mem64.wasm')).writeAsStringSync('x');
+      indexHtml.writeAsStringSync(_flutterIndexHtml);
+
+      expect(await check(), <Matcher>[
+        allOf(contains('llama_webgpu_core.js'), contains('missing')),
+        allOf(contains('llama_webgpu_core_mem64.wasm'), contains('match')),
+        contains('index.html'),
+      ]);
+      expect(await check(checkIndexHtml: false), hasLength(2));
+    });
+  });
+
+  group('patchWebBridgeIndexHtml', () {
+    test('replaces the block of an earlier release in place', () {
+      final String older = patchWebBridgeIndexHtml(
+        _flutterIndexHtml,
+        _FakeRelease(tag: 'v1.0.0').pin,
+      );
+
+      final String upgraded = patchWebBridgeIndexHtml(older, release.pin);
+
+      expect(upgraded, isNot(contains('v1.0.0')));
+      expect(upgraded, patchWebBridgeIndexHtml(_flutterIndexHtml, release.pin));
+    });
+
+    test('falls back to </head> and keeps CRLF line endings', () {
+      const String html = '<html>\r\n<head>\r\n</head>\r\n<body></body>\r\n';
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(
+        patched.indexOf('<script type="module">'),
+        lessThan(patched.indexOf('</head>')),
+      );
+      expect(patched.replaceAll('\r\n', ''), isNot(contains('\n')));
+      expect(patchWebBridgeIndexHtml(patched, release.pin), patched);
+    });
+
+    test('refuses a page with no anchor or unbalanced markers', () {
+      expect(
+        () => patchWebBridgeIndexHtml('<body></body>', release.pin),
+        throwsA(isA<WebSetupException>()),
+      );
+      expect(
+        () => patchWebBridgeIndexHtml(
+          '<head><!-- llamadart:web_setup:begin --></head>',
+          release.pin,
+        ),
+        throwsA(isA<WebSetupException>()),
+      );
+    });
+  });
+
+  test(
+    'vendors the pinned release from the CDN',
+    () async {
+      final WebSetupResult result = await setUpWebBridge(webDir: webDir);
+
+      expect(result.downloaded, webBridgeRuntimeFiles);
+      expect(await checkWebBridgeSetup(webDir: webDir), isEmpty);
+    },
+    tags: <String>['local-only'],
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+}
