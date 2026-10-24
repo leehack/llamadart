@@ -55,6 +55,10 @@ const oldHashes = <String, String>{
       "77a25ea86c7382ad198dbbbeb2e5ccdaf2b9afc7e80211044e14fa7ba6f83484",
   "chat-gguf-metal.json":
       "a5df58f964d08e8c62dc87772c45595632d58206fffd351a7f5badfad8dbe2cd",
+  "structured-gguf-cpu.json":
+      "9c5c0f5a1d6b39dbe91404162dd889857fac031104505e35cd13bdd67233211c",
+  "structured-gguf-metal.json":
+      "a5df58f964d08e8c62dc87772c45595632d58206fffd351a7f5badfad8dbe2cd",
   "gemma4-gguf-metal.json":
       "a5df58f964d08e8c62dc87772c45595632d58206fffd351a7f5badfad8dbe2cd",
   "decision-gguf-vulkan.json":

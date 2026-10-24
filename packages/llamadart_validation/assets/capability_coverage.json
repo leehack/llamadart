@@ -83,6 +83,22 @@
       ]
     },
     {
+      "id": "structured_output",
+      "cases": [
+        "S01.capabilities",
+        "S02.json_object",
+        "S03.json_schema",
+        "S04.grammar",
+        "S05.grammar.lazy",
+        "S06.reject",
+        "S07.stream",
+        "S08.tools.schema"
+      ],
+      "profiles": [
+        "assets/profiles/structured-gguf-cpu.json"
+      ]
+    },
+    {
       "id": "text",
       "cases": [
         "C03.raw",
@@ -305,22 +321,6 @@
     },
     {
       "surfaces": [
-        "api:LlamaEngine.createStructuredJson",
-        "capability:LlamaEngineCapabilities.supportsGrammar",
-        "capability:LlamaEngineCapabilities.supportsLazyGrammar",
-        "capability:LlamaEngineCapabilities.supportsStructuredOutput",
-        "matrix:Canonical JSON Schema tools",
-        "matrix:Lazy grammar",
-        "matrix:Strict responseFormat"
-      ],
-      "exemption": {
-        "id": "structured-output",
-        "reason": "Invalid-grammar guards do not qualify structured-output acceptance/rejection, schema reconstruction or tool/stream interactions. A dedicated structured-output pack remains required.",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
-    },
-    {
-      "surfaces": [
         "api:LlamaEngine.detokenize",
         "api:LlamaEngine.getTokenCount",
         "api:LlamaEngine.tokenize"
@@ -405,6 +405,18 @@
         "matrix:Generation-limit reporting"
       ],
       "pack": "streaming"
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.createStructuredJson",
+        "capability:LlamaEngineCapabilities.supportsGrammar",
+        "capability:LlamaEngineCapabilities.supportsLazyGrammar",
+        "capability:LlamaEngineCapabilities.supportsStructuredOutput",
+        "matrix:Canonical JSON Schema tools",
+        "matrix:Lazy grammar",
+        "matrix:Strict responseFormat"
+      ],
+      "pack": "structured_output"
     },
     {
       "surfaces": [

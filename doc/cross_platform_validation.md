@@ -38,7 +38,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
 | Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
 | Accelerators | GGUF native-log proof, S24 per-generation NPU dispatch evidence and Android LiteRT GPU per-load delegate-initialization evidence | LiteRT GPU per-request execution, iOS/desktop/Web LiteRT GPU proof, Pixel 10 NPU and the remaining device rotation |
-| Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls; native embeddings now have a separate locked pack | Exact-model/device feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal and speech qualification |
+| Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls; native embeddings have a separate locked pack; catalog 8 adds the structured-output pack | Exact-model/device feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal and speech qualification |
 
 Do not weaken semantic predicates to obtain a green run. The Gemma original-model
 control below passes the strict history predicate; the LiteRT results remain failed.
@@ -453,8 +453,9 @@ The shared runner accepts three profile selections:
 - `quick`: the original short core and one three-sample benchmark series.
 - `focused`: the quick core plus cases matching the profile's nonempty, unique
   `focus_features` list. Valid IDs are `text`, `unicode`, `thinking`, `history`,
-  `tools`, `streaming`, `batching`, `lifecycle`, `guards` and `performance`. Text/history/
-  performance are already covered by the applicable quick cases.
+  `tools`, `streaming`, `batching`, `lifecycle`, `guards`, `performance` and,
+  from catalog 8, `structured_output`. Text/history/performance are already
+  covered by the applicable quick cases.
 - `release`: every current extended core obligation, including unfinished cases.
 
 For example, `"selection": "focused", "focus_features": ["streaming", "tools"]`
@@ -1800,6 +1801,58 @@ these cases as unimplemented and cannot claim their execution. Catalog 4 adds
 Unicode generation, thinking on/off and tool choice/result controls. Thinking
 budgets, tool-bearing batching and model-specific qualification remain separate.
 
+
+### Catalog 8 structured-output pack
+
+Catalog 8 adds the `structured_output` feature and cases `S01`–`S08`
+([#1196](https://github.com/leehack/llamadart/issues/1196)). Focused
+`structured_output` or release selection picks them. Every request goes
+through public API with thinking off and a 256-token cap.
+
+| Case | Request | Passes when |
+| --- | --- | --- |
+| `S01.capabilities` | `LlamaEngine.capabilities` | `supportsGrammar`, `supportsLazyGrammar` and `supportsStructuredOutput` match the runtime: all true on native llama.cpp, lazy false on WebGPU, all false on LiteRT-LM |
+| `S02.json_object` | Prose prompt, then `{'type': 'json_object'}` | The constrained reply is a JSON object that `parseStructuredJson` returns |
+| `S03.json_schema` | Prose prompt, then a `json_schema` with scalars, `null`, enum, nested object and array, required and optional properties, a pattern and forced-empty array, string and object; then `createStructuredJson` | Both replies satisfy the schema |
+| `S04.grammar` | Prose prompt, then GBNF `root ::= "cedar-" [0-9] [0-9] [0-9]` | The reply is exactly `cedar-` and three digits |
+| `S05.grammar.lazy` | Prompt that asks for a sentence then `ANSWER:` and a color, with a lazy grammar triggered by the word `ANSWER:` | Free text precedes the trigger, and the reply ends `ANSWER: alpha` or `ANSWER: omega` |
+| `S06.reject` | Unconstrained prose parsed as JSON; a `{city}` schema reply parsed against a `{zip_code}` schema; a `multipleOf` schema; `responseFormat` type `yaml`; then the hello prompt | `LlamaInferenceException` `Malformed structured JSON output.` and `Structured JSON output did not match the requested schema.`, `LlamaUnsupportedException` for both unsupported requests before any chunk, then a completed reply |
+| `S07.stream` | The `S03` schema, streamed | At least two content deltas; every accumulated partial is rejected by `parse` with `LlamaInferenceException`; the final value satisfies the schema |
+| `S08.tools.schema` | `ToolDefinition.fromJsonSchema` with an enum unit and enum days, `ToolChoice.required`, asking for fahrenheit and 30 days | One `tool_calls` call whose arguments satisfy the schema |
+
+`S02`–`S05` first send the same prompt unconstrained; if that control
+already satisfies the predicate, the case is NOT_RUN. Other constrained
+prompts ask for output the constraint forbids. A harness-side schema check
+independent of the library's validator decides conformance, and the journal
+importer reruns it on every passing record. LiteRT profiles select only `S01`
+(`litert_grammar_unsupported`), WebGPU omits `S05`
+(`webgpu_lazy_grammar_unsupported`) and direct-native controls omit the pack.
+Catalog 1–7 journals keep their inventories, features and fixtures; a
+structured-output selection cannot claim an older catalog.
+
+`structured-gguf-cpu` and `structured-gguf-metal` lock Qwen3-0.6B Q8_0.
+Qwen3.5-0.8B renders tools as `qwen3CoderXml`, which rejects canonical JSON
+Schema tools, so it cannot run `S08`.
+
+```bash
+dart run tool/testing/validation.dart local --profile structured-gguf-metal \
+  --out .dart_tool/validation/runs/structured-metal
+```
+
+The profiles use the `3 + 4` arithmetic fixture of the LiteRT Qwen3-0.6B
+profiles: with thinking off, Qwen3-0.6B answers `2` for `2 + 2`
+([#509](https://github.com/leehack/llamadart/issues/509)).
+
+Local macOS arm64 (M4 Max) JIT runs on 2026-10-24 with clean source
+(diagnostic, not qualification): `structured-gguf-metal` and
+`structured-gguf-cpu` each passed 26/26. The grammar reply was `cedar-201`, the
+lazy reply ended `ANSWER: omega` after free text, the stream had 16 content
+deltas with 14 rejected partials, and the tool call was
+`{"city":"Montréal","unit":"celsius","days":3}`. Each unconstrained control
+answered in prose (or `ANSWER: BLUE`). With the native grammar setup in
+`LlamaCppService` skipped (no grammar sampler is created, so an invalid grammar
+is not rejected either), `S02`–`S08` and `C12.grammar` fail and `S01` still
+passes.
 
 ### Catalog 7 LiteRT-LM restart and overlap
 
