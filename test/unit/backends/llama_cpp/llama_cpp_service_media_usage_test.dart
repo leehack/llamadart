@@ -43,13 +43,14 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
-  FakeMtmd install({required bool chunkEval}) {
+  FakeMtmd install({required bool chunkEval, int chunkCount = 1}) {
     final fake = FakeMtmd.install(
       service,
       tokens: service.tokenize(model, _mediaText, true),
       chunkEval: chunkEval,
       chunk: FakeMtmdChunk.causalImage,
       chunkTokenCount: _mediaTokens,
+      chunkCount: chunkCount,
     );
     addTearDown(fake.dispose);
     service.createMultimodalContext(model, '${dir.path}/mmproj.gguf');
@@ -83,6 +84,16 @@ void main() {
 
     expect(await promptTokensAfter('<__media__>', media: fake), _mediaTokens);
     expect(fake.evaluations, 1);
+  });
+
+  test('sums the tokens of every media chunk', () async {
+    final fake = install(chunkEval: true, chunkCount: 2);
+
+    expect(
+      await promptTokensAfter('<__media__>', media: fake),
+      2 * _mediaTokens,
+    );
+    expect(fake.evaluations, 2);
   });
 
   test('reports no tokens for a media prompt cancelled before its first '

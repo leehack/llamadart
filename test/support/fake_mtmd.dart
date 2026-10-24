@@ -61,6 +61,7 @@ final class FakeMtmd {
     this.chunkEval = false,
     this.chunk = FakeMtmdChunk.text,
     this.chunkTokenCount,
+    this.chunkCount = 1,
     this.decode = llama_decode,
     this.audioBitmap = _audioBitmap,
     this.vision = false,
@@ -178,6 +179,10 @@ final class FakeMtmd {
   /// in for an M-RoPE image, which has fewer positions than tokens.
   final int? chunkTokenCount;
 
+  /// How many chunks the chunk-level functions present the media part as,
+  /// each evaluating [tokens].
+  final int chunkCount;
+
   /// The decode call the media evaluation makes.
   final int Function(Pointer<llama_context> context, llama_batch batch) decode;
 
@@ -221,7 +226,7 @@ final class FakeMtmd {
   ];
 
   late final MtmdChunkEvalApi _chunkEvalApi = MtmdChunkEvalApi(
-    chunksSize: (_) => 1,
+    chunksSize: (_) => chunkCount,
     chunksGet: (_, _) => Pointer<mtmd_input_chunk>.fromAddress(0x40),
     chunkType: (_) => chunk == FakeMtmdChunk.text
         ? mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT.value
