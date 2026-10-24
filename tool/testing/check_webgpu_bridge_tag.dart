@@ -12,6 +12,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/web_setup/web_bridge_setup.dart';
 
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
@@ -62,6 +63,13 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     'example/chat_app/web/index.html',
     RegExp(
       r"^\s*const defaultBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'lib/src/web_setup/web_bridge_setup.dart',
+    RegExp(
+      r"^const String webBridgeAssetsTag = '(v\d+\.\d+\.\d+)';$",
       multiLine: true,
     ),
   ),
@@ -399,8 +407,10 @@ const String bridgeAssetsReleaseId = '422794693';
 const String bridgeAssetsTagCommit = '78430396ad1a53d5058d3999727a539379a5e635';
 
 /// SHA-256 hash of the exact approved published manifest.json.
-const String bridgeManifestSha256 =
-    'f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44';
+///
+/// `dart run llamadart:web_setup` trusts the assets this manifest lists, so
+/// the value lives with that tool and `--verify-manifest` checks it here.
+const String bridgeManifestSha256 = webBridgeManifestSha256;
 
 /// Where the native runtime's llama.cpp build is pinned.
 const String nativeLlamaCppTagPath = 'lib/src/hook/native_release_pins.dart';

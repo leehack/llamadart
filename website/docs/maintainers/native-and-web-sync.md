@@ -406,8 +406,10 @@ Fetch pinned assets for local app web files:
 WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
-A repin updates the release id, tag commit, bridge source and manifest SHA-256
-in `tool/testing/check_webgpu_bridge_tag.dart` and the docs that restate them.
+A repin updates the release id, tag commit and bridge source in
+`tool/testing/check_webgpu_bridge_tag.dart`, the tag and manifest SHA-256 in
+`lib/src/web_setup/web_bridge_setup.dart` (which `dart run
+llamadart:web_setup` trusts), and the docs that restate them.
 Before opening the PR, check them against the published release:
 
 ```bash

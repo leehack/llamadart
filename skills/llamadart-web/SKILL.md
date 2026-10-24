@@ -2,7 +2,8 @@
 name: llamadart-web
 description: >-
   Use when running llamadart in a browser or Flutter Web app: adding and
-  pinning the WebGPU bridge assets in web/index.html, setting COOP/COEP
+  pinning the WebGPU bridge assets in web/index.html (dart run
+  llamadart:web_setup), setting COOP/COEP
   cross-origin isolation headers, loading GGUF models by URL with WebGPU or
   WebAssembly CPU fallback, sizing models for memory64, browser model caching,
   running .litertlm models through @litert-lm/core, or gating web features on
@@ -24,6 +25,16 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   vocabulary and int32 bounds retain `RangeError`; LoRA fetch failures remain
   `LlamaModelException`.
 
+- Run `dart run llamadart:web_setup` from the app root: it downloads the
+  bridge assets the installed llamadart pins into `web/webgpu_bridge/`,
+  verifies each against the pinned release manifest, and adds a marked
+  bootstrap block to `web/index.html`. Rerun it after upgrading llamadart;
+  `--check` verifies without network access of its own (exit `1` lists
+  problems; `dart run` may still run native build hooks that download on a
+  cold pub cache) and `--no-index-html` leaves the page alone. Do not
+  hand-edit the generated block. When switching from a hand-written loader,
+  remove it first: the tool refuses a page that already imports
+  `llama_webgpu_bridge.js` or assigns `LlamaWebGpuBridge` outside its block.
 - llamadart never injects the bridge. Load it in `web/index.html` before
   `flutter_bootstrap.js` (or your compiled script) and assign
   `window.LlamaWebGpuBridge`. At model load llamadart waits up to 12 seconds
@@ -126,13 +137,20 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   `thinkingBudget` and speculative decoding; generation honors only
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no
   embeddings, tokenizer, LoRA, state or usage. Use GGUF for anything more.
-- `flutter build web` only copies what is in `web/`: fetch or commit
-  `web/webgpu_bridge/` before building, and set the COOP/COEP headers on the
+- `flutter build web` only copies what is in `web/`: run the setup tool (or
+  commit `web/webgpu_bridge/`) before building, and set the COOP/COEP headers on the
   production host too, not only on the dev server.
 
 ## Examples
 
-Fetch pinned assets:
+Set up a Flutter Web app (assets plus `index.html` bootstrap):
+
+```bash
+dart run llamadart:web_setup
+dart run llamadart:web_setup --check  # in CI, before flutter build web
+```
+
+Or fetch the pinned assets by hand, without checksum verification:
 
 ```bash
 TAG=vX.Y.Z # the tag pinned in the WebGPU bridge docs for your llamadart version
@@ -145,7 +163,8 @@ for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
 done
 ```
 
-Load the bridge (and optionally LiteRT-LM) in `web/index.html`:
+Without the tool, load the bridge (and optionally LiteRT-LM) in
+`web/index.html`:
 
 ```html
 <script type="module">
