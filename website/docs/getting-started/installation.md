@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.0
+  llamadart: ^0.16.1
 ```
 
 Then resolve packages:
@@ -54,9 +54,9 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.0
+  llamadart: ^0.16.1
   llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.16.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_litert_lm_flutter: ^0.16.1 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in
 ```
 
@@ -105,9 +105,11 @@ companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
 A maintained companion pinning an earlier build of the core's LiteRT-LM
 release still embeds and loads its complete macOS arm64 runtime and needs no
-build phase; the build only warns to upgrade it. Companion `0.16.0` pins
-`v0.18.1`, an earlier build of the `v0.18.1-2` runtime that fixes nondeterministic
-CPU output and slow Gemma 4 CPU decode on SME2 CPUs. Companions `0.0.15` to `0.15.2` pin `v0.18.0` builds, a
+build phase; the build only warns to upgrade it. Companion `0.16.1` pins
+this core's `v0.18.1-2`, which fixes nondeterministic CPU output and slow
+Gemma 4 CPU decode on SME2 CPUs, and requires core `>=0.16.1`. Companion
+`0.16.0` pins `v0.18.1`, an earlier build of that runtime, so it builds with
+that warning. Companions `0.0.15` to `0.15.2` pin `v0.18.0` builds, a
 different release from this core's `v0.18.1-2`, so they keep macOS LiteRT-LM in the hook
 cache with a warning to upgrade the companion and core together.
 On iOS the build does not check the LiteRT-LM companion pin. `v0.18.1-2`
