@@ -2900,7 +2900,7 @@ class LlamaEngine {
         'artifacts this usually means the loaded multimodal projector has no '
         'vision encoder, so load a vision projector. Android and iOS native '
         'artifacts are built without video (LLAMA_SUBPROCESS off), as are '
-        'older or custom runtimes. Video also needs FFmpeg/ffprobe, and llamadart does not yet ingest '
+        'some older or custom runtimes. Video also needs FFmpeg/ffprobe, and llamadart does not yet ingest '
         'video frames. Extract and send image frames instead.',
       );
     }
