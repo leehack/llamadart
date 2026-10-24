@@ -9,6 +9,19 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/token_batch.dart';
 
+final class _RecordingAllocator implements Allocator {
+  final requested = <int>[];
+
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
+    requested.add(byteCount);
+    return malloc.allocate<T>(byteCount, alignment: alignment);
+  }
+
+  @override
+  void free(Pointer<NativeType> pointer) => malloc.free(pointer);
+}
+
 void main() {
   test('lays the batch out as llama_batch_init does', () {
     const tokens = 5;
@@ -58,6 +71,24 @@ void main() {
     expect(ranges.first.$1, start);
     for (var i = 1; i < ranges.length; i++) {
       expect(ranges[i].$1, ranges[i - 1].$2, reason: 'no overlap, no gap');
+    }
+  });
+
+  test('allocates exactly up to the end of the last array', () {
+    for (final (tokens, sequences) in [(1, 1), (5, 3), (512, 1), (64, 8)]) {
+      final allocator = _RecordingAllocator();
+      final owned = TokenBatch.allocate(
+        tokens,
+        sequences,
+        allocator: allocator,
+      );
+      addTearDown(owned.free);
+      final lastArrayEnd =
+          owned.batch.logits.address + tokens - owned.block.address;
+
+      expect(allocator.requested, [
+        lastArrayEnd,
+      ], reason: '$tokens tokens, $sequences sequences');
     }
   });
 
