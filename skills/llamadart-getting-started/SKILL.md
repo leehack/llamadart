@@ -119,7 +119,8 @@ Linux and web. Full docs: https://llamadart.leehack.com
     the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows
     Server lacks it.
   - Web apps must add the WebGPU bridge script to `web/index.html`; the package
-    does not inject it.
+    does not inject it. `dart run llamadart:web_setup` vendors the pinned,
+    checksum-verified assets and adds it.
   - To ship one runtime family only, set
     `hooks.user_defines.llamadart.llamadart_native_runtimes` in `pubspec.yaml`.
 - Native runtimes are fetched by the build hook on first build; no C++

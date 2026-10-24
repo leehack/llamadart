@@ -314,7 +314,15 @@ removed.
 ## Web
 
 Web apps must load the WebGPU bridge script in their `web/index.html`; the
-package does not inject it. See
+package does not inject it. From the app root, run:
+
+```bash
+dart run llamadart:web_setup
+```
+
+It vendors the pinned bridge assets into `web/webgpu_bridge/`, verifies their
+checksums and adds the bootstrap to `web/index.html`; rerun it after upgrading
+llamadart. See
 [Add the bridge to your app](../platforms/webgpu-bridge#add-the-bridge-to-your-app).
 
 ## AI agent skills
