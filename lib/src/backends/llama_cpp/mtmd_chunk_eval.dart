@@ -356,6 +356,9 @@ bool _isMediaChunk(int chunkType) =>
 /// Returns the first nonzero native result as an [MtmdChunkEvalFailure],
 /// otherwise `null`. After a `null`, [newNPast] holds the position after the
 /// last fully evaluated chunk.
+///
+/// [onChunkEvaluated] receives the token count of each fully evaluated chunk,
+/// which differs from its positions on M-RoPE projectors.
 MtmdChunkEvalFailure? evalMtmdChunksUntilCancelled(
   MtmdChunkEvalApi api,
   Pointer<mtmd_context> ctx,
@@ -363,8 +366,9 @@ MtmdChunkEvalFailure? evalMtmdChunksUntilCancelled(
   Pointer<mtmd_input_chunks> chunks,
   int nBatch,
   Pointer<llama_pos> newNPast,
-  Pointer<Int8> cancelToken,
-) {
+  Pointer<Int8> cancelToken, {
+  void Function(int tokenCount)? onChunkEvaluated,
+}) {
   final nChunks = api.chunksSize(chunks);
   var nPast = 0;
   for (var i = 0; i < nChunks; i++) {
@@ -413,6 +417,7 @@ MtmdChunkEvalFailure? evalMtmdChunksUntilCancelled(
       );
     }
     nPast = newNPast.value;
+    onChunkEvaluated?.call(api.chunkTokenCount(chunk));
   }
   newNPast.value = nPast;
   return null;
