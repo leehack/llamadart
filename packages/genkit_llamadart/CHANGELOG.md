@@ -1,4 +1,4 @@
-## Unreleased
+## 3.5.0 - 2026-10-23
 
 - Upgrade to llamadart 0.16.0 and matching 0.16.x Apple companions.
 - Export `LiteRtLmModelParams` and `LlamaCppModelParams`; examples and docs use them instead of the deprecated `liteRtLm*` arguments of `ModelParams`.
