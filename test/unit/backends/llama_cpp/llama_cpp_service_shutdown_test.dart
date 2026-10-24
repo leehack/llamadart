@@ -1,11 +1,13 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:test/test.dart';
 
 import 'package:llamadart/src/backends/backend.dart';
@@ -14,7 +16,9 @@ import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/token_batch.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 
 import '../../../support/synthetic_decision_head.dart';
@@ -41,8 +45,13 @@ void main() {
 
     expect(held, [
       'llama_dart_exit_free model',
+      // Each context, then its sampler chain and token batch.
       'llama_dart_exit_free context',
+      'llama_sampler_free session',
+      'free session',
       'llama_dart_exit_free context',
+      'llama_sampler_free session',
+      'free session',
       'llama_dart_exit_free model',
       // The decision head: its encoder context, then its runtime.
       'llama_dart_exit_free context',
@@ -65,7 +74,11 @@ void main() {
     expect(held, [
       'llama_model_free model',
       'llama_free context',
+      'llama_sampler_free session',
+      'free session',
       'llama_free context',
+      'llama_sampler_free session',
+      'free session',
       'llama_model_free model',
       'llama_free context',
       'ggml_backend_free backend',
@@ -127,7 +140,7 @@ void main() {
       return counts;
     });
 
-    expect(counts, [4, 3, 1, 0]);
+    expect(counts, [8, 5, 1, 0]);
   });
 
   test('releases every hold when the service is disposed', () async {
@@ -141,6 +154,136 @@ void main() {
 
     expect(held, 0);
   });
+
+  test('holds the sampler chain of a running generation until it '
+      'ends', () async {
+    final model = paths.model;
+    final (:before, :during, :after) = await Isolate.run(() async {
+      final service = LlamaCppService()..initializeBackend();
+      final context = service.createContext(
+        service.loadModel(model, _params),
+        _params,
+      );
+      final before = _describeHeld();
+      final cancel = calloc<Int8>();
+      final firstToken = Completer<List<String>>();
+      final subscription = service
+          .generate(
+            context,
+            'a b',
+            const GenerationParams(maxTokens: 4),
+            cancel.address,
+          )
+          .listen((_) {
+            if (!firstToken.isCompleted) firstToken.complete(_describeHeld());
+          });
+      final during = await firstToken.future;
+      await subscription.asFuture<void>();
+      calloc.free(cancel);
+      final after = _describeHeld();
+      service.dispose();
+      return (before: before, during: during, after: after);
+    });
+
+    expect(before, [
+      'llama_dart_exit_free model',
+      'llama_dart_exit_free context',
+      'llama_sampler_free session',
+      'free session',
+    ]);
+    expect(during, [...before, 'llama_sampler_free session']);
+    expect(after, before);
+  });
+
+  test('releases the sampler chain of a generation whose sampler setup '
+      'fails', () async {
+    final model = paths.model;
+    final (:before, :error, :after) = await Isolate.run(() async {
+      final service = LlamaCppService()..initializeBackend();
+      final context = service.createContext(
+        service.loadModel(model, _params),
+        _params,
+      );
+      final before = _describeHeld();
+      final cancel = calloc<Int8>();
+      Object? error;
+      try {
+        await service
+            .generate(
+              context,
+              'a b',
+              const GenerationParams(maxTokens: 1, grammar: 'root ::= ('),
+              cancel.address,
+            )
+            .drain<void>();
+      } on Object catch (e) {
+        error = e;
+      }
+      calloc.free(cancel);
+      final after = _describeHeld();
+      service.dispose();
+      return (before: before, error: '${error.runtimeType}', after: after);
+    });
+
+    expect(error, 'LlamaInferenceException');
+    expect(after, before);
+  });
+
+  for (final generating in [false, true]) {
+    test('frees what an isolate killed while '
+        '${generating ? 'generating' : 'idle'} held at its exit', () async {
+      final ready = ReceivePort();
+      final exited = ReceivePort();
+      final isolate = await Isolate.spawn(_runUntilKilled, (
+        ready.sendPort,
+        paths.model,
+        generating,
+      ), onExit: exited.sendPort);
+      final held = await ready.first as List<String>;
+      isolate.kill(priority: Isolate.immediate);
+      await exited.first;
+
+      expect(held, [
+        'llama_dart_exit_free model',
+        'llama_dart_exit_free context',
+        'llama_sampler_free session',
+        'free session',
+        if (generating) 'llama_sampler_free session',
+      ]);
+      // A wrong free function or a double free at that exit ends the process.
+      expect(await Isolate.run(() => 'alive'), 'alive');
+    });
+  }
+}
+
+const _params = ModelParams(gpuLayers: 0, contextSize: 64);
+
+/// Creates a context, and when [generating] starts a generation and pauses it
+/// after one token, then sends what it holds and waits to be killed.
+Future<void> _runUntilKilled((SendPort, String, bool) message) async {
+  final (ready, model, generating) = message;
+  final service = LlamaCppService()..initializeBackend();
+  final context = service.createContext(
+    service.loadModel(model, _params),
+    _params,
+  );
+  if (generating) {
+    late final StreamSubscription<List<int>> subscription;
+    subscription = service
+        .generate(
+          context,
+          'a b',
+          const GenerationParams(maxTokens: 32),
+          calloc<Int8>().address,
+        )
+        .listen((_) {
+          subscription.pause();
+          ready.send(_describeHeld());
+        });
+  } else {
+    ready.send(_describeHeld());
+  }
+  await Completer<void>().future;
 }
 
 final class _Paths {
@@ -165,11 +308,10 @@ final class _Paths {
   LlamaCppService service,
   _Paths paths,
 ) {
-  const params = ModelParams(gpuLayers: 0, contextSize: 64);
-  final model = service.loadModel(paths.model, params);
-  final context = service.createContext(model, params);
-  service.createContext(model, params);
-  final encoder = service.loadModel(paths.encoder, params);
+  final model = service.loadModel(paths.model, _params);
+  final context = service.createContext(model, _params);
+  service.createContext(model, _params);
+  final encoder = service.loadModel(paths.encoder, _params);
   final head = service
       .loadDecisionHead(encoder, paths.head, paths.config)
       .handle;
@@ -190,6 +332,10 @@ List<String> _describeHeld() {
     ggmlFreeAddresses.backendFree.address: 'ggml_backend_free',
     ggmlFreeAddresses.bufferFree.address: 'ggml_backend_buffer_free',
     ggmlFreeAddresses.schedFree.address: 'ggml_backend_sched_free',
+    Native.addressOf<NativeFunction<Void Function(Pointer<llama_sampler>)>>(
+      llama_sampler_free,
+    ).address: 'llama_sampler_free',
+    TokenBatch.freeAddress.address: 'free',
   };
   return [
     for (final (:free, :stage)
