@@ -165,7 +165,7 @@ Pick targeted rows based on the touched surface:
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
-| Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
+| Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
 | `stable_diffusion` runtime pin, image worker native calls, progress polling, exit or isolate shutdown | `image-exit-teardown`, `image-generation-smoke` |
 | Chat-app image screen or image model downloads | `chat-app-image-generation-smoke` |
@@ -206,7 +206,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `gemma4-webgpu-mem64` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
@@ -347,6 +347,16 @@ dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
 dart run tool/testing/run_local_e2e.dart --scenario decision-model-smoke \
   --model-path /path/to/laya-Q8_0.gguf \
   --head-path /path/to/laya-head.safetensors
+
+# Runs the same rows and default tolerances in Chrome through
+# LlamaEngine(LlamaBackend()) and the pinned bridge worker, and requires the
+# model and head on WebGPU. It fetches the pinned bridge assets into
+# build/decision_web_e2e/bridge/, and the bridge downloads the
+# decision-gguf-webgpu profile's laya-Q8_0.gguf and laya-head.safetensors
+# (527 MB) from Hugging Face on every run. The `chrome-webgpu` platform in
+# dart_test.yaml starts Chrome headless without --disable-gpu and with
+# SharedArrayBuffer enabled; a machine without a WebGPU adapter fails the load.
+dart run tool/testing/run_local_e2e.dart --scenario decision-model-web-smoke
 
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 

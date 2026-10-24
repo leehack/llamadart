@@ -848,6 +848,40 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'decision-model-web-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Run the Laya parity fixture on Web through LlamaBackend and the '
+          'pinned WebGPU bridge: exact token ids, raw logits and answers.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/decision_web_e2e/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/decision_engine_web_e2e_test.dart',
+          ],
+          description: 'Web decision model real-model parity smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'llama-cpp-speculative-benchmark',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

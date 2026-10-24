@@ -633,6 +633,24 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'safetensors reader, or llama.cpp encoder changes.',
   ),
   TestMatrixRow(
+    id: 'decision-model-web-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'LlamaEngine(LlamaBackend()) through WebAutoBackend and '
+        'WebGpuLlamaBackend in the pinned bridge worker, in Chrome with '
+        'WebGPU: the Laya Q8_0 encoder and head from Hugging Face, exact '
+        'fixture token ids and markers, raw logits and DecisionEngine answers '
+        'within the decision-model-smoke tolerances, and model and head on '
+        'WebGPU',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'decision-model-web-smoke',
+    useWhen:
+        'Web decision head (webgpu_decision.dart), WebAutoBackend decision '
+        'routing, decision engine, or WebGPU bridge pin changes.',
+  ),
+  TestMatrixRow(
     id: 'web-text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',

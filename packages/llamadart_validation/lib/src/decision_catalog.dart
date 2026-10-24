@@ -1,7 +1,7 @@
 import 'case_catalog.dart';
 
-/// Laya 0.3.5 parity reference and the tolerances of the decision E2E test
-/// (`test/e2e/backends/decision_engine_e2e_test.dart`). Bound into every
+/// Laya 0.3.5 parity reference and the tolerances of the decision E2E tests
+/// (`DecisionParity` in `test/support/decision_fixture.dart`). Bound into every
 /// decision case record; decision profiles have no overrides.
 const decisionValidationFixture = <String, Object>{
   'reference': 'assets/decision/laya_0_3_5_reference.json',
