@@ -250,6 +250,46 @@ List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
   };
 }
 
+/// Directories, in probe order, where a Linux or Windows build places the
+/// LiteRT-LM code assets reported by the build hook, relative to the app
+/// executable at [executablePath]: beside it (Flutter Windows), in `lib/`
+/// beside it (Flutter Linux) and in `../lib/` (`dart build cli`).
+///
+/// `DynamicLibrary.open` cannot resolve the `package:` asset ids the hook
+/// reports, so a relocated app must find these files by path.
+List<String> liteRtLmBundleLibraryDirectoryCandidatesForAbi(
+  String executablePath,
+  Abi abi,
+) {
+  if (abi != Abi.linuxX64 && abi != Abi.linuxArm64 && abi != Abi.windowsX64) {
+    return const <String>[];
+  }
+  final executableDir = path.dirname(path.absolute(executablePath));
+  return <String>[
+    executableDir,
+    path.join(executableDir, 'lib'),
+    path.normalize(path.join(executableDir, '..', 'lib')),
+  ];
+}
+
+/// The first [liteRtLmBundleLibraryDirectoryCandidatesForAbi] directory that
+/// holds every [liteRtLmRequiredLibrariesForAbi] library, or null.
+Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
+  String executablePath,
+  Abi abi,
+) {
+  for (final candidate in liteRtLmBundleLibraryDirectoryCandidatesForAbi(
+    executablePath,
+    abi,
+  )) {
+    final dir = Directory(candidate);
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+      return dir;
+    }
+  }
+  return null;
+}
+
 /// Internal helper used by the LiteRT-LM runtime to locate iOS native assets.
 List<String> liteRtLmIosLibraryCandidatesForAbi(Abi abi) {
   return switch (abi) {
@@ -2111,6 +2151,14 @@ class LiteRtLmRuntimeClient {
       if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
         return dir.absolute;
       }
+    }
+
+    final bundleDir = liteRtLmFindBundleLibraryDirectoryForAbi(
+      Platform.resolvedExecutable,
+      abi,
+    );
+    if (bundleDir != null) {
+      return bundleDir;
     }
 
     final cacheDirectoryCandidates = liteRtLmCacheDirectoryCandidatesForAbi(
