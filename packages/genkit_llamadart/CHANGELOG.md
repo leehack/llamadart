@@ -1,6 +1,6 @@
 ## 3.5.0 - 2026-10-23
 
-- Upgrade to llamadart 0.16.0 and matching 0.16.x Apple companions.
+- Upgrade to llamadart 0.16.0 and matching 0.16.x Apple companions. Core 0.16 throws `LlamaUnsupportedException` for `ModelParams` fields the selected runtime would ignore, including through `LlamaModelDefinition.modelParams`; see the llamadart migration guide.
 - Export `LiteRtLmModelParams` and `LlamaCppModelParams`; examples and docs use them instead of the deprecated `liteRtLm*` arguments of `ModelParams`.
 - Round-trip `SpeculativeDecodingConfig.draftMicroBatchSize` through JSON generation controls instead of dropping it.
 
