@@ -97,8 +97,7 @@ or media payloads; old string calls retain their existing text observations.
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
 `loadMultimodalProjector` loading path. `LiteRtLmModelParams(embeddingEngine: true)`
 selects the separate LiteRT-LM embedding engine. Use `ComputeDevice.cpu` on
-macOS arm64, iOS arm64 or Android arm64 (verified on an emulator; physical
-Android devices are not yet verified). Native GPU, Linux, Windows, Android x86_64
+macOS arm64, iOS arm64 or Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators). Native GPU, Linux, Windows, Android x86_64
 and all LiteRT-LM Web paths throw `LlamaUnsupportedException` at load, before
 native engine creation, whatever runtime library is loaded
 ([#1367](https://github.com/leehack/llamadart/issues/1367)). This flag

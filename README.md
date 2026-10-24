@@ -293,7 +293,7 @@ API-version-1 embedding modality probe. The default pin is qualified with
 EmbeddingGemma-2 on Chrome CPU wasm memory64 against native CPU/Metal; repeated
 media batches require memory64. Hardware WebGPU remains unqualified. LiteRT-LM
 supports text, image and audio embeddings on macOS arm64, iOS arm64 and Android
-arm64 CPU with `LiteRtLmModelParams(embeddingEngine: true)`. Select
+arm64 CPU (Android verified on a Galaxy S24 without SME and on arm64 emulators) with `LiteRtLmModelParams(embeddingEngine: true)`. Select
 `ComputeDevice.cpu`; native GPU, Linux, Windows, Android x86_64 and all LiteRT-LM
 Web paths throw `LlamaUnsupportedException` before native engine creation. GGUF loaders reject this LiteRT-LM-only flag.
 llama.cpp text-only content follows `embed`, including causal unpooled models.

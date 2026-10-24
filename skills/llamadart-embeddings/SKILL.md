@@ -66,7 +66,7 @@ description: >-
   before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
   mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
   Native CPU qualification covers macOS arm64 and iOS arm64; Android arm64 is
-  verified on an emulator only. Concurrent embeds queue;
+  verified on a Galaxy S24 without SME and on arm64 emulators. Concurrent embeds queue;
   cancellation/unload/dispose settle the current item and discard all active and
   queued batches. A timeout discards only its own batch; other queued callers
   retain their own deadlines.

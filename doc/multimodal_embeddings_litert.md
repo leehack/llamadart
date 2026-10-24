@@ -15,9 +15,10 @@ The capability probe checks the actual bundle's text-encoder/embedder and
 vision/audio encoder/adapter sections, the complete optional v0.18 embedding C
 ABI, and successful processor creation. Unknown or unloaded contexts return
 all-false without runtime I/O. Native CPU is qualified on macOS arm64 and iOS
-arm64 (iPhone 16 Pro and the arm64 simulator). Android arm64 is verified on an
-arm64 emulator on an SME2 host, with vectors bit-identical to the iPhone run;
-physical Android devices are not yet verified. Native GPU/NPU, other native
+arm64 (iPhone 16 Pro and the arm64 simulator). Android arm64 is verified on a
+Galaxy S24 (Snapdragon 8 Gen 3, no SVE/SME) and on arm64 emulators with and
+without SME, with vectors bit-identical to the iPhone run; other Android devices
+are not individually verified. Native GPU/NPU, other native
 platforms and all Web embeddings remain unsupported. Synthetic media establishes wiring, not
 retrieval quality. Other devices and embedding families were not qualified.
 
@@ -130,6 +131,8 @@ unsupported. These observations do not establish the cause of the numerical gap.
   returns `UNKNOWN` and a second one in the same process crashes with `SIGSEGV`
   in `LiteRtCreateCompiledModel` from `VisionEncoder::Initialize`. Android
   x86_64 is unqualified ([#1367](https://github.com/leehack/llamadart/issues/1367)).
+  The Galaxy S24 has no SME and works, so missing SME alone does not explain
+  the Linux arm64 failure; the failure follows the Linux and Windows builds.
   Requalify a platform before adding it to
   `liteRtLmNativeEmbeddingsQualifiedForAbi`.
 - **Native GPU:** fail before native engine creation. `v0.18.0-3` has a
