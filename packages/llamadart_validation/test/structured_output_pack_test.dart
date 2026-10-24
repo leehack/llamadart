@@ -30,11 +30,13 @@ class _ScriptedBackend
     this.honorGrammar = true,
     this.grammarSupport = true,
     this.controlConforms = false,
+    this.malformedIsJson = false,
   });
 
   final bool honorGrammar;
   final bool grammarSupport;
   final bool controlConforms;
+  final bool malformedIsJson;
   final requests = <GenerationParams>[];
 
   @override
@@ -97,7 +99,7 @@ class _ScriptedBackend
       return constrained ? '{"city":"Paris"}' : 'Paris is a city.';
     }
     if (prompt.contains(_prompt('reject', 'malformed_prompt'))) {
-      return 'The sea is wide.';
+      return malformedIsJson ? '{"sea":"wide"}' : 'The sea is wide.';
     }
     if (prompt.contains(_prompt('tools'))) {
       final arguments = constrained
@@ -214,6 +216,23 @@ void main() {
     final litert = focused('chat-litert-cpu');
     expect(structured(litert), ['S01.capabilities']);
     expect(omissions(litert).values.toSet(), {'litert_grammar_unsupported'});
+    final native = ValidationProfile.fromJson(
+      (jsonDecode(
+              File(
+                'assets/profiles/npu-qualcomm-sm8650.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>)
+        ..['execution_path'] = 'native_c_api'
+        ..['enable_thinking'] = true
+        ..['selection'] = 'focused'
+        ..['focus_features'] = ['structured_output'],
+    );
+    expect(structured(native), isEmpty);
+    expect(omissions(native).keys, _structuredIds);
+    expect(omissions(native).values.toSet(), {
+      'outside_native_reference_scope',
+    });
     final webgpu = focused('chat-gguf-webgpu');
     expect(structured(webgpu), [
       for (final id in _structuredIds)
@@ -277,6 +296,13 @@ void main() {
     expect(record['reason'], contains('unconstrained control'));
   });
 
+  test('a malformed-output request that returns JSON stays NOT_RUN', () async {
+    final result = await _run(_ScriptedBackend(malformedIsJson: true));
+    final record = _record(result.events, 'S06.reject');
+    expect(record['status'], 'NOT_RUN');
+    expect(record['reason'], contains('produced valid JSON'));
+  });
+
   test(
     'missing grammar support fails capabilities and skips the rest',
     () async {
@@ -298,6 +324,25 @@ void main() {
         (r) => (r['constrained'] as Map)['content'] = '{"name":"Ada"}',
       ),
       ('S03.json_schema', (r) => (r['helper'] as Map)['value'] = {'name': 1}),
+      (
+        'S03.json_schema',
+        (r) => (r['constrained'] as Map)
+          ..['content'] = '{"name":"Ada"}'
+          ..['parsed'] = {'name': 'Ada'},
+      ),
+      (
+        'S02.json_object',
+        (r) => (r['control'] as Map)['content'] = '{"description":"apple"}',
+      ),
+      ('S02.json_object', (r) => r.remove('control')),
+      (
+        'S02.json_object',
+        (r) => (r['constrained'] as Map)['parsed'] = {'other': 1},
+      ),
+      (
+        'S04.grammar',
+        (r) => (r['constrained'] as Map)['stream_completed'] = false,
+      ),
       ('S04.grammar', (r) => (r['constrained'] as Map)['content'] = 'cedar-1'),
       (
         'S05.grammar.lazy',
@@ -309,7 +354,44 @@ void main() {
           'error_type': 'FormatException',
         },
       ),
+      (
+        'S06.reject',
+        (r) => (r['mismatch'] as Map)['content'] = '{"town":"Paris"}',
+      ),
+      (
+        'S06.reject',
+        (r) => (r['unsupported_schema'] as Map)['error_type'] =
+            'LlamaArgumentException',
+      ),
+      (
+        'S06.reject',
+        (r) => (r['unsupported_response_format'] as Map)['error_type'] =
+            'LlamaInferenceException',
+      ),
+      (
+        'S06.reject',
+        (r) => (r['unsupported_response_format'] as Map)['chunks'] = 3,
+      ),
       ('S07.stream', (r) => r['partial_rejections'] = <Object>[]),
+      (
+        'S07.stream',
+        (r) => r['partial_rejections'] = [
+          for (final rejection in r['partial_rejections'] as List)
+            {...rejection as Map, 'error_type': 'FormatException'},
+        ],
+      ),
+      (
+        'S07.stream',
+        (r) {
+          final output = r['output'] as Map;
+          output['content_deltas'] = ['{"name":', '"Ada"}'];
+          output['content'] = '{"name":"Ada"}';
+          output['parsed'] = {'name': 'Ada'};
+          r['partial_rejections'] = [
+            {'length': 8, 'error_type': 'LlamaInferenceException'},
+          ];
+        },
+      ),
       (
         'S08.tools.schema',
         (r) => (r['output'] as Map)['tool_call_deltas'] = [
@@ -321,6 +403,22 @@ void main() {
             },
           },
         ],
+      ),
+      (
+        'S08.tools.schema',
+        (r) => (r['output'] as Map)['tool_call_deltas'] = [
+          {
+            'index': 0,
+            'function': {
+              'name': 'other_tool',
+              'arguments': '{"city":"Montréal","unit":"celsius","days":7}',
+            },
+          },
+        ],
+      ),
+      (
+        'S08.tools.schema',
+        (r) => (r['output'] as Map)['finish_reasons'] = ['stop'],
       ),
     ]) {
       final events = (jsonDecode(jsonEncode(result.events)) as List)
@@ -348,6 +446,13 @@ void main() {
         ('tier', 'platinum'),
         ('age', 17),
         ('age', 34.5),
+        ('rating', 'x'),
+        (
+          'loans',
+          [
+            {'title': 'Dune', 'days': 99},
+          ],
+        ),
         ('nickname', 'Ace'),
         ('fines', [1]),
         ('notes', 'late'),
@@ -367,6 +472,25 @@ void main() {
         conformsToFixtureSchema(member()..remove('rating'), schema),
         isFalse,
       );
+    });
+
+    test('rejects open objects and out-of-range numbers', () {
+      expect(
+        conformsToFixtureSchema(
+          {'a': 1},
+          {
+            'type': 'object',
+            'properties': {
+              'a': {'type': 'integer'},
+            },
+          },
+        ),
+        isFalse,
+      );
+      final bounded = {'type': 'number', 'minimum': 0, 'maximum': 1};
+      expect(conformsToFixtureSchema(0.5, bounded), isTrue);
+      expect(conformsToFixtureSchema(1.5, bounded), isFalse);
+      expect(conformsToFixtureSchema(-0.5, bounded), isFalse);
     });
 
     test('fails closed on keywords it does not check', () {

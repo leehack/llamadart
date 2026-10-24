@@ -60,11 +60,11 @@ bool conformsToFixtureSchema(Object? value, Map schema) {
     case 'boolean':
       return value is bool;
     case 'number':
-      return value is num && value.isFinite;
     case 'integer':
       final minimum = schema['minimum'] as num?;
       final maximum = schema['maximum'] as num?;
-      return value is int &&
+      return (schema['type'] == 'integer' ? value is int : value is num) &&
+          (value as num).isFinite &&
           (minimum == null || value >= minimum) &&
           (maximum == null || value <= maximum);
     case 'string':

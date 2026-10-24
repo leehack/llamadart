@@ -1839,16 +1839,20 @@ dart run tool/testing/validation.dart local --profile structured-gguf-metal \
   --out .dart_tool/validation/runs/structured-metal
 ```
 
+The profiles use the `3 + 4` arithmetic fixture of the LiteRT Qwen3-0.6B
+profiles: with thinking off, Qwen3-0.6B answers `2` for `2 + 2`
+([#509](https://github.com/leehack/llamadart/issues/509)).
+
 Local macOS arm64 (M4 Max) JIT runs on 2026-10-24 with clean source
 (diagnostic, not qualification): `structured-gguf-metal` and
-`structured-gguf-cpu` each passed all eight structured cases. The grammar reply
-was `cedar-201`, the lazy reply ended `ANSWER: omega` after free text, the
-stream had 16 content deltas with 14 rejected partials, and the tool call was
+`structured-gguf-cpu` each passed 26/26. The grammar reply was `cedar-201`, the
+lazy reply ended `ANSWER: omega` after free text, the stream had 16 content
+deltas with 14 rejected partials, and the tool call was
 `{"city":"Montréal","unit":"celsius","days":3}`. Each unconstrained control
-answered in prose (or `ANSWER: BLUE`). The only other non-pass was
-`C04.arithmetic`: Qwen3-0.6B answers `2` with thinking off. With native
-grammar sampling disabled, `S02`–`S08` and `C12.grammar` fail and `S01`
-still passes.
+answered in prose (or `ANSWER: BLUE`). With the native grammar setup in
+`LlamaCppService` skipped (no grammar sampler is created, so an invalid grammar
+is not rejected either), `S02`–`S08` and `C12.grammar` fail and `S01` still
+passes.
 
 ### Catalog 7 LiteRT-LM restart and overlap
 
