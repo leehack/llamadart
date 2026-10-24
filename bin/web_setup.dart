@@ -66,7 +66,10 @@ Future<void> main(List<String> arguments) async {
         for (final String problem in problems) {
           stderr.writeln('  - $problem');
         }
-        stderr.writeln('Run dart run llamadart:web_setup to fix it.');
+        stderr.writeln(
+          'dart run llamadart:web_setup repairs missing or changed assets and '
+          'a stale bootstrap; follow the instructions on any other line.',
+        );
         exit(1);
       }
       stdout.writeln(

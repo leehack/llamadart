@@ -81,10 +81,14 @@ is replaced unless it verifies.
 
 Switching from a hand-written loader such as the
 [manual setup](#manual-setup) snippet: remove that `<script>` block first. The
-tool refuses a page that already loads `llama_webgpu_bridge.js` or assigns
-`LlamaWebGpuBridge` outside its own block, and names the line, because a second
-loader loads the bridge twice and a failing one makes model loads fail. To keep
-your own loader, pass `--no-index-html`.
+tool refuses a page with a `<script>` whose `src` or inline `import` names
+`llama_webgpu_bridge.js`, or that assigns `LlamaWebGpuBridge` (also as
+`window.LlamaWebGpuBridge` or `window["LlamaWebGpuBridge"]`) outside its own
+block, and quotes the line, because a second loader loads the bridge twice and
+a failing one makes model loads fail. A `<link rel="modulepreload">` or plain
+text mention is not a loader. It cannot see a loader inside an external
+JavaScript file, so remove such a loader yourself. To keep your own loader,
+pass `--no-index-html`.
 
 The tool itself makes no network requests for `--check`, but `dart run` may
 first run llamadart's native build hooks, which download the native runtimes
