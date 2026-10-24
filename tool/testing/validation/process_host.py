@@ -8,13 +8,21 @@ import sys
 import threading
 import time
 
+RETIREMENT_SECONDS = 5
+
+
+class GroupAbsenceTimeout(RuntimeError):
+    pass
+
 
 class PosixChildReservation:
     """Hold the returned child unreaped through final owned-group delivery.
 
     WNOWAIT completion observation preserves the actual child reservation; an
     old PID receipt or a matching sampled group alone does not. After wait/reap,
-    only non-delivering absence probes are allowed. Unknown remains failure.
+    only non-delivering absence probes are allowed. Unknown remains failure,
+    except that main() keeps a known child status when only the absence wait
+    times out (a container PID 1 may never reap orphans).
     """
     def __init__(self, child):
         self.child = child
@@ -69,7 +77,7 @@ class PosixChildReservation:
     def retire(self):
         # The existing five-second child-wait bound covers delivery, reap and
         # eventual group absence. This is not general daemon containment.
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + RETIREMENT_SECONDS
         completion = self.observe()
         if self.group is None:
             # Reservation proves this actual child only, not an unbound group.
@@ -128,7 +136,7 @@ class PosixChildReservation:
                 pass
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise RuntimeError('Child group retirement deadline expired')
+                raise GroupAbsenceTimeout('Child group retirement deadline expired')
             time.sleep(min(0.02, remaining))
 
 
@@ -188,6 +196,7 @@ def main(on_child_started=None):
     child = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              start_new_session=os.name != 'nt')
     job_assigned = False
+    known_status = False
     # os.waitid is missing on macOS before Python 3.13. Without it the
     # returned child cannot be held unreaped, so that host keeps the earlier
     # unheld group delivery instead of refusing every command.
@@ -234,6 +243,7 @@ def main(on_child_started=None):
             return 143
         if time.monotonic() >= deadline:
             return 124
+        known_status = reservation is not None and reservation.returncode is not None
         return child.returncode if reservation is None else reservation.returncode
     finally:
         if job:
@@ -241,7 +251,13 @@ def main(on_child_started=None):
             if not job_assigned and child.poll() is None:
                 child.kill()
         elif reservation is not None:
-            reservation.retire()
+            try:
+                reservation.retire()
+            except GroupAbsenceTimeout:
+                if not known_status:
+                    raise
+                print('Subprocess host warning: child group still present after '
+                      'child exit; keeping the child exit status', file=sys.stderr)
         elif os.name != 'nt':
             try:
                 os.killpg(child.pid, signal.SIGKILL)

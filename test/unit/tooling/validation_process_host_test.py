@@ -14,6 +14,7 @@ import time
 import unittest
 from unittest.mock import patch
 import importlib.util
+import io
 from types import SimpleNamespace
 
 
@@ -549,6 +550,52 @@ class PosixReservationTest(unittest.TestCase):
         delivery.assert_not_called()
         self.assertEqual(self.events, ['own-leader-stop', 'reap'])
         self.assertFalse(reservation.held)
+
+@unittest.skipIf(os.name == 'nt', 'POSIX reservation source controls')
+@unittest.skipUnless(HELD_CHILD, 'os.waitid is unavailable on this host')
+class GroupAbsenceTimeoutTest(unittest.TestCase):
+    def run_host(self, child_source, group_probe, seconds='5'):
+        module = load_host('absence_timeout_host')
+        stdout = io.TextIOWrapper(io.BytesIO())
+        stderr = io.TextIOWrapper(io.BytesIO())
+        argv = ['host', seconds, sys.executable, '-c', child_source]
+        previous = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
+        try:
+            with patch.object(module.sys, 'argv', argv), \
+                    patch.object(module.sys, 'stdout', stdout), \
+                    patch.object(module.sys, 'stderr', stderr), \
+                    patch.object(module, 'RETIREMENT_SECONDS', 0.1), \
+                    patch.object(module.os, 'killpg', group_probe):
+                try:
+                    status = module.main()
+                except Exception as error:
+                    status = error
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
+        stderr.flush()
+        return status, stderr.buffer.getvalue()
+
+    def test_known_status_wins_when_group_absence_wait_times_out(self):
+        def never_absent(group, sig):
+            raise PermissionError()
+        status, error = self.run_host('import sys; sys.exit(17)', never_absent)
+        self.assertEqual(status, 17)
+        self.assertIn(b'keeping the child exit status', error)
+
+    def test_unknown_status_still_fails_when_group_absence_wait_times_out(self):
+        real_killpg = os.killpg
+        delivered = []
+        def unprovable_absence(group, sig):
+            if sig == 0 and delivered:
+                raise PermissionError()
+            real_killpg(group, sig)
+            delivered.append(sig)
+        status, error = self.run_host('import time; time.sleep(30)',
+                                      unprovable_absence, seconds='0.2')
+        self.assertIsInstance(status, Exception)
+        self.assertEqual(str(status), 'Child group retirement deadline expired')
+        self.assertNotIn(b'keeping', error)
 
 
 if __name__ == '__main__':
