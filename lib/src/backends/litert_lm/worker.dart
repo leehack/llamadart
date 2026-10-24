@@ -177,7 +177,14 @@ void runLiteRtLmWorkerForTesting(
               message.modelParams,
               backendOverride: message.backendOverride,
             );
-            message.sendPort.send(LiteRtLmHandleResponse(handle));
+            message.sendPort.send(
+              LiteRtLmHandleResponse(
+                handle,
+                reportsFinishReasons:
+                    !message.modelParams.liteRtLmEmbeddingEngine &&
+                    service.reportsFinishReasons(),
+              ),
+            );
 
           case LiteRtLmModelFreeRequest():
             service.freeModel(message.modelHandle);
@@ -224,7 +231,11 @@ void runLiteRtLmWorkerForTesting(
                 message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
               }
 
-              message.sendPort.send(LiteRtLmDoneResponse());
+              message.sendPort.send(
+                LiteRtLmDoneResponse(
+                  generationLimit: service.lastGenerationLimit,
+                ),
+              );
             } catch (error) {
               message.sendPort.send(LiteRtLmErrorResponse.from(error));
             }
@@ -264,7 +275,11 @@ void runLiteRtLmWorkerForTesting(
                 message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
               }
 
-              message.sendPort.send(LiteRtLmDoneResponse());
+              message.sendPort.send(
+                LiteRtLmDoneResponse(
+                  generationLimit: service.lastGenerationLimit,
+                ),
+              );
             } catch (error) {
               message.sendPort.send(LiteRtLmErrorResponse.from(error));
             }

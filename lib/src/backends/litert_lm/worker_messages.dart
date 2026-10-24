@@ -7,6 +7,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
+import '../backend.dart';
 import '../worker_log_message.dart';
 import 'litert_lm_embedding.dart';
 import '../../core/models/inference/embedding.dart';
@@ -379,8 +380,12 @@ class LiteRtLmHandleResponse {
   /// The resource handle.
   final int handle;
 
+  /// For a model load, whether the runtime reports why each generation
+  /// ended; see `LiteRtLmRuntimeClient.supportsFinishReasons`.
+  final bool reportsFinishReasons;
+
   /// Creates a handle response.
-  LiteRtLmHandleResponse(this.handle);
+  LiteRtLmHandleResponse(this.handle, {this.reportsFinishReasons = false});
 }
 
 /// Response containing token bytes.
@@ -597,7 +602,14 @@ class LiteRtLmChatTemplateResponse {
 }
 
 /// Response indicating an operation completed.
-class LiteRtLmDoneResponse {}
+class LiteRtLmDoneResponse {
+  /// The token limit that ended a generation, or null when none did or the
+  /// runtime cannot tell.
+  final BackendGenerationLimit? generationLimit;
+
+  /// Creates a completion response.
+  LiteRtLmDoneResponse({this.generationLimit});
+}
 
 /// Handshake message sent from the backend to the worker.
 class LiteRtLmWorkerHandshake {

@@ -2262,9 +2262,9 @@ class LlamaEngine {
     void Function(LlamaGenerationUsage usage)? onUsage,
   ) {
     final reporting = backend;
-    if (onLimit != null && reporting is BackendGenerationLimitReporting) {
-      final limit = (reporting as BackendGenerationLimitReporting)
-          .generationLimitOf(generation);
+    final limitReporter = generationLimitReporterOf(reporting);
+    if (onLimit != null && limitReporter != null) {
+      final limit = limitReporter.generationLimitOf(generation);
       if (limit != null) {
         onLimit(limit);
       }

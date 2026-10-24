@@ -122,11 +122,13 @@ description: >-
   JavaScript. On dart2wasm, stack overflow cannot be caught and may trap or
   hang. Replace the broken template or use a compatible tool schema;
   rendering does not repair upstream templates.
-- Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
-  LiteRT-LM `v0.18.0` and Web `@litert-lm/core@0.18.0` with
-  `LlamaUnsupportedException` before generation or history mutation: those
-  runtimes expose no reliable token-limit termination cause. Manual
-  `ChatSession.create`/`LlamaEngine.create` still work, but LiteRT-LM `stop`
+- Automatic `sendWithTools` and `completeWithTools` loops need a runtime that
+  reports why generation stopped; a reply cut off at `maxTokens` returns
+  `LlamaToolLoopStopReason.truncated` and runs no tools. Native LiteRT-LM
+  reports it from litert-lm-native `v0.18.0-3` (the default pin does). Older
+  native runtimes and Web `@litert-lm/core@0.18.0` throw
+  `LlamaUnsupportedException` before generation or history mutation; manual
+  `ChatSession.create`/`LlamaEngine.create` still work there, but their `stop`
   does not prove EOS. Do not infer truncation from output length or run tool
   handlers automatically from an unverified terminal result.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web does

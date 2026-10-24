@@ -11,17 +11,19 @@ chat template renders them, and the parser returns the model's calls as
 the calls, and your code runs them.
 
 Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
-runtime termination reporting. On LiteRT-LM, llamadart cannot yet distinguish
-normal completion from a per-request token cutoff: it does not read the stream
-finish reason that native runtimes from `v0.18.0-3` report
-([#919](https://github.com/leehack/llamadart/issues/919)), and Web
-`@litert-lm/core@0.18.0` reports none. These loops throw
-`LlamaUnsupportedException` there before starting the loop or modifying its history, including when resuming a turn or
+runtime termination reporting, so that a reply cut off at `maxTokens` or the
+context stops the loop as `truncated` without running its calls. Native
+LiteRT-LM reports why a reply ended on runtimes whose
+`stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
+`v0.18.0-3` and later, including the default pin. Older native runtimes, and
+Web `@litert-lm/core@0.18.0`, which reports no cause
+([#919](https://github.com/leehack/llamadart/issues/919)), throw
+`LlamaUnsupportedException` before starting the loop or modifying its history, including when resuming a turn or
 passing an empty tools list. Plain `ChatSession.create` and
-`LlamaEngine.create` remain available for manually managed completion; their
-LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do not
-execute calls automatically based on that value or infer truncation from
-output length. See the [owner runtime prerequisite](../maintainers/runtime-ownership#litert-lm-termination-reporting).
+`LlamaEngine.create` remain available there for manually managed completion;
+their LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do
+not execute calls automatically based on that value or infer truncation from
+output length. See [LiteRT-LM termination reporting](../maintainers/runtime-ownership#litert-lm-termination-reporting).
 
 GPT-OSS channel and assistant frames wait for final parsing, including headers
 continued from the model's prompt, with or without tools. Ordinary prose streams

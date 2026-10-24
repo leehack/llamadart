@@ -322,6 +322,30 @@ abstract class BackendGenerationLimitReporting {
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation);
 }
 
+final Expando<BackendGenerationLimitReporting> _generationLimitReporters =
+    Expando<BackendGenerationLimitReporting>();
+
+/// Makes [reporter] report the generation limits of [backend].
+///
+/// For an exported backend class, which must not expose the internal
+/// [BackendGenerationLimitReporting] in its type.
+void registerGenerationLimitReporter(
+  Object backend,
+  BackendGenerationLimitReporting reporter,
+) {
+  _generationLimitReporters[backend] = reporter;
+}
+
+/// The generation-limit reporter of [backend]: the backend itself when it
+/// implements [BackendGenerationLimitReporting], otherwise one registered
+/// with [registerGenerationLimitReporter], or null.
+BackendGenerationLimitReporting? generationLimitReporterOf(Object? backend) =>
+    backend == null
+    ? null
+    : backend is BackendGenerationLimitReporting
+    ? backend
+    : _generationLimitReporters[backend];
+
 /// Optional backend capability for naming the runtime that runs the loaded
 /// model.
 ///
