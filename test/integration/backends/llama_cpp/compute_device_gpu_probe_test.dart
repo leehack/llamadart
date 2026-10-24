@@ -68,6 +68,10 @@ void main() {
 
   test(
     'an automatic backend finds a GPU exactly when one is registered',
+    skip: Platform.isWindows
+        ? 'On Windows the ggml symbols live in a separate DLL that the '
+              'binding used to count devices does not resolve.'
+        : null,
     () async {
       final error = loadOnGpu(GpuBackend.auto);
 
