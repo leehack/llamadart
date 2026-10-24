@@ -15,6 +15,7 @@ For canonical full release notes, use:
 - LiteRT-LM native embedding loads throw `LlamaUnsupportedException` on Linux, Windows and Android x86_64 instead of failing at engine creation or crashing the process; they stay available on macOS arm64, iOS arm64 and Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators) ([#1367](https://github.com/leehack/llamadart/issues/1367)).
 - Native llama.cpp `usage.promptTokens` counts the tokens of an image or audio prompt, as llama-server does, instead of its positions, which M-RoPE vision models such as Qwen3.5 report far fewer of ([#696](https://github.com/leehack/llamadart/issues/696)).
 - Add `ImageGenerationRequest.vaeTiling` (`ImageVaeTiling`), opt-in spatial tiling of the image decoder that lowers its peak memory at the cost of decode time and slight seam blending; on an M4 Max it cut SD-Turbo's 512x512 VAE compute buffer from 1664 to 416 MB on Metal. Requests without it decode as before ([#1231](https://github.com/leehack/llamadart/issues/1231)).
+- Add `dart run llamadart:web_setup`: it downloads the Web bridge files this version pins into `web/webgpu_bridge/`, checks each against the pinned release manifest and adds the loader to `web/index.html`; reruns keep current files, `--check` verifies offline, and with that loader a page whose files are missing fails the first model load at once instead of after 12 seconds ([#855](https://github.com/leehack/llamadart/issues/855)).
 
 ## 0.16.1
 
