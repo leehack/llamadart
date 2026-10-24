@@ -387,6 +387,7 @@ class ValidationProfile {
     ..._quickCaseIds(version),
     for (final definition in extendedValidationCases)
       if (catalogDeclaresCase(definition.id, version) &&
+          _structuredOmission(definition.id) == null &&
           (selection == 'release' ||
               (selection == 'focused' &&
                   definition.features.any(focusFeatures.contains))))
@@ -406,6 +407,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 8) resolved.remove('structured_output');
     if (version < 6) resolved.remove('inflight');
     if (version < 5) resolved.remove('invalid_grammar');
     if (version < 4) {
@@ -471,6 +473,11 @@ class ValidationProfile {
         'Batching selection requires catalog version 2',
       );
     }
+    if (version < 8 && focusFeatures.any(catalogEightFeatures.contains)) {
+      throw const FormatException(
+        'Structured-output selection requires catalog version 8',
+      );
+    }
     if (version < 6 &&
         (data['fixtures'] as Map?)?.containsKey('inflight') == true) {
       throw const FormatException(
@@ -488,7 +495,9 @@ class ValidationProfile {
       'version': version,
       'features': {
         for (final entry in validationFeatures.entries)
-          if (version != 1 || entry.key != 'batching') entry.key: entry.value,
+          if ((version != 1 || entry.key != 'batching') &&
+              (version >= 8 || !catalogEightFeatures.contains(entry.key)))
+            entry.key: entry.value,
         if (isDecision) 'decision': 1,
         if (isEmbedding) 'embeddings': 1,
       },
@@ -520,9 +529,24 @@ class ValidationProfile {
     };
   }
 
+  /// Why this profile cannot run structured-output case [id], or null.
+  /// Runtimes without a constraint keep only the capability contract case.
+  String? _structuredOmission(String id) {
+    if (!id.startsWith('S')) return null;
+    if (nativeReference) return 'outside_native_reference_scope';
+    if (id == 'S01.capabilities') return null;
+    if (runtime == 'litert') return 'litert_grammar_unsupported';
+    if (backend == 'webgpu' && id == 'S05.grammar.lazy') {
+      return 'webgpu_lazy_grammar_unsupported';
+    }
+    return null;
+  }
+
   String _omissionReason(String id) {
     if (isDecision) return 'decision_model_has_no_text_generation';
     if (isEmbedding) return 'embedding_model_has_no_text_generation';
+    final structured = _structuredOmission(id);
+    if (structured != null) return structured;
     if (id.startsWith('C06.history.') && !historyControls) {
       return 'history_controls_disabled';
     }

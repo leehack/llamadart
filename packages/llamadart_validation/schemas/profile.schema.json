@@ -207,7 +207,8 @@
           "batching",
           "lifecycle",
           "guards",
-          "performance"
+          "performance",
+          "structured_output"
         ]
       }
     },
@@ -364,6 +365,11 @@
               "type": "string"
             }
           }
+        },
+        "structured_output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
         }
       }
     },

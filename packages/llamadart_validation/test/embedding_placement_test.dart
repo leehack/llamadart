@@ -192,7 +192,7 @@ void main() {
         );
         checked++;
       }
-      expect(checked, 9);
+      expect(checked, 10);
     },
   );
 }
