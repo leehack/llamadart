@@ -239,9 +239,9 @@ it to 120000: on macOS arm64 (M4 Max, LiteRT-LM 0.17.0-6) those cases took
 48.7 to 51.9 s, about 32 s of it WebGPU shader initialization for the one engine
 create, so 120 s is 2.3 times the slowest measured case (#521).
 `qwen35-litert-cpu` sets it to 180000, the maximum: on Linux arm64 t2a-standard-8
-(Neoverse-N1, LiteRT-LM 0.18.1-2) those cases took 75.5 to 79.2 s over five runs
+(Neoverse-N1, LiteRT-LM 0.18.1-2) those cases took 75.4 to 80.5 s over eight runs
 with cold and warm page cache, against 21.2 to 22.9 s on c4a-standard-8, so 180 s
-is 2.3 times the slowest (#760). On t2a, `gemma4-litert-cpu` engine creates took
+is 2.2 times the slowest (#760). On t2a, `gemma4-litert-cpu` engine creates took
 at most 20.8 s and the first `chat-litert-cpu` one 2.6 s, so both keep 60 s; the
 gated `gemma3-litert-cpu` was not measured.
 The field is part of the profile hash.
