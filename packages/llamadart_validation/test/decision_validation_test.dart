@@ -454,7 +454,20 @@ void main() {
         '_tolerance(_probToleranceKey, ${fixture['probability_tolerance']})',
       ),
     );
-    expect(source, contains("expected['score'], 2 * tolerance"));
+    // The native E2E passes these to DecisionParity; the Web E2E uses its
+    // defaults.
+    final parity = File(
+      '../../test/support/decision_fixture.dart',
+    ).readAsStringSync();
+    expect(
+      parity,
+      contains('this.logitTolerance = ${fixture['logit_tolerance']}'),
+    );
+    expect(
+      parity,
+      contains('this.probTolerance = ${fixture['probability_tolerance']}'),
+    );
+    expect(parity, contains("expected['score'], 2 * probTolerance"));
     expect(
       fixture['score_tolerance'],
       2 * (fixture['probability_tolerance'] as double),
