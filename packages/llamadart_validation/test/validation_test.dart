@@ -16,6 +16,8 @@ ValidationProfile profile({String backend = 'cpu', bool release = false}) {
           as Map<String, dynamic>;
   json['backend'] = backend;
   json['selection'] = release ? 'release' : 'quick';
+  // Synthetic runs bound every case through the runner's short caseTimeout.
+  json.remove('cancel_control_case_timeout_ms');
   return ValidationProfile.fromJson(json);
 }
 
@@ -46,6 +48,7 @@ class FakeEngine implements ValidationEngine {
   var timeout = false;
   bool tokenizeTimeout = false;
   Duration? tokenizeDelay;
+  Duration? cancelControlDelay;
   String? featureFault;
   bool toolsSeen = false;
   var cleanupFails = false;
@@ -209,6 +212,10 @@ class FakeEngine implements ValidationEngine {
     final recovering = _batchingSeen && !adjusted;
     if (adjusted) _batchingSeen = true;
     if (timeout) return Completer<Map<String, dynamic>>().future;
+    if (cancelControlDelay != null &&
+        maxTokens == (profile.fixtures['cancel'] as Map)['max_tokens']) {
+      await Future<void>.delayed(cancelControlDelay!);
+    }
     return {
       'enable_thinking': featureFault == 'thinking_config'
           ? false
@@ -1883,10 +1890,76 @@ void main() {
     expect(runner.caseDeadline('C03.raw'), const Duration(seconds: 60));
   });
 
-  test('only measured LiteRT profiles extend engine create deadlines', () {
-    const measured = {
+  test('cancel control deadline override rejects invalid contracts', () {
+    for (final patch in <Map<String, dynamic>>[
+      {'cancel_control_case_timeout_ms': '120000'},
+      {'cancel_control_case_timeout_ms': 120000.0},
+      {'cancel_control_case_timeout_ms': 59999},
+      {'cancel_control_case_timeout_ms': 300001},
+      {'backend': 'gpu', 'cancel_control_case_timeout_ms': 120000},
+      {'backend': 'npu', 'cancel_control_case_timeout_ms': 120000},
+    ]) {
+      expect(
+        () => ValidationProfile.fromJson(profile().toJson()..addAll(patch)),
+        throwsFormatException,
+        reason: '$patch',
+      );
+    }
+    final gguf =
+        jsonDecode(
+                File('assets/profiles/chat-gguf-cpu.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>
+          ..['cancel_control_case_timeout_ms'] = 120000;
+    expect(() => ValidationProfile.fromJson(gguf), throwsFormatException);
+  });
+
+  test('cancel control deadline override covers only its cases', () {
+    final cpu = ValidationProfile.fromJson(
+      profile().toJson()..['cancel_control_case_timeout_ms'] = 240000,
+    );
+    expect(cpu.cancelControlCaseTimeout, const Duration(seconds: 240));
+    final runner = ValidationRunner(
+      profile: cpu,
+      engine: FakeEngine(),
+      emit: (_) async {},
+    );
+    expect(runner.caseDeadline('C08.cancel'), const Duration(seconds: 240));
+    expect(runner.caseDeadline('C08.overlap'), const Duration(seconds: 240));
+    for (final id in ['C08.cancel.early', 'C08.cancel.restart', 'C03.raw']) {
+      expect(runner.caseDeadline(id), const Duration(seconds: 60), reason: id);
+    }
+    expect(
+      runner.caseDeadline('C08.cancel', firstUse: true),
+      const Duration(seconds: 240),
+    );
+
+    final both = ValidationRunner(
+      profile: ValidationProfile.fromJson(
+        cpu.toJson()
+          ..['engine_create_case_timeout_ms'] = 180000
+          ..['cancel_control_case_timeout_ms'] = 90000,
+      ),
+      engine: FakeEngine(),
+      emit: (_) async {},
+    );
+    expect(
+      both.caseDeadline('C08.cancel', firstUse: true),
+      const Duration(seconds: 180),
+    );
+    expect(both.caseDeadline('C08.cancel'), const Duration(seconds: 90));
+    expect(both.caseDeadline('C09.reload'), const Duration(seconds: 180));
+  });
+
+  test('only measured LiteRT profiles extend case deadlines', () {
+    const engineCreate = {
       'qwen35-litert-gpu': Duration(seconds: 120),
       'qwen35-litert-cpu': Duration(seconds: 180),
+    };
+    const cancelControl = {
+      'chat-litert-cpu': Duration(seconds: 240),
+      'qwen35-litert-cpu': Duration(seconds: 120),
+      'gemma4-litert-cpu': Duration(seconds: 120),
     };
     for (final file in Directory(
       'assets/profiles',
@@ -1894,8 +1967,10 @@ void main() {
       final selected = ValidationProfile.fromJson(
         jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
       );
-      final extended = measured[selected.id];
-      expect(selected.engineCreateCaseTimeout, extended, reason: selected.id);
+      final created = engineCreate[selected.id];
+      final cancelled = cancelControl[selected.id];
+      expect(selected.engineCreateCaseTimeout, created, reason: selected.id);
+      expect(selected.cancelControlCaseTimeout, cancelled, reason: selected.id);
       final runner = ValidationRunner(
         profile: selected,
         engine: FakeEngine(),
@@ -1906,9 +1981,12 @@ void main() {
           runner.caseDeadline(id),
           selected.isEmbedding
               ? const Duration(seconds: 300)
-              : extended != null &&
+              : created != null &&
                     ValidationRunner.engineReloadCaseIds.contains(id)
-              ? extended
+              ? created
+              : cancelled != null &&
+                    ValidationRunner.cancelControlCaseIds.contains(id)
+              ? cancelled
               : const Duration(seconds: 60),
           reason: '${selected.id} $id',
         );
@@ -1917,10 +1995,45 @@ void main() {
         runner.caseDeadline('C02.unicode', firstUse: true),
         selected.isEmbedding
             ? const Duration(seconds: 300)
-            : extended ?? const Duration(seconds: 60),
+            : created ?? const Duration(seconds: 60),
         reason: selected.id,
       );
     }
+  });
+
+  test('cancel control deadline override leaves other cases bounded', () async {
+    Future<Map<String, Map<String, dynamic>>> cases(
+      ValidationProfile selected,
+    ) async {
+      final result = await run(
+        FakeEngine()..cancelControlDelay = const Duration(milliseconds: 120),
+        selected: selected,
+      );
+      return {for (final c in result.report.cases) c['case_id'] as String: c};
+    }
+
+    final base = await cases(profile());
+    expect(base['C08.cancel']!['reason'], 'case_timeout');
+    expect(base['C08.cancel']!['timeout_ms'], 30);
+
+    final extended = await cases(
+      ValidationProfile.fromJson(
+        profile().toJson()..['cancel_control_case_timeout_ms'] = 60000,
+      ),
+    );
+    for (final id in ValidationRunner.cancelControlCaseIds) {
+      expect(extended[id]!['status'], 'PASS', reason: id);
+    }
+
+    final hung = await run(
+      FakeEngine()..timeout = true,
+      selected: ValidationProfile.fromJson(
+        profile().toJson()..['cancel_control_case_timeout_ms'] = 60000,
+      ),
+    );
+    final raw = hung.report.cases.singleWhere((c) => c['case_id'] == 'C03.raw');
+    expect(raw['reason'], 'case_timeout');
+    expect(raw['timeout_ms'], 30);
   });
 
   test('engine create deadline override leaves other cases bounded', () async {

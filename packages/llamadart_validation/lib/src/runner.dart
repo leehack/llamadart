@@ -570,14 +570,27 @@ class ValidationRunner {
     'C12.recovery',
   };
 
-  /// Deadline applied to [id]. The profile override, when declared, applies to
-  /// [engineReloadCaseIds] and to the [firstUse] case that follows `C01.load`.
-  /// The embedding pack instead locks a deadline for every selected case.
-  Duration caseDeadline(String id, {bool firstUse = false}) =>
-      profile.embeddingCaseTimeout ??
-      (firstUse || engineReloadCaseIds.contains(id)
-          ? profile.engineCreateCaseTimeout ?? caseTimeout
-          : caseTimeout);
+  /// Cases that run the uncancelled cancel-fixture control generation.
+  static const cancelControlCaseIds = {'C08.cancel', 'C08.overlap'};
+
+  /// Deadline applied to [id]. The engine-create override, when declared,
+  /// applies to [engineReloadCaseIds] and to the [firstUse] case that follows
+  /// `C01.load`; the cancel-control override to [cancelControlCaseIds]. A case
+  /// covered by both gets the longer one. The embedding pack instead locks a
+  /// deadline for every selected case.
+  Duration caseDeadline(String id, {bool firstUse = false}) {
+    final embedding = profile.embeddingCaseTimeout;
+    if (embedding != null) return embedding;
+    final overrides = [
+      if (firstUse || engineReloadCaseIds.contains(id))
+        ?profile.engineCreateCaseTimeout,
+      if (cancelControlCaseIds.contains(id)) ?profile.cancelControlCaseTimeout,
+    ];
+    return overrides.isEmpty
+        ? caseTimeout
+        : overrides.reduce((a, b) => a > b ? a : b);
+  }
+
   var _sequence = 0;
   var _cancelled = false;
   bool _closed = false;

@@ -109,16 +109,24 @@ void main() {
           );
           for (final id in profile.caseIds) {
             final reload = ValidationRunner.engineReloadCaseIds.contains(id);
+            final cancelControl = ValidationRunner.cancelControlCaseIds
+                .contains(id);
             expect(
               runner.caseDeadline(id),
               reload
                   ? profile.engineCreateCaseTimeout ??
                         const Duration(seconds: 60)
+                  : cancelControl
+                  ? profile.cancelControlCaseTimeout ??
+                        const Duration(seconds: 60)
                   : const Duration(seconds: 60),
             );
             expect(
               runner.caseDeadline(id, firstUse: true),
-              profile.engineCreateCaseTimeout ?? const Duration(seconds: 60),
+              [
+                profile.engineCreateCaseTimeout ?? const Duration(seconds: 60),
+                if (cancelControl) ?profile.cancelControlCaseTimeout,
+              ].reduce((a, b) => a > b ? a : b),
             );
           }
         }

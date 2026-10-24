@@ -245,6 +245,18 @@ is 2.2 times the slowest (#760). On t2a, `gemma4-litert-cpu` engine creates took
 at most 20.8 s and the first `chat-litert-cpu` one 2.6 s, so both keep 60 s; the
 gated `gemma3-litert-cpu` was not measured.
 The field is part of the profile hash.
+A LiteRT CPU profile may also set `cancel_control_case_timeout_ms` (60000 to
+300000) for `C08.cancel` and `C08.overlap`, the cases that first run the
+uncancelled 256-token cancel request as a control; a case covered by both
+overrides gets the longer one. On t2a-standard-8 that control dominates: for
+`chat-litert-cpu` (Qwen3 0.6B, 3.8 to 3.9 native decode tokens/s) it takes
+70.2 to 71.8 s, so `C08.cancel` takes 81.7 to 83.2 s and `C08.overlap` 94.1 to
+95.9 s over three runs, while the cancelled stream ends 257 to 261 ms after the
+cancel. It sets 240000, 2.5 times the slowest (#1375). `gemma4-litert-cpu` (at
+most 39.3 and 46.6 s) and `qwen35-litert-cpu` (`C08.cancel` 48.6 to 53.9 s,
+where #672 leaves the second request uncancelled) set 120000, at least 2.2
+times their slowest; the gated `gemma3-litert-cpu` keeps 60 s. The field is
+part of the profile hash.
 Native Flutter model acquisition has a ten-minute deadline within the
 18-minute integration test and 20-minute Test Lab execution limits. CLI downloads
 retain their five-minute default. Download deadline failures report received and

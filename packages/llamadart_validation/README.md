@@ -118,7 +118,8 @@ tokenizer latency. The runner records this timing scope, separate detokenization
 latency, and the active public operation on errors/timeouts. A first-use timeout
 does not establish a tokenizer defect. Case deadlines remain 60s unless the embedding pack locks its 300s deadline or a LiteRT
 CPU or GPU profile sets `engine_create_case_timeout_ms` for engine-create
-cases; provider process deadlines can additionally include model preparation and host startup.
+cases or a LiteRT CPU profile sets `cancel_control_case_timeout_ms` for
+`C08.cancel` and `C08.overlap`; provider process deadlines can additionally include model preparation and host startup.
 
 Profiles select `quick`, `focused` or `release`. Focused profiles require a
 nonempty, unique `focus_features` list; `tiny-gguf-lifecycle` adds the second

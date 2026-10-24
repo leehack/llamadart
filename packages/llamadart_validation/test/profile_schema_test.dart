@@ -215,6 +215,14 @@ void main() {
     }
   });
 
+  test('cancel control timeout is accepted on LiteRT CPU', () {
+    for (final name in ['chat-litert-cpu.json', 'gemma3-litert-cpu.json']) {
+      final profile = patched(name, {'cancel_control_case_timeout_ms': 90000});
+      expect(_violations(profile, schema), isEmpty, reason: name);
+      expect(() => ValidationProfile.fromJson(profile), returnsNormally);
+    }
+  });
+
   final imageProfiles = [
     for (final file in Directory(
       'assets/image_profiles',
@@ -375,6 +383,15 @@ void main() {
       }),
       'engine create timeout on GGUF cpu': patched('chat-gguf-cpu.json', {
         'engine_create_case_timeout_ms': 120000,
+      }),
+      'cancel control timeout on LiteRT gpu': patched('chat-litert-gpu.json', {
+        'cancel_control_case_timeout_ms': 120000,
+      }),
+      'cancel control timeout on GGUF cpu': patched('chat-gguf-cpu.json', {
+        'cancel_control_case_timeout_ms': 120000,
+      }),
+      'cancel control timeout above maximum': patched('chat-litert-cpu.json', {
+        'cancel_control_case_timeout_ms': 300001,
       }),
     };
     for (final entry in schemaAndManifest.entries) {

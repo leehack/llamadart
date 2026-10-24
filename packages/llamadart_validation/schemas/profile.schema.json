@@ -61,6 +61,11 @@
       "minimum": 60000,
       "maximum": 180000
     },
+    "cancel_control_case_timeout_ms": {
+      "type": "integer",
+      "minimum": 60000,
+      "maximum": 300000
+    },
     "max_tokens": {
       "type": "integer",
       "minimum": 1,
@@ -495,6 +500,23 @@
               "cpu",
               "gpu"
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "cancel_control_case_timeout_ms"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtime": {
+            "const": "litert"
+          },
+          "backend": {
+            "const": "cpu"
           }
         }
       }

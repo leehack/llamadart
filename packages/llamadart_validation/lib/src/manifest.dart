@@ -154,6 +154,18 @@ class ValidationProfile {
         'integer from 60000 to 180000',
       );
     }
+    final cancelControlTimeout = data['cancel_control_case_timeout_ms'];
+    if (data.containsKey('cancel_control_case_timeout_ms') &&
+        (cancelControlTimeout is! int ||
+            cancelControlTimeout < 60000 ||
+            cancelControlTimeout > 300000 ||
+            runtime != 'litert' ||
+            backend != 'cpu')) {
+      throw const FormatException(
+        'cancel_control_case_timeout_ms requires a LiteRT CPU profile and an '
+        'integer from 60000 to 300000',
+      );
+    }
     if (!const ['quick', 'focused', 'release'].contains(selection)) {
       throw const FormatException(
         'selection must be quick, focused or release',
@@ -299,6 +311,13 @@ class ValidationProfile {
   /// Deadline for cases that include an engine create, when overridden.
   Duration? get engineCreateCaseTimeout {
     final value = data['engine_create_case_timeout_ms'] as int?;
+    return value == null ? null : Duration(milliseconds: value);
+  }
+
+  /// Deadline for cases that run the uncancelled cancel-fixture control, when
+  /// overridden.
+  Duration? get cancelControlCaseTimeout {
+    final value = data['cancel_control_case_timeout_ms'] as int?;
     return value == null ? null : Duration(milliseconds: value);
   }
 

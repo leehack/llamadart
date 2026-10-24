@@ -16,6 +16,7 @@
   "threads": 4,
   "max_tokens": 32,
   "engine_create_case_timeout_ms": 180000,
+  "cancel_control_case_timeout_ms": 120000,
   "fixtures": {
     "hello": {
       "prompt": "Reply with one short sentence saying hello.",
