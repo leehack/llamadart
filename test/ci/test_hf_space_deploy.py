@@ -77,6 +77,47 @@ class RetryTest(unittest.TestCase):
         self.assertNotIn('hf_', ''.join(lines))
 
 
+class PolicyTest(unittest.TestCase):
+    def test_policy_constants(self):
+        self.assertEqual(hf.MAX_ATTEMPTS, 5)
+        self.assertEqual(hf.MAX_TOTAL_WAIT, 240.0)
+
+    def test_backoff_doubles_then_caps_with_jitter_bounds(self):
+        for jitter, scale in ((0.0, 0.5), (1.0, 1.0)):
+            api = mock.Mock()
+            api.create_repo.side_effect = [HttpError(429)] * 4 + [None]
+            sleeps = []
+            hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
+                      jitter=lambda: jitter, log=lambda *a, **k: None)
+            self.assertEqual(sleeps, [5 * scale, 10 * scale, 20 * scale, 30 * scale])
+
+    def test_exactly_max_attempts_when_every_try_is_429(self):
+        api = mock.Mock()
+        api.upload_folder.side_effect = HttpError(429)
+        with self.assertRaises(HttpError):
+            run_deploy(api)
+        self.assertEqual(api.upload_folder.call_count, 5)
+
+    def test_wait_budget_is_shared_across_create_and_upload(self):
+        api = mock.Mock()
+        api.create_repo.side_effect = [HttpError(429, {'Retry-After': '100'}), None]
+        api.upload_folder.side_effect = [HttpError(429, {'Retry-After': '100'}),
+                                         HttpError(429, {'Retry-After': '100'}), None]
+        sleeps = []
+        with self.assertRaises(HttpError):
+            hf.deploy(api, 'r', 'f', 'm', ['*'], False, sleep=sleeps.append,
+                      log=lambda *a, **k: None)
+        self.assertEqual(sleeps, [100.0, 100.0])
+        self.assertEqual(api.upload_folder.call_count, 2)
+
+    def test_only_numeric_non_negative_retry_after_is_honored(self):
+        for value, expected in (('-5', 5.0), ('Wed, 21 Oct 2026 07:28:00 GMT', 5.0),
+                                ('nan', 5.0), ('', 5.0), ('0', 0.0), ('3.5', 3.5)):
+            api = mock.Mock()
+            api.create_repo.side_effect = [HttpError(429, {'Retry-After': value}), None]
+            self.assertEqual(run_deploy(api), [expected], value)
+
+
 class DeployCallTest(unittest.TestCase):
     def test_public_flag_and_arguments_reach_the_api(self):
         api = mock.Mock()
