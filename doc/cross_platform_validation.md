@@ -234,11 +234,17 @@ A LiteRT CPU or GPU profile may set `engine_create_case_timeout_ms`
 (60000 to 180000), which replaces the 60s bound only for the cases that include an engine create:
 the first case executed after C01.load (LiteRT defers creation to first use) and
 C09.reload, C09.reload.second, C12.guards and C12.recovery. A timeout there still
-records `case_timeout` with the applied `timeout_ms`. Only `qwen35-litert-gpu`
-sets it, to 120000: on macOS arm64 (M4 Max, LiteRT-LM 0.17.0-6) those cases took
+records `case_timeout` with the applied `timeout_ms`. `qwen35-litert-gpu` sets
+it to 120000: on macOS arm64 (M4 Max, LiteRT-LM 0.17.0-6) those cases took
 48.7 to 51.9 s, about 32 s of it WebGPU shader initialization for the one engine
-create, so 120 s is 2.3 times the slowest measured case (#521). The field is part
-of the profile hash.
+create, so 120 s is 2.3 times the slowest measured case (#521).
+`qwen35-litert-cpu` sets it to 180000, the maximum: on Linux arm64 t2a-standard-8
+(Neoverse-N1, LiteRT-LM 0.18.1-2) those cases took 75.5 to 79.2 s over five runs
+with cold and warm page cache, against 21.2 to 22.9 s on c4a-standard-8, so 180 s
+is 2.3 times the slowest (#760). On t2a, `gemma4-litert-cpu` engine creates took
+at most 20.8 s and the first `chat-litert-cpu` one 2.6 s, so both keep 60 s; the
+gated `gemma3-litert-cpu` was not measured.
+The field is part of the profile hash.
 Native Flutter model acquisition has a ten-minute deadline within the
 18-minute integration test and 20-minute Test Lab execution limits. CLI downloads
 retain their five-minute default. Download deadline failures report received and
