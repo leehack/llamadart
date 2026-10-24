@@ -221,8 +221,10 @@ fallback when model template metadata is empty. See
 
 - GGUF model loading and generation through llama.cpp.
 - `.litertlm` model loading and generation through LiteRT-LM. Automatic tool
-  loops require reliable runtime termination reporting and reject the pinned
-  LiteRT-LM native and Web runtimes; use manually managed completion there
+  loops require reliable runtime termination reporting: native LiteRT-LM
+  reports it from litert-lm-native `v0.18.0-3` (the default pin does), while
+  older native runtimes and LiteRT-LM Web reject the loops; use manually
+  managed completion there
   ([tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)).
 - Gemma 2/3/3n and legacy Mistral tool-result retries fold an immediately
   following user message into the result turn; successfully rendered histories

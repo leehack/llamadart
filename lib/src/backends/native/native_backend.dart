@@ -251,13 +251,7 @@ class NativeAutoBackend
 
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) {
-    final delegate = _delegate;
-    if (delegate is BackendGenerationLimitReporting) {
-      return (delegate as BackendGenerationLimitReporting).generationLimitOf(
-        generation,
-      );
-    }
-    return null;
+    return generationLimitReporterOf(_delegate)?.generationLimitOf(generation);
   }
 
   @override

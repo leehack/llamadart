@@ -57,6 +57,20 @@ Future<void> main(List<String> args) async {
       maxTokens: 64,
     );
 
+    final cutoff = await _runScenario(
+      engine: engine,
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Count from 1 to 100, separated by commas.',
+        ),
+      ],
+      tools: const [],
+      enableThinking: false,
+      maxTokens: 3,
+    );
+    final toolLoopCutoff = await _runToolLoopCutoffScenario(engine);
+
     final thinking = await _runScenario(
       engine: engine,
       messages: const [
@@ -195,6 +209,8 @@ Future<void> main(List<String> args) async {
       'requestedLiteRtLmBackend': backend.name,
       'format': requiredTemplate.format,
       'plain': plain.toJson(),
+      'cutoff': cutoff.toJson(),
+      'toolLoopCutoff': toolLoopCutoff,
       'thinking': thinking.toJson(),
       'textHistory': textHistory.toJson(),
       'sessionStructuredOutput': sessionStructuredOutput,
@@ -218,6 +234,7 @@ Future<void> main(List<String> args) async {
     print('DIAGNOSTIC litert_lm_chat_features ${jsonEncode(result)}');
     _verifyResult(
       plain: plain,
+      cutoff: cutoff,
       thinking: thinking,
       textHistory: textHistory,
       toolCall: toolCall,
@@ -286,6 +303,7 @@ Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
 
 void _verifyResult({
   required _ScenarioResult plain,
+  required _ScenarioResult cutoff,
   required _ScenarioResult thinking,
   required _ScenarioResult textHistory,
   required _RequiredToolScenarioResult toolCall,
@@ -305,6 +323,17 @@ void _verifyResult({
   }
   if (plain.toolCalls.isNotEmpty) {
     throw StateError('LiteRT-LM plain chat produced an unexpected tool call.');
+  }
+  if (plain.finishReason != 'stop') {
+    throw StateError(
+      'LiteRT-LM plain chat finished with ${plain.finishReason}, not stop.',
+    );
+  }
+  if (cutoff.finishReason != 'length') {
+    throw StateError(
+      'LiteRT-LM chat cut off at maxTokens finished with '
+      '${cutoff.finishReason}, not length.',
+    );
   }
   if (thinking.thinking.trim().isEmpty) {
     throw StateError('LiteRT-LM thinking scenario produced no thinking delta.');
@@ -386,6 +415,49 @@ void _verifyWeatherToolCall(
       decoded['location'] != 'Seoul') {
     throw StateError('$scenarioName did not pass the expected location.');
   }
+}
+
+/// An automatic tool loop whose reply is cut off at `maxTokens` must stop
+/// truncated, run no tool and roll the turn back.
+Future<Map<String, Object?>> _runToolLoopCutoffScenario(
+  LlamaEngine engine,
+) async {
+  var toolRuns = 0;
+  final session = ChatSession(engine);
+  final result = await session.completeWithTools(
+    const [LlamaTextContent('What is the weather in Seoul? Use the tool.')],
+    tools: [
+      ToolDefinition(
+        name: _weatherTool.name,
+        description: _weatherTool.description,
+        parameters: _weatherTool.parameters,
+        handler: (_) async {
+          toolRuns++;
+          return 'Sunny';
+        },
+      ),
+    ],
+    params: const GenerationParams(maxTokens: 3, temp: 0.0, seed: 1),
+    enableThinking: false,
+  );
+  final summary = <String, Object?>{
+    'stopReason': result.stopReason.name,
+    'finishReason': result.completion.finishReason?.name,
+    'rolledBack': result.rolledBack,
+    'historyLength': session.history.length,
+    'toolRuns': toolRuns,
+  };
+  if (result.stopReason != LlamaToolLoopStopReason.truncated ||
+      result.completion.finishReason != LlamaFinishReason.length ||
+      !result.rolledBack ||
+      session.history.isNotEmpty ||
+      toolRuns != 0) {
+    throw StateError(
+      'LiteRT-LM automatic tool loop did not stop truncated at maxTokens '
+      'without running tools: ${jsonEncode(summary)}',
+    );
+  }
+  return summary;
 }
 
 Future<_RequiredToolScenarioResult> _runRequiredToolScenario({

@@ -105,13 +105,13 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Bridge `v0.1.7+` | CPU, explicit embedding engine; macOS arm64 and iOS arm64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; other platforms throw `LlamaUnsupportedException` at load ([#1367](https://github.com/leehack/llamadart/issues/1367)) | Unsupported (parity gate) |
 | Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Bridge `v0.1.64+`, explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; memory64 required for repeated media batches; hardware WebGPU unqualified (default pinned assets include the API) | CPU; bundle processors on macOS arm64, iOS arm64 and Android arm64 (Galaxy S24 and emulators) | Unsupported (parity gate) |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
-| Generation-limit reporting | `length` for output or context limits | `length` with bridge usage probe (`v0.1.54+`); cap cause unspecified | No | No |
+| Generation-limit reporting | `length` for output or context limits | `length` with bridge usage probe (`v0.1.54+`); cap cause unspecified | `length` for output or context limits on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes report `stop` | No |
 | Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.54+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | No: single-turn text prompts only |
 | Tool calling | Yes | Yes | Yes | No: tools do not reach the model |
 | Canonical JSON Schema tools | Supported subset and selected formats | Non-lazy grammars only; other combinations rejected | No | No |
-| Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | No: pinned runtime has no reliable termination cause; throws before generation | No: pinned runtime has no reliable termination cause; throws before generation |
+| Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes throw before generation | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
 
