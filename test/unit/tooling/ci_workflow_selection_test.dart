@@ -492,8 +492,12 @@ void main() {
   );
 
   test('Example Package Tests run every other example package', () {
-    final steps =
-        readWorkflow('ci')['jobs']['example-packages']['steps'] as List;
+    final job = readWorkflow('ci')['jobs']['example-packages'] as Map;
+    final steps = job['steps'] as List;
+    expect(job.containsKey('continue-on-error'), isFalse);
+    for (final step in steps.cast<Map>()) {
+      expect(step.containsKey('continue-on-error'), isFalse, reason: '$step');
+    }
     final tested = {
       for (final step in steps.cast<Map>())
         if (step['working-directory'] case final String dir) dir: step,
