@@ -40,7 +40,7 @@ export 'src/core/engine/engine.dart'
 export 'src/core/engine/engine_capabilities.dart';
 export 'src/core/engine/engine_observer.dart';
 export 'src/core/engine/chat_session.dart'
-    show ChatSession, ChatSessionCompletionExtension;
+    show ChatSession, ChatSessionCompletionExtension, ChatSessionTemplateNow;
 export 'src/core/engine/chat_session_tool_loop.dart';
 
 // Speech

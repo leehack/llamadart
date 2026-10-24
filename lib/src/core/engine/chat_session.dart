@@ -113,11 +113,6 @@ class ChatSession {
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
   ///
-  /// Use [chatTemplateKwargs] and [templateNow] as [LlamaEngine.create] does:
-  /// additional template globals, and a deterministic template time. They
-  /// also apply to the context-budget render, so trimming sees the same
-  /// prompt the request sends.
-  ///
   /// Set [continuesPreviousTurn] when non-empty [parts] are a user-role
   /// protocol continuation of the preceding request, rather than a new user
   /// turn. This keeps text-based tool-result prompts attached to the original
@@ -190,7 +185,6 @@ class ChatSession {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
   }) {
@@ -240,7 +234,6 @@ class ChatSession {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
-          templateNow: templateNow,
         );
 
         final messages = _buildMessages();
@@ -315,7 +308,6 @@ class ChatSession {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
   }) {
@@ -328,7 +320,6 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: output.responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
-      templateNow: templateNow,
       onMessageAdded: onMessageAdded,
       continuesPreviousTurn: continuesPreviousTurn,
     ).parseStructuredJson(output);
@@ -363,7 +354,6 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
   }) async {
     edits.beginContextPreparation();
     final limit = maxContextTokens ?? await _engine.getContextSize();
@@ -395,7 +385,6 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
-      templateNow: templateNow,
     );
     edits.ensureUnchanged();
     if (fullTokenCount <= targetLimit) return true;
@@ -416,7 +405,6 @@ class ChatSession {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
-          templateNow: templateNow,
         );
 
         edits.ensureUnchanged();
@@ -447,7 +435,6 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
-      templateNow: templateNow,
     );
     if (!compacted) {
       // Even retaining the root request and newest coherent protocol exchange
@@ -472,7 +459,6 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
   }) async {
     final anchorIndex = _history.indexWhere(
       (message) =>
@@ -513,7 +499,6 @@ class ChatSession {
         enableThinking: enableThinking,
         responseFormat: responseFormat,
         chatTemplateKwargs: chatTemplateKwargs,
-        templateNow: templateNow,
       );
       edits.ensureUnchanged();
       if (tokenCount <= targetLimit) {
@@ -537,7 +522,6 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
   }) async {
     final template = await _engine.chatTemplate(
       messages,
@@ -723,6 +707,26 @@ final Expando<List<LlamaChatMessage>> _mutableHistories = Expando(
 List<LlamaChatMessage>? mutableChatSessionHistory(ChatSession session) =>
     _mutableHistories[session];
 
+final Expando<DateTime> _templateNows = Expando('llamadart.chatSessionNow');
+
+/// Deterministic template time for a [ChatSession].
+///
+/// This is an extension rather than a member so that subclasses and classes
+/// that `implements ChatSession` keep compiling; it is stored per session.
+extension ChatSessionTemplateNow on ChatSession {
+  /// The time the chat template sees as "now" for this session's requests.
+  ///
+  /// Forwarded as [LlamaEngine.create]'s `templateNow` by [ChatSession.create]
+  /// and everything built on it ([ChatSession.send],
+  /// [ChatSession.createStructuredJson], `sendWithTools`,
+  /// `completeWithTools`), and used by the context-budget renders so trimming
+  /// sees the prompt the request sends. Null, the default, leaves the
+  /// template's own clock.
+  DateTime? get templateNow => _templateNows[this];
+
+  set templateNow(DateTime? value) => _templateNows[this] = value;
+}
+
 /// One-shot replies for [ChatSession].
 extension ChatSessionCompletionExtension on ChatSession {
   /// Sends [text] as a user message and returns the whole reply.
@@ -740,7 +744,6 @@ extension ChatSessionCompletionExtension on ChatSession {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
   }) {
     return create(
@@ -752,7 +755,6 @@ extension ChatSessionCompletionExtension on ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
-      templateNow: templateNow,
       onMessageAdded: onMessageAdded,
     ).collect();
   }

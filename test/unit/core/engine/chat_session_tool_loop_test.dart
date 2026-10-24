@@ -495,7 +495,6 @@ class _DelegatingSession implements ChatSession {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
   }) => _inner.create(
@@ -507,7 +506,6 @@ class _DelegatingSession implements ChatSession {
     enableThinking: enableThinking,
     responseFormat: responseFormat,
     chatTemplateKwargs: chatTemplateKwargs,
-    templateNow: templateNow,
     onMessageAdded: onMessageAdded,
     continuesPreviousTurn: continuesPreviousTurn,
   );
@@ -642,9 +640,10 @@ void main() {
     );
   });
 
-  test('every round carries templateNow', () async {
+  test('every round carries the session templateNow', () async {
     final now = DateTime.utc(2026, 1, 2, 3, 4, 5);
-    final budgeted = ChatSession(engine, maxContextTokens: 1000);
+    final budgeted = ChatSession(engine, maxContextTokens: 1000)
+      ..templateNow = now;
     engine.replies
       ..add(scriptedCalls([('call_1', 'weather', '{"city":"Seoul"}')]))
       ..add(scriptedAnswer('Sunny in Seoul.'));
@@ -652,7 +651,6 @@ void main() {
     await budgeted.sendWithTools(
       'Weather?',
       tools: [_tool('weather', (params) async => 'sunny')],
-      templateNow: now,
     );
 
     expect(engine.createTemplateNows, [now, now]);
@@ -660,18 +658,26 @@ void main() {
     expect(engine.templateTemplateNows, everyElement(now));
   });
 
-  test('completeWithTools forwards templateNow', () async {
+  test('completeWithTools carries the session templateNow', () async {
     final now = DateTime.utc(2026, 1, 2, 3, 4, 5);
-    final budgeted = ChatSession(engine, maxContextTokens: 1000);
+    final budgeted = ChatSession(engine, maxContextTokens: 1000)
+      ..templateNow = now;
     engine.replies.add(scriptedAnswer('Done.'));
 
     await budgeted.completeWithTools(
       [const LlamaTextContent('Hi')],
       tools: [_tool('weather', (params) async => 'sunny')],
-      templateNow: now,
     );
 
     expect(engine.createTemplateNows, [now]);
+  });
+
+  test('templateNow is stored per session', () {
+    final a = ChatSession(engine)..templateNow = DateTime.utc(2026);
+    final b = ChatSession(engine);
+
+    expect(a.templateNow, DateTime.utc(2026));
+    expect(b.templateNow, isNull);
   });
 
   test('runs parallel calls concurrently and records them in order', () async {

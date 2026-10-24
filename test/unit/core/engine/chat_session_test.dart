@@ -1690,7 +1690,8 @@ void main() {
 
       setUp(() {
         scripted = ScriptedChatEngine();
-        forwarding = ChatSession(scripted, maxContextTokens: 1000);
+        forwarding = ChatSession(scripted, maxContextTokens: 1000)
+          ..templateNow = now;
       });
 
       void expectForwarded() {
@@ -1702,9 +1703,7 @@ void main() {
       test('reaches the request and the budget render of create', () async {
         scripted.replies.add(scriptedAnswer('hello'));
 
-        await forwarding.create([
-          const LlamaTextContent('hi'),
-        ], templateNow: now).drain<void>();
+        await forwarding.create([const LlamaTextContent('hi')]).drain<void>();
 
         expectForwarded();
       });
@@ -1712,7 +1711,7 @@ void main() {
       test('reaches the request and the budget render of send', () async {
         scripted.replies.add(scriptedAnswer('hello'));
 
-        await forwarding.send('hi', templateNow: now);
+        await forwarding.send('hi');
 
         expectForwarded();
       });
@@ -1721,11 +1720,9 @@ void main() {
           'createStructuredJson', () async {
         scripted.replies.add(scriptedAnswer('{"ok":true}'));
 
-        await forwarding.createStructuredJson(
-          [const LlamaTextContent('status')],
-          output: LlamaStructuredOutput.jsonObject(decoder: (json) => json),
-          templateNow: now,
-        );
+        await forwarding.createStructuredJson([
+          const LlamaTextContent('status'),
+        ], output: LlamaStructuredOutput.jsonObject(decoder: (json) => json));
 
         expectForwarded();
       });
@@ -1734,6 +1731,7 @@ void main() {
         scripted.countFor = (messages) => messages.length * 100;
         scripted.replies.add(scriptedAnswer('done'));
         final compacting = ChatSession(scripted, maxContextTokens: 450)
+          ..templateNow = now
           ..addMessage(
             const LlamaChatMessage.fromText(
               role: LlamaChatRole.user,
@@ -1760,13 +1758,9 @@ void main() {
             ),
           );
 
-        await compacting
-            .create(
-              [const LlamaTextContent('result again')],
-              templateNow: now,
-              continuesPreviousTurn: true,
-            )
-            .drain<void>();
+        await compacting.create([
+          const LlamaTextContent('result again'),
+        ], continuesPreviousTurn: true).drain<void>();
 
         expect(scripted.requests.single.length, lessThan(5));
         expect(scripted.templateTemplateNows.length, greaterThan(1));
@@ -1777,7 +1771,8 @@ void main() {
       test('reaches every render of a context-budget turn drop', () async {
         scripted.countFor = (messages) => messages.length * 100;
         scripted.replies.add(scriptedAnswer('done'));
-        final dropping = ChatSession(scripted, maxContextTokens: 450);
+        final dropping = ChatSession(scripted, maxContextTokens: 450)
+          ..templateNow = now;
         for (var turn = 0; turn < 4; turn++) {
           dropping
             ..addMessage(
@@ -1794,9 +1789,7 @@ void main() {
             );
         }
 
-        await dropping.create([
-          const LlamaTextContent('next'),
-        ], templateNow: now).drain<void>();
+        await dropping.create([const LlamaTextContent('next')]).drain<void>();
 
         expect(scripted.requests.single.length, lessThan(9));
         expect(scripted.templateTemplateNows.length, greaterThan(2));
@@ -1806,6 +1799,7 @@ void main() {
       test('defaults to null', () async {
         scripted.replies.add(scriptedAnswer('hello'));
 
+        forwarding.templateNow = null;
         await forwarding.send('hi');
 
         expect(scripted.createTemplateNows, [null]);

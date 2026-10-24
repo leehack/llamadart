@@ -49,9 +49,9 @@ print(result.format);
   `{'source_lang_code': 'en', 'target_lang_code': 'ko'}`, defaulting to
   `en-GB`; the `sourceLangCode` and `targetLangCode` parameters are
   deprecated.
-- `templateNow`: deterministic time injection for tests. `ChatSession`'s
-  `create`, `send`, `createStructuredJson`, `sendWithTools` and
-  `completeWithTools` accept it, and `chatTemplateKwargs`, too.
+- `templateNow`: deterministic time injection for tests. On a `ChatSession`, set
+  `session.templateNow`; every request and context-budget render of that
+  session uses it.
 - `responseFormat`: structured-output constraint; unrecognised shapes and
   schemas the grammar converter cannot represent throw
   `LlamaUnsupportedException`.
