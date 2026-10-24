@@ -408,7 +408,7 @@ before choosing files: a supported container does not imply every model works.
 - **Lower decode memory:** `ImageGenerationRequest(vaeTiling:
   ImageVaeTiling())` decodes in overlapping tiles, trading decode time for a
   smaller decoder buffer
-  ([VAE tiling](https://llamadart.leehack.com/docs/guides/image-generation#vae-tiling)).
+  ([VAE tiling](https://llamadart.leehack.com/docs/next/guides/image-generation#vae-tiling)).
 - **Model licenses differ**, including for commercial use. Check each
   model's license before shipping it; the guide lists each model's license.
 
