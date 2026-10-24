@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- `ChatSession.create`, `send`, `createStructuredJson`, `sendWithTools` and `completeWithTools` accept `templateNow`, as `LlamaEngine.create` does ([#859](https://github.com/leehack/llamadart/issues/859)).
 - Correct the `LlamaVideoContent` rejection text: on desktop it now points to a projector without a vision encoder instead of saying video support is built out, and it names Android and iOS as the platforms whose artifacts lack video ([#320](https://github.com/leehack/llamadart/issues/320)).
 - Native LiteRT-LM reports `length` instead of `stop` when a reply reaches `maxTokens` or fills the context, and automatic `sendWithTools`/`completeWithTools` loops run on it, stopping `truncated` without running tools on a cut-off reply. This needs a runtime whose `stream_proxy_finish_reason_abi_version` export returns 1 (litert-lm-native `v0.18.0-3` or later, including the default pin); on older runtimes loops still throw `LlamaUnsupportedException`. `LiteRtLmRuntimeClient` adds `supportsFinishReasons` and `lastFinishReason`. Web LiteRT-LM is unchanged ([#919](https://github.com/leehack/llamadart/issues/919)).
 - LiteRT-LM native embedding loads throw `LlamaUnsupportedException` on Linux, Windows and Android x86_64 instead of failing at engine creation or crashing the process; they stay available on macOS arm64, iOS arm64 and Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators) ([#1367](https://github.com/leehack/llamadart/issues/1367)).

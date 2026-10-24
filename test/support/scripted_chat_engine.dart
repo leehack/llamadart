@@ -30,6 +30,12 @@ class ScriptedChatEngine extends LlamaEngine {
   /// The `enableThinking` and `chatTemplateKwargs` of each [chatTemplate]
   /// call.
   final List<(bool, Map<String, dynamic>?)> templateOptions = [];
+
+  /// The `templateNow` of each [create] call.
+  final List<DateTime?> createTemplateNows = [];
+
+  /// The `templateNow` of each [chatTemplate] call.
+  final List<DateTime?> templateTemplateNows = [];
   int promptTokens = 0;
 
   /// The prompt token count of a request; [promptTokens] when unset.
@@ -54,6 +60,7 @@ class ScriptedChatEngine extends LlamaEngine {
     requests.add(List.of(messages));
     toolChoices.add(toolChoice);
     createOptions.add((enableThinking, chatTemplateKwargs));
+    createTemplateNows.add(templateNow);
     try {
       onRequest?.call(messages, tools);
     } catch (error, stackTrace) {
@@ -81,6 +88,7 @@ class ScriptedChatEngine extends LlamaEngine {
     DateTime? templateNow,
   }) async {
     templateOptions.add((enableThinking, chatTemplateKwargs));
+    templateTemplateNows.add(templateNow);
     return LlamaChatTemplateResult(
       prompt: '',
       tokenCount: countFor?.call(messages) ?? promptTokens,

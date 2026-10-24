@@ -113,6 +113,11 @@ class ChatSession {
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
   ///
+  /// Use [chatTemplateKwargs] and [templateNow] as [LlamaEngine.create] does:
+  /// additional template globals, and a deterministic template time. They
+  /// also apply to the context-budget render, so trimming sees the same
+  /// prompt the request sends.
+  ///
   /// Set [continuesPreviousTurn] when non-empty [parts] are a user-role
   /// protocol continuation of the preceding request, rather than a new user
   /// turn. This keeps text-based tool-result prompts attached to the original
@@ -185,6 +190,7 @@ class ChatSession {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
   }) {
@@ -234,6 +240,7 @@ class ChatSession {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
         );
 
         final messages = _buildMessages();
@@ -249,6 +256,7 @@ class ChatSession {
               enableThinking: enableThinking,
               responseFormat: responseFormat,
               chatTemplateKwargs: chatTemplateKwargs,
+              templateNow: templateNow,
             ),
           ),
         );
@@ -307,6 +315,7 @@ class ChatSession {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
   }) {
@@ -319,6 +328,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: output.responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
       onMessageAdded: onMessageAdded,
       continuesPreviousTurn: continuesPreviousTurn,
     ).parseStructuredJson(output);
@@ -353,6 +363,7 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
   }) async {
     edits.beginContextPreparation();
     final limit = maxContextTokens ?? await _engine.getContextSize();
@@ -384,6 +395,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
     );
     edits.ensureUnchanged();
     if (fullTokenCount <= targetLimit) return true;
@@ -404,6 +416,7 @@ class ChatSession {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
         );
 
         edits.ensureUnchanged();
@@ -434,6 +447,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
     );
     if (!compacted) {
       // Even retaining the root request and newest coherent protocol exchange
@@ -458,6 +472,7 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
   }) async {
     final anchorIndex = _history.indexWhere(
       (message) =>
@@ -498,6 +513,7 @@ class ChatSession {
         enableThinking: enableThinking,
         responseFormat: responseFormat,
         chatTemplateKwargs: chatTemplateKwargs,
+        templateNow: templateNow,
       );
       edits.ensureUnchanged();
       if (tokenCount <= targetLimit) {
@@ -521,6 +537,7 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
   }) async {
     final template = await _engine.chatTemplate(
       messages,
@@ -530,6 +547,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
       includeTokenCount: true,
     );
     return template.tokenCount ?? _estimateTokenCount(template.prompt);
@@ -722,6 +740,7 @@ extension ChatSessionCompletionExtension on ChatSession {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
   }) {
     return create(
@@ -733,6 +752,7 @@ extension ChatSessionCompletionExtension on ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
       onMessageAdded: onMessageAdded,
     ).collect();
   }

@@ -171,6 +171,7 @@ extension ChatSessionToolLoopExtension on ChatSession {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
   }) {
     return completeWithTools(
@@ -184,6 +185,7 @@ extension ChatSessionToolLoopExtension on ChatSession {
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
       onMessageAdded: onMessageAdded,
     );
   }
@@ -302,6 +304,7 @@ extension ChatSessionToolLoopExtension on ChatSession {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
     void Function(LlamaChatMessage message)? onMessageAdded,
   }) {
     if (maxRounds < 0) {
@@ -350,6 +353,7 @@ extension ChatSessionToolLoopExtension on ChatSession {
                 parallelToolCalls: parallelToolCalls,
                 enableThinking: enableThinking,
                 chatTemplateKwargs: chatTemplateKwargs,
+                templateNow: templateNow,
                 onMessageAdded: (message) {
                   if (message.role == LlamaChatRole.assistant) {
                     cancelledAtReply = request.isCancelled();
