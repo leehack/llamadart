@@ -1158,12 +1158,12 @@ class ValidationRunner {
   }
 
   Future<Map<String, dynamic>> _overlapping({required bool restart}) async {
-    if (engine.isWeb) {
+    if (engine.isWeb && profile.runtime == 'gguf') {
       return {
         'status': 'NOT_RUN',
         'reason':
-            'Only native llama.cpp defines generation restart and overlap; '
-            'the Web bridge does not',
+            'Only native llama.cpp defines GGUF generation restart and '
+            'overlap; the Web bridge does not',
       };
     }
     final cancel = profile.fixtures['cancel'] as Map;
