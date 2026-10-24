@@ -1047,6 +1047,9 @@ void main() {
             'Pixel 9 Pro is available at: http://10.0.0.2:9101?uri=x',
         '$prefix I flutter : The Dart VM service is listening on '
             'http://0.0.0.0:8181/fixtureAuthCode=/ too',
+        // A marker in the dropped URL token must still be seen.
+        '$prefix I flutter : The Dart VM service is listening on '
+            'http://127.0.0.1:33441/VK_ERROR_DEVICE_LOST/',
         '$prefix I flutter : connecting ws://127.0.0.1:33441/fixtureAuthCode=',
         '$prefix I flutter : connecting http://localhost:33441/fixtureAuthCode',
         '$prefix I flutter : connecting http://[::1]:33441/fixtureAuthCode=/',
@@ -1082,6 +1085,16 @@ void main() {
           'listening on $url',
         ),
         process(logcat, '22950'),
+      );
+    });
+
+    test('reads only whole threadtime records', () async {
+      final began = LineSplitter.split(
+        logcat,
+      ).singleWhere((line) => line.endsWith('+0: $mention'));
+      expect(
+        await bind(logcat.replaceFirst('$began\n', 'x $began\n'), journal),
+        isNull,
       );
     });
 
@@ -1313,6 +1326,16 @@ void main() {
       expect(retained.existsSync(), isFalse);
 
       deviceLog.writeAsStringSync(logcat);
+      expect(await assess(), retained.path);
+      File(p.join(device, 'artifacts/validation/runs/app-2/events.jsonl'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('$journal\n{"type":"other"}\n');
+      expect(await assess(), isNull);
+      expect(retained.existsSync(), isFalse);
+      File(
+        p.join(device, 'artifacts/validation/runs/app-2/events.jsonl'),
+      ).deleteSync();
+
       expect(await assess(), retained.path);
       final stderr = File(p.join(device, 'stderr.log'))
         ..writeAsStringSync('Selected adapter: stray\n');

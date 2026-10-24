@@ -4,6 +4,10 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+// The root orchestrator shares policy with the private, unpublished harness;
+// adding a root package dependency would create a dependency cycle.
+// ignore: avoid_relative_lib_imports
+import '../../../packages/llamadart_validation/lib/src/litert_gpu_failure_markers.dart';
 import 'image_profile.dart';
 import 'process.dart';
 import 'remote.dart';
@@ -16,6 +20,8 @@ Future<bool> assessCollectedRun(
   Directory run, {
   CommandExecutor execute = executeCommand,
 }) async {
+  final retainedLog = File(p.join(run.path, 'report', 'native.log'));
+  if (retainedLog.existsSync()) retainedLog.deleteSync();
   final source = Directory(p.join(run.path, 'remote-results'));
   if (!source.existsSync()) return false;
   final xcresults = source
@@ -120,8 +126,6 @@ Future<bool> assessCollectedRun(
   File(
     p.join(output.path, 'events.jsonl'),
   ).writeAsStringSync(candidates.values.single, flush: true);
-  final retainedLog = File(p.join(output.path, 'native.log'));
-  if (retainedLog.existsSync()) retainedLog.deleteSync();
   final stderrLogs = [
     for (final f in files)
       if (p.basename(f.path) == 'stderr.log' &&
@@ -368,9 +372,10 @@ DateTime _logcatTime(String stamp, int year) => DateTime.utc(
 /// told apart.
 ///
 /// The retained lines are stored with the report, so a Dart VM service
-/// announcement is dropped wherever that process logs it. Any other line of
-/// the process that [_serviceUrl] matches leaves the log unbound, so that no
-/// line is altered or silently lost.
+/// announcement is dropped wherever that process logs it, unless it carries a
+/// GPU failure marker, which the report would otherwise never see. Any other
+/// line of the process that [_serviceUrl] matches leaves the log unbound, so
+/// that no line is altered or silently lost.
 Future<String?> boundLogcatNativeLog(
   Stream<String> logcat,
   String journal,
@@ -470,7 +475,10 @@ Future<String?> boundLogcatNativeLog(
     size += line.length + 1;
     if (size > _nativeLogLimit) return null;
     if (_serviceUrl.hasMatch(line)) {
-      if (!_vmService.hasMatch(entry[3]!)) return null;
+      if (!_vmService.hasMatch(entry[3]!) ||
+          containsLiteRtGpuFailureMarker(line)) {
+        return null;
+      }
       continue;
     }
     kept.writeln(line);

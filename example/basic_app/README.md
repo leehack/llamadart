@@ -88,6 +88,10 @@ dart run bin/llamadart_basic_example.dart \
   -p "What is the capital of France?"
 ```
 
+Reasoning is off by default so small reasoning models answer within the token
+budget. Add `--thinking` to let the model reason first; the reasoning prints
+ahead of the answer.
+
 ### 5. Embedding Example
 
 Generate one or more embedding vectors from text input.
