@@ -47,8 +47,9 @@ description: >-
   The modality enum may gain values; include a default in switches.
   Video and chat-only parts are unsupported. Content observers retain only part kinds/counts.
 - `LiteRtLmModelParams(embeddingEngine: true)` is the explicit LiteRT-LM
-  embedding-engine selector. Select `ComputeDevice.cpu` on native. Native GPU
-  and all LiteRT-LM Web paths throw typed unsupported errors. Keep the
+  embedding-engine selector. Select `ComputeDevice.cpu` on macOS or iOS arm64.
+  Native GPU, Android, Linux, Windows and all LiteRT-LM Web paths throw typed
+  unsupported errors at load; use llama.cpp embeddings there. Keep the
   default false for existing users; llama.cpp GGUF loaders reject true and use
   their existing per-call embedding mode.
 - Load a dedicated embedding GGUF (for example
@@ -63,7 +64,7 @@ description: >-
   conversation mode has no embeddings. Probe `await engine.embeddingCapabilities`
   before offering media. Use PNG/JPEG bytes, mono 16 kHz Float32 samples or
   mono 16 kHz PCM16/Float32 WAV bytes; paths/URLs and video are unsupported.
-  Native CPU qualification covers macOS arm64 only. Concurrent embeds queue;
+  Native CPU qualification covers macOS arm64 and iOS arm64. Concurrent embeds queue;
   cancellation/unload/dispose settle the current item and discard all active and
   queued batches. A timeout discards only its own batch; other queued callers
   retain their own deadlines.

@@ -432,8 +432,9 @@ dart test
 ### LiteRT-LM image embeddings
 
 Use an existing embedding bundle with vision encoder/adapter sections and a local
-PNG/JPEG. This example selects the separate native CPU embedding engine; native
-GPU and LiteRT-LM Web embeddings are unavailable on the pinned runtime.
+PNG/JPEG. This example selects the separate native CPU embedding engine, which
+runs on macOS arm64 and iOS arm64; native GPU, Android, Linux, Windows and
+LiteRT-LM Web embeddings are unavailable on the pinned runtime.
 
 ```bash
 dart run bin/llamadart_litert_embedding_example.dart /path/model.litertlm /path/image.png

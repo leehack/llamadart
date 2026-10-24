@@ -97,7 +97,9 @@ or media payloads; old string calls retain their existing text observations.
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
 `loadMultimodalProjector` loading path. `LiteRtLmModelParams(embeddingEngine: true)`
 selects the separate LiteRT-LM embedding engine. Use `ComputeDevice.cpu` on
-native. Native GPU and all LiteRT-LM Web paths throw `LlamaUnsupportedException`. This flag
+macOS arm64 or iOS arm64. Native GPU, Android, Linux, Windows and all LiteRT-LM
+Web paths throw `LlamaUnsupportedException` at load, before native engine creation
+([#1367](https://github.com/leehack/llamadart/issues/1367)). This flag
 is LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
 existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
 than inferring modality support from its name. Follow
