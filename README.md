@@ -45,9 +45,10 @@ Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.
   this is a declared floor, not a tested one: on a device it has run only on
   iOS 18.3.2 ([#831](https://github.com/leehack/llamadart/issues/831))
 - macOS deployment target `14.0` or newer for Flutter macOS apps
-- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
-  architecture (x64 or arm64) on every machine that runs it, at least as new
-  as the build tools of the bundled DLLs; stock Windows Server lacks it
+- Windows: nothing extra for llama.cpp and LiteRT-LM, which bundle the
+  Visual C++ runtime DLLs they need. Machines that run the opt-in
+  `stable_diffusion` runtime need the latest Microsoft Visual C++ v14
+  Redistributable (x64); stock Windows Server lacks it
 
 Consumers do not need a local C++ toolchain. Native runtime archives are
 resolved by the package build hook on first build or run.
@@ -474,7 +475,7 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0-2` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-2` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.73` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 
