@@ -733,6 +733,17 @@ void main() {
     );
     expect(
       liteRtLmEngineCreateFailureMessage(
+        backend: 'cpu',
+        modelPath: '/models/gemma-4-E2B-it.litertlm',
+      ),
+      allOf(
+        contains('backend "cpu"'),
+        contains('Verify the LiteRT-LM bundle'),
+        isNot(contains('delegate')),
+      ),
+    );
+    expect(
+      liteRtLmEngineCreateFailureMessage(
         backend: 'gpu',
         modelPath: '/models/gemma-4-E2B-it.litertlm',
         nativeError: 'LiteRT-LM reported INTERNAL (13): no OpenCL device.',
