@@ -247,8 +247,8 @@ Qwen3-TTS-12Hz-0.6B-Base Q4_K_M with its Q8_0 projector on Metal:
 | --- | --- | --- | --- | --- |
 | `dispose()` (control) | 0 | 0 | ≤ 12 KiB | ≤ 0.4 MiB |
 | Kill while idle | 0 | 0 | ≤ 7 KiB | ≤ 0.4 MiB |
-| Kill while generating | 0 | 0 | ≤ 12 KiB | ≤ 0.4 MiB |
-| Kill while synthesizing speech | 0 | 0 | 17 KiB | 3.4 MiB |
+| Kill while generating | 0 | 0 | ≤ 19 KiB | ≤ 0.4 MiB |
+| Kill while synthesizing speech | 0 | 0 | 12 to 17 KiB | 0.03 to 3.4 MiB |
 | Kill inside the load (Qwen2.5, Metal) | 1 per kill, 10 of 10 | 374 MiB per kill | 30 MiB | 494 MiB |
 
 Per-cycle values are medians. Before the batch and the sampler chains were

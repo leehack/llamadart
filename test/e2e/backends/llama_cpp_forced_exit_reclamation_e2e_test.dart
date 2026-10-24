@@ -145,7 +145,7 @@ const _mib = 1 << 20;
 const _growthPerCycle = 8 * _mib;
 
 /// Allowed median growth per cycle of the malloc zones: a kill measured at
-/// most 18 KiB, and leaking a context's batch and sampler chain at least
+/// most 19 KiB, and leaking a context's batch and sampler chain at least
 /// 75 KiB.
 const _mallocGrowthPerCycle = 48 * 1024;
 
