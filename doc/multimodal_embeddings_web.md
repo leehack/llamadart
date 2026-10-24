@@ -39,12 +39,13 @@ Bridge source contract inspected read-only at
 restore and structured-clone ownership; those are bridge responsibilities.
 
 Qualification target: EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.72` on Chrome CPU wasm memory64
+mmproj and pinned assets `v0.1.73` on Chrome CPU wasm memory64
 (`gpuLayers: 0`). The latest rerun, exact-artifact provenance and lifecycle
 results, on `v0.1.66`, are tracked in
 [PR 1205](https://github.com/leehack/llamadart/pull/1205); the table below
 retains its original artifact identity. The current pin adds only URL
-resolution, teardown, state-file, truncated-snapshot and UTF-8 decoding fixes on the same llama.cpp, passed the
+resolution, teardown, state-file, truncated-snapshot, UTF-8 decoding and
+string-embedding rejection fixes on the same llama.cpp, passed the
 bridge's hosted multimodal gate, and has not been rerun against these reference
 vectors.
 

@@ -82,11 +82,12 @@ description: >-
 - Rank-pooled reranker GGUFs (such as Qwen3-Reranker) produce classifier
   scores, not embeddings; `embed`/`embedBatch` throw
   `LlamaUnsupportedException` for them, as do encoder-decoder models such as
-  T5.
+  T5. On Web, rerankers throw it with bridge assets `v0.1.73+`.
 - Web embeddings need llama.cpp bridge assets `v0.1.7` or newer. When
   older assets lack the embedding API, calls throw `LlamaUnsupportedException`
-  naming that floor; other web embedding failures surface as
-  `LlamaInferenceException`.
+  naming that floor. Bridge assets `v0.1.73+` throw
+  `LlamaEmbeddingInputTooLongException` for input over the one-pass limit;
+  other web embedding failures surface as `LlamaInferenceException`.
 - Nothing is truncated for you. Native encoder-only, no-memory and
   non-causal models (BERT, ModernBERT, EmbeddingGemma), plus MEAN/CLS-pooled
   models even with a KV cache, need one micro-batch per input. Exceeding the
@@ -297,7 +298,8 @@ Future<List<String>> chunkByTokens(
 ```
 
 A single paragraph longer than `maxTokens` still needs splitting (for example
-by sentence) before `embed`, or native llama.cpp throws
+by sentence) before `embed`, or native llama.cpp (and Web bridge assets
+`v0.1.73+` for one-pass models) throws
 `LlamaEmbeddingInputTooLongException`. Other runtimes may report
 `LlamaInferenceException` without structured counts.
 

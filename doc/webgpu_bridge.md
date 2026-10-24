@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.72`.
+Default pinned tag in the example is `v0.1.73`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.72 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.73 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,17 +81,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.72';
+  window.__llamadartBridgeAssetsTag = 'v0.1.73';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-2`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.72` differs from the native runtime tag
-`v0.7.0-2`. Provenance for this immutable consumer artifact: release `422332916`,
-tag commit `5a8ae4b2c6c8324ee50dc84e960791fb20a999f8`, bridge source
-`22fd92f359c2dcdf56f50688f23043553731f143`, and manifest SHA-256
-`85075d7d278bcacab706b79cda65c4a1bf8098a90f1e9fdbd504c198b8c8b03a`. The bridge
+even though the bridge asset tag `v0.1.73` differs from the native runtime tag
+`v0.7.0-2`. Provenance for this immutable consumer artifact: release `422794693`,
+tag commit `78430396ad1a53d5058d3999727a539379a5e635`, bridge source
+`5340be9e71684c946d864a9f14f2e63a542ac025`, and manifest SHA-256
+`f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`. The bridge
 manifest records native `v0.7.0-2`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
@@ -162,6 +162,13 @@ physical playback, intelligibility or speaker-reference fidelity.
   ([llama-web-bridge#187](https://github.com/leehack/llama-web-bridge/pull/187),
   [#184](https://github.com/leehack/llama-web-bridge/pull/184),
   [#190](https://github.com/leehack/llama-web-bridge/pull/190)).
+- `v0.1.73+`: string `embed`/`embedBatch` reject a rank-pooled model, which
+  llamadart maps to `LlamaUnsupportedException`, and input that must fit one
+  micro-batch but exceeds `nUbatch`, mapped to
+  `LlamaEmbeddingInputTooLongException` with both counts. Older assets return
+  an invalid vector built from classifier scores, embed only part of the input or abort
+  the runtime
+  ([llama-web-bridge#194](https://github.com/leehack/llama-web-bridge/pull/194)).
 
 ### Media embeddings
 
@@ -394,8 +401,9 @@ tag:
 `test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks these
 gates against real assets and models; its header lists the setup.
 `test/e2e/webgpu/bridge_runtime_fixes_e2e_test.dart` (local-only) checks the
-`v0.1.67+` state-file, relative-URL and reload behavior, and the `v0.1.69+`
-truncated-snapshot rejection, in both runtimes.
+`v0.1.67+` state-file, relative-URL and reload behavior, the `v0.1.69+`
+truncated-snapshot rejection and the `v0.1.73+` string embedding rejections,
+in both runtimes.
 
 ## Notes
 
@@ -484,5 +492,8 @@ The classifier is separate from operation fallbacks. Media embeddings map the
 pinned API's stable `EmbeddingError.code` values to argument, unsupported and
 inference exceptions, preserving known codes (including `EMBEDDING_INPUT_TOO_LARGE`
 and `EMBEDDING_FAILED`) and the `aborted` runtime label without copying diagnostic
-payloads. Unknown codes are omitted. Reserved mixed-input media markers are
+payloads. Unknown codes are omitted. The string path has no stable code, so
+its v0.1.73+ rank-pooling and one-pass overflow rejections are matched on the
+core's exact message, prefix included; any other message stays an inference
+error. Reserved mixed-input media markers are
 rejected as unsupported before dispatch, matching native.
