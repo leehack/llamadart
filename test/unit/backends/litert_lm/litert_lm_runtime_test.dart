@@ -718,8 +718,8 @@ void main() {
     });
     tearDown(() => root.deleteSync(recursive: true));
 
-    Directory populate(String relativeDir, Abi abi) {
-      final dir = Directory(path.join(root.path, relativeDir))
+    Directory populate(List<String> segments, Abi abi) {
+      final dir = Directory(path.joinAll([root.path, ...segments]))
         ..createSync(recursive: true);
       for (final library in liteRtLmRequiredLibrariesForAbi(abi)) {
         File(path.join(dir.path, library)).createSync();
@@ -743,7 +743,7 @@ void main() {
 
     test('finds the dart build cli, Flutter Linux and Flutter Windows '
         'layouts', () {
-      final cliLib = populate('cli/bundle/lib', Abi.linuxX64);
+      final cliLib = populate(['cli', 'bundle', 'lib'], Abi.linuxX64);
       expect(
         liteRtLmFindBundleLibraryDirectoryForAbi(
           path.join(root.path, 'cli', 'bundle', 'bin', 'app'),
@@ -752,10 +752,11 @@ void main() {
         cliLib.path,
       );
 
-      final flutterLinuxLib = populate(
-        'flutter_linux/bundle/lib',
-        Abi.linuxX64,
-      );
+      final flutterLinuxLib = populate([
+        'flutter_linux',
+        'bundle',
+        'lib',
+      ], Abi.linuxX64);
       expect(
         liteRtLmFindBundleLibraryDirectoryForAbi(
           path.join(root.path, 'flutter_linux', 'bundle', 'app'),
@@ -764,7 +765,7 @@ void main() {
         flutterLinuxLib.path,
       );
 
-      final flutterWindowsDir = populate('Release', Abi.windowsX64);
+      final flutterWindowsDir = populate(['Release'], Abi.windowsX64);
       expect(
         liteRtLmFindBundleLibraryDirectoryForAbi(
           path.join(flutterWindowsDir.path, 'app.exe'),
@@ -775,7 +776,7 @@ void main() {
     });
 
     test('rejects a bundle missing any required library', () {
-      final lib = populate('bundle/lib', Abi.windowsX64);
+      final lib = populate(['bundle', 'lib'], Abi.windowsX64);
       final executable = path.join(root.path, 'bundle', 'bin', 'app.exe');
       for (final library in liteRtLmRequiredLibrariesForAbi(Abi.windowsX64)) {
         final file = File(path.join(lib.path, library))..deleteSync();
