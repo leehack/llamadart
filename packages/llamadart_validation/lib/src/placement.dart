@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 
 import 'case_catalog.dart';
 import 'decision_catalog.dart';
+import 'litert_gpu_failure_markers.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 
@@ -312,15 +313,6 @@ bool _loadsReport(
       });
 }
 
-const _liteRtGpuFailureMarkers = [
-  'GPU accelerator could not be loaded and registered',
-  'Some ops are not accelerated',
-  'Failed to modify graph with delegate',
-  'VK_ERROR_',
-  'Validation error',
-  'Falling back to CPU',
-];
-
 /// LiteRT-LM tags whose sources were read for the two rules
 /// [_inspectLiteRtGpu] rests on. Before adding a tag, re-read
 /// `runtime/executor/llm_executor_settings_utils.cc` and LiteRT's
@@ -400,7 +392,7 @@ Map<String, dynamic> _inspectLiteRtGpu(
   final expectedLoads = expectedIds.length;
   final lowered = log.toLowerCase();
   final failures = [
-    for (final marker in _liteRtGpuFailureMarkers)
+    for (final marker in liteRtGpuFailureMarkers)
       if (lowered.contains(marker.toLowerCase())) marker,
   ];
   final adapter = RegExp(

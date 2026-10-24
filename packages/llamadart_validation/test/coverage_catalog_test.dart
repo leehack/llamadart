@@ -190,6 +190,7 @@ void main() {
       'manifest.dart',
       'case_catalog.dart',
       'decision_catalog.dart',
+      'litert_gpu_failure_markers.dart',
       'runtime_environment.dart',
       'runtime_environment_io.dart',
       'runtime_environment_stub.dart',
