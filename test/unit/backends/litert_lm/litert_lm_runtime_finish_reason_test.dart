@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:test/test.dart';
 
 Future<String> _compileFixture(
@@ -92,6 +93,30 @@ void main() {
     ]) {
       final client = LiteRtLmRuntimeClient(libraryPath: library);
       expect(client.supportsFinishReasons, supported, reason: library);
+    }
+  });
+
+  test('the service probes a fresh client of the runtime for finish '
+      'reasons', () {
+    for (final (library, supported) in [
+      (reporting, true),
+      (abiZero, false),
+      (futureAbi, false),
+      (noAbi, false),
+      ('${Directory.systemTemp.path}/missing_litert_lm.dylib', false),
+    ]) {
+      final service = LiteRtLmService(
+        clientFactory: () => throw StateError(
+          'the probe must not create '
+          'the generation client',
+        ),
+        finishReasonProbeLibraryPath: library,
+      );
+      try {
+        expect(service.reportsFinishReasons(), supported, reason: library);
+      } finally {
+        service.dispose();
+      }
     }
   });
 

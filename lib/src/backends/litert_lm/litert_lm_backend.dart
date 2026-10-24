@@ -112,8 +112,10 @@ class LiteRtLmBackend
   /// (litert-lm-native `v0.18.0-3` and later); otherwise, and before a load,
   /// why automatic tool loops cannot run.
   @override
-  String? get generationLimitUnsupportedReason =>
-      _isReady && _reportsFinishReasons
+  String? get generationLimitUnsupportedReason => _embeddingEngine
+      ? 'The model is loaded as a LiteRT-LM embedding engine '
+            '(embeddingEngine: true), which generates no text.'
+      : _isReady && _reportsFinishReasons
       ? null
       : 'The loaded native LiteRT-LM runtime does not report why generation '
             'stopped: token-limit reporting needs litert-lm-native v0.18.0-3 '
@@ -446,7 +448,7 @@ class LiteRtLmBackend
           }
         } else if (message is LiteRtLmDoneResponse) {
           final limit = message.generationLimit;
-          if (limit != null && !closed && !current.cancelRequested) {
+          if (limit != null && !current.cancelRequested) {
             _generationLimits.limits[stream] = limit;
           }
           close();

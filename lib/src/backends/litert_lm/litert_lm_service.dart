@@ -87,8 +87,8 @@ class LiteRtLmService {
   /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client,
   /// [readBundleChatTemplate] replaces [readLiteRtLmBundleChatTemplate], and
   /// [readBundleFirstChannel] replaces [readLiteRtLmBundleFirstChannel].
-  /// [readFinishReasonSupport] replaces
-  /// [LiteRtLmRuntimeClient.supportsFinishReasons] on a fresh client.
+  /// [finishReasonProbeLibraryPath] is the runtime library that
+  /// [reportsFinishReasons] probes, the default runtime when null.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
@@ -97,7 +97,7 @@ class LiteRtLmService {
     LiteRtLmBundleCapabilitiesReader? readBundleCapabilities,
     LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
     LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
-    bool Function()? readFinishReasonSupport,
+    String? finishReasonProbeLibraryPath,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
        _readBundleCapabilities =
            readBundleCapabilities ??
@@ -107,9 +107,7 @@ class LiteRtLmService {
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
        _readBundleFirstChannel =
            readBundleFirstChannel ?? readLiteRtLmBundleFirstChannel,
-       _readFinishReasonSupport =
-           readFinishReasonSupport ??
-           (() => LiteRtLmRuntimeClient().supportsFinishReasons),
+       _finishReasonProbeLibraryPath = finishReasonProbeLibraryPath,
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
@@ -119,7 +117,7 @@ class LiteRtLmService {
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
   final LiteRtLmBundleFirstChannelReader _readBundleFirstChannel;
-  final bool Function() _readFinishReasonSupport;
+  final String? _finishReasonProbeLibraryPath;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
@@ -1718,7 +1716,9 @@ class LiteRtLmService {
   ///
   /// Probes a fresh client, so a model load that asks creates no engine.
   bool reportsFinishReasons() =>
-      _runtimeFinishReasons ??= _readFinishReasonSupport();
+      _runtimeFinishReasons ??= LiteRtLmRuntimeClient(
+        libraryPath: _finishReasonProbeLibraryPath,
+      ).supportsFinishReasons;
 
   /// The token limit that ended the latest generation, or null when it ended
   /// at a stop token, a stop sequence, cancellation or an error, is still

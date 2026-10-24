@@ -379,6 +379,88 @@ void main() {
       }
     });
 
+    test('a failed reload forgets that the runtime reports finish '
+        'reasons', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        reportsFinishReasons: true,
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+      try {
+        await backend.modelLoad(modelFile.path, const ModelParams());
+        expect(backend.generationLimitUnsupportedReason, isNull);
+        worker.modelLoadErrorResponse = LiteRtLmErrorResponse(
+          'load failed',
+          kind: 'state',
+        );
+        await expectLater(
+          backend.modelLoad(modelFile.path, const ModelParams()),
+          throwsA(anything),
+        );
+        expect(backend.generationLimitUnsupportedReason, isNotNull);
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    });
+
+    test('an embedding engine names itself as why loops cannot run', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+      try {
+        await backend.modelLoad(
+          modelFile.path,
+          const ModelParams(liteRtLmEmbeddingEngine: true),
+        );
+        expect(
+          backend.generationLimitUnsupportedReason,
+          allOf(contains('embedding engine'), isNot(contains('v0.18.0-3'))),
+        );
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    });
+
+    test(
+      'a generation cancelled through the backend records no limit',
+      () async {
+        final worker = _FakeLiteRtLmWorker(
+          tokenizeResponse: const <int>[],
+          detokenizeResponse: '',
+          generationChunks: [utf8.encode('Hello')],
+          holdGeneration: true,
+          reportsFinishReasons: true,
+          generationLimit: BackendGenerationLimit.maxTokens,
+        );
+        final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+        try {
+          await backend.modelLoad(modelFile.path, const ModelParams());
+          final stream = backend.generate(1, 'hi', const GenerationParams());
+          final first = Completer<void>();
+          final done = stream.map((chunk) {
+            if (!first.isCompleted) first.complete();
+            return chunk;
+          }).drain<void>();
+          await first.future;
+          backend.cancelGeneration();
+          worker.releaseGeneration();
+          await done;
+          expect(
+            generationLimitReporterOf(backend)!.generationLimitOf(stream),
+            isNull,
+          );
+        } finally {
+          await backend.dispose();
+          worker.close();
+        }
+      },
+    );
+
     test('a cancelled generation records no limit', () async {
       for (final cancel in [false, true]) {
         final worker = _FakeLiteRtLmWorker(
@@ -3092,6 +3174,7 @@ class _FakeLiteRtLmWorker {
   final ({bool penalties, bool thinkingBudget}) generationControlsResponse;
   final bool reportsFinishReasons;
   final BackendGenerationLimit? generationLimit;
+  LiteRtLmErrorResponse? modelLoadErrorResponse;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
   final Completer<LiteRtLmGenerateRequest> generateReceived =
@@ -3159,6 +3242,11 @@ class _FakeLiteRtLmWorker {
           );
         }
       case LiteRtLmModelLoadRequest():
+        final loadError = modelLoadErrorResponse;
+        if (loadError != null) {
+          message.sendPort.send(loadError);
+          break;
+        }
         message.sendPort.send(
           LiteRtLmHandleResponse(1, reportsFinishReasons: reportsFinishReasons),
         );

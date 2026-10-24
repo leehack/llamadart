@@ -4269,31 +4269,6 @@ void main() {
   group('finish reasons', () {
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
 
-    test('reportsFinishReasons probes once without the client factory', () {
-      for (final supported in [false, true]) {
-        var factoryCalls = 0;
-        var probes = 0;
-        final service = LiteRtLmService(
-          clientFactory: () {
-            factoryCalls++;
-            return _FakeLiteRtLmRuntimeClient();
-          },
-          readFinishReasonSupport: () {
-            probes++;
-            return supported;
-          },
-        );
-        try {
-          expect(service.reportsFinishReasons(), supported);
-          expect(service.reportsFinishReasons(), supported);
-          expect(probes, 1);
-          expect(factoryCalls, 0);
-        } finally {
-          service.dispose();
-        }
-      }
-    });
-
     final expectations = <LiteRtLmFinishReason?, BackendGenerationLimit?>{
       LiteRtLmFinishReason.length: BackendGenerationLimit.maxTokens,
       LiteRtLmFinishReason.contextExhausted: BackendGenerationLimit.contextSize,
