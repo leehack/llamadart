@@ -51,12 +51,17 @@ class LlamaCliService {
   Future<String> chat(String text, {GenerationParams? params}) async {
     final tools = _tools;
     if (tools == null || tools.isEmpty) {
-      return (await _session.send(text, params: params)).text;
+      return (await _session.send(
+        text,
+        params: params,
+        enableThinking: false,
+      )).text;
     }
     final result = await _session.sendWithTools(
       text,
       tools: tools,
       params: params,
+      enableThinking: false,
       maxRounds: _maxToolRounds,
     );
     return result.text;
@@ -71,16 +76,24 @@ class LlamaCliService {
   /// [ChatSession.sendWithTools] runs each tool call and feeds its result
   /// back until the model answers or [_maxToolRounds] is reached; the stream
   /// reports each call, result and reply as it is added to the history.
+  ///
+  /// Reasoning is skipped unless [enableThinking] is true, in which case it
+  /// streams ahead of the answer.
   Stream<String> chatStream(
     String text, {
     GenerationParams? params,
     ToolChoice? toolChoice,
+    bool enableThinking = false,
   }) {
     final tools = _tools;
     if (tools == null || tools.isEmpty) {
-      return _session.create([
-        LlamaTextContent(text),
-      ], params: params).textDeltas();
+      return _replyDeltas(
+        _session.create(
+          [LlamaTextContent(text)],
+          params: params,
+          enableThinking: enableThinking,
+        ),
+      );
     }
 
     final output = StreamController<String>();
@@ -90,6 +103,7 @@ class LlamaCliService {
           tools: tools,
           params: params,
           toolChoice: toolChoice,
+          enableThinking: enableThinking,
           maxRounds: _maxToolRounds,
           onMessageAdded: (message) {
             for (final part in message.parts) {
@@ -113,6 +127,22 @@ class LlamaCliService {
         }, onError: output.addError)
         .whenComplete(output.close);
     return output.stream;
+  }
+
+  Stream<String> _replyDeltas(Stream<LlamaCompletionChunk> chunks) async* {
+    var reasoned = false;
+    var answered = false;
+    await for (final chunk in chunks) {
+      if (chunk.thinking.isNotEmpty) {
+        reasoned = true;
+        yield chunk.thinking;
+      }
+      if (chunk.text.isNotEmpty) {
+        if (reasoned && !answered) yield '\n\n';
+        answered = true;
+        yield chunk.text;
+      }
+    }
   }
 
   /// Disposes the underlying engine resources.
