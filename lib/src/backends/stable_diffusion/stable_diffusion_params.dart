@@ -105,6 +105,17 @@ void applyStableDiffusionGenerationParams(
     ..sample_method = stableDiffusionSampleMethod(request.sampler)
     ..scheduler = stableDiffusionScheduler(request.scheduler)
     ..flow_shift = stableDiffusionFlowShift(request.flowShift);
+  final tiling = request.vaeTiling;
+  if (tiling != null) {
+    params.ref.vae_tiling_params
+      ..enabled = true
+      ..tile_size_w = tiling.tileWidth
+      ..tile_size_h = tiling.tileHeight
+      ..target_overlap = tiling.overlap
+      // Positive relative sizes would override the tile sizes.
+      ..rel_size_w = 0
+      ..rel_size_h = 0;
+  }
 }
 
 /// The runtime's sampler for [sampler]. `null` maps to

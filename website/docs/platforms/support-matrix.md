@@ -36,7 +36,9 @@ F16C and BMI2, Windows needs the latest Microsoft Visual C++ v14
 Redistributable (x64), and Android arm64 needs dot-product and fp16. The
 desktop models (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo,
 Z-Image-Turbo) need about 8 to 15 GiB and are validated on macOS Metal; NVIDIA
-Vulkan figures come from the native CLI. See
+Vulkan figures come from the native CLI. Opt-in VAE tiling
+(`ImageGenerationRequest.vaeTiling`) is available on every image platform and
+measured on macOS CPU and Metal only. See
 [Image generation](../guides/image-generation#support). GGUF
 Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming

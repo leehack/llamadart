@@ -17,7 +17,19 @@ void main() {
     expect(request.sampler, isNull);
     expect(request.scheduler, isNull);
     expect(request.flowShift, isNull);
+    expect(request.vaeTiling, isNull);
     validateImageGenerationRequest(request);
+  });
+
+  test('VAE tiling defaults to the runtime\'s 256-pixel tiles and half '
+      'overlap', () {
+    const tiling = ImageVaeTiling();
+
+    expect((tiling.tileWidth, tiling.tileHeight), (256, 256));
+    expect(tiling.overlap, 0.5);
+    validateImageGenerationRequest(
+      const ImageGenerationRequest(prompt: 'a', vaeTiling: tiling),
+    );
   });
 
   test('accepts the bounds', () {
@@ -31,6 +43,7 @@ void main() {
         seed: 0,
         count: 1,
         flowShift: 0.01,
+        vaeTiling: ImageVaeTiling(tileWidth: 64, tileHeight: 2048, overlap: 0),
       ),
       ImageGenerationRequest(
         prompt: 'a',
@@ -41,6 +54,11 @@ void main() {
         seed: 0x7FFFFFFF,
         count: 16,
         flowShift: 100,
+        vaeTiling: ImageVaeTiling(
+          tileWidth: 2048,
+          tileHeight: 64,
+          overlap: 0.5,
+        ),
       ),
     ]) {
       validateImageGenerationRequest(request);
@@ -76,6 +94,62 @@ void main() {
       (
         ImageGenerationRequest(prompt: 'a', flowShift: double.nan),
         'flowShift',
+        isNaN,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(tileWidth: 0),
+        ),
+        'vaeTiling.tileWidth',
+        0,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(tileWidth: 96),
+        ),
+        'vaeTiling.tileWidth',
+        96,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(tileHeight: 32),
+        ),
+        'vaeTiling.tileHeight',
+        32,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(tileHeight: 2112),
+        ),
+        'vaeTiling.tileHeight',
+        2112,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(overlap: -0.1),
+        ),
+        'vaeTiling.overlap',
+        -0.1,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(overlap: 0.6),
+        ),
+        'vaeTiling.overlap',
+        0.6,
+      ),
+      (
+        ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(overlap: double.nan),
+        ),
+        'vaeTiling.overlap',
         isNaN,
       ),
     ]) {
