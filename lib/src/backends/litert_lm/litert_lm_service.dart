@@ -183,6 +183,7 @@ class LiteRtLmService {
       backendOverride: backendOverride,
     );
     if (params.liteRtLmEmbeddingEngine) {
+      liteRtLmEnsureNativeEmbeddingsQualified();
       ensureLiteRtLmNativeEmbeddingBackend(resolvedBackend);
     }
     final modelLink = await LiteRtLmModelLink.create(

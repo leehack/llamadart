@@ -16,6 +16,7 @@ import 'litert_lm_embedding.dart';
 import 'litert_lm_embedding_bindings.dart' as emb;
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_last_error.dart';
+import 'litert_lm_platform.dart';
 import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
