@@ -58,7 +58,7 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.0
+  llamadart: ^0.16.1
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -89,9 +89,9 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.0
+  llamadart: ^0.16.1
   llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.16.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_litert_lm_flutter: ^0.16.1 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in
 ```
 
@@ -108,9 +108,11 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Use LiteRT-LM companion `0.16.0` with core `0.16.x` (it pins native `v0.18.1`; the
-companion pinning `v0.18.1-2` comes with release prep), or
-`0.15.2` with core `>=0.15.6 <0.16.0` for `v0.18.0-3`; both load dedicated ASR
+Use LiteRT-LM companion `0.16.1` with core `>=0.16.1 <0.17.0` for native
+`v0.18.1-2`, which fixes nondeterministic CPU output and slow Gemma 4 CPU decode
+on SME2 CPUs. Companion `0.16.0` pins `v0.18.1` and pairs with core `0.16.0`;
+later `0.16.x` cores build it with a macOS upgrade warning. Use `0.15.2` with
+core `>=0.15.6 <0.16.0` for `v0.18.0-3`. All three load dedicated ASR
 `.litertlm` containers such as Whisper tiny. Locked `0.15.0`/`0.15.1`
 companions keep `v0.18.0-2` and work with core `0.15.6` with a macOS upgrade
 warning; pair `0.14.0` with core `0.14.x`. From `v0.18.0-2`, the runtime reduces duplicated words at untimed ASR

@@ -1,6 +1,8 @@
-## Unreleased
+## 0.16.1
 
-* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.18.1-2`.
+- Update Apple SwiftPM to `leehack/litert-lm-native@v0.18.1-2`, which makes
+  CPU chat and audio embeddings deterministic again on SME2 CPUs such as Apple
+  M4 and restores Gemma 4 CPU decode speed; require core `>=0.16.1 <0.17.0`.
 
 ## 0.16.0
 

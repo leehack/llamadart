@@ -439,8 +439,11 @@ LiteRT-LM release, such as `v0.18.1` before a `v0.18.1-2` core, still embeds
 the complete macOS runtime, which the app loads from its bundle, so the build
 only warns to upgrade the companion. A maintained manifest pinning any other
 LiteRT-LM release or a later build of the same release warns to upgrade the
-core and companion together. Core `0.16.0` and its companion `0.16.0` pin `v0.18.1`; a core pinning
-`v0.18.1-2` accepts that companion with the warning above. Companions
+core and companion together. Core `0.16.0` and its companion `0.16.0` pin
+`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`, and core
+`0.16.1` accepts companion `0.16.0` with the warning above. Companion `0.16.1`
+requires core `>=0.16.1`, since core `0.16.0` would keep LiteRT-LM in the hook
+cache. Companions
 `0.0.15` to `0.15.2` pin `v0.18.0` to `v0.18.0-3`, a different release from
 the `v0.18.1` core release line.
 Without a companion, and for non-Flutter or non-Apple builds, the hook

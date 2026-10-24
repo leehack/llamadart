@@ -31,8 +31,8 @@ also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.0
-  llamadart_litert_lm_flutter: ^0.16.0
+  llamadart: ^0.16.1
+  llamadart_litert_lm_flutter: ^0.16.1
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
@@ -40,7 +40,9 @@ normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.1-2`.
 That runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
-Use companion `0.16.0` with core `0.16.x`. Companion `0.15.2` pins
+Use companion `0.16.1` with core `>=0.16.1 <0.17.0`. Companion `0.16.0`
+pins `v0.18.1` for core `0.16.x`; from core `0.16.1` it builds with a macOS
+upgrade warning. Companion `0.15.2` pins
 `v0.18.0-3` for core `>=0.15.6 <0.16.0`. Locked `0.15.0`/`0.15.1`
 companions keep `v0.18.0-2` and work with core `0.15.6` with a macOS upgrade
 warning. Pair `0.14.0` with core `0.14.x`, `0.13.0` with
