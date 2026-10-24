@@ -1554,18 +1554,19 @@ still required for every actual run.
 
 ### Native video input
 
-The previously pinned `llamadart-native` `v0.6.0-3` archive exports upstream video helper
-symbols (`mtmd_helper_video_*`), but the release is not qualified for
-end-to-end video input. The companion build does not opt into
-`LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe, so the public Dart
-path stays unsupported until matching native, packaging and frame-lifecycle
-validation exists. Native LiteRT-LM direct media accepts image and audio only;
-WebGPU and Web LiteRT-LM have no validated video transport or frame-lifetime
-contract; Android and iOS need native packaging and device validation.
-`LlamaVideoContent` throws `LlamaUnsupportedException` naming either the native
-compile/dependency blocker or, for a custom video-enabled native build, the
-remaining Dart frame-ingestion/lifetime blocker. Do not infer support from the
-exported symbols.
+The pinned `llamadart-native` `v0.7.0-2` macOS, Linux and Windows archives are
+built with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, so `mtmd_helper_support_video`
+there reports whether the loaded projector has a vision encoder (an audio-only
+projector reports `false`). The Android and iOS archives are built without
+video, so it always reports `false`. FFmpeg/ffprobe is not packaged, and the
+public Dart path stays unsupported until frame-lifecycle validation exists.
+Native LiteRT-LM direct media accepts image and audio only; WebGPU and Web
+LiteRT-LM have no validated video transport or frame-lifetime contract.
+`LlamaVideoContent` throws `LlamaUnsupportedException` naming either the
+missing video support (a projector without a vision encoder, or a runtime built
+without video) or, for a video-enabled runtime, the remaining Dart
+frame-ingestion/lifetime blocker. Do not infer support from the exported
+symbols.
 
 ### Primary model profiles and runnable speech packs
 
