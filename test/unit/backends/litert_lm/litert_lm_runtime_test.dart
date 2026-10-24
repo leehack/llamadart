@@ -905,8 +905,10 @@ void main() {
     });
     tearDown(() => root.deleteSync(recursive: true));
 
+    // The hook-cache walk joins with `/`; normalize so Windows compares
+    // separators consistently.
     String? resolve({String? libDirOverride, bool searchRootsAllowed = true}) {
-      return liteRtLmResolveRuntimeDirectoryForAbi(
+      final dir = liteRtLmResolveRuntimeDirectoryForAbi(
         abi,
         libDirOverride: libDirOverride,
         executablePath: executable,
@@ -916,7 +918,8 @@ void main() {
           }
           return [Directory(path.join(project.path, 'src'))];
         },
-      )?.path;
+      );
+      return dir == null ? null : path.normalize(dir.path);
     }
 
     test(
