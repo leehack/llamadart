@@ -624,13 +624,13 @@ void main() {
     library,
   ).lookupFunction<Int Function(), int Function()>('settings_creates')();
   for (final (abi, reason) in [
-    (Abi.linuxArm64, 'fails'),
-    (Abi.windowsX64, 'crashes the process'),
-    (Abi.linuxX64, 'not qualified'),
-    (Abi.androidArm64, 'not qualified'),
-    (Abi.androidX64, 'not qualified'),
+    (Abi.linuxArm64, 'creation fails there with'),
+    (Abi.windowsX64, 'creation crashes the process there'),
+    (Abi.linuxX64, 'fails there, and a repeated attempt crashes the process'),
+    (Abi.androidX64, 'they are not qualified there'),
   ]) {
-    test('$abi rejects embedding loads before any native call', () async {
+    test('$abi rejects embedding loads on a custom runtime before any native '
+        'call', () async {
       debugLiteRtLmAbiOverride = abi;
       final matcher = throwsA(
         isA<LlamaUnsupportedException>().having(
@@ -640,6 +640,8 @@ void main() {
             contains('LiteRT-LM native embeddings are unsupported on $abi'),
             contains(reason),
             contains('leehack/llamadart#1367'),
+            contains('every LiteRT-LM runtime library, including a custom one'),
+            isNot(contains('pinned')),
           ),
         ),
       );
@@ -667,7 +669,7 @@ void main() {
       expect(chat, isPositive);
     });
   }
-  for (final abi in [Abi.macosArm64, Abi.iosArm64]) {
+  for (final abi in [Abi.macosArm64, Abi.iosArm64, Abi.androidArm64]) {
     test('$abi creates the embedding engine', () async {
       debugLiteRtLmAbiOverride = abi;
       final session = await create();

@@ -22,18 +22,13 @@ void main() {
     expect(liteRtLmDesktopGpuSupportedForAbi(Abi.windowsArm64), isFalse);
   });
 
-  test(
-    'native embedding qualification is restricted to macOS and iOS arm64',
-    () {
-      for (final abi in Abi.values) {
-        expect(
-          liteRtLmNativeEmbeddingsQualifiedForAbi(abi),
-          abi == Abi.macosArm64 || abi == Abi.iosArm64,
-          reason: '$abi must keep its qualified embedding boundary (#1367)',
-        );
-      }
-    },
-  );
+  test('native embeddings are qualified on exactly three ABIs (#1367)', () {
+    expect(Abi.values.where(liteRtLmNativeEmbeddingsQualifiedForAbi).toSet(), {
+      Abi.macosArm64,
+      Abi.iosArm64,
+      Abi.androidArm64,
+    });
+  });
 
   test('normalizes native backend overrides', () {
     expect(normalizeLiteRtLmNativeBackendOverride(null), isNull);

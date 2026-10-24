@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- LiteRT-LM native embedding loads throw `LlamaUnsupportedException` on Android, Linux and Windows instead of failing at engine creation on Linux arm64 or crashing the process on Windows x64; they stay available on macOS arm64 and iOS arm64 ([#1367](https://github.com/leehack/llamadart/issues/1367)).
+- LiteRT-LM native embedding loads throw `LlamaUnsupportedException` on Linux, Windows and Android x86_64 instead of failing at engine creation or crashing the process; they stay available on macOS arm64, iOS arm64 and Android arm64 ([#1367](https://github.com/leehack/llamadart/issues/1367)).
 
 ## 0.16.1
 

@@ -15,8 +15,10 @@ The capability probe checks the actual bundle's text-encoder/embedder and
 vision/audio encoder/adapter sections, the complete optional v0.18 embedding C
 ABI, and successful processor creation. Unknown or unloaded contexts return
 all-false without runtime I/O. Native CPU is qualified on macOS arm64 and iOS
-arm64; native GPU/NPU, other native platforms and all Web embeddings remain
-unsupported. Synthetic media establishes wiring, not
+arm64 (iPhone 16 Pro and the arm64 simulator). Android arm64 is verified on an
+arm64 emulator on an SME2 host, with vectors bit-identical to the iPhone run;
+physical Android devices are not yet verified. Native GPU/NPU, other native
+platforms and all Web embeddings remain unsupported. Synthetic media establishes wiring, not
 retrieval quality. Other devices and embedding families were not qualified.
 
 Inputs preserve order and merge adjacent text verbatim. Accepted media are
@@ -119,13 +121,17 @@ unsupported. These observations do not establish the cause of the numerical gap.
 
 ## Unsupported paths and upstream gaps
 
-- **Native platforms other than macOS and iOS arm64:** fail at load, before any
-  native call. With EmbeddingGemma 2 on every `v0.18` pin, CPU engine creation
-  returns an empty `UNKNOWN` error from the vision executor compile on Linux
-  arm64 and crashes the process (`0xC0000005` in `libLiteRt.dll`) on Windows
-  x64; Android and Linux x64 are unqualified
-  ([#1367](https://github.com/leehack/llamadart/issues/1367)). Requalify a
-  platform before adding it to `liteRtLmNativeEmbeddingsQualifiedForAbi`.
+- **Native platforms other than macOS, iOS and Android arm64:** fail at load,
+  before any native call, whichever runtime library is loaded. With
+  EmbeddingGemma 2 on every `v0.18` pin, CPU engine creation returns an empty
+  `UNKNOWN` error from the vision executor compile on Linux arm64 and crashes
+  the process (`0xC0000005` in `libLiteRt.dll`) on Windows x64. On Linux x64,
+  observed only under x86_64 emulation (Docker on Rosetta), the first creation
+  returns `UNKNOWN` and a second one in the same process crashes with `SIGSEGV`
+  in `LiteRtCreateCompiledModel` from `VisionEncoder::Initialize`. Android
+  x86_64 is unqualified ([#1367](https://github.com/leehack/llamadart/issues/1367)).
+  Requalify a platform before adding it to
+  `liteRtLmNativeEmbeddingsQualifiedForAbi`.
 - **Native GPU:** fail before native engine creation. `v0.18.0-3` has a
   WebGPU accelerator/absl ABI mismatch that crashed the upstream-only reference
   as well as the prototype. The upstream repair is

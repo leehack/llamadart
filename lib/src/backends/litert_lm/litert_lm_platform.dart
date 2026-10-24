@@ -93,29 +93,36 @@ void liteRtLmEnsureDeviceAvailable(ComputeDevice device) {
 
 /// Returns whether LiteRT-LM native embedding engines are qualified on [abi].
 bool liteRtLmNativeEmbeddingsQualifiedForAbi(Abi abi) {
-  return abi == Abi.macosArm64 || abi == Abi.iosArm64;
+  return abi == Abi.macosArm64 ||
+      abi == Abi.iosArm64 ||
+      abi == Abi.androidArm64;
 }
 
 /// Throws a [LlamaUnsupportedException] when this target has no qualified
 /// LiteRT-LM native embedding engine.
 ///
-/// This runs before any native call: with the pinned runtimes, embedding
-/// engine creation fails on Linux arm64 and crashes the process on Windows
-/// x64, which no error check after the call can catch
+/// This runs before any native call, whichever runtime library is loaded:
+/// with LiteRT-LM v0.18, embedding engine creation fails on Linux arm64 and
+/// x64 and crashes the process on Windows x64 (and on Linux x64 when retried),
+/// which no error check after the call can catch
 /// ([#1367](https://github.com/leehack/llamadart/issues/1367)).
 void liteRtLmEnsureNativeEmbeddingsQualified() {
   final abi = liteRtLmGateAbi();
   if (liteRtLmNativeEmbeddingsQualifiedForAbi(abi)) return;
   final reason = switch (abi) {
     Abi.linuxArm64 => 'embedding engine creation fails there',
+    Abi.linuxX64 =>
+      'embedding engine creation fails there, and a repeated attempt '
+          'crashes the process',
     Abi.windowsX64 => 'embedding engine creation crashes the process there',
     _ => 'they are not qualified there',
   };
   throw LlamaUnsupportedException(
-    'LiteRT-LM native embeddings are unsupported on $abi: $reason with the '
-    'pinned litert-lm-native runtime (leehack/llamadart#1367). They are '
-    'qualified on macOS arm64 and iOS arm64 only; use the llama.cpp backend '
-    'for embeddings on this platform.',
+    'LiteRT-LM native embeddings are unsupported on $abi: $reason with '
+    'LiteRT-LM v0.18 (leehack/llamadart#1367). This applies to every '
+    'LiteRT-LM runtime library, including a custom one. Embeddings run on '
+    'macOS arm64, iOS arm64 and Android arm64; use the llama.cpp backend for '
+    'embeddings on this platform.',
   );
 }
 
