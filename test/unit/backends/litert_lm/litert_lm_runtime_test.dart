@@ -710,6 +710,112 @@ void main() {
     expect(liteRtLmIsCacheDirectoryForAbi(windowsDir, Abi.linuxX64), isFalse);
   });
 
+  group('LiteRT-LM app bundle directory', () {
+    late Directory root;
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('litert_lm_bundle_test_');
+    });
+    tearDown(() => root.deleteSync(recursive: true));
+
+    Directory populate(List<String> segments, Abi abi) {
+      final dir = Directory(path.joinAll([root.path, ...segments]))
+        ..createSync(recursive: true);
+      for (final library in liteRtLmRequiredLibrariesForAbi(abi)) {
+        File(path.join(dir.path, library)).createSync();
+      }
+      return dir;
+    }
+
+    test('probes beside, lib/ and ../lib/ of the executable', () {
+      final executable = path.join(root.path, 'bundle', 'bin', 'app');
+      for (final abi in const [Abi.linuxX64, Abi.linuxArm64, Abi.windowsX64]) {
+        expect(
+          liteRtLmBundleLibraryDirectoryCandidatesForAbi(executable, abi),
+          [
+            path.join(root.path, 'bundle', 'bin'),
+            path.join(root.path, 'bundle', 'bin', 'lib'),
+            path.join(root.path, 'bundle', 'lib'),
+          ],
+        );
+      }
+    });
+
+    test('finds the dart build cli, Flutter Linux and Flutter Windows '
+        'layouts', () {
+      final cliLib = populate(['cli', 'bundle', 'lib'], Abi.linuxX64);
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(
+          path.join(root.path, 'cli', 'bundle', 'bin', 'app'),
+          Abi.linuxX64,
+        )?.path,
+        cliLib.path,
+      );
+
+      final flutterLinuxLib = populate([
+        'flutter_linux',
+        'bundle',
+        'lib',
+      ], Abi.linuxX64);
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(
+          path.join(root.path, 'flutter_linux', 'bundle', 'app'),
+          Abi.linuxX64,
+        )?.path,
+        flutterLinuxLib.path,
+      );
+
+      final flutterWindowsDir = populate(['Release'], Abi.windowsX64);
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(
+          path.join(flutterWindowsDir.path, 'app.exe'),
+          Abi.windowsX64,
+        )?.path,
+        flutterWindowsDir.path,
+      );
+    });
+
+    test('rejects a bundle missing any required library', () {
+      final lib = populate(['bundle', 'lib'], Abi.windowsX64);
+      final executable = path.join(root.path, 'bundle', 'bin', 'app.exe');
+      for (final library in liteRtLmRequiredLibrariesForAbi(Abi.windowsX64)) {
+        final file = File(path.join(lib.path, library))..deleteSync();
+        expect(
+          liteRtLmFindBundleLibraryDirectoryForAbi(executable, Abi.windowsX64),
+          isNull,
+          reason: 'Missing $library must not select the bundle',
+        );
+        file.createSync();
+      }
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(executable, Abi.windowsX64),
+        isNotNull,
+      );
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(executable, Abi.linuxX64),
+        isNull,
+      );
+    });
+
+    test('is not probed on platforms without hook-bundled desktop '
+        'libraries', () {
+      final executable = path.join(root.path, 'bundle', 'bin', 'app');
+      for (final abi in const [
+        Abi.macosArm64,
+        Abi.macosX64,
+        Abi.iosArm64,
+        Abi.androidArm64,
+        Abi.windowsArm64,
+      ]) {
+        expect(
+          liteRtLmBundleLibraryDirectoryCandidatesForAbi(executable, abi),
+          isEmpty,
+          reason: '$abi',
+        );
+      }
+    });
+  });
+
   test('engine create failure diagnostics include fallback guidance', () {
     expect(
       liteRtLmEngineCreateFailureMessage(
