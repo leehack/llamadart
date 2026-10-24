@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'generated_image.dart';
 import 'image_generation_model.dart';
+import 'image_generation_request.dart';
 
 /// Model files and runtime settings for one native image-generation context.
 final class ImageGenerationSessionConfig {
@@ -68,6 +69,9 @@ final class ImageGenerationSessionRequest {
   /// Flow shift, or `null` for the runtime default.
   final double? flowShift;
 
+  /// VAE decode tiling, or `null` to decode the whole image at once.
+  final ImageVaeTiling? vaeTiling;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -81,6 +85,7 @@ final class ImageGenerationSessionRequest {
     this.sampler,
     this.scheduler,
     this.flowShift,
+    this.vaeTiling,
   });
 }
 

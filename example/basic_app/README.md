@@ -349,6 +349,9 @@ Image CLI flags (`bin/llamadart_image_example.dart`):
 - `-o, --out`: PNG path (default `image.png`).
 - `--device`: `auto`, `cpu` or `gpu`. `--threads`: CPU threads (`0`: all
   physical cores).
+- `--vae-tile`: Decode in square tiles of this many pixels, a multiple of 64,
+  to lower the decoder's peak memory (`ImageVaeTiling`); off by default.
+  `--vae-tile-overlap`: their overlap, from 0 to 0.5 (default 0.5).
 
 With model files on disk, the local-only test runs real generation, including
 determinism, cancellation and the one-generation-at-a-time guard:

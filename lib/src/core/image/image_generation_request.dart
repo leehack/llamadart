@@ -77,6 +77,10 @@ class ImageGenerationRequest {
   /// models ignore it.
   final double? flowShift;
 
+  /// Decodes the image in overlapping tiles to lower the decoder's peak
+  /// memory. `null` decodes the whole image at once, as before.
+  final ImageVaeTiling? vaeTiling;
+
   /// Creates an image-generation request.
   const ImageGenerationRequest({
     required this.prompt,
@@ -90,6 +94,60 @@ class ImageGenerationRequest {
     this.sampler,
     this.scheduler,
     this.flowShift,
+    this.vaeTiling,
+  });
+}
+
+/// Spatial tiling of an image's VAE decode: `ImageGenerationRequest.vaeTiling`.
+///
+/// The decoder (the VAE, or the tiny autoencoder that replaces it) runs on
+/// one [tileWidth] by [tileHeight] tile of the image at a time instead of on
+/// the whole image, and blends where tiles overlap. Its compute buffer then
+/// scales with the tile instead of the image, which lowers peak memory most
+/// for large images and full VAEs. Decoding takes longer, and pixels change
+/// slightly, mostly near tile seams. Sampling, the prompt encoders and the
+/// weights are unaffected. A tile larger than the image covers the whole
+/// image on that axis.
+///
+/// Without tiling, the runtime already retries a decode that fails to
+/// allocate its buffers with tiles; tiling from the start avoids reaching that
+/// limit, as where the system ends an app before an allocation fails. If a
+/// tile still does not fit, the runtime retries with smaller tiles.
+class ImageVaeTiling {
+  /// Smallest accepted [tileWidth] and [tileHeight], and the step both
+  /// take: a multiple of every supported decoder's downscale factor.
+  static const int minTileSize = 64;
+
+  /// Largest accepted [tileWidth] and [tileHeight].
+  static const int maxTileSize = ImageGenerationRequest.maxDimension;
+
+  /// [tileWidth] and [tileHeight] when unset: stable-diffusion.cpp's default.
+  static const int defaultTileSize = 256;
+
+  /// Largest accepted [overlap].
+  static const double maxOverlap = 0.5;
+
+  /// [overlap] when unset: stable-diffusion.cpp's default.
+  static const double defaultOverlap = 0.5;
+
+  /// Tile width in output pixels: a multiple of [minTileSize] up to
+  /// [maxTileSize].
+  final int tileWidth;
+
+  /// Tile height in output pixels, with the same range as [tileWidth].
+  final int tileHeight;
+
+  /// Target fraction of a tile that overlaps its neighbour, from 0 to
+  /// [maxOverlap]. More overlap blends seams better and decodes more tiles.
+  /// The runtime spaces tiles evenly, so the overlap it uses is close to this
+  /// one, and neighbouring tiles always overlap a little.
+  final double overlap;
+
+  /// Creates tiling settings.
+  const ImageVaeTiling({
+    this.tileWidth = defaultTileSize,
+    this.tileHeight = defaultTileSize,
+    this.overlap = defaultOverlap,
   });
 }
 
@@ -156,5 +214,31 @@ void validateImageGenerationRequest(ImageGenerationRequest request) {
       '${ImageGenerationRequest.maxFlowShift}.',
       flowShift,
     );
+  }
+  final vaeTiling = request.vaeTiling;
+  if (vaeTiling != null) {
+    for (final (name, value) in [
+      ('vaeTiling.tileWidth', vaeTiling.tileWidth),
+      ('vaeTiling.tileHeight', vaeTiling.tileHeight),
+    ]) {
+      if (value < ImageVaeTiling.minTileSize ||
+          value > ImageVaeTiling.maxTileSize ||
+          value % ImageVaeTiling.minTileSize != 0) {
+        reject(
+          '$name must be a multiple of ${ImageVaeTiling.minTileSize} from '
+          '${ImageVaeTiling.minTileSize} to ${ImageVaeTiling.maxTileSize}.',
+          value,
+        );
+      }
+    }
+    final overlap = vaeTiling.overlap;
+    if (!overlap.isFinite ||
+        overlap < 0 ||
+        overlap > ImageVaeTiling.maxOverlap) {
+      reject(
+        'vaeTiling.overlap must be from 0 to ${ImageVaeTiling.maxOverlap}.',
+        overlap,
+      );
+    }
   }
 }

@@ -584,6 +584,7 @@ class ImageGenerationEngine {
       sampler: effective.sampler,
       scheduler: effective.scheduler,
       flowShift: effective.flowShift,
+      vaeTiling: effective.vaeTiling,
     );
     final task = ImageGenerationTask._(_session.cancel);
     _activeTask = task;
@@ -609,10 +610,11 @@ class ImageGenerationEngine {
   /// M4 Max with an empty Metal shader cache. GPU drivers and macOS cache
   /// compiled shaders on disk, so later launches are faster.
   ///
-  /// Use the size the app will generate: ggml picks some pipelines by tensor
-  /// size, so another size can still compile more. Unset values fall back
-  /// as in [generate]. For a model trained at 1024x1024 the warm-up costs
-  /// one sampling step and a decode at that size: about 2 to 4 s for
+  /// Use the size and [vaeTiling] the app will generate with: ggml picks some
+  /// pipelines by tensor size, so another size or a tiled decode can still
+  /// compile more. Unset values fall back as in [generate]. For a model
+  /// trained at 1024x1024 the warm-up costs one sampling step and a decode
+  /// at that size: about 2 to 4 s for
   /// SDXL-Lightning with TAESDXL on an M4 Max, and the same peak memory as
   /// an image, which the memory check in [load] covers where it runs (not
   /// on the Windows CPU).
@@ -623,11 +625,16 @@ class ImageGenerationEngine {
   /// before the next [generate] or [load]. [dispose] cancels a running
   /// warm-up, which then completes normally.
   ///
-  /// Throws [LlamaImageGenerationException] for an invalid size or guidance,
-  /// [LlamaStateException] after [dispose] or while another
+  /// Throws [LlamaImageGenerationException] for an invalid size, guidance or
+  /// tiling, [LlamaStateException] after [dispose] or while another
   /// generation or load is running, and [LlamaInferenceException] when the
   /// runtime fails the generation.
-  Future<void> warmUp({int? width, int? height, double? guidanceScale}) async {
+  Future<void> warmUp({
+    int? width,
+    int? height,
+    double? guidanceScale,
+    ImageVaeTiling? vaeTiling,
+  }) async {
     final request = ImageGenerationRequest(
       prompt: 'warm-up',
       width: width,
@@ -635,6 +642,7 @@ class ImageGenerationEngine {
       guidanceScale: guidanceScale,
       steps: 1,
       seed: 0,
+      vaeTiling: vaeTiling,
     );
     if (!_isGpu(_backendName)) {
       // Fail where a GPU warm-up would, so callers behave the same on both.
@@ -679,6 +687,7 @@ class ImageGenerationEngine {
       sampler: request.sampler,
       scheduler: request.scheduler,
       flowShift: request.flowShift,
+      vaeTiling: request.vaeTiling,
     );
     validateImageGenerationRequest(effective);
     return effective;

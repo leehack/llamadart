@@ -1456,6 +1456,14 @@ void main() {
         const ImageGenerationRequest(prompt: 'a', seed: -1),
         const ImageGenerationRequest(prompt: 'a', count: 0),
         const ImageGenerationRequest(prompt: 'a', count: 17),
+        const ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(tileWidth: 100),
+        ),
+        const ImageGenerationRequest(
+          prompt: 'a',
+          vaeTiling: ImageVaeTiling(overlap: 0.75),
+        ),
       ]) {
         await expectLater(
           engine.generate(request),
@@ -1484,6 +1492,25 @@ void main() {
       expect(sent.sampler, isNull);
       expect(sent.scheduler, isNull);
       expect(sent.flowShift, isNull);
+      expect(sent.vaeTiling, isNull);
+    });
+
+    test('sends VAE tiling only with the request that sets it', () async {
+      final engine = await load(_sdxs());
+      const tiling = ImageVaeTiling(
+        tileWidth: 512,
+        tileHeight: 128,
+        overlap: 0.25,
+      );
+
+      await (await engine.generate(
+        const ImageGenerationRequest(prompt: 'a', vaeTiling: tiling),
+      )).done;
+      await (await engine.generate(
+        const ImageGenerationRequest(prompt: 'a'),
+      )).done;
+
+      expect(driver.session.requests.map((r) => r.vaeTiling), [tiling, null]);
     });
 
     test('sends every setting a request sets, each side of the size on its '
@@ -1794,6 +1821,16 @@ void main() {
         ),
         [(512, 512, 1, 1.0, 1), (256, 384, 1, 1.0, 1)],
       );
+      expect(driver.session.requests.map((r) => r.vaeTiling), [null, null]);
+    });
+
+    test('decodes in the tiles it is given', () async {
+      final engine = await load(_sdxs());
+      const tiling = ImageVaeTiling(tileWidth: 128, tileHeight: 128);
+
+      await engine.warmUp(guidanceScale: 1, vaeTiling: tiling);
+
+      expect(driver.session.requests.single.vaeTiling, same(tiling));
     });
 
     test('falls back like a request, and a given side overrides it', () async {
@@ -1821,6 +1858,10 @@ void main() {
 
       await expectLater(
         engine.warmUp(width: 500),
+        throwsA(isA<LlamaImageGenerationException>()),
+      );
+      await expectLater(
+        engine.warmUp(vaeTiling: const ImageVaeTiling(tileHeight: 32)),
         throwsA(isA<LlamaImageGenerationException>()),
       );
 

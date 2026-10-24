@@ -319,6 +319,16 @@ ArgParser createImageArgParser() {
       defaultsTo: ComputeDevice.auto.name,
     )
     ..addOption('threads', help: 'CPU threads (0: all cores).', defaultsTo: '0')
+    ..addOption(
+      'vae-tile',
+      help:
+          'Decode in square tiles of this many pixels, a multiple of 64, to '
+          'lower peak memory (default: decode the whole image).',
+    )
+    ..addOption(
+      'vae-tile-overlap',
+      help: 'Overlap of --vae-tile tiles, from 0 to 0.5 (default: 0.5).',
+    )
     ..addFlag('help', abbr: 'h', help: 'Show this help.', negatable: false);
 }
 
@@ -349,6 +359,11 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
       );
     }
   }
+  final tileSize = _int(results, 'vae-tile');
+  final tileOverlap = _double(results, 'vae-tile-overlap');
+  if (tileOverlap != null && tileSize == null) {
+    throw const FormatException('--vae-tile-overlap needs --vae-tile.');
+  }
   final decoderGiven = given.containsKey('vae') || given.containsKey('taesd');
   final texts = <String, String>{
     for (final MapEntry(key: role, value: text) in preset.files.entries)
@@ -378,6 +393,13 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
       scheduler: preset.scheduler,
       seed: _int(results, 'seed'),
       count: _int(results, 'count')!,
+      vaeTiling: tileSize == null
+          ? null
+          : ImageVaeTiling(
+              tileWidth: tileSize,
+              tileHeight: tileSize,
+              overlap: tileOverlap ?? ImageVaeTiling.defaultOverlap,
+            ),
     ),
     outputPath: results['out'] as String,
     device: ComputeDevice.values.byName(results['device'] as String),
@@ -411,6 +433,10 @@ String buildImageHelpText(ArgParser parser) {
         ..writeln(
           '  dart run bin/llamadart_image_example.dart --preset '
           "sdxl-lightning --taesd default -p 'a lighthouse at dusk'",
+        )
+        ..writeln(
+          '  dart run bin/llamadart_image_example.dart --preset sd-turbo '
+          "--vae-tile 256 -p 'a lighthouse at dusk'",
         ))
       .toString();
 }

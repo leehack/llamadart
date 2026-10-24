@@ -152,6 +152,11 @@ core and `llamadart_stable_diffusion_flutter` together.
   `flowShift` (flow-matching models only, greater than 0, at most 100);
   `null` keeps the runtime's default for the model. SDXL-Lightning wants
   `euler` with `sgmUniform`.
+- `vaeTiling: ImageVaeTiling()` decodes in overlapping tiles (output
+  pixels, multiples of 64 from 64 to 2048, default 256; `overlap` 0 to 0.5,
+  default 0.5) to cut the decoder's peak memory for large images or full
+  VAEs, at the cost of decode time and slight seam blending; `null` (the
+  default) decodes the whole image. Pass the same tiling to `warmUp`.
 - `load` checks every file exists and, unless
   `ImageModelParams(checkMemory: false)`, refuses a model whose estimate
   (file sizes plus a quarter plus 512 MiB, for the model's native size)

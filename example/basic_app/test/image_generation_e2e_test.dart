@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_worker.dart';
@@ -495,6 +496,116 @@ void main() {
       File(
         '$outputDir/sd-turbo-256-seed42.png',
       ).writeAsBytesSync(result.images.single.toPng());
+    }
+  });
+
+  test('VAE tiling decodes SD-Turbo\'s full VAE in tiles with a smaller '
+      'compute buffer on each device, and an untiled request after it is '
+      'unchanged', () async {
+    // A skip: argument would not apply: the scenario passes --run-skipped.
+    if (sdTurboPath == null) {
+      markTestSkipped('Set LLAMADART_SD_TURBO_MODEL');
+      return;
+    }
+    final records = <LlamaLogRecord>[];
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.debug,
+      handler: records.add,
+    );
+    addTearDown(LlamaLogging.configure);
+
+    double? logged(List<String> log, String pattern) {
+      final values = [
+        for (final line in log)
+          if (RegExp(pattern).firstMatch(line) case final match?)
+            double.parse(match.group(1)!),
+      ];
+      return values.isEmpty ? null : values.reduce(max);
+    }
+
+    final measured = <String>{};
+    for (final device in [ComputeDevice.auto, ComputeDevice.cpu]) {
+      final engine = await ImageGenerationEngine.load(
+        ImageGenerationModel(ModelSource.path(sdTurboPath)),
+        params: ImageModelParams(device: device),
+      );
+      try {
+        final backendName = (await engine.capabilities).backendName!;
+        if (!measured.add(backendName)) {
+          continue;
+        }
+
+        Future<({GeneratedImage image, List<String> log})> run(
+          ImageVaeTiling? tiling,
+        ) async {
+          final start = records.length;
+          final result = await engine.generateImage(
+            ImageGenerationRequest(
+              prompt: 'a lighthouse at dusk',
+              width: 512,
+              height: 512,
+              steps: 1,
+              guidanceScale: 1,
+              seed: 42,
+              vaeTiling: tiling,
+            ),
+          );
+          return (
+            image: result.images.single,
+            log: [for (final r in records.skip(start)) r.message],
+          );
+        }
+
+        final untiled = await run(null);
+        final tiled = await run(const ImageVaeTiling());
+        final again = await run(null);
+
+        const buffer = r'vae compute buffer size: ([\d.]+) MB';
+        const decode = r'decode_first_stage completed, taking ([\d.]+)s';
+        final untiledMb = logged(untiled.log, buffer);
+        final tiledMb = logged(tiled.log, buffer);
+        final a = untiled.image.pixels;
+        final b = tiled.image.pixels;
+        var sum = 0;
+        var largest = 0;
+        for (var i = 0; i < a.length; i++) {
+          final d = (a[i] - b[i]).abs();
+          sum += d;
+          largest = max(largest, d);
+        }
+        print(
+          'VAE_TILING $backendName 512x512 tile 256 overlap 0.5: VAE compute '
+          'buffer $untiledMb MB untiled, $tiledMb MB tiled; decode '
+          '${logged(untiled.log, decode)} s untiled, '
+          '${logged(tiled.log, decode)} s tiled; pixel difference mean '
+          '${(sum / a.length).toStringAsFixed(2)}, max $largest of 255',
+        );
+        if (outputDir != null) {
+          final name = backendName.toLowerCase();
+          File(
+            '$outputDir/sd-turbo-512-$name-vae-untiled.png',
+          ).writeAsBytesSync(untiled.image.toPng());
+          File(
+            '$outputDir/sd-turbo-512-$name-vae-tiled-256.png',
+          ).writeAsBytesSync(tiled.image.toPng());
+        }
+
+        expect(
+          tiled.log,
+          contains(contains('VAE decode tile size: 256x256 pixels')),
+        );
+        for (final log in [untiled.log, again.log]) {
+          expect(log, isNot(contains(contains('VAE decode tile size'))));
+        }
+        expect(untiledMb, isNotNull);
+        expect(tiledMb, lessThan(untiledMb! / 2));
+        expect((tiled.image.width, tiled.image.height), (512, 512));
+        // Tiles blend where they overlap, so pixels differ slightly.
+        expect(sum / a.length, lessThan(4));
+        expect(again.image.pixels, a);
+      } finally {
+        await engine.dispose();
+      }
     }
   });
 

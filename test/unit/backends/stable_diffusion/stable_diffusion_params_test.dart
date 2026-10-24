@@ -2,6 +2,7 @@
 library;
 
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:test/test.dart';
@@ -11,6 +12,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_binding
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_model.dart';
+import 'package:llamadart/src/core/image/image_generation_request.dart';
 
 String? _text(Pointer<Char> value) =>
     value == nullptr ? null : value.cast<Utf8>().toDartString();
@@ -271,6 +273,29 @@ void main() {
     expect(sizeOf<sd.sd_img_gen_params_t>(), 552);
     expect(sizeOf<sd.sd_sample_params_t>(), 96);
     expect(sizeOf<sd.sd_image_t>(), 24);
+    expect(sizeOf<sd.sd_tiling_params_t>(), 32);
+  }, testOn: 'mac-os || linux');
+
+  test('VAE tiling fields sit at the pinned runtime\'s offsets', () {
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      params.ref.vae_tiling_params
+        ..enabled = true
+        ..tile_size_w = 0x01020304
+        ..target_overlap = 0.25
+        ..rel_size_w = 0.75;
+      final bytes = params.cast<Uint8>().asTypedList(
+        sizeOf<sd.sd_img_gen_params_t>(),
+      );
+      final data = ByteData.sublistView(bytes);
+
+      // offsetof in stable-diffusion.h: vae_tiling_params at 352, and in it
+      // tile_size_w at 4, target_overlap at 12 and rel_size_w at 16.
+      expect(bytes[352], 1);
+      expect(data.getInt32(356, Endian.host), 0x01020304);
+      expect(data.getFloat32(364, Endian.host), 0.25);
+      expect(data.getFloat32(368, Endian.host), 0.75);
+    });
   }, testOn: 'mac-os || linux');
 
   group('applyStableDiffusionGenerationParams', () {
@@ -338,6 +363,70 @@ void main() {
         expect(sample.sample_methodAsInt, 0);
         expect(sample.schedulerAsInt, 5);
         expect(sample.flow_shift, 3);
+      });
+    });
+  });
+
+  group('VAE tiling', () {
+    ImageGenerationSessionRequest request([ImageVaeTiling? tiling]) =>
+        ImageGenerationSessionRequest(
+          prompt: 'a fox',
+          negativePrompt: '',
+          width: 1024,
+          height: 768,
+          steps: 1,
+          guidanceScale: 1,
+          seed: 0,
+          count: 1,
+          vaeTiling: tiling,
+        );
+
+    test('an unset request leaves the runtime\'s defaults, which decode the '
+        'whole image', () {
+      using((arena) {
+        final params = arena<sd.sd_img_gen_params_t>();
+        params.ref.vae_tiling_params
+          ..enabled = false
+          ..tile_size_w = 0
+          ..tile_size_h = 0
+          ..target_overlap = 0.5
+          ..rel_size_w = 0.25;
+        applyStableDiffusionGenerationParams(params, request(), arena);
+
+        final tiling = params.ref.vae_tiling_params;
+        expect(tiling.enabled, isFalse);
+        expect((tiling.tile_size_w, tiling.tile_size_h), (0, 0));
+        expect(tiling.target_overlap, 0.5);
+        expect(tiling.rel_size_w, 0.25);
+      });
+    });
+
+    test('writes the tile size and overlap, enables spatial tiling only, and '
+        'clears the relative sizes', () {
+      using((arena) {
+        final params = arena<sd.sd_img_gen_params_t>();
+        params.ref.vae_tiling_params
+          ..rel_size_w = 0.25
+          ..rel_size_h = 3;
+        applyStableDiffusionGenerationParams(
+          params,
+          request(
+            const ImageVaeTiling(
+              tileWidth: 320,
+              tileHeight: 192,
+              overlap: 0.25,
+            ),
+          ),
+          arena,
+        );
+
+        final tiling = params.ref.vae_tiling_params;
+        expect(tiling.enabled, isTrue);
+        expect(tiling.temporal_tiling, isFalse);
+        expect((tiling.tile_size_w, tiling.tile_size_h), (320, 192));
+        expect(tiling.target_overlap, 0.25);
+        expect((tiling.rel_size_w, tiling.rel_size_h), (0, 0));
+        expect(tiling.extra_tiling_args, nullptr);
       });
     });
   });
