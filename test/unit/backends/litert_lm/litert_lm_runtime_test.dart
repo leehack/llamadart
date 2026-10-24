@@ -573,17 +573,41 @@ void main() {
       }
     }
     expect(liteRtLmCompanionLibrariesForAbi(Abi.windowsX64), const <String>[
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
+      'msvcp140.dll',
+      'webgpu_dawn.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
-      'msvcp140.dll',
-      'vcruntime140.dll',
-      'vcruntime140_1.dll',
-      'vcruntime140_threads.dll',
-      'webgpu_dawn.dll',
     ]);
+  });
+
+  test('Windows companions open every imported DLL before its importers', () {
+    // Import tables of the v0.18.1-4 Windows runtime, companions only.
+    // Windows binds an import to an already loaded module before searching
+    // System32, the working directory and PATH.
+    const imports = <String, List<String>>{
+      'libLiteRtTopKWebGpuSampler.dll': ['webgpu_dawn.dll'],
+      'libLiteRtWebGpuAccelerator.dll': ['webgpu_dawn.dll'],
+      'msvcp140.dll': ['vcruntime140.dll', 'vcruntime140_1.dll'],
+      'vcruntime140_1.dll': ['vcruntime140.dll'],
+      'vcruntime140_threads.dll': ['vcruntime140.dll'],
+    };
+    final order = liteRtLmCompanionLibrariesForAbi(Abi.windowsX64);
+    for (final MapEntry(key: importer, value: dependencies)
+        in imports.entries) {
+      for (final dependency in dependencies) {
+        expect(
+          order.indexOf(dependency),
+          allOf(isNonNegative, lessThan(order.indexOf(importer))),
+          reason: '$dependency must open before $importer',
+        );
+      }
+    }
   });
 
   test('companion libraries are the required list minus the primary', () {
@@ -598,13 +622,15 @@ void main() {
       expect(required, contains(primary), reason: '$abi');
       expect(
         liteRtLmCompanionLibrariesForAbi(abi),
-        required
-            .where((library) => library != primary)
-            .where(
-              (library) =>
-                  !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(library),
-            )
-            .toList(),
+        unorderedEquals(
+          required
+              .where((library) => library != primary)
+              .where(
+                (library) =>
+                    !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(library),
+              )
+              .toList(),
+        ),
         reason: '$abi',
       );
     }
@@ -735,7 +761,7 @@ void main() {
       return dir;
     }
 
-    test('probes beside, lib/ and ../lib/ of the executable', () {
+    test('probes beside, lib/ and, from bin/, ../lib/ of the executable', () {
       final executable = path.join(root.path, 'bundle', 'bin', 'app');
       for (final abi in const [Abi.linuxX64, Abi.linuxArm64, Abi.windowsX64]) {
         expect(
@@ -747,6 +773,25 @@ void main() {
           ],
         );
       }
+    });
+
+    test('never looks outside the folder of an executable not in bin/', () {
+      populate(['lib'], Abi.linuxX64);
+      populate(['lib'], Abi.windowsX64);
+      final linuxApp = path.join(root.path, 'bundle', 'app');
+      final windowsApp = path.join(root.path, 'Release', 'app.exe');
+      expect(
+        liteRtLmBundleLibraryDirectoryCandidatesForAbi(linuxApp, Abi.linuxX64),
+        [path.join(root.path, 'bundle'), path.join(root.path, 'bundle', 'lib')],
+      );
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(linuxApp, Abi.linuxX64),
+        isNull,
+      );
+      expect(
+        liteRtLmFindBundleLibraryDirectoryForAbi(windowsApp, Abi.windowsX64),
+        isNull,
+      );
     });
 
     test('finds the dart build cli, Flutter Linux and Flutter Windows '
@@ -821,6 +866,87 @@ void main() {
           reason: '$abi',
         );
       }
+    });
+  });
+
+  group('LiteRT-LM runtime directory resolution', () {
+    const abi = Abi.linuxX64;
+    late Directory root;
+    late String executable;
+    late Directory override;
+    late Directory bundle;
+    late Directory project;
+    late Directory cache;
+
+    Directory complete(List<String> segments) {
+      final dir = Directory(path.joinAll([root.path, ...segments]))
+        ..createSync(recursive: true);
+      for (final library in liteRtLmRequiredLibrariesForAbi(abi)) {
+        File(path.join(dir.path, library)).createSync();
+      }
+      return dir;
+    }
+
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('litert_lm_resolve_test_');
+      executable = path.join(root.path, 'app', 'bin', 'app');
+      override = complete(['override']);
+      bundle = complete(['app', 'lib']);
+      project = Directory(path.join(root.path, 'project'));
+      cache = complete([
+        'project',
+        '.dart_tool',
+        'llamadart',
+        'litert_lm',
+        liteRtLmVersion,
+        'linux',
+        'x64',
+      ]);
+    });
+    tearDown(() => root.deleteSync(recursive: true));
+
+    String? resolve({String? libDirOverride, bool searchRootsAllowed = true}) {
+      return liteRtLmResolveRuntimeDirectoryForAbi(
+        abi,
+        libDirOverride: libDirOverride,
+        executablePath: executable,
+        searchRoots: () {
+          if (!searchRootsAllowed) {
+            fail('the hook cache must not be searched');
+          }
+          return [Directory(path.join(project.path, 'src'))];
+        },
+      )?.path;
+    }
+
+    test(
+      'a complete LLAMADART_LITERT_LM_LIB_DIR wins over bundle and cache',
+      () {
+        expect(
+          resolve(libDirOverride: override.path, searchRootsAllowed: false),
+          override.absolute.path,
+        );
+      },
+    );
+
+    test('the app bundle wins over the hook cache', () {
+      expect(resolve(searchRootsAllowed: false), bundle.path);
+      final incompleteOverride = Directory(path.join(root.path, 'partial'))
+        ..createSync();
+      expect(
+        resolve(
+          libDirOverride: incompleteOverride.path,
+          searchRootsAllowed: false,
+        ),
+        bundle.path,
+      );
+    });
+
+    test('the hook cache above a search root is the last resort', () {
+      bundle.deleteSync(recursive: true);
+      expect(resolve(), cache.path);
+      cache.deleteSync(recursive: true);
+      expect(resolve(), isNull);
     });
   });
 
