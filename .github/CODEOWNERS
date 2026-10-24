@@ -66,6 +66,8 @@ packages/*/pubspec_overrides.yaml @leehack
 
 tool/ci/web_deployment.py @leehack
 tool/ci/deploy_guard.py @leehack
+tool/ci/hf_space_deploy.py @leehack
+test/ci/test_hf_space_deploy.py @leehack
 test/ci/test_deploy_guard.py @leehack
 tool/ci/select_jobs.py @leehack
 tool/ci/litert_lm_temp_canary.sh @leehack
