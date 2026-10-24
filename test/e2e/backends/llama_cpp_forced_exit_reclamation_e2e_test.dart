@@ -26,8 +26,8 @@ import '../../test_helper.dart';
 /// in use in the malloc zones and the Metal device's allocated size before
 /// the load, with the model loaded, and after the worker exited. Model,
 /// context, KV and Metal buffers that a cycle left behind would show as
-/// growth of tens of MiB or more per cycle; the bound tolerates the small
-/// per-request allocations that are not held for isolate shutdown
+/// growth of tens of MiB or more per cycle, and a context's token batch and
+/// sampler chain as about 80 KiB of malloc per cycle
 /// (`doc/llama_cpp_exit_teardown.md`, "Forced worker exit").
 ///
 /// `FORCED_EXIT_MODEL` sets the GGUF (default: the cached stories15M test
@@ -140,9 +140,14 @@ typedef _Cycle = (_Sample, _Sample, _Sample);
 
 const _mib = 1 << 20;
 
-/// Allowed median growth per cycle of `phys_footprint` and of the malloc
-/// zones.
+/// Allowed median growth per cycle of `phys_footprint`, which moves by whole
+/// pages and by memory the GPU driver keeps.
 const _growthPerCycle = 8 * _mib;
+
+/// Allowed median growth per cycle of the malloc zones: a kill measured at
+/// most 18 KiB, and leaking a context's batch and sampler chain at least
+/// 75 KiB.
+const _mallocGrowthPerCycle = 48 * 1024;
 
 void _expectReclaimed(List<_Cycle> cycles, _Device device) {
   expect(cycles.length, greaterThanOrEqualTo(3), reason: 'FORCED_EXIT_CYCLES');
@@ -165,26 +170,27 @@ void _expectReclaimed(List<_Cycle> cycles, _Device device) {
       );
     }
   }
-  // The median ignores one-time growth: the first loads compile Metal
-  // pipelines, and libmalloc keeps freed large blocks dirty for reuse.
-  int medianGrowth(int Function(_Sample) read) {
-    final growth = [
-      for (var i = 1; i < cycles.length; i++)
-        read(cycles[i].$3) - read(cycles[i - 1].$3),
-    ]..sort();
-    return growth[growth.length ~/ 2];
-  }
-
   expect(
-    medianGrowth((s) => s.footprint),
+    _medianGrowth(cycles, (s) => s.footprint),
     lessThan(_growthPerCycle),
     reason: 'phys_footprint growth per cycle',
   );
   expect(
-    medianGrowth((s) => s.malloc),
-    lessThan(_growthPerCycle),
+    _medianGrowth(cycles, (s) => s.malloc),
+    lessThan(_mallocGrowthPerCycle),
     reason: 'malloc growth per cycle',
   );
+}
+
+/// The median growth of [read] from one cycle's end to the next. The median
+/// ignores one-time growth: the first loads compile Metal pipelines, and
+/// libmalloc keeps freed large blocks dirty for reuse.
+int _medianGrowth(List<_Cycle> cycles, int Function(_Sample) read) {
+  final growth = [
+    for (var i = 1; i < cycles.length; i++)
+      read(cycles[i].$3) - read(cycles[i - 1].$3),
+  ]..sort();
+  return growth[growth.length ~/ 2];
 }
 
 /// Runs one cycle and returns the sample taken with the model loaded.
@@ -322,6 +328,14 @@ void _report(String name, List<_Cycle> cycles) {
       '${index + 1} | ${before.tracked}/${loaded.tracked}/${after.tracked} | '
       '${row(cycle, (s) => s.footprint)} | ${row(cycle, (s) => s.malloc)} | '
       '${row(cycle, (s) => s.metal)}',
+    );
+  }
+  if (cycles.length > 1) {
+    String kib(int Function(_Sample) read) =>
+        (_medianGrowth(cycles, read) / 1024).toStringAsFixed(1);
+    buffer.writeln(
+      'median growth per cycle: footprint ${kib((s) => s.footprint)} KiB, '
+      'malloc ${kib((s) => s.malloc)} KiB',
     );
   }
   stdout.write(buffer);

@@ -224,17 +224,18 @@ Image models have their own registry in `libstable-diffusion`: see
 `Isolate.kill` on a llama.cpp worker
 ([#629](https://github.com/leehack/llamadart/issues/629)) shuts its isolate
 down, which frees every object the isolate held, as any isolate shutdown
-does. The process keeps running, so what the isolate did not hold stays
-allocated until the process exits:
+does. Besides models, contexts and projectors the service holds each
+context's token batch and sampler chain and the sampler chain of a running
+generation, at the `session` stage, so they go before their context. The
+batch is one `malloc` block (`token_batch.dart`) because `llama_batch_free`
+takes the batch by value, which a native finalizer cannot call.
 
-- An object a native call was still creating. The kill takes effect when
-  the call returns, before the isolate holds the object, so it stays
-  tracked: teardown frees it at C `exit` on Apple platforms, and nothing
-  frees it elsewhere. When the object is a context, the isolate still frees
-  its model, and the context outlives its model.
-- Allocations the service never holds for shutdown: each context's batch and
-  sampler chain, and the sampler chain of a running generation, which keeps
-  an `n_vocab` × 12-byte candidate array (`llama_sampler_chain::cur`).
+The process keeps running, so an object a native call was still creating
+stays allocated until the process exits. The kill takes effect when the call
+returns, before the isolate holds the object, so it stays tracked: teardown
+frees it at C `exit` on Apple platforms, and nothing frees it elsewhere.
+When the object is a context, the isolate still frees its model, and the
+context outlives its model.
 
 `test/e2e/backends/llama_cpp_forced_exit_reclamation_e2e_test.dart` measured
 this on an M4 Max (macOS 26.7.1, llamadart-native `v0.7.0-2`), 10 cycles per
@@ -244,13 +245,17 @@ Qwen3-TTS-12Hz-0.6B-Base Q4_K_M with its Q8_0 projector on Metal:
 
 | Case | Tracked objects left | Metal left | malloc in use, per cycle | `phys_footprint`, per cycle |
 | --- | --- | --- | --- | --- |
-| `dispose()` (control) | 0 | 0 | 0 | ≤ 0.4 MiB |
-| Kill while idle | 0 | 0 | 0.1 MiB | ≤ 0.4 MiB |
-| Kill while generating | 0 | 0 | 0.5 MiB (stories15M, 32,000 tokens); 1.8 MiB (Qwen2.5, 151,936 tokens) | 0.5 to 2.1 MiB |
-| Kill while synthesizing speech | 0 | 0 | 0.1 MiB | 4.1 MiB |
+| `dispose()` (control) | 0 | 0 | ≤ 12 KiB | ≤ 0.4 MiB |
+| Kill while idle | 0 | 0 | ≤ 7 KiB | ≤ 0.4 MiB |
+| Kill while generating | 0 | 0 | ≤ 12 KiB | ≤ 0.4 MiB |
+| Kill while synthesizing speech | 0 | 0 | 17 KiB | 3.4 MiB |
 | Kill inside the load (Qwen2.5, Metal) | 1 per kill, 10 of 10 | 374 MiB per kill | 30 MiB | 494 MiB |
 
-Per-cycle values are medians. Loaded, a model held 2 tracked objects (4 for
+Per-cycle values are medians. Before the batch and the sampler chains were
+held, each kill left 0.1 MiB of malloc, and a kill during generation also
+the chain's `n_vocab` × 12-byte candidate array (`llama_sampler_chain::cur`):
+0.5 MiB with stories15M (32,000 tokens) and 1.8 MiB with Qwen2.5 (151,936
+tokens). Loaded, a model held 2 tracked objects (4 for
 speech), 107 to 1,194 MiB of footprint, and on Metal 139 MiB (stories15M),
 704 MiB (Qwen2.5) or 2.7 GiB (speech). With `IsolateShutdownReleases.hold`
 doing nothing, every kill left both objects, the whole Metal allocation and
@@ -332,6 +337,13 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   it loaded (`_createModelWrapper`).
 - The same test pins the free order of `dispose()` and `freeModel`: context,
   projector, model.
+- `test/unit/backends/llama_cpp/llama_cpp_service_shutdown_test.dart`: the
+  free function and stage of every object the service holds, a running
+  generation's sampler chain held until it ends and released when its setup
+  fails, every hold released when its object is freed, and the exit of an
+  isolate killed while idle or generating.
+  `llama_cpp_service_native_release_test.dart` checks that `dispose()` frees
+  a context's batch and sampler chain once.
 - `native-exit-teardown` in `doc/testing_matrix.md`: local-only process exits
   on Metal, including a C `exit` while a service with a projector disposes.
 - `chat-app-macos-quit` in `doc/testing_matrix.md`: local-only Flutter macOS
@@ -343,8 +355,8 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   local-only, macOS. Kills the worker while idle, generating or (with
   `FORCED_EXIT_TTS_MODEL` and `FORCED_EXIT_TTS_MMPROJ`) synthesizing speech,
   on the CPU and Metal, and requires every tracked object and Metal byte
-  freed after each kill and a median growth of malloc in use and
-  `phys_footprint` under 8 MiB per cycle. `FORCED_EXIT_KILL_LOADING=1` adds
+  freed after each kill and a median growth per cycle under 48 KiB of
+  malloc in use and under 8 MiB of `phys_footprint`. `FORCED_EXIT_KILL_LOADING=1` adds
   the kill inside a load, which fails until its object is freed (see "Forced
   worker exit"). Run it with
   `dart test -p vm --run-skipped -t local-only <file>`;

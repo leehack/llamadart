@@ -90,7 +90,10 @@ class NativeLlamaBackend
   /// If a worker spawned by this backend exits unexpectedly, pending work
   /// fails with [LlamaStateException] and existing model/context handles are
   /// invalid. Dispose this backend and create a fresh one before reloading.
-  /// This does not recover native allocations owned by an abandoned worker.
+  /// A worker that exits frees the native objects it held, such as its
+  /// models, contexts, token batches and sampler chains; an object a native
+  /// call was still creating when the worker was killed stays allocated until
+  /// the process exits.
   /// An externally supplied [initialSendPort] has no owned isolate to monitor.
   NativeLlamaBackend({
     SendPort? initialSendPort,
