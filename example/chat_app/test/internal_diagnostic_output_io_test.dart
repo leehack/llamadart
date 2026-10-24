@@ -173,7 +173,7 @@ void main() {
     root,
   ) async {
     final o = InternalDiagnosticOutput.open(root, binding);
-    await complete(o, catalogVersion: validationCatalogVersion);
+    await complete(o, catalogVersion: 6);
     final report = o.finish();
     expect(
       !report.assertionsPassed && seal(o)['complete'] == false,

@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 6;
+const int validationCatalogVersion = 7;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
