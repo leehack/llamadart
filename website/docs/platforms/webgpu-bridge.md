@@ -266,7 +266,7 @@ The feature-by-runtime table is in the
   reranker throw `LlamaUnsupportedException`, and input that exceeds the
   micro-batch where it must fit one pass throws
   `LlamaEmbeddingInputTooLongException`, as on native. Older assets return
-  classifier scores as an embedding, embed only part of the input or abort
+  an invalid vector built from classifier scores, embed only part of the input or abort
   the runtime
   ([llama-web-bridge#194](https://github.com/leehack/llama-web-bridge/pull/194)).
 - The runtime fetches the model and projector itself. `ModelSource.parse`

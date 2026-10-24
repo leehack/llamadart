@@ -18,7 +18,7 @@
 /// - string embeddings of a rank-pooled reranker throw
 ///   `LlamaUnsupportedException`, and an encoder input over the micro-batch
 ///   throws `LlamaEmbeddingInputTooLongException`, instead of returning
-///   classifier scores or a vector of part of the input (`v0.1.73+`,
+///   an invalid vector built from classifier scores or a vector of part of the input (`v0.1.73+`,
 ///   [#121](https://github.com/leehack/llama-web-bridge/issues/121)).
 ///
 /// The test runner serves the package root, so the files must sit under

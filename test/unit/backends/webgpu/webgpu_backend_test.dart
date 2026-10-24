@@ -5163,6 +5163,22 @@ void main() {
         await expectBothEmbedCalls(throwsEmbeddingInference(message));
       });
 
+      test('keeps an unprefixed rank message an inference error', () async {
+        final message = rankMessage.substring(
+          'Embedding generation failed: '.length,
+        );
+        await rejectEmbeddingsWith(message);
+        await expectBothEmbedCalls(throwsEmbeddingInference(message));
+      });
+
+      test('keeps a message with leading text an inference error', () async {
+        for (final base in const [rankMessage, tooLongMessage]) {
+          final message = 'Worker failed: $base';
+          await rejectEmbeddingsWith(message);
+          await expectBothEmbedCalls(throwsEmbeddingInference(message));
+        }
+      });
+
       test('keeps a zero pass limit an inference error', () async {
         final message = tooLongMessage.replaceFirst('512', '0');
         await rejectEmbeddingsWith(message);

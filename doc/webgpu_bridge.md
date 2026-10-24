@@ -166,7 +166,7 @@ physical playback, intelligibility or speaker-reference fidelity.
   llamadart maps to `LlamaUnsupportedException`, and input that must fit one
   micro-batch but exceeds `nUbatch`, mapped to
   `LlamaEmbeddingInputTooLongException` with both counts. Older assets return
-  classifier scores as an embedding, embed only part of the input or abort
+  an invalid vector built from classifier scores, embed only part of the input or abort
   the runtime
   ([llama-web-bridge#194](https://github.com/leehack/llama-web-bridge/pull/194)).
 
