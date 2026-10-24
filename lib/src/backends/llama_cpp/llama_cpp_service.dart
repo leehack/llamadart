@@ -5306,7 +5306,11 @@ class LlamaCppService {
 
       // 3. Ingest Prompt (Text or Multimodal)
       final promptEvalStopwatch = Stopwatch()..start();
-      final (nPast: initialTokens, :promptTokenCount) = _ingestPrompt(
+      final (
+        nPast: initialTokens,
+        :promptTokenCount,
+        :evaluatedPromptTokens,
+      ) = _ingestPrompt(
         contextHandle,
         modelHandle,
         ctx,
@@ -5330,7 +5334,7 @@ class LlamaCppService {
       promptEvalStopwatch.stop();
       ctx.lastPerfPromptEvalMs =
           promptEvalStopwatch.elapsedMicroseconds / 1000.0;
-      ctx.lastPerfPromptEvalTokens = initialTokens;
+      ctx.lastPerfPromptEvalTokens = evaluatedPromptTokens;
 
       _ensureLogitsAvailableAfterPromptEval(ctx.pointer);
       if (speculativeSession != nullptr &&
@@ -6145,10 +6149,12 @@ class LlamaCppService {
 
   /// Ingests the prompt (text or multimodal).
   ///
-  /// Returns the next KV position and how many prompt ids were written to
-  /// `tokensPtr`. Multimodal ingestion writes none. A text prompt cancelled
-  /// through `cancelToken` reports only the tokens decoded before the cancel.
-  ({int nPast, int promptTokenCount}) _ingestPrompt(
+  /// Returns the next KV position, how many prompt ids were written to
+  /// `tokensPtr`, and how many prompt tokens were evaluated, media tokens
+  /// included. Multimodal ingestion writes no ids, and its positions can be
+  /// fewer than its tokens. A prompt cancelled through `cancelToken` reports
+  /// only the tokens decoded before the cancel.
+  ({int nPast, int promptTokenCount, int evaluatedPromptTokens}) _ingestPrompt(
     int contextHandle,
     int modelHandle,
     _LlamaContextWrapper ctx,
@@ -6175,7 +6181,7 @@ class LlamaCppService {
     final mmCtx = mmHandle != null ? _mtmdContexts[mmHandle] : null;
 
     if (mediaParts.isNotEmpty && mmCtx != null) {
-      final nPast = _ingestMultimodalPrompt(
+      final (:nPast, :evaluatedTokens) = _ingestMultimodalPrompt(
         mmCtx,
         ctx,
         vocab,
@@ -6185,7 +6191,11 @@ class LlamaCppService {
         cancelToken,
         chatMediaMarker: chatMediaMarker,
       );
-      return (nPast: nPast, promptTokenCount: 0);
+      return (
+        nPast: nPast,
+        promptTokenCount: 0,
+        evaluatedPromptTokens: evaluatedTokens,
+      );
     } else {
       final nTokens = _ingestTextPrompt(
         batch,
@@ -6201,11 +6211,17 @@ class LlamaCppService {
         speculativeConfig: speculativeConfig,
         isCancelled: () => cancelToken.value == 1,
       );
-      return (nPast: nTokens, promptTokenCount: nTokens);
+      return (
+        nPast: nTokens,
+        promptTokenCount: nTokens,
+        evaluatedPromptTokens: nTokens,
+      );
     }
   }
 
-  int _ingestMultimodalPrompt(
+  /// Without chunk-level mtmd functions, [evaluatedTokens] falls back to the
+  /// positions, as no token count is reachable.
+  ({int nPast, int evaluatedTokens}) _ingestMultimodalPrompt(
     Pointer<mtmd_context> mmCtx,
     _LlamaContextWrapper ctx,
     Pointer<llama_vocab> vocab,
@@ -6218,6 +6234,7 @@ class LlamaCppService {
   }) {
     _calls.failures.ensureUsable(mmCtx, 'This multimodal projector');
     int initialTokens = 0;
+    int? evaluatedTokens;
     // Zeroed, so the cleanup of a part that failed skips the slots after it.
     final bitmaps = allocator<Pointer<mtmd_bitmap>>(mediaParts.length);
     Pointer<mtmd_input_chunks> chunks = nullptr;
@@ -6359,6 +6376,8 @@ class LlamaCppService {
               modelParams.n_batch,
               newPast,
               cancelToken,
+              onChunkEvaluated: (tokens) =>
+                  evaluatedTokens = (evaluatedTokens ?? 0) + tokens,
             );
             evalResult = chunkFailure?.result ?? 0;
             if (evalResult == _nativeStatusException) {
@@ -6401,7 +6420,10 @@ class LlamaCppService {
       if (chunks != nullptr) _mtmdInputChunksFree(chunks);
     }
     ctx.cachedPromptTokens = null;
-    return initialTokens;
+    return (
+      nPast: initialTokens,
+      evaluatedTokens: evaluatedTokens ?? initialTokens,
+    );
   }
 
   /// Rejects a prompt whose non-causal media chunk llama.cpp would abort on.

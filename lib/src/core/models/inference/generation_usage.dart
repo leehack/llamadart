@@ -6,9 +6,10 @@ class LlamaGenerationUsage {
   /// A cancel during prompt evaluation leaves only the tokens evaluated
   /// before it.
   ///
-  /// For a multimodal prompt this is the number of context positions the
-  /// prompt filled. Models with M-RoPE vision, such as Qwen2-VL, give an image
-  /// fewer positions than image tokens.
+  /// Native llama.cpp counts the image and audio tokens of a multimodal
+  /// prompt, as llama-server does. WebGPU counts the context positions it
+  /// filled, which models with M-RoPE vision, such as Qwen2-VL, give an image
+  /// fewer of than image tokens.
   final int promptTokens;
 
   /// Leading prompt tokens reused from the KV cache, left by the context's
