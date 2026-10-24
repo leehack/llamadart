@@ -145,7 +145,9 @@ input exceeds its context or single-pass capacity. It remains an inference
 exception for existing callers. The effective limit can be lower than the model
 context because of batch, micro-batch or parallel-sequence settings. For mixed
 inputs the counts are expanded rows; no prefix or media content appears in the
-structured fields. Other runtimes retain their existing inference errors.
+structured fields. Web bridge assets `v0.1.73+` throw it too when an input
+exceeds the single-pass capacity. Other runtimes retain their existing
+inference errors.
 
 ```dart
 try {
@@ -165,9 +167,10 @@ try {
   model, so the model limits below still apply.
 - Native llama.cpp/GGUF backends support embeddings, including batched
   embeddings, when the loaded model was built for embedding output.
-- On native, rank-pooled reranker GGUFs (such as Qwen3-Reranker) return
-  classifier scores rather than embeddings, so `embed(...)` and
-  `embedBatch(...)` throw `LlamaUnsupportedException` for them. Reranking is
+- On native and with Web bridge assets `v0.1.73+`, rank-pooled reranker
+  GGUFs (such as Qwen3-Reranker) return classifier scores rather than
+  embeddings, so `embed(...)` and `embedBatch(...)` throw
+  `LlamaUnsupportedException` for them. Reranking is
   tracked in [#323](https://github.com/leehack/llamadart/issues/323).
 - On native, encoder-decoder GGUFs (such as T5) throw
   `LlamaUnsupportedException`; use an encoder-only or decoder-only embedding
