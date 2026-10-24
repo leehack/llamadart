@@ -5069,6 +5069,123 @@ void main() {
       });
     });
 
+    group('a string embedding rejection', () {
+      const rankMessage =
+          'Embedding generation failed: Embeddings are not supported for '
+          'rank-pooled models such as rerankers: llama.cpp returns classifier '
+          'scores, not an embedding, for pooling type RANK';
+      const tooLongMessage =
+          'Embedding generation failed: The embedding input has 600 tokens, '
+          'but this model embeds its input in one pass of at most 512 tokens '
+          '(n_ubatch). Shorten the input or raise nUbatch and nBatch.';
+
+      Future<void> rejectEmbeddingsWith(String message) async {
+        for (final method in const ['embed', 'embedBatch']) {
+          bridge.setProperty(
+            method.toJS,
+            ((JSAny? _, JSAny? _) => _rejectPromise(_jsError(message))).toJS,
+          );
+        }
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+      }
+
+      Future<void> expectBothEmbedCalls(Matcher matcher) async {
+        await expectLater(backend.embed(1, 'a'), matcher);
+        await expectLater(backend.embedBatch(1, const ['a', 'b']), matcher);
+      }
+
+      Matcher throwsEmbeddingInference(String details) => throwsA(
+        isA<LlamaInferenceException>()
+            .having(
+              (error) => error,
+              'type',
+              isNot(isA<LlamaEmbeddingInputTooLongException>()),
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              'The Web runtime could not compute embeddings.',
+            )
+            .having((error) => error.details, 'details', details),
+      );
+
+      test('maps rank pooling to LlamaUnsupportedException', () async {
+        await rejectEmbeddingsWith(rankMessage);
+        await expectBothEmbedCalls(
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              startsWith(
+                'Embeddings are not supported for rank-pooled models such as '
+                'rerankers',
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('maps an over-long input to the typed overflow error', () async {
+        await rejectEmbeddingsWith(tooLongMessage);
+        await expectBothEmbedCalls(
+          throwsA(
+            isA<LlamaEmbeddingInputTooLongException>()
+                .having((error) => error.maxInputTokens, 'maxInputTokens', 512)
+                .having((error) => error.actualTokens, 'actualTokens', 600)
+                .having(
+                  (error) => error.message,
+                  'message',
+                  'The embedding input has 600 tokens, but this model embeds '
+                      'its input in one pass of at most 512 tokens (n_ubatch). '
+                      'Shorten the input or raise ModelParams.microBatchSize '
+                      'and ModelParams.batchSize.',
+                ),
+          ),
+        );
+      });
+
+      test('keeps the abort of an older bridge an inference error', () async {
+        const abort =
+            'RuntimeError: Aborted(GGML_ASSERT(cparams.n_ubatch >= n_tokens '
+            '&& "encoder requires n_ubatch >= n_tokens") failed)';
+        await rejectEmbeddingsWith(abort);
+        await expectBothEmbedCalls(throwsEmbeddingInference(abort));
+      });
+
+      test('keeps an unprefixed core message an inference error', () async {
+        final message = tooLongMessage.substring(
+          'Embedding generation failed: '.length,
+        );
+        await rejectEmbeddingsWith(message);
+        await expectBothEmbedCalls(throwsEmbeddingInference(message));
+      });
+
+      test('keeps an unprefixed rank message an inference error', () async {
+        final message = rankMessage.substring(
+          'Embedding generation failed: '.length,
+        );
+        await rejectEmbeddingsWith(message);
+        await expectBothEmbedCalls(throwsEmbeddingInference(message));
+      });
+
+      test('keeps a message with leading text an inference error', () async {
+        for (final base in const [rankMessage, tooLongMessage]) {
+          final message = 'Worker failed: $base';
+          await rejectEmbeddingsWith(message);
+          await expectBothEmbedCalls(throwsEmbeddingInference(message));
+        }
+      });
+
+      test('keeps a zero pass limit an inference error', () async {
+        final message = tooLongMessage.replaceFirst('512', '0');
+        await rejectEmbeddingsWith(message);
+        await expectBothEmbedCalls(throwsEmbeddingInference(message));
+      });
+    });
+
     group('a rejected projector load', () {
       setUp(() {
         bridge.setProperty(
