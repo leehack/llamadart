@@ -9,6 +9,14 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test('examples-tests row names the example package CI job', () {
+    final row = testMatrixRows.singleWhere((r) => r.id == 'examples-tests');
+    expect(row.tier, 'targeted');
+    expect(row.command, contains('"Example Package Tests"'));
+    expect(row.command, contains('"Web Chat Contract"'));
+    expect(row.command, contains('flutter test test test_vm'));
+  });
+
   test(
     'Genkit matrix exposes independent contract native and release lanes',
     () {
