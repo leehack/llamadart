@@ -176,7 +176,7 @@ void main() {
         secretReferences(workflow),
         secretReferences(steps[secretSteps.single]),
       );
-      expect('${steps[secretSteps.single]['run']}', contains('private=False'));
+      expect('${steps[secretSteps.single]['run']}', contains('--public'));
     },
   );
 
