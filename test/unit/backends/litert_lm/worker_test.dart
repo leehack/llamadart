@@ -3,9 +3,11 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ffi';
 import 'dart:isolate';
 
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_embedding.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
@@ -671,6 +673,10 @@ void main() {
     for (final embedding in [false, true]) {
       test('model load reports finish-reason support '
           '(embedding engine: $embedding)', () async {
+        // The fake service stands in for a qualified embedding target on
+        // every test host.
+        debugLiteRtLmAbiOverride = Abi.macosArm64;
+        addTearDown(() => debugLiteRtLmAbiOverride = null);
         final service = _FinishReasonLiteRtLmService();
         final worker = await _startWorkerInCurrentIsolate(service);
 
