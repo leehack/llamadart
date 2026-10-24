@@ -91,6 +91,34 @@ void liteRtLmEnsureDeviceAvailable(ComputeDevice device) {
   );
 }
 
+/// Returns whether LiteRT-LM native embedding engines are qualified on [abi].
+bool liteRtLmNativeEmbeddingsQualifiedForAbi(Abi abi) {
+  return abi == Abi.macosArm64 || abi == Abi.iosArm64;
+}
+
+/// Throws a [LlamaUnsupportedException] when this target has no qualified
+/// LiteRT-LM native embedding engine.
+///
+/// This runs before any native call: with the pinned runtimes, embedding
+/// engine creation fails on Linux arm64 and crashes the process on Windows
+/// x64, which no error check after the call can catch
+/// ([#1367](https://github.com/leehack/llamadart/issues/1367)).
+void liteRtLmEnsureNativeEmbeddingsQualified() {
+  final abi = liteRtLmGateAbi();
+  if (liteRtLmNativeEmbeddingsQualifiedForAbi(abi)) return;
+  final reason = switch (abi) {
+    Abi.linuxArm64 => 'embedding engine creation fails there',
+    Abi.windowsX64 => 'embedding engine creation crashes the process there',
+    _ => 'they are not qualified there',
+  };
+  throw LlamaUnsupportedException(
+    'LiteRT-LM native embeddings are unsupported on $abi: $reason with the '
+    'pinned litert-lm-native runtime (leehack/llamadart#1367). They are '
+    'qualified on macOS arm64 and iOS arm64 only; use the llama.cpp backend '
+    'for embeddings on this platform.',
+  );
+}
+
 /// Returns whether a Linux or Windows ABI has qualified GPU runtime support.
 ///
 /// ARM64 desktop targets remain unavailable until separately qualified.

@@ -56,7 +56,12 @@ void main() {
     model = '${suite().path}/model.litertlm';
     await File(model).writeAsBytes(embeddingBundleHeader());
   });
-  setUp(() => mode(0));
+  setUp(() {
+    mode(0);
+    // The fake runtime stands in for a qualified target on every test host.
+    debugLiteRtLmAbiOverride = Abi.macosArm64;
+    addTearDown(() => debugLiteRtLmAbiOverride = null);
+  });
   Future<LiteRtLmEmbeddingSession> create({
     String? modelPath,
     String? libraryPath,
@@ -615,6 +620,63 @@ void main() {
       expect(allocations(), 0);
     }
   });
+  int settingsCreates() => DynamicLibrary.open(
+    library,
+  ).lookupFunction<Int Function(), int Function()>('settings_creates')();
+  for (final (abi, reason) in [
+    (Abi.linuxArm64, 'fails'),
+    (Abi.windowsX64, 'crashes the process'),
+    (Abi.linuxX64, 'not qualified'),
+    (Abi.androidArm64, 'not qualified'),
+    (Abi.androidX64, 'not qualified'),
+  ]) {
+    test('$abi rejects embedding loads before any native call', () async {
+      debugLiteRtLmAbiOverride = abi;
+      final matcher = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'capability, platform and issue',
+          allOf(
+            contains('LiteRT-LM native embeddings are unsupported on $abi'),
+            contains(reason),
+            contains('leehack/llamadart#1367'),
+          ),
+        ),
+      );
+      await expectLater(create(), matcher);
+
+      final port = ReceivePort();
+      final service = LiteRtLmService(
+        clientFactory: () => LiteRtLmRuntimeClient(libraryPath: library),
+      );
+      runLiteRtLmWorkerForTesting(port.sendPort, service, exitOnDispose: false);
+      final backend = LiteRtLmBackend(
+        initialSendPort: await port.first as SendPort,
+      );
+      port.close();
+      addTearDown(backend.dispose);
+      await expectLater(backend.modelLoad(model, embeddingParams), matcher);
+      expect(backend.supportsEmbeddings, isFalse);
+      expect(settingsCreates(), 0);
+      expect(allocations(), 0);
+
+      final chat = await backend.modelLoad(
+        model,
+        const ModelParams(device: ComputeDevice.cpu),
+      );
+      expect(chat, isPositive);
+    });
+  }
+  for (final abi in [Abi.macosArm64, Abi.iosArm64]) {
+    test('$abi creates the embedding engine', () async {
+      debugLiteRtLmAbiOverride = abi;
+      final session = await create();
+      expect(settingsCreates(), 1);
+      expect(await session.compute(input(), normalize: false), [3, 4]);
+      session.dispose();
+      expect(allocations(), 0);
+    });
+  }
   test(
     'single-item compute copies pooled width, normalize and overflow-error options',
     () async {
@@ -841,20 +903,21 @@ void* litert_lm_engine_settings_create(void){return NULL;}
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
-static int mode=0, processors=0, signature=0;
+static int mode=0, processors=0, signature=0, settings_count=0;
 int signature_limit(void){return signature;}
+int settings_creates(void){return settings_count;}
 static atomic_int live=0;
 static atomic_int compute_count=0, released=0;
 int compute_calls(void){return compute_count;}
 void release_compute(void){released=1;}
 int processor_backends(void){return processors;}
-void set_mode(int n){mode=n;compute_count=0;released=0;}
+void set_mode(int n){mode=n;compute_count=0;released=0;settings_count=0;}
 int allocations(void){return live;}
 static void* alloc(void){live++;return calloc(1,16);}
 static void del(void*p){if(p){live--;free(p);}}
 void* tracked_alloc(size_t n){live++;return calloc(1,n);}
 void tracked_free(void*p){del(p);}
-void* litert_lm_embedding_engine_settings_create(const char*m,const char*b,const char*v,const char*a){processors=(v&&strcmp(v,"cpu")==0?1:0)|(a&&strcmp(a,"cpu")==0?2:0);return mode==9||strcmp(b,"cpu")!=0?NULL:alloc();}
+void* litert_lm_embedding_engine_settings_create(const char*m,const char*b,const char*v,const char*a){settings_count++;processors=(v&&strcmp(v,"cpu")==0?1:0)|(a&&strcmp(a,"cpu")==0?2:0);return mode==9||strcmp(b,"cpu")!=0?NULL:alloc();}
 void litert_lm_embedding_engine_settings_delete(void*p){del(p);}
 void litert_lm_embedding_engine_settings_set_cache_dir(void*p,const char*s){}
 void litert_lm_embedding_engine_settings_set_max_input_length(void*p,int n){signature=n;}
