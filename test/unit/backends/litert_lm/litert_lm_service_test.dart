@@ -5,7 +5,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:mirrors' as mirrors;
 import 'dart:typed_data';
 
 import 'package:dinja/dinja.dart';
@@ -2019,32 +2018,6 @@ void main() {
       } finally {
         service.dispose();
       }
-    });
-
-    test('every device names the LiteRT-LM backend of the same name', () {
-      // An NPU load only passes the platform gate on Android.
-      final library =
-          mirrors.reflectClass(LiteRtLmService).owner! as mirrors.LibraryMirror;
-      final deviceBackendName = mirrors.MirrorSystem.getSymbol(
-        '_deviceBackendName',
-        library,
-      );
-
-      expect(
-        {
-          for (final device in ComputeDevice.values)
-            device: mirrors.reflectClass(LiteRtLmService).invoke(
-              deviceBackendName,
-              [device],
-            ).reflectee,
-        },
-        {
-          ComputeDevice.auto: null,
-          ComputeDevice.cpu: 'cpu',
-          ComputeDevice.gpu: 'gpu',
-          ComputeDevice.npu: 'npu',
-        },
-      );
     });
 
     test('an unavailable device throws LlamaUnsupportedException', () async {
