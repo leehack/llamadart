@@ -189,6 +189,8 @@ Chrome, validates the final Flutter Web artifact, exercises deterministic UI
 behavior, and loads a tiny real GGUF through the packaged worker and WASM core.
 Large Gemma 4 GGUF and LiteRT-LM downloads remain targeted rows so transient
 model-host availability does not make every pull request flaky.
+`Example Package Tests` runs the other example packages' model-free tests on
+full-graph changes, including any change under those packages.
 
 ## Coverage Map
 

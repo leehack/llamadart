@@ -342,10 +342,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
     id: 'examples-tests',
     tier: 'targeted',
-    mode: 'local',
+    mode: 'CI + local',
     covers: 'example package unit tests and Flutter app regressions',
     command:
-        'Run tests in each touched example package, for example '
+        'CI jobs "Example Package Tests" and "Web Chat Contract", or run '
+        'tests in each touched example package, for example '
         '(cd example/chat_app && flutter test test test_vm).',
     useWhen: 'Any example app, CLI, or server package change.',
   ),
