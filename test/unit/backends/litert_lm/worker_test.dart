@@ -3,8 +3,11 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ffi';
 import 'dart:isolate';
 
+import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_embedding.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
@@ -667,6 +670,90 @@ void main() {
       }
     });
 
+    for (final embedding in [false, true]) {
+      test('model load reports finish-reason support '
+          '(embedding engine: $embedding)', () async {
+        // The fake service stands in for a qualified embedding target on
+        // every test host.
+        debugLiteRtLmAbiOverride = Abi.macosArm64;
+        addTearDown(() => debugLiteRtLmAbiOverride = null);
+        final service = _FinishReasonLiteRtLmService();
+        final worker = await _startWorkerInCurrentIsolate(service);
+
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => LiteRtLmModelLoadRequest(
+              modelFile.path,
+              ModelParams(
+                preferredBackend: GpuBackend.cpu,
+                liteRtLmEmbeddingEngine: embedding,
+              ),
+              sendPort,
+            ),
+          );
+
+          expect(
+            response,
+            isA<LiteRtLmHandleResponse>().having(
+              (response) => response.reportsFinishReasons,
+              'reportsFinishReasons',
+              !embedding,
+            ),
+          );
+        } finally {
+          await _disposeWorker(worker);
+        }
+      });
+    }
+
+    for (final chat in [false, true]) {
+      for (final limit in [null, ...BackendGenerationLimit.values]) {
+        test(
+          '${chat ? 'chat' : 'raw'} generation done carries limit $limit',
+          () async {
+            final service = _FinishReasonLiteRtLmService()..limit = limit;
+            final worker = await _startWorkerInCurrentIsolate(service);
+
+            try {
+              final responses = await _collectGenerationResponses(
+                worker.sendPort,
+                (sendPort) => chat
+                    ? LiteRtLmGenerateChatRequest(
+                        1,
+                        const [
+                          LlamaChatMessage.fromText(
+                            role: LlamaChatRole.user,
+                            text: 'hi',
+                          ),
+                        ],
+                        const GenerationParams(),
+                        sendPort,
+                      )
+                    : LiteRtLmGenerateRequest(
+                        1,
+                        'hi',
+                        const GenerationParams(),
+                        sendPort,
+                      ),
+              );
+
+              expect(
+                responses.last,
+                isA<LiteRtLmDoneResponse>().having(
+                  (response) => response.generationLimit,
+                  'generationLimit',
+                  limit,
+                ),
+              );
+            } finally {
+              await _disposeWorker(worker);
+            }
+          },
+        );
+      }
+    }
+
     test('forwards chat template kwargs to native chat generation', () async {
       final service = _ChatKwargsCapturingService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -1061,6 +1148,44 @@ class _StreamingLiteRtLmService extends LiteRtLmService {
     for (final chunk in chunks) {
       yield chunk;
     }
+  }
+}
+
+class _FinishReasonLiteRtLmService extends LiteRtLmService {
+  BackendGenerationLimit? limit;
+  BackendGenerationLimit? _last;
+
+  @override
+  bool reportsFinishReasons() => true;
+
+  @override
+  BackendGenerationLimit? get lastGenerationLimit => _last;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    yield const [1];
+    _last = limit;
+  }
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    yield const [1];
+    _last = limit;
   }
 }
 

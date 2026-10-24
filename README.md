@@ -221,8 +221,10 @@ fallback when model template metadata is empty. See
 
 - GGUF model loading and generation through llama.cpp.
 - `.litertlm` model loading and generation through LiteRT-LM. Automatic tool
-  loops require reliable runtime termination reporting and reject the pinned
-  LiteRT-LM native and Web runtimes; use manually managed completion there
+  loops require reliable runtime termination reporting: native LiteRT-LM
+  reports it from litert-lm-native `v0.18.0-3` (the default pin does), while
+  older native runtimes and LiteRT-LM Web reject the loops; use manually
+  managed completion there
   ([tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)).
 - Gemma 2/3/3n and legacy Mistral tool-result retries fold an immediately
   following user message into the result turn; successfully rendered histories
@@ -292,10 +294,10 @@ llama.cpp also accepts image/audio content with bridge assets v0.1.64+ and an
 API-version-1 embedding modality probe. The default pin is qualified with
 EmbeddingGemma-2 on Chrome CPU wasm memory64 against native CPU/Metal; repeated
 media batches require memory64. Hardware WebGPU remains unqualified. LiteRT-LM
-supports text, image and audio embeddings (qualified on macOS arm64 CPU only)
-with `LiteRtLmModelParams(embeddingEngine: true)`. Select `ComputeDevice.cpu`
-on native; native GPU and all LiteRT-LM Web paths throw
-`LlamaUnsupportedException`. GGUF loaders reject this LiteRT-LM-only flag.
+supports text, image and audio embeddings on macOS arm64, iOS arm64 and Android
+arm64 CPU (Android verified on a Galaxy S24 without SME and on arm64 emulators) with `LiteRtLmModelParams(embeddingEngine: true)`. Select
+`ComputeDevice.cpu`; native GPU, Linux, Windows, Android x86_64 and all LiteRT-LM
+Web paths throw `LlamaUnsupportedException` before native engine creation. GGUF loaders reject this LiteRT-LM-only flag.
 llama.cpp text-only content follows `embed`, including causal unpooled models.
 Unsupported native media diagnostics name the required v0.7.0-1 ABI. Windows
 requires the complete native DLL bundle; missing media symbols leave text

@@ -36,17 +36,38 @@ integration correctness.
 
 ## LiteRT-LM termination reporting
 
-The consumer safety gate leaves
-[#919](https://github.com/leehack/llamadart/issues/919) open for reliable runtime
-reporting. Native `v0.18.0-3` adds the owner fix below
-([litert-lm-native#80](https://github.com/leehack/litert-lm-native/pull/80)):
-`stream_proxy_finish_reason_abi_version` and `stream_proxy_get_finish_reason`
-report the cause, but llamadart does not read them yet. Web
-`@litert-lm/core@0.18.0` exposes no cause. Until #919 lands, neither pin can
-safely drive automatic tool loops. Plain completion remains available; its
-`stop` value is an unverified termination reason.
+Native runtimes from `v0.18.0-3`
+([litert-lm-native#80](https://github.com/leehack/litert-lm-native/pull/80))
+report why a conversation stream turn ended, and llamadart reads it
+([#919](https://github.com/leehack/llamadart/issues/919)):
 
-Verified source chain for the native artifact:
+- `LiteRtLmRuntimeClient.supportsFinishReasons` is true only when
+  `stream_proxy_finish_reason_abi_version` returns 1 and
+  `stream_proxy_get_finish_reason` resolves. A missing export, version 0 or an
+  unknown version keeps the explicit unsupported loop path.
+- The final stream callback, including the cancellation error, reads
+  `stream_proxy_get_finish_reason` before `stream_proxy_delete`. Wire values:
+  0 unknown, 1 stop token or stop sequence, 2 output budget, 3 context full,
+  4 cancelled, 5 error. The blocking send path and Session-API streams report
+  none.
+- The service maps 2 to `BackendGenerationLimit.maxTokens` and 3 to
+  `contextSize` (both `length`); every other value is no limit. Cancellation,
+  including a Dart stop sequence, which cancels the native turn, wins over a
+  reported limit, as on llama.cpp. A reporting runtime returns 0 for a
+  finished turn only when another message races it on the same conversation,
+  which the worker's one-generation-at-a-time rule prevents.
+- The worker probes support at model load and returns it with the handle, so
+  `generationLimitUnsupportedReason` is null only after a load on a reporting
+  runtime.
+
+Web `@litert-lm/core@0.18.0` exposes no cause, so LiteRT-LM Web keeps
+rejecting automatic tool loops. It needs a terminal cause from a qualified
+`@litert-lm/core` release (or an owned bridge package) that distinguishes EOS,
+output and context budgets and cancellation, a capability probe for it in
+`litert_lm_backend_web.dart`, and `BackendGenerationLimitReporting` there.
+Plain completion stays available; its `stop` remains unverified.
+
+Why the cause needs the owner patch, from upstream `v0.18.0`:
 
 - [Owner release `v0.18.0`](https://github.com/leehack/litert-lm-native/releases/tag/v0.18.0)
   records owner `29537be97949ef4eca8da793c4df4fb487f3993c` and upstream

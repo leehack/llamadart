@@ -80,6 +80,7 @@ export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
 export 'src/backends/litert_lm/litert_lm_runtime_stub.dart'
     if (dart.library.io) 'src/backends/litert_lm/litert_lm_runtime.dart'
     show
+        LiteRtLmFinishReason,
         LiteRtLmRuntimeClient,
         LiteRtLmRuntimeMetrics,
         LiteRtLmRuntimeResult,

@@ -53,6 +53,10 @@ trigger; native token reduction or an actual overlap rejection proves the
 in-flight condition. A missed condition stays NOT_RUN, and older journals keep
 their original results. See [the case contract](../../doc/cross_platform_validation.md#catalog-6-in-flight-cancellation-and-overlap).
 
+Catalog 7 runs `C08.cancel.restart` and `C08.overlap` on LiteRT profiles too;
+LiteRT journals from older catalogs keep both omitted. See
+[the catalog 7 notes](../../doc/cross_platform_validation.md#catalog-7-litert-lm-restart-and-overlap).
+
 ## Running validation
 
 Start from the repository root:

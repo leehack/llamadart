@@ -5,6 +5,9 @@
 // -DOMIT_PENALTIES leaves out the repetition penalty API and -DOMIT_THINKING
 // the thinking config API, as runtimes that predate them.
 // -DOMIT_PRESENCE leaves out only the presence penalty setter.
+// With -DWITH_STREAM_PROXY, -DFINISH_REASON_ABI=<n> exports the litert-lm-native
+// finish-reason proxy ABI <n>; -DOMIT_FINISH_REASON_GETTER then leaves out
+// stream_proxy_get_finish_reason.
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -143,18 +146,43 @@ static const char response_text[] =
 typedef void (*stream_callback)(void*, const char*, bool, const char*);
 static stream_callback listener;
 static int proxy_data;
+static bool proxy_live;
+static int next_finish_reason;
+static bool cancel_next;
+// The wire value the proxy records at the next final callback.
+void fixture_set_finish_reason(int value) { next_finish_reason = value; }
+// Makes the next send end with the runtime's cancellation error.
+void fixture_cancel_next(void) { cancel_next = true; }
 static void proxy_callback(void* d, const char* c, bool f, const char* e) {
   listener(NULL, c, f, e);
 }
 void* stream_proxy_create(stream_callback callback, void* data, stream_callback* out) {
   listener = callback;
   *out = proxy_callback;
+  proxy_live = true;
+  proxy_data = 0;
   return &proxy_data;
 }
 void stream_proxy_free_string(char* value) { free(value); }
-void stream_proxy_delete(void* data) {}
+void stream_proxy_delete(void* data) { proxy_live = false; }
+#ifdef FINISH_REASON_ABI
+int stream_proxy_finish_reason_abi_version(void) { return FINISH_REASON_ABI; }
+#ifndef OMIT_FINISH_REASON_GETTER
+// A deleted proxy reads as unknown, so a read after stream_proxy_delete shows.
+int stream_proxy_get_finish_reason(const void* data) {
+  return data == &proxy_data && proxy_live ? proxy_data : 0;
+}
+#endif
+#endif
 int litert_lm_conversation_send_message_stream(void* c, const char* m, const char* x, void* a, stream_callback cb, void* d) {
   record_send(a);
+  if (cancel_next) {
+    cancel_next = false;
+    proxy_data = 4;
+    cb(d, NULL, true, strdup("CANCELLED: Process cancelled."));
+    return 0;
+  }
+  proxy_data = next_finish_reason;
   cb(d, strdup(response_text), true, NULL);
   return 0;
 }

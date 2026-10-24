@@ -66,6 +66,9 @@ class LiteRtLmBackend
   int? _embeddingContext;
   bool _disposed = false;
   bool _nativeSettlementUnverified = false;
+  bool _reportsFinishReasons = false;
+  final _LiteRtLmGenerationLimits _generationLimits =
+      _LiteRtLmGenerationLimits();
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a LiteRT-LM backend.
@@ -98,17 +101,27 @@ class LiteRtLmBackend
        _cancelAcknowledgementTimeout = cancelAcknowledgementTimeout,
        _preferredBackend = preferredBackend,
        _workerEntryPoint = workerEntryPoint ?? liteRtLmWorkerEntry {
+    registerGenerationLimitReporter(this, _generationLimits);
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
     }
   }
 
+  /// Null once a loaded model's runtime reports why each generation ended
+  /// (litert-lm-native `v0.18.0-3` and later); otherwise, and before a load,
+  /// why automatic tool loops cannot run.
   @override
-  String? get generationLimitUnsupportedReason =>
-      'Native LiteRT-LM v0.18.0 does not expose a reliable generation termination reason. '
-      'Automatic tool loops require an owner runtime with token-limit reporting; '
-      'use ChatSession.create or LlamaEngine.create for manual completion.';
+  String? get generationLimitUnsupportedReason => _embeddingEngine
+      ? 'The model is loaded as a LiteRT-LM embedding engine '
+            '(embeddingEngine: true), which generates no text.'
+      : _isReady && _reportsFinishReasons
+      ? null
+      : 'The loaded native LiteRT-LM runtime does not report why generation '
+            'stopped: token-limit reporting needs litert-lm-native v0.18.0-3 '
+            'or later, whose stream_proxy_finish_reason_abi_version export '
+            'returns 1. Install the pinned runtime, or use ChatSession.create '
+            'or LlamaEngine.create for manual completion.';
 
   @override
   bool get isReady => _isReady;
@@ -225,6 +238,7 @@ class LiteRtLmBackend
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
     await _cancelActiveGeneration();
+    _reportsFinishReasons = false;
     final response = await _sendRequest(
       (sendPort) => LiteRtLmModelLoadRequest(
         path,
@@ -233,10 +247,9 @@ class LiteRtLmBackend
         backendOverride: _preferredBackend,
       ),
     );
-    final handle = _expect<LiteRtLmHandleResponse>(
-      response,
-      'model load',
-    ).handle;
+    final loaded = _expect<LiteRtLmHandleResponse>(response, 'model load');
+    final handle = loaded.handle;
+    _reportsFinishReasons = loaded.reportsFinishReasons;
     _isReady = true;
     _embeddingEngine = params.liteRtLmEmbeddingEngine;
     _embeddingContext = null;
@@ -396,6 +409,7 @@ class LiteRtLmBackend
     LiteRtLmWorkerRequest Function(SendPort responsePort) buildRequest,
   ) {
     late final StreamController<List<int>> controller;
+    late final Stream<List<int>> stream;
     _WorkerGeneration? generation;
     _QueuedGeneration? queued;
     var closed = false;
@@ -433,6 +447,10 @@ class LiteRtLmBackend
             controller.add(message.bytes);
           }
         } else if (message is LiteRtLmDoneResponse) {
+          final limit = message.generationLimit;
+          if (limit != null && !current.cancelRequested) {
+            _generationLimits.limits[stream] = limit;
+          }
           close();
           _finishGeneration(current);
         } else if (message is LiteRtLmErrorResponse) {
@@ -506,7 +524,7 @@ class LiteRtLmBackend
       },
     );
 
-    return controller.stream;
+    return stream = controller.stream;
   }
 
   /// Releases [generation] after its terminal response, or when it never
@@ -1179,6 +1197,20 @@ class LiteRtLmBackend
     }
     return backend;
   }
+}
+
+/// The token limit that ended each generation stream: `maxTokens` or the
+/// context. None while a stream runs, when it stopped at a stop token, a stop
+/// sequence, cancellation or an error, or on runtimes without finish reasons,
+/// which cannot tell a limit from a stop.
+final class _LiteRtLmGenerationLimits
+    implements BackendGenerationLimitReporting {
+  final Expando<BackendGenerationLimit> limits =
+      Expando<BackendGenerationLimit>();
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      limits[generation];
 }
 
 /// A generation sent to the worker, tracked until its terminal response even

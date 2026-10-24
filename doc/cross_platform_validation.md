@@ -1554,18 +1554,19 @@ still required for every actual run.
 
 ### Native video input
 
-The previously pinned `llamadart-native` `v0.6.0-3` archive exports upstream video helper
-symbols (`mtmd_helper_video_*`), but the release is not qualified for
-end-to-end video input. The companion build does not opt into
-`LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe, so the public Dart
-path stays unsupported until matching native, packaging and frame-lifecycle
-validation exists. Native LiteRT-LM direct media accepts image and audio only;
-WebGPU and Web LiteRT-LM have no validated video transport or frame-lifetime
-contract; Android and iOS need native packaging and device validation.
-`LlamaVideoContent` throws `LlamaUnsupportedException` naming either the native
-compile/dependency blocker or, for a custom video-enabled native build, the
-remaining Dart frame-ingestion/lifetime blocker. Do not infer support from the
-exported symbols.
+The pinned `llamadart-native` `v0.7.0-2` macOS, Linux and Windows archives are
+built with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, so `mtmd_helper_support_video`
+there reports whether the loaded projector has a vision encoder (an audio-only
+projector reports `false`). The Android and iOS archives are built without
+video, so it always reports `false`. FFmpeg/ffprobe is not packaged, and the
+public Dart path stays unsupported until frame-lifecycle validation exists.
+Native LiteRT-LM direct media accepts image and audio only; WebGPU and Web
+LiteRT-LM have no validated video transport or frame-lifetime contract.
+`LlamaVideoContent` throws `LlamaUnsupportedException` naming either the
+missing video support (a projector without a vision encoder, or a runtime built
+without video) or, for a video-enabled runtime, the remaining Dart
+frame-ingestion/lifetime blocker. Do not infer support from the exported
+symbols.
 
 ### Primary model profiles and runnable speech packs
 
@@ -1793,6 +1794,30 @@ Unicode generation, thinking on/off and tool choice/result controls. Thinking
 budgets, tool-bearing batching and model-specific qualification remain separate.
 
 
+### Catalog 7 LiteRT-LM restart and overlap
+
+Catalog 7 selects `C08.cancel.restart` and `C08.overlap` for LiteRT profiles
+([#1115](https://github.com/leehack/llamadart/issues/1115)). Since
+[#656](https://github.com/leehack/llamadart/issues/656), a LiteRT-LM generation
+requested after a cancel waits for the cancelled run to end, and one requested
+during an uncancelled run throws `LlamaStateException`, on native and Web. Case
+versions, fixtures and predicates are unchanged. LiteRT journals from catalogs
+5 and 6 keep both cases omitted as `litert_restart_contract_undefined`. The Web
+host rejects native LiteRT fixtures, so no LiteRT Web profile runs them yet.
+
+Local macOS arm64 (M4 Max) JIT runs on 2026-10-24 with Qwen3-0.6B, clean
+source and LiteRT-LM `0.18.1-2` (diagnostic, not qualification):
+`chat-litert-cpu` and `chat-litert-gpu` each passed 17/17. In
+`C08.cancel.restart` the second request, issued right after the cancel, began
+streaming after the cancelled stream ended (CPU 656 ms after 336 ms; GPU 159 ms
+after 86 ms). In `C08.overlap` the timed second request was rejected with
+`LlamaStateException` within 4 ms, and the first stream delivered two more
+deltas and ended cleanly. The GPU run's placement stayed unverified. When the
+native backend starts a post-cancel request without waiting, GPU
+`C08.cancel.restart` fails with the wrapped `generation is already in
+progress` error; when it queues an uncancelled overlap instead of rejecting it,
+`C08.overlap` stays NOT_RUN and the run does not qualify.
+
 ### Catalog 6 in-flight cancellation and overlap
 
 Catalog 6 versions `C08.cancel` and `C08.overlap` to 2. Native GGUF runs
@@ -1828,19 +1853,16 @@ timings; a missed precondition is NOT_RUN, never PASS.
 | Case | Request | Passes when | Runs on |
 | --- | --- | --- | --- |
 | `C08.cancel.early` | `cancelGeneration()` right after listening to the short request, before any delta ([#602](https://github.com/leehack/llamadart/issues/602)) | The stream ends without content, thinking or tool calls within the 5 s cancel deadline; the same request then completes with output | Every public-API profile |
-| `C08.cancel.restart` | At the first delta of the 256-token cancel request, `cancelGeneration()`, then the short request without waiting ([#655](https://github.com/leehack/llamadart/issues/655)) | The short request, issued before the cancelled stream ended, completes with output and its first delta follows that end | GGUF quick core |
-| `C08.overlap` | The short request at the first delta of the uncancelled 256-token request | It fails with `LlamaStateException` before the first ends, the first streams at least one more delta and ends cleanly after the harness cancels it, and a later request completes | GGUF quick core |
+| `C08.cancel.restart` | At the first delta of the 256-token cancel request, `cancelGeneration()`, then the short request without waiting ([#655](https://github.com/leehack/llamadart/issues/655)) | The short request, issued before the cancelled stream ended, completes with output and its first delta follows that end | GGUF quick core; LiteRT quick core from catalog 7 |
+| `C08.overlap` | The short request at the first delta of the uncancelled 256-token request | It fails with `LlamaStateException` before the first ends, the first streams at least one more delta and ends cleanly after the harness cancels it, and a later request completes | GGUF quick core; LiteRT quick core from catalog 7 |
 | `C12.grammar` | Raw request with GBNF `root ::= "unterminated` | Native: `LlamaInferenceException` `llama.cpp failed to initialize the requested grammar sampler.`; Web: `LlamaInferenceException` whose details contain `(invalid grammar)`; then a request completes | GGUF quick core |
 | `C07.tools.auto_text` | `ToolChoice.auto` with `get_weather` on the hello prompt ([#654](https://github.com/leehack/llamadart/issues/654)) | Text finish matching the hello regex, no tool call | `tools` selection |
 
 Of the GGUF runtimes, only native llama.cpp defines restart and overlap, so
-GGUF Web records both as NOT_RUN. LiteRT-LM defines both on native and Web
-since [#656](https://github.com/leehack/llamadart/issues/656), but LiteRT
-profiles still omit them (`litert_restart_contract_undefined`) until their
-cases are enabled and qualified
-([#1115](https://github.com/leehack/llamadart/issues/1115)). LiteRT profiles
-also omit `C12.grammar` (`litert_grammar_unsupported`: LiteRT-LM rejects every
-grammar). C07.tools version 3 also binds the hello fixture its recovery uses.
+GGUF Web records both as NOT_RUN. LiteRT profiles run both from catalog 7 and
+omit them in catalogs 5 and 6 (`litert_restart_contract_undefined`). LiteRT
+profiles also omit `C12.grammar` (`litert_grammar_unsupported`: LiteRT-LM
+rejects every grammar). C07.tools version 3 also binds the hello fixture its recovery uses.
 On Web, a required trial rejected with the documented
 `LlamaUnsupportedException` for a lazy required-tool grammar counts as that
 trial's result; elsewhere the rejection stays ERROR. Catalog 1 to 4 reports

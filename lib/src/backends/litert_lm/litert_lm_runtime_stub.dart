@@ -2,8 +2,10 @@
 
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
+import 'litert_lm_finish_reason.dart';
 
 export 'litert_lm_asr_types.dart';
+export 'litert_lm_finish_reason.dart';
 
 /// Runtime metrics shape shared with the native LiteRT-LM implementation.
 class LiteRtLmRuntimeMetrics {
@@ -86,6 +88,12 @@ class LiteRtLmRuntimeClient {
 
   /// Thinking budgets are unavailable without `dart:ffi`.
   bool get supportsThinkingBudget => false;
+
+  /// Finish reasons are unavailable without `dart:ffi`.
+  bool get supportsFinishReasons => false;
+
+  /// Finish reasons are unavailable without `dart:ffi`.
+  LiteRtLmFinishReason? get lastFinishReason => null;
 
   /// Bundle capability queries are unavailable without `dart:ffi`.
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
