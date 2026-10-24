@@ -83,7 +83,12 @@ abstract interface class SpeechValidationAdapter {
 
   /// With `cancel`, cancels after a wait and reports `cancel_latency_ms`,
   /// `cancel_after_ms` and `cancel_in_flight`, which is true only if the
-  /// adapter had not seen the task finish when it cancelled. With
+  /// adapter had not seen the task finish when it cancelled. The TTS adapter
+  /// also reports where the cancel landed: `progress_events_before_cancel`,
+  /// `ms_since_last_progress_at_cancel`, `reference_progress_events` and
+  /// `cancel_after_reference_last_progress`, true when it came after as many
+  /// progress events as the reference generation emitted, so in its final
+  /// step, which emits none. With
   /// `cancelImmediately`, cancels as soon as the task is handed back, without
   /// yielding first, and reports `cancel_latency_ms`, `cancel_after_ms` and
   /// `cancel_immediate`. Setting both throws [ArgumentError].
@@ -199,6 +204,7 @@ class PublicSpeechValidationAdapter
   double? _lastGenerationMs;
   String? _lastTranscript;
   int? _lastFramesGenerated;
+  int? _lastProgressEvents;
 
   /// Public diagnostics are selector hints, not accelerator execution proof.
   Map<String, Object?> observedRuntime = {};
@@ -319,6 +325,7 @@ class PublicSpeechValidationAdapter
     Future<Object?> done,
     void Function() cancelTask, {
     required bool immediately,
+    Map<String, Object?> Function()? landing,
   }) async {
     if (immediately) {
       final afterMs = watch.elapsedMicroseconds / 1000;
@@ -345,12 +352,14 @@ class PublicSpeechValidationAdapter
     }
     final afterMs = watch.elapsedMicroseconds / 1000;
     final inFlight = !settled;
+    final landed = landing?.call();
     cancelWatch.start();
     cancelTask();
     return {
       'cancel_after_ms': afterMs,
       'cancel_in_flight': inFlight,
       'reference_generation_ms': reference,
+      ...?landed,
     };
   }
 
@@ -444,6 +453,24 @@ class PublicSpeechValidationAdapter
       _synthesisRequest(text: invalid ? '' : text),
     );
     final cancelWatch = _newStopwatch();
+    double? firstAudioMs;
+    double? lastProgressMs;
+    var finals = 0;
+    var progressEvents = 0;
+    final drained = Completer<void>()..future.ignore();
+    task.events.listen(
+      (event) {
+        if (event is TextToSpeechProgressEvent) {
+          progressEvents++;
+          lastProgressMs = watch.elapsedMicroseconds / 1000;
+        } else if (event is TextToSpeechFinalEvent) {
+          firstAudioMs ??= watch.elapsedMicroseconds / 1000;
+          finals++;
+        }
+      },
+      onError: drained.completeError,
+      onDone: drained.complete,
+    );
     final cancellation = cancel || cancelImmediately
         ? await _cancelTask(
             watch,
@@ -451,16 +478,23 @@ class PublicSpeechValidationAdapter
             task.done,
             task.cancel,
             immediately: cancelImmediately,
+            landing: () {
+              final lastMs = lastProgressMs;
+              final referenceEvents = _lastProgressEvents;
+              return {
+                'progress_events_before_cancel': progressEvents,
+                'ms_since_last_progress_at_cancel': lastMs == null
+                    ? null
+                    : watch.elapsedMicroseconds / 1000 - lastMs,
+                'reference_progress_events': referenceEvents,
+                'cancel_after_reference_last_progress': referenceEvents == null
+                    ? null
+                    : progressEvents >= referenceEvents,
+              };
+            },
           )
         : null;
-    double? firstAudioMs;
-    var finals = 0;
-    await for (final event in task.events) {
-      if (event is TextToSpeechFinalEvent) {
-        firstAudioMs ??= watch.elapsedMicroseconds / 1000;
-        finals++;
-      }
-    }
+    await drained.future;
     final completion = await task.done;
     if (completion.state == TextToSpeechCompletionState.failed) {
       throw completion.error!;
@@ -485,6 +519,7 @@ class PublicSpeechValidationAdapter
     _lastGenerationMs = watch.elapsedMicroseconds / 1000;
     final result = completion.result!;
     _lastFramesGenerated = result.framesGenerated;
+    _lastProgressEvents = progressEvents;
     final metrics = inspectSpeechAudio(result);
     await saveAudio(result.toWavBytes());
     return {
@@ -900,6 +935,18 @@ const speechTruncationTokenFraction = 0.5;
 /// Context size loaded for `context_size_truncation`.
 const speechTruncationContextSize = 512;
 
+const _cancelLandingKeys = [
+  'progress_events_before_cancel',
+  'ms_since_last_progress_at_cancel',
+  'reference_progress_events',
+  'cancel_after_reference_last_progress',
+];
+
+Map<String, Object?> _landingFields(Map<String, Object?> cancelled) => {
+  for (final key in _cancelLandingKeys)
+    if (cancelled.containsKey(key)) key: cancelled[key],
+};
+
 Map<String, Object?> _teardownOutcome(Map<String, Object?> result) {
   final frames = result['frames_before_teardown'];
   if (result['in_flight'] != true || frames is! int || frames < 1) {
@@ -1203,6 +1250,8 @@ Future<Map<String, Object?>> runSpeechValidation(
   final cancelLeads = <double>[];
   final immediateLatencies = <double>[];
   final immediateLeads = <double>[];
+  final cancelProgressEvents = <int?>[];
+  final cancelAfterReferenceLastProgress = <bool?>[];
   final footprintSamples = <Map<String, Object?>>[];
   var footprintMeasurable = true;
   final unmeasured = <String, Object?>{
@@ -1267,6 +1316,12 @@ Future<Map<String, Object?>> runSpeechValidation(
     }
     (immediate ? immediateLatencies : cancelLatencies).add(latency.toDouble());
     (immediate ? immediateLeads : cancelLeads).add(lead.toDouble());
+    if (!immediate) {
+      cancelProgressEvents.add(result['progress_events_before_cancel'] as int?);
+      cancelAfterReferenceLastProgress.add(
+        result['cancel_after_reference_last_progress'] as bool?,
+      );
+    }
     return result;
   }
 
@@ -1403,6 +1458,7 @@ Future<Map<String, Object?>> runSpeechValidation(
             'cancel_latency_ms': cancelled['cancel_latency_ms'],
             'cancel_after_ms': cancelled['cancel_after_ms'],
             'cancel_in_flight': cancelled['cancel_in_flight'],
+            ..._landingFields(cancelled),
           };
         });
       }
@@ -1513,6 +1569,8 @@ Future<Map<String, Object?>> runSpeechValidation(
         'budget': speechCancelLatencyBudgetMs,
         'samples': [...cancelLatencies],
         'lead': [...cancelLeads],
+        'progress_events_before_cancel': [...cancelProgressEvents],
+        'after_reference_last_progress': [...cancelAfterReferenceLastProgress],
         'lead_fraction': speechCancelInFlightLeadFraction,
         'worst': latencyRow['worst_ms'],
         'within_budget': latencyRow.isEmpty
