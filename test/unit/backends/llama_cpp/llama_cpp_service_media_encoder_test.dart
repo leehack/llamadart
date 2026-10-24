@@ -72,12 +72,14 @@ void main() {
   late FakeMtmd fake;
   late int context;
 
-  void attach({required bool vision, required bool audio}) {
+  void attach({required bool vision, required bool audio, Abi? abi}) {
     dir = Directory.systemTemp.createTempSync('llamadart_media_encoder_');
     addTearDown(() => dir.deleteSync(recursive: true));
     final modelPath = writeSyntheticLlamaGguf('${dir.path}/model.gguf').path;
-    service = LlamaCppService(objectCalls: LlamaCppObjectCalls.upstream)
-      ..initializeBackend();
+    service = LlamaCppService(
+      objectCalls: LlamaCppObjectCalls.upstream,
+      abi: abi,
+    )..initializeBackend();
     final model = service.loadModel(modelPath, _params);
     fake = FakeMtmd.install(
       service,
@@ -113,6 +115,52 @@ void main() {
       calloc.free(cancel);
     }
   }
+
+  group('video input without native video support', () {
+    Matcher rejection(Matcher platform, Matcher absent) => throwsA(
+      isA<LlamaUnsupportedException>()
+          .having((e) => e.message, 'platform', platform)
+          .having((e) => e.message, 'absent', absent)
+          .having((e) => e.message, 'frames', contains('image frames')),
+    );
+
+    for (final (abi, name) in [
+      (Abi.androidArm64, 'Android'),
+      (Abi.iosArm64, 'iOS'),
+    ]) {
+      test('names $name and its disabled LLAMA_SUBPROCESS build', () async {
+        attach(vision: true, audio: false, abi: abi);
+
+        await expectLater(
+          send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
+          rejection(
+            allOf(
+              contains('unavailable on $name'),
+              contains('LLAMA_SUBPROCESS'),
+            ),
+            isNot(contains('v0.4.1')),
+          ),
+        );
+      });
+    }
+
+    for (final abi in [Abi.macosArm64, Abi.linuxX64, Abi.windowsX64]) {
+      test('does not call a $abi artifact video-less', () async {
+        attach(vision: true, audio: false, abi: abi);
+
+        await expectLater(
+          send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
+          rejection(
+            allOf(
+              contains('v0.4.1 macOS, Linux and Windows archives'),
+              contains('FFmpeg/ffprobe'),
+            ),
+            allOf(isNot(contains('Android')), isNot(contains('iOS'))),
+          ),
+        );
+      });
+    }
+  });
 
   group('a projector with a vision encoder only', () {
     setUp(() => attach(vision: true, audio: false));

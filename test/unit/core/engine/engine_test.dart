@@ -2793,6 +2793,16 @@ void main() {
               .having(
                 (error) => error.message,
                 'message',
+                allOf(contains('Android and iOS'), contains('desktop')),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                isNot(contains('compile mtmd video support out')),
+              )
+              .having(
+                (error) => error.message,
+                'message',
                 contains('image frames'),
               ),
         ),

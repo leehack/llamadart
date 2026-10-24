@@ -5194,14 +5194,7 @@ class LlamaCppService {
         }
         final nativeRuntimeSupportsVideo = supportsVideo(mmHandle);
         if (!nativeRuntimeSupportsVideo) {
-          throw LlamaUnsupportedException(
-            'Video input is unavailable because the loaded native mtmd '
-            'runtime/projector does not report compiled video support. Current '
-            'llamadart artifacts build mtmd video support out; a future native '
-            'package must enable LLAMA_SUBPROCESS/MTMD_VIDEO and provide '
-            'FFmpeg/ffprobe before video can be consumed. Extract and send '
-            'image frames instead.',
-          );
+          throw LlamaUnsupportedException(_videoUnreportedMessage());
         }
         throw LlamaUnsupportedException(
           'The loaded native runtime reports mtmd video support, but the Dart '
@@ -9527,6 +9520,32 @@ class LlamaCppService {
         has('GIF8') ||
         has('BM');
     return imageMagic || part is LlamaImageContent ? false : null;
+  }
+
+  String _videoUnreportedMessage() {
+    final platform = switch (_abi) {
+      Abi.androidArm ||
+      Abi.androidArm64 ||
+      Abi.androidIA32 ||
+      Abi.androidX64 ||
+      Abi.androidRiscv64 => 'Android',
+      Abi.iosArm64 || Abi.iosX64 => 'iOS',
+      _ => null,
+    };
+    if (platform != null) {
+      return 'Video input is unavailable on $platform: the llamadart native '
+          'artifacts for this platform are built without mtmd video support '
+          '(upstream forces MTMD_VIDEO off when LLAMA_SUBPROCESS, which '
+          'spawns FFmpeg, is off), so mtmd_helper_support_video reports '
+          'false. Extract and send image frames instead.';
+    }
+    return 'Video input is unavailable: the loaded native mtmd runtime '
+        'reports no video support (mtmd_helper_support_video is false). The '
+        'llamadart-native v0.4.1 macOS, Linux and Windows archives are built '
+        'with it, so this runtime is an older or custom build without '
+        'LLAMA_SUBPROCESS/MTMD_VIDEO. Video also needs FFmpeg/ffprobe on '
+        'PATH, and llamadart does not yet ingest video frames. Extract and '
+        'send image frames instead.';
   }
 
   /// Returns whether the active native mtmd build and projector report video.

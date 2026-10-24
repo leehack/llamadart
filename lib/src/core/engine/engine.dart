@@ -2895,11 +2895,12 @@ class LlamaEngine {
 
     if (!nativeRuntimeSupportsVideo) {
       throw LlamaUnsupportedException(
-        'Video input is not supported by the active backend/runtime. Current '
-        'llamadart native artifacts compile mtmd video support out; enabling '
-        'it requires LLAMA_SUBPROCESS plus FFmpeg/ffprobe packaging. Extract '
-        'and send image frames instead until companion-native packaging and '
-        'the Dart video-ingestion contract are implemented.',
+        'Video input is not supported by the active backend/runtime: the '
+        'loaded native mtmd runtime reports no video support. Android and iOS '
+        'native artifacts are built without it (LLAMA_SUBPROCESS off); '
+        'desktop artifacts include it but an older or custom build may not. '
+        'Video also needs FFmpeg/ffprobe, and llamadart does not yet ingest '
+        'video frames. Extract and send image frames instead.',
       );
     }
 
