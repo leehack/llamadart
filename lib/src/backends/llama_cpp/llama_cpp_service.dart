@@ -9540,9 +9540,10 @@ class LlamaCppService {
           'false. Extract and send image frames instead.';
     }
     return 'Video input is unavailable: the loaded native mtmd runtime '
-        'reports no video support (mtmd_helper_support_video is false). The '
-        'llamadart-native v0.4.1 macOS, Linux and Windows archives are built '
-        'with it, so this runtime is an older or custom build without '
+        'reports no video support (mtmd_helper_support_video is false). On '
+        'the pinned $llamaCppTag macOS, Linux and Windows artifacts this means '
+        'the loaded multimodal projector has no vision encoder; load a vision '
+        'projector. Otherwise the runtime is an older or custom build without '
         'LLAMA_SUBPROCESS/MTMD_VIDEO. Video also needs FFmpeg/ffprobe on '
         'PATH, and llamadart does not yet ingest video frames. Extract and '
         'send image frames instead.';

@@ -2896,10 +2896,11 @@ class LlamaEngine {
     if (!nativeRuntimeSupportsVideo) {
       throw LlamaUnsupportedException(
         'Video input is not supported by the active backend/runtime: the '
-        'loaded native mtmd runtime reports no video support. Android and iOS '
-        'native artifacts are built without it (LLAMA_SUBPROCESS off); '
-        'desktop artifacts include it but an older or custom build may not. '
-        'Video also needs FFmpeg/ffprobe, and llamadart does not yet ingest '
+        'loaded native mtmd runtime reports no video support. On desktop '
+        'artifacts this usually means the loaded multimodal projector has no '
+        'vision encoder, so load a vision projector. Android and iOS native '
+        'artifacts are built without video (LLAMA_SUBPROCESS off), as are '
+        'older or custom runtimes. Video also needs FFmpeg/ffprobe, and llamadart does not yet ingest '
         'video frames. Extract and send image frames instead.',
       );
     }

@@ -2793,7 +2793,10 @@ void main() {
               .having(
                 (error) => error.message,
                 'message',
-                allOf(contains('Android and iOS'), contains('desktop')),
+                allOf(
+                  contains('Android and iOS'),
+                  contains('vision projector'),
+                ),
               )
               .having(
                 (error) => error.message,

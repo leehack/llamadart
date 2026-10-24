@@ -16,6 +16,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:test/test.dart';
 
 import '../../../support/fake_mtmd.dart';
@@ -125,34 +126,44 @@ void main() {
     );
 
     for (final (abi, name) in [
+      (Abi.androidArm, 'Android'),
       (Abi.androidArm64, 'Android'),
+      (Abi.androidIA32, 'Android'),
+      (Abi.androidX64, 'Android'),
+      (Abi.androidRiscv64, 'Android'),
       (Abi.iosArm64, 'iOS'),
+      (Abi.iosX64, 'iOS'),
     ]) {
-      test('names $name and its disabled LLAMA_SUBPROCESS build', () async {
-        attach(vision: true, audio: false, abi: abi);
+      test(
+        'names $name and its disabled LLAMA_SUBPROCESS build ($abi)',
+        () async {
+          attach(vision: true, audio: false, abi: abi);
 
-        await expectLater(
-          send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
-          rejection(
-            allOf(
-              contains('unavailable on $name'),
-              contains('LLAMA_SUBPROCESS'),
+          await expectLater(
+            send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
+            rejection(
+              allOf(
+                contains('unavailable on $name'),
+                contains('LLAMA_SUBPROCESS'),
+              ),
+              allOf(isNot(contains(llamaCppTag)), isNot(contains('projector'))),
             ),
-            isNot(contains('v0.4.1')),
-          ),
-        );
-      });
+          );
+        },
+      );
     }
 
     for (final abi in [Abi.macosArm64, Abi.linuxX64, Abi.windowsX64]) {
-      test('does not call a $abi artifact video-less', () async {
+      test('blames the projector before the runtime on $abi', () async {
         attach(vision: true, audio: false, abi: abi);
 
         await expectLater(
           send([LlamaVideoContent(path: '/tmp/clip.mp4')]),
           rejection(
             allOf(
-              contains('v0.4.1 macOS, Linux and Windows archives'),
+              contains('pinned $llamaCppTag macOS, Linux and Windows'),
+              contains('no vision encoder; load a vision projector'),
+              contains('LLAMA_SUBPROCESS/MTMD_VIDEO'),
               contains('FFmpeg/ffprobe'),
             ),
             allOf(isNot(contains('Android')), isNot(contains('iOS'))),
