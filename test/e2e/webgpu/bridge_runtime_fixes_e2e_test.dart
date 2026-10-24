@@ -14,7 +14,12 @@
 ///   teardown awaits the WebGPU shutdown
 ///   ([#150](https://github.com/leehack/llama-web-bridge/issues/150)). The
 ///   backend gives each load a new bridge, so the same-bridge reload that
-///   #150 broke is not reachable from here.
+///   #150 broke is not reachable from here;
+/// - string embeddings of a rank-pooled reranker throw
+///   `LlamaUnsupportedException`, and an encoder input over the micro-batch
+///   throws `LlamaEmbeddingInputTooLongException`, instead of returning
+///   an invalid vector built from classifier scores or a vector of part of the input (`v0.1.73+`,
+///   [#121](https://github.com/leehack/llama-web-bridge/issues/121)).
 ///
 /// The test runner serves the package root, so the files must sit under
 /// `build/webgpu_bridge_fixes_e2e/` (gitignored), hard-linked or copied there
@@ -28,6 +33,8 @@
 ///   "visionModel": "models/LFM2-VL-450M-Q4_0.gguf",
 ///   "visionProjector": "models/mmproj-LFM2-VL-450M-Q8_0.gguf",
 ///   "image": "media/red_square.png",
+///   "rerankerModel": "models/qwen3-reranker-0.6b-q8_0.gguf",
+///   "encoderModel": "models/modernbert-mean-pooled.gguf",
 ///   "gpuLayers": 0
 /// }
 /// ```
@@ -37,7 +44,9 @@
 /// depth from this test, so a URL relative to the document does not also
 /// resolve against the worker script; the test checks this. `model` is any
 /// small text GGUF, such as `stories15M`; `visionModel` and `visionProjector`
-/// are `LiquidAI/LFM2-VL-450M-GGUF`, and `image` is any small PNG. Set
+/// are `LiquidAI/LFM2-VL-450M-GGUF`, and `image` is any small PNG.
+/// `rerankerModel` is a rank-pooled GGUF such as Qwen3-Reranker-0.6B, and
+/// `encoderModel` a MEAN-pooled ModernBERT embedding GGUF. Set
 /// `gpuLayers` above 0 to run on WebGPU; the test then requires a WebGPU
 /// backend.
 ///
@@ -138,9 +147,12 @@ void main() {
         addTearDown(engine.dispose);
       });
 
-      Future<String> load(String key) async {
+      Future<String> load(String key, [ModelParams? params]) async {
         final relative = _relativeToDocument(fixture(key));
-        await engine.loadModelFromUrl(relative, modelParams: modelParams());
+        await engine.loadModelFromUrl(
+          relative,
+          modelParams: params ?? modelParams(),
+        );
         final backendName = await engine.getBackendName();
         print('[bridge-fixes] $runtime $key backend: $backendName');
         if (gpuLayers() > 0) {
@@ -257,6 +269,63 @@ void main() {
             baseline,
           );
           expectRuntime('state restore after truncated snapshots');
+        },
+      );
+
+      test('string embeddings reject a rank-pooled reranker', () async {
+        await load('rerankerModel');
+        final rejectsRank = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('rank-pooled'),
+          ),
+        );
+        await expectLater(engine.embed('What is the capital?'), rejectsRank);
+        await expectLater(
+          engine.embedBatch(const ['a query', 'a document']),
+          rejectsRank,
+        );
+        expect(await engine.tokenize('still usable'), isNotEmpty);
+        expectRuntime('rank pooling rejection');
+      });
+
+      test(
+        'string embeddings reject an encoder input over the micro-batch',
+        () async {
+          await load(
+            'encoderModel',
+            modelParams().copyWith(batchSize: 64, microBatchSize: 64),
+          );
+          expect(
+            (await engine.getMetadata())['llamadart.webgpu.n_ubatch'],
+            '64',
+          );
+          const short = 'The Eiffel Tower is in Paris.';
+          final baseline = await engine.embed(short);
+          expect(baseline, isNotEmpty);
+          expect(baseline.every((value) => value.isFinite), isTrue);
+
+          final long = List.filled(120, 'word').join(' ');
+          print(
+            '[bridge-fixes] $runtime long input tokens: '
+            '${await engine.getTokenCount(long)}',
+          );
+          final tooLong = throwsA(
+            isA<LlamaEmbeddingInputTooLongException>()
+                .having((error) => error.maxInputTokens, 'maxInputTokens', 64)
+                .having(
+                  (error) => error.actualTokens,
+                  'actualTokens',
+                  greaterThan(64),
+                ),
+          );
+          await expectLater(engine.embed(long), tooLong);
+          await expectLater(engine.embedBatch([short, long]), tooLong);
+          expectRuntime('one-pass overflow rejection');
+
+          expect(await engine.embed(short), baseline);
+          expectRuntime('embedding after the rejection');
         },
       );
 

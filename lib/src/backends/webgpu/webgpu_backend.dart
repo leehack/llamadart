@@ -2821,12 +2821,48 @@ class WebGpuLlamaBackend
     }
   }
 
-  static LlamaException _embeddingError(Object error) =>
-      webGpuBridgeRequestError(error) ??
-      LlamaInferenceException(
-        'The Web runtime could not compute embeddings.',
-        webGpuBridgeErrorText(error),
+  // The string embed path has no stable error code, so the v0.1.73+ rejections
+  // (llama-web-bridge#194) are matched on the core's exact message.
+  static final RegExp _rankPooledEmbedding = RegExp(
+    r'^Embedding generation failed: Embeddings are not supported for '
+    r'rank-pooled models such as rerankers: ',
+  );
+  static final RegExp _embeddingPassTooLong = RegExp(
+    r'^Embedding generation failed: The embedding input has (\d+) tokens, '
+    r'but this model embeds its input in one pass of at most (\d+) tokens '
+    r'\(n_ubatch\)\.',
+  );
+
+  static LlamaException _embeddingError(Object error) {
+    final requestError = webGpuBridgeRequestError(error);
+    if (requestError != null) return requestError;
+    final message = webGpuBridgeErrorText(error);
+    if (_rankPooledEmbedding.hasMatch(message)) {
+      return LlamaUnsupportedException(
+        'Embeddings are not supported for rank-pooled models such as '
+        'rerankers: llama.cpp returns classifier scores, not an embedding, '
+        'for pooling type RANK. Reranking is tracked in '
+        'https://github.com/leehack/llamadart/issues/323.',
       );
+    }
+    final tooLong = _embeddingPassTooLong.firstMatch(message);
+    final actualTokens = int.tryParse(tooLong?.group(1) ?? '');
+    final maxInputTokens = int.tryParse(tooLong?.group(2) ?? '');
+    if (actualTokens != null && maxInputTokens != null && maxInputTokens > 0) {
+      return LlamaEmbeddingInputTooLongException(
+        'The embedding input has $actualTokens tokens, but this model '
+        'embeds its input in one pass of at most $maxInputTokens tokens '
+        '(n_ubatch). Shorten the input or raise ModelParams.microBatchSize '
+        'and ModelParams.batchSize.',
+        maxInputTokens: maxInputTokens,
+        actualTokens: actualTokens,
+      );
+    }
+    return LlamaInferenceException(
+      'The Web runtime could not compute embeddings.',
+      message,
+    );
+  }
 
   @override
   Future<LlamaNextTokenScores> scoreNextToken(
