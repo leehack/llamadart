@@ -24,8 +24,8 @@ export 'litert_lm_finish_reason.dart';
 
 part 'litert_lm_embedding_native.dart';
 
-const _litertLmReleaseTag = 'v0.18.1-2';
-const _litertLmVersion = '0.18.1-2';
+const _litertLmReleaseTag = 'v0.18.1-3';
+const _litertLmVersion = '0.18.1-3';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -338,6 +338,10 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
+      'msvcp140.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
       'webgpu_dawn.dll',
     ],
     _ => const <String>[],
