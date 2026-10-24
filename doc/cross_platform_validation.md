@@ -848,7 +848,8 @@ or supplements it. Collection streams the single `logcat` under
 `remote-results` (at most 128 MiB) and writes the app process's lines from its
 test start record onward (at most 8 MiB, dropped lines included) to
 `report/native.log`, replacing any earlier one. A Dart VM service announcement,
-whose URL carries an auth code, is dropped wherever the process logs it. The
+whose URL carries an auth code, is dropped wherever the process logs it, unless
+it also carries a GPU failure marker, which leaves the log unbound. The
 log is bound to the journal only if all of these hold:
 
 - exactly one `flutter` record `00:00 +0: shared validation: <profile id>`
