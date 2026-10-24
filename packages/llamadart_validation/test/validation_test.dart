@@ -1276,7 +1276,7 @@ void main() {
           engine,
           selected: ValidationProfile.fromJson(data),
         );
-        expect(result.report.cases.length, native ? 12 : 18);
+        expect(result.report.cases.length, native ? 12 : 20);
         expect(result.report.assertionsPassed, true);
         final histories = engine.requests
             .where((r) => r['history'] != null)
@@ -2260,7 +2260,7 @@ void main() {
   });
 
   group('catalog 5 cancellation, restart, overlap and grammar cases', () {
-    test('GGUF quick core adds them; LiteRT omits the undefined contracts', () {
+    test('GGUF quick core adds them; LiteRT adds restart and overlap', () {
       expect(gguf('tiny-gguf-cpu').caseIds, [
         'C01.load',
         'C02.unicode',
@@ -2281,17 +2281,31 @@ void main() {
       final litert = profile();
       expect(litert.caseIds.where(catalogFiveCaseIds.contains), [
         'C08.cancel.early',
+        'C08.cancel.restart',
+        'C08.overlap',
       ]);
-      final omitted = {
-        for (final entry in (litert.catalog['cases'] as List).cast<Map>())
+      Map<Object?, Object?> omitted(int version) => {
+        for (final entry
+            in (litert.catalogForVersion(version)['cases'] as List).cast<Map>())
           if (entry['selected'] == false) entry['id']: entry['omission_reason'],
       };
-      expect(
-        omitted['C08.cancel.restart'],
-        'litert_restart_contract_undefined',
-      );
-      expect(omitted['C08.overlap'], 'litert_restart_contract_undefined');
-      expect(omitted['C12.grammar'], 'litert_grammar_unsupported');
+      expect(omitted(7).keys, isNot(contains('C08.cancel.restart')));
+      expect(omitted(7).keys, isNot(contains('C08.overlap')));
+      expect(omitted(7)['C12.grammar'], 'litert_grammar_unsupported');
+      for (final version in [5, 6]) {
+        expect(
+          litert.caseIdsForCatalog(version).where(catalogFiveCaseIds.contains),
+          ['C08.cancel.early'],
+        );
+        expect(
+          omitted(version)['C08.cancel.restart'],
+          'litert_restart_contract_undefined',
+        );
+        expect(
+          omitted(version)['C08.overlap'],
+          'litert_restart_contract_undefined',
+        );
+      }
       expect(litert.caseIdsForCatalog(4), isNot(contains('C08.cancel.early')));
       expect(
         gguf().caseIdsForCatalog(4).where(catalogFiveCaseIds.contains),
@@ -2460,7 +2474,7 @@ void main() {
       },
     );
 
-    test('Web records restart and overlap as NOT_RUN', () async {
+    test('GGUF Web records restart and overlap as NOT_RUN', () async {
       final engine = ggufEngine()..isWeb = true;
       final result = await run(engine, selected: gguf());
       for (final id in ['C08.cancel.restart', 'C08.overlap']) {
@@ -2470,6 +2484,45 @@ void main() {
       }
       expect(engine.overlapCalls, isEmpty);
       expect(record(result, 'C08.cancel.early')['status'], 'PASS');
+    });
+
+    test('LiteRT runs restart and overlap on native and Web', () async {
+      for (final web in [false, true]) {
+        final engine = FakeEngine()..isWeb = web;
+        final result = await run(engine);
+        expect(engine.overlapCalls, [true, false], reason: 'web=$web');
+        for (final id in ['C08.cancel.restart', 'C08.overlap']) {
+          expect(record(result, id)['status'], 'PASS', reason: '$id web=$web');
+        }
+        final failed = await run(
+          FakeEngine()
+            ..isWeb = web
+            ..overlapFault = 'overlap_accepted',
+        );
+        expect(record(failed, 'C08.overlap')['status'], 'FAIL');
+        expect(failed.report.qualified, false);
+      }
+    });
+
+    test('catalog 6 LiteRT journals keep their restart omissions', () async {
+      final selected = profile();
+      final result = await run(FakeEngine(), selected: selected);
+      final events = (jsonDecode(jsonEncode(result.events)) as List)
+          .cast<Map<String, dynamic>>();
+      dropUndeclared(events, selected, 6);
+      events.first['catalog'] = selected.catalogForVersion(6);
+      events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+      final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+      expect(report.problems, isEmpty);
+      expect(
+        report.cases.map((e) => e['case_id']),
+        isNot(anyOf(contains('C08.cancel.restart'), contains('C08.overlap'))),
+      );
+      events.first['case_ids'] = selected.caseIds;
+      expect(
+        ValidationReport.parse(events.map(jsonEncode).join('\n')).problems,
+        contains('Case inventory does not match the profile'),
+      );
     });
 
     test(

@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- LiteRT-LM native embedding loads throw `LlamaUnsupportedException` on Linux, Windows and Android x86_64 instead of failing at engine creation or crashing the process; they stay available on macOS arm64, iOS arm64 and Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators) ([#1367](https://github.com/leehack/llamadart/issues/1367)).
+
 ## 0.16.1
 
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.18.1-2`: on SME2 CPUs (verified on Apple M4 and iPhone 16 Pro), CPU chat and audio embeddings are deterministic again ([#1340](https://github.com/leehack/llamadart/issues/1340)) and Gemma 4 CPU decode is faster again ([litert-lm-native#84](https://github.com/leehack/litert-lm-native/issues/84); 1.56× on M4, 1.2× on iPhone 16 Pro), while its CPU prefill is 15–30% slower than `v0.18.1`. Output and speed on non-SME2 CPUs (Linux arm64, Windows x64) are unchanged. Image and audio embeddings shift slightly from core `0.16.0`, so re-embed stored vectors of image or audio content; text-only vectors are unchanged. Flutter Apple apps get it with `llamadart_litert_lm_flutter` `0.16.1`.

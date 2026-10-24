@@ -350,7 +350,10 @@ class ValidationProfile {
           if (!nativeReference) 'C08.cancel',
           if (!nativeReference && catalogVersion >= 5) ...[
             'C08.cancel.early',
-            if (runtime == 'gguf') ...['C08.cancel.restart', 'C08.overlap'],
+            if (runtime == 'gguf' || catalogVersion >= 7) ...[
+              'C08.cancel.restart',
+              'C08.overlap',
+            ],
           ],
           'C09.reload',
           if (!nativeReference) ...[
