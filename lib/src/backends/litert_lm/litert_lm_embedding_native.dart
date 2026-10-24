@@ -10,6 +10,7 @@ extension LiteRtLmEmbeddingRuntime on LiteRtLmRuntimeClient {
     required int maxInputLength,
     required int numberOfThreads,
   }) async {
+    liteRtLmEnsureNativeEmbeddingsQualified();
     ensureLiteRtLmNativeEmbeddingBackend(backend);
     _ensureLibrariesLoaded();
     final file = File(modelPath).openSync();
