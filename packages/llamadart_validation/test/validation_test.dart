@@ -1883,51 +1883,45 @@ void main() {
     expect(runner.caseDeadline('C03.raw'), const Duration(seconds: 60));
   });
 
-  test(
-    'only the measured LiteRT GPU profile extends engine create deadlines',
-    () {
-      for (final file in Directory(
-        'assets/profiles',
-      ).listSync().whereType<File>()) {
-        final selected = ValidationProfile.fromJson(
-          jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
-        );
+  test('only measured LiteRT profiles extend engine create deadlines', () {
+    const measured = {
+      'qwen35-litert-gpu': Duration(seconds: 120),
+      'qwen35-litert-cpu': Duration(seconds: 180),
+    };
+    for (final file in Directory(
+      'assets/profiles',
+    ).listSync().whereType<File>()) {
+      final selected = ValidationProfile.fromJson(
+        jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
+      );
+      final extended = measured[selected.id];
+      expect(selected.engineCreateCaseTimeout, extended, reason: selected.id);
+      final runner = ValidationRunner(
+        profile: selected,
+        engine: FakeEngine(),
+        emit: (_) async {},
+      );
+      for (final id in selected.caseIds) {
         expect(
-          selected.engineCreateCaseTimeout,
-          selected.id == 'qwen35-litert-gpu'
-              ? const Duration(seconds: 120)
-              : null,
-          reason: selected.id,
-        );
-        final runner = ValidationRunner(
-          profile: selected,
-          engine: FakeEngine(),
-          emit: (_) async {},
-        );
-        for (final id in selected.caseIds) {
-          expect(
-            runner.caseDeadline(id),
-            selected.isEmbedding
-                ? const Duration(seconds: 300)
-                : selected.id == 'qwen35-litert-gpu' &&
-                      ValidationRunner.engineReloadCaseIds.contains(id)
-                ? const Duration(seconds: 120)
-                : const Duration(seconds: 60),
-            reason: '${selected.id} $id',
-          );
-        }
-        expect(
-          runner.caseDeadline('C02.unicode', firstUse: true),
+          runner.caseDeadline(id),
           selected.isEmbedding
               ? const Duration(seconds: 300)
-              : selected.id == 'qwen35-litert-gpu'
-              ? const Duration(seconds: 120)
+              : extended != null &&
+                    ValidationRunner.engineReloadCaseIds.contains(id)
+              ? extended
               : const Duration(seconds: 60),
-          reason: selected.id,
+          reason: '${selected.id} $id',
         );
       }
-    },
-  );
+      expect(
+        runner.caseDeadline('C02.unicode', firstUse: true),
+        selected.isEmbedding
+            ? const Duration(seconds: 300)
+            : extended ?? const Duration(seconds: 60),
+        reason: selected.id,
+      );
+    }
+  });
 
   test('engine create deadline override leaves other cases bounded', () async {
     Future<Map<String, dynamic>> reload(ValidationProfile selected) async {
