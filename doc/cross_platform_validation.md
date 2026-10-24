@@ -1631,7 +1631,7 @@ is handed back, the window in which `tts` cancellations were dropped until
 [#596](https://github.com/leehack/llamadart/pull/596), and once after a wait.
 The second must report `cancel_in_flight`, which is true only if the adapter
 had not seen the task finish when it cancelled; it cannot show that the
-generation had begun. Exceeding any budget fails the run; if the footprint
+generation had begun; `tts` also records where it landed (see the speech README, [#627](https://github.com/leehack/llamadart/issues/627)). Exceeding any budget fails the run; if the footprint
 cannot be sampled, the memory bounds record `SKIP` with a reason, and they
 are the only checks a passing run may leave unmeasured or unapplied.
 GGUF STT additionally compares file and bytes inputs and runs four generated
