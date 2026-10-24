@@ -9,6 +9,14 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test('examples-tests row names the example package CI job', () {
+    final row = testMatrixRows.singleWhere((r) => r.id == 'examples-tests');
+    expect(row.tier, 'targeted');
+    expect(row.command, contains('"Example Package Tests"'));
+    expect(row.command, contains('"Web Chat Contract"'));
+    expect(row.command, contains('flutter test test test_vm'));
+  });
+
   test(
     'Genkit matrix exposes independent contract native and release lanes',
     () {
@@ -113,6 +121,7 @@ void main() {
       expect(ids, contains('gemma4-webgpu-mem64'));
       expect(ids, contains('physical-ios-speech-e2e'));
       expect(ids, contains('decision-model-smoke'));
+      expect(ids, contains('decision-model-web-smoke'));
       expect(ids, contains('image-generation-smoke'));
       expect(ids, contains('image-exit-teardown'));
       expect(ids, contains('chat-app-image-generation-smoke'));
@@ -208,6 +217,7 @@ void main() {
         }
       }
       expect(referenced, contains('decision-model-smoke'));
+      expect(referenced, contains('decision-model-web-smoke'));
       expect(referenced, contains('image-generation-smoke'));
       expect(referenced, contains('image-exit-teardown'));
       expect(referenced, contains('chat-app-macos-quit'));

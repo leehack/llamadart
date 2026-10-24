@@ -491,6 +491,40 @@ void main() {
     },
   );
 
+  test('Example Package Tests run every other example package', () {
+    final job = readWorkflow('ci')['jobs']['example-packages'] as Map;
+    final steps = job['steps'] as List;
+    expect(job.containsKey('continue-on-error'), isFalse);
+    for (final step in steps.cast<Map>()) {
+      expect(step.containsKey('continue-on-error'), isFalse, reason: '$step');
+    }
+    final tested = {
+      for (final step in steps.cast<Map>())
+        if (step['working-directory'] case final String dir) dir: step,
+    };
+    final packages = Directory('example')
+        .listSync()
+        .whereType<Directory>()
+        .map((dir) => dir.path.replaceAll(r'\', '/'))
+        .where((dir) => File('$dir/pubspec.yaml').existsSync())
+        .where((dir) => Directory('$dir/test').existsSync())
+        .toSet();
+    expect(packages, contains('example/chat_app'));
+    expect(tested.keys.toSet(), packages.difference({'example/chat_app'}));
+    for (final MapEntry(key: dir, value: step) in tested.entries) {
+      final pubspec = File('$dir/pubspec.yaml').readAsStringSync();
+      final runner =
+          pubspec.contains(RegExp(r'^\s+sdk: flutter$', multiLine: true))
+          ? 'flutter'
+          : 'dart';
+      expect(step['if'], r'${{ !cancelled() }}', reason: dir);
+      expect('${step['run']}'.trim().split('\n'), [
+        'flutter pub get',
+        'TMPDIR="\$(mktemp -d)" $runner test --exclude-tags local-only',
+      ], reason: dir);
+    }
+  });
+
   test('Web Chat Contract opts the chat app out of stable_diffusion', () {
     final steps =
         readWorkflow('ci')['jobs']['web-chat-contract']['steps'] as List;
