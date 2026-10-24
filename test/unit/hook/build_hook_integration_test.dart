@@ -8,12 +8,14 @@ import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
+import 'package:llamadart/src/hook/windows_file_version.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hooks_runner_layout.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
+import '../../support/windows_version_resource.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
@@ -715,6 +717,139 @@ void main() {
     );
   });
 
+  group('both runtime families ship the Visual C++ runtime', () {
+    final bothRuntimes = PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_native_runtimes': ['both'],
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
+
+    Future<void> writeDll(
+      Directory bundle,
+      String name,
+      WindowsFileVersion version,
+    ) => File(
+      path.join(bundle.path, name),
+    ).writeAsBytes(windowsDllWithVersion(version, label: bundle.path));
+
+    test('the app bundles each runtime DLL once, the newer copy', () async {
+      await writeDll(bundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
+      await writeDll(bundleDir, 'vcruntime140.dll', (14, 51, 36247, 0));
+      await writeDll(bundleDir, 'vcruntime140_1.dll', (14, 51, 36247, 0));
+      await writeDll(litertBundleDir, 'msvcp140.dll', (14, 52, 36300, 0));
+      await writeDll(litertBundleDir, 'vcruntime140.dll', (14, 50, 35710, 0));
+      await File(
+        path.join(litertBundleDir.path, 'vcruntime140_1.dll'),
+      ).writeAsBytes(
+        await File(
+          path.join(bundleDir.path, 'vcruntime140_1.dll'),
+        ).readAsBytes(),
+      );
+      await writeDll(litertBundleDir, 'vcruntime140_threads.dll', (
+        14,
+        52,
+        36300,
+        0,
+      ));
+
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        userDefines: bothRuntimes,
+        check: (input, output) {
+          final files = {
+            for (final asset in output.assets.encodedAssets.where(
+              (asset) => asset.isCodeAsset,
+            ))
+              asset.asCodeAsset.id: asset.asCodeAsset.file!.toFilePath(),
+          };
+          final names = files.values.map(path.basename).toList();
+          expect(names.toSet(), hasLength(names.length));
+          WindowsFileVersion? versionOf(String name) => windowsFileVersion(
+            File(
+              files.values.singleWhere((file) => path.basename(file) == name),
+            ).readAsBytesSync(),
+          );
+          expect(versionOf('msvcp140.dll'), (14, 52, 36300, 0));
+          expect(versionOf('vcruntime140.dll'), (14, 51, 36247, 0));
+          expect(versionOf('vcruntime140_1.dll'), (14, 51, 36247, 0));
+          expect(versionOf('vcruntime140_threads.dll'), (14, 52, 36300, 0));
+          expect(
+            files.keys,
+            contains('package:llamadart/litert_lm_vcruntime140_threads'),
+          );
+          expect(
+            files.keys,
+            isNot(contains('package:llamadart/litert_lm_msvcp140')),
+          );
+          for (final library in _windowsLiteRtLibraries) {
+            expect(names, contains(library));
+          }
+        },
+      );
+    });
+
+    test('equal file versions keep the llama.cpp copy', () async {
+      await writeDll(bundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
+      await writeDll(litertBundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
+      final llamaCppBytes = await File(
+        path.join(bundleDir.path, 'msvcp140.dll'),
+      ).readAsBytes();
+      expect(
+        await File(
+          path.join(litertBundleDir.path, 'msvcp140.dll'),
+        ).readAsBytes(),
+        isNot(llamaCppBytes),
+      );
+
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        userDefines: bothRuntimes,
+        check: (input, output) {
+          final bundled = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset.file!.toFilePath())
+              .where((file) => path.basename(file) == 'msvcp140.dll')
+              .toList();
+          expect(bundled, hasLength(1));
+          expect(File(bundled.single).readAsBytesSync(), llamaCppBytes);
+        },
+      );
+    });
+
+    test('a different unversioned library both ship fails the build', () async {
+      await File(
+        path.join(bundleDir.path, 'msvcp140.dll'),
+      ).writeAsString('llama.cpp copy');
+      await File(
+        path.join(litertBundleDir.path, 'msvcp140.dll'),
+      ).writeAsString('LiteRT-LM copy');
+
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.windows,
+          targetArchitecture: Architecture.x64,
+          userDefines: bothRuntimes,
+          check: (input, output) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => '$error',
+            'message',
+            contains('both ship a different `msvcp140.dll`'),
+          ),
+        ),
+      );
+    });
+  });
+
   test(
     'only LiteRT-LM assets follow the resolved graph',
     () => expectOnlyLiteRtLmFollowsResolvedGraph(
@@ -788,6 +923,10 @@ const List<String> _windowsLiteRtLibraries = [
   'webgpu_dawn.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
+  'msvcp140.dll',
+  'vcruntime140.dll',
+  'vcruntime140_1.dll',
+  'vcruntime140_threads.dll',
 ];
 
 const List<String> _windowsLiteRtAssetNames = [

@@ -322,7 +322,9 @@ bool _loadsReport(
 /// ASR sources and the conversation finish reason. v0.18.1 keeps the
 /// LiteRT-LM source and moves LiteRT to `ca21dc99`, where both rules hold and
 /// the undelegated-node count can only grow. v0.18.1-1 and v0.18.1-2 add only XNNPACK
-/// CPU kernel patches to those sources.
+/// CPU kernel patches to those sources. v0.18.1-3 changes only the Windows
+/// runtime. v0.18.1-4 patches only LiteRT's CPU options identifier, which
+/// `compiled_model.cc` reads only when the CPU accelerator is requested.
 const _liteRtGpuOnlyDelegationTags = {
   '0.18.0',
   '0.18.0-1',
@@ -331,6 +333,8 @@ const _liteRtGpuOnlyDelegationTags = {
   '0.18.1',
   '0.18.1-1',
   '0.18.1-2',
+  '0.18.1-3',
+  '0.18.1-4',
 };
 
 /// A logcat `threadtime` record's tag:

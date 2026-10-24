@@ -24,6 +24,7 @@ import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/hook/native_runtime_coexistence.dart';
+import 'package:llamadart/src/hook/windows_file_version.dart';
 
 const _nativeRepoSlug = 'leehack/llamadart-native';
 const _stableDiffusionNativeRepoSlug = 'leehack/stable-diffusion-native';
@@ -438,7 +439,7 @@ void main(List<String> args) async {
     }
     await reportDir.create(recursive: true);
 
-    final copiedFileNames = <String>{};
+    final emittedFilePaths = <String, String>{};
     final usedAssetNames = <String>{};
 
     final emittedLibraries = <NativeLibraryDescriptor>[];
@@ -479,7 +480,7 @@ void main(List<String> args) async {
 
         for (final emittedFileName in emittedFileNames) {
           final loweredFileName = emittedFileName.toLowerCase();
-          if (copiedFileNames.contains(loweredFileName)) {
+          if (emittedFilePaths.containsKey(loweredFileName)) {
             if (emittedFileName == library.fileName) {
               log.warning(
                 'Duplicate library filename detected, skipping: '
@@ -489,9 +490,8 @@ void main(List<String> args) async {
             continue;
           }
 
-          copiedFileNames.add(loweredFileName);
-
           final destinationPath = path.join(reportDirPath, emittedFileName);
+          emittedFilePaths[loweredFileName] = destinationPath;
           await File(library.filePath).copy(destinationPath);
           emittedLibraries.add(describeNativeLibrary(destinationPath));
         }
@@ -527,6 +527,7 @@ void main(List<String> args) async {
         packageRoot: pkgRoot,
         reportDirPath: reportDirPath,
         usedAssetNames: usedAssetNames,
+        llamaCppFilePaths: emittedFilePaths,
         log: log,
       );
     }
@@ -1466,6 +1467,7 @@ Future<void> _emitLiteRtLmAssets({
   required String packageRoot,
   required String reportDirPath,
   required Set<String> usedAssetNames,
+  required Map<String, String> llamaCppFilePaths,
   required Logger log,
 }) async {
   final bundleSpec = _liteRtLmBundleSpecForCode(code);
@@ -1512,6 +1514,15 @@ Future<void> _emitLiteRtLmAssets({
       log.info('Skipping duplicate LiteRT-LM library `$fileName`.');
       continue;
     }
+    final llamaCppPath = llamaCppFilePaths[loweredFileName];
+    if (llamaCppPath != null) {
+      await _shareLibraryWithLlamaCpp(
+        liteRtLmPath: sourcePath,
+        llamaCppPath: llamaCppPath,
+        log: log,
+      );
+      continue;
+    }
     final destinationPath = path.join(reportDirPath, fileName);
     await File(sourcePath).copy(destinationPath);
     if (code.targetOS == OS.iOS) {
@@ -1534,6 +1545,63 @@ Future<void> _emitLiteRtLmAssets({
       '`package:$_packageName/$assetName`.',
     );
   }
+}
+
+/// Emits one copy of a library that both the llama.cpp and the LiteRT-LM
+/// bundle ship, since an app may bundle each file name only once.
+///
+/// On Windows both bundles ship the Visual C++ runtime app-locally. When both
+/// copies carry a Windows version resource, the newer file version serves
+/// both, as Microsoft keeps the runtime backward compatible, and a tie keeps
+/// the llama.cpp copy. Identical unversioned files share one copy; different
+/// unversioned files fail the build instead of guessing.
+Future<void> _shareLibraryWithLlamaCpp({
+  required String liteRtLmPath,
+  required String llamaCppPath,
+  required Logger log,
+}) async {
+  final fileName = path.basename(llamaCppPath);
+  final liteRtLmBytes = await File(liteRtLmPath).readAsBytes();
+  final llamaCppBytes = await File(llamaCppPath).readAsBytes();
+  final liteRtLmVersion = windowsFileVersion(liteRtLmBytes);
+  final llamaCppVersion = windowsFileVersion(llamaCppBytes);
+  if (liteRtLmVersion == null || llamaCppVersion == null) {
+    if (_sameBytes(liteRtLmBytes, llamaCppBytes)) {
+      log.info('LiteRT-LM shares the llama.cpp copy of `$fileName`.');
+      return;
+    }
+    throw Exception(
+      'The llama.cpp and LiteRT-LM bundles both ship a different '
+      '`$fileName` without a Windows file version, and an app can bundle '
+      'only one. Exclude one runtime with $nativeRuntimesUserDefineKey.',
+    );
+  }
+  if (isNewerWindowsFileVersion(liteRtLmVersion, llamaCppVersion)) {
+    await File(liteRtLmPath).copy(llamaCppPath);
+    log.info(
+      'Bundling the LiteRT-LM copy of `$fileName` '
+      '(${formatWindowsFileVersion(liteRtLmVersion)}) for both runtimes; '
+      'the llama.cpp copy is ${formatWindowsFileVersion(llamaCppVersion)}.',
+    );
+    return;
+  }
+  log.info(
+    'Bundling the llama.cpp copy of `$fileName` '
+    '(${formatWindowsFileVersion(llamaCppVersion)}) for both runtimes; '
+    'the LiteRT-LM copy is ${formatWindowsFileVersion(liteRtLmVersion)}.',
+  );
+}
+
+bool _sameBytes(List<int> a, List<int> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+  for (var index = 0; index < a.length; index++) {
+    if (a[index] != b[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 Future<void> _emitStableDiffusionAssets({
