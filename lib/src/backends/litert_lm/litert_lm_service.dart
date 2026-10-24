@@ -87,6 +87,8 @@ class LiteRtLmService {
   /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client,
   /// [readBundleChatTemplate] replaces [readLiteRtLmBundleChatTemplate], and
   /// [readBundleFirstChannel] replaces [readLiteRtLmBundleFirstChannel].
+  /// [readFinishReasonSupport] replaces
+  /// [LiteRtLmRuntimeClient.supportsFinishReasons] on a fresh client.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
@@ -95,6 +97,7 @@ class LiteRtLmService {
     LiteRtLmBundleCapabilitiesReader? readBundleCapabilities,
     LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
     LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
+    bool Function()? readFinishReasonSupport,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
        _readBundleCapabilities =
            readBundleCapabilities ??
@@ -104,6 +107,9 @@ class LiteRtLmService {
            readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
        _readBundleFirstChannel =
            readBundleFirstChannel ?? readLiteRtLmBundleFirstChannel,
+       _readFinishReasonSupport =
+           readFinishReasonSupport ??
+           (() => LiteRtLmRuntimeClient().supportsFinishReasons),
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
@@ -113,6 +119,7 @@ class LiteRtLmService {
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
   final LiteRtLmBundleFirstChannelReader _readBundleFirstChannel;
+  final bool Function() _readFinishReasonSupport;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
@@ -139,6 +146,8 @@ class LiteRtLmService {
   String? _bundleTemplateAdapter;
   bool _bundleTemplateMisreadsContent = false;
   ({bool penalties, bool thinkingBudget})? _runtimeGenerationControls;
+  bool? _runtimeFinishReasons;
+  BackendGenerationLimit? _lastGenerationLimit;
   bool? _bundleDeclaresThinkingChannel;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
@@ -375,6 +384,7 @@ class LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     resetPerformanceMetrics();
+    _lastGenerationLimit = null;
     _checkContextHandle(contextHandle);
     _requireConversationEngine();
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
@@ -453,6 +463,7 @@ class LiteRtLmService {
         }
         yield chunk;
       }
+      _lastGenerationLimit = _generationLimitOf(client);
     } on StateError catch (error, stackTrace) {
       _throwSendFailure(error, stackTrace, outputStarted: outputStarted);
     } finally {
@@ -508,6 +519,7 @@ class LiteRtLmService {
     DateTime? templateNow,
   }) async* {
     resetPerformanceMetrics();
+    _lastGenerationLimit = null;
     _checkContextHandle(contextHandle);
     _requireConversationEngine();
     if (messages.isEmpty) {
@@ -652,6 +664,7 @@ class LiteRtLmService {
         }
         yield chunk;
       }
+      _lastGenerationLimit = _generationLimitOf(client);
     } on StateError catch (error, stackTrace) {
       _throwSendFailure(
         error,
@@ -1698,6 +1711,32 @@ class LiteRtLmService {
       penalties: runtime.penalties,
       thinkingBudget: runtime.thinkingBudget && _bundleBoundsThinking(),
     );
+  }
+
+  /// Whether the LiteRT-LM runtime reports why each generation ended, so
+  /// [lastGenerationLimit] can tell a token limit from a natural stop.
+  ///
+  /// Probes a fresh client, so a model load that asks creates no engine.
+  bool reportsFinishReasons() =>
+      _runtimeFinishReasons ??= _readFinishReasonSupport();
+
+  /// The token limit that ended the latest generation, or null when it ended
+  /// at a stop token, a stop sequence, cancellation or an error, is still
+  /// running, or ran on a runtime without [reportsFinishReasons].
+  BackendGenerationLimit? get lastGenerationLimit => _lastGenerationLimit;
+
+  // Cancellation, including a Dart stop sequence, which cancels the native
+  // turn, wins over a limit the runtime reported at the same time.
+  BackendGenerationLimit? _generationLimitOf(LiteRtLmRuntimeClient client) {
+    if (_cancelRequested) {
+      return null;
+    }
+    return switch (client.lastFinishReason) {
+      LiteRtLmFinishReason.length => BackendGenerationLimit.maxTokens,
+      LiteRtLmFinishReason.contextExhausted =>
+        BackendGenerationLimit.contextSize,
+      _ => null,
+    };
   }
 
   ({bool penalties, bool thinkingBudget}) _readRuntimeGenerationControls() {

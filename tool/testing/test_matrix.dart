@@ -871,17 +871,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real .litertlm chat, thinking channel reassembly, streaming tool '
-        'calls, and optional byte-backed audio question answering with an '
-        'exact expected answer',
+        'real .litertlm chat, stop and maxTokens length finish reasons, an '
+        'automatic tool loop cut off at maxTokens, thinking channel '
+        'reassembly, streaming tool calls, and optional byte-backed audio '
+        'question answering with an exact expected answer',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'litert-lm-chat-features-smoke --model-path <model.litertlm> '
         '--backend auto --audio-path <audio.wav> '
         '--expect <expected-answer>',
     useWhen:
-        'LiteRT-LM chat templates, thinking, tool calling, audio input, or '
-        'ChatSession work. Omit --audio-path and --expect for the base '
+        'LiteRT-LM chat templates, finish reasons, thinking, tool calling, '
+        'audio input, or ChatSession work. Omit --audio-path and --expect for the base '
         'chat-only smoke.',
   ),
   TestMatrixRow(

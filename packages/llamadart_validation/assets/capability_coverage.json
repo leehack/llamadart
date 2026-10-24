@@ -111,7 +111,7 @@
       ],
       "exemption": {
         "id": "automatic-tool-loops",
-        "reason": "Reliable runtime termination and automatic-loop rollback need their own validation contract. Ordinary best-effort tool-call cases are insufficient.",
+        "reason": "Reliable runtime termination and automatic-loop rollback, including native LiteRT-LM finish reasons, need their own validation contract; the litert-lm-chat-features-smoke local check covers the LiteRT-LM cutoff. Ordinary best-effort tool-call cases are insufficient.",
         "issue": "https://github.com/leehack/llamadart/issues/919"
       }
     },

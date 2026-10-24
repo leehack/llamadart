@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:dinja/dinja.dart';
 import 'package:llamadart/llamadart.dart' as api;
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_cache.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
@@ -4265,6 +4266,157 @@ void main() {
     }
   }
 
+  group('finish reasons', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+
+    test('reportsFinishReasons probes once without the client factory', () {
+      for (final supported in [false, true]) {
+        var factoryCalls = 0;
+        var probes = 0;
+        final service = LiteRtLmService(
+          clientFactory: () {
+            factoryCalls++;
+            return _FakeLiteRtLmRuntimeClient();
+          },
+          readFinishReasonSupport: () {
+            probes++;
+            return supported;
+          },
+        );
+        try {
+          expect(service.reportsFinishReasons(), supported);
+          expect(service.reportsFinishReasons(), supported);
+          expect(probes, 1);
+          expect(factoryCalls, 0);
+        } finally {
+          service.dispose();
+        }
+      }
+    });
+
+    final expectations = <LiteRtLmFinishReason?, BackendGenerationLimit?>{
+      LiteRtLmFinishReason.length: BackendGenerationLimit.maxTokens,
+      LiteRtLmFinishReason.contextExhausted: BackendGenerationLimit.contextSize,
+      LiteRtLmFinishReason.stop: null,
+      LiteRtLmFinishReason.unknown: null,
+      LiteRtLmFinishReason.cancelled: null,
+      LiteRtLmFinishReason.error: null,
+      null: null,
+    };
+
+    for (final chat in [false, true]) {
+      Stream<List<int>> generate(
+        LiteRtLmService service,
+        int context, {
+        List<String> stopSequences = const [],
+      }) {
+        final generationParams = GenerationParams(
+          maxTokens: 4,
+          stopSequences: stopSequences,
+        );
+        return chat
+            ? service.generateChat(context, const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+              ], generationParams)
+            : service.generate(context, 'Hi', generationParams);
+      }
+
+      final kind = chat ? 'chat' : 'raw';
+
+      for (final MapEntry(key: reason, value: limit) in expectations.entries) {
+        test('$kind generation maps $reason to $limit', () async {
+          final client = _FakeLiteRtLmRuntimeClient();
+          final service = LiteRtLmService(clientFactory: () => client);
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            final done = generate(service, context).drain<void>();
+            await client.generateStarted.future;
+            client
+              ..generated.add('partial')
+              ..finishReason = reason;
+            await client.generated.close();
+            await done;
+            expect(service.lastGenerationLimit, limit);
+          } finally {
+            service.dispose();
+          }
+        });
+      }
+
+      test('$kind cancellation wins over a reported limit', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          final done = generate(service, context).drain<void>();
+          await client.generateStarted.future;
+          client
+            ..generated.add('partial')
+            ..finishReason = LiteRtLmFinishReason.length;
+          service.cancelGeneration();
+          await client.generated.close();
+          await done;
+          expect(service.lastGenerationLimit, isNull);
+        } finally {
+          service.dispose();
+        }
+      });
+
+      test('$kind stop sequence wins over a reported limit', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          final text = generate(
+            service,
+            context,
+            stopSequences: ['END'],
+          ).expand((chunk) => chunk).toList();
+          await client.generateStarted.future;
+          client
+            ..generated.add('done END tail')
+            ..finishReason = LiteRtLmFinishReason.length;
+          await client.generated.close();
+          expect(utf8.decode(await text), 'done ');
+          expect(service.lastGenerationLimit, isNull);
+        } finally {
+          service.dispose();
+        }
+      });
+
+      test('$kind failed generation clears the previous limit', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          final first = generate(service, context).drain<void>();
+          await client.generateStarted.future;
+          client.finishReason = LiteRtLmFinishReason.length;
+          await client.generated.close();
+          await first;
+          expect(service.lastGenerationLimit, BackendGenerationLimit.maxTokens);
+
+          client.generated = StreamController<String>();
+          final second = expectLater(
+            generate(service, context).drain<void>(),
+            throwsA(isA<StateError>()),
+          );
+          await pumpEventQueue();
+          client.generated.addError(StateError('native failure'));
+          await client.generated.close();
+          await second;
+          expect(service.lastGenerationLimit, isNull);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+  });
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -6742,6 +6894,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   int? lastThinkingTokenBudget;
   bool samplingPenalties = true;
   bool thinkingBudget = true;
+  LiteRtLmFinishReason? finishReason;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
@@ -6895,6 +7048,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   @override
   bool get supportsThinkingBudget => thinkingBudget;
+
+  @override
+  LiteRtLmFinishReason? get lastFinishReason => finishReason;
 
   @override
   Stream<String> generate(

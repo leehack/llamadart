@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Native LiteRT-LM reports `length` instead of `stop` when a reply reaches `maxTokens` or fills the context, and automatic `sendWithTools`/`completeWithTools` loops run on it, stopping `truncated` without running tools on a cut-off reply. This needs a runtime whose `stream_proxy_finish_reason_abi_version` export returns 1 (litert-lm-native `v0.18.0-3` or later, including the default pin); on older runtimes loops still throw `LlamaUnsupportedException`. `LiteRtLmRuntimeClient` adds `supportsFinishReasons` and `lastFinishReason`. Web LiteRT-LM is unchanged ([#919](https://github.com/leehack/llamadart/issues/919)).
+
 ## 0.16.1
 
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.18.1-2`: on SME2 CPUs (verified on Apple M4 and iPhone 16 Pro), CPU chat and audio embeddings are deterministic again ([#1340](https://github.com/leehack/llamadart/issues/1340)) and Gemma 4 CPU decode is faster again ([litert-lm-native#84](https://github.com/leehack/litert-lm-native/issues/84); 1.56× on M4, 1.2× on iPhone 16 Pro), while its CPU prefill is 15–30% slower than `v0.18.1`. Output and speed on non-SME2 CPUs (Linux arm64, Windows x64) are unchanged. Image and audio embeddings shift slightly from core `0.16.0`, so re-embed stored vectors of image or audio content; text-only vectors are unchanged. Flutter Apple apps get it with `llamadart_litert_lm_flutter` `0.16.1`.

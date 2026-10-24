@@ -345,6 +345,7 @@ void main() {
       'StateLoadResult',
       'LlamaEngineBackendHooks',
       'LiteRtLmBackend',
+      'LiteRtLmFinishReason',
       'LiteRtLmRuntimeClient',
       'LiteRtLmRuntimeMetrics',
       'LiteRtLmRuntimeResult',

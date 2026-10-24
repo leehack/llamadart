@@ -219,6 +219,207 @@ void main() {
     });
   }
 
+  group('finish reasons', () {
+    api.ToolDefinition weatherTool(void Function() onRun) => api.ToolDefinition(
+      name: 'weather',
+      description: 'Weather',
+      parameters: const [],
+      handler: (_) async {
+        onRun();
+        return 'sunny';
+      },
+    );
+
+    for (final routed in [false, true]) {
+      Future<
+        ({LlamaEngine engine, LlamaBackend backend, _FakeLiteRtLmWorker worker})
+      >
+      load({required bool reports, BackendGenerationLimit? limit}) async {
+        final worker = _FakeLiteRtLmWorker(
+          tokenizeResponse: const <int>[],
+          detokenizeResponse: '',
+          generationChunks: [utf8.encode('Hello')],
+          reportsFinishReasons: reports,
+          generationLimit: limit,
+        );
+        final liteRt = LiteRtLmBackend(initialSendPort: worker.sendPort);
+        final LlamaBackend backend = routed
+            ? NativeAutoBackend(liteRtLmFactory: () => liteRt)
+            : liteRt;
+        final engine = LlamaEngine(backend);
+        addTearDown(() async {
+          await engine.dispose();
+          worker.close();
+        });
+        await engine.loadModel(modelFile.path);
+        return (engine: engine, backend: backend, worker: worker);
+      }
+
+      const messages = [
+        api.LlamaChatMessage.fromText(role: api.LlamaChatRole.user, text: 'hi'),
+      ];
+      const params = api.GenerationParams(maxTokens: 1);
+
+      test(
+        'a reported token limit finishes with length (routed: $routed)',
+        () async {
+          for (final limit in [
+            BackendGenerationLimit.maxTokens,
+            BackendGenerationLimit.contextSize,
+          ]) {
+            final loaded = await load(reports: true, limit: limit);
+            expect(
+              (loaded.backend as BackendGenerationLimitSupport)
+                  .generationLimitUnsupportedReason,
+              isNull,
+            );
+
+            final chunks = await loaded.engine
+                .create(messages, params: params)
+                .toList();
+            expect(chunks.last.choices.single.finishReason, 'length');
+            expect(completionGenerationLimit(chunks.last), limit);
+
+            final raw = loaded.engine.generate('hi', params: params);
+            expect(await raw.join(), 'Hello');
+            expect(rawGenerationLimit(raw), limit);
+          }
+        },
+      );
+
+      test('no reported limit finishes with stop (routed: $routed)', () async {
+        final loaded = await load(reports: true);
+
+        final chunks = await loaded.engine
+            .create(messages, params: params)
+            .toList();
+        expect(chunks.last.choices.single.finishReason, 'stop');
+        expect(completionGenerationLimit(chunks.last), isNull);
+      });
+
+      test('automatic tool loops run on a reporting runtime and stop '
+          'truncated at a limit (routed: $routed)', () async {
+        var toolRuns = 0;
+        final tools = [weatherTool(() => toolRuns++)];
+
+        final completed = await load(reports: true);
+        final completedSession = api.ChatSession(
+          completed.engine,
+          maxContextTokens: 0,
+        );
+        final done = await completedSession.completeWithTools(
+          const [api.LlamaTextContent('New turn')],
+          tools: tools,
+          params: params,
+        );
+        expect(done.stopReason, api.LlamaToolLoopStopReason.completed);
+        expect(done.completion.finishReason, api.LlamaFinishReason.stop);
+        expect(completedSession.history, hasLength(2));
+
+        final limited = await load(
+          reports: true,
+          limit: BackendGenerationLimit.maxTokens,
+        );
+        final limitedSession = api.ChatSession(
+          limited.engine,
+          maxContextTokens: 0,
+        );
+        final truncated = await limitedSession.completeWithTools(
+          const [api.LlamaTextContent('New turn')],
+          tools: tools,
+          params: params,
+        );
+        expect(truncated.stopReason, api.LlamaToolLoopStopReason.truncated);
+        expect(truncated.completion.finishReason, api.LlamaFinishReason.length);
+        expect(truncated.rolledBack, isTrue);
+        expect(limitedSession.history, isEmpty);
+        expect(toolRuns, 0);
+      });
+
+      test('a runtime without finish reasons keeps loops unsupported '
+          '(routed: $routed)', () async {
+        final loaded = await load(reports: false);
+        expect(
+          (loaded.backend as BackendGenerationLimitSupport)
+              .generationLimitUnsupportedReason,
+          allOf(
+            contains('v0.18.0-3'),
+            contains('stream_proxy_finish_reason_abi_version'),
+          ),
+        );
+        await expectLater(
+          api.ChatSession(loaded.engine).completeWithTools(
+            const [api.LlamaTextContent('New turn')],
+            tools: [weatherTool(() {})],
+            params: params,
+          ),
+          throwsA(isA<api.LlamaUnsupportedException>()),
+        );
+      });
+    }
+
+    test('a free forgets that the runtime reports finish reasons', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        reportsFinishReasons: true,
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+      try {
+        final model = await backend.modelLoad(
+          modelFile.path,
+          const ModelParams(),
+        );
+        expect(backend.generationLimitUnsupportedReason, isNull);
+        await backend.modelFree(model);
+        expect(backend.generationLimitUnsupportedReason, isNotNull);
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    });
+
+    test('a cancelled generation records no limit', () async {
+      for (final cancel in [false, true]) {
+        final worker = _FakeLiteRtLmWorker(
+          tokenizeResponse: const <int>[],
+          detokenizeResponse: '',
+          generationChunks: [utf8.encode('Hello')],
+          holdGeneration: true,
+          reportsFinishReasons: true,
+          generationLimit: BackendGenerationLimit.maxTokens,
+        );
+        final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+        try {
+          await backend.modelLoad(modelFile.path, const ModelParams());
+          final stream = backend.generate(1, 'hi', const GenerationParams());
+          final first = Completer<void>();
+          final subscription = stream.listen((_) {
+            if (!first.isCompleted) first.complete();
+          });
+          final done = subscription.asFuture<void>();
+          await first.future;
+          if (cancel) {
+            await subscription.cancel();
+          }
+          worker.releaseGeneration();
+          if (!cancel) {
+            await done;
+          }
+          await pumpEventQueue();
+          expect(
+            generationLimitReporterOf(backend)!.generationLimitOf(stream),
+            cancel ? isNull : BackendGenerationLimit.maxTokens,
+            reason: 'cancel: $cancel',
+          );
+        } finally {
+          await backend.dispose();
+          worker.close();
+        }
+      }
+    });
+  });
+
   test('implements backend diagnostics contracts', () {
     final backend = LiteRtLmBackend();
 
@@ -2864,6 +3065,8 @@ class _FakeLiteRtLmWorker {
     this.supportsAudioResponse,
     this.bundleCapabilitiesResponse,
     this.generationControlsResponse = (penalties: false, thinkingBudget: false),
+    this.reportsFinishReasons = false,
+    this.generationLimit,
   }) {
     _receivePort.listen(_handleMessage);
   }
@@ -2887,6 +3090,8 @@ class _FakeLiteRtLmWorker {
   final ({bool vision, bool audio, bool speculativeDecoding})?
   bundleCapabilitiesResponse;
   final ({bool penalties, bool thinkingBudget}) generationControlsResponse;
+  final bool reportsFinishReasons;
+  final BackendGenerationLimit? generationLimit;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
   final Completer<LiteRtLmGenerateRequest> generateReceived =
@@ -2922,11 +3127,15 @@ class _FakeLiteRtLmWorker {
         if (holdGeneration) {
           unawaited(
             _releaseGeneration.future.then(
-              (_) => message.sendPort.send(LiteRtLmDoneResponse()),
+              (_) => message.sendPort.send(
+                LiteRtLmDoneResponse(generationLimit: generationLimit),
+              ),
             ),
           );
         } else {
-          message.sendPort.send(LiteRtLmDoneResponse());
+          message.sendPort.send(
+            LiteRtLmDoneResponse(generationLimit: generationLimit),
+          );
         }
       case LiteRtLmGenerateChatRequest():
         if (generationErrorResponse != null) {
@@ -2939,14 +3148,20 @@ class _FakeLiteRtLmWorker {
         if (holdGeneration) {
           unawaited(
             _releaseGeneration.future.then(
-              (_) => message.sendPort.send(LiteRtLmDoneResponse()),
+              (_) => message.sendPort.send(
+                LiteRtLmDoneResponse(generationLimit: generationLimit),
+              ),
             ),
           );
         } else {
-          message.sendPort.send(LiteRtLmDoneResponse());
+          message.sendPort.send(
+            LiteRtLmDoneResponse(generationLimit: generationLimit),
+          );
         }
       case LiteRtLmModelLoadRequest():
-        message.sendPort.send(LiteRtLmHandleResponse(1));
+        message.sendPort.send(
+          LiteRtLmHandleResponse(1, reportsFinishReasons: reportsFinishReasons),
+        );
       case LiteRtLmContextCreateRequest():
         message.sendPort.send(LiteRtLmHandleResponse(1));
       case LiteRtLmTokenizeRequest():

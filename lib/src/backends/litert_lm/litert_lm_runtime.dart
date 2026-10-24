@@ -14,10 +14,12 @@ import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
 import 'litert_lm_embedding.dart';
 import 'litert_lm_embedding_bindings.dart' as emb;
+import 'litert_lm_finish_reason.dart';
 import 'litert_lm_last_error.dart';
 import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
+export 'litert_lm_finish_reason.dart';
 
 part 'litert_lm_embedding_native.dart';
 
@@ -68,6 +70,37 @@ String? liteRtLmStreamProxyCompatibilityError({
       'Expected callback ABI $_streamChunkCallbackAbiVersion from pinned '
       'litert-lm-native $_litertLmReleaseTag; detected $detectedAbi. Install the '
       'pinned runtime before using asynchronous generation.';
+}
+
+/// Looks up `stream_proxy_get_finish_reason` in [library] when its
+/// `stream_proxy_finish_reason_abi_version` export reports an understood ABI,
+/// and returns null when either export is missing or the version is not.
+///
+/// This is public only for unit tests.
+int Function(Pointer<Void> callbackData)? liteRtLmFinishReasonReader(
+  DynamicLibrary library,
+) {
+  int? abiVersion;
+  try {
+    abiVersion = library
+        .lookupFunction<
+          _ProxyCallbackAbiVersionNative,
+          _ProxyCallbackAbiVersionDart
+        >('stream_proxy_finish_reason_abi_version')();
+  } on ArgumentError {
+    abiVersion = null;
+  }
+  if (!liteRtLmFinishReasonAbiSupported(abiVersion)) {
+    return null;
+  }
+  try {
+    return library
+        .lookupFunction<_ProxyGetFinishReasonNative, _ProxyGetFinishReasonDart>(
+          'stream_proxy_get_finish_reason',
+        );
+  } on ArgumentError {
+    return null;
+  }
 }
 
 /// `litert_lm_engine_create` returned no engine for the requested backend,
@@ -489,6 +522,10 @@ typedef _ProxyDeleteDart = void Function(Pointer<Void> callbackData);
 typedef _ProxyCallbackAbiVersionNative = Int32 Function();
 typedef _ProxyCallbackAbiVersionDart = int Function();
 
+typedef _ProxyGetFinishReasonNative =
+    Int32 Function(Pointer<Void> callbackData);
+typedef _ProxyGetFinishReasonDart = int Function(Pointer<Void> callbackData);
+
 typedef _LoadGlobalNative = Pointer<Void> Function(Pointer<Utf8> path);
 typedef _LoadGlobalDart = Pointer<Void> Function(Pointer<Utf8> path);
 
@@ -699,6 +736,28 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Whether the active native runtime reports why each streamed turn ended:
+  /// its `stream_proxy_finish_reason_abi_version` export returns 1
+  /// (litert-lm-native `v0.18.0-3` and later) and it streams through the
+  /// embedded StreamProxy.
+  ///
+  /// Runtime load failures are reported as unsupported rather than thrown so
+  /// callers can use this as a capability probe.
+  bool get supportsFinishReasons {
+    try {
+      _ensureLibrariesLoaded();
+      return _proxyCreate != null && _proxyGetFinishReason != null;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Why the latest [generateMessageJson] or [generate] stream ended.
+  ///
+  /// Set before that stream closes. Null while a stream is running, before
+  /// the first one, and on runtimes without [supportsFinishReasons].
+  LiteRtLmFinishReason? get lastFinishReason => _lastFinishReason;
+
   /// What the `.litertlm` bundle at [modelPath] declares in its section
   /// metadata, read without creating an engine: whether it takes image and
   /// audio input, and whether it has a speculative decoding drafter.
@@ -764,6 +823,8 @@ class LiteRtLmRuntimeClient {
   _ProxyCreateDart? _proxyCreate;
   _ProxyFreeStringDart? _proxyFreeString;
   _ProxyDeleteDart? _proxyDelete;
+  _ProxyGetFinishReasonDart? _proxyGetFinishReason;
+  LiteRtLmFinishReason? _lastFinishReason;
   String? _liteRtLmLibraryPath;
   List<String> _liteRtLmCompanionLibraryPaths = const <String>[];
   // Paths a native error message may contain, cut to base names there.
@@ -1318,6 +1379,7 @@ class LiteRtLmRuntimeClient {
     final extraContextJson = extraContext == null || extraContext.isEmpty
         ? null
         : jsonEncode(extraContext);
+    _lastFinishReason = null;
     if (_proxyCreate == null) {
       return _generateBlockingMessageJson(
         messageJson,
@@ -1443,6 +1505,16 @@ class LiteRtLmRuntimeClient {
       bool isFinal,
       Pointer<Char> errorMessage,
     ) {
+      if (isFinal || errorMessage != nullptr) {
+        // The proxy records the reason before its final callback and frees it
+        // in cleanup(), so it must be read here, before the stream closes.
+        final readFinishReason = _proxyGetFinishReason;
+        if (readFinishReason != null && callbackData != nullptr) {
+          _lastFinishReason = LiteRtLmFinishReason.fromWire(
+            readFinishReason(callbackData),
+          );
+        }
+      }
       if (errorMessage != nullptr) {
         final error = errorMessage.cast<Utf8>().toDartString();
         _proxyFreeString?.call(errorMessage);
@@ -1885,11 +1957,13 @@ class LiteRtLmRuntimeClient {
       _proxyCreate = proxyCreate;
       _proxyFreeString = proxyFreeString;
       _proxyDelete = proxyDelete;
+      _proxyGetFinishReason = liteRtLmFinishReasonReader(liteRtLmLibrary);
       _proxyLibrary = liteRtLmLibrary;
     } catch (error) {
       _proxyCreate = null;
       _proxyFreeString = null;
       _proxyDelete = null;
+      _proxyGetFinishReason = null;
       _proxyLibrary = null;
       if (!directCallbackSupported) {
         throw StateError(
