@@ -2755,6 +2755,10 @@ const List<String> _windowsLiteRtLibraries = [
   'webgpu_dawn.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
+  'msvcp140.dll',
+  'vcruntime140.dll',
+  'vcruntime140_1.dll',
+  'vcruntime140_threads.dll',
 ];
 
 Future<void> _backupDirectory(Directory directory, Directory backup) async {

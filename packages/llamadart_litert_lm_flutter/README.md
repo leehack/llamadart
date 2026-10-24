@@ -38,7 +38,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.1-2`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.1-4`.
 That runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
 Use companion `0.16.1` with core `>=0.16.1 <0.17.0`. Companion `0.16.0`
 pins `v0.18.1` for core `0.16.x`; from core `0.16.1` it builds with a macOS

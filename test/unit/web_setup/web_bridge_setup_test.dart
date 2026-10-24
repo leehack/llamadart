@@ -458,9 +458,27 @@ void main() {
         ),
       );
 
-      expect(await check(), <Matcher>[
-        allOf(contains('index.html'), contains('Remove that loader')),
-      ]);
+      final List<String> problems = await check();
+
+      expect(problems, hasLength(1));
+      expect(problems.single, contains('window.LlamaWebGpuBridge'));
+      expect(problems.single, contains('Remove that loader'));
+      expect(problems.single, contains('--no-index-html'));
+      expect(problems.single, isNot(contains('web_setup')));
+      expect('index.html'.allMatches(problems.single), hasLength(1));
+    });
+
+    test('quotes only a short excerpt of a single-line page', () async {
+      await runSetup();
+      indexHtml.writeAsStringSync(
+        '<head>${'<meta name="x">' * 40}<script src="llama_webgpu_bridge.js">'
+        '</script></head>',
+      );
+
+      final String problem = (await check()).single;
+
+      expect(problem, contains('llama_webgpu_bridge.js'));
+      expect(problem.length, lessThan(300));
     });
   });
 
@@ -553,6 +571,137 @@ void main() {
         () => patchWebBridgeIndexHtml(_manualLoaderHtml, release.pin),
         throwsA(isA<WebSetupException>()),
       );
+    });
+
+    test('treats <!-- inside a script or style as text', () {
+      const String html =
+          '<html>\n<head>\n  <script>var a = "<!--";</script>\n'
+          '  <style>/* <!-- */</style>\n</head>\n<body>\n'
+          '  <script src="flutter_bootstrap.js" async></script>\n'
+          '</body>\n</html>\n';
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(
+        patched.indexOf('llamadart:web_setup:begin'),
+        greaterThan(patched.indexOf('</style>')),
+      );
+      expect(
+        patched.indexOf('llamadart:web_setup:begin'),
+        lessThan(patched.indexOf('flutter_bootstrap.js')),
+      );
+      expect(patchWebBridgeIndexHtml(patched, release.pin), patched);
+    });
+
+    test('still finds a loader after a script that holds <!--', () {
+      const String html =
+          '<head>\n<script>var a = "<!--";</script>\n'
+          '<script src="webgpu_bridge/llama_webgpu_bridge.js"></script>\n'
+          '</head>\n';
+
+      expect(
+        () => patchWebBridgeIndexHtml(html, release.pin),
+        throwsA(isA<WebSetupException>()),
+      );
+    });
+
+    test('an unclosed comment does not hide the rest of the page', () {
+      const String html =
+          '<html>\n<head>\n</head>\n<body>\n  <!-- never closed\n'
+          '  <script src="flutter_bootstrap.js" async></script>\n'
+          '</body>\n</html>\n';
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(
+        patched.indexOf('llamadart:web_setup:begin'),
+        lessThan(patched.indexOf('flutter_bootstrap.js')),
+      );
+      expect(
+        patched.indexOf('llamadart:web_setup:begin'),
+        greaterThan(patched.indexOf('never closed')),
+      );
+    });
+
+    test('skips a commented </head> for the real one', () {
+      const String html =
+          '<html>\n<head>\n<!--\n</head>\n-->\n<title>t</title>\n</head>\n'
+          '<body></body>\n</html>\n';
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(
+        patched.indexOf('llamadart:web_setup:begin'),
+        greaterThan(patched.indexOf('<title>')),
+      );
+      expect(
+        patched.indexOf('llamadart:web_setup:begin'),
+        lessThan(patched.lastIndexOf('</head>')),
+      );
+    });
+
+    test('accepts mentions that do not load the bridge', () {
+      for (final String markup in <String>[
+        '<link rel="modulepreload" href="webgpu_bridge/llama_webgpu_bridge.js">',
+        '<p>Uses llama_webgpu_bridge.js for WebGPU.</p>',
+        '<script>const f = LlamaWebGpuBridge => 1;</script>',
+        '<script>if (LlamaWebGpuBridge == null) {}</script>',
+        '<script>if (LlamaWebGpuBridge === null) {}</script>',
+        '<script>window.LlamaWebGpuBridge === undefined;</script>',
+        '<script src="app_llama_webgpu_bridge_worker.js"></script>',
+      ]) {
+        final String html = '<head>\n$markup\n</head>\n';
+
+        expect(
+          patchWebBridgeIndexHtml(html, release.pin),
+          contains('llamadart:web_setup:begin'),
+          reason: markup,
+        );
+      }
+    });
+
+    test('refuses each real way of loading the bridge by hand', () {
+      for (final String markup in <String>[
+        '<script src="webgpu_bridge/llama_webgpu_bridge.js"></script>',
+        "<script type=module src='llama_webgpu_bridge.js?v=1'></script>",
+        '<script type="module">import "./llama_webgpu_bridge.js";</script>',
+        '<script type="module">const m = await import("llama_webgpu_bridge.js");'
+            '</script>',
+        '<script>LlamaWebGpuBridge = window.Other;</script>',
+        '<script>window.LlamaWebGpuBridge = window.Other;</script>',
+        '<script>window["LlamaWebGpuBridge"] = window.Other;</script>',
+        "<script>globalThis['LlamaWebGpuBridge']=window.Other;</script>",
+      ]) {
+        expect(
+          () => patchWebBridgeIndexHtml(
+            '<head>\n$markup\n</head>\n',
+            release.pin,
+          ),
+          throwsA(isA<WebSetupException>()),
+          reason: markup,
+        );
+      }
+    });
+
+    test('keeps a byte order mark before the begin marker', () {
+      final String generated = patchWebBridgeIndexHtml(
+        '<head>\n</head>\n',
+        release.pin,
+      );
+      final String block = generated
+          .substring(
+            generated.indexOf('<!-- llamadart:web_setup:begin -->'),
+            generated.indexOf('</head>'),
+          )
+          .trimRight();
+      final String html = '\uFEFF$block\n</head>\n';
+
+      expect(patchWebBridgeIndexHtml(html, release.pin), html);
+
+      final String withMarkup = '\uFEFF<meta charset="UTF-8">$block\n</head>\n';
+      final String patched = patchWebBridgeIndexHtml(withMarkup, release.pin);
+      expect(patched, startsWith('\uFEFF<meta charset="UTF-8">\n'));
+      expect(patchWebBridgeIndexHtml(patched, release.pin), patched);
     });
 
     test('refuses a page with no anchor or unbalanced markers', () {

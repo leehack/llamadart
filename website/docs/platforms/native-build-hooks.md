@@ -258,11 +258,12 @@ Selection rules:
 Linux modules need system libraries; see
 [Linux prerequisites](./linux-prerequisites).
 
-On Windows every module needs the latest Microsoft Visual C++ v14
-Redistributable (x64 or arm64), at least as new as the build tools of the
-bundled DLLs. The bundles ship only the OpenMP runtime
-(`vcomp140.dll` on x64, `libomp140.aarch64.dll` on arm64), not
-`msvcp140.dll` or `vcruntime140.dll`. `vulkan` also needs a GPU driver that
+On Windows the bundles ship the Visual C++ runtime app-locally
+(`msvcp140.dll` and `vcruntime140.dll`, plus `vcruntime140_1.dll` and the
+OpenMP runtime `vcomp140.dll` on x64), so no Visual C++ Redistributable is
+needed. The LiteRT-LM Windows x64 runtime ships the same DLLs plus
+`vcruntime140_threads.dll`; when an app bundles both runtimes, the hook
+bundles the newer file version of each DLL they share. `vulkan` also needs a GPU driver that
 provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,
 which provides `nvcuda.dll`. When one of those is missing, the module's
 startup diagnostic, which a failed model load reports, names it.
