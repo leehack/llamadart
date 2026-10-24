@@ -249,6 +249,7 @@ class ChatSession {
               enableThinking: enableThinking,
               responseFormat: responseFormat,
               chatTemplateKwargs: chatTemplateKwargs,
+              templateNow: templateNow,
             ),
           ),
         );
@@ -530,6 +531,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
       includeTokenCount: true,
     );
     return template.tokenCount ?? _estimateTokenCount(template.prompt);
@@ -704,6 +706,26 @@ final Expando<List<LlamaChatMessage>> _mutableHistories = Expando(
 /// class that implements [ChatSession] without extending it.
 List<LlamaChatMessage>? mutableChatSessionHistory(ChatSession session) =>
     _mutableHistories[session];
+
+final Expando<DateTime> _templateNows = Expando('llamadart.chatSessionNow');
+
+/// Deterministic template time for a [ChatSession].
+///
+/// This is an extension rather than a member so that subclasses and classes
+/// that `implements ChatSession` keep compiling; it is stored per session.
+extension ChatSessionTemplateNow on ChatSession {
+  /// The time the chat template sees as "now" for this session's requests.
+  ///
+  /// Forwarded as [LlamaEngine.create]'s `templateNow` by [ChatSession.create]
+  /// and everything built on it ([ChatSession.send],
+  /// [ChatSession.createStructuredJson], `sendWithTools`,
+  /// `completeWithTools`), and used by the context-budget renders so trimming
+  /// sees the prompt the request sends. Null, the default, leaves the
+  /// template's own clock.
+  DateTime? get templateNow => _templateNows[this];
+
+  set templateNow(DateTime? value) => _templateNows[this] = value;
+}
 
 /// One-shot replies for [ChatSession].
 extension ChatSessionCompletionExtension on ChatSession {

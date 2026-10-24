@@ -1683,6 +1683,130 @@ void main() {
       });
     });
 
+    group('templateNow', () {
+      final now = DateTime.utc(2026, 1, 2, 3, 4, 5);
+      late ScriptedChatEngine scripted;
+      late ChatSession forwarding;
+
+      setUp(() {
+        scripted = ScriptedChatEngine();
+        forwarding = ChatSession(scripted, maxContextTokens: 1000)
+          ..templateNow = now;
+      });
+
+      void expectForwarded() {
+        expect(scripted.createTemplateNows, [now]);
+        expect(scripted.templateTemplateNows, isNotEmpty);
+        expect(scripted.templateTemplateNows, everyElement(now));
+      }
+
+      test('reaches the request and the budget render of create', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        await forwarding.create([const LlamaTextContent('hi')]).drain<void>();
+
+        expectForwarded();
+      });
+
+      test('reaches the request and the budget render of send', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        await forwarding.send('hi');
+
+        expectForwarded();
+      });
+
+      test('reaches the request and the budget render of '
+          'createStructuredJson', () async {
+        scripted.replies.add(scriptedAnswer('{"ok":true}'));
+
+        await forwarding.createStructuredJson([
+          const LlamaTextContent('status'),
+        ], output: LlamaStructuredOutput.jsonObject(decoder: (json) => json));
+
+        expectForwarded();
+      });
+
+      test('reaches every render of a context-budget compaction', () async {
+        scripted.countFor = (messages) => messages.length * 100;
+        scripted.replies.add(scriptedAnswer('done'));
+        final compacting = ChatSession(scripted, maxContextTokens: 450)
+          ..templateNow = now
+          ..addMessage(
+            const LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'task',
+            ),
+          )
+          ..addMessage(
+            const LlamaChatMessage.fromText(
+              role: LlamaChatRole.assistant,
+              text: 'call',
+            ),
+          )
+          ..addMessage(
+            const LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'result',
+              continuesPreviousTurn: true,
+            ),
+          )
+          ..addMessage(
+            const LlamaChatMessage.fromText(
+              role: LlamaChatRole.assistant,
+              text: 'call again',
+            ),
+          );
+
+        await compacting.create([
+          const LlamaTextContent('result again'),
+        ], continuesPreviousTurn: true).drain<void>();
+
+        expect(scripted.requests.single.length, lessThan(5));
+        expect(scripted.templateTemplateNows.length, greaterThan(1));
+        expect(scripted.templateTemplateNows, everyElement(now));
+        expect(scripted.createTemplateNows, [now]);
+      });
+
+      test('reaches every render of a context-budget turn drop', () async {
+        scripted.countFor = (messages) => messages.length * 100;
+        scripted.replies.add(scriptedAnswer('done'));
+        final dropping = ChatSession(scripted, maxContextTokens: 450)
+          ..templateNow = now;
+        for (var turn = 0; turn < 4; turn++) {
+          dropping
+            ..addMessage(
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'question $turn',
+              ),
+            )
+            ..addMessage(
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.assistant,
+                text: 'answer $turn',
+              ),
+            );
+        }
+
+        await dropping.create([const LlamaTextContent('next')]).drain<void>();
+
+        expect(scripted.requests.single.length, lessThan(9));
+        expect(scripted.templateTemplateNows.length, greaterThan(2));
+        expect(scripted.templateTemplateNows, everyElement(now));
+      });
+
+      test('defaults to null', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        forwarding.templateNow = null;
+        await forwarding.send('hi');
+
+        expect(scripted.createTemplateNows, [null]);
+        expect(scripted.templateTemplateNows, everyElement(isNull));
+      });
+    });
+
     test('a cancel after completion leaves the next turn intact', () async {
       backend.queueResponse('First');
       await session.create([const LlamaTextContent('Hi')]).drain<void>();
