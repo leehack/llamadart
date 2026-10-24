@@ -544,6 +544,10 @@ void main() {
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
+      'msvcp140.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
       'webgpu_dawn.dll',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.androidArm64), isEmpty);
@@ -574,6 +578,10 @@ void main() {
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
+      'msvcp140.dll',
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
       'webgpu_dawn.dll',
     ]);
   });
