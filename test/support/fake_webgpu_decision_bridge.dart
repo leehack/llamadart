@@ -11,6 +11,43 @@ external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
 JSPromise<JSAny?> rejectWithMessage(String message) =>
     _rejectPromise(JSObject()..setProperty('message'.toJS, message.toJS));
 
+@JS('DOMException')
+extension type _DomException._(JSObject _) implements JSObject {
+  external _DomException(String message, String name);
+}
+
+@JS('Object.defineProperty')
+external void _defineProperty(
+  JSObject target,
+  String name,
+  JSObject descriptor,
+);
+
+/// A promise rejected like a bridge decision API failure.
+///
+/// [code] becomes an own `code` property, as the bridge's error helper sets
+/// it. With [abort] the error is a DOMException named `AbortError`, whose
+/// legacy `code` is the number 20 unless [code] replaces it.
+JSPromise<JSAny?> rejectWithCode(
+  String message, {
+  JSAny? code,
+  bool abort = false,
+}) {
+  final error = abort
+      ? _DomException(message, 'AbortError')
+      : (JSObject()..setProperty('message'.toJS, message.toJS));
+  if (code != null) {
+    _defineProperty(
+      error,
+      'code',
+      JSObject()
+        ..setProperty('value'.toJS, code)
+        ..setProperty('configurable'.toJS, true.toJS),
+    );
+  }
+  return _rejectPromise(error);
+}
+
 /// One `runDecision` sequence as the fake bridge received it.
 typedef FakeDecisionSequence = ({
   List<int> tokens,
@@ -61,6 +98,10 @@ class FakeDecisionBridge {
   /// Rejection messages for matching calls.
   String? capabilitiesError, loadError, runError, freeError;
 
+  /// `code` and AbortError shape of every `*Error` rejection, when set.
+  JSAny? errorCode;
+  bool errorAsAbort = false;
+
   /// Every decision call, in order.
   final List<String> calls = <String>[];
 
@@ -78,13 +119,16 @@ class FakeDecisionBridge {
 
   int _nextHandle = 7;
 
+  JSPromise<JSAny?> _reject(String message) =>
+      rejectWithCode(message, code: errorCode, abort: errorAsAbort);
+
   void _installDecisionApi() {
     object.setProperty(
       'getDecisionCapabilities'.toJS,
       (() {
         calls.add('capabilities');
         final error = capabilitiesError;
-        if (error != null) return rejectWithMessage(error);
+        if (error != null) return _reject(error);
         final result =
             capabilitiesResult ??
             (JSObject()
@@ -105,7 +149,7 @@ class FakeDecisionBridge {
         calls.add('load $url');
         loadedConfigs.add(configJson);
         final error = loadError;
-        if (error != null) return rejectWithMessage(error);
+        if (error != null) return _reject(error);
         final handle = _nextHandle++;
         liveHandles.add(handle);
         final info = <String, Object?>{
@@ -136,7 +180,7 @@ class FakeDecisionBridge {
         ];
         calls.add('run $handle ${lastSequences.length}');
         final error = runError;
-        if (error != null) return rejectWithMessage(error);
+        if (error != null) return _reject(error);
         if (!liveHandles.contains(handle)) {
           return rejectWithMessage(
             'Decision head $handle is not loaded; it was freed, its model '
@@ -170,7 +214,7 @@ class FakeDecisionBridge {
         final handle = rawHandle.toDartInt;
         calls.add('free $handle');
         final error = freeError;
-        if (error != null) return rejectWithMessage(error);
+        if (error != null) return _reject(error);
         liveHandles.remove(handle);
         return Future<JSAny?>.value().toJS;
       }).toJS,
