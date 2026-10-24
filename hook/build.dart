@@ -1550,9 +1550,11 @@ Future<void> _emitLiteRtLmAssets({
 /// Emits one copy of a library that both the llama.cpp and the LiteRT-LM
 /// bundle ship, since an app may bundle each file name only once.
 ///
-/// On Windows both bundles ship the Visual C++ runtime app-locally; the newer
-/// file version serves both, as Microsoft keeps it backward compatible.
-/// Any other shared name fails the build instead of guessing.
+/// On Windows both bundles ship the Visual C++ runtime app-locally. When both
+/// copies carry a Windows version resource, the newer file version serves
+/// both, as Microsoft keeps the runtime backward compatible, and a tie keeps
+/// the llama.cpp copy. Identical unversioned files share one copy; different
+/// unversioned files fail the build instead of guessing.
 Future<void> _shareLibraryWithLlamaCpp({
   required String liteRtLmPath,
   required String llamaCppPath,

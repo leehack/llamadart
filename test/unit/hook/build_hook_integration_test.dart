@@ -793,6 +793,36 @@ void main() {
       );
     });
 
+    test('equal file versions keep the llama.cpp copy', () async {
+      await writeDll(bundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
+      await writeDll(litertBundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
+      final llamaCppBytes = await File(
+        path.join(bundleDir.path, 'msvcp140.dll'),
+      ).readAsBytes();
+      expect(
+        await File(
+          path.join(litertBundleDir.path, 'msvcp140.dll'),
+        ).readAsBytes(),
+        isNot(llamaCppBytes),
+      );
+
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        userDefines: bothRuntimes,
+        check: (input, output) {
+          final bundled = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset.file!.toFilePath())
+              .where((file) => path.basename(file) == 'msvcp140.dll')
+              .toList();
+          expect(bundled, hasLength(1));
+          expect(File(bundled.single).readAsBytesSync(), llamaCppBytes);
+        },
+      );
+    });
+
     test('a different unversioned library both ship fails the build', () async {
       await File(
         path.join(bundleDir.path, 'msvcp140.dll'),

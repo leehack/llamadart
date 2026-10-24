@@ -34,6 +34,36 @@ void main() {
     expect(windowsFileVersion(bytes), (14, 44, 35211, 0));
   });
 
+  test('reads fixed file info that follows the key without padding', () {
+    final key = [
+      for (final unit in 'VS_VERSION_INFO\u0000'.codeUnits) ...[unit, 0],
+    ];
+    final fixedInfo = ByteData(16)
+      ..setUint32(0, 0xFEEF04BD, Endian.little)
+      ..setUint32(8, 14 << 16 | 50, Endian.little)
+      ..setUint32(12, 35710 << 16, Endian.little);
+    final bytes = Uint8List.fromList([
+      ...key,
+      ...fixedInfo.buffer.asUint8List(),
+      ...List.filled(8, 0),
+    ]);
+    expect(windowsFileVersion(bytes), (14, 50, 35710, 0));
+  });
+
+  test('a resource cut off inside its fixed file info has no version', () {
+    final key = [
+      for (final unit in 'VS_VERSION_INFO\u0000'.codeUnits) ...[unit, 0],
+    ];
+    final signature = ByteData(4)..setUint32(0, 0xFEEF04BD, Endian.little);
+    expect(
+      windowsFileVersion(
+        Uint8List.fromList([...key, ...signature.buffer.asUint8List()]),
+      ),
+      isNull,
+    );
+    expect(windowsFileVersion(Uint8List.fromList(key)), isNull);
+  });
+
   test('a file without a version resource has no version', () {
     expect(
       windowsFileVersion(Uint8List.fromList('fake-x.dll'.codeUnits)),
