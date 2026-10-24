@@ -62,6 +62,19 @@ class SelectionTest(unittest.TestCase):
                                  {'analyze', 'web-chat-contract'})
                 self.assertEqual(plan['apps'], [])
 
+    def test_example_package_tests_follow_core_and_example_changes_only(self):
+        for path in ('lib/llamadart.dart', 'pubspec.yaml', 'example/basic_app/lib/main.dart',
+                     'example/laya_tetris/test/tetris_test.dart',
+                     'example/tui_coding_agent/pubspec.yaml'):
+            with self.subTest(path=path):
+                self.assertTrue(ci.select([path])['jobs']['example-packages'])
+        for path in ('example/chat_app/lib/main.dart', 'example/chat_app/test/unit_test.dart',
+                     'example/basic_app/README.md', 'test/unit/core/engine_test.dart',
+                     'packages/genkit_llamadart/lib/genkit_llamadart.dart',
+                     'packages/llamadart_validation/lib/src/runner.dart'):
+            with self.subTest(path=path):
+                self.assertFalse(ci.select([path])['jobs']['example-packages'])
+
     def test_genkit_gateway_runs_package_snippet_compilation_with_docs(self):
         plan = ci.select(['website/docs/integrations/genkit.md'])
         self.assertEqual({j for j, v in plan['jobs'].items() if v},
