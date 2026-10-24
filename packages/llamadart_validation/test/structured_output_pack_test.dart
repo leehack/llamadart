@@ -38,6 +38,7 @@ class _ScriptedBackend
   final bool controlConforms;
   final bool malformedIsJson;
   final requests = <GenerationParams>[];
+  final prompts = <String>[];
 
   @override
   bool get supportsUrlLoading => false;
@@ -119,6 +120,7 @@ class _ScriptedBackend
     List<LlamaContentPart>? parts,
   }) async* {
     requests.add(params);
+    prompts.add(prompt);
     final bytes = utf8.encode(_reply(prompt, params));
     for (var i = 0; i < bytes.length; i += 5) {
       yield bytes.sublist(i, min(i + 5, bytes.length));
@@ -276,6 +278,21 @@ void main() {
       expect((reject['unsupported_response_format'] as Map)['chunks'], 0);
     },
   );
+
+  test('S03 records the createStructuredJson result as the helper', () async {
+    final backend = _ScriptedBackend();
+    final result = await _run(backend);
+    final schemaPrompt = _prompt('json_schema');
+    final requests = [
+      for (var i = 0; i < backend.prompts.length; i++)
+        if (backend.prompts[i].contains(schemaPrompt)) backend.requests[i],
+    ];
+    expect(requests.map((r) => r.grammar != null), [false, true, true, true]);
+    final helper = _record(result.events, 'S03.json_schema')['helper'] as Map;
+    expect(helper['value'], jsonDecode(_conformingMember));
+    expect(helper, contains('wall_ms'));
+    expect(helper, isNot(contains('parsed')));
+  });
 
   test(
     'a backend that ignores grammars fails every constrained case',
