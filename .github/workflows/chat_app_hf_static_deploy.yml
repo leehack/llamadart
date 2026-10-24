@@ -103,30 +103,12 @@ jobs:
           SHORT_SHA="$(printf '%s' "$DEPLOY_SHA" | cut -c1-7)"
           export SHORT_SHA
 
-          python3 - <<'PY'
-          import os
-
-          from huggingface_hub import HfApi
-
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          space_repo = os.environ["SPACE_REPO"]
-          short_sha = os.environ["SHORT_SHA"]
-
-          api.create_repo(
-              repo_id=space_repo,
-              repo_type="space",
-              space_sdk="static",
-              exist_ok=True,
-          )
-          api.upload_folder(
-              repo_id=space_repo,
-              repo_type="space",
-              folder_path="hf-space-sync",
-              revision="main",
-              commit_message=f"chore: deploy chat app {short_sha}",
-              delete_patterns=["*", "**/*"],
-          )
-          PY
+          python3 tool/ci/hf_space_deploy.py \
+            --repo "$SPACE_REPO" \
+            --folder hf-space-sync \
+            --commit-message "chore: deploy chat app ${SHORT_SHA}" \
+            --delete-pattern '*' \
+            --delete-pattern '**/*'
 
       - name: Verify deployed production artifact
         if: steps.current.outputs.deploy == 'true'

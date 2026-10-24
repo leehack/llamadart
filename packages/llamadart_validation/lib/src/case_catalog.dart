@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 7;
+const int validationCatalogVersion = 8;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -15,7 +15,11 @@ const validationFeatures = {
   'lifecycle': 1,
   'guards': 1,
   'performance': 1,
+  'structured_output': 1,
 };
+
+/// Feature selectors that catalogs before 8 do not declare.
+const catalogEightFeatures = {'structured_output'};
 
 /// Shared synthetic fixtures, compiled into desktop, mobile and Web runners.
 /// Model-specific overrides stay in the hashed profile manifest.
@@ -87,6 +91,7 @@ const validationFixtures = <String, Map<String, Object>>{
     'warmups': 1,
     'samples': 3,
   },
+  'structured_output': structuredOutputFixture,
 };
 
 /// Case identity and fixture dependencies. False implementation flags always
@@ -233,6 +238,7 @@ const extendedValidationCases = [
     ['lifecycle'],
     ['raw', 'hello'],
   ),
+  ...structuredOutputValidationCases,
 ];
 
 /// Stable order for the complete selected/omitted inventory.
@@ -253,10 +259,12 @@ const catalogFiveCaseIds = {
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    [
-      ...decisionValidationCases,
-      ...embeddingValidationCases,
-    ].any((definition) => definition.id == id)
+    structuredOutputValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion >= 8
+    : [
+        ...decisionValidationCases,
+        ...embeddingValidationCases,
+      ].any((definition) => definition.id == id)
     ? catalogVersion >= 5
     : catalogVersion >= 5 || !catalogFiveCaseIds.contains(id);
 
@@ -445,3 +453,197 @@ bool validEmbeddingCaseEvidence(
       return false;
   }
 }
+
+/// Version-one structured-output prompts, schemas and grammars. Each
+/// constrained request asks for output that an unconstrained model would not
+/// produce, so conforming output is evidence that the constraint was applied.
+const structuredOutputFixture = <String, Object>{
+  'max_tokens': 256,
+  'capabilities': {
+    'native': {
+      'grammar': true,
+      'lazy_grammar': true,
+      'structured_output': true,
+    },
+    'web': {'grammar': true, 'lazy_grammar': false, 'structured_output': true},
+    'litert': {
+      'grammar': false,
+      'lazy_grammar': false,
+      'structured_output': false,
+    },
+  },
+  'json_object': {'prompt': 'Describe a red apple in one short sentence.'},
+  'json_schema': {
+    'prompt': 'Describe a fictional library member in one short sentence.',
+    'schema': {
+      'type': 'object',
+      'properties': {
+        'name': {'type': 'string', 'minLength': 1, 'maxLength': 20},
+        'age': {'type': 'integer', 'minimum': 18, 'maximum': 99},
+        'rating': {'type': 'number'},
+        'active': {'type': 'boolean'},
+        'nickname': {'type': 'null'},
+        'tier': {
+          'enum': ['bronze', 'silver', 'gold'],
+        },
+        'address': {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string', 'minLength': 1, 'maxLength': 20},
+            'zip': {'type': 'string', 'pattern': r'^[0-9]{5}$'},
+          },
+          'required': ['city', 'zip'],
+          'additionalProperties': false,
+        },
+        'loans': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'title': {'type': 'string', 'minLength': 1, 'maxLength': 20},
+              'days': {'type': 'integer', 'minimum': 1, 'maximum': 30},
+            },
+            'required': ['title', 'days'],
+            'additionalProperties': false,
+          },
+          'minItems': 1,
+          'maxItems': 2,
+        },
+        'fines': {
+          'type': 'array',
+          'items': {'type': 'number'},
+          'maxItems': 0,
+        },
+        'notes': {'type': 'string', 'maxLength': 0},
+        'preferences': {
+          'type': 'object',
+          'properties': <String, Object>{},
+          'additionalProperties': false,
+        },
+        'email': {'type': 'string', 'maxLength': 24},
+      },
+      'required': [
+        'name',
+        'age',
+        'rating',
+        'active',
+        'nickname',
+        'tier',
+        'address',
+        'loans',
+        'fines',
+        'notes',
+        'preferences',
+      ],
+      'additionalProperties': false,
+    },
+  },
+  'grammar': {
+    'prompt': 'Write a short sentence about the sea.',
+    'grammar': 'root ::= "cedar-" [0-9] [0-9] [0-9]',
+    'regex': r'^cedar-[0-9]{3}$',
+  },
+  'lazy_grammar': {
+    'prompt':
+        'Write one sentence about the weather. Then, on a new line, write '
+        'ANSWER: followed by your favorite color.',
+    'trigger': 'ANSWER:',
+    'grammar': 'root ::= "ANSWER: " ("alpha" | "omega")',
+    'regex': r'ANSWER: (alpha|omega)$',
+  },
+  'reject': {
+    'malformed_prompt': 'Write one short sentence about the sea.',
+    'mismatch_prompt': 'Name a city.',
+    'generated_schema': {
+      'type': 'object',
+      'properties': {
+        'city': {'type': 'string', 'minLength': 1, 'maxLength': 20},
+      },
+      'required': ['city'],
+      'additionalProperties': false,
+    },
+    'parsed_schema': {
+      'type': 'object',
+      'properties': {
+        'zip_code': {'type': 'string'},
+      },
+      'required': ['zip_code'],
+      'additionalProperties': false,
+    },
+    'unsupported_schema': {
+      'type': 'object',
+      'properties': {
+        'count': {'type': 'integer', 'multipleOf': 3},
+      },
+      'required': ['count'],
+    },
+    'unsupported_response_format': {'type': 'yaml'},
+    'malformed_message': 'Malformed structured JSON output.',
+    'mismatch_message':
+        'Structured JSON output did not match the requested schema.',
+  },
+  'tools': {
+    'prompt': 'Call get_forecast for Montréal in fahrenheit for 30 days.',
+    'name': 'get_forecast',
+    'description': 'Return the forecast for a city.',
+    'schema': {
+      'type': 'object',
+      'properties': {
+        'city': {'type': 'string', 'minLength': 1, 'maxLength': 32},
+        'unit': {
+          'enum': ['celsius', 'kelvin'],
+        },
+        'days': {
+          'type': 'integer',
+          'enum': [1, 3, 7],
+        },
+      },
+      'required': ['city', 'unit', 'days'],
+      'additionalProperties': false,
+    },
+  },
+};
+
+/// Selected by `structured_output` focus or release selection, from catalog 8.
+const structuredOutputValidationCases = [
+  ValidationCaseDefinition(
+    'S01.capabilities',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+  ValidationCaseDefinition(
+    'S02.json_object',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+  ValidationCaseDefinition(
+    'S03.json_schema',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+  ValidationCaseDefinition(
+    'S04.grammar',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+  ValidationCaseDefinition(
+    'S05.grammar.lazy',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+  ValidationCaseDefinition(
+    'S06.reject',
+    ['structured_output'],
+    ['structured_output', 'hello'],
+  ),
+  ValidationCaseDefinition(
+    'S07.stream',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+  ValidationCaseDefinition(
+    'S08.tools.schema',
+    ['structured_output'],
+    ['structured_output'],
+  ),
+];

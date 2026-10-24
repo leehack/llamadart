@@ -17,8 +17,8 @@ dart test -p vm test/unit/tooling/validation_coverage_test.dart
 CI rejects missing/stale/duplicate mappings, invented cases, missing profiles
 and cases that no declared profile selects. Exemptions need a concrete reason
 and a GitHub issue. The test prints the current gap inventory; do not maintain
-a second copied list. Structured output, multimodal chat, LoRA, state, scoring,
-speculative decoding, sampling and tokenization still need dedicated pack work.
+a second copied list. Multimodal chat, LoRA, state, scoring, speculative
+decoding, sampling and tokenization still need dedicated pack work.
 Speech/image profiles exist, while their individual reported capability
 contracts remain explicitly exempt pending case-ID bindings.
 
@@ -44,8 +44,8 @@ the validation-harness CI lane runs it too.
 
 These are deterministic adapter regressions supporting the existing tools pack,
 not inference or grammar-enforcement evidence. They do not qualify a model,
-backend or physical device. #1196's dedicated structured-output pack remains
-open, as do the other family cases under #740 and #741.
+backend or physical device. The other family cases under #740 and #741 remain
+open.
 
 Catalog 6 also tests native cancellation and overlap independently of visible
 output, including EOF-gated GPT-OSS streams. A measured control calibrates the
@@ -56,6 +56,22 @@ their original results. See [the case contract](../../doc/cross_platform_validat
 Catalog 7 runs `C08.cancel.restart` and `C08.overlap` on LiteRT profiles too;
 LiteRT journals from older catalogs keep both omitted. See
 [the catalog 7 notes](../../doc/cross_platform_validation.md#catalog-7-litert-lm-restart-and-overlap).
+
+## Structured-output pack
+
+Catalog 8 adds `S01`–`S08`, selected by `structured_output` focus or release
+selection. `structured-gguf-cpu` and `structured-gguf-metal` lock Qwen3-0.6B
+Q8_0, whose Hermes tool format accepts canonical JSON Schema tools. The cases
+use only public API: capability flags, `json_object` and `json_schema`
+`responseFormat`, `createStructuredJson`, a strict GBNF grammar, a word-triggered
+lazy grammar, typed rejection of malformed, mismatched and unsupported output,
+streamed partial/final parsing and a JSON Schema tool. Each constrained request
+asks for output an unconstrained model would not produce; an unconstrained
+control that already conforms leaves the case NOT_RUN. The importer rechecks
+passing evidence with an independent schema check. LiteRT profiles run only
+`S01` (all flags false) and WebGPU omits the lazy-grammar case. Older journals
+keep their catalogs. See
+[the runbook](../../doc/cross_platform_validation.md#catalog-8-structured-output-pack).
 
 ## Running validation
 
@@ -123,8 +139,8 @@ cases; provider process deadlines can additionally include model preparation and
 Profiles select `quick`, `focused` or `release`. Focused profiles require a
 nonempty, unique `focus_features` list; `tiny-gguf-lifecycle` adds the second
 dispose/load/generate cycle to the quick CPU run. Core feature IDs are `text`,
-`unicode`, `thinking`, `history`, `tools`, `streaming`, `batching`, `lifecycle`, `guards` and
-`performance`. Unimplemented selected cases stay NOT_RUN.
+`unicode`, `thinking`, `history`, `tools`, `streaming`, `batching`, `lifecycle`, `guards`, `performance` and,
+from catalog 8, `structured_output`. Unimplemented selected cases stay NOT_RUN.
 
 Journal schema 2 includes the versioned case/feature catalog, resolved synthetic
 fixtures, explicit omissions and a catalog hash. Each terminal case carries its

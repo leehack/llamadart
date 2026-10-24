@@ -24,11 +24,13 @@ final _chunks = Pointer<mtmd_input_chunks>.fromAddress(0x300);
 final _embd = Pointer<Float>.fromAddress(0x400);
 
 class _FakeChunk {
-  const _FakeChunk(this.type, this.nPos, {this.nonCausal = false});
+  const _FakeChunk(this.type, this.nPos, {this.nonCausal = false, int? nTokens})
+    : nTokens = nTokens ?? nPos;
 
   final int type;
   final int nPos;
   final bool nonCausal;
+  final int nTokens;
 }
 
 class _FakeMtmd {
@@ -65,7 +67,7 @@ class _FakeMtmd {
     },
     chunkTokenCount: (chunk) {
       calls.add('tokens ${_index(chunk)}');
-      return prompt[_index(chunk)].nPos;
+      return prompt[_index(chunk)].nTokens;
     },
     decodeUseNonCausal: (ctx, chunk) {
       expect(ctx, _ctx);
@@ -255,6 +257,54 @@ void main() {
       expect(newNPast.value, completed);
     });
   }
+
+  group('onChunkEvaluated', () {
+    // An M-RoPE image has fewer positions than tokens.
+    const prompt = <_FakeChunk>[
+      _FakeChunk(_text, 5),
+      _FakeChunk(_image, 16, nTokens: 256),
+      _FakeChunk(_text, 3),
+    ];
+    late List<int> evaluated;
+
+    MtmdChunkEvalFailure? evalCounting(_FakeMtmd fake) =>
+        evalMtmdChunksUntilCancelled(
+          fake.api,
+          _ctx,
+          _lctx,
+          _chunks,
+          _nBatch,
+          newNPast,
+          cancelToken,
+          onChunkEvaluated: evaluated.add,
+        );
+
+    setUp(() => evaluated = []);
+
+    test('receives the token count of each chunk', () {
+      final fake = _FakeMtmd(prompt, cancelToken);
+
+      expect(evalCounting(fake), isNull);
+      expect(evaluated, [5, 256, 3]);
+      expect(newNPast.value, 24);
+    });
+
+    test('skips a chunk whose decode a cancel stopped', () {
+      final fake = _FakeMtmd(prompt, cancelToken)..cancelDuring.add('encode 1');
+
+      expect(evalCounting(fake), isNull);
+      expect(evaluated, [5]);
+      expect(newNPast.value, 5);
+    });
+
+    test('skips a failed chunk', () {
+      final fake = _FakeMtmd(prompt, cancelToken)
+        ..results['decode 1 nPast=5 seq=0 batch=512'] = 1;
+
+      expect(evalCounting(fake)?.result, 1);
+      expect(evaluated, [5]);
+    });
+  });
 
   for (final (failingCall, result, failure) in [
     (3, -1, 'failed to eval chunk 0'),

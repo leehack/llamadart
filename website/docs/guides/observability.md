@@ -87,8 +87,9 @@ not a reliable per-request tokens-per-second measurement.
 Missing counts or timings are omitted, not converted to zero. A request
 cancelled while queued may have no usage. Backend duration and time to first
 token exclude queueing and template rendering. Cached prompt tokens are
-already part of input tokens; do not add them again. Multimodal input counts
-can represent context positions rather than image tokens. WebGPU output counts
+already part of input tokens; do not add them again. Native llama.cpp counts
+the media tokens of multimodal input, as llama-server does; WebGPU counts
+context positions, fewer than image tokens on M-RoPE models. WebGPU output counts
 may include tokens generated while a stop signal was in flight. See
 [Token usage and timings](./generation-and-streaming#token-usage-and-timings).
 

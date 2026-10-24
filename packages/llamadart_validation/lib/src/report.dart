@@ -5,6 +5,7 @@ import 'case_catalog.dart';
 import 'inflight_evidence.dart';
 import 'manifest.dart';
 import 'placement.dart';
+import 'structured_output_evidence.dart';
 
 /// Validates the event journal and produces all report formats from one source.
 class ValidationReport {
@@ -191,6 +192,20 @@ class ValidationReport {
                 (profile.fixtures['cancel'] as Map)['deadline_ms'] as num,
           )) {
         problems.add('Invalid in-flight case evidence: $id');
+      }
+      if (profile != null &&
+          id.startsWith('S') &&
+          event['status'] == 'PASS' &&
+          !validStructuredCaseEvidence(
+            id,
+            event,
+            runtime: profile.runtime == 'litert'
+                ? 'litert'
+                : (manifest['environment'] as Map?)?['web'] == true
+                ? 'web'
+                : 'native',
+          )) {
+        problems.add('Invalid structured-output case evidence: $id');
       }
       if (profile?.isEmbedding == true &&
           (manifest['environment'] as Map?)?['web'] == true &&

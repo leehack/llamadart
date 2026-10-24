@@ -3,7 +3,7 @@ import 'package:llamadart/llamadart.dart';
 import '../../../../server_engine/domain/chat_completion_engine_port.dart';
 import '../../openai_response_mapper.dart';
 
-/// Executes one completion round and computes usage metadata.
+/// Executes one completion round and reports its usage.
 class CompletionRoundRunner {
   final ChatCompletionEnginePort _engine;
 
@@ -19,23 +19,10 @@ class CompletionRoundRunner {
     required bool parallelToolCalls,
     required bool enableThinking,
   }) async {
-    var promptTokens = 0;
-    try {
-      final templateResult = await _engine.chatTemplate(
-        messages,
-        tools: tools,
-        toolChoice: toolChoice ?? ToolChoice.auto,
-        parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
-      );
-      promptTokens = templateResult.tokenCount ?? 0;
-    } catch (_) {
-      promptTokens = 0;
-    }
-
     final accumulator = OpenAiChatCompletionAccumulator();
     var completionId = 'chatcmpl-${DateTime.now().millisecondsSinceEpoch}';
     var created = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    LlamaGenerationUsage? usage;
 
     await for (final chunk in _engine.create(
       messages,
@@ -47,13 +34,22 @@ class CompletionRoundRunner {
     )) {
       completionId = chunk.id;
       created = chunk.created;
+      usage = chunk.usage ?? usage;
       accumulator.addChunk(chunk);
     }
 
-    final completionTokenText = _buildCompletionTokenText(accumulator);
-    final completionTokens = completionTokenText.isEmpty
-        ? 0
-        : await _engine.getTokenCount(completionTokenText);
+    final promptTokens =
+        usage?.promptTokens ??
+        await _templatePromptTokens(
+          messages,
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+        );
+    final completionTokens =
+        usage?.completionTokens ??
+        await _completionTokens(_buildCompletionTokenText(accumulator));
 
     return CompletionRoundResult(
       accumulator: accumulator,
@@ -63,6 +59,32 @@ class CompletionRoundRunner {
       completionTokens: completionTokens,
     );
   }
+
+  // Backends without per-request usage fall back to counting tokens of the
+  // rendered prompt and the generated text.
+  Future<int> _templatePromptTokens(
+    List<LlamaChatMessage> messages, {
+    required List<ToolDefinition>? tools,
+    required ToolChoice? toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
+  }) async {
+    try {
+      final templateResult = await _engine.chatTemplate(
+        messages,
+        tools: tools,
+        toolChoice: toolChoice ?? ToolChoice.auto,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+      );
+      return templateResult.tokenCount ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> _completionTokens(String text) async =>
+      text.isEmpty ? 0 : await _engine.getTokenCount(text);
 
   String _buildCompletionTokenText(
     OpenAiChatCompletionAccumulator accumulator,
