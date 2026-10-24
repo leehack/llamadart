@@ -47,6 +47,10 @@ final RegExp _flutterBootstrapScript = RegExp(
   multiLine: true,
 );
 final RegExp _headClose = RegExp(r'^([ \t]*)</head>', multiLine: true);
+final RegExp _htmlComment = RegExp(r'<!--.*?(?:-->|$)', dotAll: true);
+final RegExp _manualBridgeLoader = RegExp(
+  r'llama_webgpu_bridge\.js|\bLlamaWebGpuBridge\s*=(?!=)',
+);
 
 /// A bridge asset release identified by the SHA-256 of its manifest.
 final class WebBridgePin {
@@ -119,7 +123,8 @@ final class WebSetupResult {
 ///
 /// Files that already match the manifest are not fetched again, and an
 /// up-to-date `index.html` is not rewritten, so rerunning is a no-op.
-/// A file is replaced only after its download verified. Throws
+/// `index.html` is validated before any download, and a file is replaced
+/// only after its download verified. Throws
 /// [WebSetupException] on any failure.
 Future<WebSetupResult> setUpWebBridge({
   required Directory webDir,
@@ -129,6 +134,10 @@ Future<WebSetupResult> setUpWebBridge({
   void Function(String message)? log,
 }) async {
   final File indexHtml = _requireWebDir(webDir, needIndexHtml: patchIndexHtml);
+  final String? html = patchIndexHtml ? _readText(indexHtml) : null;
+  final String? patched = html == null
+      ? null
+      : patchWebBridgeIndexHtml(html, pin);
   final WebBridgeFetch fetchUrl = fetch ?? _httpFetch;
   final Directory assetsDir = Directory(
     p.join(webDir.path, webBridgeAssetsDirName),
@@ -162,14 +171,9 @@ Future<WebSetupResult> setUpWebBridge({
     _writeAtomically(manifestFile, manifestBytes);
   }
 
-  var indexHtmlUpdated = false;
-  if (patchIndexHtml) {
-    final String html = _readText(indexHtml);
-    final String patched = patchWebBridgeIndexHtml(html, pin);
-    if (patched != html) {
-      _writeAtomically(indexHtml, utf8.encode(patched));
-      indexHtmlUpdated = true;
-    }
+  final bool indexHtmlUpdated = patched != html;
+  if (indexHtmlUpdated) {
+    _writeAtomically(indexHtml, utf8.encode(patched!));
   }
 
   return WebSetupResult(
@@ -213,10 +217,14 @@ Future<List<String>> checkWebBridgeSetup({
   }
   if (checkIndexHtml) {
     final String html = _readText(indexHtml);
-    if (patchWebBridgeIndexHtml(html, pin) != html) {
-      problems.add(
-        '${indexHtml.path} lacks the current llamadart bridge bootstrap',
-      );
+    try {
+      if (patchWebBridgeIndexHtml(html, pin) != html) {
+        problems.add(
+          '${indexHtml.path} lacks the current llamadart bridge bootstrap',
+        );
+      }
+    } on WebSetupException catch (error) {
+      problems.add('${indexHtml.path}: ${error.message}');
     }
   }
   return problems;
@@ -225,9 +233,10 @@ Future<List<String>> checkWebBridgeSetup({
 /// Returns [html] with the bridge bootstrap for [pin] inserted, or replacing
 /// the one a previous run inserted.
 ///
-/// A new snippet goes just before the `flutter_bootstrap.js` script tag, or
-/// before `</head>` when there is none. Throws [WebSetupException] when
-/// neither exists or the markers are unbalanced.
+/// A new snippet goes just before the first `flutter_bootstrap.js` script tag
+/// outside an HTML comment, or before `</head>` when there is none. Throws
+/// [WebSetupException] when neither exists, the markers are unbalanced, or the
+/// page already loads the bridge outside the generated block.
 String patchWebBridgeIndexHtml(String html, WebBridgePin pin) {
   final int begin = html.indexOf(_beginMarker);
   final int end = html.indexOf(_endMarker);
@@ -243,19 +252,29 @@ String patchWebBridgeIndexHtml(String html, WebBridgePin pin) {
       'Remove the llamadart block by hand and rerun.',
     );
   }
+  _rejectManualBridgeLoader(
+    hasBegin
+        ? html.substring(0, begin) + html.substring(end + _endMarker.length)
+        : html,
+  );
   final String newline = html.contains('\r\n') ? '\r\n' : '\n';
 
   if (hasBegin) {
     final int lineStart = html.lastIndexOf('\n', begin) + 1;
-    final String indent = html.substring(lineStart, begin);
-    final String block = _indentedSnippet(pin, indent, newline);
+    final String prefix = html.substring(lineStart, begin);
+    final String indent = RegExp(r'^[ \t]*').stringMatch(prefix)!;
+    // Markup before the marker on its line stays once, on its own line.
+    final String kept = prefix == indent ? '' : '${prefix.trimRight()}$newline';
     return html.substring(0, lineStart) +
-        block +
+        kept +
+        _indentedSnippet(pin, indent, newline) +
         html.substring(end + _endMarker.length);
   }
 
+  final List<RegExpMatch> comments = _htmlComment.allMatches(html).toList();
   final RegExpMatch? anchor =
-      _flutterBootstrapScript.firstMatch(html) ?? _headClose.firstMatch(html);
+      _firstOutside(_flutterBootstrapScript, html, comments) ??
+      _firstOutside(_headClose, html, comments);
   if (anchor == null) {
     throw WebSetupException(
       'index.html has no <script src="flutter_bootstrap.js"> tag and no '
@@ -268,6 +287,37 @@ String patchWebBridgeIndexHtml(String html, WebBridgePin pin) {
       _indentedSnippet(pin, indent, newline) +
       newline +
       html.substring(anchor.start);
+}
+
+RegExpMatch? _firstOutside(
+  RegExp pattern,
+  String html,
+  List<RegExpMatch> comments,
+) {
+  for (final RegExpMatch match in pattern.allMatches(html)) {
+    final int at = match.end - 1;
+    if (!comments.any((RegExpMatch c) => at >= c.start && at < c.end)) {
+      return match;
+    }
+  }
+  return null;
+}
+
+void _rejectManualBridgeLoader(String htmlOutsideBlock) {
+  final String live = htmlOutsideBlock.replaceAll(_htmlComment, '');
+  final RegExpMatch? loader = _manualBridgeLoader.firstMatch(live);
+  if (loader == null) return;
+  final int lineStart = live.lastIndexOf('\n', loader.start) + 1;
+  final int lineEnd = live.indexOf('\n', loader.end);
+  final String line = live
+      .substring(lineStart, lineEnd < 0 ? live.length : lineEnd)
+      .trim();
+  throw WebSetupException(
+    'index.html already loads the WebGPU bridge outside the generated '
+    'llamadart block ("$line"). Loading it twice wastes memory, and a failing '
+    'old loader makes model loads fail. Remove that loader and rerun, or '
+    'keep it and rerun with --no-index-html.',
+  );
 }
 
 String _indentedSnippet(WebBridgePin pin, String indent, String newline) {

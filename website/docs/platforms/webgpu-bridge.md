@@ -79,9 +79,22 @@ is replaced unless it verifies.
 | `--no-index-html` | Fetch the assets but leave `index.html` unchanged |
 | `--check` | Verify the assets and bootstrap offline and change nothing; exits `1` with each problem, for CI before `flutter build web` |
 
+Switching from a hand-written loader such as the
+[manual setup](#manual-setup) snippet: remove that `<script>` block first. The
+tool refuses a page that already loads `llama_webgpu_bridge.js` or assigns
+`LlamaWebGpuBridge` outside its own block, and names the line, because a second
+loader loads the bridge twice and a failing one makes model loads fail. To keep
+your own loader, pass `--no-index-html`.
+
+The tool itself makes no network requests for `--check`, but `dart run` may
+first run llamadart's native build hooks, which download the native runtimes
+for the host into the pub cache when it is cold.
+
 It exits `64` for a usage error, `66` when the web directory or `index.html`
-is missing, and `1` for a failed download, a checksum mismatch or a page with
-neither a `flutter_bootstrap.js` script nor `</head>`. If the bridge module
+is missing, and `1` for a failed download, a checksum mismatch, a page that
+already loads the bridge, or a page with neither a `flutter_bootstrap.js`
+script outside a comment nor `</head>`. Nothing is downloaded when
+`index.html` cannot be patched. If the bridge module
 then fails to load in the browser, the generated bootstrap sets
 `__llamadartBridgeLoadError`, so the first model load throws
 `LlamaUnsupportedException` at once instead of waiting.

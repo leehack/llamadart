@@ -75,6 +75,33 @@ final class _FakeRelease {
   }
 }
 
+const String _manualLoaderHtml = '''
+<!DOCTYPE html>
+<html>
+<head>
+</head>
+<body>
+  <script type="module">
+    try {
+      const base = new URL('webgpu_bridge/', document.baseURI);
+      const mod = await import(new URL('llama_webgpu_bridge.js', base).href);
+      window.LlamaWebGpuBridge = mod.LlamaWebGpuBridge;
+    } catch (error) {
+      window.__llamadartBridgeLoadError = String(error);
+    }
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+''';
+
+/// Flips the first byte of [file], keeping its size.
+void _corruptKeepingSize(File file) {
+  final List<int> bytes = file.readAsBytesSync();
+  bytes[0] ^= 0xff;
+  file.writeAsBytesSync(bytes);
+}
+
 void main() {
   late Directory tempDir;
   late Directory webDir;
@@ -170,6 +197,75 @@ void main() {
       release.files['llama_webgpu_core.js'],
     );
   });
+
+  test('re-fetches an asset changed without changing its size', () async {
+    await runSetup();
+    final File core = File(assetPath('llama_webgpu_core.wasm'));
+    _corruptKeepingSize(core);
+    release.requests.clear();
+
+    final WebSetupResult result = await runSetup();
+
+    expect(release.requests, <String>['llama_webgpu_core.wasm']);
+    expect(result.downloaded, <String>['llama_webgpu_core.wasm']);
+    expect(core.readAsBytesSync(), release.files['llama_webgpu_core.wasm']);
+  });
+
+  test(
+    're-fetches a local manifest changed without changing its size',
+    () async {
+      await runSetup();
+      final File manifest = File(assetPath('manifest.json'));
+      _corruptKeepingSize(manifest);
+      release.requests.clear();
+
+      final WebSetupResult result = await runSetup();
+
+      expect(release.requests, <String>['manifest.json']);
+      expect(result.downloaded, isEmpty);
+      expect(manifest.readAsBytesSync(), release.manifestBytes);
+    },
+  );
+
+  test(
+    'rejects a served manifest of the pinned size but other bytes',
+    () async {
+      final List<int> forged = List<int>.of(release.manifestBytes);
+      forged[forged.length - 2] ^= 0x01;
+      release.served['manifest.json'] = forged;
+
+      await expectLater(runSetup(), throwsA(isA<WebSetupException>()));
+      expect(Directory(assetPath('')).listSync(), isEmpty);
+    },
+  );
+
+  test(
+    'refuses a page that already loads the bridge before downloading',
+    () async {
+      indexHtml.writeAsStringSync(_manualLoaderHtml);
+
+      await expectLater(
+        runSetup(),
+        throwsA(
+          isA<WebSetupException>().having(
+            (WebSetupException e) => e.message,
+            'message',
+            allOf(
+              contains("import(new URL('llama_webgpu_bridge.js', base).href)"),
+              contains('Remove that loader'),
+              contains('--no-index-html'),
+            ),
+          ),
+        ),
+      );
+      expect(release.requests, isEmpty);
+      expect(indexHtml.readAsStringSync(), _manualLoaderHtml);
+
+      final WebSetupResult kept = await runSetup(patchIndexHtml: false);
+      expect(kept.downloaded, webBridgeRuntimeFiles);
+      expect(indexHtml.readAsStringSync(), _manualLoaderHtml);
+    },
+  );
 
   test('rejects a manifest whose bytes differ from the pin', () async {
     release.served['manifest.json'] = <int>[...release.manifestBytes, 0x20];
@@ -340,6 +436,32 @@ void main() {
       ]);
       expect(await check(checkIndexHtml: false), hasLength(2));
     });
+
+    test('names assets and a manifest changed in place', () async {
+      await runSetup();
+      _corruptKeepingSize(File(assetPath('llama_webgpu_bridge.js')));
+
+      expect(await check(), <Matcher>[
+        allOf(contains('llama_webgpu_bridge.js'), contains('match')),
+      ]);
+
+      _corruptKeepingSize(File(assetPath('manifest.json')));
+      expect(await check(), <Matcher>[contains('manifest.json')]);
+    });
+
+    test('reports a page that also loads the bridge by hand', () async {
+      await runSetup();
+      indexHtml.writeAsStringSync(
+        indexHtml.readAsStringSync().replaceFirst(
+          '</body>',
+          '<script>window.LlamaWebGpuBridge = window.Other;</script>\n</body>',
+        ),
+      );
+
+      expect(await check(), <Matcher>[
+        allOf(contains('index.html'), contains('Remove that loader')),
+      ]);
+    });
   });
 
   group('patchWebBridgeIndexHtml', () {
@@ -366,6 +488,71 @@ void main() {
       );
       expect(patched.replaceAll('\r\n', ''), isNot(contains('\n')));
       expect(patchWebBridgeIndexHtml(patched, release.pin), patched);
+    });
+
+    test('keeps markup before the begin marker exactly once', () {
+      final String generated = patchWebBridgeIndexHtml(
+        '<head>\n</head>\n',
+        release.pin,
+      );
+      final String block = generated.substring(
+        generated.indexOf('<!-- llamadart:web_setup:begin -->'),
+        generated.indexOf('</head>'),
+      );
+      final String html =
+          '<html>\n  <head><meta charset="UTF-8">${block.trimRight()}\n'
+          '  </head>\n</html>\n';
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(
+        RegExp('<meta charset="UTF-8">').allMatches(patched),
+        hasLength(1),
+      );
+      expect(patched, startsWith('<html>\n  <head><meta charset="UTF-8">\n'));
+      expect(
+        RegExp('llamadart:web_setup:begin').allMatches(patched),
+        hasLength(1),
+      );
+      expect(patchWebBridgeIndexHtml(patched, release.pin), patched);
+    });
+
+    test('ignores a flutter_bootstrap.js script inside a comment', () {
+      const String html =
+          '<html>\n<head>\n</head>\n<body>\n  <!--\n'
+          '  <script src="flutter_bootstrap.js" async></script>\n  -->\n'
+          '  <script src="main.dart.js"></script>\n</body>\n</html>\n';
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(
+        patched.indexOf('<script type="module">'),
+        lessThan(patched.indexOf('</head>')),
+      );
+      expect(
+        patched.substring(patched.indexOf('</head>')),
+        html.substring(html.indexOf('</head>')),
+      );
+    });
+
+    test('ignores a bridge loader that is commented out', () {
+      final String html = _manualLoaderHtml
+          .replaceFirst(
+            '  <script type="module">',
+            '  <!--\n  <script type="module">',
+          )
+          .replaceFirst(
+            '  </script>\n  <script src',
+            '  </script>\n  -->\n  <script src',
+          );
+
+      final String patched = patchWebBridgeIndexHtml(html, release.pin);
+
+      expect(patched, contains('llamadart:web_setup:begin'));
+      expect(
+        () => patchWebBridgeIndexHtml(_manualLoaderHtml, release.pin),
+        throwsA(isA<WebSetupException>()),
+      );
     });
 
     test('refuses a page with no anchor or unbalanced markers', () {

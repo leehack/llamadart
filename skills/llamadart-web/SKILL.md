@@ -29,8 +29,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   bridge assets the installed llamadart pins into `web/webgpu_bridge/`,
   verifies each against the pinned release manifest, and adds a marked
   bootstrap block to `web/index.html`. Rerun it after upgrading llamadart;
-  `--check` verifies offline (exit `1` lists problems) and `--no-index-html`
-  leaves the page alone. Do not hand-edit the generated block.
+  `--check` verifies without network access of its own (exit `1` lists
+  problems; `dart run` may still run native build hooks that download on a
+  cold pub cache) and `--no-index-html` leaves the page alone. Do not
+  hand-edit the generated block. When switching from a hand-written loader,
+  remove it first: the tool refuses a page that already imports
+  `llama_webgpu_bridge.js` or assigns `LlamaWebGpuBridge` outside its block.
 - llamadart never injects the bridge. Load it in `web/index.html` before
   `flutter_bootstrap.js` (or your compiled script) and assign
   `window.LlamaWebGpuBridge`. At model load llamadart waits up to 12 seconds
