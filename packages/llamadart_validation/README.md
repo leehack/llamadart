@@ -18,15 +18,14 @@ CI rejects missing/stale/duplicate mappings, invented cases, missing profiles
 and cases that no declared profile selects. Exemptions need a concrete reason
 and a GitHub issue. The test prints the current gap inventory; do not maintain
 a second copied list. Multimodal chat, LoRA, state, scoring, speculative
-decoding, sampling and tokenization still need dedicated pack work.
+decoding and sampling still need dedicated pack work.
 Speech/image profiles exist, while their individual reported capability
 contracts remain explicitly exempt pending case-ID bindings.
 
 A mapping is not a test run or qualification result. It does not waive
 unsupported-path negatives, physical-device evidence, provenance or release
 gates. Review new exemptions; do not hide a missing pack behind a generic
-reason. This first #1196 slice implements no missing packs and authorizes no
-Firebase/GCE runs.
+reason. The registry authorizes no Firebase/GCE runs.
 
 This private harness and the chat app that imports it are both excluded from
 the core pub archive. Run them from a repository checkout.
@@ -72,6 +71,25 @@ passing evidence with an independent schema check. LiteRT profiles run only
 `S01` (all flags false) and WebGPU omits the lazy-grammar case. Older journals
 keep their catalogs. See
 [the runbook](../../doc/cross_platform_validation.md#catalog-8-structured-output-pack).
+
+## Tokenization pack
+
+Catalog 9 adds `T01.roundtrip` and `T02.count`, selected by `tokenization`
+focus or release selection. `tokenization-gguf-cpu` locks the existing tiny
+Stories15M GGUF. Both cases call the public engine without injected special
+tokens over a fixed corpus: empty input, ASCII, repeated/edge whitespace,
+newlines/tabs, accented text, emoji, Korean, combining marks, Chinese and Arabic.
+The first requires repeated IDs and exact decoded text; a locked model prefix
+is permitted only for nonempty input. The second calls public `getTokenCount`
+and compares it with `tokenize(addSpecial: false).length`. The importer checks
+all rows independently. A reference adapter without public token count records
+that case NOT_RUN; direct native-reference profiles omit this public API pack.
+
+Catalogs 1–8 retain their inventories. Model-free tests exercise the production
+engine/adapter and reject corrupted evidence; they qualify no tokenizer, model,
+backend or device. Exact upstream token IDs, `addSpecial: true`, special-token
+rendering and normalization-specific model families need separate evidence.
+See [the case contract](../../doc/cross_platform_validation.md#catalog-9-tokenization-pack).
 
 ## Running validation
 

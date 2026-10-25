@@ -208,7 +208,8 @@
           "lifecycle",
           "guards",
           "performance",
-          "structured_output"
+          "structured_output",
+          "tokenization"
         ]
       }
     },
@@ -364,6 +365,13 @@
             "chat_prompt": {
               "type": "string"
             }
+          }
+        },
+        "tokenization": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "expected_prefix": {"type": "string"}
           }
         },
         "structured_output": {
