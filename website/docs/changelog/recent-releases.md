@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add opt-in EmbeddingGemma-2 query/document/title helpers and 768/512/256/128-dimensional output controls with normalization after truncation; existing raw embedding calls are unchanged ([#1126](https://github.com/leehack/llamadart/issues/1126)).
 - Web GGUF loads with `device: ComputeDevice.gpu`, `splitMode: ModelSplitMode.none` and a negative `mainGpu` reach WebGPU instead of failing native CPU-placement validation; an unavailable or inactive GPU still throws ([#915](https://github.com/leehack/llamadart/issues/915)).
 - Cancel a queued Web generation, speech-to-text or speech-synthesis task without stopping another request running on the bridge ([#1371](https://github.com/leehack/llamadart/issues/1371)).
 

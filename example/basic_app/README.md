@@ -1,5 +1,11 @@
 # llamadart CLI Chat Example
 
+For EG2 text retrieval with task/title formatting and a shared 256-component
+query/corpus space, run `dart run bin/llamadart_embedding_retrieval_example.dart
+<path/to/embeddinggemma-2-BF16.gguf>`. This CPU example downloads no model.
+The EG2 profile is an explicit compatibility assertion; quantized models need
+independent retrieval qualification. The existing embedding CLI remains raw.
+
 A clean, organized CLI application demonstrating the capabilities of the `llamadart` package. It supports both interactive conversation mode and single-response mode.
 
 ## Features

@@ -12,6 +12,37 @@ import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
   test(
+    'text retrieval scenario requires both artifacts and opts into local tests',
+    () async {
+      const environment = {
+        'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH': '/local/model.gguf',
+        'LLAMADART_EG2_RETRIEVAL_REFERENCE': '/local/reference.json',
+      };
+      for (final missing in environment.keys) {
+        final result = await runLocalE2e(
+          ['--scenario', 'text-embedding-retrieval', '--dry-run'],
+          projectRoot: '/repo',
+          environment: {...environment}..remove(missing),
+        );
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains(missing));
+      }
+      final result = await runLocalE2e(
+        ['--scenario', 'text-embedding-retrieval', '--dry-run'],
+        projectRoot: '/repo',
+        environment: environment,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('embeddinggemma2_retrieval_e2e_test.dart'),
+      );
+      expect(result.stdout, contains('--run-skipped'));
+      expect(result.stdout, contains('--tags local-only'));
+    },
+  );
+
+  test(
     'native multimodal embedding qualification requires local weights and references',
     () async {
       const environment = {

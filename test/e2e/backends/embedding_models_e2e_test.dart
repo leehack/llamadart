@@ -35,8 +35,8 @@ void main() {
       if (engine == null) return;
       addTearDown(engine.dispose);
       const inputs = [
-        'task: search result | text: Paris is the capital of France.',
-        'task: search result | text: A cat sleeps beside the window.',
+        'title: none | text: Paris is the capital of France.',
+        'title: none | text: A cat sleeps beside the window.',
       ];
       final sequential = [
         for (final input in inputs) await engine.embed(input),
