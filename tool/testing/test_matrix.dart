@@ -614,6 +614,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'probe or hook changes.',
   ),
   TestMatrixRow(
+    id: 'image-seamless-textures',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'SDXS embedded tiny decoder 512-square circular X/Y quality on CPU '
+        'and actual Metal, exact native settings parity when references are '
+        'provided, repeat-tile PNGs, off-after-on and cancellation/reuse; '
+        'no generic VAE-tiling or other-family qualification',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-seamless-textures --model-path <sdxs.gguf>',
+    useWhen:
+        'SeamlessImageGenerationRequest, circular ABI wiring or decoder routing changes.',
+  ),
+  TestMatrixRow(
     id: 'image-exit-teardown',
     tier: 'targeted',
     mode: 'local-only',

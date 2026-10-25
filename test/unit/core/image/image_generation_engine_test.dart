@@ -9,6 +9,7 @@ import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_engine.dart';
 
 import '../../../support/legacy_image_model_params.dart';
+import '../../../support/legacy_image_generation_request.dart';
 import '../../../support/image_model_headers.dart';
 
 const _model = '/models/sd-turbo.gguf';
@@ -81,6 +82,109 @@ void main() {
     }
     engines.clear();
     debugImageGenerationDriverOverride = null;
+  });
+
+  group('seamless textures', () {
+    test(
+      'circular flags survive resolution and ordinary requests reset them',
+      () async {
+        driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
+        driver.session.modelVersion = 'SDXS (512-DS)';
+        final engine = await load(
+          _sdxs(),
+          params: const ImageModelParams(
+            flashAttention: false,
+            vaeDirectConvolution: false,
+          ),
+        );
+        for (final (x, y) in [
+          (true, false),
+          (false, true),
+          (true, true),
+          (false, false),
+        ]) {
+          await engine.generateImage(
+            SeamlessImageGenerationRequest(
+              prompt: 'stone',
+              circularX: x,
+              circularY: y,
+            ),
+          );
+          expect(
+            (
+              driver.session.requests.last.circularX,
+              driver.session.requests.last.circularY,
+            ),
+            (x, y),
+          );
+        }
+        await engine.generateImage(const LegacyImageGenerationRequest());
+        expect(
+          (
+            driver.session.requests.last.circularX,
+            driver.session.requests.last.circularY,
+          ),
+          (false, false),
+        );
+      },
+    );
+
+    test(
+      'forced checkpoint roles and decoder overrides cannot bypass circular checks',
+      () async {
+        driver.session.modelVersion = 'SDXS (512-DS)';
+        for (final header in [
+          ImageModelHeaders.sdTurboCheckpoint,
+          Uint8List(16),
+        ]) {
+          driver.headers[_model] = header;
+          final engine = await load(
+            ImageGenerationModel(
+              _local(_model),
+              role: ImageModelRole.checkpoint,
+            ),
+            params: const ImageModelParams(
+              flashAttention: false,
+              vaeDirectConvolution: false,
+            ),
+          );
+          await expectLater(
+            engine.generate(
+              const SeamlessImageGenerationRequest(
+                prompt: 'stone',
+                circularX: true,
+              ),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(driver.session.requests, isEmpty);
+          await engine.dispose();
+          driver.session = _FakeSession()..modelVersion = 'SDXS (512-DS)';
+        }
+        driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
+        final engine = await load(
+          _sdxs(_local(_model), _local(_taesd)),
+          params: const ImageModelParams(
+            flashAttention: false,
+            vaeDirectConvolution: false,
+          ),
+        );
+        await expectLater(
+          engine.generate(
+            const SeamlessImageGenerationRequest(
+              prompt: 'stone',
+              circularY: true,
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(driver.session.requests, isEmpty);
+        // Rejection happens before taking the process-wide generation slot.
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'ordinary'),
+        );
+      },
+    );
   });
 
   group('checkRuntime', () {
@@ -2154,7 +2258,7 @@ final class _FakeSession implements ImageGenerationSession {
   bool disposedAfterGenerate = false;
 
   @override
-  String get modelVersion => 'SD 2.x';
+  String modelVersion = 'SD 2.x';
 
   @override
   Future<List<GeneratedImage>?> generate(

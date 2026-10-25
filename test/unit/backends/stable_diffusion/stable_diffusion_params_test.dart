@@ -315,6 +315,50 @@ void main() {
       count: 2,
     );
 
+    for (final (x, y) in [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
+      test('maps circular axes $x/$y without changing decoder tiling', () {
+        using((arena) {
+          final params = arena<sd.sd_img_gen_params_t>();
+          params.ref.vae_tiling_params.target_overlap = 0.37;
+          applyStableDiffusionGenerationParams(
+            params,
+            ImageGenerationSessionRequest(
+              prompt: 'stone',
+              negativePrompt: '',
+              width: 512,
+              height: 512,
+              steps: 4,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              circularX: x,
+              circularY: y,
+            ),
+            arena,
+          );
+          expect(params.ref.circular_x, x);
+          expect(params.ref.circular_y, y);
+          final bytes = params.cast<Uint8>().asTypedList(
+            sizeOf<sd.sd_img_gen_params_t>(),
+          );
+          expect(bytes[540], x ? 1 : 0);
+          expect(bytes[541], y ? 1 : 0);
+          expect(params.ref.vae_tiling_params.enabled, isFalse);
+          expect(params.ref.vae_tiling_params.rel_size_w, 0);
+          expect(params.ref.vae_tiling_params.rel_size_h, 0);
+          expect(
+            params.ref.vae_tiling_params.target_overlap,
+            closeTo(0.37, 0.00001),
+          );
+        });
+      });
+    }
+
     test('writes the prompt, size, seed, count, steps and guidance', () {
       using((arena) {
         final params = arena<sd.sd_img_gen_params_t>();

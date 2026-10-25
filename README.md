@@ -477,6 +477,14 @@ turn off prompt-conditioning reuse, or a positive entry limit. Unset keeps
 the runtime default of four entries. This does not enable approximate
 sampling caches; see the guide's [conditioning cache](https://llamadart.leehack.com/docs/next/guides/image-generation#conditioning-cache).
 
+For repeatable textures, `SeamlessImageGenerationRequest(circularX: true,
+circularY: true, ...)` enables independent axes. The initial qualified recipe
+is SDXS with its embedded tiny decoder at 512×512 on CPU or Metal, with
+`flashAttention: false` and `vaeDirectConvolution: false`; other recipes
+throw. Both axes default off. Inspect repeated output and see the guide's
+[seamless texture recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
+for its measured scope and quality criteria.
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |

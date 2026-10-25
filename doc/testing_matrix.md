@@ -967,3 +967,11 @@ compares Qwen3 named-template/multiclass and Jina fallback/single-output scoring
 with upstream, including batching, overflow, cancellation, reuse and disposal.
 Record CPU and Metal receipts separately; other platforms remain unqualified
 until their model-backed runs pass.
+
+## Seamless texture qualification
+
+`image-seamless-textures` runs the maintained local-only SDXS recipe through
+`example/basic_app/test/image_seamless_textures_e2e_test.dart`. See
+[the recipe and native-reference procedure](image_seamless_textures.md).
+Set `LLAMADART_TEXTURE_DEVICES=cpu` on a host without Metal; this qualifies
+CPU only. The default `cpu,metal` requires an actual `MTL` backend for Metal.

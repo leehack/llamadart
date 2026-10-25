@@ -791,6 +791,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-seamless-textures',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify the bounded SDXS 512-square circular texture recipe: '
+          'CPU and actual Metal, X/Y seam quality, repeat PNGs, off-after-on, '
+          'cancellation/reuse and optional exact native-reference pixels.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_seamless_textures_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_SDXS_MODEL': context.modelPath!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-seamless-textures',
+          },
+          description: 'SDXS circular axes and decoder quality qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2080,11 +2109,12 @@ Future<LocalE2eResult> runLocalE2e(
           'chat-app-web-tool-penalty-smoke.\n',
     );
   }
-  if (scenario.name == 'image-generation-smoke' && parsed.modelPath == null) {
-    return const LocalE2eResult(
+  if ((scenario.name == 'image-generation-smoke' ||
+          scenario.name == 'image-seamless-textures') &&
+      parsed.modelPath == null) {
+    return LocalE2eResult(
       64,
-      stderr:
-          '--model-path <sdxs.gguf> is required for image-generation-smoke.\n',
+      stderr: '--model-path <sdxs.gguf> is required for ${scenario.name}.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&

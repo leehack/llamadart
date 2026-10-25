@@ -674,6 +674,66 @@ for this option; SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image were not run.
 Web image generation remains unavailable. Approximation-cache modes remain
 separate work in [#1233](https://github.com/leehack/llamadart/issues/1233).
 
+## Seamless textures
+
+`SeamlessImageGenerationRequest` opts into circular padding independently on
+X (left/right) and Y (top/bottom). Both default to `false`; ordinary
+`ImageGenerationRequest` calls keep their existing behavior. The first
+qualified profile is **SDXS (512-DS), its embedded tiny decoder, 512×512,
+CPU or Metal**, loaded with both `flashAttention: false` and
+`vaeDirectConvolution: false`. The engine checks the native family and file
+headers, so renaming weights or forcing a checkpoint role does not grant
+support. Other families, component/decoder overrides, sizes, other GPUs and
+enabled attention/direct-convolution options throw `LlamaUnsupportedException`
+before a task starts. Defaults that enable flash attention must be overridden.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  ImageGenerationModel(ModelSource.path('sdxs-512-tinySDdistilled_Q8_0.gguf')),
+  params: const ImageModelParams(
+    flashAttention: false,
+    vaeDirectConvolution: false,
+  ),
+);
+try {
+  final result = await engine.generateImage(
+    const SeamlessImageGenerationRequest(
+      prompt: 'seamless texture of weathered gray stone, uniform rough stone '
+          'surface, flat lighting, top down',
+      width: 512,
+      height: 512,
+      steps: 4,
+      guidanceScale: 1,
+      seed: 42,
+      sampler: ImageGenerationSampler.euler,
+      scheduler: ImageGenerationScheduler.discrete,
+      circularX: true,
+      circularY: true,
+    ),
+  );
+  await File('stone.png').writeAsBytes(result.images.single.toPng());
+} finally {
+  await engine.dispose();
+}
+```
+
+This uses the pinned runtime's ordinary diffusion and VAE decoder circular
+convolutions. It does not enable VAE tiling or alter sampling defaults.
+Padding improves boundary continuity; prompt content and seeds can still
+produce an unsuitable texture. Inspect a 2×2 repeat before using the output.
+The fixed qualification prompt/seed must pass, on each requested axis:
+edge mean absolute RGB difference below 8/255, below 1.5 times the average
+interior adjacent-pixel difference, and below 40% of the same-seed off result.
+These criteria measure continuity, not artistic quality.
+
+The maintained `image-seamless-textures` scenario saves individual and repeated
+PNGs, numerical JSON, checks native-reference pixels when provided, and checks
+ordinary output after circular generation and cancellation/reuse. Measured
+qualification is macOS arm64 CPU and actual Metal; other platforms are
+unmeasured. SD-Turbo's full VAE missed the fixed profile's absolute seam gate
+and is refused. Other families and external TAESD decoders are not qualified.
+See the [reproducible source and artifact evidence](https://github.com/leehack/llamadart/blob/main/doc/image_seamless_textures.md).
+
 ## First-image latency and warm-up
 
 ggml compiles GPU shaders the first time a process needs them, in two places:

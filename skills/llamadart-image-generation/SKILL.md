@@ -60,6 +60,17 @@ core and `llamadart_stable_diffusion_flutter` together.
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64
   are unsupported. Windows needs the latest
   Microsoft Visual C++ v14 Redistributable (x64).
+- For repeating textures use `SeamlessImageGenerationRequest`, with independent
+  `circularX` and `circularY` flags (both default off). Its initial supported
+  recipe is native-detected SDXS (512-DS) with header-detected embedded tiny
+  decoder, no components, 512×512, CPU or Metal, loaded with
+  `flashAttention: false` and `vaeDirectConvolution: false`. Other families,
+  decoder overrides, sizes and options throw `LlamaUnsupportedException`.
+  This changes convolution padding in diffusion and VAE, not VAE tiling.
+  Keep seed, sampler, scheduler and guidance explicit for comparisons; inspect
+  a 2×2 repeat because arbitrary prompts/seeds are not quality guarantees.
+  Measured qualification is macOS arm64 CPU and Metal. See the image guide's
+  seamless-textures recipe and `doc/image_seamless_textures.md` for evidence.
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.
