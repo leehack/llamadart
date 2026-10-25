@@ -472,6 +472,115 @@ void main() {
       });
     }
 
+    Directory baselineRepo(String heading, {String tag = 'v9.9.9'}) {
+      final root = releaseNotesRepo(heading);
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        final claim = pin.path == 'CHANGELOG.md'
+            ? '* Keep the default WebGPU bridge assets at'
+            : '- Keep default WebGPU bridge assets at';
+        file.writeAsStringSync(
+          file.readAsStringSync().replaceFirst(
+            RegExp(r'^[*-] Aligned[^\n]*', multiLine: true),
+            '$claim `$tag` (unchanged from 1.2.2).',
+          ),
+        );
+      }
+      return root;
+    }
+
+    for (final heading in ['Unreleased', '1.2.3']) {
+      test('accepts an explicit unchanged bridge baseline in $heading', () {
+        expect(
+          findCurrentReleaseNotesDrift(baselineRepo(heading), 'v9.9.9'),
+          isEmpty,
+        );
+      });
+
+      test('a stale unchanged baseline in $heading fails', () {
+        expect(
+          findCurrentReleaseNotesDrift(
+            baselineRepo(heading, tag: 'v0.0.1'),
+            'v9.9.9',
+          ),
+          [
+            for (final pin in releaseNotesPins)
+              '${pin.path}: pins v0.0.1, expected v9.9.9',
+          ],
+        );
+      });
+
+      for (final extra in [
+        'Keep default WebGPU bridge assets at `v9.9.9` (unchanged from 1.2.2).',
+        'Aligned default WebGPU bridge assets to `v9.9.9`.',
+        'Moved WebGPU bridge assets to malformed.',
+      ]) {
+        test('$heading baseline cannot hide an additional claim: $extra', () {
+          final root = baselineRepo(heading);
+          for (final pin in releaseNotesPins) {
+            final file = File('${root.path}/${pin.path}');
+            final bullet = pin.path == 'CHANGELOG.md' ? '*' : '-';
+            final claim = pin.path == 'CHANGELOG.md'
+                ? extra.replaceFirst('default WebGPU', 'the default WebGPU')
+                : extra;
+            file.writeAsStringSync(
+              file.readAsStringSync().replaceFirst(
+                '\n\n',
+                '\n\n$bullet $claim\n',
+              ),
+            );
+          }
+          expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+        });
+      }
+
+      for (final malformed in [
+        ' (unchanged from 1.2.2)',
+        ' (unchanged from older releases).',
+        ' (unchanged from 1.2.2). Extra claim.',
+        '.',
+      ]) {
+        test('$heading baseline requires its complete wording: $malformed', () {
+          final root = baselineRepo(heading);
+          for (final pin in releaseNotesPins) {
+            final file = File('${root.path}/${pin.path}');
+            file.writeAsStringSync(
+              file.readAsStringSync().replaceFirst(
+                ' (unchanged from 1.2.2).',
+                malformed,
+              ),
+            );
+          }
+          expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+        });
+      }
+    }
+
+    test('the aggregate pin gate rejects a stale unchanged baseline', () {
+      final root = baselineRepo('1.2.3', tag: 'v0.0.1');
+      expect(
+        findBridgeTagDrift(root, 'v9.9.9'),
+        containsAll([
+          for (final pin in releaseNotesPins)
+            '${pin.path}: pins v0.0.1, expected v9.9.9',
+        ]),
+      );
+    });
+
+    test('a promoted pin-free section cannot borrow a frozen baseline', () {
+      final root = baselineRepo('1.2.3');
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        file.writeAsStringSync(
+          file.readAsStringSync().replaceFirst(
+            RegExp(r'^[*-] Keep[^\n]*\n', multiLine: true),
+            '',
+          ),
+        );
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+    });
+
     test('a heading naming another version is reported', () {
       expect(
         findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.4'), 'v9.9.9'),

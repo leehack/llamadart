@@ -20,6 +20,10 @@ For canonical full release notes, use:
 - Fix explicit Web GGUF GPU placement with `splitMode: ModelSplitMode.none` and negative `mainGpu`; unavailable or inactive GPUs still throw ([#915](https://github.com/leehack/llamadart/issues/915)).
 - Cancel queued Web generation, speech-to-text or speech-synthesis tasks without stopping another request running on the bridge ([#1371](https://github.com/leehack/llamadart/issues/1371)).
 
+- Keep default WebGPU bridge assets at `v0.1.73` (unchanged from 0.16.2).
+
+Web runtime baseline (unchanged): upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, native `v0.7.0-2`; Web LiteRT-LM `@litert-lm/core@0.18.0`. Bridge manifest SHA-256: `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`.
+
 ## 0.16.2
 
 - Update the default LiteRT-LM native runtime to `leehack/litert-lm-native@v0.18.1-4`. Windows x64 apps no longer need the Visual C++ Redistributable for LiteRT-LM, which now ships its own Visual C++ runtime DLLs ([litert-lm-native#87](https://github.com/leehack/litert-lm-native/issues/87)); llama.cpp already did, so only the opt-in `stable_diffusion` runtime still needs it. On Linux and Windows, LiteRT-LM CPU inference uses the configured thread count instead of one thread: Qwen3 0.6B CPU decode is 3.3× faster on an 8-vCPU Linux arm64 host and 2.2× faster on a 4-vCPU Windows x64 host ([litert-lm-native#89](https://github.com/leehack/litert-lm-native/issues/89), [#1375](https://github.com/leehack/llamadart/issues/1375)). Flutter Apple apps get it with `llamadart_litert_lm_flutter` `0.16.2`.

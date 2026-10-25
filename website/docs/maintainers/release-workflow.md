@@ -138,6 +138,28 @@ version alignment:
   remove the heading. `--release-prep` fails while either keeps
   `## Unreleased`; after the release, `docs_version_cut.yml` puts an empty one
   back on `main`, so the next change only adds a bullet.
+- Each current core release section must state the pinned WebGPU bridge tag.
+  If it is unchanged, use an explicit baseline instead of repeating the old
+  release's fixes. In `CHANGELOG.md`, use:
+
+  ```markdown
+  * Keep the default WebGPU bridge assets at `vX.Y.Z` (unchanged from A.B.C).
+  ```
+
+  In `website/docs/changelog/recent-releases.md`, use:
+
+  ```markdown
+  - Keep default WebGPU bridge assets at `vX.Y.Z` (unchanged from A.B.C).
+  ```
+
+  Replace `vX.Y.Z` with the pinned asset tag and `A.B.C` with the published core
+  version it is retained from. Keep a separate runtime-baseline paragraph with
+  the existing upstream llama.cpp tag and commit, native tag, Web LiteRT-LM
+  module version and manifest SHA-256; the release-note tests still require
+  that provenance in the current section. This records retained versions, not
+  newly shipped fixes. The bridge-tag gate checks the complete baseline wording,
+  rejects missing, stale or multiple claims, and never borrows a baseline from
+  an older release when the promoted current section omits it.
 - Both core changelogs union-merge (see [Changelog merges](#changelog-merges)).
   Turn union off before rebasing or merging the release-prep branch.
 - Update `MIGRATION.md` if breaking behavior changed.
