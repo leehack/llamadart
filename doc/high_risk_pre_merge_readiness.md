@@ -106,8 +106,18 @@ tooling tests that load them are their only durable proof; no other `.github/`
 or policy path is a production reference. The independent Genkit
 package may cite its own `packages/genkit_llamadart/test/**/*_test.dart` files;
 the same exact-blob, callsite, causal-control and structured-output obligations
-apply. This does not admit arbitrary package paths or relax compiled-grammar,
-independent-audit or external-authentication requirements.
+apply. The private validation harness additionally admits only
+`packages/llamadart_validation/lib/` and the exact
+`packages/llamadart_validation/assets/capability_coverage.json` registry as
+production references. Every changed path in that bounded set needs coverage.
+Its `packages/llamadart_validation/test/**/*_test.dart` tests may cite only
+harness production references; harness references may be cited only by those
+package tests or `test/unit/tooling/**/*_test.dart` tests. This pairing admits
+paths, not a caller assertion of reachability: the independent reviewer still
+inspects the actual callsite and causal control. The registry's literal JSON
+snippet must occur in its exact candidate blob, like any source reference.
+This does not admit other harness assets or arbitrary package paths, or relax
+compiled-grammar, independent-audit or external-authentication requirements.
 
 Changes to the native-sync scripts may cite the Python suites CI runs
 directly, each only with its paired script in `production_refs` and a
