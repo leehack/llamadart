@@ -945,6 +945,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
   ),
   TestMatrixRow(
+    id: 'qwen3-litert-cpu-unicode',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Known Qwen3-0.6B artifact exact split-token emoji decode, Unicode '
+        'and literal byte-level text round trips, followed by CPU chat features',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'qwen3-litert-cpu-unicode --model-path <Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen:
+        'Changing the Qwen3 LiteRT-LM CPU smoke artifact or tokenizer fidelity. '
+        'The original artifact is an expected failing negative control. '
+        'No GPU, device, or Web qualification.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',

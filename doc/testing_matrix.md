@@ -291,6 +291,32 @@ production page or the native cause of the abort. To repeat it, use the recorded
 artifacts, set both optional batch values to 4096 and run the maintained
 `TTS 1-frame baseline without cancellation` test.
 
+## Qwen3 LiteRT-LM CPU Unicode fixture
+
+List and dry-run before executing the scenario:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/run_local_e2e.dart --scenario qwen3-litert-cpu-unicode \
+  --model-path <Qwen3-0.6B.litertlm> --backend cpu --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario qwen3-litert-cpu-unicode \
+  --model-path <Qwen3-0.6B.litertlm> --backend cpu
+```
+
+It verifies the immutable
+Qwen3-0.6B artifact hash, checks public `detokenize([9707, 0, 26525, 232])`
+against `Hello! 😊`, checks Unicode and literal `ĠðŁĺĬ` round trips, then runs
+the maintained chat/thinking/tool/cutoff campaign. Round trips alone can
+miss the split-token conversion defect.
+
+The updated artifact has revision `e6687177e00897731e7716267eebd4eba0dde7c2`
+and SHA-256 `c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`.
+The legacy `8414150f` artifact is accepted only as a negative control and must
+fail the decoded-text assertion. Other artifacts are rejected before applying
+Qwen token IDs. Generic `litert-lm-chat-features-smoke` remains available for
+other models without the fixture. The native smoke workflow runs this CPU
+scenario on Linux and Windows; GPU and mobile/Web adoption remain separate.
+
 ## Platform Rows
 
 The platform tier is intentionally explicit about what is runtime-tested versus

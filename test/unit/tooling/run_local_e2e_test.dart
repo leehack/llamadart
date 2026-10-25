@@ -73,6 +73,47 @@ void main() {
     },
   );
 
+  test(
+    'Qwen Unicode scenario wires the exact fixture and forces CPU',
+    () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'qwen3-litert-cpu-unicode',
+          '--model-path',
+          'models/Qwen3-0.6B.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('LITERT_LM_TOKENIZER_FIXTURE=qwen3-0.6b'));
+      expect(
+        result.stdout,
+        contains(
+          'tool/litert_lm_chat_features_smoke.dart '
+          'models/Qwen3-0.6B.litertlm cpu',
+        ),
+      );
+      for (final args in [
+        ['--scenario', 'qwen3-litert-cpu-unicode', '--dry-run'],
+        [
+          '--scenario',
+          'qwen3-litert-cpu-unicode',
+          '--model-path',
+          'model',
+          '--backend',
+          'gpu',
+          '--dry-run',
+        ],
+      ]) {
+        final invalid = await runLocalE2e(args, projectRoot: '/repo');
+        expect(invalid.exitCode, 64);
+      }
+    },
+  );
+
   group('run_local_e2e', () {
     test('documents shared runner options and defaults', () async {
       final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');

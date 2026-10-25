@@ -13,6 +13,8 @@ on:
       - "pubspec.*"
       - "tool/litert_lm_chat_features_smoke.dart"
       - "tool/audio_chat_smoke_support.dart"
+      - "tool/litert_lm_tokenizer_fixture.dart"
+      - "tool/testing/run_local_e2e.dart"
       - "tool/litert_lm_engine_smoke.dart"
       - "tool/litert_lm_library_smoke.dart"
   pull_request:
@@ -26,12 +28,14 @@ on:
       - "pubspec.*"
       - "tool/litert_lm_chat_features_smoke.dart"
       - "tool/audio_chat_smoke_support.dart"
+      - "tool/litert_lm_tokenizer_fixture.dart"
+      - "tool/testing/run_local_e2e.dart"
       - "tool/litert_lm_engine_smoke.dart"
       - "tool/litert_lm_library_smoke.dart"
 
 env:
-  LITERT_LM_SMOKE_MODEL_REVISION: 8414150f2e9dcc82449bcc9c5abc404b399a4d06
-  LITERT_LM_SMOKE_MODEL_SHA256: 555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4
+  LITERT_LM_SMOKE_MODEL_REVISION: e6687177e00897731e7716267eebd4eba0dde7c2
+  LITERT_LM_SMOKE_MODEL_SHA256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -186,7 +190,9 @@ jobs:
             "What is 2+2? Answer only with the number." \
             16 \
             1024
-          dart run tool/litert_lm_chat_features_smoke.dart "$LITERT_LM_MODEL_PATH" cpu
+          dart run tool/testing/run_local_e2e.dart \
+            --scenario qwen3-litert-cpu-unicode \
+            --model-path "$LITERT_LM_MODEL_PATH" --backend cpu
 
       - name: Note skipped LiteRT-LM model smokes
         if: steps.download-model.outcome != 'success'
