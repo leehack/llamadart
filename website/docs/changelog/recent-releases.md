@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Recommend the corrected Qwen3-0.6B LiteRT-LM bundle for native CPU to preserve split-token emoji.
+
 - Add `TemplateTimeChatSession` for reproducible prompt dates and apply explicit template clocks to `strftime_now` ([#859](https://github.com/leehack/llamadart/issues/859)).
 - Aligned default WebGPU bridge assets to `v0.1.73`: Web `embed()` and `embedBatch()` throw `LlamaUnsupportedException` for rank-pooled rerankers instead of returning an invalid vector built from classifier scores, and `LlamaEmbeddingInputTooLongException` for an input that must fit one micro-batch but is longer, instead of embedding only part of it or aborting the runtime, as native does ([llama-web-bridge#194](https://github.com/leehack/llama-web-bridge/pull/194)). Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native `v0.7.0-2`, which the manifest records; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`.
 - Correct the `LlamaVideoContent` rejection text: on desktop it now points to a projector without a vision encoder instead of saying video support is built out, and it names Android and iOS as the platforms whose artifacts lack video ([#320](https://github.com/leehack/llamadart/issues/320)).

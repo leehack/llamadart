@@ -109,6 +109,18 @@ The Dart template registry is still used for template metadata, streamed output
 parsing, `engine.chatTemplate(...)`, web LiteRT-LM, and fallback prompt
 rendering when a request cannot use the native conversation path.
 
+For native CPU Qwen3-0.6B, use the updated
+[LiteRT-LM bundle](https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm)
+(revision `e6687177e00897731e7716267eebd4eba0dde7c2`, SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`).
+The older `8414150f` bundle can emit literal byte-level token spellings such
+as `ĠðŁĺĬ` instead of an emoji. A runtime upgrade alone does not repair its
+tokenizer; replace the model artifact. Preserve literal user text rather than
+rewriting these characters. The updated bundle is verified on macOS CPU;
+Linux/Windows CPU qualification runs in the maintained smoke workflow.
+GPU, iOS, Android and Web adoption still need separate validation
+([#554](https://github.com/leehack/llamadart/issues/554)).
+
 Native LiteRT-LM recognizes renamed Qwen 3 bundles only with a Qwen 3
 model-type declaration (metadata field 6), or the complete canonical Qwen 3
 template in field 7 or `ModelParams.chatTemplate`. Generic ChatML and thinking

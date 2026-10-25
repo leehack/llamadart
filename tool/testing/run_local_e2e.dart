@@ -1,6 +1,7 @@
 #!/usr/bin/env dart
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 /// Result returned by [runLocalE2e].
@@ -31,6 +32,7 @@ class LocalE2eCommandStep {
     this.environment = const {},
     this.background = false,
     this.waitForPort,
+    this.foregroundStdoutEncoding = systemEncoding,
   });
 
   final String workingDirectory;
@@ -40,6 +42,10 @@ class LocalE2eCommandStep {
   final String description;
   final bool background;
   final int? waitForPort;
+
+  /// Codec for foreground stdout; controlled Dart protocols can opt into UTF-8.
+  /// Other commands retain their platform's output encoding.
+  final Encoding foregroundStdoutEncoding;
 
   /// Renders this step as a copy-pasteable command for [shell].
   String toDisplayString({LocalE2eDisplayShell? shell}) {
@@ -1302,6 +1308,33 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'qwen3-litert-cpu-unicode',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Check known Qwen3 artifact split-token Unicode and CPU chat.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'tool/litert_lm_chat_features_smoke.dart',
+            context.modelPath!,
+            'cpu',
+          ],
+          environment: const {
+            'LITERT_LM_TOKENIZER_FIXTURE': 'qwen3-0.6b',
+            'LITERT_LM_AUDIO_PATH': '',
+            'LITERT_LM_AUDIO_EXPECTED_TEXT': '',
+            'LITERT_LM_IMAGE_PATH': '',
+          },
+          description: 'Qwen3 exact Unicode decode and CPU chat campaign',
+          foregroundStdoutEncoding: utf8,
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2042,6 +2075,14 @@ Future<LocalE2eResult> runLocalE2e(
           '--model-path and --head-path are required for decision-model-smoke.\n',
     );
   }
+  if (scenario.name == 'qwen3-litert-cpu-unicode' &&
+      parsed.backendProvided &&
+      parsed.backend != 'cpu') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'qwen3-litert-cpu-unicode requires --backend cpu.\n',
+    );
+  }
   if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
     return const LocalE2eResult(
       64,
@@ -2159,6 +2200,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
+          scenario.name == 'qwen3-litert-cpu-unicode' ||
           scenario.name == 'native-prompt-cancel' ||
           scenario.name == 'native-exit-teardown' ||
           scenario.name == 'image-exit-teardown' ||
@@ -2311,6 +2353,7 @@ Future<LocalE2eResult> runLocalE2e(
               workingDirectory: step.workingDirectory,
               environment: step.environment.isEmpty ? null : step.environment,
               runInShell: false,
+              stdoutEncoding: step.foregroundStdoutEncoding,
             )
           : foregroundStepRun(step));
       buffer
@@ -2510,6 +2553,7 @@ Direct environment for example/chat_app/test/flutter_shutdown_e2e_test.dart:
   MACOS_QUIT_BUILD_MODES         Builds to quit (default: debug,release).
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
+  LITERT_LM_TOKENIZER_FIXTURE    qwen3-0.6b checks only the known Qwen artifacts.
   LITERT_LM_IMAGE_PATH           Optional local image fixture.
   LITERT_LM_AUDIO_PATH           Optional local encoded audio fixture.
   LITERT_LM_AUDIO_EXPECTED_TEXT  Required exact expected answer when audio is set.
