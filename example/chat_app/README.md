@@ -167,6 +167,8 @@ flutter test --run-skipped -t local-only \
      button. The microphone records a temporary mono WAV
      for up to 30 seconds; **Stop & transcribe** finalizes it, runs whole-file
      STT, and deletes the native file or revokes the browser blob.
+     Cancelling a Web transcription stops its own request, including when it
+     is queued behind another request on the bridge.
      Capture is foreground-only and cancelling discards the temporary
      recording. The recorder requests 16 kHz mono WAV, but the hardware or
      browser may pick another valid rate; the decoder reads the WAV metadata.
@@ -203,7 +205,9 @@ flutter test --run-skipped -t local-only \
      not chat generation. Enter text, optionally select a language and choose
      or record a speaker reference, then synthesize. The app reports generation
      progress, automatically plays the completed 24 kHz mono output, and lets
-     you stop, replay, or save it as WAV. Recorded references are read into
+     you stop, replay, or save it as WAV. Web cancellation stops its own request,
+     including during startup while another bridge request is active.
+     Recorded references are read into
      memory and their temporary WAV files are best-effort deleted. Web accepts
      selected speaker-reference files as bytes but does not record speaker
      references. The matching model/projector downloads are immutable and

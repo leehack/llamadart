@@ -19,6 +19,7 @@ import 'package:web/web.dart'
         Blob,
         BlobPropertyBag,
         DOMException,
+        Event,
         Response,
         URL,
         document,
@@ -3298,62 +3299,58 @@ void main() {
     });
 
     test(
-      'canceling generation subscription aborts active bridge completion',
+      'canceling a generation subscription aborts only its bridge signal',
       () async {
         final completion = Completer<void>();
-        bridge.setProperty(
-          'cancel'.toJS,
-          (() {
-            cancelCallCount += 1;
-            if (!completion.isCompleted) {
-              completion.complete();
-            }
-          }).toJS,
-        );
+        final started = Completer<void>();
+        late AbortSignal signal;
         bridge.setProperty(
           'createCompletion'.toJS,
           ((String prompt, JSObject opts) {
+            signal = opts.getProperty<AbortSignal>('signal'.toJS);
+            signal.addEventListener(
+              'abort',
+              ((Event _) {
+                if (!completion.isCompleted) completion.complete();
+              }).toJS,
+            );
             final onToken = opts.getProperty('onToken'.toJS) as JSFunction?;
             onToken?.callAsFunction(null, 'Hello'.toJS, 'Hello'.toJS);
+            started.complete();
             return completion.future.toJS;
           }).toJS,
         );
-
         await backend.modelLoadFromUrl(
           'https://example.com/model.gguf',
           const ModelParams(),
         );
-
         final subscription = backend
             .generate(1, 'Hello', const GenerationParams())
             .listen((_) {});
-        await Future<void>.delayed(Duration.zero);
+        await started.future;
         await subscription.cancel();
-
-        expect(cancelCallCount, 1);
-        if (!completion.isCompleted) {
-          completion.complete();
-        }
+        expect(signal.aborted, isTrue);
+        expect(completion.isCompleted, isTrue);
+        expect(cancelCallCount, 0);
       },
     );
 
-    test('an engine subscription cancel before the first token aborts the '
-        'bridge completion before the cancel returns', () async {
+    test('an engine subscription cancel before the first token aborts its '
+        'signal before the cancel returns', () async {
       final completion = Completer<void>();
-      var completionStarted = false;
-      bridge.setProperty(
-        'cancel'.toJS,
-        (() {
-          cancelCallCount += 1;
-          if (!completion.isCompleted) {
-            completion.complete();
-          }
-        }).toJS,
-      );
+      final started = Completer<void>();
+      late AbortSignal signal;
       bridge.setProperty(
         'createCompletion'.toJS,
         ((String prompt, JSObject opts) {
-          completionStarted = true;
+          signal = opts.getProperty<AbortSignal>('signal'.toJS);
+          signal.addEventListener(
+            'abort',
+            ((Event _) {
+              if (!completion.isCompleted) completion.complete();
+            }).toJS,
+          );
+          started.complete();
           return completion.future.toJS;
         }).toJS,
       );
@@ -3362,16 +3359,77 @@ void main() {
         'https://example.com/model.gguf',
         modelParams: const ModelParams(),
       );
-
       final subscription = engine.generate('Hello').listen((_) {});
-      while (!completionStarted) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await started.future;
       final cancelled = subscription.cancel();
-
-      expect(cancelCallCount, 1);
+      expect(signal.aborted, isTrue);
+      expect(cancelCallCount, 0);
       await cancelled;
     });
+
+    test(
+      'cancelling a queued completion leaves the active request intact',
+      () async {
+        final activeCompletion = Completer<JSString>();
+        final queuedCompletion = Completer<JSString>();
+        final signals = <String, AbortSignal>{};
+        final dispatched = <String, Completer<void>>{
+          'active': Completer<void>(),
+          'queued': Completer<void>(),
+        };
+        bridge.setProperty(
+          'cancel'.toJS,
+          (() {
+            cancelCallCount += 1;
+            if (!activeCompletion.isCompleted) {
+              activeCompletion.complete('cut short'.toJS);
+            }
+          }).toJS,
+        );
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final signal = opts.getProperty<AbortSignal>('signal'.toJS);
+            signals[prompt] = signal;
+            final completion = prompt == 'active'
+                ? activeCompletion
+                : queuedCompletion;
+            signal.addEventListener(
+              'abort',
+              ((Event _) {
+                if (!completion.isCompleted) completion.complete(''.toJS);
+              }).toJS,
+            );
+            dispatched[prompt]!.complete();
+            return completion.future.toJS;
+          }).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        final active = backend
+            .generate(1, 'active', const GenerationParams())
+            .toList();
+        await dispatched['active']!.future;
+        final queued = backend
+            .generate(1, 'queued', const GenerationParams())
+            .listen((_) {});
+        await dispatched['queued']!.future;
+        await queued.cancel();
+        expect(signals['queued']!.aborted, isTrue);
+        expect(signals['active']!.aborted, isFalse);
+        if (!activeCompletion.isCompleted) {
+          activeCompletion.complete('kept alive'.toJS);
+        }
+        final chunks = await active;
+        expect(
+          utf8.decode(chunks.expand((chunk) => chunk).toList()),
+          'kept alive',
+        );
+        expect(cancelCallCount, 0);
+      },
+    );
 
     test('generates embedding vector from bridge', () async {
       await backend.modelLoadFromUrl(
@@ -5739,9 +5797,92 @@ void main() {
     );
 
     test(
+      'public TTS startup cancellation preserves another active generation',
+      () async {
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl('https://example.com/model.gguf');
+        await engine.loadMultimodalProjector('https://example.com/mmproj.gguf');
+        final firstProbe = Completer<JSObject>();
+        final secondProbe = Completer<JSObject>();
+        final secondProbeStarted = Completer<void>();
+        final activeStarted = Completer<void>();
+        final activeCompletion = Completer<JSString>();
+        var capabilityCalls = 0;
+        var synthesizeCalls = 0;
+        final capabilities = JSObject()
+          ..setProperty('apiVersion'.toJS, 1.toJS)
+          ..setProperty('supported'.toJS, true.toJS)
+          ..setProperty('modelType'.toJS, 1.toJS)
+          ..setProperty('supportsLanguage'.toJS, true.toJS)
+          ..setProperty('sampleRate'.toJS, 24000.toJS)
+          ..setProperty('channels'.toJS, 1.toJS);
+        bridge.setProperty(
+          'getTextToSpeechCapabilities'.toJS,
+          (() {
+            capabilityCalls++;
+            if (capabilityCalls == 1) return firstProbe.future.toJS;
+            secondProbeStarted.complete();
+            return secondProbe.future.toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject options) {
+            activeStarted.complete();
+            return activeCompletion.future.toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'synthesizeSpeech'.toJS,
+          ((JSObject options) {
+            synthesizeCalls++;
+            return Future<JSAny?>.error(
+              StateError('unexpected synthesis'),
+            ).toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'cancel'.toJS,
+          (() {
+            cancelCallCount++;
+            if (!activeCompletion.isCompleted) {
+              activeCompletion.complete('cut short'.toJS);
+            }
+          }).toJS,
+        );
+        final speech = TextToSpeechEngine.attach(
+          engine,
+          adapter: const Qwen3TtsAdapter(),
+        );
+        addTearDown(speech.dispose);
+        final taskFuture = speech.synthesize(
+          const TextToSpeechRequest(text: 'Queued speech.'),
+        );
+        final other = engine.generate('other request').join();
+        await activeStarted.future;
+        firstProbe.complete(capabilities);
+        final task = await taskFuture;
+        final events = task.events.toList();
+        await secondProbeStarted.future;
+        task.cancel();
+        secondProbe.complete(capabilities);
+        expect((await task.done).state, TextToSpeechCompletionState.cancelled);
+        expect((await events).whereType<TextToSpeechFinalEvent>(), isEmpty);
+        if (!activeCompletion.isCompleted) {
+          activeCompletion.complete('kept alive'.toJS);
+        }
+        expect(await other, 'kept alive');
+        expect(synthesizeCalls, 0);
+        expect(cancelCallCount, 0);
+      },
+    );
+
+    test(
       'rejects local speaker paths and routes active cancellation',
       () async {
         final synthesis = Completer<JSAny?>();
+        late AbortSignal signal;
         bridge.setProperty(
           'getTextToSpeechCapabilities'.toJS,
           (() {
@@ -5758,7 +5899,10 @@ void main() {
         );
         bridge.setProperty(
           'synthesizeSpeech'.toJS,
-          ((JSObject options) => synthesis.future.toJS).toJS,
+          ((JSObject options) {
+            signal = options.getProperty<AbortSignal>('signal'.toJS);
+            return synthesis.future.toJS;
+          }).toJS,
         );
         await backend.modelLoadFromUrl(
           'https://example.com/model.gguf',
@@ -5788,7 +5932,8 @@ void main() {
         );
         await Future<void>.delayed(Duration.zero);
         backend.cancelTextToSpeech();
-        expect(cancelCallCount, 1);
+        expect(signal.aborted, isTrue);
+        expect(cancelCallCount, 0);
         synthesis.completeError(StateError('cancelled'));
         await expectLater(active, throwsA(isA<LlamaTextToSpeechException>()));
       },
@@ -5825,7 +5970,7 @@ void main() {
           const BackendTextToSpeechRequest(text: 'Cancel me.'),
         );
         backend.cancelTextToSpeech();
-        expect(cancelCallCount, 1);
+        expect(cancelCallCount, 0);
 
         capabilityProbe.complete(
           JSObject()

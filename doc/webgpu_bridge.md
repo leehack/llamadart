@@ -205,6 +205,24 @@ Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
 hardware WebGPU was not exercised. Repeated media batches require memory64. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
 
+### Per-request cancellation
+
+A generation subscription cancel, including `SpeechToTextTask.cancel()`, aborts
+only the signal passed to that bridge completion. It must not also call the
+bridge's global `cancel()`: a cancelled queued completion may not own the active
+operation. TTS task cancellation follows the same rule: its controller is
+claimed before the backend capability probe, which may still be queued behind
+another active request. The signal prevents synthesis after that probe returns.
+Engine-wide `cancelGeneration()` retains its global behavior.
+
+The `web-speech-task-cancel` scenario exercises real typed STT/TTS cancellation
+and reuse against pinned assets in direct and worker runtimes. Its CPU/Wasm
+results do not establish hardware WebGPU acceleration or cancellation latency.
+The TTS recipe uses explicit batch 512 and micro-batch 256; it does not qualify
+the default context-sized batch profile. See [the test matrix](testing_matrix.md#web-speech-task-cancellation)
+for the bounded controls and the non-isolated test harness's larger-batch
+observation.
+
 ### Completion termination
 
 With `supportsCompletionUsage`, the backend consumes `onUsage.finishReason`

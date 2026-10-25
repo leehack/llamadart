@@ -250,10 +250,14 @@ fallback when model template metadata is empty. See
   validated WebGPU bridge assets, your own `SpeechToTextPromptAdapter` for
   other audio chat models, plus worker-isolated, CPU-only native LiteRT-LM
   streaming ASR (`LiteRtLmAsrAdapter`) with bounded 16 kHz PCM input and
-  partial transcripts.
+  partial transcripts. With the pinned bridge assets, Web speech-to-text task
+  cancellation stops only that task, including when its generation is queued
+  behind another request.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp and WebGPU
   bridge assets through `TextToSpeechEngine.load` or `attach`
-  (`Qwen3TtsAdapter`), returning complete PCM with WAV encoding.
+  (`Qwen3TtsAdapter`), returning complete PCM with WAV encoding. With the pinned
+  bridge assets, Web task cancellation leaves other requests running, including
+  during synthesis startup.
 - **Preview:** on-device text-to-image generation through
   `ImageGenerationEngine` on native targets; see
   [Image generation (Preview)](#image-generation-preview).

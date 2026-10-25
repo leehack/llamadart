@@ -176,6 +176,7 @@ void main() {
       expect(result.stdout, contains('litert-lm-asr-smoke'));
       expect(result.stdout, contains('decision-model-smoke'));
       expect(result.stdout, contains('decision-model-web-smoke'));
+      expect(result.stdout, contains('web-speech-task-cancel'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -1734,6 +1735,32 @@ dev_dependencies:
       ).readAsStringSync();
       expect(e2e, contains("@Tags(['local-only', 'e2e'])"));
       expect(e2e, contains("'../../../build/decision_web_e2e/'"));
+    });
+
+    test('dry-runs Web speech cancellation with pinned assets and '
+        'the WebGPU Chrome platform', () async {
+      final result = await runLocalE2e(
+        const ['--scenario', 'web-speech-task-cancel', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Scenario: web-speech-task-cancel'));
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_speech_task_cancel/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test -p chrome-webgpu --run-skipped -t local-only '
+          'test/e2e/webgpu/speech_task_cancellation_e2e_test.dart',
+        ),
+      );
     });
 
     test('defines the chrome-webgpu platform with WebGPU and '
