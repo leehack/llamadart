@@ -291,7 +291,16 @@ at generation start when it is missing. Native llama.cpp also takes
 `draftMicroBatchSize` to give the draft context a smaller micro-batch than the
 target; WebGPU and LiteRT-LM reject it.
 
-For ordered embedding content, use `LlamaEmbeddingInput` with
+For text retrieval, opt into
+`LlamaTextEmbedder(engine, profile: LlamaEmbeddingProfile.embeddingGemma2,
+dimensions: 256)` and pass `LlamaEmbeddingText.query`, `.document(title: ...)`
+or `.prepared` inputs. It formats only explicit text tasks, checks the full
+768-component EG2 output, truncates to 768/512/256/128, then L2-normalizes.
+The profile is your assertion of model compatibility; it does not identify or
+qualify the loaded model. Query and corpus dimensions must match. The default
+raw profile and existing `embed` calls retain their original behavior.
+
+For ordered image/audio content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports
 image/audio embeddings with EmbeddingGemma-2 and its projector on native

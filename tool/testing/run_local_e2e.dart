@@ -1066,6 +1066,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'text-embedding-retrieval',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Compare EmbeddingGemma-2 text helpers at 768/512/256/128 dimensions with the official float32 CPU reference; no downloads. See doc/embedding_text_helpers.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--tags',
+            'local-only',
+            '--run-skipped',
+            'test/e2e/backends/embeddinggemma2_retrieval_e2e_test.dart',
+          ],
+          description: 'Official EG2 text retrieval reference qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'native-embedding-benchmark',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2090,6 +2115,22 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name == 'text-embedding-retrieval') {
+    for (final name in const [
+      'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH',
+      'LLAMADART_EG2_RETRIEVAL_REFERENCE',
+    ]) {
+      if ((environment ?? Platform.environment)[name]?.trim().isNotEmpty !=
+          true) {
+        return LocalE2eResult(
+          64,
+          stderr:
+              '$name is required for text-embedding-retrieval; see doc/embedding_text_helpers.md.\n',
+        );
+      }
+    }
   }
 
   if (scenario.name == 'native-multimodal-embeddings') {

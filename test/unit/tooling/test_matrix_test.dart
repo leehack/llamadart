@@ -9,6 +9,23 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test('text profile row selects the official retrieval production scenario', () {
+    final row = testMatrixRows.singleWhere(
+      (r) => r.id == 'text-embedding-retrieval',
+    );
+    expect(row.tier, 'targeted');
+    expect(row.mode, contains('local-only'));
+    expect(
+      row.command,
+      'dart run tool/testing/run_local_e2e.dart --scenario text-embedding-retrieval',
+    );
+    final scenario = buildLocalE2eScenarios().singleWhere(
+      (s) => s.name == row.id,
+    );
+    expect(scenario.requiresDevice, isFalse);
+    expect(scenario.description, contains('official float32 CPU reference'));
+  });
+
   test('examples-tests row names the example package CI job', () {
     final row = testMatrixRows.singleWhere((r) => r.id == 'examples-tests');
     expect(row.tier, 'targeted');
