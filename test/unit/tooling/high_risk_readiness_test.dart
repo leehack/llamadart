@@ -2059,6 +2059,8 @@ void main() {
           'packages/genkit_llamadart/lib/not_a_test.dart',
           'packages/genkit_llamadart/test/../lib/escape_test.dart',
           'packages/genkit_llamadart/test/unit/*_test.dart',
+          'packages/llamadart_validation/test/../lib/reuse_test.dart',
+          'packages/llamadart_validation/test/unit/*_test.dart',
           '/test/absolute_test.dart',
           'test/../test/escape_test.dart',
           'lib/readme.dart',
@@ -2170,6 +2172,299 @@ void main() {
 
         expectFailure(result, ReadinessFailureClassification.gitExecutionError);
         expect(() => jsonEncode(result.toJson()), returnsNormally);
+      },
+    );
+  });
+
+  group('private harness evidence admission', () {
+    const source = 'packages/llamadart_validation/lib/src/tokenization.dart';
+    const registry =
+        'packages/llamadart_validation/assets/capability_coverage.json';
+    const target = 'packages/llamadart_validation/test/tokenization_test.dart';
+    const tooling = 'test/unit/tooling/validation_coverage_test.dart';
+    const changes = [
+      RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+      RepositoryChange(path: registry, kind: RepositoryChangeKind.modified),
+      RepositoryChange(path: target, kind: RepositoryChangeKind.added),
+    ];
+
+    Map<String, dynamic> evidenceFor(String testPath) {
+      final evidence = backendEvidence()..['affected_test_paths'] = [testPath];
+      evidence['test_evidence'] = {
+        testPath: testProof(source)
+          ..['production_refs'] = [
+            ...productionRefs(source),
+            {'path': registry, 'snippet': '"schema_version": 1'},
+          ],
+      };
+      return evidence;
+    }
+
+    Future<HighRiskReadinessResult> evaluate(
+      Map<String, dynamic> evidence, {
+      List<RepositoryChange> inventory = changes,
+      Set<String>? existingPaths,
+      Map<String, ReadinessFile>? headFiles,
+    }) {
+      final files = <String, ReadinessFile>{
+        source: (mode: '100644', contents: 'productionCall();'),
+        registry: (mode: '100644', contents: '{"schema_version": 1}'),
+        for (final path in [target, tooling, backendTest])
+          path: (
+            mode: '100644',
+            contents: 'regression case\nproductionCall();',
+          ),
+        backendSource: (mode: '100644', contents: 'productionCall();'),
+        'packages/genkit_llamadart/test/registry_test.dart': (
+          mode: '100644',
+          contents: 'regression case\nproductionCall();',
+        ),
+        ...?headFiles,
+      };
+      return HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: inventory,
+          existingPaths: existingPaths ?? files.keys.toSet(),
+          files: {headSha: files},
+        ),
+        clock: () => DateTime.utc(2026, 8, 28, 13),
+      ).evaluate(evidence: evidence, context: context);
+    }
+
+    for (final testPath in [target, tooling]) {
+      test(
+        'private harness paired $testPath keeps local prerequisites',
+        () async {
+          final result = await evaluate(evidenceFor(testPath));
+          expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+        },
+      );
+    }
+
+    test('private harness CLI reads exact Git blobs and exits 2', () async {
+      final repo = Directory.systemTemp.createTempSync(
+        'harness-readiness-git-',
+      );
+      addTearDown(() => repo.deleteSync(recursive: true));
+      String git(List<String> args) {
+        final result = Process.runSync(
+          'git',
+          args,
+          workingDirectory: repo.path,
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim();
+      }
+
+      void write(String path, String contents) {
+        File('${repo.path}/$path')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(contents);
+      }
+
+      git(['init', '--quiet']);
+      git(['config', 'user.name', 'Harness test']);
+      git(['config', 'user.email', 'harness@example.invalid']);
+      write(source, 'productionCall();');
+      write(registry, '{"schema_version": 0}');
+      write(target, 'regression case\nproductionCall();');
+      git(['add', '.']);
+      git(['commit', '--quiet', '-m', 'base']);
+      final base = git(['rev-parse', 'HEAD']);
+      write(registry, '{"schema_version": 1}');
+      git(['add', '.']);
+      git(['commit', '--quiet', '-m', 'registry']);
+      final head = git(['rev-parse', 'HEAD']);
+      final evidence = evidenceFor(target)
+        ..['expected_pr_head_sha'] = head
+        ..['current_base_sha'] = base;
+      evidence['independent_audit']['audit_head_sha'] = head;
+      evidence['independent_audit']['audit_base_sha'] = base;
+      final evidenceFile = File('${repo.path}/evidence.json');
+      final script = File(
+        'tool/testing/high_risk_readiness.dart',
+      ).absolute.path;
+      Future<ProcessResult> run() {
+        evidenceFile.writeAsStringSync(jsonEncode(evidence));
+        return Process.run(Platform.resolvedExecutable, [
+          script,
+          '--evidence',
+          evidenceFile.path,
+          '--repository',
+          context.repository,
+          '--pr-number',
+          '${context.prNumber}',
+          '--head-sha',
+          head,
+          '--base-sha',
+          base,
+          '--pr-author',
+          context.author,
+        ], workingDirectory: repo.path);
+      }
+
+      // Working-tree edits cannot replace either cited committed blob.
+      write(registry, '{"schema_version": 2}');
+      write(target, 'invented working-tree case');
+      final accepted = await run();
+      expect(
+        accepted.exitCode,
+        2,
+        reason: '${accepted.stdout}\n${accepted.stderr}',
+      );
+      final output = jsonDecode(accepted.stdout as String) as Map;
+      expect(output['evaluation']['decision'], 'unverifiedPrerequisites');
+      final refs = evidence['test_evidence'][target]['production_refs'] as List;
+      refs.last['snippet'] = '"schema_version": 2';
+      final rejected = await run();
+      expect(
+        rejected.exitCode,
+        1,
+        reason: '${rejected.stdout}\n${rejected.stderr}',
+      );
+      expect(rejected.stdout, contains('disconnected'));
+    });
+
+    test(
+      'private harness registry requires exact candidate JSON snippet',
+      () async {
+        final evidence = evidenceFor(tooling);
+        final refs =
+            evidence['test_evidence'][tooling]['production_refs'] as List;
+        refs.last['snippet'] = '"schema_version": 2';
+        final result = await evaluate(evidence);
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('disconnected'));
+      },
+    );
+
+    test('private harness source and test snippets bind exact head', () async {
+      for (final path in [source, target]) {
+        final result = await evaluate(
+          evidenceFor(target),
+          headFiles: {path: (mode: '100644', contents: 'different candidate')},
+        );
+        expect(result.decision, ReadinessDecision.rejected, reason: path);
+      }
+    });
+
+    test(
+      'private harness changed production requires complete coverage',
+      () async {
+        final evidence = evidenceFor(target);
+        (evidence['test_evidence'][target]['production_refs'] as List)
+            .removeLast();
+        final result = await evaluate(evidence);
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('lack reviewed test reachability'));
+      },
+    );
+
+    test(
+      'private harness rejects core and cross-package test substitutions',
+      () async {
+        for (final testPath in [
+          backendTest,
+          'packages/genkit_llamadart/test/registry_test.dart',
+        ]) {
+          final result = await evaluate(evidenceFor(testPath));
+          expect(result.decision, ReadinessDecision.rejected, reason: testPath);
+          expect(result.message, contains('paired'));
+        }
+        final evidence = evidenceFor(target);
+        (evidence['test_evidence'][target]['production_refs'] as List).addAll(
+          productionRefs(backendSource),
+        );
+        final result = await evaluate(evidence);
+        expect(result.decision, ReadinessDecision.rejected);
+        expect(result.message, contains('paired'));
+      },
+    );
+
+    test(
+      'private harness admission excludes other packages and assets',
+      () async {
+        for (final path in [
+          'packages/other/lib/runtime.dart',
+          'packages/llamadart_validation_extra/lib/runtime.dart',
+          'packages/llamadart_validation/assets/profiles.json',
+          'packages/llamadart_validation/assets/capability_coverage.json.backup',
+          'packages/llamadart_validation/lib/../assets/profiles.json',
+        ]) {
+          final evidence = evidenceFor(target);
+          (evidence['test_evidence'][target]['production_refs'] as List).addAll(
+            productionRefs(path),
+          );
+          final result = await evaluate(evidence);
+          expectFailure(result, ReadinessFailureClassification.schemaViolation);
+          expect(result.message, 'Invalid production reference.', reason: path);
+        }
+      },
+    );
+
+    test(
+      'private harness rejects deleted renamed-old and phantom tests',
+      () async {
+        final evidence = evidenceFor(target);
+        for (final (inventory, paths, failure) in [
+          (
+            [
+              ...changes.take(2),
+              const RepositoryChange(
+                path: target,
+                kind: RepositoryChangeKind.deleted,
+              ),
+            ],
+            {source, registry, target},
+            ReadinessFailureClassification.deletedEvidencePath,
+          ),
+          (
+            [
+              ...changes.take(2),
+              const RepositoryChange(
+                path: 'packages/llamadart_validation/test/renamed_test.dart',
+                previousPath: target,
+                kind: RepositoryChangeKind.renamed,
+              ),
+            ],
+            {source, registry, target},
+            ReadinessFailureClassification.renamedEvidencePath,
+          ),
+          (
+            changes,
+            {source, registry},
+            ReadinessFailureClassification.missingTestPath,
+          ),
+        ]) {
+          expectFailure(
+            await evaluate(
+              evidence,
+              inventory: inventory,
+              existingPaths: paths,
+            ),
+            failure,
+          );
+        }
+      },
+    );
+
+    test(
+      'private harness keeps causal audit and head binding requirements',
+      () async {
+        for (final mutate in <void Function(Map<String, dynamic>)>[
+          (evidence) =>
+              evidence['test_evidence'][target]['control_result'] = 'pass',
+          (evidence) => evidence['independent_audit']['auditor_identity'] =
+              context.author,
+          (evidence) => evidence['expected_pr_head_sha'] = otherSha,
+        ]) {
+          final evidence = evidenceFor(target);
+          mutate(evidence);
+          expect(
+            (await evaluate(evidence)).decision,
+            ReadinessDecision.rejected,
+          );
+        }
       },
     );
   });
@@ -2511,6 +2806,12 @@ void main() {
       expect(testPathPattern.hasMatch(backendTest), isTrue);
       expect(
         testPathPattern.hasMatch(
+          'packages/llamadart_validation/test/tokenization_test.dart',
+        ),
+        isTrue,
+      );
+      expect(
+        testPathPattern.hasMatch(
           'packages/genkit_llamadart/test/core/runtime/reuse_test.dart',
         ),
         isTrue,
@@ -2527,6 +2828,8 @@ void main() {
         'packages/other/test/reuse_test.dart',
         'packages/genkit_llamadart/test/../lib/reuse_test.dart',
         'packages/genkit_llamadart/test/unit/*_test.dart',
+        'packages/llamadart_validation/test/../lib/reuse_test.dart',
+        'packages/llamadart_validation/test/unit/*_test.dart',
         'tool/native/sync_native_release_pins.py',
         'tool/native/test_unlisted_suite.py',
         'tool/testing/validation/test_npu_apk.py',
