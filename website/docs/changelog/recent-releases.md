@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Recommend the corrected Qwen3-0.6B LiteRT-LM bundle for native CPU to preserve split-token emoji.
 - Add a model-free desktop setup report API and `dart run llamadart:doctor [--json]`, separating pinned publication policy from unchecked native/model behavior ([#124](https://github.com/leehack/llamadart/issues/124)).
 
 - Add `TemplateTimeChatSession` for reproducible prompt dates and apply explicit template clocks to `strftime_now` ([#859](https://github.com/leehack/llamadart/issues/859)).

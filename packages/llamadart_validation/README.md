@@ -108,7 +108,13 @@ See [the full plan](../../doc/cross_platform_validation_plan.md) for subsequent
 platform and feature qualification. A quick run does not qualify a release.
 
 `assets/profiles/` locks each model URL/revision/SHA256/size and inference
-configuration. `lib/llamadart_validation.dart` is the platform-neutral suite; conditional native
+configuration. The `chat-litert-cpu` profile uses the corrected Qwen3-0.6B
+bundle (`e6687177`, SHA-256 `c5f39b41…`) checked by the maintained
+`qwen3-litert-cpu-unicode` root scenario. The `chat-litert-gpu` profile retains
+the legacy artifact pending separate qualification of the updated bundle; CPU
+checks do not qualify GPU/device/Web adoption.
+
+`lib/llamadart_validation.dart` is the platform-neutral suite; conditional native
 adapters and `lib/io.dart` handle filesystem/runtime checks. `bin/run.dart` and `bin/report.dart` are the
 CLI entrypoints. Flutter uses the package's profile assets and shared runner.
 Native wrappers persist JSONL per event; reports always derive from that journal.

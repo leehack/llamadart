@@ -18,6 +18,7 @@ import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/token_batch.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 
@@ -157,33 +158,7 @@ void main() {
 
   test('holds the sampler chain of a running generation until it '
       'ends', () async {
-    final model = paths.model;
-    final (:before, :during, :after) = await Isolate.run(() async {
-      final service = LlamaCppService()..initializeBackend();
-      final context = service.createContext(
-        service.loadModel(model, _params),
-        _params,
-      );
-      final before = _describeHeld();
-      final cancel = calloc<Int8>();
-      final firstToken = Completer<List<String>>();
-      final subscription = service
-          .generate(
-            context,
-            'a b',
-            const GenerationParams(maxTokens: 4),
-            cancel.address,
-          )
-          .listen((_) {
-            if (!firstToken.isCompleted) firstToken.complete(_describeHeld());
-          });
-      final during = await firstToken.future;
-      await subscription.asFuture<void>();
-      calloc.free(cancel);
-      final after = _describeHeld();
-      service.dispose();
-      return (before: before, during: during, after: after);
-    });
+    final (:before, :during, :after) = await _samplerChainHolds(paths.model);
 
     expect(before, [
       'llama_dart_exit_free model',
@@ -193,6 +168,38 @@ void main() {
     ]);
     expect(during, [...before, 'llama_sampler_free session']);
     expect(after, before);
+  });
+
+  test('sampler hold observation reports generation ending before its first '
+      'token', () async {
+    await expectLater(
+      _samplerChainHolds(
+        paths.model,
+        params: const GenerationParams(
+          maxTokens: 4,
+          seed: 7,
+          grammar: 'root ::= ""',
+        ),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'readiness diagnostic',
+          contains('Generation completed before its first token'),
+        ),
+      ),
+    );
+  });
+
+  test('sampler hold observation propagates generation errors before its first '
+      'token', () async {
+    await expectLater(
+      _samplerChainHolds(
+        paths.model,
+        params: const GenerationParams(maxTokens: 4, grammar: 'root ::= ('),
+      ),
+      throwsA(isA<LlamaInferenceException>()),
+    );
   });
 
   test('releases the sampler chain of a generation whose sampler setup '
@@ -302,6 +309,37 @@ const _heldGenerationParams = GenerationParams(
   seed: 0,
   grammar: 'root ::= "a"',
 );
+
+Future<({List<String> before, List<String> during, List<String> after})>
+_samplerChainHolds(
+  String model, {
+  GenerationParams params = _heldGenerationParams,
+}) => Isolate.run(() async {
+  final service = LlamaCppService()..initializeBackend();
+  final context = service.createContext(
+    service.loadModel(model, _params),
+    _params,
+  );
+  final before = _describeHeld();
+  final cancel = calloc<Int8>();
+  final tokens = StreamIterator(
+    service.generate(context, 'a b', params, cancel.address),
+  );
+  try {
+    if (!await tokens.moveNext()) {
+      throw StateError('Generation completed before its first token.');
+    }
+    // The iterator pauses generation until its next moveNext call.
+    final during = _describeHeld();
+    while (await tokens.moveNext()) {}
+    final after = _describeHeld();
+    return (before: before, during: during, after: after);
+  } finally {
+    await tokens.cancel();
+    calloc.free(cancel);
+    service.dispose();
+  }
+});
 
 Future<List<String>> _killAfterReadiness(
   String model, {

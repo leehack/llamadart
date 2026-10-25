@@ -5,12 +5,12 @@
   "backend": "cpu",
   "model": {
     "id": "chat-litert",
-    "revision": "8414150f2e9dcc82449bcc9c5abc404b399a4d06",
+    "revision": "e6687177e00897731e7716267eebd4eba0dde7c2",
     "filename": "Qwen3-0.6B.litertlm",
-    "sha256": "555579ff2f4fd13379abe69c1c3ab5200f7338bc92471557f1d6614a6e5ab0b4",
-    "bytes": 614236160,
+    "sha256": "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108",
+    "bytes": 613722264,
     "kind": "chat",
-    "url": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/8414150f2e9dcc82449bcc9c5abc404b399a4d06/Qwen3-0.6B.litertlm"
+    "url": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm"
   },
   "selection": "quick",
   "context_size": 1024,

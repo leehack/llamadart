@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -11,6 +12,45 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  test(
+    'Qwen scenario preserves UTF-8 stdout from the real child process',
+    () async {
+      final project = await Directory.systemTemp.createTemp(
+        'qwen-utf8-runner-',
+      );
+      addTearDown(() => project.delete(recursive: true));
+      await File('${project.path}/pubspec.yaml').writeAsString(
+        'name: qwen_stdout_fixture\nenvironment:\n  sdk: ^3.10.7\n',
+      );
+      final tool = await Directory('${project.path}/tool').create();
+      await File(
+        '${tool.path}/litert_lm_chat_features_smoke.dart',
+      ).writeAsString(
+        "import 'dart:convert';\n"
+        "import 'dart:io';\n"
+        'void main() {\n'
+        "  stdout.add(utf8.encode(jsonEncode({'decoded': 'Hello! 😊', "
+        "'literal': 'ĠðŁĺĬ', 'mixed': 'café 한글 日本語'})));\n"
+        '}\n',
+      );
+      final result = await runLocalE2e([
+        '--scenario',
+        'qwen3-litert-cpu-unicode',
+        '--model-path',
+        'fixture.litertlm',
+      ], projectRoot: project.path);
+      expect(result.exitCode, 0, reason: result.stderr);
+      final start = result.stdout.indexOf('{"decoded":');
+      expect(start, greaterThanOrEqualTo(0), reason: result.stdout);
+      expect(jsonDecode(result.stdout.substring(start)), {
+        'decoded': 'Hello! 😊',
+        'literal': 'ĠðŁĺĬ',
+        'mixed': 'café 한글 日本語',
+      });
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   test(
     'text retrieval scenario requires both artifacts and opts into local tests',
     () async {
@@ -70,6 +110,47 @@ void main() {
         contains('multimodal_embedding_native_e2e_test.dart'),
       );
       expect(result.stdout, contains('--tags local-only'));
+    },
+  );
+
+  test(
+    'Qwen Unicode scenario wires the exact fixture and forces CPU',
+    () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'qwen3-litert-cpu-unicode',
+          '--model-path',
+          'models/Qwen3-0.6B.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('LITERT_LM_TOKENIZER_FIXTURE=qwen3-0.6b'));
+      expect(
+        result.stdout,
+        contains(
+          'tool/litert_lm_chat_features_smoke.dart '
+          'models/Qwen3-0.6B.litertlm cpu',
+        ),
+      );
+      for (final args in [
+        ['--scenario', 'qwen3-litert-cpu-unicode', '--dry-run'],
+        [
+          '--scenario',
+          'qwen3-litert-cpu-unicode',
+          '--model-path',
+          'model',
+          '--backend',
+          'gpu',
+          '--dry-run',
+        ],
+      ]) {
+        final invalid = await runLocalE2e(args, projectRoot: '/repo');
+        expect(invalid.exitCode, 64);
+      }
     },
   );
 
