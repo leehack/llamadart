@@ -1,6 +1,7 @@
 #!/usr/bin/env dart
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 /// Result returned by [runLocalE2e].
@@ -31,6 +32,7 @@ class LocalE2eCommandStep {
     this.environment = const {},
     this.background = false,
     this.waitForPort,
+    this.foregroundStdoutEncoding = systemEncoding,
   });
 
   final String workingDirectory;
@@ -40,6 +42,10 @@ class LocalE2eCommandStep {
   final String description;
   final bool background;
   final int? waitForPort;
+
+  /// Codec for foreground stdout; controlled Dart protocols can opt into UTF-8.
+  /// Other commands retain their platform's output encoding.
+  final Encoding foregroundStdoutEncoding;
 
   /// Renders this step as a copy-pasteable command for [shell].
   String toDisplayString({LocalE2eDisplayShell? shell}) {
@@ -1324,6 +1330,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LITERT_LM_IMAGE_PATH': '',
           },
           description: 'Qwen3 exact Unicode decode and CPU chat campaign',
+          foregroundStdoutEncoding: utf8,
         ),
       ],
     ),
@@ -2346,6 +2353,7 @@ Future<LocalE2eResult> runLocalE2e(
               workingDirectory: step.workingDirectory,
               environment: step.environment.isEmpty ? null : step.environment,
               runInShell: false,
+              stdoutEncoding: step.foregroundStdoutEncoding,
             )
           : foregroundStepRun(step));
       buffer

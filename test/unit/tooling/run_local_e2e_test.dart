@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -11,6 +12,45 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  test(
+    'Qwen scenario preserves UTF-8 stdout from the real child process',
+    () async {
+      final project = await Directory.systemTemp.createTemp(
+        'qwen-utf8-runner-',
+      );
+      addTearDown(() => project.delete(recursive: true));
+      await File('${project.path}/pubspec.yaml').writeAsString(
+        'name: qwen_stdout_fixture\nenvironment:\n  sdk: ^3.10.7\n',
+      );
+      final tool = await Directory('${project.path}/tool').create();
+      await File(
+        '${tool.path}/litert_lm_chat_features_smoke.dart',
+      ).writeAsString(
+        "import 'dart:convert';\n"
+        "import 'dart:io';\n"
+        'void main() {\n'
+        "  stdout.add(utf8.encode(jsonEncode({'decoded': 'Hello! 😊', "
+        "'literal': 'ĠðŁĺĬ', 'mixed': 'café 한글 日本語'})));\n"
+        '}\n',
+      );
+      final result = await runLocalE2e([
+        '--scenario',
+        'qwen3-litert-cpu-unicode',
+        '--model-path',
+        'fixture.litertlm',
+      ], projectRoot: project.path);
+      expect(result.exitCode, 0, reason: result.stderr);
+      final start = result.stdout.indexOf('{"decoded":');
+      expect(start, greaterThanOrEqualTo(0), reason: result.stdout);
+      expect(jsonDecode(result.stdout.substring(start)), {
+        'decoded': 'Hello! 😊',
+        'literal': 'ĠðŁĺĬ',
+        'mixed': 'café 한글 日本語',
+      });
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   test(
     'text retrieval scenario requires both artifacts and opts into local tests',
     () async {
