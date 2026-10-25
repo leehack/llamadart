@@ -232,16 +232,10 @@ void main() {
   for (final generating in [false, true]) {
     test('frees what an isolate killed while '
         '${generating ? 'generating' : 'idle'} held at its exit', () async {
-      final ready = ReceivePort();
-      final exited = ReceivePort();
-      final isolate = await Isolate.spawn(_runUntilKilled, (
-        ready.sendPort,
+      final held = await _killAfterReadiness(
         paths.model,
-        generating,
-      ), onExit: exited.sendPort);
-      final held = await ready.first as List<String>;
-      isolate.kill(priority: Isolate.immediate);
-      await exited.first;
+        generating: generating,
+      );
 
       expect(held, [
         'llama_dart_exit_free model',
@@ -254,34 +248,130 @@ void main() {
       expect(await Isolate.run(() => 'alive'), 'alive');
     });
   }
+
+  test('reports generation completing before its first token', () async {
+    await expectLater(
+      _killAfterReadiness(
+        paths.model,
+        params: const GenerationParams(
+          maxTokens: 32,
+          seed: 7,
+          grammar: 'root ::= ""',
+        ),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'readiness diagnostic',
+          contains('completed before its first token (seed: 7)'),
+        ),
+      ),
+    );
+  });
+
+  test('reports generation failing before its first token', () async {
+    await expectLater(
+      _killAfterReadiness(
+        paths.model,
+        params: const GenerationParams(
+          maxTokens: 32,
+          seed: 7,
+          grammar: 'root ::= (',
+        ),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'readiness diagnostic',
+          allOf(
+            contains('failed before its first token (seed: 7)'),
+            contains('LlamaInferenceException'),
+          ),
+        ),
+      ),
+    );
+  });
 }
 
 const _params = ModelParams(gpuLayers: 0, contextSize: 64);
 
-/// Creates a context, and when [generating] starts a generation and pauses it
-/// after one token, then sends what it holds and waits to be killed.
-Future<void> _runUntilKilled((SendPort, String, bool) message) async {
-  final (ready, model, generating) = message;
-  final service = LlamaCppService()..initializeBackend();
-  final context = service.createContext(
-    service.loadModel(model, _params),
-    _params,
-  );
-  if (generating) {
-    late final StreamSubscription<List<int>> subscription;
-    subscription = service
-        .generate(
-          context,
-          'a b',
-          const GenerationParams(maxTokens: 32),
-          calloc<Int8>().address,
-        )
-        .listen((_) {
-          subscription.pause();
-          ready.send(_describeHeld());
-        });
-  } else {
-    ready.send(_describeHeld());
+// The grammar guarantees a visible token before EOG on every platform.
+const _heldGenerationParams = GenerationParams(
+  maxTokens: 32,
+  temp: 0,
+  seed: 0,
+  grammar: 'root ::= "a"',
+);
+
+Future<List<String>> _killAfterReadiness(
+  String model, {
+  bool generating = true,
+  GenerationParams params = _heldGenerationParams,
+}) async {
+  final ready = ReceivePort();
+  final exited = ReceivePort();
+  Isolate? isolate;
+  try {
+    printOnFailure('Awaiting shutdown readiness (seed: ${params.seed}).');
+    isolate = await Isolate.spawn(_runUntilKilled, (
+      ready.sendPort,
+      model,
+      generating,
+      params,
+    ), onExit: exited.sendPort);
+    final (held, error) = await ready.first as (List<String>?, String?);
+    if (error != null) throw StateError(error);
+    return held!;
+  } finally {
+    if (isolate != null) {
+      printOnFailure(
+        'Killing shutdown worker; awaiting onExit '
+        '(seed: ${params.seed}).',
+      );
+      isolate.kill(priority: Isolate.immediate);
+      await exited.first;
+    }
+    ready.close();
+    exited.close();
+  }
+}
+
+/// Pauses after the first token so its sampler is still held when killed.
+Future<void> _runUntilKilled(
+  (SendPort, String, bool, GenerationParams) message,
+) async {
+  final (ready, model, generating, params) = message;
+  try {
+    final service = LlamaCppService()..initializeBackend();
+    final context = service.createContext(
+      service.loadModel(model, _params),
+      _params,
+    );
+    if (generating) {
+      late final StreamSubscription<List<int>> subscription;
+      subscription = service
+          .generate(context, 'a b', params, calloc<Int8>().address)
+          .listen(
+            (_) {
+              subscription.pause();
+              ready.send((_describeHeld(), null));
+            },
+            onDone: () => ready.send((
+              null,
+              'Generation completed before its first token '
+                  '(seed: ${params.seed}).',
+            )),
+            onError: (Object error) => ready.send((
+              null,
+              'Generation failed before its first token '
+                  '(seed: ${params.seed}): ${error.runtimeType}: $error',
+            )),
+          );
+    } else {
+      ready.send((_describeHeld(), null));
+    }
+  } on Object catch (error) {
+    ready.send((null, 'Shutdown worker setup failed: $error'));
   }
   await Completer<void>().future;
 }
