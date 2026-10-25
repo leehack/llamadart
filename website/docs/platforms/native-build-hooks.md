@@ -50,6 +50,63 @@ After changing any of these keys, or after a native release tag is republished
 with new assets, run `flutter clean` once so stale native assets are not
 reused.
 
+## Desktop setup report
+
+On macOS, Linux or Windows, collect a bounded setup snapshot before loading a
+model:
+
+```bash
+dart run llamadart:doctor
+dart run llamadart:doctor --json
+dart run llamadart:doctor --help
+```
+
+The JSON command writes one schema-versioned document to stdout. Exit 0 means
+a report was produced, **not** that a runtime works; invalid arguments exit 64.
+The collector itself performs bounded local package-metadata reads and no
+network, subprocess, native initialization, native-asset resolution, GPU probe
+or model load. `dart run` can run the package build hook **before main**: it may
+prepare/download native assets, print build output, or fail before a report is
+produced. Capture/parse the CLI's report stdout only after a successful launch.
+
+The public API is usable from a desktop Dart IO process, including a desktop
+Flutter process:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> main() async {
+  final LlamaRuntimeSetupReport report =
+      await collectLlamaRuntimeSetupReport();
+  print(report.toText());
+}
+```
+
+Schema 1 contains normalized OS/version/ABI architecture, Dart version,
+llamadart's **own** package version (unknown if source metadata is unavailable),
+and expected native release tags with published-bundle policy from the hook's
+selectors. Unrecognized metadata becomes `unknown`; Flutter version is unknown
+and is not inferred from the Dart CLI. macOS x64 LiteRT-LM and Windows arm64
+LiteRT-LM/stable_diffusion are marked unavailable under current publication
+policy. Unknown OS/ABI combinations stay unknown. Policy is separate from
+observed native loading: custom bundles, hook settings and Apple companions can
+differ. No report field proves which assets were emitted or loaded. Actual
+loaded versions/backend/GPU, model capabilities and inference remain
+`unknown`/`not_checked`.
+
+Only the names `LLAMADART_NATIVE_LIB_DIR`, `LLAMADART_BACKEND_MODULE_DIR`, and
+`LLAMADART_LITERT_LM_LIB_DIR` are reported as `set`/`unset` (an empty value counts
+as set). Values, paths, arbitrary environment variables, exception text and
+logs are excluded. Remediation uses fixed codes and hints.
+
+Mobile/Web collection throws `LlamaUnsupportedException` with scope guidance.
+A Dart CLI report does not validate an already-built Flutter app, device or
+browser. `web_setup --check` remains a separate offline asset check, not a live
+browser diagnosis. Native bootstrap, mobile/browser diagnostics and broader
+doctor work remain in [#124](https://github.com/leehack/llamadart/issues/124);
+loaded-model capability semantics remain separate in
+[#861](https://github.com/leehack/llamadart/issues/861).
+
 ## Choose runtime families
 
 `llamadart_native_runtimes` keeps whole runtimes out of the app when it ships

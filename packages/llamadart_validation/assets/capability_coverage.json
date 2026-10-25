@@ -134,6 +134,16 @@
   "mappings": [
     {
       "surfaces": [
+        "matrix:Model-free setup report"
+      ],
+      "exemption": {
+        "id": "desktop-setup-report",
+        "reason": "This pre-load desktop report has no model/backend probe and cannot qualify native loading or inference. VM production-path tests cover host publication selectors, bounded package version origin, privacy and actual CLI JSON/argument behavior; common model and unsupported Web paths run in Chrome. A versioned diagnostics pack remains separate from model capability validation (#861) and cross-platform qualification (#1196).",
+        "issue": "https://github.com/leehack/llamadart/issues/124"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Deterministic session template time"
       ],
       "exemption": {
