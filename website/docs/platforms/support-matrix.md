@@ -69,6 +69,10 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 | Image generation | First GPU reported, else CPU | Needs a GPU; Android and the CPU builds have none | Throws |
 | LiteRT-LM ASR | CPU | Not selectable | Not selectable |
 
+The WebGPU bridge ignores negative `mainGpu` values, including with
+`splitMode: ModelSplitMode.none`; they do not select the CPU as they do in
+native llama.cpp. Explicit `gpu` still requires WebGPU after load.
+
 Under `auto`, `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the
 CPU on both llama.cpp and LiteRT-LM, and a GPU `preferredBackend` (Vulkan,
 Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM GPU backend. On Linux x64

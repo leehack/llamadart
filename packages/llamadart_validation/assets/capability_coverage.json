@@ -55,6 +55,7 @@
     },
     {
       "id": "lifecycle",
+      "notes": "Web negative-mainGpu routing and unsupported GPU paths are covered by test/unit/backends/webgpu/webgpu_backend_test.dart; native CPU-placement rejection is covered by test/unit/core/engine/engine_test.dart. These model-free controls do not qualify WebGPU hardware or the separate NPU work in https://github.com/leehack/llamadart/issues/915.",
       "cases": [
         "C01.load",
         "C08.cancel",

@@ -67,6 +67,11 @@ and [active shutdown tests](../../doc/testing_matrix.md#flutter-shutdown-during-
   regenerate actions
 - 📊 Compact runtime status with detailed performance diagnostics on demand
 
+For custom Web GGUF loads, `ModelParams(device: ComputeDevice.gpu,
+splitMode: ModelSplitMode.none, mainGpu: -1)` keeps WebGPU selection: the bridge
+ignores negative `mainGpu` values. An absent adapter or inactive GPU runtime
+still throws `LlamaUnsupportedException`; request `ComputeDevice.cpu` for CPU.
+
 ## Setup
 
 ### 1. Run the App

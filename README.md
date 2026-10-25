@@ -471,6 +471,8 @@ and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero reso
 Decision heads follow this CPU placement and report `CPU` in
 `DecisionModelInfo.deviceName`; see
 [head placement](website/docs/guides/decision-models.md#current-support-matrix).
+The WebGPU bridge ignores negative `mainGpu` values; `device: ComputeDevice.gpu`
+still requires a WebGPU adapter and active GPU layers after load.
 
 Current default runtime pins:
 
