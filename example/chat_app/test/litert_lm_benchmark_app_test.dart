@@ -4,6 +4,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/litert_lm_benchmark_app.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('LiteRT-LM benchmark backend selection', () {
@@ -76,29 +77,31 @@ void main() {
     });
 
     test('resolves relative model names from app documents when requested', () {
+      final home = p.join(p.current, 'app', 'home');
+      final absoluteModelPath = p.join(p.current, 'tmp', 'gemma.gguf');
       expect(
         resolveBenchmarkModelPath(
           'gemma-4-E2B-it.litertlm',
-          homeDirectory: '/app/home',
+          homeDirectory: home,
           useDocumentsForRelative: true,
         ),
-        '/app/home/Documents/gemma-4-E2B-it.litertlm',
+        p.join(home, 'Documents', 'gemma-4-E2B-it.litertlm'),
       );
       expect(
         resolveBenchmarkModelPath(
           'documents:gemma-4-E2B-it-Q4_K_S.gguf',
-          homeDirectory: '/app/home',
+          homeDirectory: home,
           useDocumentsForRelative: false,
         ),
-        '/app/home/Documents/gemma-4-E2B-it-Q4_K_S.gguf',
+        p.join(home, 'Documents', 'gemma-4-E2B-it-Q4_K_S.gguf'),
       );
       expect(
         resolveBenchmarkModelPath(
-          '/tmp/gemma.gguf',
-          homeDirectory: '/app/home',
+          absoluteModelPath,
+          homeDirectory: home,
           useDocumentsForRelative: true,
         ),
-        '/tmp/gemma.gguf',
+        absoluteModelPath,
       );
     });
 
