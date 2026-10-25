@@ -261,8 +261,9 @@ Linux modules need system libraries; see
 On Windows the bundles ship the Visual C++ runtime app-locally
 (`msvcp140.dll` and `vcruntime140.dll`, plus `vcruntime140_1.dll` and the
 OpenMP runtime `vcomp140.dll` on x64), so no Visual C++ Redistributable is
-needed. The LiteRT-LM Windows x64 runtime ships the same DLLs plus
-`vcruntime140_threads.dll`; when an app bundles both runtimes, the hook
+needed. The LiteRT-LM Windows x64 runtime ships `msvcp140.dll`,
+`vcruntime140.dll`, `vcruntime140_1.dll` and `vcruntime140_threads.dll`, but no
+`vcomp140.dll`; when an app bundles both runtimes, the hook
 bundles the newer file version of each DLL they share. `vulkan` also needs a GPU driver that
 provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,
 which provides `nvcuda.dll`. When one of those is missing, the module's
@@ -444,10 +445,11 @@ the complete macOS runtime, which the app loads from its bundle, so the build
 only warns to upgrade the companion. A maintained manifest pinning any other
 LiteRT-LM release or a later build of the same release warns to upgrade the
 core and companion together. Core `0.16.0` and its companion `0.16.0` pin
-`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`, and core
-`0.16.1` accepts companion `0.16.0` with the warning above. Companion `0.16.1`
-requires core `>=0.16.1`, since core `0.16.0` would keep LiteRT-LM in the hook
-cache. Companions
+`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`; core
+`0.16.2` and companion `0.16.2` pin `v0.18.1-4`. Each core accepts the earlier
+`0.16.x` companions with the warning above. Companion `0.16.1` requires core
+`>=0.16.1` and companion `0.16.2` core `>=0.16.2`, since an earlier core would
+keep LiteRT-LM in the hook cache. Companions
 `0.0.15` to `0.15.2` pin `v0.18.0` to `v0.18.0-3`, a different release from
 the `v0.18.1` core release line.
 Without a companion, and for non-Flutter or non-Apple builds, the hook

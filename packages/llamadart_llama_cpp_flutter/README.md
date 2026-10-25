@@ -22,7 +22,7 @@ core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.1
+  llamadart: ^0.16.2
   llamadart_llama_cpp_flutter: ^0.16.0
 ```
 
