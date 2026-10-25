@@ -408,6 +408,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
   ),
   TestMatrixRow(
+    id: 'text-embedding-retrieval',
+    tier: 'targeted',
+    mode: 'local-only; pinned official EG2 weights and reference',
+    covers:
+        'text task/document/prepared helpers, title formatting, Matryoshka dimensions and real production retrieval against official float32 CPU vectors',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario text-embedding-retrieval',
+    useWhen:
+        'Embedding text profiles, task formatting or output dimensions change. Follow doc/embedding_text_helpers.md; no GPU, quantized or media qualification.',
+  ),
+  TestMatrixRow(
     id: 'native-embedding-benchmark',
     tier: 'targeted',
     mode: 'local-only',

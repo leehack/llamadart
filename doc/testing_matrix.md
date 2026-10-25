@@ -151,6 +151,7 @@ Pick targeted rows based on the touched surface:
 | llama.cpp native pin, object creation and free paths, exit or isolate shutdown | `native-exit-teardown` |
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
+| Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
@@ -941,6 +942,12 @@ VM termination; fatal errors with pending startup or forced termination that
 skips disposal remain outside this evidence.
 
 ## Native multimodal embeddings
+
+For text task/profile or Matryoshka changes, use the distinct
+`text-embedding-retrieval` row. It compares all four EG2 dimensions with the
+pinned official float32 CPU reference through production helper calls, using
+BF16 GGUF CPU output. Follow [text helper qualification](embedding_text_helpers.md).
+This establishes no media, GPU, Web, LiteRT-bundle or quantized retrieval claim.
 
 The `native-multimodal-embeddings` local-only row qualifies EmbeddingGemma-2
 BF16 with the matching vision/audio projector on macOS CPU and Metal. It

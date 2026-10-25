@@ -106,7 +106,7 @@ existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
 than inferring modality support from its name. Follow
 [the multimodal tracker](https://github.com/leehack/llamadart/issues/1072);
 [task-prefix and Matryoshka helpers](https://github.com/leehack/llamadart/issues/1126)
-remain separate.
+are explicit opt-in text operations described below.
 
 ### LiteRT-LM embedding engine
 
@@ -268,13 +268,68 @@ For document embeddings, pass the model's task prefix as part of the text:
 
 ```dart
 final vector = await engine.embed(
-  'task: search result | text: Paris is the capital of France.',
+  'title: none | text: Paris is the capital of France.',
 );
 ```
 
 Like other non-causal encoders, every input must fit in one micro-batch. Raise
 `microBatchSize` and `batchSize` together for longer inputs. The runtime does
 not automatically prepend task instructions.
+
+## Text tasks, titles and Matryoshka dimensions
+
+Use `LlamaTextEmbedder` with an explicit `embeddingGemma2` profile after loading
+a compatible EG2 model. This is your assertion of model compatibility: the
+helper checks output width and values, but does not authenticate the loaded
+model or establish quantized-artifact quality. It does not change `LlamaEngine`
+or automatically insert text into image/audio inputs.
+
+```dart
+Future<List<List<double>>> prepareRetrieval(LlamaEngine engine) async {
+  final embedder = LlamaTextEmbedder(
+    engine,
+    profile: LlamaEmbeddingProfile.embeddingGemma2,
+    dimensions: 256,
+  );
+  return embedder.embedBatch([
+    const LlamaEmbeddingText.query('What is the capital of France?'),
+    const LlamaEmbeddingText.document(
+      'Paris is the capital of France.',
+      title: 'France',
+    ),
+  ]);
+}
+```
+
+Queries use `task: search result | query: ...`; documents use
+`title: {title or none} | text: ...`. Select question answering, fact checking,
+code retrieval, classification, clustering or sentence similarity through
+`LlamaEmbeddingText.query(text, task: LlamaEmbeddingTask.questionAnswering)`.
+Symmetric tasks use the same task on both sides. Text and supplied titles keep
+their original whitespace. `LlamaEmbeddingText.prepared(text)` passes already
+formatted text verbatim; prefix detection is deliberately absent.
+
+The EG2 profile accepts 768 (default), 512, 256 or 128 components. It requests
+the full raw 768-component vector, keeps its leading dimensions, and then
+L2-normalizes by default. Query and corpus must use the same model/profile and
+dimensions; changing any of them requires rebuilding the index. Invalid
+dimensions or source width throw `LlamaUnsupportedException`. Nonfinite output
+throws `LlamaInferenceException`; a zero retained vector also throws when
+normalization is on. With `normalize: false`, finite zeros and unnormalized
+leading components are preserved. Whole batches fail without partial output.
+
+The default raw profile accepts only prepared text and delegates existing
+normalization unchanged. It forbids model-specific formatting or dimension
+reduction. Existing `engine.embed`, `embedBatch` and content methods keep their
+defaults. The helper retains the underlying engine's cancellation/unsupported
+contract and does not own or dispose it.
+
+The text retrieval comparison uses the pinned official EG2 float32 reference
+and BF16 GGUF CPU output at each dimension; see the
+[qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/embedding_text_helpers.md).
+That evidence does not qualify quantized models, LiteRT bundles, media, GPU or
+Web retrieval. Google recommends [renormalization after truncation](https://huggingface.co/google/embeddinggemma-2#best-practices)
+and warns that 128 dimensions has a larger cost for multimodal quality.
 
 ## Retrieval-style flow (query + candidate ranking)
 

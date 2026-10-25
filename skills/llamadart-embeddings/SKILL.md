@@ -14,6 +14,21 @@ description: >-
 
 ## Guidelines
 
+- For a known EmbeddingGemma-2 model, opt into `LlamaTextEmbedder` with
+  `profile: LlamaEmbeddingProfile.embeddingGemma2` and common query/corpus
+  `dimensions` of 768 (default), 512, 256 or 128. Pass
+  `LlamaEmbeddingText.query(text, task: LlamaEmbeddingTask.search)`,
+  `.document(text, title: title)` or `.prepared(alreadyFormattedText)`.
+  Documents use `title: none | text: ...` without a title; queries use
+  `task: search result | query: ...`. Prepared text is always verbatim.
+  The profile is a caller assertion, not model auto-detection or quantization
+  qualification. It validates full 768-wide finite vectors, truncates first,
+  then L2-normalizes. A zero retained vector fails normalization; with
+  `normalize: false`, finite zero output is preserved. The default raw profile
+  accepts prepared inputs only and forbids dimensions. Existing engine methods
+  retain their defaults and media receives no automatic prefix. Never infer
+  compatibility from a vector's width. Re-index when dimensions/profile/model
+  change; this helper does not own or dispose its engine.
 - Use `engine.embed(text)` for one vector and `engine.embedBatch(texts)` for
   many; both return `List<double>` vectors (one per input, in input order) and
   take `normalize` (default `true`, L2-normalized). With normalized vectors,
@@ -128,6 +143,27 @@ description: >-
   nearest-neighbour search there.
 
 ## Examples
+
+Embed an EG2 query and titled document with the same output dimension:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<List<List<double>>> embedEg2Retrieval(LlamaEngine engine) {
+  final LlamaTextEmbedder embedder = LlamaTextEmbedder(
+    engine,
+    profile: LlamaEmbeddingProfile.embeddingGemma2,
+    dimensions: 256,
+  );
+  return embedder.embedBatch(<LlamaEmbeddingText>[
+    const LlamaEmbeddingText.query('What causes the northern lights?'),
+    const LlamaEmbeddingText.document(
+      'Charged particles from the Sun interact with atmospheric gases.',
+      title: 'Aurora',
+    ),
+  ]);
+}
+```
 
 Embed an image with its caption after probing the loaded model/runtime:
 
