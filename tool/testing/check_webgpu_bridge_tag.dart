@@ -164,20 +164,27 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
 
 /// Release-notes files whose current section restates the pinned tag.
 ///
+/// An unchanged baseline names its prior release explicitly, without repeating
+/// the features that shipped with the original alignment.
+///
 /// The patterns are matched against [currentReleaseNotesSection] alone, so the
 /// frozen sections below it keep the tags their releases shipped.
 final List<BridgeTagPin> releaseNotesPins = <BridgeTagPin>[
   BridgeTagPin(
     'CHANGELOG.md',
     RegExp(
-      r'^\* Aligned the default WebGPU bridge assets to `(v\d+\.\d+\.\d+)`',
+      r'^\* (?:Aligned the default WebGPU bridge assets to|Keep the default '
+      r'WebGPU bridge assets at(?= `v\d+\.\d+\.\d+` '
+      r'\(unchanged from \d+\.\d+\.\d+\)\.\r?$)) `(v\d+\.\d+\.\d+)`',
       multiLine: true,
     ),
   ),
   BridgeTagPin(
     'website/docs/changelog/recent-releases.md',
     RegExp(
-      r'^- Aligned default WebGPU bridge assets to `(v\d+\.\d+\.\d+)`',
+      r'^- (?:Aligned default WebGPU bridge assets to|Keep default WebGPU '
+      r'bridge assets at(?= `v\d+\.\d+\.\d+` '
+      r'\(unchanged from \d+\.\d+\.\d+\)\.\r?$)) `(v\d+\.\d+\.\d+)`',
       multiLine: true,
     ),
   ),
