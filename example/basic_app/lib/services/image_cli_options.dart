@@ -330,6 +330,16 @@ ArgParser createImageArgParser() {
     )
     ..addOption('threads', help: 'CPU threads (0: all cores).', defaultsTo: '0')
     ..addOption(
+      'vae-tile',
+      help:
+          'Decode in square tiles of this many pixels, a multiple of 64, to '
+          'lower peak memory (default: decode the whole image).',
+    )
+    ..addOption(
+      'vae-tile-overlap',
+      help: 'Overlap of --vae-tile tiles, from 0 to 0.5 (default: 0.5).',
+    )
+    ..addOption(
       'conditioning-cache-size',
       help: 'Retained prompt-conditioning entries (0 disables; unset: 4).',
     )
@@ -363,6 +373,11 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
       );
     }
   }
+  final tileSize = _int(results, 'vae-tile');
+  final tileOverlap = _double(results, 'vae-tile-overlap');
+  if (tileOverlap != null && tileSize == null) {
+    throw const FormatException('--vae-tile-overlap needs --vae-tile.');
+  }
   final decoderGiven = given.containsKey('vae') || given.containsKey('taesd');
   final texts = <String, String>{
     for (final MapEntry(key: role, value: text) in preset.files.entries)
@@ -381,18 +396,36 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
             ? ModelSource.parse(preset.taesd!)
             : _source(imageFileFlags[role]!, text),
     },
-    request: ImageGenerationRequest(
-      prompt: prompt,
-      negativePrompt: results['negative'] as String,
-      width: _int(results, 'width') ?? preset.size,
-      height: _int(results, 'height') ?? preset.size,
-      steps: _int(results, 'steps') ?? preset.steps,
-      guidanceScale: _double(results, 'guidance') ?? 1,
-      sampler: preset.sampler,
-      scheduler: preset.scheduler,
-      seed: _int(results, 'seed'),
-      count: _int(results, 'count')!,
-    ),
+    request: tileSize == null
+        ? ImageGenerationRequest(
+            prompt: prompt,
+            negativePrompt: results['negative'] as String,
+            width: _int(results, 'width') ?? preset.size,
+            height: _int(results, 'height') ?? preset.size,
+            steps: _int(results, 'steps') ?? preset.steps,
+            guidanceScale: _double(results, 'guidance') ?? 1,
+            sampler: preset.sampler,
+            scheduler: preset.scheduler,
+            seed: _int(results, 'seed'),
+            count: _int(results, 'count')!,
+          )
+        : TiledImageGenerationRequest(
+            prompt: prompt,
+            negativePrompt: results['negative'] as String,
+            width: _int(results, 'width') ?? preset.size,
+            height: _int(results, 'height') ?? preset.size,
+            steps: _int(results, 'steps') ?? preset.steps,
+            guidanceScale: _double(results, 'guidance') ?? 1,
+            sampler: preset.sampler,
+            scheduler: preset.scheduler,
+            seed: _int(results, 'seed'),
+            count: _int(results, 'count')!,
+            vaeTiling: ImageVaeTiling(
+              tileWidth: tileSize,
+              tileHeight: tileSize,
+              overlap: tileOverlap ?? ImageVaeTiling.defaultOverlap,
+            ),
+          ),
     outputPath: results['out'] as String,
     device: ComputeDevice.values.byName(results['device'] as String),
     threads: _int(results, 'threads')!,
@@ -426,6 +459,10 @@ String buildImageHelpText(ArgParser parser) {
         ..writeln(
           '  dart run bin/llamadart_image_example.dart --preset '
           "sdxl-lightning --taesd default -p 'a lighthouse at dusk'",
+        )
+        ..writeln(
+          '  dart run bin/llamadart_image_example.dart --preset sd-turbo '
+          "--vae-tile 256 -p 'a lighthouse at dusk'",
         ))
       .toString();
 }

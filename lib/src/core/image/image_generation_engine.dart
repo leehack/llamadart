@@ -501,6 +501,18 @@ class ImageGenerationEngine {
         },
         threads: params.threads,
         conditioningCacheSize: conditioningCacheSize,
+        vaeTilingRecipeVerified:
+            // v0.3.0 is the runtime whose tiling layout and decode are qualified.
+            (runtime.commit == '0518b34' ||
+                runtime.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec') &&
+            assignment.vaeTilingDecoderVerified &&
+            assignment.roles.containsKey(ImageModelRole.checkpoint) &&
+            assignment.roles.keys.every(
+              (role) =>
+                  role == ImageModelRole.checkpoint ||
+                  role == ImageModelRole.taesd,
+            ) &&
+            (backendName == 'CPU' || _isMetal(backendName)),
         seamlessRecipeVerified:
             assignment.decodesWithTinyAutoencoder &&
             assignment.roles.length == 1 &&
@@ -609,6 +621,7 @@ class ImageGenerationEngine {
       sampler: effective.sampler,
       scheduler: effective.scheduler,
       flowShift: effective.flowShift,
+      vaeTiling: imageRequestVaeTiling(request),
       circularX: request is SeamlessImageGenerationRequest && request.circularX,
       circularY: request is SeamlessImageGenerationRequest && request.circularY,
     );
@@ -617,6 +630,18 @@ class ImageGenerationEngine {
       _config,
       _session.modelVersion,
     );
+    validateImageVaeTilingRecipe(resolved, _config, _session.modelVersion);
+    if (resolved.vaeTiling != null &&
+        !switch (_session) {
+          ImageVaeTilingSession tiling => tiling.supportsVaeTiling,
+          _ => false,
+        }) {
+      throw LlamaUnsupportedException(
+        'This image-generation backend does not report support for '
+        'per-request VAE tiling. Use the pinned stable_diffusion v0.3.0 '
+        'runtime with a supported SD 2.x decoder recipe.',
+      );
+    }
     final operation = _acquireOperation();
     final task = ImageGenerationTask._(_session.cancel);
     _activeTask = task;
@@ -713,6 +738,9 @@ class ImageGenerationEngine {
       scheduler: request.scheduler,
       flowShift: request.flowShift,
     );
+    if (imageRequestVaeTiling(request) != null) {
+      validateImageGenerationRequest(request);
+    }
     validateImageGenerationRequest(effective);
     return effective;
   }

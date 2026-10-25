@@ -768,7 +768,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'Run experimental ImageGenerationEngine on SDXS through the opt-in '
           'stable_diffusion runtime, including CPU/automatic-device '
           'conditioning-cache parity, hits, eviction, cancellation/reuse and '
-          'reload; SD-Turbo too when '
+          'reload; SD-Turbo with and without VAE tiling when '
           'LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
           'LLAMADART_SDXL_LIGHTNING_MODEL is set, and SDXS from its pinned '
           'Hugging Face file when LLAMADART_IMAGE_HF_CACHE '

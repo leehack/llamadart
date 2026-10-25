@@ -66,7 +66,11 @@ export 'src/core/image/image_generation_events.dart';
 export 'src/core/image/image_generation_model.dart';
 export 'src/core/image/image_model_params.dart';
 export 'src/core/image/image_generation_request.dart'
-    show ImageGenerationRequest, SeamlessImageGenerationRequest;
+    show
+        ImageGenerationRequest,
+        SeamlessImageGenerationRequest,
+        TiledImageGenerationRequest,
+        ImageVaeTiling;
 
 // Decision models
 export 'src/core/decision/decision_engine.dart'

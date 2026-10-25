@@ -160,6 +160,77 @@ void main() {
     }
 
     test(
+      'tiling survives worker transport and resets on the next request',
+      () async {
+        final worker = await start(
+          config: const ImageGenerationSessionConfig(
+            files: {'model': '/models/renamed.gguf'},
+            backend: 'cpu',
+            threads: 1,
+            vaeTilingRecipeVerified: true,
+          ),
+        );
+        await worker.generate(
+          const ImageGenerationSessionRequest(
+            prompt: 'a',
+            negativePrompt: '',
+            width: 512,
+            height: 512,
+            steps: 1,
+            guidanceScale: 1,
+            seed: 42,
+            count: 1,
+            vaeTiling: ImageVaeTiling(
+              tileWidth: 128,
+              tileHeight: 256,
+              overlap: 0.25,
+            ),
+          ),
+          (_, _) {},
+        );
+        expect(runtime.lastVaeTiling, (true, 128, 256, 0.25, 0.0, 0.0));
+        await worker.generate(_request(), (_, _) {});
+        expect(runtime.lastVaeTiling.$1, isFalse);
+        await runtime.flush();
+        expect(
+          runtime
+              .calls('worker')
+              .where((c) => c == 'sd_dart_generate_image+held')
+              .length,
+          2,
+        );
+      },
+    );
+
+    test(
+      'direct worker tiling without decoder proof makes no native call',
+      () async {
+        final worker = await loaded();
+        await expectLater(
+          worker.generate(
+            const ImageGenerationSessionRequest(
+              prompt: 'a',
+              negativePrompt: '',
+              width: 512,
+              height: 512,
+              steps: 1,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              vaeTiling: ImageVaeTiling(),
+            ),
+            (_, _) {},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('caller'), isEmpty);
+        expect(runtime.calls('worker'), isEmpty);
+        await worker.generate(_request(), (_, _) {});
+      },
+    );
+
+    test(
       'direct worker circular requests reject an unqualified native family',
       () async {
         final worker = await loaded();

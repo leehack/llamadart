@@ -44,7 +44,8 @@ typedef StableDiffusionProgressTimer =
 /// Only a pending reply keeps the calling isolate alive, so a program that
 /// ends with a model loaded exits; the worker then frees the model as it shuts
 /// down.
-final class StableDiffusionImageWorker implements ImageGenerationSession {
+final class StableDiffusionImageWorker
+    implements ImageGenerationSession, ImageVaeTilingSession {
   /// How often a running [generate] reads the recorded progress. A cancel
   /// that arrived before the runtime started generating is applied again at
   /// the same rate.
@@ -82,6 +83,10 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
 
   @override
   final String modelVersion;
+
+  @override
+  bool get supportsVaeTiling =>
+      _config.vaeTilingRecipeVerified && modelVersion == 'SD 2.x';
 
   StableDiffusionImageWorker._(
     this._isolate,
@@ -171,6 +176,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
       throw stableDiffusionBackendFailure();
     }
     validateSeamlessImageGenerationRecipe(request, _config, modelVersion);
+    validateImageVaeTilingRecipe(request, _config, modelVersion);
     final reports = calloc<sd.sd_dart_progress_t>(_reportsPerRead);
     final latest = calloc<Uint64>();
     // Reports are process-wide and numbered: everything after the newest one

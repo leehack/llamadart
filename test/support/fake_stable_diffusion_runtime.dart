@@ -69,7 +69,8 @@ const _generationErrorLength = _gpus + _maxGpus * _gpuBytes;
 const _generationError = _generationErrorLength + 8;
 const _generationErrorBytes = 1024;
 const _conditioningCacheSize = _generationError + _generationErrorBytes;
-const _stateBytes = _conditioningCacheSize + 4;
+const _vaeTiling = _conditioningCacheSize + 4;
+const _stateBytes = _vaeTiling + 32;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -114,6 +115,16 @@ final class FakeStableDiffusionRuntime {
 
   /// Reports the runtime keeps.
   final int history;
+
+  /// Last tiling tuple received by the guarded native generation call.
+  (bool, int, int, double, double, double) get lastVaeTiling => (
+    _state[_vaeTiling] != 0,
+    _state.cast<Int32>()[(_vaeTiling + 4) ~/ 4],
+    _state.cast<Int32>()[(_vaeTiling + 8) ~/ 4],
+    (_state + _vaeTiling + 12).cast<Float>().value,
+    (_state + _vaeTiling + 16).cast<Float>().value,
+    (_state + _vaeTiling + 20).cast<Float>().value,
+  );
 
   final Pointer<Uint8> _state;
   late final RawReceivePort _port;
@@ -662,6 +673,13 @@ final class _FakeCalls {
     Pointer<Int> countOut,
   ) {
     _record('sd_dart_generate_image$_held');
+    final tiling = params.ref.vae_tiling_params;
+    _state[_vaeTiling] = tiling.enabled ? 1 : 0;
+    _ints[(_vaeTiling + 4) ~/ 4] = tiling.tile_size_w;
+    _ints[(_vaeTiling + 8) ~/ 4] = tiling.tile_size_h;
+    (_state + _vaeTiling + 12).cast<Float>().value = tiling.target_overlap;
+    (_state + _vaeTiling + 16).cast<Float>().value = tiling.rel_size_w;
+    (_state + _vaeTiling + 20).cast<Float>().value = tiling.rel_size_h;
     _logText(_sdLogDebug, 'stable-diffusion.cpp:3120 - sampling');
     _logText(_sdLogInfo, 'stable-diffusion.cpp:3391 - generating');
     imagesOut.value = nullptr;

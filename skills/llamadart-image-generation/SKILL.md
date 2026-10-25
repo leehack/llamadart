@@ -163,6 +163,15 @@ core and `llamadart_stable_diffusion_flutter` together.
   `flowShift` (flow-matching models only, greater than 0, at most 100);
   `null` keeps the runtime's default for the model. SDXL-Lightning wants
   `euler` with `sgmUniform`.
+- `TiledImageGenerationRequest(vaeTiling: ImageVaeTiling(), prompt: ...)` decodes in overlapping tiles (output
+  pixels, multiples of 64 from 64 to 2048, default 256; `overlap` 0 to 0.5,
+  default 0.5) to cut the decoder's peak memory for large images or full
+  VAEs, at the cost of decode time and slight seam blending. Ordinary requests
+  and `warmUp` keep their original interface and defaults. Tiling accepts
+  header-verified SD 2.x checkpoints with embedded full VAE or TAESD on CPU/Metal;
+  SD-Turbo is measured, other accepted SD 2.x artifacts and phones are unmeasured.
+  Unknown proof, other families/backends, external full VAE/component overrides
+  and tiling combined with either circular axis throw `LlamaUnsupportedException`.
 - `load` checks every file exists and, unless
   `ImageModelParams(checkMemory: false)`, refuses a model whose estimate
   (file sizes plus a quarter plus 512 MiB, for the model's native size)

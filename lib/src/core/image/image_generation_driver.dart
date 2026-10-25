@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'generated_image.dart';
 import 'image_generation_model.dart';
+import 'image_generation_request.dart';
 
 /// Model files and runtime settings for one native image-generation context.
 final class ImageGenerationSessionConfig {
@@ -22,6 +23,9 @@ final class ImageGenerationSessionConfig {
   /// Used only by the bounded SDXS seamless-texture recipe.
   final bool seamlessRecipeVerified;
 
+  /// Header-role and device evidence for the bounded SD 2.x tiling recipe.
+  final bool vaeTilingRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -38,6 +42,7 @@ final class ImageGenerationSessionConfig {
     required this.threads,
     this.conditioningCacheSize,
     this.seamlessRecipeVerified = false,
+    this.vaeTilingRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -78,6 +83,9 @@ final class ImageGenerationSessionRequest {
   /// Flow shift, or `null` for the runtime default.
   final double? flowShift;
 
+  /// VAE decode tiling, or `null` to decode the whole image at once.
+  final ImageVaeTiling? vaeTiling;
+
   /// Whether convolution boundaries wrap horizontally.
   final bool circularX;
 
@@ -97,6 +105,7 @@ final class ImageGenerationSessionRequest {
     this.sampler,
     this.scheduler,
     this.flowShift,
+    this.vaeTiling,
     this.circularX = false,
     this.circularY = false,
   });
@@ -127,6 +136,13 @@ enum ImageGenerationComputeDevice {
   /// reports it, with host memory behind it for what does not fit, or host
   /// memory alone when the GPU is an integrated one.
   otherGpu,
+}
+
+/// Optional session support for honoring per-request spatial VAE tiling.
+/// Sessions without this contract are refused for opt-in tiled requests.
+abstract interface class ImageVaeTilingSession {
+  /// Whether this session can honor tiling for its loaded recipe and runtime.
+  bool get supportsVaeTiling;
 }
 
 /// A loaded native image-generation context.

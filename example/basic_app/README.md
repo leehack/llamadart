@@ -366,6 +366,12 @@ Image CLI flags (`bin/llamadart_image_example.dart`):
 - `-o, --out`: PNG path (default `image.png`).
 - `--device`: `auto`, `cpu` or `gpu`. `--threads`: CPU threads (`0`: all
   physical cores).
+- `--vae-tile`: Decode in square tiles of this many pixels, a multiple of 64,
+  to lower the decoder's peak memory (`ImageVaeTiling`); off by default.
+  `--vae-tile-overlap`: their overlap, from 0 to 0.5 (default 0.5).
+  Requires the pinned runtime, an SD 2.x checkpoint with embedded full VAE or
+  TAESD, and CPU/Metal. SD-Turbo is measured; other accepted SD 2.x checkpoints
+  and phones are unmeasured. Other model/decoder/backend recipes are refused.
 
 - `--conditioning-cache-size`: Retained prompt-conditioning entries, from 0
   to `2147483647`; `0` disables reuse, and omission preserves the native

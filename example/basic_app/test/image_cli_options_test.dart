@@ -25,6 +25,7 @@ void main() {
     expect(options.outputPath, 'image.png');
     expect(options.params.device, ComputeDevice.auto);
     expect(options.params.threads, 0);
+    expect(options.request, isNot(isA<TiledImageGenerationRequest>()));
     expect(options.params, isNot(isA<ImageConditioningCacheParams>()));
     expect(options.model.source, same(options.modelSource));
     expect(options.model.components, isEmpty);
@@ -75,6 +76,10 @@ void main() {
       'cpu',
       '--threads',
       '6',
+      '--vae-tile',
+      '192',
+      '--vae-tile-overlap',
+      '0.25',
     ]);
 
     expect(options.preset, ImagePreset.sdTurbo);
@@ -89,6 +94,9 @@ void main() {
     expect(options.params.device, ComputeDevice.cpu);
     expect(options.params.threads, 6);
     expect(options.threads, 6);
+    final tiling = (options.request as TiledImageGenerationRequest).vaeTiling;
+    expect((tiling.tileWidth, tiling.tileHeight), (192, 192));
+    expect(tiling.overlap, 0.25);
     expect(options.outputPathFor(0), 'out/light.png');
     expect(options.outputPathFor(1), 'out/light-1.png');
     final model = options.model;
@@ -135,6 +143,8 @@ void main() {
       (['--preset', 'flux1-schnell', '-p', 'a', '--clip-g', '/g'], '--clip-g'),
       (['--preset', 'sdxl-lightning', '-p', 'a', '--llm', '/l'], '--llm'),
       (['-p', 'a', '--model', 'ftp://host/m.gguf'], '--model'),
+      (['-p', 'a', '--vae-tile', 'big'], '--vae-tile'),
+      (['-p', 'a', '--vae-tile-overlap', '0.25'], '--vae-tile'),
     ]) {
       expect(
         () => _parse(arguments),

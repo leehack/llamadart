@@ -640,6 +640,60 @@ Vulkan flash attention has not been measured yet, so it stays off there;
 pass `flashAttention: true` to try it. The runtime falls back to regular
 attention where a device has no kernel for it.
 
+### VAE tiling
+
+`TiledImageGenerationRequest(vaeTiling: ImageVaeTiling())` decodes the image in overlapping tiles
+instead of all at once. The decoder's compute buffer then scales with the
+tile instead of the image, so peak memory drops most for large images and
+full VAEs; decoding takes longer, and pixels change slightly where tiles
+blend. It requires the pinned `stable_diffusion` v0.3.0 runtime (upstream `0518b34`)
+and accepts header-verified SD 2.x checkpoints with their embedded full VAE
+or a valid TAESD override on CPU or Metal. SD-Turbo is the measured artifact;
+other accepted SD 2.x checkpoints and phones remain unmeasured. Unknown
+headers, external full VAEs, other component overrides, model families and
+backends throw `LlamaUnsupportedException` before a task starts. Tiling with
+either seamless circular axis is also refused until separately qualified.
+Custom image backends are unavailable for tiling in this slice; no public
+backend extension contract is added. Sampling and weights are unchanged. Requests without
+it decode the whole image, as before.
+
+```dart
+final result = await engine.generateImage(
+  const TiledImageGenerationRequest(
+    prompt: 'a lighthouse at dusk',
+    width: 1024,
+    height: 1024,
+    steps: 1,
+    guidanceScale: 1,
+    vaeTiling: ImageVaeTiling(), // 256x256 tiles, overlap 0.5
+  ),
+);
+```
+
+Tile sizes are output pixels, multiples of 64 from 64 to 2048, and default to
+256; a tile larger than the image covers it on that axis. `overlap` is the
+target fraction a tile shares with its neighbour, from 0 to 0.5 (default
+0.5); the runtime spaces tiles evenly, so neighbours always overlap a little.
+Other values throw `LlamaImageGenerationException` before the task starts.
+The existing `warmUp` signature stays unchanged; use a single-step tiled
+generation and discard its image when tiled GPU pipelines need warming. Without tiling, the runtime already retries a decode that fails
+to allocate with tiles; tiling from the start keeps the decode under limits
+that end the app before an allocation fails. Cancelling does not interrupt a
+decode that has started.
+
+SD-Turbo Q8_0 with its full VAE, one step, 256-pixel tiles at overlap 0.5,
+on an M4 Max:
+
+| Device, size | VAE compute buffer | Decode time | Peak footprint of the `dart run` process |
+| --- | --- | --- | --- |
+| Metal, 512x512 | 1664 MB to 416 MB | 1.7 s to 3.7 s | Not visible: Metal buffers are outside `phys_footprint` |
+| CPU, 512x512 | 704 MB to 176 MB | 5.9 s to 12.5 s | 3.02 GiB to 2.59 GiB |
+| CPU, 1024x1024 | Not logged | Image 31 s to 71 s | 5.10 GiB to 2.83 GiB |
+
+At 512x512 the tiled image differed from the untiled one by 2.5 of 255 per
+channel on average and at most 88 near tile seams, with no visible seams.
+Vulkan GPUs and phones, including the iPhone GPU watchdog of
+[#1047](https://github.com/leehack/llamadart/issues/1047), are unmeasured.
 ## Conditioning cache
 
 `ImageConditioningCacheParams(capacity: ...)` controls how many prompt-conditioning

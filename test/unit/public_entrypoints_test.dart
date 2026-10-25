@@ -89,6 +89,8 @@ const _appNames = <String>{
   'ImageModelComponent',
   'ImageModelParams',
   'ImageModelRole',
+  'ImageVaeTiling',
+  'TiledImageGenerationRequest',
   'KvCacheType',
   'LiteRtLmActivationDataType',
   'LiteRtLmAsrAdapter',

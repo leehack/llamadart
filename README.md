@@ -443,6 +443,12 @@ before choosing files: a supported container does not imply every model works.
   SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
   desktop models generate 1024x1024 images and are validated on
   macOS Metal only ([#802](https://github.com/leehack/llamadart/issues/802)).
+- **Lower decode memory:** `TiledImageGenerationRequest(vaeTiling:
+  ImageVaeTiling(), prompt: ...)` decodes in overlapping tiles, trading decode time for a
+  smaller decoder buffer.
+  Measured on SD-Turbo full VAE/TAESD on macOS CPU and Metal; other recipes
+  are bounded by explicit model, decoder and device guards.
+  ([VAE tiling](https://llamadart.leehack.com/docs/next/guides/image-generation#vae-tiling)).
 - **Model licenses differ**, including for commercial use. Check each
   model's license before shipping it; the guide lists each model's license.
 

@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add opt-in decoder tiling with `TiledImageGenerationRequest` for SD 2.x checkpoints on CPU/Metal, measured with SD-Turbo full VAE and TAESD; ordinary requests keep their API and defaults ([#1231](https://github.com/leehack/llamadart/issues/1231)).
+
 - Recommend the corrected Qwen3-0.6B LiteRT-LM bundle for native CPU to preserve split-token emoji.
 - Add a model-free desktop setup report API and `dart run llamadart:doctor [--json]`, separating pinned publication policy from unchecked native/model behavior ([#124](https://github.com/leehack/llamadart/issues/124)).
 
