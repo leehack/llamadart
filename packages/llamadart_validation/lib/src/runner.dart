@@ -14,10 +14,12 @@ import 'manifest.dart';
 import 'npu_evidence.dart';
 import 'runtime_environment.dart';
 import 'structured_output_evidence.dart';
+import 'tokenization_evidence.dart';
 
 part 'decision_runner.dart';
 part 'embedding_runner.dart';
 part 'structured_runner.dart';
+part 'tokenization_runner.dart';
 
 /// Sink implemented by file, browser and Firebase host adapters.
 typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
@@ -71,7 +73,7 @@ abstract interface class ValidationEngine {
 /// Runs inference through the exported llamadart API on every platform.
 class PublicValidationEngine
     with _PublicDecisionValidation, _PublicStructuredValidation
-    implements ValidationEngine {
+    implements ValidationEngine, TokenCountValidationEngine {
   /// Uses the public engine; a factory allows isolated adapter verification.
   /// [decisionHead] and [decisionConfig] are the prepared decision files or
   /// URLs of a decision profile.
@@ -138,6 +140,8 @@ class PublicValidationEngine
       _engine.tokenize(text, addSpecial: false);
   @override
   Future<String> detokenize(List<int> tokens) => _engine.detokenize(tokens);
+  @override
+  Future<int> getTokenCount(String text) => _engine.getTokenCount(text);
 
   @override
   Future<Map<String, dynamic>> diagnostics() async => {
@@ -1368,6 +1372,7 @@ class ValidationRunner {
     if (id.startsWith('E')) return _embeddingCase(id);
     if (id.startsWith('D')) return _decisionCase(id, location);
     if (id.startsWith('S')) return _structuredCase(id);
+    if (id.startsWith('T')) return _tokenizationCase(id);
     if (profile.nativeReference &&
         [
           'C02.generate',

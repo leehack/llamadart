@@ -111,6 +111,16 @@
       ]
     },
     {
+      "id": "tokenization",
+      "cases": [
+        "T01.roundtrip",
+        "T02.count"
+      ],
+      "profiles": [
+        "assets/profiles/tokenization-gguf-cpu.json"
+      ]
+    },
+    {
       "id": "tools",
       "cases": [
         "C07.tools",
@@ -326,11 +336,7 @@
         "api:LlamaEngine.getTokenCount",
         "api:LlamaEngine.tokenize"
       ],
-      "exemption": {
-        "id": "tokenization",
-        "reason": "The decision tokenizer fixture does not cover general public tokenize/detokenize/count contracts. A dedicated tokenization pack remains.",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
+      "pack": "tokenization"
     },
     {
       "surfaces": [

@@ -446,6 +446,13 @@ class FakeEngine implements ValidationEngine, StructuredValidationEngine {
   }
 }
 
+/// Release-selection double includes the new public token-count boundary.
+class CountingFakeEngine extends FakeEngine
+    implements TokenCountValidationEngine {
+  @override
+  Future<int> getTokenCount(String text) async => (await tokenize(text)).length;
+}
+
 /// Removes the records that catalog [version] did not derive for [selected],
 /// renumbering events as that catalog's runner would have written them.
 void dropUndeclared(
@@ -701,7 +708,7 @@ void main() {
     );
 
     final incomplete = await run(
-      FakeEngine(),
+      CountingFakeEngine(),
       selected: profile(release: true),
     );
     expect(incomplete.report.qualificationGaps, isEmpty);
@@ -2036,7 +2043,10 @@ void main() {
     },
   );
   test('release selection executes every implemented obligation', () async {
-    final result = await run(FakeEngine(), selected: profile(release: true));
+    final result = await run(
+      CountingFakeEngine(),
+      selected: profile(release: true),
+    );
     expect(result.report.qualified, isTrue);
     expect(
       result.report.cases.singleWhere(

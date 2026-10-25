@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 8;
+const int validationCatalogVersion = 9;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -16,6 +16,7 @@ const validationFeatures = {
   'guards': 1,
   'performance': 1,
   'structured_output': 1,
+  'tokenization': 1,
 };
 
 /// Feature selectors that catalogs before 8 do not declare.
@@ -92,6 +93,7 @@ const validationFixtures = <String, Map<String, Object>>{
     'samples': 3,
   },
   'structured_output': structuredOutputFixture,
+  'tokenization': tokenizationFixture,
 };
 
 /// Case identity and fixture dependencies. False implementation flags always
@@ -239,6 +241,7 @@ const extendedValidationCases = [
     ['raw', 'hello'],
   ),
   ...structuredOutputValidationCases,
+  ...tokenizationValidationCases,
 ];
 
 /// Stable order for the complete selected/omitted inventory.
@@ -259,7 +262,9 @@ const catalogFiveCaseIds = {
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    structuredOutputValidationCases.any((definition) => definition.id == id)
+    tokenizationValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion >= 9
+    : structuredOutputValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 8
     : [
         ...decisionValidationCases,
@@ -646,4 +651,24 @@ const structuredOutputValidationCases = [
     ['structured_output'],
     ['structured_output'],
   ),
+];
+
+/// Fixed text corpus for public tokenization without injected special tokens.
+/// Only a model's documented decoder prefix may vary in a locked profile.
+const tokenizationFixture = <String, Object>{
+  'inputs': [
+    '',
+    'Hello, world!',
+    '  leading  and trailing  ',
+    'line one\nline two\tend',
+    'Montréal 👋\n한글 café',
+    'e\u0301 café 中文 العربية',
+  ],
+  'expected_prefix': '',
+};
+
+/// Selected by tokenization focus or release selection from catalog 9.
+const tokenizationValidationCases = [
+  ValidationCaseDefinition('T01.roundtrip', ['tokenization'], ['tokenization']),
+  ValidationCaseDefinition('T02.count', ['tokenization'], ['tokenization']),
 ];

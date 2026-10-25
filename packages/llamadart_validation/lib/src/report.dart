@@ -6,6 +6,7 @@ import 'inflight_evidence.dart';
 import 'manifest.dart';
 import 'placement.dart';
 import 'structured_output_evidence.dart';
+import 'tokenization_evidence.dart';
 
 /// Validates the event journal and produces all report formats from one source.
 class ValidationReport {
@@ -206,6 +207,12 @@ class ValidationReport {
                 : 'native',
           )) {
         problems.add('Invalid structured-output case evidence: $id');
+      }
+      if (profile != null &&
+          id.startsWith('T') &&
+          event['status'] == 'PASS' &&
+          !validTokenizationCaseEvidence(id, event, profile)) {
+        problems.add('Invalid tokenization case evidence: $id');
       }
       if (profile?.isEmbedding == true &&
           (manifest['environment'] as Map?)?['web'] == true &&
