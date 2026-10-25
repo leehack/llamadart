@@ -601,7 +601,7 @@ void main() {
           final tiled = await run(const ImageVaeTiling());
           final again = await run(null);
 
-          const buffer = r'(?:vae|tae) compute buffer size: ([\d.]+) MB';
+          const buffer = r'(?:vae|taesd) compute buffer size: ([\d.]+) MB';
           const decode = r'decode_first_stage completed, taking ([\d.]+)s';
           final untiledMb = logged(untiled.log, buffer);
           final tiledMb = logged(tiled.log, buffer);
@@ -631,6 +631,13 @@ void main() {
             ).writeAsBytesSync(tiled.image.toPng());
           }
 
+          if (outputDir != null) {
+            File(
+              '$outputDir/sd-turbo-$decoder-${backendName.toLowerCase()}-native.log',
+            ).writeAsStringSync(
+              [...untiled.log, ...tiled.log, ...again.log].join('\n'),
+            );
+          }
           expect(
             tiled.log,
             contains(contains('VAE decode tile size: 256x256 pixels')),
@@ -639,21 +646,16 @@ void main() {
             expect(log, isNot(contains(contains('VAE decode tile size'))));
           }
           final actualBackend = backendName.startsWith('MTL')
-              ? RegExp(r'(?:vae|tae) compute buffer size: .*MB\(VRAM\) on MTL')
-              : RegExp(r'(?:vae|tae) compute buffer size: .* on CPU');
+              ? RegExp(
+                  r'(?:vae|taesd) compute buffer size: .*MB\(VRAM\) on MTL',
+                )
+              : RegExp(r'(?:vae|taesd) compute buffer size: .* on CPU');
           expect(
             tiled.log.any(actualBackend.hasMatch),
             isTrue,
             reason:
                 'Decoder must execute on the measured backend, not fall back',
           );
-          if (outputDir != null) {
-            File(
-              '$outputDir/sd-turbo-$decoder-${backendName.toLowerCase()}-native.log',
-            ).writeAsStringSync(
-              [...untiled.log, ...tiled.log, ...again.log].join('\n'),
-            );
-          }
           expect(untiledMb, isNotNull);
           expect(tiledMb, lessThan(untiledMb! / 2));
           expect((tiled.image.width, tiled.image.height), (512, 512));
