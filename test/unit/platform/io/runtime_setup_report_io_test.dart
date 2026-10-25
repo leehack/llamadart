@@ -177,28 +177,34 @@ void main() {
     },
   );
 
-  test(
-    'real CLI validates arguments without echoing them and supports help',
-    () async {
-      for (final args in [
-        ['--token=https://private.example/?secret=SECRET'],
-        ['--json', '--json'],
-        ['--help', 'SECRET'],
-      ]) {
-        final result = await Process.run(Platform.resolvedExecutable, [
-          'bin/doctor.dart',
-          ...args,
-        ]);
-        expect(result.exitCode, 64);
-        expect(result.stdout, isEmpty);
-        expect(result.stderr, 'doctor: invalid arguments. Use --help.\n');
-      }
-      final help = await Process.run(Platform.resolvedExecutable, [
+  for (final (name, args) in [
+    ('unknown option', ['--token=https://private.example/?secret=SECRET']),
+    ('duplicate JSON option', ['--json', '--json']),
+    ('extra help argument', ['--help', 'SECRET']),
+  ]) {
+    test('real CLI rejects $name without echoing arguments', () async {
+      final result = await Process.run(Platform.resolvedExecutable, [
         'bin/doctor.dart',
-        '--help',
+        ...args,
       ]);
-      expect(help.exitCode, 0);
-      expect(help.stdout, contains('build hook can prepare/download assets'));
+      expect(result.exitCode, 64);
+      expect(result.stdout, isEmpty);
+      expect(result.stderr, 'doctor: invalid arguments. Use --help.\n');
+    });
+  }
+
+  test('real CLI help explains build-hook preparation', () async {
+    final help = await Process.run(Platform.resolvedExecutable, [
+      'bin/doctor.dart',
+      '--help',
+    ]);
+    expect(help.exitCode, 0);
+    expect(help.stdout, contains('build hook can prepare/download assets'));
+  });
+
+  test(
+    'real CLI human output states runtime verification is unchecked',
+    () async {
       final human = await Process.run(Platform.resolvedExecutable, [
         'bin/doctor.dart',
       ]);
