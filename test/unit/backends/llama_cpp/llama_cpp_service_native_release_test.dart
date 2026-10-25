@@ -38,11 +38,9 @@ void main() {
       'still open', () {
     final samplerFrees = _SamplerFrees();
     addTearDown(samplerFrees.close);
-    final batches = _LiveBatches();
-    final service = LlamaCppService(
-      batchInit: batches.init,
-      batchFree: batches.free,
-    )..initializeBackend();
+    final batches = _LiveBlocks();
+    final service = LlamaCppService(contextBatchAllocator: batches)
+      ..initializeBackend();
     addTearDown(service.dispose);
     final context = service.createContext(
       service.loadModel(modelPath, _params),
@@ -55,6 +53,7 @@ void main() {
 
     expect(samplerFrees.count, 1);
     expect(batches.live, isEmpty);
+    expect(batches.frees, 1);
   });
 
   test('frees only the bitmaps it created when a later media part '
@@ -149,6 +148,26 @@ final class _LiveBatches {
   void free(llama_batch batch) {
     live.remove(batch.token.address);
     llama_batch_free(batch);
+  }
+}
+
+/// [malloc] blocks that were allocated and not freed yet, by address.
+final class _LiveBlocks implements Allocator {
+  final List<int> live = <int>[];
+  int frees = 0;
+
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
+    final block = malloc.allocate<T>(byteCount, alignment: alignment);
+    live.add(block.address);
+    return block;
+  }
+
+  @override
+  void free(Pointer<NativeType> pointer) {
+    expect(live.remove(pointer.address), isTrue, reason: 'freed once');
+    frees++;
+    malloc.free(pointer);
   }
 }
 

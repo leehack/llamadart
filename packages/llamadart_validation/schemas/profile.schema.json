@@ -207,7 +207,9 @@
           "batching",
           "lifecycle",
           "guards",
-          "performance"
+          "performance",
+          "structured_output",
+          "tokenization"
         ]
       }
     },
@@ -364,6 +366,18 @@
               "type": "string"
             }
           }
+        },
+        "tokenization": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "expected_prefix": {"type": "string"}
+          }
+        },
+        "structured_output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
         }
       }
     },

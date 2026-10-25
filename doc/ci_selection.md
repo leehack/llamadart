@@ -18,7 +18,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Other chat app implementation/dependencies | Static, private harness, Web Chat | All app targets |
 | Chat app unit tests | Static and Web Chat | None |
 | Root tests/fixtures | Static, full Linux coverage, Chrome and macOS/Windows VM inventories | None |
-| Root runtime/hooks/dependencies, shared or unknown paths | Full behavioral graph | All targets |
+| Root runtime/hooks/dependencies, other example packages, shared or unknown paths | Full behavioral graph | All targets |
 | Workflow/selector changes | Full graph including synthetic artifact transport | All targets |
 | Missing, empty or invalid diff; explicit manual bundle run | Full fallback | All targets |
 
@@ -56,6 +56,11 @@ raw coverage with `format_lcov.dart` exactly as one full run would, then
 enforces the threshold and uploads to Codecov. The aggregate requires the
 shards (`SHARD_JOBS` in the selector) as well as that job whenever Linux
 coverage is selected.
+
+`Example Package Tests` runs the model-free tests (`--exclude-tags
+local-only`) of every example package except the chat app, which Web Chat
+covers, as one Ubuntu job in the full graph. `ci_workflow_selection_test.dart`
+fails when an example package with a `test/` directory has no step there.
 
 Obsolete PR bundle runs cancel. Manual bundle runs have unique concurrency
 groups and do not cancel one another. Bundle workflows do not automatically run

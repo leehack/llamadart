@@ -342,10 +342,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
     id: 'examples-tests',
     tier: 'targeted',
-    mode: 'local',
+    mode: 'CI + local',
     covers: 'example package unit tests and Flutter app regressions',
     command:
-        'Run tests in each touched example package, for example '
+        'CI jobs "Example Package Tests" and "Web Chat Contract", or run '
+        'tests in each touched example package, for example '
         '(cd example/chat_app && flutter test test test_vm).',
     useWhen: 'Any example app, CLI, or server package change.',
   ),
@@ -405,6 +406,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/run_local_e2e.dart --scenario native-multimodal-embeddings',
     useWhen:
         'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
+  ),
+  TestMatrixRow(
+    id: 'text-embedding-retrieval',
+    tier: 'targeted',
+    mode: 'local-only; pinned official EG2 weights and reference',
+    covers:
+        'text task/document/prepared helpers, title formatting, Matryoshka dimensions and real production retrieval against official float32 CPU vectors',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario text-embedding-retrieval',
+    useWhen:
+        'Embedding text profiles, task formatting or output dimensions change. Follow doc/embedding_text_helpers.md; no GPU, quantized or media qualification.',
   ),
   TestMatrixRow(
     id: 'native-embedding-benchmark',
@@ -566,7 +578,10 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'a runtime probe that leaves the calling isolate responsive, a first '
         'image after warmUp about as fast as a warm one, '
         'SDXS load and 256x256 one-step generation with labelled progress, '
-        'same-seed determinism, pre-start and mid-run cancellation, the '
+        'same-seed determinism; disabled/default/one-entry conditioning-cache '
+        'pixel parity, native hits, prompt changes, eviction, cancel/reuse '
+        'and dispose/reload on CPU and the automatic device for SDXS and '
+        'SD-Turbo; pre-start and mid-run cancellation, the '
         'one-generation guard, dispose during generation, and PNG output; '
         'the runtime\'s reason in the error of a truncated file, a missing '
         'file and a file in the wrong role, without paths; runtime messages '
@@ -630,6 +645,43 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen:
         'Decision engine, decision sequence or decoder, native decision head, '
         'safetensors reader, or llama.cpp encoder changes.',
+  ),
+  TestMatrixRow(
+    id: 'decision-model-web-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'LlamaEngine(LlamaBackend()) through WebAutoBackend and '
+        'WebGpuLlamaBackend in the pinned bridge worker, in Chrome with '
+        'WebGPU: the Laya Q8_0 encoder and head from Hugging Face, exact '
+        'fixture token ids and markers, raw logits and DecisionEngine answers '
+        'within the decision-model-smoke tolerances, and model and head on '
+        'WebGPU',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'decision-model-web-smoke',
+    useWhen:
+        'Web decision head (webgpu_decision.dart), WebAutoBackend decision '
+        'routing, decision engine, or WebGPU bridge pin changes.',
+  ),
+  TestMatrixRow(
+    id: 'web-speech-task-cancel',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real Qwen3-ASR and Qwen3-TTS task cancellation through the pinned '
+        'bridge direct and worker paths: another request remains intact, '
+        'cancelled tasks emit no final event, and the engine remains reusable; '
+        'CPU placement by default; TTS batch 512/micro-batch 256 with bounded '
+        'one/eight-frame controls; WebGPU qualification only with positive '
+        'gpuLayers and verified WebGPU execution',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'web-speech-task-cancel',
+    useWhen:
+        'Speech task cancellation, WebGPU request ownership, direct/worker '
+        'dispatch, or bridge pin changes. Stage the real input config in '
+        'build/web_speech_task_cancel/config.json; see doc/testing_matrix.md.',
   ),
   TestMatrixRow(
     id: 'web-text-to-speech-smoke',

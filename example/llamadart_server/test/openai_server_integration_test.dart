@@ -171,6 +171,36 @@ void main() {
       expect(fakeEngine.parallelToolCalls, <bool>[false]);
     });
 
+    test(
+      'reports the usage of the final chunk when the backend has one',
+      () async {
+        fakeEngine.usage = const LlamaGenerationUsage(
+          promptTokens: 781,
+          completionTokens: 16,
+        );
+
+        final response = await client.post(
+          server.uri('/v1/chat/completions'),
+          headers: <String, String>{'Content-Type': 'application/json'},
+          body: jsonEncode(<String, dynamic>{
+            'model': 'test-model',
+            'messages': <Map<String, dynamic>>[
+              <String, dynamic>{'role': 'user', 'content': 'Say hi'},
+            ],
+          }),
+        );
+
+        expect(response.statusCode, 200);
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        expect(json['usage'], <String, dynamic>{
+          'prompt_tokens': 781,
+          'completion_tokens': 16,
+          'total_tokens': 797,
+        });
+        expect(fakeEngine.templateEnableThinkingCalls, isEmpty);
+      },
+    );
+
     test('forwards enable_thinking to the engine', () async {
       final response = await client.post(
         server.uri('/v1/chat/completions'),
@@ -605,6 +635,7 @@ class _RunningServer {
 
 class _FakeApiServerEngine implements ApiServerEngine {
   int cancelCount = 0;
+  LlamaGenerationUsage? usage;
   final List<bool> templateEnableThinkingCalls = <bool>[];
   final List<bool> enableThinkingCalls = <bool>[];
   final List<bool> templateParallelToolCalls = <bool>[];
@@ -666,6 +697,7 @@ class _FakeApiServerEngine implements ApiServerEngine {
           finishReason: 'stop',
         ),
       ],
+      usage: usage,
     );
   }
 

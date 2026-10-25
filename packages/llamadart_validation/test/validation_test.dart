@@ -19,9 +19,35 @@ ValidationProfile profile({String backend = 'cpu', bool release = false}) {
   return ValidationProfile.fromJson(json);
 }
 
-class FakeEngine implements ValidationEngine {
+class FakeEngine implements ValidationEngine, StructuredValidationEngine {
   @override
   bool isWeb = false;
+
+  /// LiteRT profiles select only the capability contract, whose flags are
+  /// all false there.
+  @override
+  Future<LlamaEngineCapabilities> structuredCapabilities() async =>
+      const LlamaEngineCapabilities(isSupported: true);
+  @override
+  Future<Map<String, dynamic>> generateStructured(
+    String prompt,
+    ValidationProfile profile, {
+    required int maxTokens,
+    Map<String, dynamic>? responseFormat,
+    LlamaStructuredOutput<Object?>? parseWith,
+    String? grammar,
+    bool grammarLazy = false,
+    List<GenerationGrammarTrigger> grammarTriggers = const [],
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+  }) => throw UnimplementedError('LiteRT profiles omit constrained cases');
+  @override
+  Future<Map<String, dynamic>> createStructuredJson(
+    String prompt,
+    ValidationProfile profile,
+    LlamaStructuredOutput<Object?> output, {
+    required int maxTokens,
+  }) => throw UnimplementedError('LiteRT profiles omit constrained cases');
   bool rejectBatching = false;
   String? batchingFault;
   bool _batchingSeen = false;
@@ -420,6 +446,13 @@ class FakeEngine implements ValidationEngine {
   }
 }
 
+/// Release-selection double includes the new public token-count boundary.
+class CountingFakeEngine extends FakeEngine
+    implements TokenCountValidationEngine {
+  @override
+  Future<int> getTokenCount(String text) async => (await tokenize(text)).length;
+}
+
 /// Removes the records that catalog [version] did not derive for [selected],
 /// renumbering events as that catalog's runner would have written them.
 void dropUndeclared(
@@ -675,7 +708,7 @@ void main() {
     );
 
     final incomplete = await run(
-      FakeEngine(),
+      CountingFakeEngine(),
       selected: profile(release: true),
     );
     expect(incomplete.report.qualificationGaps, isEmpty);
@@ -2010,7 +2043,10 @@ void main() {
     },
   );
   test('release selection executes every implemented obligation', () async {
-    final result = await run(FakeEngine(), selected: profile(release: true));
+    final result = await run(
+      CountingFakeEngine(),
+      selected: profile(release: true),
+    );
     expect(result.report.qualified, isTrue);
     expect(
       result.report.cases.singleWhere(
@@ -2503,6 +2539,45 @@ void main() {
         expect(failed.report.qualified, false);
       }
     });
+
+    test(
+      'catalog 7 journals import without the structured-output pack',
+      () async {
+        for (final (selected, engine) in [
+          (profile(), FakeEngine()),
+          (gguf(), ggufEngine()),
+        ]) {
+          final result = await run(engine, selected: selected);
+          final events = (jsonDecode(jsonEncode(result.events)) as List)
+              .cast<Map<String, dynamic>>();
+          dropUndeclared(events, selected, 7);
+          final catalog = selected.catalogForVersion(7);
+          events.first['catalog'] = catalog;
+          events.first['catalog_hash'] = jsonHash(catalog);
+          expect(
+            ValidationReport.parse(events.map(jsonEncode).join('\n')).problems,
+            isEmpty,
+            reason: selected.id,
+          );
+          expect(catalog['features'], isNot(contains('structured_output')));
+          expect(catalog['fixtures'], isNot(contains('structured_output')));
+          expect(
+            (catalog['cases'] as List).map((c) => (c as Map)['id']),
+            isNot(contains(startsWith('S0'))),
+          );
+          expect(
+            (selected.catalog['cases'] as List)
+                .cast<Map>()
+                .where((c) => '${c['id']}'.startsWith('S0'))
+                .map((c) => c['omission_reason'])
+                .toSet(),
+            selected.runtime == 'litert'
+                ? {'outside_selected_features', 'litert_grammar_unsupported'}
+                : {'outside_selected_features'},
+          );
+        }
+      },
+    );
 
     test('catalog 6 LiteRT journals keep their restart omissions', () async {
       final selected = profile();

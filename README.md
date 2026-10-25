@@ -45,9 +45,10 @@ Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.
   this is a declared floor, not a tested one: on a device it has run only on
   iOS 18.3.2 ([#831](https://github.com/leehack/llamadart/issues/831))
 - macOS deployment target `14.0` or newer for Flutter macOS apps
-- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
-  architecture (x64 or arm64) on every machine that runs it, at least as new
-  as the build tools of the bundled DLLs; stock Windows Server lacks it
+- Windows: nothing extra for llama.cpp and LiteRT-LM, which bundle the
+  Visual C++ runtime DLLs they need. Machines that run the opt-in
+  `stable_diffusion` runtime need the latest Microsoft Visual C++ v14
+  Redistributable (x64); stock Windows Server lacks it
 
 Consumers do not need a local C++ toolchain. Native runtime archives are
 resolved by the package build hook on first build or run.
@@ -58,7 +59,7 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.1
+  llamadart: ^0.16.2
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -89,9 +90,9 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.1
+  llamadart: ^0.16.2
   llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.16.1 # Apple .litertlm / LiteRT-LM targets
+  llamadart_litert_lm_flutter: ^0.16.2 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in
 ```
 
@@ -108,10 +109,10 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Use LiteRT-LM companion `0.16.1` with core `>=0.16.1 <0.17.0` for native
-`v0.18.1-2`, which fixes nondeterministic CPU output and slow Gemma 4 CPU decode
-on SME2 CPUs. Companion `0.16.0` pins `v0.18.1` and pairs with core `0.16.0`;
-later `0.16.x` cores build it with a macOS upgrade warning. Use `0.15.2` with
+Use LiteRT-LM companion `0.16.2` with core `>=0.16.2 <0.17.0` for native
+`v0.18.1-4`. Companion `0.16.1` pins `v0.18.1-2`, which fixes nondeterministic
+CPU output and slow Gemma 4 CPU decode on SME2 CPUs, and `0.16.0` pins
+`v0.18.1`; core `0.16.2` builds both with a macOS upgrade warning. Use `0.15.2` with
 core `>=0.15.6 <0.16.0` for `v0.18.0-3`. All three load dedicated ASR
 `.litertlm` containers such as Whisper tiny. Locked `0.15.0`/`0.15.1`
 companions keep `v0.18.0-2` and work with core `0.15.6` with a macOS upgrade
@@ -231,6 +232,8 @@ fallback when model template metadata is empty. See
   stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
+  `dart run llamadart:web_setup` vendors the pinned, checksum-verified bridge
+  assets into `web/` and adds the bootstrap to `web/index.html`.
   WebGPU rejects invalid request arguments with `LlamaArgumentException`;
   `scoreNextToken` vocabulary and int32 bounds retain `RangeError`.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
@@ -247,10 +250,14 @@ fallback when model template metadata is empty. See
   validated WebGPU bridge assets, your own `SpeechToTextPromptAdapter` for
   other audio chat models, plus worker-isolated, CPU-only native LiteRT-LM
   streaming ASR (`LiteRtLmAsrAdapter`) with bounded 16 kHz PCM input and
-  partial transcripts.
+  partial transcripts. With the pinned bridge assets, Web speech-to-text task
+  cancellation stops only that task, including when its generation is queued
+  behind another request.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp and WebGPU
   bridge assets through `TextToSpeechEngine.load` or `attach`
-  (`Qwen3TtsAdapter`), returning complete PCM with WAV encoding.
+  (`Qwen3TtsAdapter`), returning complete PCM with WAV encoding. With the pinned
+  bridge assets, Web task cancellation leaves other requests running, including
+  during synthesis startup.
 - **Preview:** on-device text-to-image generation through
   `ImageGenerationEngine` on native targets; see
   [Image generation (Preview)](#image-generation-preview).
@@ -284,7 +291,16 @@ at generation start when it is missing. Native llama.cpp also takes
 `draftMicroBatchSize` to give the draft context a smaller micro-batch than the
 target; WebGPU and LiteRT-LM reject it.
 
-For ordered embedding content, use `LlamaEmbeddingInput` with
+For text retrieval, opt into
+`LlamaTextEmbedder(engine, profile: LlamaEmbeddingProfile.embeddingGemma2,
+dimensions: 256)` and pass `LlamaEmbeddingText.query`, `.document(title: ...)`
+or `.prepared` inputs. It formats only explicit text tasks, checks the full
+768-component EG2 output, truncates to 768/512/256/128, then L2-normalizes.
+The profile is your assertion of model compatibility; it does not identify or
+qualify the loaded model. Query and corpus dimensions must match. The default
+raw profile and existing `embed` calls retain their original behavior.
+
+For ordered image/audio content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports
 image/audio embeddings with EmbeddingGemma-2 and its projector on native
@@ -447,6 +463,11 @@ engine downloads each `ModelSource` (local path, URL or `hf://`) like
 for the files and settings of each validated model, download options, memory
 checks and known limits.
 
+Image loads also accept `ImageConditioningCacheParams(capacity: 0)` to
+turn off prompt-conditioning reuse, or a positive entry limit. Unset keeps
+the runtime default of four entries. This does not enable approximate
+sampling caches; see the guide's [conditioning cache](https://llamadart.leehack.com/docs/next/guides/image-generation#conditioning-cache).
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |
@@ -468,13 +489,15 @@ and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero reso
 Decision heads follow this CPU placement and report `CPU` in
 `DecisionModelInfo.deviceName`; see
 [head placement](website/docs/guides/decision-models.md#current-support-matrix).
+The WebGPU bridge ignores negative `mainGpu` values; `device: ComputeDevice.gpu`
+still requires a WebGPU adapter and active GPU layers after load.
 
 Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0-2` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-2` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.73` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |
 

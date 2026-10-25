@@ -164,32 +164,12 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         if: ${{ github.event.action != 'closed' }}
         run: |
-          python3 - <<'PY'
-          import os
-
-          from huggingface_hub import HfApi
-
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          space_repo = os.environ["SPACE_REPO"]
-          pr_number = os.environ["PR_NUMBER"]
-          head_sha = os.environ["PR_HEAD_SHA"]
-
-          api.create_repo(
-              repo_id=space_repo,
-              repo_type="space",
-              space_sdk="static",
-              exist_ok=True,
-              private=False,
-          )
-          api.upload_folder(
-              repo_id=space_repo,
-              repo_type="space",
-              folder_path="hf-space-sync",
-              revision="main",
-              delete_patterns="*",
-              commit_message=f"deploy PR #{pr_number} {head_sha[:7]}",
-          )
-          PY
+          python3 tool/ci/hf_space_deploy.py \
+            --repo "$SPACE_REPO" \
+            --folder hf-space-sync \
+            --commit-message "deploy PR #${PR_NUMBER} ${PR_HEAD_SHA:0:7}" \
+            --delete-pattern '*' \
+            --public
 
       - name: Verify deployed preview artifact
         if: ${{ github.event.action != 'closed' }}

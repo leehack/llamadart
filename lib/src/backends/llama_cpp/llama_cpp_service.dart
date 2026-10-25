@@ -39,6 +39,7 @@ import 'load_device_selection.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
+import 'token_batch.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 import 'mtmd_chunk_eval.dart';
@@ -50,6 +51,10 @@ part 'multimodal_embedding.dart';
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 final int _nativeStatusException =
     llama_dart_status.LLAMA_DART_STATUS_EXCEPTION.value;
+final Pointer<NativeFinalizerFunction> _samplerFreeAddress =
+    Native.addressOf<NativeFunction<Void Function(Pointer<llama_sampler>)>>(
+      llama_sampler_free,
+    ).cast();
 
 typedef _GgmlBackendLoadNative = ggml_backend_reg_t Function(Pointer<Char>);
 typedef _GgmlBackendLoadDart = ggml_backend_reg_t Function(Pointer<Char>);
@@ -692,10 +697,12 @@ class LlamaCppService {
   /// backend policy, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the ggml calls of decision heads, the
-  /// calls that allocate and free token batches and prepared embedding
-  /// resources, the read of the Vulkan device facts, the registered ggml
-  /// devices a load selects from, and the allocator of the model paths
-  /// [loadModel] and draft model loads pass to llama.cpp.
+  /// calls that allocate and free per-request token batches and prepared
+  /// embedding resources, the read of the Vulkan device facts, the registered
+  /// ggml devices a load selects from, the allocator of the model paths
+  /// [loadModel] and draft model loads pass to llama.cpp, and the allocator
+  /// of each context's token batch, whose blocks `malloc`'s free must be able
+  /// to free: an isolate exit frees a batch still held with it.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -715,6 +722,7 @@ class LlamaCppService {
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
     Allocator modelPathAllocator = malloc,
+    Allocator contextBatchAllocator = malloc,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -731,7 +739,8 @@ class LlamaCppService {
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices,
-       _modelPathAllocator = modelPathAllocator;
+       _modelPathAllocator = modelPathAllocator,
+       _contextBatchAllocator = contextBatchAllocator;
 
   final void Function() _backendInit;
   final Abi _abi;
@@ -753,6 +762,7 @@ class LlamaCppService {
 
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
   final Allocator _modelPathAllocator;
+  final Allocator _contextBatchAllocator;
 
   // Reading the facts loads the system's GPU drivers into the process, so
   // they are read once, and only for a load that selects a registered
@@ -827,7 +837,7 @@ class LlamaCppService {
   final Map<int, _LlamaContextWrapper> _contexts = {};
   final Map<int, int> _contextToModel = {};
   final Map<int, Pointer<llama_sampler>> _samplers = {};
-  final Map<int, llama_batch> _batches = {};
+  final Map<int, TokenBatch> _batches = {};
   final Map<int, llama_context_params> _contextParams = {};
 
   /// Called for unit tests with the draft context of each speculative session
@@ -4402,10 +4412,22 @@ class LlamaCppService {
     _contextToModel[handle] = modelHandle;
     _activeLoras[handle] = {};
     _contextParams[handle] = ctxParams;
-    _samplers[handle] = llama_sampler_chain_init(
+    final sampler = llama_sampler_chain_init(
       llama_sampler_chain_default_params(),
     );
-    _batches[handle] = _batchInit(resolvedBatchSizes.batchSize, 0, 1);
+    _holdSamplerChain(sampler);
+    _samplers[handle] = sampler;
+    final batch = TokenBatch.allocate(
+      resolvedBatchSizes.batchSize,
+      1,
+      allocator: _contextBatchAllocator,
+    );
+    IsolateShutdownReleases.current.hold(
+      ShutdownStage.session,
+      TokenBatch.freeAddress,
+      batch.block,
+    );
+    _batches[handle] = batch;
 
     return handle;
   }
@@ -4461,9 +4483,12 @@ class LlamaCppService {
     _activeLoras.remove(handle);
     _contextParams.remove(handle);
     final sampler = _samplers.remove(handle);
-    if (sampler != null && sampler != nullptr) llama_sampler_free(sampler);
+    if (sampler != null && sampler != nullptr) _freeSamplerChain(sampler);
     final batch = _batches.remove(handle);
-    if (batch != null) _batchFree(batch);
+    if (batch != null) {
+      IsolateShutdownReleases.current.release(batch.block);
+      batch.free();
+    }
     _contexts.remove(handle)?.dispose();
   }
 
@@ -5241,7 +5266,7 @@ class LlamaCppService {
 
       // 2. Prepare Resources
       final nCtx = llama_n_ctx(ctx.pointer);
-      final batch = _batches[contextHandle]!;
+      final batch = _batches[contextHandle]!.batch;
       tokensPtr = malloc<Int32>(nCtx);
       pieceBuf = malloc<Uint8>(256);
 
@@ -5306,7 +5331,11 @@ class LlamaCppService {
 
       // 3. Ingest Prompt (Text or Multimodal)
       final promptEvalStopwatch = Stopwatch()..start();
-      final (nPast: initialTokens, :promptTokenCount) = _ingestPrompt(
+      final (
+        nPast: initialTokens,
+        :promptTokenCount,
+        :evaluatedPromptTokens,
+      ) = _ingestPrompt(
         contextHandle,
         modelHandle,
         ctx,
@@ -5330,7 +5359,7 @@ class LlamaCppService {
       promptEvalStopwatch.stop();
       ctx.lastPerfPromptEvalMs =
           promptEvalStopwatch.elapsedMicroseconds / 1000.0;
-      ctx.lastPerfPromptEvalTokens = initialTokens;
+      ctx.lastPerfPromptEvalTokens = evaluatedPromptTokens;
 
       _ensureLogitsAvailableAfterPromptEval(ctx.pointer);
       if (speculativeSession != nullptr &&
@@ -5410,7 +5439,7 @@ class LlamaCppService {
         IsolateShutdownReleases.current.release(speculativeSession);
         speculativeApi?.free(speculativeSession);
       }
-      if (sampler != nullptr) llama_sampler_free(sampler);
+      if (sampler != nullptr) _freeSamplerChain(sampler);
       final remaining = (_generatingContexts[contextHandle] ?? 1) - 1;
       if (remaining <= 0) {
         _generatingContexts.remove(contextHandle);
@@ -5475,7 +5504,7 @@ class LlamaCppService {
     var pieceBuf = malloc<Uint8>(pieceCapacity);
     try {
       final promptTokens = _ingestTextPrompt(
-        _batches[contextHandle]!,
+        _batches[contextHandle]!.batch,
         vocab,
         prompt,
         tokensPtr,
@@ -6145,10 +6174,12 @@ class LlamaCppService {
 
   /// Ingests the prompt (text or multimodal).
   ///
-  /// Returns the next KV position and how many prompt ids were written to
-  /// `tokensPtr`. Multimodal ingestion writes none. A text prompt cancelled
-  /// through `cancelToken` reports only the tokens decoded before the cancel.
-  ({int nPast, int promptTokenCount}) _ingestPrompt(
+  /// Returns the next KV position, how many prompt ids were written to
+  /// `tokensPtr`, and how many prompt tokens were evaluated, media tokens
+  /// included. Multimodal ingestion writes no ids, and its positions can be
+  /// fewer than its tokens. A prompt cancelled through `cancelToken` reports
+  /// only the tokens decoded before the cancel.
+  ({int nPast, int promptTokenCount, int evaluatedPromptTokens}) _ingestPrompt(
     int contextHandle,
     int modelHandle,
     _LlamaContextWrapper ctx,
@@ -6175,7 +6206,7 @@ class LlamaCppService {
     final mmCtx = mmHandle != null ? _mtmdContexts[mmHandle] : null;
 
     if (mediaParts.isNotEmpty && mmCtx != null) {
-      final nPast = _ingestMultimodalPrompt(
+      final (:nPast, :evaluatedTokens) = _ingestMultimodalPrompt(
         mmCtx,
         ctx,
         vocab,
@@ -6185,7 +6216,11 @@ class LlamaCppService {
         cancelToken,
         chatMediaMarker: chatMediaMarker,
       );
-      return (nPast: nPast, promptTokenCount: 0);
+      return (
+        nPast: nPast,
+        promptTokenCount: 0,
+        evaluatedPromptTokens: evaluatedTokens,
+      );
     } else {
       final nTokens = _ingestTextPrompt(
         batch,
@@ -6201,11 +6236,17 @@ class LlamaCppService {
         speculativeConfig: speculativeConfig,
         isCancelled: () => cancelToken.value == 1,
       );
-      return (nPast: nTokens, promptTokenCount: nTokens);
+      return (
+        nPast: nTokens,
+        promptTokenCount: nTokens,
+        evaluatedPromptTokens: nTokens,
+      );
     }
   }
 
-  int _ingestMultimodalPrompt(
+  /// Without chunk-level mtmd functions, [evaluatedTokens] falls back to the
+  /// positions, as no token count is reachable.
+  ({int nPast, int evaluatedTokens}) _ingestMultimodalPrompt(
     Pointer<mtmd_context> mmCtx,
     _LlamaContextWrapper ctx,
     Pointer<llama_vocab> vocab,
@@ -6218,6 +6259,7 @@ class LlamaCppService {
   }) {
     _calls.failures.ensureUsable(mmCtx, 'This multimodal projector');
     int initialTokens = 0;
+    int? evaluatedTokens;
     // Zeroed, so the cleanup of a part that failed skips the slots after it.
     final bitmaps = allocator<Pointer<mtmd_bitmap>>(mediaParts.length);
     Pointer<mtmd_input_chunks> chunks = nullptr;
@@ -6359,6 +6401,8 @@ class LlamaCppService {
               modelParams.n_batch,
               newPast,
               cancelToken,
+              onChunkEvaluated: (tokens) =>
+                  evaluatedTokens = (evaluatedTokens ?? 0) + tokens,
             );
             evalResult = chunkFailure?.result ?? 0;
             if (evalResult == _nativeStatusException) {
@@ -6401,7 +6445,10 @@ class LlamaCppService {
       if (chunks != nullptr) _mtmdInputChunksFree(chunks);
     }
     ctx.cachedPromptTokens = null;
-    return initialTokens;
+    return (
+      nPast: initialTokens,
+      evaluatedTokens: evaluatedTokens ?? initialTokens,
+    );
   }
 
   /// Rejects a prompt whose non-causal media chunk llama.cpp would abort on.
@@ -6890,6 +6937,18 @@ class LlamaCppService {
     return i;
   }
 
+  void _holdSamplerChain(Pointer<llama_sampler> chain) =>
+      IsolateShutdownReleases.current.hold(
+        ShutdownStage.session,
+        _samplerFreeAddress,
+        chain,
+      );
+
+  void _freeSamplerChain(Pointer<llama_sampler> chain) {
+    IsolateShutdownReleases.current.release(chain);
+    llama_sampler_free(chain);
+  }
+
   /// Helper: Initializes the sampler chain.
   Pointer<llama_sampler> _initializeSampler(
     GenerationParams params,
@@ -6907,6 +6966,7 @@ class LlamaCppService {
     final sampler = llama_sampler_chain_init(
       llama_sampler_chain_default_params(),
     );
+    _holdSamplerChain(sampler);
 
     final penaltyConfig = _resolvePenaltySamplerConfig(params);
     final penaltiesSampler = llama_sampler_init_penalties(
@@ -6924,7 +6984,7 @@ class LlamaCppService {
         suppressedTokens,
       );
       if (suppressSampler == nullptr) {
-        llama_sampler_free(sampler);
+        _freeSamplerChain(sampler);
         throw LlamaInferenceException(
           'llama.cpp failed to initialize model-specific suppressed tokens.',
         );
@@ -6947,7 +7007,7 @@ class LlamaCppService {
             lazyGrammarConfig.numTriggerTokens,
           );
         } on LlamaException {
-          llama_sampler_free(sampler);
+          _freeSamplerChain(sampler);
           rethrow;
         }
       } else {
@@ -6959,7 +7019,7 @@ class LlamaCppService {
       }
     }
     if (grammarPtr != nullptr && grammarSampler == nullptr) {
-      llama_sampler_free(sampler);
+      _freeSamplerChain(sampler);
       throw LlamaInferenceException(
         'llama.cpp failed to initialize the requested grammar sampler.',
       );
@@ -6971,7 +7031,7 @@ class LlamaCppService {
         if (grammarSampler != nullptr) {
           llama_sampler_free(grammarSampler);
         }
-        llama_sampler_free(sampler);
+        _freeSamplerChain(sampler);
         throw StateError('Missing llama.cpp reasoning-budget sampler API.');
       }
       final budgetSampler = api.initSampler(
@@ -6986,7 +7046,7 @@ class LlamaCppService {
         if (grammarSampler != nullptr) {
           llama_sampler_free(grammarSampler);
         }
-        llama_sampler_free(sampler);
+        _freeSamplerChain(sampler);
         _calls.failures.throwIfCaught(
           'llama_dart_sampler_init_reasoning_budget',
           LlamaInferenceException.new,
@@ -7038,7 +7098,7 @@ class LlamaCppService {
           }
         }
       } on LlamaException {
-        llama_sampler_free(sampler);
+        _freeSamplerChain(sampler);
         rethrow;
       }
     }

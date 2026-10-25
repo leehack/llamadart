@@ -4,8 +4,8 @@ import 'dart:ffi';
 /// an earlier stage before any object of a later one, so an object goes before
 /// the objects it uses.
 enum ShutdownStage {
-  /// Per-request native state over a context, such as a speculative-decoding
-  /// or text-to-speech session.
+  /// Native state used with a context: its token batch and sampler chains,
+  /// and per-request sessions such as speculative decoding or text-to-speech.
   session,
 
   /// ggml schedulers.

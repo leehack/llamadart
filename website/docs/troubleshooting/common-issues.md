@@ -61,13 +61,14 @@ resolves binaries: [Native build hooks](../platforms/native-build-hooks).
 `LlamaBackendInitializationException`, which the load wraps in
 `LlamaModelException`: Windows could not load a DLL that llama.cpp imports,
 and the message names the Visual C++ runtime DLLs that did not load, such as
-`msvcp140.dll` or `vcruntime140.dll`. Install the latest Microsoft Visual C++
-v14 Redistributable for the app's architecture
+`msvcp140.dll` or `vcruntime140.dll`. The llama.cpp bundle ships those DLLs
+next to `llamadart.dll`, so this means the app's copies were removed or not
+packaged. Restore them, or install the latest Microsoft Visual C++ v14
+Redistributable for the app's architecture
 ([`vc_redist.x64.exe`](https://aka.ms/vc14/vc_redist.x64.exe), or
 [`vc_redist.arm64.exe`](https://aka.ms/vc14/vc_redist.arm64.exe) on Windows
-arm64) on that machine, or ship those DLLs next to `llamadart.dll`. It must be
-at least as new as the build tools of the bundled DLLs, so update an older
-installed copy too. Stock Windows Server lacks it.
+arm64) on that machine; an installed copy must be at least as new as the build
+tools of the bundled DLLs.
 
 ### `libgomp.so.1: cannot open shared object file`
 
@@ -214,7 +215,9 @@ pins it or later
 The WebGPU backend throws
 `Web bridge is unavailable. Ensure LlamaWebGpuBridge assets are loaded and reachable.`
 or `Web bridge is unavailable: <load error>` when the bridge script did not
-load. Add the bridge assets to the app and check that they are served; see
+load. Run `dart run llamadart:web_setup` (or `--check` to list what is
+missing without changing anything) and check that `web/webgpu_bridge/` is
+served; see
 [Add the bridge to your app](../platforms/webgpu-bridge#add-the-bridge-to-your-app).
 In the browser console, `window.LlamaWebGpuBridge` should exist and
 `window.__llamadartBridgeLoadError` should be empty.

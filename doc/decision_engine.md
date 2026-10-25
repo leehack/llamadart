@@ -511,6 +511,12 @@ freed or bridges disposed behind the engine's back were checked against the
 same assets. The previous pin, `v0.1.44`, which lacks the API, reported
 unsupported with the actionable reason in both bridge modes.
 
+The `decision-model-web-smoke` scenario repeats the `laya-Q8_0.gguf` WebGPU
+worker check with the pinned assets ([testing matrix](testing_matrix.md)).
+With bridge source `5340be9e` in headless Chrome 155 on an Apple M4 Max
+(wasm64 core), it passed every row with worst differences of 0.1244, 0.0334
+and 0.0217.
+
 ## Known limits
 
 User-facing limits are listed under

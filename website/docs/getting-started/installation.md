@@ -13,17 +13,17 @@ For Genkit or Flutter Edge AI integration setup, see
 - Flutter SDK `>= 3.38.0` (if you build Flutter apps)
 - Flutter iOS apps: deployment target `16.4` or newer
 - Flutter macOS apps: deployment target `14.0` or newer
-- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
-  architecture (x64 or arm64) on every machine that runs the app, at least as
-  new as the build tools of the bundled DLLs. Stock Windows Server lacks it;
-  see
-  [Native library won't load](../troubleshooting/common-issues#llamacpp-runtime-could-not-be-loaded-on-windows-x64).
+- Windows: nothing extra for llama.cpp and LiteRT-LM, which bundle the
+  Visual C++ runtime DLLs they need. Machines that run the opt-in
+  `stable_diffusion` runtime need the latest Microsoft Visual C++ v14
+  Redistributable (x64), which stock Windows Server lacks; see
+  [Image generation](../guides/image-generation).
 
 ## Add the package
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.1
+  llamadart: ^0.16.2
 ```
 
 Then resolve packages:
@@ -54,9 +54,9 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.1
+  llamadart: ^0.16.2
   llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.16.1 # Apple .litertlm / LiteRT-LM targets
+  llamadart_litert_lm_flutter: ^0.16.2 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in
 ```
 
@@ -105,14 +105,14 @@ companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
 A maintained companion pinning an earlier build of the core's LiteRT-LM
 release still embeds and loads its complete macOS arm64 runtime and needs no
-build phase; the build only warns to upgrade it. Companion `0.16.1` pins
-this core's `v0.18.1-2`, which fixes nondeterministic CPU output and slow
-Gemma 4 CPU decode on SME2 CPUs, and requires core `>=0.16.1`. Companion
-`0.16.0` pins `v0.18.1`, an earlier build of that runtime, so it builds with
-that warning. Companions `0.0.15` to `0.15.2` pin `v0.18.0` builds, a
-different release from this core's `v0.18.1-2`, so they keep macOS LiteRT-LM in the hook
+build phase; the build only warns to upgrade it. Companion `0.16.2` pins
+this core's `v0.18.1-4` and requires core `>=0.16.2`. Companion `0.16.1` pins
+`v0.18.1-2`, which fixes nondeterministic CPU output and slow Gemma 4 CPU
+decode on SME2 CPUs, and companion `0.16.0` pins `v0.18.1`. Both are earlier
+builds of `v0.18.1-4`, so they build with that warning. Companions `0.0.15` to `0.15.2` pin `v0.18.0` builds, a
+different release from this core's `v0.18.1-4`, so they keep macOS LiteRT-LM in the hook
 cache with a warning to upgrade the companion and core together.
-On iOS the build does not check the LiteRT-LM companion pin. `v0.18.1-2`
+On iOS the build does not check the LiteRT-LM companion pin. `v0.18.1-4`
 keeps the arm64-only macOS XCFrameworks introduced in `v0.18.0-1`, the
 `v0.18.0-2` reduction of duplicated words at untimed ASR window boundaries
 with the default overlap, and the `v0.18.0-3` loading of dedicated ASR
@@ -314,7 +314,15 @@ removed.
 ## Web
 
 Web apps must load the WebGPU bridge script in their `web/index.html`; the
-package does not inject it. See
+package does not inject it. From the app root, run:
+
+```bash
+dart run llamadart:web_setup
+```
+
+It vendors the pinned bridge assets into `web/webgpu_bridge/`, verifies their
+checksums and adds the bootstrap to `web/index.html`; rerun it after upgrading
+llamadart. See
 [Add the bridge to your app](../platforms/webgpu-bridge#add-the-bridge-to-your-app).
 
 ## AI agent skills

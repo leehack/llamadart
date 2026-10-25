@@ -55,6 +55,10 @@ const oldHashes = <String, String>{
       "77a25ea86c7382ad198dbbbeb2e5ccdaf2b9afc7e80211044e14fa7ba6f83484",
   "chat-gguf-metal.json":
       "a5df58f964d08e8c62dc87772c45595632d58206fffd351a7f5badfad8dbe2cd",
+  "structured-gguf-cpu.json":
+      "9c5c0f5a1d6b39dbe91404162dd889857fac031104505e35cd13bdd67233211c",
+  "structured-gguf-metal.json":
+      "a5df58f964d08e8c62dc87772c45595632d58206fffd351a7f5badfad8dbe2cd",
   "gemma4-gguf-metal.json":
       "a5df58f964d08e8c62dc87772c45595632d58206fffd351a7f5badfad8dbe2cd",
   "decision-gguf-vulkan.json":
@@ -63,6 +67,8 @@ const oldHashes = <String, String>{
       "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
   "gemma4-litert-gpu.json":
       "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
+  "tokenization-gguf-cpu.json":
+      "9c5c0f5a1d6b39dbe91404162dd889857fac031104505e35cd13bdd67233211c",
   "decision-gguf-webgpu.json":
       "40d0ba6b84a6ae4006d48c4e76b42ba0d8a5e669814d1fa74088d6b4ec806288",
 };

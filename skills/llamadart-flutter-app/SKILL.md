@@ -116,11 +116,12 @@ or shipping runtimes the app does not use.
     `DebugProfile.entitlements` and `Release.entitlements`.
   - Android release builds need the `INTERNET` permission in
     `AndroidManifest.xml`.
-  - Windows machines that run the app need the latest Microsoft Visual C++
-    v14 Redistributable (x64 or arm64), at least as new as the build tools of
-    the bundled DLLs; stock Windows Server lacks it.
+  - Windows: llama.cpp and LiteRT-LM bundle the Visual C++ runtime DLLs
+    they need. Machines that run the opt-in `stable_diffusion` runtime need
+    the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows
+    Server lacks it.
   - Web needs the WebGPU bridge script in `web/index.html`; the package does
-    not inject it. LiteRT-LM on web is single-turn text only (no
+    not inject it (`dart run llamadart:web_setup` adds it). LiteRT-LM on web is single-turn text only (no
     `ChatSession`).
 - Apple SwiftPM linking uses the companion packages:
   `llamadart_llama_cpp_flutter` (llama.cpp XCFrameworks),

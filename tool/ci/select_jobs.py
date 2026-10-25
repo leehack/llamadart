@@ -23,7 +23,7 @@ CORE_JOBS = (
     'validation-integration', 'companion-packages', 'test-linux-coverage',
     'test-web', 'web-chat-contract', 'test-other-os',
     'native-prompt-reuse-parity', 'artifact-contract',
-    'genkit', 'genkit-lower-bounds',
+    'genkit', 'genkit-lower-bounds', 'example-packages',
 )
 # Jobs outside the plan that run exactly when the planned job they feed runs:
 # the Linux VM test shards whose raw coverage test-linux-coverage merges.

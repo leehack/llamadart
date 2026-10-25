@@ -640,6 +640,40 @@ Vulkan flash attention has not been measured yet, so it stays off there;
 pass `flashAttention: true` to try it. The runtime falls back to regular
 attention where a device has no kernel for it.
 
+## Conditioning cache
+
+`ImageConditioningCacheParams(capacity: ...)` controls how many prompt-conditioning
+entries a loaded model retains. Ordinary `ImageModelParams` preserve the pinned
+native runtime's default of four entries; capacity `0` disables reuse. A positive
+integer sets the least-recently-used entry limit, up to the signed 32-bit C ABI limit
+(`2147483647`). Invalid values throw `LlamaImageGenerationException` before
+model files are resolved or downloaded.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  model,
+  params: const ImageConditioningCacheParams(capacity: 0),
+);
+```
+
+The limit counts entries, not bytes: conditioning size depends on the text
+encoder and request. Reuse requires matching conditioning inputs, including
+the prompt and dimensions; another prompt is encoded separately. Entries
+belong to the loaded native context, remain available after a cancelled
+generation when valid, and are freed when it is disposed. Load a new engine
+to change capacity. This cache already operates when the option is unset;
+this control does not enable approximate diffusion-step caching, change
+sampling, or promise a speed or memory improvement.
+
+The maintained `image-generation-smoke` checks compare disabled, default and
+one-entry caches with SDXS (embedded tiny decoder) and SD-Turbo (full VAE),
+including repeated/changed prompts, eviction, cancellation/reuse and reload.
+Qualification for this control covers macOS arm64 CPU and Metal. Android,
+iOS, Linux CPU/Vulkan, Windows CPU/Vulkan and macOS x64 have not been measured
+for this option; SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image were not run.
+Web image generation remains unavailable. Approximation-cache modes remain
+separate work in [#1233](https://github.com/leehack/llamadart/issues/1233).
+
 ## First-image latency and warm-up
 
 ggml compiles GPU shaders the first time a process needs them, in two places:

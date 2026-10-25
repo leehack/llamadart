@@ -75,7 +75,16 @@ WEBGPU_BRIDGE_ASSETS_TAG=v0.1.73 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
-`sha256sums.txt` when the release provides it. To load another CDN release in
+`sha256sums.txt` when the release provides it.
+
+Apps use `dart run llamadart:web_setup` (`bin/web_setup.dart`) instead. It
+pins the tag and the manifest SHA-256 in
+`lib/src/web_setup/web_bridge_setup.dart`, verifies every runtime file against
+that manifest's `files` digests and sizes before replacing anything, and keeps
+a marked bootstrap block in the app's `index.html`. Unlike the chat app
+bootstrap it loads only the local assets, with no CDN fallback.
+`tool/testing/check_webgpu_bridge_tag.dart` registers its tag as a pin and
+reads its manifest SHA-256, so a repin cannot leave it behind. To load another CDN release in
 the chat app, set the bootstrap globals before the bootstrap runs:
 
 ```html
@@ -195,6 +204,24 @@ Await cancelled embedding futures before reuse.
 Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
 hardware WebGPU was not exercised. Repeated media batches require memory64. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
+
+### Per-request cancellation
+
+A generation subscription cancel, including `SpeechToTextTask.cancel()`, aborts
+only the signal passed to that bridge completion. It must not also call the
+bridge's global `cancel()`: a cancelled queued completion may not own the active
+operation. TTS task cancellation follows the same rule: its controller is
+claimed before the backend capability probe, which may still be queued behind
+another active request. The signal prevents synthesis after that probe returns.
+Engine-wide `cancelGeneration()` retains its global behavior.
+
+The `web-speech-task-cancel` scenario exercises real typed STT/TTS cancellation
+and reuse against pinned assets in direct and worker runtimes. Its CPU/Wasm
+results do not establish hardware WebGPU acceleration or cancellation latency.
+The TTS recipe uses explicit batch 512 and micro-batch 256; it does not qualify
+the default context-sized batch profile. See [the test matrix](testing_matrix.md#web-speech-task-cancellation)
+for the bounded controls and the non-isolated test harness's larger-batch
+observation.
 
 ### Completion termination
 

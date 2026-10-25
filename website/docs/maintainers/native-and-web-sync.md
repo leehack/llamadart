@@ -289,6 +289,16 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+Core `0.16.2` preparation moves LiteRT-LM to `v0.18.1-4`, which ships the
+Visual C++ runtime in the Windows bundle and makes Linux and Windows CPU
+inference honour the thread count, and pairs it with
+`llamadart_litert_lm_flutter` `0.16.2`, constrained to
+`llamadart: '>=0.16.2 <0.17.0'`: core `0.16.1` treats a companion pinning
+`v0.18.1-4` as a later build and keeps macOS LiteRT-LM in the hook cache. Core
+`0.16.2` accepts the published `0.16.1` (`v0.18.1-2`) and `0.16.0`
+(`v0.18.1`) companions with an upgrade warning. The llama.cpp and SD
+companions stay `0.16.0`.
+
 Core `0.16.1` preparation moves LiteRT-LM to `v0.18.1-2`, which restores
 deterministic CPU output and Gemma 4 CPU decode speed on SME2 CPUs, and pairs
 it with `llamadart_litert_lm_flutter` `0.16.1`, constrained to
@@ -406,8 +416,10 @@ Fetch pinned assets for local app web files:
 WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
-A repin updates the release id, tag commit, bridge source and manifest SHA-256
-in `tool/testing/check_webgpu_bridge_tag.dart` and the docs that restate them.
+A repin updates the release id, tag commit and bridge source in
+`tool/testing/check_webgpu_bridge_tag.dart`, the tag and manifest SHA-256 in
+`lib/src/web_setup/web_bridge_setup.dart` (which `dart run
+llamadart:web_setup` trusts), and the docs that restate them.
 Before opening the PR, check them against the published release:
 
 ```bash

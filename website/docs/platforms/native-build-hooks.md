@@ -8,7 +8,10 @@ The `llamadart` build hook (`hook/build.dart`) downloads prebuilt llama.cpp and
 LiteRT-LM runtimes for the target platform, so apps never compile C++. The hook
 reports the downloaded `.so`, `.dylib` and `.dll` files as `package:code_assets`
 code assets, and the Flutter or Dart build bundles them into the APK, IPA or
-desktop app. On macOS, the hook does not report LiteRT-LM libraries: they stay
+desktop app. On Linux and Windows, LiteRT-LM loads from the app bundle (beside
+the executable, in its `lib/` directory, or in `../lib/` for a `dart build cli`
+executable in `bin/`), and from the hook cache under `dart run` and
+`dart test`; `LLAMADART_LITERT_LM_LIB_DIR` overrides both. On macOS, the hook does not report LiteRT-LM libraries: they stay
 in the hook cache inside the resolved `llamadart` package. `dart run` loads
 them from there and a `dart build cli` bundle needs
 `LLAMADART_LITERT_LM_LIB_DIR`. A Flutter macOS app gets them from the
@@ -255,11 +258,13 @@ Selection rules:
 Linux modules need system libraries; see
 [Linux prerequisites](./linux-prerequisites).
 
-On Windows every module needs the latest Microsoft Visual C++ v14
-Redistributable (x64 or arm64), at least as new as the build tools of the
-bundled DLLs. The bundles ship only the OpenMP runtime
-(`vcomp140.dll` on x64, `libomp140.aarch64.dll` on arm64), not
-`msvcp140.dll` or `vcruntime140.dll`. `vulkan` also needs a GPU driver that
+On Windows the bundles ship the Visual C++ runtime app-locally
+(`msvcp140.dll` and `vcruntime140.dll`, plus `vcruntime140_1.dll` and the
+OpenMP runtime `vcomp140.dll` on x64), so no Visual C++ Redistributable is
+needed. The LiteRT-LM Windows x64 runtime ships `msvcp140.dll`,
+`vcruntime140.dll`, `vcruntime140_1.dll` and `vcruntime140_threads.dll`, but no
+`vcomp140.dll`; when an app bundles both runtimes, the hook
+bundles the newer file version of each DLL they share. `vulkan` also needs a GPU driver that
 provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,
 which provides `nvcuda.dll`. When one of those is missing, the module's
 startup diagnostic, which a failed model load reports, names it.
@@ -440,10 +445,11 @@ the complete macOS runtime, which the app loads from its bundle, so the build
 only warns to upgrade the companion. A maintained manifest pinning any other
 LiteRT-LM release or a later build of the same release warns to upgrade the
 core and companion together. Core `0.16.0` and its companion `0.16.0` pin
-`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`, and core
-`0.16.1` accepts companion `0.16.0` with the warning above. Companion `0.16.1`
-requires core `>=0.16.1`, since core `0.16.0` would keep LiteRT-LM in the hook
-cache. Companions
+`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`; core
+`0.16.2` and companion `0.16.2` pin `v0.18.1-4`. Each core accepts the earlier
+`0.16.x` companions with the warning above. Companion `0.16.1` requires core
+`>=0.16.1` and companion `0.16.2` core `>=0.16.2`, since an earlier core would
+keep LiteRT-LM in the hook cache. Companions
 `0.0.15` to `0.15.2` pin `v0.18.0` to `v0.18.0-3`, a different release from
 the `v0.18.1` core release line.
 Without a companion, and for non-Flutter or non-Apple builds, the hook

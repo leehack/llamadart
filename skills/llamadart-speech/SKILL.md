@@ -58,7 +58,7 @@ description: >-
     `source` and its tokenizer JSON as `tokenizer` (still required for a
     container, which uses its embedded tokenizer). Apple apps on LiteRT
     companion `0.15.0`/`0.15.1` (`v0.18.0-2`) reject containers until they
-    upgrade to companion `0.16.1` with core `0.16.1`, or `0.15.2` with core
+    upgrade to companion `0.16.2` with core `0.16.2`, or `0.15.2` with core
     `0.15.6`. Native only, CPU only
     (`LiteRtLmAsrBackend.cpu`); runtime settings go on the adapter, and
     `params`/`backend` must be null. `load` throws
@@ -144,8 +144,10 @@ description: >-
 - Cancellation is cooperative: `task.cancel()` or `await session.cancel()`.
   `done` then reports `cancelled`, and `task.result` throws
   `LlamaStateException`. `task.cancel()` stops only that task; it does not
-  cancel other requests on the same `LlamaEngine`. A streaming session's `events`
-  still report a failure as a stream error (also on `session.done`), so give
+  cancel other requests on the same `LlamaEngine`. With the pinned Web bridge,
+  this includes queued STT generation and TTS startup waiting for a capability probe.
+  Use `task.cancel()` for one task; `engine.cancelGeneration()` requests global generation cancellation.
+  A streaming session's `events` still report a failure as a stream error (also on `session.done`), so give
   its `listen` an `onError`. Cancelling or pausing the `events`
   subscription does not stop or throttle inference. The speech engine's
   `dispose()`, and `unloadModel()` and `dispose()` on its `LlamaEngine`,

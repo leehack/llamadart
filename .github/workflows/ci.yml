@@ -35,6 +35,7 @@ jobs:
       artifact-contract: ${{ steps.select.outputs.artifact-contract }}
       genkit: ${{ steps.select.outputs.genkit }}
       genkit-lower-bounds: ${{ steps.select.outputs.genkit-lower-bounds }}
+      example-packages: ${{ steps.select.outputs.example-packages }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -373,7 +374,8 @@ jobs:
           - shard: tooling
             paths: >-
               test/unit/tooling test/unit/hook test/unit/platform
-              test/unit/test_structure test/unit/public_entrypoints_test.dart
+              test/unit/test_structure test/unit/web_setup
+              test/unit/public_entrypoints_test.dart
               test/unit/public_entrypoints_web_test.dart
           - shard: runtime
             paths: test/unit/backends test/integration test/e2e
@@ -526,6 +528,66 @@ jobs:
 
       - name: Run Browser tests
         run: dart test -p chrome --exclude-tags local-only
+
+  # chat_app's tests run in web-chat-contract. Model-backed tests are tagged
+  # local-only, so this job needs no model.
+  example-packages:
+    needs: changes
+    if: needs.changes.outputs.example-packages == 'true'
+    name: Example Package Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: 'stable'
+          cache: true
+
+      - name: Test basic_app
+        if: ${{ !cancelled() }}
+        working-directory: example/basic_app
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
+
+      - name: Test laya_command_bar
+        if: ${{ !cancelled() }}
+        working-directory: example/laya_command_bar
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
+
+      - name: Test laya_tetris
+        if: ${{ !cancelled() }}
+        working-directory: example/laya_tetris
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" flutter test --exclude-tags local-only
+
+      - name: Test llamadart_cli
+        if: ${{ !cancelled() }}
+        working-directory: example/llamadart_cli
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
+
+      - name: Test llamadart_server
+        if: ${{ !cancelled() }}
+        working-directory: example/llamadart_server
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
+
+      - name: Test tui_coding_agent
+        if: ${{ !cancelled() }}
+        working-directory: example/tui_coding_agent
+        run: |
+          flutter pub get
+          TMPDIR="$(mktemp -d)" dart test --exclude-tags local-only
 
   web-chat-contract:
     needs: changes
@@ -745,6 +807,7 @@ jobs:
       - artifact-contract
       - genkit
       - genkit-lower-bounds
+      - example-packages
     steps:
       - uses: actions/checkout@v7
         with:

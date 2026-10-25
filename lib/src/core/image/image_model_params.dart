@@ -63,3 +63,36 @@ class ImageModelParams {
     this.vaeDirectConvolution,
   });
 }
+
+/// Image runtime settings with an explicit prompt-conditioning cache capacity.
+///
+/// Ordinary [ImageModelParams] preserve the runtime default (4 entries).
+/// This separate type keeps existing implementations and subclasses of
+/// [ImageModelParams] source-compatible.
+final class ImageConditioningCacheParams extends ImageModelParams {
+  /// Largest [capacity], the signed 32-bit C ABI limit.
+  static const int maxCapacity = 0x7FFFFFFF;
+
+  /// Number of prompt-conditioning entries retained by this loaded model.
+  ///
+  /// `0` disables conditioning reuse. Accepts 0 through [maxCapacity]. Other
+  /// values make `ImageGenerationEngine.load` throw
+  /// `LlamaImageGenerationException` before resolving or downloading files.
+  ///
+  /// This counts entries, not bytes. Matching conditioning inputs reuse an
+  /// entry; eviction is least-recently-used first. Entries belong to the
+  /// native model context and are freed on disposal. Load another engine to
+  /// change capacity. This does not enable approximate diffusion-step caches
+  /// or change sampling settings.
+  final int capacity;
+
+  /// Creates runtime settings with an explicit conditioning-cache [capacity].
+  const ImageConditioningCacheParams({
+    required this.capacity,
+    super.device,
+    super.threads,
+    super.checkMemory,
+    super.flashAttention,
+    super.vaeDirectConvolution,
+  });
+}

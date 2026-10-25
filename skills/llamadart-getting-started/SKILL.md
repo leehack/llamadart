@@ -114,12 +114,13 @@ Linux and web. Full docs: https://llamadart.leehack.com
   companion manifests, native URLs and checksums.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
-  - Windows machines that run the app need the latest Microsoft Visual C++
-    v14 Redistributable (x64 or arm64), at least as new as the build tools of
-    the bundled DLLs; stock Windows Server lacks it, and llama.cpp then fails
-    to load with an error naming the missing DLLs.
+  - Windows: llama.cpp and LiteRT-LM bundle the Visual C++ runtime DLLs
+    they need. Machines that run the opt-in `stable_diffusion` runtime need
+    the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows
+    Server lacks it.
   - Web apps must add the WebGPU bridge script to `web/index.html`; the package
-    does not inject it.
+    does not inject it. `dart run llamadart:web_setup` vendors the pinned,
+    checksum-verified assets and adds it.
   - To ship one runtime family only, set
     `hooks.user_defines.llamadart.llamadart_native_runtimes` in `pubspec.yaml`.
 - Native runtimes are fetched by the build hook on first build; no C++

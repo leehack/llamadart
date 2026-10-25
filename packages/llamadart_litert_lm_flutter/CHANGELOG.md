@@ -1,3 +1,8 @@
+## 0.16.2
+
+- Update Apple SwiftPM to `leehack/litert-lm-native@v0.18.1-4`, the LiteRT-LM
+  runtime of core `0.16.2`; require core `>=0.16.2 <0.17.0`.
+
 ## 0.16.1
 
 - Update Apple SwiftPM to `leehack/litert-lm-native@v0.18.1-2`, which makes

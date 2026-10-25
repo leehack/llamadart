@@ -147,15 +147,16 @@ Pick targeted rows based on the touched surface:
 | Native sync tooling under `tool/native/`, `lib/src/hook/native_release_pins.dart`, `sync_native_bindings.yml`, an Apple companion `Package.swift`, or a runtime pin constant | `native-sync-python-suites`, `native-release-digests` |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
-| Generation cancel or engine stream forwarding | `native-prompt-cancel` |
+| Generation cancel or engine stream forwarding | `native-prompt-cancel`, plus `web-speech-task-cancel` for browser speech task isolation |
 | llama.cpp native pin, object creation and free paths, exit or isolate shutdown | `native-exit-teardown` |
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
+| Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke` |
-| WebGPU multimodal | `webgpu-multimodal-regression`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
+| WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
@@ -165,7 +166,7 @@ Pick targeted rows based on the touched surface:
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
-| Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
+| Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
 | `stable_diffusion` runtime pin, image worker native calls, progress polling, exit or isolate shutdown | `image-exit-teardown`, `image-generation-smoke` |
 | Chat-app image screen or image model downloads | `chat-app-image-generation-smoke` |
@@ -189,6 +190,10 @@ Chrome, validates the final Flutter Web artifact, exercises deterministic UI
 behavior, and loads a tiny real GGUF through the packaged worker and WASM core.
 Large Gemma 4 GGUF and LiteRT-LM downloads remain targeted rows so transient
 model-host availability does not make every pull request flaky.
+`Example Package Tests` runs the other example packages' model-free tests on
+full-graph changes, which include any non-Markdown change under `example/`
+outside `example/chat_app`. Chat app changes and Markdown under `example/`
+do not select it.
 
 ## Coverage Map
 
@@ -204,12 +209,87 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `gemma4-webgpu-mem64` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `web-speech-task-cancel`, `gemma4-webgpu-mem64`, `decision-model-web-smoke` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
 | Feature paths | load/generate, prompt reuse, chat templates, streaming, tool calls, thinking, multimodal image/audio, model cache, native hook packaging |
 | Platforms | See `dart run tool/testing/test_matrix.dart --tier platform`; each supported family/architecture is marked as CI, local, manual/device, or hook-only. |
+
+## Web Speech Task Cancellation
+
+`web-speech-task-cancel` runs real Qwen3-ASR and Qwen3-TTS cancellation
+isolation and subsequent engine reuse through both direct and worker bridge
+paths. It fetches the pinned bridge into
+`build/web_speech_task_cancel/bridge/`. Stage compatible model/projector pairs
+and a WAV with a known exact transcript under `build/web_speech_task_cancel/`,
+then create `config.json` there (all paths are relative to that config):
+
+```json
+{
+  "assets": "bridge/",
+  "asrModel": "asr.gguf",
+  "asrProjector": "asr-projector.gguf",
+  "audio": "speech.wav",
+  "expectedText": "The exact transcript of speech.wav",
+  "ttsModel": "tts.gguf",
+  "ttsProjector": "tts-projector.gguf",
+  "manifestSha256": "<SHA-256 of bridge/manifest.json>",
+  "ttsBatchSize": 512,
+  "ttsMicroBatchSize": 256,
+  "sha256": {
+    "asrModel": "<SHA-256>",
+    "asrProjector": "<SHA-256>",
+    "audio": "<SHA-256>",
+    "ttsModel": "<SHA-256>",
+    "ttsProjector": "<SHA-256>"
+  }
+}
+```
+
+Verify the staged files outside the browser and put their digests in `sha256`:
+
+```bash
+cd build/web_speech_task_cancel
+shasum -a 256 asr.gguf asr-projector.gguf speech.wav tts.gguf tts-projector.gguf
+```
+
+Use the file names in your config. The suite checks the bridge manifest and WAV
+digests; the model/projector digests are externally verified provenance, printed
+from the config, rather than browser-verified multi-gigabyte copies. No models
+are downloaded by this scenario. Run `--list`, then
+`--scenario web-speech-task-cancel --dry-run` before the real run:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario web-speech-task-cancel
+```
+
+The default `gpuLayers` is zero: this qualifies browser CPU execution, including
+worker isolation, rather than GPU inference. Add a positive `gpuLayers` value
+only on a WebGPU-capable machine; GPU qualification requires the test's WebGPU
+backend assertion to pass. A worker fallback cannot qualify the worker path.
+
+The Qwen3-TTS profile uses context 4096, batch 512 and micro-batch 256, matching
+the batch settings in the pinned bridge owner's speech smoke. The optional
+`ttsBatchSize` and `ttsMicroBatchSize` config values change only this test recipe, not public
+`ModelParams` defaults. TTS controls synthesize one and eight frames without
+cancellation, then check a first-progress cancellation with one-frame reuse
+and a cancellation after the first generated frame with eight-frame reuse.
+A separate startup control holds delivery of a real TTS capability result until
+another raw generation owns the bridge, cancels the pending typed task, and
+compares that generation with its exact baseline before reusing TTS.
+These bounded controls do not qualify every output length or load setting.
+
+The `chrome-webgpu` test pages enable SharedArrayBuffer with browser flags but
+remain non-isolated (`crossOriginIsolated == false`), so the bridge caps native
+threads at one. In the [#1371 controls recorded in PR #1418](https://github.com/leehack/llamadart/pull/1418),
+with that run's staged Qwen3-TTS fixture and bridge manifest, the 4096/4096 batch
+profile aborted even on fresh one- and eight-frame synthesis, before
+cancellation. The 512/256 fresh controls succeeded. This historical diagnostic
+does not establish the behavior of other artifacts, an ordinary isolated
+production page or the native cause of the abort. To repeat it, use the recorded
+artifacts, set both optional batch values to 4096 and run the maintained
+`TTS 1-frame baseline without cancellation` test.
 
 ## Platform Rows
 
@@ -323,6 +403,8 @@ dart run tool/testing/run_local_e2e.dart \
 # through the resolver, 683 MB on the first run, and
 # LLAMADART_IMAGE_SPLIT_MODEL (a split model's files, comma separated in any
 # order) to check role detection on a real split model. It also checks the
+# disabled/default/one-entry conditioning-cache pixel parity, hits, eviction,
+# cancellation/reuse and reload on CPU and the automatic device; the
 # runtime's reason in the error of a rejected load, the runtime's messages in
 # the log handler, and on macOS the runtime's GPU memory figure.
 dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
@@ -345,6 +427,16 @@ dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
 dart run tool/testing/run_local_e2e.dart --scenario decision-model-smoke \
   --model-path /path/to/laya-Q8_0.gguf \
   --head-path /path/to/laya-head.safetensors
+
+# Runs the same rows and default tolerances in Chrome through
+# LlamaEngine(LlamaBackend()) and the pinned bridge worker, and requires the
+# model and head on WebGPU. It fetches the pinned bridge assets into
+# build/decision_web_e2e/bridge/, and the bridge downloads the
+# decision-gguf-webgpu profile's laya-Q8_0.gguf and laya-head.safetensors
+# (527 MB) from Hugging Face on every run. The `chrome-webgpu` platform in
+# dart_test.yaml starts Chrome headless without --disable-gpu and with
+# SharedArrayBuffer enabled; a machine without a WebGPU adapter fails the load.
+dart run tool/testing/run_local_e2e.dart --scenario decision-model-web-smoke
 
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 
@@ -850,6 +942,12 @@ VM termination; fatal errors with pending startup or forced termination that
 skips disposal remain outside this evidence.
 
 ## Native multimodal embeddings
+
+For text task/profile or Matryoshka changes, use the distinct
+`text-embedding-retrieval` row. It compares all four EG2 dimensions with the
+pinned official float32 CPU reference through production helper calls, using
+BF16 GGUF CPU output. Follow [text helper qualification](embedding_text_helpers.md).
+This establishes no media, GPU, Web, LiteRT-bundle or quantized retrieval claim.
 
 The `native-multimodal-embeddings` local-only row qualifies EmbeddingGemma-2
 BF16 with the matching vision/audio projector on macOS CPU and Metal. It

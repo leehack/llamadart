@@ -43,6 +43,26 @@ void main() {
     }
     expect(downloads.requested, isEmpty);
   });
+
+  test(
+    'explicit conditioning capacity cannot enable the Web runtime',
+    () async {
+      final downloads = _RecordingDownloads();
+      for (final capacity in [0, 1, ImageConditioningCacheParams.maxCapacity]) {
+        await expectLater(
+          ImageGenerationEngine.load(
+            ImageGenerationModel(
+              ModelSource.parse('https://example.com/sdxs.gguf'),
+            ),
+            params: ImageConditioningCacheParams(capacity: capacity),
+            store: ModelFileStore(downloadManager: downloads),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
+      expect(downloads.requested, isEmpty);
+    },
+  );
 }
 
 final class _RecordingDownloads extends ThrowingModelDownloadManager {

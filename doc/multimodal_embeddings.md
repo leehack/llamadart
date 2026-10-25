@@ -1,7 +1,8 @@
 # Multimodal embedding contract (015-A)
 
 Tracking: https://github.com/leehack/llamadart/issues/1072.
-Task prefixes and Matryoshka output controls remain separate under
+Opt-in text task prefixes and Matryoshka output controls are documented in
+[text embedding helpers](embedding_text_helpers.md), tracked under
 https://github.com/leehack/llamadart/issues/1126.
 
 ## Delivered boundary
@@ -159,10 +160,11 @@ With `normalize: true`, return an L2-normalized vector; false returns the raw
 pooled vector. Preserve model pooling semantics, reject rank-pooled classifiers
 and unsupported encoder-decoder configurations as existing string APIs do.
 Finite/zero-vector behavior must match qualified text runtime behavior.
-Task-prefix policy and output controls are deferred to
-https://github.com/leehack/llamadart/issues/1126, including media-only inputs.
-The native reference prefixes media-only documents. This lane applies no task
-prefixes and does not constrain the future policy or output dimensions.
+`LlamaTextEmbedder` adds explicit text-only formatting and output controls;
+the existing string/content calls still apply no implicit prefixes or truncation.
+The native reference prefixes media-only documents; raw content methods apply
+no task prefixes. The text helper accepts no media and introduces no policy
+for media-only inputs.
 
 Missing model modality, projector/processor, runtime ABI, bridge feature, media
 source or option combination -> `LlamaUnsupportedException` naming the missing

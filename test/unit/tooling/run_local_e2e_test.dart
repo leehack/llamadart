@@ -5,11 +5,43 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  test(
+    'text retrieval scenario requires both artifacts and opts into local tests',
+    () async {
+      const environment = {
+        'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH': '/local/model.gguf',
+        'LLAMADART_EG2_RETRIEVAL_REFERENCE': '/local/reference.json',
+      };
+      for (final missing in environment.keys) {
+        final result = await runLocalE2e(
+          ['--scenario', 'text-embedding-retrieval', '--dry-run'],
+          projectRoot: '/repo',
+          environment: {...environment}..remove(missing),
+        );
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains(missing));
+      }
+      final result = await runLocalE2e(
+        ['--scenario', 'text-embedding-retrieval', '--dry-run'],
+        projectRoot: '/repo',
+        environment: environment,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('embeddinggemma2_retrieval_e2e_test.dart'),
+      );
+      expect(result.stdout, contains('--run-skipped'));
+      expect(result.stdout, contains('--tags local-only'));
+    },
+  );
+
   test(
     'native multimodal embedding qualification requires local weights and references',
     () async {
@@ -174,6 +206,8 @@ void main() {
       expect(result.stdout, contains('speech-to-text-smoke'));
       expect(result.stdout, contains('litert-lm-asr-smoke'));
       expect(result.stdout, contains('decision-model-smoke'));
+      expect(result.stdout, contains('decision-model-web-smoke'));
+      expect(result.stdout, contains('web-speech-task-cancel'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -1700,6 +1734,106 @@ dev_dependencies:
       expect(
         result.stderr,
         contains('--head-path is not supported by text-to-speech-smoke.'),
+      );
+    });
+
+    test('dry-runs the Web decision smoke on the WebGPU Chrome platform '
+        'with bridge assets where the test reads them', () async {
+      final result = await runLocalE2e(
+        const ['--scenario', 'decision-model-web-smoke', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Scenario: decision-model-web-smoke'));
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/decision_web_e2e/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test -p chrome-webgpu --run-skipped -t local-only '
+          'test/e2e/backends/decision_engine_web_e2e_test.dart',
+        ),
+      );
+      final e2e = File(
+        'test/e2e/backends/decision_engine_web_e2e_test.dart',
+      ).readAsStringSync();
+      expect(e2e, contains("@Tags(['local-only', 'e2e'])"));
+      expect(e2e, contains("'../../../build/decision_web_e2e/'"));
+    });
+
+    test('dry-runs Web speech cancellation with pinned assets and '
+        'the WebGPU Chrome platform', () async {
+      final result = await runLocalE2e(
+        const ['--scenario', 'web-speech-task-cancel', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Scenario: web-speech-task-cancel'));
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_speech_task_cancel/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test -p chrome-webgpu --run-skipped -t local-only '
+          'test/e2e/webgpu/speech_task_cancellation_e2e_test.dart',
+        ),
+      );
+    });
+
+    test('defines the chrome-webgpu platform with WebGPU and '
+        'SharedArrayBuffer', () {
+      final config =
+          loadYaml(File('dart_test.yaml').readAsStringSync()) as YamlMap;
+      final platform =
+          (config['define_platforms'] as YamlMap)['chrome-webgpu'] as YamlMap;
+      final settings = platform['settings'] as YamlMap;
+
+      expect(platform['extends'], 'chrome');
+      // Headless test Chrome adds --disable-gpu, which leaves no adapter.
+      expect(settings['headless'], isFalse);
+      expect(
+        (settings['arguments'] as String).split(RegExp(r'\s+')),
+        containsAll([
+          '--headless=new',
+          '--enable-unsafe-webgpu',
+          '--enable-features=SharedArrayBuffer,'
+              'SharedArrayBufferUnrestrictedAccessAllowed',
+        ]),
+      );
+      expect(config['platforms'], ['vm', 'chrome']);
+    });
+
+    test('rejects a head path for the Web decision smoke', () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'decision-model-web-smoke',
+          '--head-path',
+          'models/laya-head.safetensors',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('--head-path is not supported by decision-model-web-smoke.'),
       );
     });
 

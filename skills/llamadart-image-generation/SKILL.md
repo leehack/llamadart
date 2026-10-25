@@ -182,6 +182,15 @@ core and `llamadart_stable_diffusion_flutter` together.
   true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
   tripped the GPU watchdog and returned a corrupt image
   ([#1044](https://github.com/leehack/llamadart/issues/1044)).
+- `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
+  preserve the native default of 4 prompt-conditioning entries. `0` disables
+  reuse; positive values set an LRU entry limit up to `2147483647` (the signed 32-bit ABI
+  limit). Other values throw `LlamaImageGenerationException` before resolving
+  files. The capacity counts entries, not bytes; it belongs to the loaded
+  context and is freed on disposal. Load another engine to change it.
+  It does not enable approximate sampling caches or promise a speed/memory
+  improvement. The control is qualified with SDXS and SD-Turbo on macOS arm64
+  CPU/Metal; other platforms and families remain unmeasured for this option.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
   first runtime probe in a process (`checkRuntime()` or `load()`, both off
   the calling isolate) compiles the Metal library on Apple (about 16 s on an

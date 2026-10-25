@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart' as llama;
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/services/model_download_controller_adapter.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('ChatAppModelDownloadManager', () {
@@ -26,7 +27,7 @@ void main() {
         expect(service.getDownloadedCalls, 1);
         expect(entry.cacheKey, manager.source.cacheKey);
         expect(entry.fileName, model.filename);
-        expect(entry.filePath, '/models/${model.filename}');
+        expect(entry.filePath, p.join('/models', model.filename));
       },
     );
 
@@ -107,7 +108,7 @@ void main() {
 
       expect(manager.source.url.toString(), model.webModelSource.loadReference);
       expect(entry.fileName, 'gemma-web.litertlm');
-      expect(entry.filePath, '/models/gemma-web.litertlm');
+      expect(entry.filePath, p.join('/models', 'gemma-web.litertlm'));
     });
 
     test(
@@ -151,7 +152,7 @@ void main() {
         expect(service.lastCancelToken, isNotNull);
         expect(appDetails, [same(detail)]);
         expect(controllerProgress.single.fraction, 0.5);
-        expect(entry.filePath, '/models/${model.filename}');
+        expect(entry.filePath, p.join('/models', model.filename));
       },
     );
 

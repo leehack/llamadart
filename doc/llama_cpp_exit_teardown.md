@@ -200,7 +200,7 @@ refused or narrowed.
 | Exit | What happens |
 | --- | --- |
 | Flutter macOS quit (`-[NSApplication terminate:]`: the Quit menu item, a Quit Apple event, a last-window close, `exitApplication`) | The engine shuts the isolates down before C `exit`, so held objects are freed by their isolate. Teardown frees what no isolate held yet: a quit while a model loads, and a quit after a hot restart during a load, no longer abort. |
-| Dart program returns from `main` or dies of an unhandled error; an isolate is killed | The VM shuts the isolates down first. An object created by a native call the isolate never returned from in Dart is freed by teardown. |
+| Dart program returns from `main` or dies of an unhandled error; an isolate is killed | The VM shuts the isolates down first. An object created by a native call the isolate never returned from in Dart is freed by teardown. A killed worker in a process that keeps running: see "Forced worker exit". |
 | `exit()` from `dart:io` | Runs no static destructors: no teardown and no abort. |
 | C `exit()` while an isolate is still running (through FFI, or a native host that skips the engine shutdown) | Covered only while the isolate is idle, freeing an object, or inside a guarded call that returns within two seconds. Inside an unguarded call it is a use after free; inside a longer guarded call ggml-metal aborts. |
 
@@ -218,6 +218,56 @@ it.
 
 Image models have their own registry in `libstable-diffusion`: see
 "Image models".
+
+## Forced worker exit
+
+`Isolate.kill` on a llama.cpp worker
+([#629](https://github.com/leehack/llamadart/issues/629)) shuts its isolate
+down, which frees every object the isolate held, as any isolate shutdown
+does. Besides models, contexts and projectors the service holds each
+context's token batch and sampler chain and the sampler chain of a running
+generation, at the `session` stage, so they go before their context. The
+batch is one `malloc` block (`token_batch.dart`) because `llama_batch_free`
+takes the batch by value, which a native finalizer cannot call.
+
+The process keeps running, so an object a native call was still creating
+stays allocated until the process exits. The kill takes effect when the call
+returns, before the isolate holds the object, so it stays tracked: teardown
+frees it at C `exit` on Apple platforms, and nothing frees it elsewhere.
+When the object is a context, the isolate still frees its model, and the
+context outlives its model.
+
+`test/e2e/backends/llama_cpp_forced_exit_reclamation_e2e_test.dart` measured
+this on an M4 Max (macOS 26.7.1, llamadart-native `v0.7.0-2`), 10 cycles per
+case, each cycle a new backend, `useMmap: false`, context 2048, with
+stories15M and Qwen2.5-0.5B-Instruct Q4_K_M on the CPU and Metal, and
+Qwen3-TTS-12Hz-0.6B-Base Q4_K_M with its Q8_0 projector on Metal:
+
+| Case | Tracked objects left | Metal left | malloc in use, per cycle | `phys_footprint`, per cycle |
+| --- | --- | --- | --- | --- |
+| `dispose()` (control) | 0 | 0 | ≤ 12 KiB | ≤ 0.4 MiB |
+| Kill while idle | 0 | 0 | ≤ 7 KiB | ≤ 0.4 MiB |
+| Kill while generating | 0 | 0 | ≤ 19 KiB | ≤ 0.4 MiB |
+| Kill while synthesizing speech | 0 | 0 | 12 to 17 KiB | 0.03 to 3.4 MiB |
+| Kill inside the load (Qwen2.5, Metal) | 1 per kill, 10 of 10 | 374 MiB per kill | 30 MiB | 494 MiB |
+
+Per-cycle values are medians. Before the batch and the sampler chains were
+held, each kill left 0.1 MiB of malloc, and a kill during generation also
+the chain's `n_vocab` × 12-byte candidate array (`llama_sampler_chain::cur`):
+0.5 MiB with stories15M (32,000 tokens) and 1.8 MiB with Qwen2.5 (151,936
+tokens). Loaded, a model held 2 tracked objects (4 for
+speech), 107 to 1,194 MiB of footprint, and on Metal 139 MiB (stories15M),
+704 MiB (Qwen2.5) or 2.7 GiB (speech). With `IsolateShutdownReleases.hold`
+doing nothing, every kill left both objects, the whole Metal allocation and
+about 110 MiB of footprint per cycle with stories15M.
+
+With stories15M, kills late in the load left a context (80 MiB of Metal, its
+KV and compute buffers) instead of a model. The first cycles grow the
+footprint once, by about 200 MiB, or 830 MiB with speech, and later cycles
+reuse it: after the speech cycles `vmmap` showed 831 MB of freed large malloc
+blocks that libmalloc keeps dirty (`MALLOC_LARGE (empty)`) and 144 MB of
+driver-owned graphics memory, while malloc in use and the Metal allocation
+were back at their baselines.
 
 ## Rule for new code
 
@@ -287,6 +337,13 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   it loaded (`_createModelWrapper`).
 - The same test pins the free order of `dispose()` and `freeModel`: context,
   projector, model.
+- `test/unit/backends/llama_cpp/llama_cpp_service_shutdown_test.dart`: the
+  free function and stage of every object the service holds, a running
+  generation's sampler chain held until it ends and released when its setup
+  fails, every hold released when its object is freed, and the exit of an
+  isolate killed while idle or generating.
+  `llama_cpp_service_native_release_test.dart` checks that `dispose()` frees
+  a context's batch and sampler chain once.
 - `native-exit-teardown` in `doc/testing_matrix.md`: local-only process exits
   on Metal, including a C `exit` while a service with a projector disposes.
 - `chat-app-macos-quit` in `doc/testing_matrix.md`: local-only Flutter macOS
@@ -294,6 +351,16 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   and a decision head idle on Metal and nothing disposed, through a Quit
   Apple event, `terminate:`, a last-window close and `exitApplication`, and
   after a hot restart.
+- `test/e2e/backends/llama_cpp_forced_exit_reclamation_e2e_test.dart`:
+  local-only, macOS. Kills the worker while idle, generating or (with
+  `FORCED_EXIT_TTS_MODEL` and `FORCED_EXIT_TTS_MMPROJ`) synthesizing speech,
+  on the CPU and Metal, and requires every tracked object and Metal byte
+  freed after each kill and a median growth per cycle under 48 KiB of
+  malloc in use and under 8 MiB of `phys_footprint`. `FORCED_EXIT_KILL_LOADING=1` adds
+  the kill inside a load, which fails until its object is freed (see "Forced
+  worker exit"). Run it with
+  `dart test -p vm --run-skipped -t local-only <file>`;
+  `FORCED_EXIT_MODEL` replaces the cached stories15M.
 
 ## Image models
 

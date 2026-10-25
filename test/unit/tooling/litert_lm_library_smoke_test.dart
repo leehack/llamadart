@@ -43,7 +43,7 @@ void main() {
       );
       expect(calls.last, 'LiteRtLm.dll');
       expect(calls.where((name) => name == dependent), hasLength(2));
-      expect(opened.companions, hasLength(6));
+      expect(opened.companions, hasLength(inventory.length));
     },
   );
 
@@ -58,7 +58,10 @@ void main() {
       },
     );
     expect(calls, isNot(anyElement(isIn(['dxcompiler.dll', 'dxil.dll']))));
-    expect(calls, hasLength(7));
+    expect(calls, [
+      ...liteRtLmCompanionLibrariesForAbi(Abi.windowsX64),
+      'LiteRtLm.dll',
+    ]);
 
     File(path.join(directory.path, 'dxil.dll')).deleteSync();
     expect(

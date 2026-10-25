@@ -760,7 +760,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
           'Run experimental ImageGenerationEngine on SDXS through the opt-in '
-          'stable_diffusion runtime; SD-Turbo too when '
+          'stable_diffusion runtime, including CPU/automatic-device '
+          'conditioning-cache parity, hits, eviction, cancellation/reuse and '
+          'reload; SD-Turbo too when '
           'LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
           'LLAMADART_SDXL_LIGHTNING_MODEL is set, and SDXS from its pinned '
           'Hugging Face file when LLAMADART_IMAGE_HF_CACHE '
@@ -844,6 +846,74 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               'LLAMADART_DECISION_BACKEND': context.backend,
           },
           description: 'Decision model real-model parity smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'decision-model-web-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Run the Laya parity fixture on Web through LlamaBackend and the '
+          'pinned WebGPU bridge: exact token ids, raw logits and answers.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/decision_web_e2e/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/decision_engine_web_e2e_test.dart',
+          ],
+          description: 'Web decision model real-model parity smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'web-speech-task-cancel',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check real STT/TTS task cancellation isolation and engine reuse '
+          'through the direct and worker paths of the pinned WebGPU bridge.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_speech_task_cancel/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/speech_task_cancellation_e2e_test.dart',
+          ],
+          description: 'Web speech task cancellation isolation and reuse',
         ),
       ],
     ),
@@ -994,6 +1064,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           description:
               'Native CPU/Metal multimodal embedding qualification; no downloads',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'text-embedding-retrieval',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Compare EmbeddingGemma-2 text helpers at 768/512/256/128 dimensions with the official float32 CPU reference; no downloads. See doc/embedding_text_helpers.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--tags',
+            'local-only',
+            '--run-skipped',
+            'test/e2e/backends/embeddinggemma2_retrieval_e2e_test.dart',
+          ],
+          description: 'Official EG2 text retrieval reference qualification',
         ),
       ],
     ),
@@ -2022,6 +2117,22 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name == 'text-embedding-retrieval') {
+    for (final name in const [
+      'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH',
+      'LLAMADART_EG2_RETRIEVAL_REFERENCE',
+    ]) {
+      if ((environment ?? Platform.environment)[name]?.trim().isNotEmpty !=
+          true) {
+        return LocalE2eResult(
+          64,
+          stderr:
+              '$name is required for text-embedding-retrieval; see doc/embedding_text_helpers.md.\n',
+        );
+      }
+    }
   }
 
   if (scenario.name == 'native-multimodal-embeddings') {
