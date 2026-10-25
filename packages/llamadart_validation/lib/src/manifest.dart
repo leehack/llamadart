@@ -388,6 +388,7 @@ class ValidationProfile {
     for (final definition in extendedValidationCases)
       if (catalogDeclaresCase(definition.id, version) &&
           _structuredOmission(definition.id) == null &&
+          !(definition.id.startsWith('T') && nativeReference) &&
           (selection == 'release' ||
               (selection == 'focused' &&
                   definition.features.any(focusFeatures.contains))))
@@ -407,6 +408,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 9) resolved.remove('tokenization');
     if (version < 8) resolved.remove('structured_output');
     if (version < 6) resolved.remove('inflight');
     if (version < 5) resolved.remove('invalid_grammar');
@@ -473,6 +475,13 @@ class ValidationProfile {
         'Batching selection requires catalog version 2',
       );
     }
+    if (version < 9 &&
+        (focusFeatures.contains('tokenization') ||
+            (data['fixtures'] as Map?)?.containsKey('tokenization') == true)) {
+      throw const FormatException(
+        'Tokenization selection or fixture requires catalog version 9',
+      );
+    }
     if (version < 8 && focusFeatures.any(catalogEightFeatures.contains)) {
       throw const FormatException(
         'Structured-output selection requires catalog version 8',
@@ -496,7 +505,8 @@ class ValidationProfile {
       'features': {
         for (final entry in validationFeatures.entries)
           if ((version != 1 || entry.key != 'batching') &&
-              (version >= 8 || !catalogEightFeatures.contains(entry.key)))
+              (version >= 8 || !catalogEightFeatures.contains(entry.key)) &&
+              (version >= 9 || entry.key != 'tokenization'))
             entry.key: entry.value,
         if (isDecision) 'decision': 1,
         if (isEmbedding) 'embeddings': 1,
@@ -545,6 +555,9 @@ class ValidationProfile {
   String _omissionReason(String id) {
     if (isDecision) return 'decision_model_has_no_text_generation';
     if (isEmbedding) return 'embedding_model_has_no_text_generation';
+    if (id.startsWith('T') && nativeReference) {
+      return 'outside_native_reference_scope';
+    }
     final structured = _structuredOmission(id);
     if (structured != null) return structured;
     if (id.startsWith('C06.history.') && !historyControls) {
