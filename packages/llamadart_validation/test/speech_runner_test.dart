@@ -2346,13 +2346,19 @@ void main() {
     Future<Map<String, Object?>> cancelInto(
       SynthesisSpeechEngine engine,
     ) async {
-      final adapter = edgeAdapter(pack: 'tts', engine: engine);
-      await adapter.load();
-      final reference = await adapter.execute();
-      expect(reference.containsKey('progress_events_before_cancel'), isFalse);
-      final cancelled = await adapter.execute(cancel: true);
-      await adapter.dispose();
-      return cancelled;
+      return runInFakeTime((async) async {
+        final adapter = edgeAdapter(
+          pack: 'tts',
+          engine: engine,
+          newStopwatch: () => FakeTimeStopwatch(async),
+        );
+        await adapter.load();
+        final reference = await adapter.execute();
+        expect(reference.containsKey('progress_events_before_cancel'), isFalse);
+        final cancelled = await adapter.execute(cancel: true);
+        await adapter.dispose();
+        return cancelled;
+      });
     }
 
     final inFinalStep = await cancelInto(

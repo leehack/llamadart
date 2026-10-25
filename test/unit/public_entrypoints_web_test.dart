@@ -9,6 +9,12 @@ import 'package:test/test.dart';
 // Compiling this file for the browser is the guard: an entrypoint that pulls
 // in dart:ffi on Web fails the Chrome suite at compile time.
 void main() {
+  test('desktop setup collector throws a typed unsupported error on Web', () {
+    expect(
+      app.collectLlamaRuntimeSetupReport,
+      throwsA(isA<app.LlamaUnsupportedException>()),
+    );
+  });
   test('the app and backend entrypoints import on Web', () {
     expect(app.LlamaEngine, isNotNull);
     expect(backend.LlamaBackend, isNotNull);

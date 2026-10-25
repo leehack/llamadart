@@ -23,10 +23,16 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
 | Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Not yet ([#780](https://github.com/leehack/llamadart/issues/780)) | Experimental |
 
-On Windows, llama.cpp needs the latest Microsoft Visual C++ v14
-Redistributable for the app's architecture (x64 or arm64), at least as new as
-the build tools of the bundled DLLs, which the bundles do not ship. Stock Windows Server lacks it, and the load error names the DLLs
-that failed to load.
+On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
+DLLs they need, so they need no Visual C++ Redistributable. The opt-in
+`stable_diffusion` runtime does not ship them: machines that run it need the
+latest Microsoft Visual C++ v14 Redistributable (x64), which stock Windows
+Server lacks, and its load error names the DLLs that failed to load.
+
+With the pinned bridge assets, Web speech-to-text and text-to-speech
+cancellation is request-scoped, including queued STT generation and TTS startup
+awaiting a capability probe. The local `web-speech-task-cancel` validation row
+keeps direct/worker and CPU/Wasm versus hardware WebGPU evidence separate.
 
 Speech to text, text to speech and decision models are experimental. Image
 generation is a Preview: its API is experimental and may change, and it needs
@@ -37,8 +43,11 @@ Redistributable (x64), and Android arm64 needs dot-product and fp16. The
 desktop models (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo,
 Z-Image-Turbo) need about 8 to 15 GiB and are validated on macOS Metal; NVIDIA
 Vulkan figures come from the native CLI. Opt-in VAE tiling
-(`ImageGenerationRequest.vaeTiling`) is available on every image platform and
-measured on macOS CPU and Metal only. See
+(`TiledImageGenerationRequest`) accepts header-verified SD 2.x checkpoints
+with an embedded full VAE or TAESD on CPU/Metal. SD-Turbo is measured on macOS
+CPU and actual Metal; other accepted SD 2.x checkpoints and phones are unmeasured.
+Other families/backends, unknown decoder proof and circular-axis combinations
+throw `LlamaUnsupportedException`. See
 [Image generation](../guides/image-generation#support). GGUF
 Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
@@ -53,6 +62,21 @@ including mixed-format components. PyTorch checkpoints need explicit roles
 and remain less qualified; directories and managed shard sets have no public
 loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
 Container support does not extend the model/device qualification above.
+
+Image prompt-conditioning reuse can be disabled or limited by entry count
+with `ImageConditioningCacheParams(capacity: ...)`; ordinary settings preserve
+four entries.
+This option is qualified with SDXS and SD-Turbo on macOS arm64 CPU/Metal;
+other image platforms and families have not been measured for this control.
+It adds no Web image runtime or approximate sampling cache. See
+[Conditioning cache](../guides/image-generation#conditioning-cache).
+
+Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
+flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
+512×512, flash attention and direct VAE convolutions disabled; CPU and actual
+Metal were measured on macOS arm64. Other platforms are unmeasured, other GPUs
+and model/decoder recipes are refused. See
+[seamless textures](../guides/image-generation#seamless-textures).
 
 ## Compute device
 
@@ -69,6 +93,10 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 | LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
 | Image generation | First GPU reported, else CPU | Needs a GPU; Android and the CPU builds have none | Throws |
 | LiteRT-LM ASR | CPU | Not selectable | Not selectable |
+
+The WebGPU bridge ignores negative `mainGpu` values, including with
+`splitMode: ModelSplitMode.none`; they do not select the CPU as they do in
+native llama.cpp. Explicit `gpu` still requires WebGPU after load.
 
 Under `auto`, `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the
 CPU on both llama.cpp and LiteRT-LM, and a GPU `preferredBackend` (Vulkan,
@@ -94,6 +122,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
+| Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
 | Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.18.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
@@ -105,12 +134,15 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Speculative decoding | Draft model, MTP, n-gram and DSpark strategies; external drafts require `draftModel`, in-file MTP requires an MTP head and `loadMtp`; `draftMicroBatchSize` sizes the draft context; recurrent/hybrid models reject nonzero rollback capacity | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, MTP uses the model's own layers, and `draftMicroBatchSize` is rejected; otherwise rejected | Runtime default or MTP, for bundles with a speculative drafter; `capabilities` reports the bundle's declaration | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Bridge `v0.1.7+`; `v0.1.73+` rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64 and iOS arm64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; other platforms throw `LlamaUnsupportedException` at load ([#1367](https://github.com/leehack/llamadart/issues/1367)) | Unsupported (parity gate) |
+| Reranking | Rank-pooled GGUF only; explicit loaded-context probe, complete-pair limits and independent sequence batching | No | No | No |
+| Text task helpers and Matryoshka | Opt-in EG2 text profile; CPU BF16 retrieval reference | Same Dart helpers on an available embedding engine; no new Web qualification | Same Dart helpers on an available CPU embedding engine; bundle requires independent retrieval qualification | Unsupported with the underlying embedding engine |
 | Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Bridge `v0.1.64+`, explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; memory64 required for repeated media batches; hardware WebGPU unqualified (default pinned assets include the API) | CPU; bundle processors on macOS arm64, iOS arm64 and Android arm64 (Galaxy S24 and emulators) | Unsupported (parity gate) |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
 | Generation-limit reporting | `length` for output or context limits | `length` with bridge usage probe (`v0.1.54+`); cap cause unspecified | `length` for output or context limits on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes report `stop` | No |
 | Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.54+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | No: single-turn text prompts only |
+| Deterministic session template time | `TemplateTimeChatSession`, Dart-rendered templates | Same Dart template path | Dart-side rendering only; runtime-owned template clock unchanged | No: single-turn runtime-owned prompts |
 | Tool calling | Yes | Yes | Yes | No: tools do not reach the model |
 | Canonical JSON Schema tools | Supported subset and selected formats | Non-lazy grammars only; other combinations rejected | No | No |
 | Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes throw before generation | No: pinned runtime has no reliable termination cause; throws before generation |
@@ -273,7 +305,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.7.0-2` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.18.1-2` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.18.1-4` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 

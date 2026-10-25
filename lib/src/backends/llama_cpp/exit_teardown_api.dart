@@ -1,5 +1,7 @@
 import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
+
 import '../../core/exceptions.dart';
 import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
@@ -468,6 +470,90 @@ final class ExitTeardownApi {
 /// typed error of its operation instead of returning its failure value, and
 /// [failures] remembers the objects that call left free-only.
 final class LlamaCppObjectCalls {
+  /// Copies reranker metadata while the model is owned by this service.
+  ({
+    bool encoder,
+    bool decoder,
+    Pointer<llama_vocab> vocab,
+    List<String?> labels,
+    String? template,
+  })
+  rerankingModelInfo(Pointer<llama_model> model) {
+    failures.ensureUsable(model, 'This reranker model');
+    try {
+      final count = llama_model_n_cls_out(model);
+      if (count <= 0) {
+        throw LlamaUnsupportedException(
+          'The reranker reports no classifier outputs.',
+        );
+      }
+      final labels = <String?>[];
+      for (var i = 0; i < count; i++) {
+        final label = llama_model_cls_label(model, i);
+        labels.add(label == nullptr ? null : label.cast<Utf8>().toDartString());
+      }
+      final name = 'rerank'.toNativeUtf8();
+      final String? template;
+      try {
+        final text = llama_model_chat_template(model, name.cast());
+        template = text == nullptr ? null : text.cast<Utf8>().toDartString();
+      } finally {
+        malloc.free(name);
+      }
+      return (
+        encoder: llama_model_has_encoder(model),
+        decoder: llama_model_has_decoder(model),
+        vocab: llama_model_get_vocab(model),
+        labels: labels,
+        template: template,
+      );
+    } on ArgumentError {
+      throw LlamaUnsupportedException(
+        'Native reranking requires classifier metadata and named-template symbols from the pinned llama.cpp runtime (v0.7.0-2).',
+      );
+    }
+  }
+
+  /// Vocabulary framing for the upstream rerank fallback; no text is inserted.
+  ({int? bos, int? eos, int? sep}) rerankingSpecialTokens(
+    Pointer<llama_vocab> vocab,
+  ) {
+    final eos = llama_vocab_eos(vocab);
+    final sep = llama_vocab_sep(vocab);
+    return (
+      bos: llama_vocab_get_add_bos(vocab) ? llama_vocab_bos(vocab) : null,
+      eos: llama_vocab_get_add_eos(vocab)
+          ? (eos == LLAMA_TOKEN_NULL ? sep : eos)
+          : null,
+      sep: llama_vocab_get_add_sep(vocab) ? sep : null,
+    );
+  }
+
+  /// Enables classifier output, retaining the failed-context cleanup rule.
+  void setRerankingOutput(Pointer<llama_context> context, bool enabled) {
+    try {
+      failures.ensureUsable(context, 'This reranking context');
+    } on LlamaStateException {
+      if (!enabled) return;
+      rethrow;
+    }
+    llama_set_embeddings(context, enabled);
+  }
+
+  /// Copies exactly n_cls_out values; an embedding width must never be used.
+  List<double> rerankingOutput(
+    Pointer<llama_context> context,
+    int sequence,
+    int count,
+  ) {
+    failures.ensureUsable(context, 'This reranking context');
+    final output = llama_get_embeddings_seq(context, sequence);
+    if (output == nullptr) {
+      throw LlamaInferenceException('Native reranking output is unavailable.');
+    }
+    return List<double>.of(output.asTypedList(count));
+  }
+
   /// Mixed-batch support is independent of the legacy all-or-nothing exit API.
   late final LlamaCppMixedBatchApi? mixedBatch = _mixedBatchResolver != null
       ? _mixedBatchResolver()

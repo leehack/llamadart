@@ -55,6 +55,7 @@
     },
     {
       "id": "lifecycle",
+      "notes": "Web negative-mainGpu routing and unsupported GPU paths are covered by test/unit/backends/webgpu/webgpu_backend_test.dart; native CPU-placement rejection is covered by test/unit/core/engine/engine_test.dart. These model-free controls do not qualify WebGPU hardware or the separate NPU work in https://github.com/leehack/llamadart/issues/915.",
       "cases": [
         "C01.load",
         "C08.cancel",
@@ -110,6 +111,16 @@
       ]
     },
     {
+      "id": "tokenization",
+      "cases": [
+        "T01.roundtrip",
+        "T02.count"
+      ],
+      "profiles": [
+        "assets/profiles/tokenization-gguf-cpu.json"
+      ]
+    },
+    {
       "id": "tools",
       "cases": [
         "C07.tools",
@@ -121,6 +132,65 @@
     }
   ],
   "mappings": [
+    {
+      "surfaces": [
+        "matrix:Model-free setup report"
+      ],
+      "exemption": {
+        "id": "desktop-setup-report",
+        "reason": "This pre-load desktop report has no model/backend probe and cannot qualify native loading or inference. VM production-path tests cover host publication selectors, bounded package version origin, privacy and actual CLI JSON/argument behavior; common model and unsupported Web paths run in Chrome. A versioned diagnostics pack remains separate from model capability validation (#861) and cross-platform qualification (#1196).",
+        "issue": "https://github.com/leehack/llamadart/issues/124"
+      }
+    },
+    {
+      "surfaces": [
+        "matrix:Deterministic session template time"
+      ],
+      "exemption": {
+        "id": "session-template-clock",
+        "reason": "The history pack does not assert template clock semantics. Production-path VM and Chrome tests cover real strftime_now rendering, request snapshots, context trimming, structured output, tool loops and compatibility with existing ChatSession implementations and application extensions. Runtime-owned LiteRT-LM templates retain their runtime clock. A versioned clock scenario remains tracked separately.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaReranker.new",
+        "api:LlamaReranker.engine",
+        "api:LlamaReranker.capabilities",
+        "api:LlamaReranker.rerank",
+        "api:LlamaReranker.cancel",
+        "capability:LlamaRerankingCapabilities.isSupported",
+        "capability:LlamaRerankingCapabilities.unsupportedReason",
+        "capability:LlamaRerankingCapabilities.classifierLabels",
+        "capability:LlamaRerankingCapabilities.maxInputTokens",
+        "capability:LlamaRerankingCapabilities.maxParallelSequences",
+        "matrix:Reranking",
+        "api:LlamaReranker.load",
+        "api:LlamaReranker.dispose"
+      ],
+      "exemption": {
+        "id": "native-reranking",
+        "reason": "The local-only native-reranking scenario compares full classifier outputs and server output zero against exact pinned upstream for named-template two-class Qwen3 and single-output fallback Jina/BGE, with batching, overflow, cancellation and lifecycle controls. Deterministic tests cover framing, optional-backend rejection, bounded classifier-directory verification, explicit RANK loading and buffer lifetime. A versioned cross-platform validation pack remains separate; local receipts do not qualify other platforms or model families.",
+        "issue": "https://github.com/leehack/llamadart/issues/323"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaTextEmbedder.new",
+        "api:LlamaTextEmbedder.engine",
+        "api:LlamaTextEmbedder.profile",
+        "api:LlamaTextEmbedder.dimensions",
+        "api:LlamaTextEmbedder.normalize",
+        "api:LlamaTextEmbedder.embed",
+        "api:LlamaTextEmbedder.embedBatch",
+        "matrix:Text task helpers and Matryoshka"
+      ],
+      "exemption": {
+        "id": "text-embedding-profiles",
+        "reason": "The shared embeddings pack exercises raw engine vectors, not explicit text profiles. Deterministic production-path tests cover raw defaults, prefixes, batching/fallback and invalid outputs; the local-only text-embedding-retrieval scenario compares every EG2 output dimension with the pinned official float32 CPU model. A versioned cross-platform profile pack remains separate; no GPU, media or quantized qualification is implied.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
     {
       "surfaces": [
         "matrix:Automatic sendWithTools / completeWithTools loop"
@@ -185,7 +255,7 @@
       ],
       "exemption": {
         "id": "image-capabilities",
-        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim.",
+        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim. ImageConditioningCacheParams.capacity has maintained engine/worker tests and image-generation-smoke qualification on SDXS/SD-Turbo CPU and Metal; it has no versioned validation-pack case yet. SeamlessImageGenerationRequest circularX/circularY has maintained API/ABI refusal tests and image-seamless-textures CPU/Metal quality and cancellation qualification for SDXS; versioned pack case IDs remain open in https://github.com/leehack/llamadart/issues/1234. TiledImageGenerationRequest has maintained request/legacy-interface, engine/worker/ABI guards and image-generation-smoke SD-Turbo full-VAE/TAESD CPU/Metal qualification; it has no versioned validation-pack case yet (https://github.com/leehack/llamadart/issues/1231). Approximation caching remains https://github.com/leehack/llamadart/issues/1233.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },
@@ -302,7 +372,7 @@
       ],
       "exemption": {
         "id": "speech-capabilities",
-        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. This slice does not claim every speech flag or negative path is qualified.",
+        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. The web-speech-task-cancel local E2E separately covers direct/worker task isolation and bounded reuse with explicit TTS batch 512/micro-batch 256 (#1371); it does not bind these capability fields or qualify every speech flag or negative path.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },
@@ -325,11 +395,7 @@
         "api:LlamaEngine.getTokenCount",
         "api:LlamaEngine.tokenize"
       ],
-      "exemption": {
-        "id": "tokenization",
-        "reason": "The decision tokenizer fixture does not cover general public tokenize/detokenize/count contracts. A dedicated tokenization pack remains.",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
+      "pack": "tokenization"
     },
     {
       "surfaces": [

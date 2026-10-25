@@ -1,6 +1,16 @@
 # llamadart CLI Chat Example
 
+For EG2 text retrieval with task/title formatting and a shared 256-component
+query/corpus space, run `dart run bin/llamadart_embedding_retrieval_example.dart
+<path/to/embeddinggemma-2-BF16.gguf>`. This CPU example downloads no model.
+The EG2 profile is an explicit compatibility assertion; quantized models need
+independent retrieval qualification. The existing embedding CLI remains raw.
+
 A clean, organized CLI application demonstrating the capabilities of the `llamadart` package. It supports both interactive conversation mode and single-response mode.
+
+For native cross-encoder reranking, run `dart run bin/llamadart_reranking_example.dart
+<path/to/reranker.gguf>`. This CPU example loads local weights, probes RANK
+pooling and prints candidate documents by the native classifier score.
 
 ## Features
 
@@ -30,6 +40,13 @@ start if `draftModel` is missing.
 Custom Jinja chat templates accept `\xHH` string escapes. Use
 `engine.chatTemplate(...)` to inspect the rendered prompt before generation;
 see [chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing).
+
+For a reproducible date in a ChatML prompt, run
+`dart run bin/llamadart_template_time_example.dart /path/to/chatml-model.gguf`.
+It uses `TemplateTimeChatSession` with January 2, 2026 and an explicit ChatML
+template containing `strftime_now`. Use a ChatML-compatible model. Each
+request snapshots the session clock for context budgeting and generation;
+set `templateNow` to `null` to return to the normal clock.
 
 To try an imported JSON Schema with nested array arguments, run:
 
@@ -352,6 +369,14 @@ Image CLI flags (`bin/llamadart_image_example.dart`):
 - `--vae-tile`: Decode in square tiles of this many pixels, a multiple of 64,
   to lower the decoder's peak memory (`ImageVaeTiling`); off by default.
   `--vae-tile-overlap`: their overlap, from 0 to 0.5 (default 0.5).
+  Requires the pinned runtime, an SD 2.x checkpoint with embedded full VAE or
+  TAESD, and CPU/Metal. SD-Turbo is measured; other accepted SD 2.x checkpoints
+  and phones are unmeasured. Other model/decoder/backend recipes are refused.
+
+- `--conditioning-cache-size`: Retained prompt-conditioning entries, from 0
+  to `2147483647`; `0` disables reuse, and omission preserves the native
+  default of 4. This is an entry limit, not a byte limit or approximation
+  cache. For example, add `--conditioning-cache-size 0` to any image command.
 
 With model files on disk, the local-only test runs real generation, including
 determinism, cancellation and the one-generation-at-a-time guard:
@@ -362,6 +387,12 @@ LLAMADART_SD_TURBO_MODEL=/models/sd_turbo-f16-q8_0.gguf \
 LLAMADART_TAESD=/models/taesd.safetensors \
   dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
 ```
+
+The same suite compares disabled/default/one-entry conditioning caches on
+CPU and the automatic device using SDXS and SD-Turbo's full VAE. It requires
+exact pixels for repeated and changed prompts, eviction, cancellation/reuse,
+and disposal/reload, and verifies native cache-hit messages. Select just
+these cases with `--name 'conditioning cache'`.
 
 Set `LLAMADART_IMAGE_SPLIT_MODEL` to a split model's local files, comma
 separated in any order (such as FLUX.1-schnell's transformer, `ae`, CLIP-L
@@ -446,3 +477,22 @@ Android x86_64 and LiteRT-LM Web embeddings are unavailable.
 ```bash
 dart run bin/llamadart_litert_embedding_example.dart /path/model.litertlm /path/image.png
 ```
+
+### Seamless SDXS texture recipe
+
+Use `SeamlessImageGenerationRequest(circularX: true, circularY: true, ...)`
+with SDXS's embedded tiny decoder at 512×512. Load with
+`flashAttention: false` and `vaeDirectConvolution: false`. Both axes default
+to off; decoder overrides and unqualified families/options throw. The
+[guide](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
+includes a complete example. The maintained real-model suite saves 2×2
+repeat PNGs and checks both numerical seams and cancellation/reuse:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario image-seamless-textures \
+  --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
+```
+
+Run this command from the repository root. On a CPU-only host set
+`LLAMADART_TEXTURE_DEVICES=cpu`; the default requires CPU and actual Metal.
+See `doc/image_seamless_textures.md` for the independent native comparison.

@@ -16,6 +16,7 @@ import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/token_batch.dart';
 import 'package:llamadart/src/backends/llama_cpp/load_device_selection.dart';
 import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
 import 'package:llamadart/src/backends/llama_cpp/vulkan_device_probe.dart';
@@ -4122,10 +4123,10 @@ void main() {
             ).getField(#pointer).reflectee
             as Pointer<llama_model>;
 
-    llama_batch batch() => _readPrivateForTesting<Map<int, llama_batch>>(
+    llama_batch batch() => _readPrivateForTesting<Map<int, TokenBatch>>(
       service,
       '_batches',
-    )[contextHandle]!;
+    )[contextHandle]!.batch;
 
     int positionsInMemory() =>
         llama_memory_seq_pos_max(llama_get_memory(contextPointer()), 0) + 1;

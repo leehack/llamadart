@@ -5,6 +5,7 @@ import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'audio_chat_smoke_support.dart';
+import 'litert_lm_tokenizer_fixture.dart';
 
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
@@ -15,6 +16,7 @@ Future<void> main(List<String> args) async {
       'Usage: dart run tool/litert_lm_chat_features_smoke.dart '
       '<model.litertlm> [cpu|gpu|npu|auto] [image-path]\n'
       'Optional env:\n'
+      '  LITERT_LM_TOKENIZER_FIXTURE=qwen3-0.6b (known artifacts only)\n'
       '  LITERT_LM_IMAGE_PATH=<local image file>\n'
       '  LITERT_LM_AUDIO_PATH=<local encoded audio file>\n'
       '  LITERT_LM_AUDIO_EXPECTED_TEXT=<expected answer; required with audio>',
@@ -37,12 +39,22 @@ Future<void> main(List<String> args) async {
   final audioFixture = audioPath == null
       ? null
       : await readAudioChatSmokeFixture(audioPath);
+  final tokenizerFixture = selectLiteRtLmTokenizerFixture(
+    Platform.environment['LITERT_LM_TOKENIZER_FIXTURE'],
+  );
+  final tokenizerArtifactSha256 = tokenizerFixture == null
+      ? null
+      : await verifyQwen3TokenizerArtifact(File(modelPath));
   final engine = LlamaEngine(LlamaBackend());
   try {
     await engine.loadModel(
       modelPath,
       modelParams: ModelParams(contextSize: 2048, liteRtLmBackend: backend),
     );
+
+    final tokenizer = tokenizerFixture == null
+        ? null
+        : await checkQwen3Tokenizer(engine);
 
     final plain = await _runScenario(
       engine: engine,
@@ -208,6 +220,12 @@ Future<void> main(List<String> args) async {
       'backendName': await engine.getBackendName(),
       'requestedLiteRtLmBackend': backend.name,
       'format': requiredTemplate.format,
+      if (tokenizer != null)
+        'tokenizer': {
+          'fixture': tokenizerFixture,
+          'artifactSha256': tokenizerArtifactSha256,
+          ...tokenizer,
+        },
       'plain': plain.toJson(),
       'cutoff': cutoff.toJson(),
       'toolLoopCutoff': toolLoopCutoff,

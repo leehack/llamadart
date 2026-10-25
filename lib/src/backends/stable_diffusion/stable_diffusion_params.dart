@@ -53,6 +53,9 @@ void applyStableDiffusionContextParams(
         vae: params.ref.vae_conv_direct,
       ),
     );
+  if (config.conditioningCacheSize case final capacity?) {
+    params.ref.conditioning_cache_size = capacity;
+  }
   if (config.threads > 0) {
     params.ref.n_threads = config.threads;
   }
@@ -98,7 +101,9 @@ void applyStableDiffusionGenerationParams(
     ..width = request.width
     ..height = request.height
     ..seed = request.seed
-    ..batch_count = request.count;
+    ..batch_count = request.count
+    ..circular_x = request.circularX
+    ..circular_y = request.circularY;
   params.ref.sample_params
     ..sample_steps = request.steps
     ..guidance.txt_cfg = request.guidanceScale

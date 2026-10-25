@@ -1,5 +1,6 @@
 import '../exceptions.dart';
 import 'image_generation_model.dart';
+import 'image_generation_driver.dart';
 
 /// A request to generate one or more images from a text prompt.
 class ImageGenerationRequest {
@@ -77,10 +78,6 @@ class ImageGenerationRequest {
   /// models ignore it.
   final double? flowShift;
 
-  /// Decodes the image in overlapping tiles to lower the decoder's peak
-  /// memory. `null` decodes the whole image at once, as before.
-  final ImageVaeTiling? vaeTiling;
-
   /// Creates an image-generation request.
   const ImageGenerationRequest({
     required this.prompt,
@@ -94,11 +91,46 @@ class ImageGenerationRequest {
     this.sampler,
     this.scheduler,
     this.flowShift,
-    this.vaeTiling,
   });
 }
 
-/// Spatial tiling of an image's VAE decode: `ImageGenerationRequest.vaeTiling`.
+/// A request that opts into spatial VAE decode tiling.
+///
+/// Supported for SD 2.x checkpoints with their embedded full VAE or a TAESD
+/// override on CPU or Metal. SD-Turbo is the measured recipe; other SD 2.x
+/// checkpoints and platforms remain unqualified. Other families, decoder
+/// overrides and devices throw [LlamaUnsupportedException] before a task starts.
+/// Ordinary [ImageGenerationRequest] implementations keep their original API.
+final class TiledImageGenerationRequest extends ImageGenerationRequest {
+  /// Overlapping spatial tiles used by the decoder.
+  final ImageVaeTiling vaeTiling;
+
+  /// Creates an opt-in tiled request.
+  const TiledImageGenerationRequest({
+    required super.prompt,
+    required this.vaeTiling,
+    super.negativePrompt,
+    super.width,
+    super.height,
+    super.steps,
+    super.guidanceScale,
+    super.seed,
+    super.count,
+    super.sampler,
+    super.scheduler,
+    super.flowShift,
+  });
+}
+
+/// Returns opt-in decode settings without extending the ordinary interface.
+ImageVaeTiling? imageRequestVaeTiling(ImageGenerationRequest request) =>
+    switch (request) {
+      TiledImageGenerationRequest() => request.vaeTiling,
+      SeamlessImageGenerationRequest() => request.vaeTiling,
+      _ => null,
+    };
+
+/// Spatial VAE decode tiling for [TiledImageGenerationRequest].
 ///
 /// The decoder (the VAE, or the tiny autoencoder that replaces it) runs on
 /// one [tileWidth] by [tileHeight] tile of the image at a time instead of on
@@ -148,6 +180,51 @@ class ImageVaeTiling {
     this.tileWidth = defaultTileSize,
     this.tileHeight = defaultTileSize,
     this.overlap = defaultOverlap,
+  });
+}
+
+/// A text-to-image request with independently repeatable texture axes.
+///
+/// Both axes default to off. When either is enabled, the initial qualified
+/// recipe is SDXS (512-DS) with its header-detected embedded tiny decoder,
+/// no component overrides, 512 by 512 pixels, and CPU or Metal computation.
+/// Load with `flashAttention: false` and `vaeDirectConvolution: false`.
+/// Other families, decoders, sizes and runtime options throw
+/// [LlamaUnsupportedException] before generation starts.
+///
+/// The runtime applies circular padding to both diffusion and decoder
+/// convolutions. Inspect a repeated tile: this improves continuity but does
+/// not promise that every prompt and seed produces a useful texture.
+///
+/// This separate type preserves existing implementations and subclasses of
+/// [ImageGenerationRequest]. Ordinary requests keep their original behavior.
+final class SeamlessImageGenerationRequest extends ImageGenerationRequest {
+  /// Wraps left and right convolution boundaries.
+  final bool circularX;
+
+  /// Wraps top and bottom convolution boundaries.
+  final bool circularY;
+
+  /// Optional decode tiling. Combining tiling with an enabled circular axis
+  /// is unqualified and throws [LlamaUnsupportedException].
+  final ImageVaeTiling? vaeTiling;
+
+  /// Creates a request with independently optional circular axes.
+  const SeamlessImageGenerationRequest({
+    required super.prompt,
+    super.negativePrompt,
+    super.width,
+    super.height,
+    super.steps,
+    super.guidanceScale,
+    super.seed,
+    super.count,
+    super.sampler,
+    super.scheduler,
+    super.flowShift,
+    this.circularX = false,
+    this.circularY = false,
+    this.vaeTiling,
   });
 }
 
@@ -215,7 +292,7 @@ void validateImageGenerationRequest(ImageGenerationRequest request) {
       flowShift,
     );
   }
-  final vaeTiling = request.vaeTiling;
+  final vaeTiling = imageRequestVaeTiling(request);
   if (vaeTiling != null) {
     for (final (name, value) in [
       ('vaeTiling.tileWidth', vaeTiling.tileWidth),
@@ -240,5 +317,60 @@ void validateImageGenerationRequest(ImageGenerationRequest request) {
         overlap,
       );
     }
+  }
+}
+
+/// Rejects circular generation outside the measured SDXS decoder recipe.
+/// Checks the native family and header evidence, never the model filename.
+void validateSeamlessImageGenerationRecipe(
+  ImageGenerationSessionRequest request,
+  ImageGenerationSessionConfig config,
+  String modelVersion,
+) {
+  if (!request.circularX && !request.circularY) return;
+  if (request.vaeTiling != null) {
+    throw LlamaUnsupportedException(
+      'VAE tiling combined with seamless circular axes is not qualified. '
+      'Use a tiled request without circular axes or the qualified untiled '
+      'SDXS seamless recipe.',
+    );
+  }
+  if (modelVersion != 'SDXS (512-DS)' ||
+      !config.seamlessRecipeVerified ||
+      config.files.length != 1 ||
+      !config.files.containsKey('model') ||
+      request.width != 512 ||
+      request.height != 512 ||
+      config.flashAttention ||
+      config.vaeDirectConvolution) {
+    throw LlamaUnsupportedException(
+      'Seamless textures require stable_diffusion v0.3.0 SDXS (512-DS), '
+      'its header-detected embedded tiny decoder without component overrides '
+      'on CPU or Metal, '
+      '512 by 512 pixels, flashAttention: false and '
+      'vaeDirectConvolution: false. This model or decoder recipe is '
+      'not qualified for circular padding.',
+    );
+  }
+}
+
+/// Refuses opt-in tiling outside the bounded CPU/Metal SD 2.x recipe.
+void validateImageVaeTilingRecipe(
+  ImageGenerationSessionRequest request,
+  ImageGenerationSessionConfig config,
+  String modelVersion,
+) {
+  if (request.vaeTiling == null) return;
+  if (request.circularX ||
+      request.circularY ||
+      modelVersion != 'SD 2.x' ||
+      !config.vaeTilingRecipeVerified) {
+    throw LlamaUnsupportedException(
+      'VAE tiling requires stable_diffusion v0.3.0, an SD 2.x checkpoint '
+      'with its embedded full VAE or a TAESD override on CPU or Metal, '
+      'without circular axes or other component overrides. SD-Turbo is '
+      'the qualified model; this model, decoder or device recipe is '
+      'not qualified for VAE tiling.',
+    );
   }
 }

@@ -408,6 +408,28 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
   ),
   TestMatrixRow(
+    id: 'native-reranking',
+    tier: 'targeted',
+    mode: 'local-only',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario native-reranking',
+    covers:
+        'Qwen3 named-template/multiclass and Jina fallback/single-score parity against pinned upstream; batching, overflow, cancellation and lifecycle',
+    useWhen:
+        'Native reranker APIs, classifier output or pair framing changes. Requires local weights and exact oracle paths per doc/native_reranking.md; no downloads.',
+  ),
+  TestMatrixRow(
+    id: 'text-embedding-retrieval',
+    tier: 'targeted',
+    mode: 'local-only; pinned official EG2 weights and reference',
+    covers:
+        'text task/document/prepared helpers, title formatting, Matryoshka dimensions and real production retrieval against official float32 CPU vectors',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario text-embedding-retrieval',
+    useWhen:
+        'Embedding text profiles, task formatting or output dimensions change. Follow doc/embedding_text_helpers.md; no GPU, quantized or media qualification.',
+  ),
+  TestMatrixRow(
     id: 'native-embedding-benchmark',
     tier: 'targeted',
     mode: 'local-only',
@@ -567,7 +589,10 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'a runtime probe that leaves the calling isolate responsive, a first '
         'image after warmUp about as fast as a warm one, '
         'SDXS load and 256x256 one-step generation with labelled progress, '
-        'same-seed determinism, pre-start and mid-run cancellation, the '
+        'same-seed determinism; disabled/default/one-entry conditioning-cache '
+        'pixel parity, native hits, prompt changes, eviction, cancel/reuse '
+        'and dispose/reload on CPU and the automatic device for SDXS and '
+        'SD-Turbo; pre-start and mid-run cancellation, the '
         'one-generation guard, dispose during generation, and PNG output; '
         'the runtime\'s reason in the error of a truncated file, a missing '
         'file and a file in the wrong role, without paths; runtime messages '
@@ -589,6 +614,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen:
         'Image generation API, stable_diffusion runtime pins, bindings, '
         'probe or hook changes.',
+  ),
+  TestMatrixRow(
+    id: 'image-seamless-textures',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'SDXS embedded tiny decoder 512-square circular X/Y quality on CPU '
+        'and actual Metal, exact native settings parity when references are '
+        'provided, repeat-tile PNGs, off-after-on and cancellation/reuse; '
+        'no generic VAE-tiling or other-family qualification',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-seamless-textures --model-path <sdxs.gguf>',
+    useWhen:
+        'SeamlessImageGenerationRequest, circular ABI wiring or decoder routing changes.',
   ),
   TestMatrixRow(
     id: 'image-exit-teardown',
@@ -651,6 +691,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen:
         'Web decision head (webgpu_decision.dart), WebAutoBackend decision '
         'routing, decision engine, or WebGPU bridge pin changes.',
+  ),
+  TestMatrixRow(
+    id: 'web-speech-task-cancel',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real Qwen3-ASR and Qwen3-TTS task cancellation through the pinned '
+        'bridge direct and worker paths: another request remains intact, '
+        'cancelled tasks emit no final event, and the engine remains reusable; '
+        'CPU placement by default; TTS batch 512/micro-batch 256 with bounded '
+        'one/eight-frame controls; WebGPU qualification only with positive '
+        'gpuLayers and verified WebGPU execution',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'web-speech-task-cancel',
+    useWhen:
+        'Speech task cancellation, WebGPU request ownership, direct/worker '
+        'dispatch, or bridge pin changes. Stage the real input config in '
+        'build/web_speech_task_cancel/config.json; see doc/testing_matrix.md.',
   ),
   TestMatrixRow(
     id: 'web-text-to-speech-smoke',
@@ -886,6 +945,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
     useWhen:
         'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
+  ),
+  TestMatrixRow(
+    id: 'qwen3-litert-cpu-unicode',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Known Qwen3-0.6B artifact exact split-token emoji decode, Unicode '
+        'and literal byte-level text round trips, followed by CPU chat features',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'qwen3-litert-cpu-unicode --model-path <Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen:
+        'Changing the Qwen3 LiteRT-LM CPU smoke artifact or tokenizer fidelity. '
+        'The original artifact is an expected failing negative control. '
+        'No GPU, device, or Web qualification.',
   ),
   TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',

@@ -15,6 +15,17 @@ final class ImageGenerationSessionConfig {
   /// runtime default.
   final String? backend;
 
+  /// Conditioning-cache entry limit; `null` preserves the runtime default.
+  final int? conditioningCacheSize;
+
+  /// Whether headers verified an embedded tiny decoder without overrides
+  /// on a qualified CPU or Metal device.
+  /// Used only by the bounded SDXS seamless-texture recipe.
+  final bool seamlessRecipeVerified;
+
+  /// Header-role and device evidence for the bounded SD 2.x tiling recipe.
+  final bool vaeTilingRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -29,6 +40,9 @@ final class ImageGenerationSessionConfig {
     required this.files,
     required this.backend,
     required this.threads,
+    this.conditioningCacheSize,
+    this.seamlessRecipeVerified = false,
+    this.vaeTilingRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -72,6 +86,12 @@ final class ImageGenerationSessionRequest {
   /// VAE decode tiling, or `null` to decode the whole image at once.
   final ImageVaeTiling? vaeTiling;
 
+  /// Whether convolution boundaries wrap horizontally.
+  final bool circularX;
+
+  /// Whether convolution boundaries wrap vertically.
+  final bool circularY;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -86,6 +106,8 @@ final class ImageGenerationSessionRequest {
     this.scheduler,
     this.flowShift,
     this.vaeTiling,
+    this.circularX = false,
+    this.circularY = false,
   });
 }
 
@@ -114,6 +136,13 @@ enum ImageGenerationComputeDevice {
   /// reports it, with host memory behind it for what does not fit, or host
   /// memory alone when the GPU is an integrated one.
   otherGpu,
+}
+
+/// Optional session support for honoring per-request spatial VAE tiling.
+/// Sessions without this contract are refused for opt-in tiled requests.
+abstract interface class ImageVaeTilingSession {
+  /// Whether this session can honor tiling for its loaded recipe and runtime.
+  bool get supportsVaeTiling;
 }
 
 /// A loaded native image-generation context.

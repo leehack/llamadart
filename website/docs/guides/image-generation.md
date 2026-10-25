@@ -642,17 +642,24 @@ attention where a device has no kernel for it.
 
 ### VAE tiling
 
-`ImageGenerationRequest.vaeTiling` decodes the image in overlapping tiles
+`TiledImageGenerationRequest(vaeTiling: ImageVaeTiling())` decodes the image in overlapping tiles
 instead of all at once. The decoder's compute buffer then scales with the
 tile instead of the image, so peak memory drops most for large images and
 full VAEs; decoding takes longer, and pixels change slightly where tiles
-blend. It applies to every VAE and tiny autoencoder the engine loads, on
-every device, and leaves sampling and the weights unchanged. Requests without
+blend. It requires the pinned `stable_diffusion` v0.3.0 runtime (upstream `0518b34`)
+and accepts header-verified SD 2.x checkpoints with their embedded full VAE
+or a valid TAESD override on CPU or Metal. SD-Turbo is the measured artifact;
+other accepted SD 2.x checkpoints and phones remain unmeasured. Unknown
+headers, external full VAEs, other component overrides, model families and
+backends throw `LlamaUnsupportedException` before a task starts. Tiling with
+either seamless circular axis is also refused until separately qualified.
+Custom image backends are unavailable for tiling in this slice; no public
+backend extension contract is added. Sampling and weights are unchanged. Requests without
 it decode the whole image, as before.
 
 ```dart
 final result = await engine.generateImage(
-  const ImageGenerationRequest(
+  const TiledImageGenerationRequest(
     prompt: 'a lighthouse at dusk',
     width: 1024,
     height: 1024,
@@ -668,8 +675,8 @@ Tile sizes are output pixels, multiples of 64 from 64 to 2048, and default to
 target fraction a tile shares with its neighbour, from 0 to 0.5 (default
 0.5); the runtime spaces tiles evenly, so neighbours always overlap a little.
 Other values throw `LlamaImageGenerationException` before the task starts.
-Pass the same tiling to `warmUp`, since a tiled decode compiles different GPU
-pipelines. Without tiling, the runtime already retries a decode that fails
+The existing `warmUp` signature stays unchanged; use a single-step tiled
+generation and discard its image when tiled GPU pipelines need warming. Without tiling, the runtime already retries a decode that fails
 to allocate with tiles; tiling from the start keeps the decode under limits
 that end the app before an allocation fails. Cancelling does not interrupt a
 decode that has started.
@@ -687,6 +694,99 @@ At 512x512 the tiled image differed from the untiled one by 2.5 of 255 per
 channel on average and at most 88 near tile seams, with no visible seams.
 Vulkan GPUs and phones, including the iPhone GPU watchdog of
 [#1047](https://github.com/leehack/llamadart/issues/1047), are unmeasured.
+## Conditioning cache
+
+`ImageConditioningCacheParams(capacity: ...)` controls how many prompt-conditioning
+entries a loaded model retains. Ordinary `ImageModelParams` preserve the pinned
+native runtime's default of four entries; capacity `0` disables reuse. A positive
+integer sets the least-recently-used entry limit, up to the signed 32-bit C ABI limit
+(`2147483647`). Invalid values throw `LlamaImageGenerationException` before
+model files are resolved or downloaded.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  model,
+  params: const ImageConditioningCacheParams(capacity: 0),
+);
+```
+
+The limit counts entries, not bytes: conditioning size depends on the text
+encoder and request. Reuse requires matching conditioning inputs, including
+the prompt and dimensions; another prompt is encoded separately. Entries
+belong to the loaded native context, remain available after a cancelled
+generation when valid, and are freed when it is disposed. Load a new engine
+to change capacity. This cache already operates when the option is unset;
+this control does not enable approximate diffusion-step caching, change
+sampling, or promise a speed or memory improvement.
+
+The maintained `image-generation-smoke` checks compare disabled, default and
+one-entry caches with SDXS (embedded tiny decoder) and SD-Turbo (full VAE),
+including repeated/changed prompts, eviction, cancellation/reuse and reload.
+Qualification for this control covers macOS arm64 CPU and Metal. Android,
+iOS, Linux CPU/Vulkan, Windows CPU/Vulkan and macOS x64 have not been measured
+for this option; SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image were not run.
+Web image generation remains unavailable. Approximation-cache modes remain
+separate work in [#1233](https://github.com/leehack/llamadart/issues/1233).
+
+## Seamless textures
+
+`SeamlessImageGenerationRequest` opts into circular padding independently on
+X (left/right) and Y (top/bottom). Both default to `false`; ordinary
+`ImageGenerationRequest` calls keep their existing behavior. The first
+qualified profile is **SDXS (512-DS), its embedded tiny decoder, 512×512,
+CPU or Metal**, loaded with both `flashAttention: false` and
+`vaeDirectConvolution: false`. The engine checks the native family and file
+headers, so renaming weights or forcing a checkpoint role does not grant
+support. Other families, component/decoder overrides, sizes, other GPUs and
+enabled attention/direct-convolution options throw `LlamaUnsupportedException`
+before a task starts. Defaults that enable flash attention must be overridden.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  ImageGenerationModel(ModelSource.path('sdxs-512-tinySDdistilled_Q8_0.gguf')),
+  params: const ImageModelParams(
+    flashAttention: false,
+    vaeDirectConvolution: false,
+  ),
+);
+try {
+  final result = await engine.generateImage(
+    const SeamlessImageGenerationRequest(
+      prompt: 'seamless texture of weathered gray stone, uniform rough stone '
+          'surface, flat lighting, top down',
+      width: 512,
+      height: 512,
+      steps: 4,
+      guidanceScale: 1,
+      seed: 42,
+      sampler: ImageGenerationSampler.euler,
+      scheduler: ImageGenerationScheduler.discrete,
+      circularX: true,
+      circularY: true,
+    ),
+  );
+  await File('stone.png').writeAsBytes(result.images.single.toPng());
+} finally {
+  await engine.dispose();
+}
+```
+
+This uses the pinned runtime's ordinary diffusion and VAE decoder circular
+convolutions. It does not enable VAE tiling or alter sampling defaults.
+Padding improves boundary continuity; prompt content and seeds can still
+produce an unsuitable texture. Inspect a 2×2 repeat before using the output.
+The fixed qualification prompt/seed must pass, on each requested axis:
+edge mean absolute RGB difference below 8/255, below 1.5 times the average
+interior adjacent-pixel difference, and below 40% of the same-seed off result.
+These criteria measure continuity, not artistic quality.
+
+The maintained `image-seamless-textures` scenario saves individual and repeated
+PNGs, numerical JSON, checks native-reference pixels when provided, and checks
+ordinary output after circular generation and cancellation/reuse. Measured
+qualification is macOS arm64 CPU and actual Metal; other platforms are
+unmeasured. SD-Turbo's full VAE missed the fixed profile's absolute seam gate
+and is refused. Other families and external TAESD decoders are not qualified.
+See the [reproducible source and artifact evidence](https://github.com/leehack/llamadart/blob/main/doc/image_seamless_textures.md).
 
 ## First-image latency and warm-up
 

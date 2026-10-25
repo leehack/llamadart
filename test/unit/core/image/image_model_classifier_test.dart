@@ -442,6 +442,31 @@ void main() {
   });
 
   group('assignImageModelRoles', () {
+    test(
+      'tiling requires positive checkpoint and decoder header proof',
+      () async {
+        for (final (headers, expected) in [
+          ([ImageModelHeaders.sdTurboCheckpoint], true),
+          (
+            [ImageModelHeaders.sdTurboCheckpoint, ImageModelHeaders.taesd],
+            true,
+          ),
+          ([ImageModelHeaders.sdxsCheckpoint], false),
+          ([(Uint8List(8), ImageModelRole.checkpoint)], false),
+          (
+            [
+              ImageModelHeaders.sdTurboCheckpoint,
+              (Uint8List(8), ImageModelRole.taesd),
+            ],
+            false,
+          ),
+          ([ImageModelHeaders.fluxDiffusion, ImageModelHeaders.fluxVae], false),
+        ]) {
+          expect((await _assign(headers)).vaeTilingDecoderVerified, expected);
+        }
+      },
+    );
+
     test('assigns roles whatever the order of the files', () async {
       final assignment = await _assign([
         ImageModelHeaders.t5xxl,

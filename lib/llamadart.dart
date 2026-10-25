@@ -34,13 +34,19 @@
 /// ```
 library;
 
+export 'src/core/diagnostics/runtime_setup_report.dart'
+    show
+        LlamaRuntimeSetupReport,
+        LlamaRuntimeSetupRuntime,
+        collectLlamaRuntimeSetupReport;
+
 // Engine & Chat
 export 'src/core/engine/engine.dart'
     show LlamaEngine, LlamaEngineCompletionExtension;
 export 'src/core/engine/engine_capabilities.dart';
 export 'src/core/engine/engine_observer.dart';
 export 'src/core/engine/chat_session.dart'
-    show ChatSession, ChatSessionCompletionExtension;
+    show ChatSession, ChatSessionCompletionExtension, TemplateTimeChatSession;
 export 'src/core/engine/chat_session_tool_loop.dart';
 
 // Speech
@@ -60,7 +66,11 @@ export 'src/core/image/image_generation_events.dart';
 export 'src/core/image/image_generation_model.dart';
 export 'src/core/image/image_model_params.dart';
 export 'src/core/image/image_generation_request.dart'
-    show ImageGenerationRequest, ImageVaeTiling;
+    show
+        ImageGenerationRequest,
+        SeamlessImageGenerationRequest,
+        TiledImageGenerationRequest,
+        ImageVaeTiling;
 
 // Decision models
 export 'src/core/decision/decision_engine.dart'
@@ -91,6 +101,9 @@ export 'src/backends/backend.dart'
 
 // Models - Inference
 export 'src/core/models/inference/embedding.dart';
+export 'src/core/engine/text_embedder.dart';
+export 'src/core/engine/reranker.dart';
+export 'src/core/models/inference/reranking.dart';
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/next_token_scores.dart';
 export 'src/core/models/inference/generation_params.dart';

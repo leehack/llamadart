@@ -454,7 +454,8 @@ The shared runner accepts three profile selections:
 - `focused`: the quick core plus cases matching the profile's nonempty, unique
   `focus_features` list. Valid IDs are `text`, `unicode`, `thinking`, `history`,
   `tools`, `streaming`, `batching`, `lifecycle`, `guards`, `performance` and,
-  from catalog 8, `structured_output`. Text/history/performance are already
+  from catalog 8, `structured_output`, and from catalog 9, `tokenization`.
+  Text/history/performance are already
   covered by the applicable quick cases.
 - `release`: every current extended core obligation, including unfinished cases.
 
@@ -1087,7 +1088,7 @@ LiteRT GPU on Android has load-time evidence only. Given a bound device log,
 the reporter verifies placement as
 `gpu_delegate_initialized_per_load_execution_unobserved` when the journal's
 environment is Android and states `web: false`, its LiteRT-LM tag is
-source-qualified (`0.18.0`, `0.18.0-1`, `0.18.0-2`, `0.18.0-3`, `0.18.1`, `0.18.1-1` or `0.18.1-2`), every
+source-qualified (`0.18.0`, `0.18.0-1`, `0.18.0-2`, `0.18.0-3`, `0.18.1`, `0.18.1-1`, `0.18.1-2`, `0.18.1-3` or `0.18.1-4`), every
 expected load case passes exactly once reporting a GPU backend, and the log holds N GPU
 delegate initializations for the N expected load cases. Each of them has:
 
@@ -1128,7 +1129,10 @@ LiteRT `ca21dc99de51c76bdcc572afeea1dd937d3c9e5c`: the LiteRT-LM file is
 unchanged, and LiteRT now counts every node that is neither a delegate nor a
 dispatch op as undelegated, which can only fail more compilations. The
 `0.18.1` Android WebGPU accelerator and Dawn libraries are byte-identical to
-`0.18.0-3`; `0.18.1-1` and `0.18.1-2` add only XNNPACK CPU kernel patches. Re-read both rules before qualifying another LiteRT-LM tag. It
+`0.18.0-3`; `0.18.1-1` and `0.18.1-2` add only XNNPACK CPU kernel patches;
+`0.18.1-3` changes only the Windows runtime, and `0.18.1-4` patches only
+LiteRT's CPU options identifier, which the compile rule reads only when the CPU
+accelerator is requested. Re-read both rules before qualifying another LiteRT-LM tag. It
 therefore shows that the main model
 was fully delegated to that adapter at every expected load. The delegate-kernel
 count is a consistency check on top of that compile rule, not proof by itself:
@@ -2019,3 +2023,35 @@ model qualification. A collector must validate the full binding, fixed inventory
 checksums and maintained report, and retain failed or incomplete evidence.
 This option requires newly built, separately reviewed app/test APKs; it cannot
 recover reports from historical APKs or authorize another device attempt.
+
+### Catalog 9 tokenization pack
+
+Catalog 9 adds public-engine `tokenization` focus and release cases. The
+locked `tokenization-gguf-cpu` profile reuses the tiny Stories15M model and its
+known decoder space prefix. The fixed corpus contains empty input, ASCII,
+repeated and edge spaces, newlines/tabs, accented text, emoji, Korean,
+combining marks, Chinese and Arabic. Fixture identity is hashed with each case.
+
+| Case | Public path | Passing evidence |
+| --- | --- | --- |
+| `T01.roundtrip` | `tokenize(addSpecial: false)` twice, then `detokenize(special: false)` | Nonnegative integer IDs, nonempty encoding of nonempty text, identical repeated IDs and exact decoded text; only the locked prefix may precede nonempty input, while empty input decodes to empty text |
+| `T02.count` | `tokenize(addSpecial: false)` and `getTokenCount` | Integer count equals the encoded list length for every input, including empty input |
+
+The importer rechecks the complete ordered corpus and options against the
+locked profile; missing rows, changed inputs, invalid IDs, unstable results,
+lost whitespace and incorrect counts invalidate a claimed PASS. A reference
+adapter without public `getTokenCount` records T02 NOT_RUN. Direct native-C
+reference profiles omit both cases because they bypass the public API.
+Catalogs 1–8 retain their original inventories, features and fixture hashes;
+a tokenization focus or prefix override cannot claim an older catalog.
+
+```sh
+dart run tool/testing/validation.dart local --profile tokenization-gguf-cpu \
+  --model /path/to/stories15M.gguf --out /tmp/tokenization-cpu-run
+```
+
+Model-free byte-tokenizer tests verify the production engine/adapter wiring and
+journal checks only. Exact upstream token IDs, special-token insertion/rendering,
+normalization-specific tokenizers, other model families, Web, LiteRT-LM and
+physical devices require their own runs and any needed model-specific oracles.
+The pack adds no blanket platform qualification or device campaign.

@@ -25,10 +25,26 @@ void main() {
     expect(options.outputPath, 'image.png');
     expect(options.params.device, ComputeDevice.auto);
     expect(options.params.threads, 0);
-    expect(options.request.vaeTiling, isNull);
+    expect(options.request, isNot(isA<TiledImageGenerationRequest>()));
+    expect(options.params, isNot(isA<ImageConditioningCacheParams>()));
     expect(options.model.source, same(options.modelSource));
     expect(options.model.components, isEmpty);
   });
+
+  for (final capacity in [0, 1, 64]) {
+    test('forwards --conditioning-cache-size $capacity into load settings', () {
+      final options = _parse([
+        '-p',
+        'a fox',
+        '--conditioning-cache-size',
+        '$capacity',
+      ]);
+      expect(
+        (options.params as ImageConditioningCacheParams).capacity,
+        capacity,
+      );
+    });
+  }
 
   test('reads every option for sd-turbo', () {
     final options = _parse(const [
@@ -78,7 +94,7 @@ void main() {
     expect(options.params.device, ComputeDevice.cpu);
     expect(options.params.threads, 6);
     expect(options.threads, 6);
-    final tiling = options.request.vaeTiling!;
+    final tiling = (options.request as TiledImageGenerationRequest).vaeTiling;
     expect((tiling.tileWidth, tiling.tileHeight), (192, 192));
     expect(tiling.overlap, 0.25);
     expect(options.outputPathFor(0), 'out/light.png');
@@ -113,6 +129,10 @@ void main() {
     for (final (arguments, message) in const [
       (<String>[], '--prompt'),
       (['-p', 'a', '--width', 'wide'], '--width'),
+      (
+        ['-p', 'a', '--conditioning-cache-size', 'many'],
+        '--conditioning-cache-size',
+      ),
       (['-p', 'a', '--guidance', 'high'], '--guidance'),
       (['-p', 'a', '--taesd', 'default'], '--taesd'),
       (['--preset', 'sd-turbo', '-p', 'a', '--vae', '/v'], '--vae'),

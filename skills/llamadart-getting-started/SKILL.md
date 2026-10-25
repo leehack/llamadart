@@ -14,6 +14,17 @@ Linux and web. Full docs: https://llamadart.leehack.com
 
 ## Guidelines
 
+- For a model-free macOS/Linux/Windows setup snapshot, use
+  `dart run llamadart:doctor [--json]` or
+  `await collectLlamaRuntimeSetupReport()`. It reports pinned publication policy
+  and only set/unset native override names. Exit 0 means a report was produced;
+  loading, emitted assets, GPU/backend and model capabilities remain unchecked.
+  The collector performs no native initialization or network work, but `dart run`
+  can prepare/download native assets or fail in its build hook before main.
+  Web/mobile throw `LlamaUnsupportedException`; a Dart CLI report does not
+  validate a Flutter app/device/browser. Keep `web_setup --check` as separate
+  offline asset advice and use loaded-model capabilities for feature decisions.
+
 - In custom backends and fakes, declare URL-load callbacks as
   `void Function(double progress)? onProgress` (0.14+), including
   `BackendModelFormatRouting.modelLoadFromUrlAs`. Forward progress fractions
@@ -114,10 +125,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
   companion manifests, native URLs and checksums.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
-  - Windows machines that run the app need the latest Microsoft Visual C++
-    v14 Redistributable (x64 or arm64), at least as new as the build tools of
-    the bundled DLLs; stock Windows Server lacks it, and llama.cpp then fails
-    to load with an error naming the missing DLLs.
+  - Windows: llama.cpp and LiteRT-LM bundle the Visual C++ runtime DLLs
+    they need. Machines that run the opt-in `stable_diffusion` runtime need
+    the latest Microsoft Visual C++ v14 Redistributable (x64); stock Windows
+    Server lacks it.
   - Web apps must add the WebGPU bridge script to `web/index.html`; the package
     does not inject it. `dart run llamadart:web_setup` vendors the pinned,
     checksum-verified assets and adds it.

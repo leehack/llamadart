@@ -8,7 +8,10 @@ The `llamadart` build hook (`hook/build.dart`) downloads prebuilt llama.cpp and
 LiteRT-LM runtimes for the target platform, so apps never compile C++. The hook
 reports the downloaded `.so`, `.dylib` and `.dll` files as `package:code_assets`
 code assets, and the Flutter or Dart build bundles them into the APK, IPA or
-desktop app. On macOS, the hook does not report LiteRT-LM libraries: they stay
+desktop app. On Linux and Windows, LiteRT-LM loads from the app bundle (beside
+the executable, in its `lib/` directory, or in `../lib/` for a `dart build cli`
+executable in `bin/`), and from the hook cache under `dart run` and
+`dart test`; `LLAMADART_LITERT_LM_LIB_DIR` overrides both. On macOS, the hook does not report LiteRT-LM libraries: they stay
 in the hook cache inside the resolved `llamadart` package. `dart run` loads
 them from there and a `dart build cli` bundle needs
 `LLAMADART_LITERT_LM_LIB_DIR`. A Flutter macOS app gets them from the
@@ -46,6 +49,63 @@ hooks:
 After changing any of these keys, or after a native release tag is republished
 with new assets, run `flutter clean` once so stale native assets are not
 reused.
+
+## Desktop setup report
+
+On macOS, Linux or Windows, collect a bounded setup snapshot before loading a
+model:
+
+```bash
+dart run llamadart:doctor
+dart run llamadart:doctor --json
+dart run llamadart:doctor --help
+```
+
+The JSON command writes one schema-versioned document to stdout. Exit 0 means
+a report was produced, **not** that a runtime works; invalid arguments exit 64.
+The collector itself performs bounded local package-metadata reads and no
+network, subprocess, native initialization, native-asset resolution, GPU probe
+or model load. `dart run` can run the package build hook **before main**: it may
+prepare/download native assets, print build output, or fail before a report is
+produced. Capture/parse the CLI's report stdout only after a successful launch.
+
+The public API is usable from a desktop Dart IO process, including a desktop
+Flutter process:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> main() async {
+  final LlamaRuntimeSetupReport report =
+      await collectLlamaRuntimeSetupReport();
+  print(report.toText());
+}
+```
+
+Schema 1 contains normalized OS/version/ABI architecture, Dart version,
+llamadart's **own** package version (unknown if source metadata is unavailable),
+and expected native release tags with published-bundle policy from the hook's
+selectors. Unrecognized metadata becomes `unknown`; Flutter version is unknown
+and is not inferred from the Dart CLI. macOS x64 LiteRT-LM and Windows arm64
+LiteRT-LM/stable_diffusion are marked unavailable under current publication
+policy. Unknown OS/ABI combinations stay unknown. Policy is separate from
+observed native loading: custom bundles, hook settings and Apple companions can
+differ. No report field proves which assets were emitted or loaded. Actual
+loaded versions/backend/GPU, model capabilities and inference remain
+`unknown`/`not_checked`.
+
+Only the names `LLAMADART_NATIVE_LIB_DIR`, `LLAMADART_BACKEND_MODULE_DIR`, and
+`LLAMADART_LITERT_LM_LIB_DIR` are reported as `set`/`unset` (an empty value counts
+as set). Values, paths, arbitrary environment variables, exception text and
+logs are excluded. Remediation uses fixed codes and hints.
+
+Mobile/Web collection throws `LlamaUnsupportedException` with scope guidance.
+A Dart CLI report does not validate an already-built Flutter app, device or
+browser. `web_setup --check` remains a separate offline asset check, not a live
+browser diagnosis. Native bootstrap, mobile/browser diagnostics and broader
+doctor work remain in [#124](https://github.com/leehack/llamadart/issues/124);
+loaded-model capability semantics remain separate in
+[#861](https://github.com/leehack/llamadart/issues/861).
 
 ## Choose runtime families
 
@@ -255,11 +315,13 @@ Selection rules:
 Linux modules need system libraries; see
 [Linux prerequisites](./linux-prerequisites).
 
-On Windows every module needs the latest Microsoft Visual C++ v14
-Redistributable (x64 or arm64), at least as new as the build tools of the
-bundled DLLs. The bundles ship only the OpenMP runtime
-(`vcomp140.dll` on x64, `libomp140.aarch64.dll` on arm64), not
-`msvcp140.dll` or `vcruntime140.dll`. `vulkan` also needs a GPU driver that
+On Windows the bundles ship the Visual C++ runtime app-locally
+(`msvcp140.dll` and `vcruntime140.dll`, plus `vcruntime140_1.dll` and the
+OpenMP runtime `vcomp140.dll` on x64), so no Visual C++ Redistributable is
+needed. The LiteRT-LM Windows x64 runtime ships `msvcp140.dll`,
+`vcruntime140.dll`, `vcruntime140_1.dll` and `vcruntime140_threads.dll`, but no
+`vcomp140.dll`; when an app bundles both runtimes, the hook
+bundles the newer file version of each DLL they share. `vulkan` also needs a GPU driver that
 provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,
 which provides `nvcuda.dll`. When one of those is missing, the module's
 startup diagnostic, which a failed model load reports, names it.
@@ -440,10 +502,11 @@ the complete macOS runtime, which the app loads from its bundle, so the build
 only warns to upgrade the companion. A maintained manifest pinning any other
 LiteRT-LM release or a later build of the same release warns to upgrade the
 core and companion together. Core `0.16.0` and its companion `0.16.0` pin
-`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`, and core
-`0.16.1` accepts companion `0.16.0` with the warning above. Companion `0.16.1`
-requires core `>=0.16.1`, since core `0.16.0` would keep LiteRT-LM in the hook
-cache. Companions
+`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`; core
+`0.16.2` and companion `0.16.2` pin `v0.18.1-4`. Each core accepts the earlier
+`0.16.x` companions with the warning above. Companion `0.16.1` requires core
+`>=0.16.1` and companion `0.16.2` core `>=0.16.2`, since an earlier core would
+keep LiteRT-LM in the hook cache. Companions
 `0.0.15` to `0.15.2` pin `v0.18.0` to `v0.18.0-3`, a different release from
 the `v0.18.1` core release line.
 Without a companion, and for non-Flutter or non-Apple builds, the hook

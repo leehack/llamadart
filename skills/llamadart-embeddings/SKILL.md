@@ -5,7 +5,7 @@ description: >-
   engine.embedBatch, engine.embedContent, engine.embedContentBatch,
   LlamaEmbeddingInput, embeddingCapabilities), embedding images or audio with
   EmbeddingGemma-2 or a LiteRT-LM embedding bundle, ranking documents by cosine
-  similarity, building a local retrieval-augmented generation (RAG) loop, storing
+  similarity, cross-encoder reranking with LlamaReranker, building a local retrieval-augmented generation (RAG) loop, storing
   vectors, or tuning ModelParams batch sizes and input length limits for embedding
   models.
 ---
@@ -14,6 +14,41 @@ description: >-
 
 ## Guidelines
 
+- For cross-encoder reranking, use a separate loaded rank-pooled GGUF engine and
+  `LlamaReranker(engine)` for an already rank-pooled context, or own a model with
+  `await LlamaReranker.load(model, params: ...)`. The owning loader verifies a
+  classifier tensor/count before selecting RANK for BERT/Jina files missing
+  rank metadata; it rejects LoRA/projector inputs. `dispose()` frees an owned
+  engine and leaves a borrowed one alive. Probe `await reranker.capabilities`; only native
+  llama.cpp is supported, and ordinary embeddings/chat models are rejected.
+  Call `reranker.rerank(query, documents, topN: 5)` and use each result's original
+  `index` to select the candidate. All native class scores and nullable labels
+  are retained. Default `scoreIndex: 0` matches llama-server; explicitly select
+  another label's index if needed. Never infer a positive class or normalize:
+  Qwen3 returns probabilities while other rerankers can return raw scores.
+  Complete framed pairs must fit the probed context/batch/micro-batch limit;
+  overflow rejects the whole request before inference. Increase those load
+  limits to fit input and set `maxParallelSequences` above one for independent
+  sequence batching. `topN` does not reduce scoring compute. Cancellation via
+  `reranker.cancel()` affects the borrowed engine and waits for a native pass;
+  await operations before model changes, then dispose the owning helper or
+  the caller-owned engine.
+
+- For a known EmbeddingGemma-2 model, opt into `LlamaTextEmbedder` with
+  `profile: LlamaEmbeddingProfile.embeddingGemma2` and common query/corpus
+  `dimensions` of 768 (default), 512, 256 or 128. Pass
+  `LlamaEmbeddingText.query(text, task: LlamaEmbeddingTask.search)`,
+  `.document(text, title: title)` or `.prepared(alreadyFormattedText)`.
+  Documents use `title: none | text: ...` without a title; queries use
+  `task: search result | query: ...`. Prepared text is always verbatim.
+  The profile is a caller assertion, not model auto-detection or quantization
+  qualification. It validates full 768-wide finite vectors, truncates first,
+  then L2-normalizes. A zero retained vector fails normalization; with
+  `normalize: false`, finite zero output is preserved. The default raw profile
+  accepts prepared inputs only and forbids dimensions. Existing engine methods
+  retain their defaults and media receives no automatic prefix. Never infer
+  compatibility from a vector's width. Re-index when dimensions/profile/model
+  change; this helper does not own or dispose its engine.
 - Use `engine.embed(text)` for one vector and `engine.embedBatch(texts)` for
   many; both return `List<double>` vectors (one per input, in input order) and
   take `normalize` (default `true`, L2-normalized). With normalized vectors,
@@ -128,6 +163,27 @@ description: >-
   nearest-neighbour search there.
 
 ## Examples
+
+Embed an EG2 query and titled document with the same output dimension:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<List<List<double>>> embedEg2Retrieval(LlamaEngine engine) {
+  final LlamaTextEmbedder embedder = LlamaTextEmbedder(
+    engine,
+    profile: LlamaEmbeddingProfile.embeddingGemma2,
+    dimensions: 256,
+  );
+  return embedder.embedBatch(<LlamaEmbeddingText>[
+    const LlamaEmbeddingText.query('What causes the northern lights?'),
+    const LlamaEmbeddingText.document(
+      'Charged particles from the Sun interact with atmospheric gases.',
+      title: 'Aurora',
+    ),
+  ]);
+}
+```
 
 Embed an image with its caption after probing the loaded model/runtime:
 

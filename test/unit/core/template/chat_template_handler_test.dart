@@ -15,6 +15,39 @@ import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('fixed strftime_now renders do not change the default clock', () {
+    final handler = _FakeHandler();
+    final template = Template("{{ strftime_now('%Y-%m-%d') }}");
+    String render(Map<String, String> metadata) =>
+        handler.renderTemplate(template, metadata: metadata, context: const {});
+    final before = DateTime.now();
+    expect(
+      render({internalTemplateNowMetadataKey: '1984-06-01T12:34:56.000Z'}),
+      '1984-06-01',
+    );
+    final defaultOutput = render(const {});
+    final invalidOutput = render({internalTemplateNowMetadataKey: 'invalid'});
+    final after = DateTime.now();
+    String date(DateTime time) =>
+        '${time.year.toString().padLeft(4, '0')}-'
+        '${time.month.toString().padLeft(2, '0')}-'
+        '${time.day.toString().padLeft(2, '0')}';
+    expect(defaultOutput, anyOf(date(before), date(after)));
+    expect(invalidOutput, anyOf(date(before), date(after)));
+  });
+
+  test('fixed strftime_now retains escaping of a user supplied format', () {
+    final handler = _FakeHandler();
+    final template = Template('{{ strftime_now(format) }}');
+    final context = {'format': JinjaString.user('<tag>%Y</tag>')};
+    final fixed = handler.renderTemplate(
+      template,
+      metadata: {internalTemplateNowMetadataKey: '1984-06-01T12:34:56.000Z'},
+      context: context,
+    );
+    expect(fixed, '&lt;tag&gt;1984&lt;/tag&gt;');
+  });
+
   test('renderTemplate injects chat_template_kwargs metadata', () {
     final handler = _FakeHandler();
     final output = handler.renderTemplate(

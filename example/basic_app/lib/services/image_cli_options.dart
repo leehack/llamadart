@@ -213,6 +213,7 @@ final class ImageCliOptions {
     required this.outputPath,
     required this.device,
     required this.threads,
+    this.conditioningCacheSize,
   });
 
   /// Model preset.
@@ -240,6 +241,9 @@ final class ImageCliOptions {
   /// CPU threads; 0 uses the physical cores.
   final int threads;
 
+  /// Conditioning-cache entry limit; null preserves the runtime default.
+  final int? conditioningCacheSize;
+
   /// The engine model: [modelSource] and [fileSources], each assigned its
   /// role from its header when the engine loads it.
   ImageGenerationModel get model => ImageGenerationModel(
@@ -249,9 +253,15 @@ final class ImageCliOptions {
     ],
   );
 
-  /// Engine settings: [device] and [threads].
-  ImageModelParams get params =>
-      ImageModelParams(device: device, threads: threads);
+  /// Engine settings.
+  ImageModelParams get params => switch (conditioningCacheSize) {
+    final capacity? => ImageConditioningCacheParams(
+      capacity: capacity,
+      device: device,
+      threads: threads,
+    ),
+    null => ImageModelParams(device: device, threads: threads),
+  };
 
   /// Output path of image [index].
   String outputPathFor(int index) {
@@ -329,6 +339,10 @@ ArgParser createImageArgParser() {
       'vae-tile-overlap',
       help: 'Overlap of --vae-tile tiles, from 0 to 0.5 (default: 0.5).',
     )
+    ..addOption(
+      'conditioning-cache-size',
+      help: 'Retained prompt-conditioning entries (0 disables; unset: 4).',
+    )
     ..addFlag('help', abbr: 'h', help: 'Show this help.', negatable: false);
 }
 
@@ -382,28 +396,40 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
             ? ModelSource.parse(preset.taesd!)
             : _source(imageFileFlags[role]!, text),
     },
-    request: ImageGenerationRequest(
-      prompt: prompt,
-      negativePrompt: results['negative'] as String,
-      width: _int(results, 'width') ?? preset.size,
-      height: _int(results, 'height') ?? preset.size,
-      steps: _int(results, 'steps') ?? preset.steps,
-      guidanceScale: _double(results, 'guidance') ?? 1,
-      sampler: preset.sampler,
-      scheduler: preset.scheduler,
-      seed: _int(results, 'seed'),
-      count: _int(results, 'count')!,
-      vaeTiling: tileSize == null
-          ? null
-          : ImageVaeTiling(
+    request: tileSize == null
+        ? ImageGenerationRequest(
+            prompt: prompt,
+            negativePrompt: results['negative'] as String,
+            width: _int(results, 'width') ?? preset.size,
+            height: _int(results, 'height') ?? preset.size,
+            steps: _int(results, 'steps') ?? preset.steps,
+            guidanceScale: _double(results, 'guidance') ?? 1,
+            sampler: preset.sampler,
+            scheduler: preset.scheduler,
+            seed: _int(results, 'seed'),
+            count: _int(results, 'count')!,
+          )
+        : TiledImageGenerationRequest(
+            prompt: prompt,
+            negativePrompt: results['negative'] as String,
+            width: _int(results, 'width') ?? preset.size,
+            height: _int(results, 'height') ?? preset.size,
+            steps: _int(results, 'steps') ?? preset.steps,
+            guidanceScale: _double(results, 'guidance') ?? 1,
+            sampler: preset.sampler,
+            scheduler: preset.scheduler,
+            seed: _int(results, 'seed'),
+            count: _int(results, 'count')!,
+            vaeTiling: ImageVaeTiling(
               tileWidth: tileSize,
               tileHeight: tileSize,
               overlap: tileOverlap ?? ImageVaeTiling.defaultOverlap,
             ),
-    ),
+          ),
     outputPath: results['out'] as String,
     device: ComputeDevice.values.byName(results['device'] as String),
     threads: _int(results, 'threads')!,
+    conditioningCacheSize: _int(results, 'conditioning-cache-size'),
   );
 }
 

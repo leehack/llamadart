@@ -106,7 +106,7 @@ existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
 than inferring modality support from its name. Follow
 [the multimodal tracker](https://github.com/leehack/llamadart/issues/1072);
 [task-prefix and Matryoshka helpers](https://github.com/leehack/llamadart/issues/1126)
-remain separate.
+are explicit opt-in text operations described below.
 
 ### LiteRT-LM embedding engine
 
@@ -268,13 +268,68 @@ For document embeddings, pass the model's task prefix as part of the text:
 
 ```dart
 final vector = await engine.embed(
-  'task: search result | text: Paris is the capital of France.',
+  'title: none | text: Paris is the capital of France.',
 );
 ```
 
 Like other non-causal encoders, every input must fit in one micro-batch. Raise
 `microBatchSize` and `batchSize` together for longer inputs. The runtime does
 not automatically prepend task instructions.
+
+## Text tasks, titles and Matryoshka dimensions
+
+Use `LlamaTextEmbedder` with an explicit `embeddingGemma2` profile after loading
+a compatible EG2 model. This is your assertion of model compatibility: the
+helper checks output width and values, but does not authenticate the loaded
+model or establish quantized-artifact quality. It does not change `LlamaEngine`
+or automatically insert text into image/audio inputs.
+
+```dart
+Future<List<List<double>>> prepareRetrieval(LlamaEngine engine) async {
+  final embedder = LlamaTextEmbedder(
+    engine,
+    profile: LlamaEmbeddingProfile.embeddingGemma2,
+    dimensions: 256,
+  );
+  return embedder.embedBatch([
+    const LlamaEmbeddingText.query('What is the capital of France?'),
+    const LlamaEmbeddingText.document(
+      'Paris is the capital of France.',
+      title: 'France',
+    ),
+  ]);
+}
+```
+
+Queries use `task: search result | query: ...`; documents use
+`title: {title or none} | text: ...`. Select question answering, fact checking,
+code retrieval, classification, clustering or sentence similarity through
+`LlamaEmbeddingText.query(text, task: LlamaEmbeddingTask.questionAnswering)`.
+Symmetric tasks use the same task on both sides. Text and supplied titles keep
+their original whitespace. `LlamaEmbeddingText.prepared(text)` passes already
+formatted text verbatim; prefix detection is deliberately absent.
+
+The EG2 profile accepts 768 (default), 512, 256 or 128 components. It requests
+the full raw 768-component vector, keeps its leading dimensions, and then
+L2-normalizes by default. Query and corpus must use the same model/profile and
+dimensions; changing any of them requires rebuilding the index. Invalid
+dimensions or source width throw `LlamaUnsupportedException`. Nonfinite output
+throws `LlamaInferenceException`; a zero retained vector also throws when
+normalization is on. With `normalize: false`, finite zeros and unnormalized
+leading components are preserved. Whole batches fail without partial output.
+
+The default raw profile accepts only prepared text and delegates existing
+normalization unchanged. It forbids model-specific formatting or dimension
+reduction. Existing `engine.embed`, `embedBatch` and content methods keep their
+defaults. The helper retains the underlying engine's cancellation/unsupported
+contract and does not own or dispose it.
+
+The text retrieval comparison uses the pinned official EG2 float32 reference
+and BF16 GGUF CPU output at each dimension; see the
+[qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/embedding_text_helpers.md).
+That evidence does not qualify quantized models, LiteRT bundles, media, GPU or
+Web retrieval. Google recommends [renormalization after truncation](https://huggingface.co/google/embeddinggemma-2#best-practices)
+and warns that 128 dimensions has a larger cost for multimodal quality.
 
 ## Retrieval-style flow (query + candidate ranking)
 
@@ -377,3 +432,94 @@ LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths
 program cache limits, MTP/rollback and Web memory hints throw
 `LlamaUnsupportedException` before model I/O. Native CPU qualification is limited
 to macOS arm64; GPU/NPU and Web embeddings remain unavailable.
+
+## Cross-encoder reranking
+
+Retrieve a candidate set with embeddings, then score query/document pairs with
+a separate rank-pooled GGUF reranker. `LlamaReranker(engine)` borrows an already rank-pooled engine. For published
+BERT/Jina rerankers that omit rank metadata, use the owning factory:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> rerankLocal(String modelPath) async {
+  final reranker = await LlamaReranker.load(
+    LlamaModel(ModelSource.path(modelPath)),
+    params: const LlamaCppModelParams(
+      contextSize: 2048, batchSize: 2048, microBatchSize: 2048,
+      maxParallelSequences: 4,
+    ),
+  );
+  try {
+    final results = await reranker.rerank('capital of France', [
+      'Paris is the capital of France.', 'Rome is the capital of Italy.',
+    ]);
+    print(results.first.index);
+  } finally {
+    await reranker.dispose();
+  }
+}
+```
+
+The factory verifies a bounded GGUF classifier tensor directory and matching
+output width before explicitly selecting RANK. It rejects unverified or ordinary
+models, LoRA adapters and multimodal projectors. Normal engine loads retain
+their original pooling configuration. `dispose()` releases an owned engine;
+on a borrowed helper it leaves the caller's engine alive. Existing engine and
+backend interfaces gain no required members.
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<List<LlamaRerankResult>> rankCandidates(
+  LlamaEngine rerankerEngine,
+  String query,
+  List<String> documents,
+) async {
+  final reranker = LlamaReranker(rerankerEngine);
+  final support = await reranker.capabilities;
+  if (!support.isSupported) {
+    throw LlamaUnsupportedException(support.unsupportedReason!);
+  }
+  return reranker.rerank(query, documents, topN: 5);
+}
+```
+
+Native llama.cpp supports RANK-pooled models such as Qwen3-Reranker and Jina/BGE
+rerankers. WebGPU and LiteRT-LM report unsupported. Ordinary embedding and chat
+models are rejected; `embed` continues to reject classifier output.
+
+Results sort descending, retain the original document `index`, and keep
+`classifierScores` and nullable `classifierLabels` in model order. The default
+`scoreIndex: 0` matches upstream llama-server. For another class, inspect the
+labels and pass its index explicitly. No positive label is inferred. Qwen3
+returns native softmax probabilities; other models can return unbounded raw
+scores. No sigmoid, L2 normalization or further softmax is applied.
+
+The model's named `rerank` template substitutes `{query}`, then `{document}`,
+and parses its embedded special tokens. Without that template, query and
+document are tokenized separately as literal text and framed with the
+vocabulary's BOS/EOS/SEP flags. Inputs are not sent through the ordinary chat
+renderer, and an ordinary chat-template override does not override reranking.
+
+Every complete pair, including framing, must fit `maxInputTokens` from the
+probe: the minimum of allocated context, per-sequence context, logical batch
+and micro-batch limits. All pairs are checked before inference. Oversized input
+throws `LlamaInferenceException`; it is never truncated and no partial result
+is returned. Set `contextSize`, `batchSize` and `microBatchSize` at load to fit
+your inputs. `maxParallelSequences > 1` enables independent sequence batching
+within those limits; the default one scores documents sequentially.
+
+Ties preserve input order and duplicate documents retain separate indices.
+`topN` limits results after all pairs are scored. Empty batches return no results
+on a supported, loaded engine. Invalid score indices and negative `topN` throw
+`LlamaArgumentException`. Call `reranker.cancel()` or `engine.cancelGeneration()`
+to cancel this engine's inference; cancellation waits for its current native
+pass before returning `LlamaInferenceException`. Await pending calls before
+unloading or switching the engine's model, and always dispose the engine.
+
+See the [CPU command-line example](https://github.com/leehack/llamadart/blob/main/example/basic_app/bin/llamadart_reranking_example.dart).
+Real-model qualification uses the local-only `native-reranking` scenario and
+the pinned upstream oracle described in `doc/native_reranking.md`. Its receipts
+identify the model hashes, runtime revision and tested device/backend; native
+API availability alone does not qualify every model, quantization or platform.

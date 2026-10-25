@@ -125,9 +125,10 @@ void main() {
 
     Future<StableDiffusionImageWorker> start({
       LlamaLogLevel logLevel = LlamaLogLevel.none,
+      ImageGenerationSessionConfig config = _config,
     }) async {
       final worker = await StableDiffusionImageWorker.start(
-        _config,
+        config,
         resolveCalls: runtime.resolver,
         progressTimer: timers.start,
         logLevel: logLevel,
@@ -157,6 +158,105 @@ void main() {
       runtime.clearCalls();
       return worker;
     }
+
+    test(
+      'tiling survives worker transport and resets on the next request',
+      () async {
+        final worker = await start(
+          config: const ImageGenerationSessionConfig(
+            files: {'model': '/models/renamed.gguf'},
+            backend: 'cpu',
+            threads: 1,
+            vaeTilingRecipeVerified: true,
+          ),
+        );
+        await worker.generate(
+          const ImageGenerationSessionRequest(
+            prompt: 'a',
+            negativePrompt: '',
+            width: 512,
+            height: 512,
+            steps: 1,
+            guidanceScale: 1,
+            seed: 42,
+            count: 1,
+            vaeTiling: ImageVaeTiling(
+              tileWidth: 128,
+              tileHeight: 256,
+              overlap: 0.25,
+            ),
+          ),
+          (_, _) {},
+        );
+        expect(runtime.lastVaeTiling, (true, 128, 256, 0.25, 0.0, 0.0));
+        await worker.generate(_request(), (_, _) {});
+        expect(runtime.lastVaeTiling.$1, isFalse);
+        await runtime.flush();
+        expect(
+          runtime
+              .calls('worker')
+              .where((c) => c == 'sd_dart_generate_image+held')
+              .length,
+          2,
+        );
+      },
+    );
+
+    test(
+      'direct worker tiling without decoder proof makes no native call',
+      () async {
+        final worker = await loaded();
+        await expectLater(
+          worker.generate(
+            const ImageGenerationSessionRequest(
+              prompt: 'a',
+              negativePrompt: '',
+              width: 512,
+              height: 512,
+              steps: 1,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              vaeTiling: ImageVaeTiling(),
+            ),
+            (_, _) {},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('caller'), isEmpty);
+        expect(runtime.calls('worker'), isEmpty);
+        await worker.generate(_request(), (_, _) {});
+      },
+    );
+
+    test(
+      'direct worker circular requests reject an unqualified native family',
+      () async {
+        final worker = await loaded();
+        await expectLater(
+          worker.generate(
+            const ImageGenerationSessionRequest(
+              prompt: 'stone',
+              negativePrompt: '',
+              width: 512,
+              height: 512,
+              steps: 4,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              circularX: true,
+            ),
+            (_, _) {},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('caller'), isEmpty);
+        expect(runtime.calls('worker'), isEmpty);
+        await worker.generate(_request(), (_, _) {});
+      },
+    );
 
     /// The records the calling isolate's logger hands its handler from now
     /// on, at [level].
@@ -207,6 +307,23 @@ void main() {
 
       expect(runtime.loadedModelPath, '/models/sdxs.gguf');
     });
+
+    for (final capacity in [null, 0, 1, 64]) {
+      test(
+        'worker load reads conditioning capacity $capacity across isolates',
+        () async {
+          await start(
+            config: ImageGenerationSessionConfig(
+              files: _config.files,
+              backend: _config.backend,
+              threads: _config.threads,
+              conditioningCacheSize: capacity,
+            ),
+          );
+          expect(runtime.loadedConditioningCacheSize, capacity ?? 4);
+        },
+      );
+    }
 
     test('a generation marks its start, reads the reports after the reply '
         'and stops its timer', () async {

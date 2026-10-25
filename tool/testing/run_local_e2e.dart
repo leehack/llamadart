@@ -1,6 +1,7 @@
 #!/usr/bin/env dart
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 /// Result returned by [runLocalE2e].
@@ -31,6 +32,7 @@ class LocalE2eCommandStep {
     this.environment = const {},
     this.background = false,
     this.waitForPort,
+    this.foregroundStdoutEncoding = systemEncoding,
   });
 
   final String workingDirectory;
@@ -40,6 +42,10 @@ class LocalE2eCommandStep {
   final String description;
   final bool background;
   final int? waitForPort;
+
+  /// Codec for foreground stdout; controlled Dart protocols can opt into UTF-8.
+  /// Other commands retain their platform's output encoding.
+  final Encoding foregroundStdoutEncoding;
 
   /// Renders this step as a copy-pasteable command for [shell].
   String toDisplayString({LocalE2eDisplayShell? shell}) {
@@ -760,8 +766,10 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
           'Run experimental ImageGenerationEngine on SDXS through the opt-in '
-          'stable_diffusion runtime; SD-Turbo, with and without VAE '
-          'tiling, when LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
+          'stable_diffusion runtime, including CPU/automatic-device '
+          'conditioning-cache parity, hits, eviction, cancellation/reuse and '
+          'reload; SD-Turbo with and without VAE tiling when '
+          'LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
           'LLAMADART_SDXL_LIGHTNING_MODEL is set, and SDXS from its pinned '
           'Hugging Face file when LLAMADART_IMAGE_HF_CACHE '
           'names a model cache directory, and a split model from files in '
@@ -785,6 +793,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
                 '${context.projectRoot}/build/image-generation-smoke',
           },
           description: 'Image generation real-model smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'image-seamless-textures',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify the bounded SDXS 512-square circular texture recipe: '
+          'CPU and actual Metal, X/Y seam quality, repeat PNGs, off-after-on, '
+          'cancellation/reuse and optional exact native-reference pixels.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_seamless_textures_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_SDXS_MODEL': context.modelPath!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-seamless-textures',
+          },
+          description: 'SDXS circular axes and decoder quality qualification',
         ),
       ],
     ),
@@ -878,6 +915,40 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test/e2e/backends/decision_engine_web_e2e_test.dart',
           ],
           description: 'Web decision model real-model parity smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'web-speech-task-cancel',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check real STT/TTS task cancellation isolation and engine reuse '
+          'through the direct and worker paths of the pinned WebGPU bridge.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_speech_task_cancel/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/speech_task_cancellation_e2e_test.dart',
+          ],
+          description: 'Web speech task cancellation isolation and reuse',
         ),
       ],
     ),
@@ -1032,6 +1103,57 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'native-reranking',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify native reranking against pinned upstream full-class and server oracles with local Qwen3/Jina weights; see doc/native_reranking.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '--tags',
+            'local-only',
+            'test/e2e/backends/native_reranking_e2e_test.dart',
+          ],
+          description:
+              'Native reranking CPU/Metal reference qualification; no downloads',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'text-embedding-retrieval',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Compare EmbeddingGemma-2 text helpers at 768/512/256/128 dimensions with the official float32 CPU reference; no downloads. See doc/embedding_text_helpers.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--tags',
+            'local-only',
+            '--run-skipped',
+            'test/e2e/backends/embeddinggemma2_retrieval_e2e_test.dart',
+          ],
+          description: 'Official EG2 text retrieval reference qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'native-embedding-benchmark',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1182,6 +1304,33 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LITERT_LM_BACKEND': context.backend,
           },
           description: 'LiteRT-LM lifecycle and process cleanup',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'qwen3-litert-cpu-unicode',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Check known Qwen3 artifact split-token Unicode and CPU chat.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'tool/litert_lm_chat_features_smoke.dart',
+            context.modelPath!,
+            'cpu',
+          ],
+          environment: const {
+            'LITERT_LM_TOKENIZER_FIXTURE': 'qwen3-0.6b',
+            'LITERT_LM_AUDIO_PATH': '',
+            'LITERT_LM_AUDIO_EXPECTED_TEXT': '',
+            'LITERT_LM_IMAGE_PATH': '',
+          },
+          description: 'Qwen3 exact Unicode decode and CPU chat campaign',
+          foregroundStdoutEncoding: utf8,
         ),
       ],
     ),
@@ -1926,6 +2075,14 @@ Future<LocalE2eResult> runLocalE2e(
           '--model-path and --head-path are required for decision-model-smoke.\n',
     );
   }
+  if (scenario.name == 'qwen3-litert-cpu-unicode' &&
+      parsed.backendProvided &&
+      parsed.backend != 'cpu') {
+    return const LocalE2eResult(
+      64,
+      stderr: 'qwen3-litert-cpu-unicode requires --backend cpu.\n',
+    );
+  }
   if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
     return const LocalE2eResult(
       64,
@@ -1993,11 +2150,12 @@ Future<LocalE2eResult> runLocalE2e(
           'chat-app-web-tool-penalty-smoke.\n',
     );
   }
-  if (scenario.name == 'image-generation-smoke' && parsed.modelPath == null) {
-    return const LocalE2eResult(
+  if ((scenario.name == 'image-generation-smoke' ||
+          scenario.name == 'image-seamless-textures') &&
+      parsed.modelPath == null) {
+    return LocalE2eResult(
       64,
-      stderr:
-          '--model-path <sdxs.gguf> is required for image-generation-smoke.\n',
+      stderr: '--model-path <sdxs.gguf> is required for ${scenario.name}.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&
@@ -2042,6 +2200,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
+          scenario.name == 'qwen3-litert-cpu-unicode' ||
           scenario.name == 'native-prompt-cancel' ||
           scenario.name == 'native-exit-teardown' ||
           scenario.name == 'image-exit-teardown' ||
@@ -2056,6 +2215,22 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
     );
+  }
+
+  if (scenario.name == 'text-embedding-retrieval') {
+    for (final name in const [
+      'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH',
+      'LLAMADART_EG2_RETRIEVAL_REFERENCE',
+    ]) {
+      if ((environment ?? Platform.environment)[name]?.trim().isNotEmpty !=
+          true) {
+        return LocalE2eResult(
+          64,
+          stderr:
+              '$name is required for text-embedding-retrieval; see doc/embedding_text_helpers.md.\n',
+        );
+      }
+    }
   }
 
   if (scenario.name == 'native-multimodal-embeddings') {
@@ -2178,6 +2353,7 @@ Future<LocalE2eResult> runLocalE2e(
               workingDirectory: step.workingDirectory,
               environment: step.environment.isEmpty ? null : step.environment,
               runInShell: false,
+              stdoutEncoding: step.foregroundStdoutEncoding,
             )
           : foregroundStepRun(step));
       buffer
@@ -2377,6 +2553,7 @@ Direct environment for example/chat_app/test/flutter_shutdown_e2e_test.dart:
   MACOS_QUIT_BUILD_MODES         Builds to quit (default: debug,release).
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
+  LITERT_LM_TOKENIZER_FIXTURE    qwen3-0.6b checks only the known Qwen artifacts.
   LITERT_LM_IMAGE_PATH           Optional local image fixture.
   LITERT_LM_AUDIO_PATH           Optional local encoded audio fixture.
   LITERT_LM_AUDIO_EXPECTED_TEXT  Required exact expected answer when audio is set.

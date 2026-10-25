@@ -140,6 +140,11 @@ event stream carries progress, then one `TextToSpeechFinalEvent` with the PCM,
 and never emits an error. `task.result` returns the audio or throws the
 failure, or `LlamaStateException` when the task is cancelled; `task.done`
 reports the same outcome as a `TextToSpeechCompletion` and never throws.
+
+`task.cancel()` stops its own synthesis request. With the pinned Web bridge
+assets this also preserves another active request when synthesis is still
+awaiting a queued capability probe. Await `task.done` before reusing its speech context; cancellation is
+cooperative and does not promise a latency bound.
 `synthesizeOnce` skips the events: it is
 `(await synthesizer.synthesize(request)).result`.
 

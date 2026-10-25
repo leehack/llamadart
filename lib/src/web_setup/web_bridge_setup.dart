@@ -47,10 +47,24 @@ final RegExp _flutterBootstrapScript = RegExp(
   multiLine: true,
 );
 final RegExp _headClose = RegExp(r'^([ \t]*)</head>', multiLine: true);
-final RegExp _htmlComment = RegExp(r'<!--.*?(?:-->|$)', dotAll: true);
-final RegExp _manualBridgeLoader = RegExp(
-  r'llama_webgpu_bridge\.js|\bLlamaWebGpuBridge\s*=(?!=)',
+final RegExp _rawTextOpen = RegExp(
+  r'<(script|style)(?=[\s/>])',
+  caseSensitive: false,
 );
+final RegExp _srcAttribute = RegExp(
+  r'''\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''',
+  caseSensitive: false,
+);
+final RegExp _bridgeModule = RegExp(r'llama_webgpu_bridge\.js');
+final RegExp _bridgeModuleImport = RegExp(
+  r'\bimport\b[^;]*?llama_webgpu_bridge\.js',
+);
+final RegExp _bridgeGlobalAssignment = RegExp(
+  r'''(?<![\w$.])(?:(?:window|globalThis|self)\s*\.\s*)?LlamaWebGpuBridge\s*=(?![=>])'''
+  r'''|(?<![\w$.])(?:window|globalThis|self)\s*\[\s*["']LlamaWebGpuBridge["']\s*\]\s*=(?![=>])''',
+);
+const int _maxExcerptChars = 80;
+const String _byteOrderMark = '\uFEFF';
 
 /// A bridge asset release identified by the SHA-256 of its manifest.
 final class WebBridgePin {
@@ -223,8 +237,17 @@ Future<List<String>> checkWebBridgeSetup({
           '${indexHtml.path} lacks the current llamadart bridge bootstrap',
         );
       }
+    } on _ManualLoaderException catch (error) {
+      problems.add(
+        '${indexHtml.path} also loads the WebGPU bridge by hand '
+        '("${error.excerpt}"). Remove that loader, or skip this page with '
+        '--no-index-html.',
+      );
     } on WebSetupException catch (error) {
-      problems.add('${indexHtml.path}: ${error.message}');
+      problems.add(
+        '${indexHtml.path} '
+        '${error.message.replaceFirst(RegExp(r'^index\.html '), '')}',
+      );
     }
   }
   return problems;
@@ -261,20 +284,24 @@ String patchWebBridgeIndexHtml(String html, WebBridgePin pin) {
 
   if (hasBegin) {
     final int lineStart = html.lastIndexOf('\n', begin) + 1;
-    final String prefix = html.substring(lineStart, begin);
+    final String bom = lineStart == 0 && html.startsWith(_byteOrderMark)
+        ? _byteOrderMark
+        : '';
+    final String prefix = html.substring(lineStart + bom.length, begin);
     final String indent = RegExp(r'^[ \t]*').stringMatch(prefix)!;
     // Markup before the marker on its line stays once, on its own line.
     final String kept = prefix == indent ? '' : '${prefix.trimRight()}$newline';
-    return html.substring(0, lineStart) +
+    return bom +
+        html.substring(0, lineStart) +
         kept +
         _indentedSnippet(pin, indent, newline) +
         html.substring(end + _endMarker.length);
   }
 
-  final List<RegExpMatch> comments = _htmlComment.allMatches(html).toList();
+  final _Markup markup = _scanMarkup(html);
   final RegExpMatch? anchor =
-      _firstOutside(_flutterBootstrapScript, html, comments) ??
-      _firstOutside(_headClose, html, comments);
+      _firstOutside(_flutterBootstrapScript, html, markup) ??
+      _firstOutside(_headClose, html, markup);
   if (anchor == null) {
     throw WebSetupException(
       'index.html has no <script src="flutter_bootstrap.js"> tag and no '
@@ -289,35 +316,139 @@ String patchWebBridgeIndexHtml(String html, WebBridgePin pin) {
       html.substring(anchor.start);
 }
 
-RegExpMatch? _firstOutside(
-  RegExp pattern,
-  String html,
-  List<RegExpMatch> comments,
-) {
+RegExpMatch? _firstOutside(RegExp pattern, String html, _Markup markup) {
   for (final RegExpMatch match in pattern.allMatches(html)) {
-    final int at = match.end - 1;
-    if (!comments.any((RegExpMatch c) => at >= c.start && at < c.end)) {
-      return match;
-    }
+    if (!markup.isHidden(match.end - 1)) return match;
   }
   return null;
 }
 
+typedef _Range = ({int start, int end});
+
+/// A `<script>` element outside any comment.
+typedef _Script = ({int tagStart, String openTag, int bodyStart, String body});
+
+/// The parts of a page that decide where the bootstrap may go and whether a
+/// loader is already there.
+final class _Markup {
+  _Markup(this.hidden, this.scripts);
+
+  /// Closed comments and the bodies of `<script>` and `<style>`.
+  final List<_Range> hidden;
+
+  /// Scripts outside comments.
+  final List<_Script> scripts;
+
+  bool isHidden(int at) =>
+      hidden.any((_Range r) => at >= r.start && at < r.end);
+}
+
+/// Splits [html] into comments and raw-text elements. `<!--` inside a
+/// `<script>` or `<style>` is text, and a comment that never closes is not
+/// treated as one, so it cannot hide the rest of the page.
+_Markup _scanMarkup(String html) {
+  final hidden = <_Range>[];
+  final scripts = <_Script>[];
+  var at = 0;
+  while (true) {
+    final int lt = html.indexOf('<', at);
+    if (lt < 0) break;
+    if (html.startsWith('<!--', lt)) {
+      final int close = html.indexOf('-->', lt + 4);
+      if (close < 0) {
+        at = lt + 4;
+      } else {
+        hidden.add((start: lt, end: close + 3));
+        at = close + 3;
+      }
+      continue;
+    }
+    final Match? open = _rawTextOpen.matchAsPrefix(html, lt);
+    if (open == null) {
+      at = lt + 1;
+      continue;
+    }
+    final int bodyStart = _openTagEnd(html, open.end);
+    final String name = open.group(1)!;
+    final RegExpMatch? close = RegExp(
+      '</$name(?=[\\s/>])',
+      caseSensitive: false,
+    ).allMatches(html, bodyStart).firstOrNull;
+    final int bodyEnd = close?.start ?? html.length;
+    hidden.add((start: bodyStart, end: bodyEnd));
+    if (name.toLowerCase() == 'script') {
+      scripts.add((
+        tagStart: lt,
+        openTag: html.substring(lt, bodyStart),
+        bodyStart: bodyStart,
+        body: html.substring(bodyStart, bodyEnd),
+      ));
+    }
+    at = bodyEnd;
+  }
+  return _Markup(hidden, scripts);
+}
+
+int _openTagEnd(String html, int from) {
+  String? quote;
+  for (var i = from; i < html.length; i++) {
+    final String c = html[i];
+    if (quote != null) {
+      if (c == quote) quote = null;
+    } else if (c == '"' || c == "'") {
+      quote = c;
+    } else if (c == '>') {
+      return i + 1;
+    }
+  }
+  return html.length;
+}
+
+/// A manual bridge loader outside the generated block.
+final class _ManualLoaderException extends WebSetupException {
+  _ManualLoaderException(this.excerpt)
+    : super(
+        'index.html already loads the WebGPU bridge outside the generated '
+        'llamadart block ("$excerpt"). Loading it twice wastes memory, and a '
+        'failing old loader makes model loads fail. Remove that loader and '
+        'rerun, or keep it and rerun with --no-index-html.',
+      );
+
+  final String excerpt;
+}
+
 void _rejectManualBridgeLoader(String htmlOutsideBlock) {
-  final String live = htmlOutsideBlock.replaceAll(_htmlComment, '');
-  final RegExpMatch? loader = _manualBridgeLoader.firstMatch(live);
-  if (loader == null) return;
-  final int lineStart = live.lastIndexOf('\n', loader.start) + 1;
-  final int lineEnd = live.indexOf('\n', loader.end);
-  final String line = live
-      .substring(lineStart, lineEnd < 0 ? live.length : lineEnd)
-      .trim();
-  throw WebSetupException(
-    'index.html already loads the WebGPU bridge outside the generated '
-    'llamadart block ("$line"). Loading it twice wastes memory, and a failing '
-    'old loader makes model loads fail. Remove that loader and rerun, or '
-    'keep it and rerun with --no-index-html.',
-  );
+  final _Markup markup = _scanMarkup(htmlOutsideBlock);
+  for (final _Script script in markup.scripts) {
+    final int? at = _loaderOffset(script);
+    if (at != null) {
+      throw _ManualLoaderException(_excerpt(htmlOutsideBlock, at));
+    }
+  }
+}
+
+int? _loaderOffset(_Script script) {
+  for (final RegExpMatch src in _srcAttribute.allMatches(script.openTag)) {
+    final String value = src.group(1) ?? src.group(2) ?? src.group(3)!;
+    if (_bridgeModule.hasMatch(value)) return script.tagStart + src.start;
+  }
+  final RegExpMatch? loader =
+      _bridgeModuleImport.firstMatch(script.body) ??
+      _bridgeGlobalAssignment.firstMatch(script.body);
+  return loader == null ? null : script.bodyStart + loader.start;
+}
+
+String _excerpt(String html, int at) {
+  final int lineStart = html.lastIndexOf('\n', at) + 1;
+  final int lineEnd = html.indexOf('\n', at);
+  final int end = lineEnd < 0 ? html.length : lineEnd;
+  final int from = at - lineStart > _maxExcerptChars ~/ 2
+      ? at - _maxExcerptChars ~/ 2
+      : lineStart;
+  final int to = end - from > _maxExcerptChars ? from + _maxExcerptChars : end;
+  return '${from > lineStart ? '...' : ''}'
+      '${html.substring(from, to).trim()}'
+      '${to < end ? '...' : ''}';
 }
 
 String _indentedSnippet(WebBridgePin pin, String indent, String newline) {

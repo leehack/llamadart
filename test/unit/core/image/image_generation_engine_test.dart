@@ -8,6 +8,9 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_engine.dart';
 
+import '../../../support/legacy_image_model_params.dart';
+import '../../../support/legacy_image_generation_request.dart';
+import '../../../support/legacy_image_generation_engine.dart';
 import '../../../support/image_model_headers.dart';
 
 const _model = '/models/sd-turbo.gguf';
@@ -80,6 +83,109 @@ void main() {
     }
     engines.clear();
     debugImageGenerationDriverOverride = null;
+  });
+
+  group('seamless textures', () {
+    test(
+      'circular flags survive resolution and ordinary requests reset them',
+      () async {
+        driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
+        driver.session.modelVersion = 'SDXS (512-DS)';
+        final engine = await load(
+          _sdxs(),
+          params: const ImageModelParams(
+            flashAttention: false,
+            vaeDirectConvolution: false,
+          ),
+        );
+        for (final (x, y) in [
+          (true, false),
+          (false, true),
+          (true, true),
+          (false, false),
+        ]) {
+          await engine.generateImage(
+            SeamlessImageGenerationRequest(
+              prompt: 'stone',
+              circularX: x,
+              circularY: y,
+            ),
+          );
+          expect(
+            (
+              driver.session.requests.last.circularX,
+              driver.session.requests.last.circularY,
+            ),
+            (x, y),
+          );
+        }
+        await engine.generateImage(const LegacyImageGenerationRequest());
+        expect(
+          (
+            driver.session.requests.last.circularX,
+            driver.session.requests.last.circularY,
+          ),
+          (false, false),
+        );
+      },
+    );
+
+    test(
+      'forced checkpoint roles and decoder overrides cannot bypass circular checks',
+      () async {
+        driver.session.modelVersion = 'SDXS (512-DS)';
+        for (final header in [
+          ImageModelHeaders.sdTurboCheckpoint,
+          Uint8List(16),
+        ]) {
+          driver.headers[_model] = header;
+          final engine = await load(
+            ImageGenerationModel(
+              _local(_model),
+              role: ImageModelRole.checkpoint,
+            ),
+            params: const ImageModelParams(
+              flashAttention: false,
+              vaeDirectConvolution: false,
+            ),
+          );
+          await expectLater(
+            engine.generate(
+              const SeamlessImageGenerationRequest(
+                prompt: 'stone',
+                circularX: true,
+              ),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(driver.session.requests, isEmpty);
+          await engine.dispose();
+          driver.session = _FakeSession()..modelVersion = 'SDXS (512-DS)';
+        }
+        driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
+        final engine = await load(
+          _sdxs(_local(_model), _local(_taesd)),
+          params: const ImageModelParams(
+            flashAttention: false,
+            vaeDirectConvolution: false,
+          ),
+        );
+        await expectLater(
+          engine.generate(
+            const SeamlessImageGenerationRequest(
+              prompt: 'stone',
+              circularY: true,
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(driver.session.requests, isEmpty);
+        // Rejection happens before taking the process-wide generation slot.
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'ordinary'),
+        );
+      },
+    );
   });
 
   group('checkRuntime', () {
@@ -584,6 +690,93 @@ void main() {
     test('a GGUF source format loads like no format', () async {
       await load(_sdxs(ModelSource.path(_model, format: ModelFormat.gguf)));
     });
+
+    for (final capacity in [
+      null,
+      0,
+      1,
+      ImageConditioningCacheParams.maxCapacity,
+    ]) {
+      test(
+        'forwards conditioning cache capacity $capacity to the session',
+        () async {
+          final engine = await load(
+            _sdxs(),
+            params: capacity == null
+                ? const ImageModelParams()
+                : ImageConditioningCacheParams(capacity: capacity),
+          );
+          expect(
+            engine.params is ImageConditioningCacheParams,
+            capacity != null,
+          );
+          expect(driver.started.single.conditioningCacheSize, capacity);
+        },
+      );
+    }
+
+    for (final capacity in [-1, ImageConditioningCacheParams.maxCapacity + 1]) {
+      test(
+        'rejects conditioning cache capacity $capacity before file resolution',
+        () async {
+          await expectLater(
+            load(
+              _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+              params: ImageConditioningCacheParams(capacity: capacity),
+            ),
+            throwsA(
+              isA<LlamaImageGenerationException>().having(
+                (error) => error.message,
+                'message',
+                contains('ImageConditioningCacheParams.capacity'),
+              ),
+            ),
+          );
+          expect(downloads.calls, isEmpty);
+          expect(driver.started, isEmpty);
+        },
+      );
+    }
+
+    test(
+      'legacy external implementations and subclasses preserve default cache settings',
+      () async {
+        for (final legacy in [
+          const LegacyImageModelParams(),
+          const LegacyImageModelSubclass(),
+        ]) {
+          final engine = await load(_sdxs(), params: legacy);
+          expect(engine.params, same(legacy));
+          final config = driver.started.last;
+          expect(config.conditioningCacheSize, isNull);
+          expect(config.backend, 'cpu');
+          expect(config.threads, legacy.threads);
+        }
+      },
+    );
+
+    test(
+      'explicit cache settings preserve every inherited runtime option',
+      () async {
+        const params = ImageConditioningCacheParams(
+          capacity: 2,
+          device: ComputeDevice.cpu,
+          threads: 5,
+          checkMemory: false,
+          flashAttention: false,
+          vaeDirectConvolution: false,
+        );
+        final engine = await load(_sdxs(), params: params);
+        expect(engine.params, same(params));
+        final config = driver.started.single;
+        expect(config.conditioningCacheSize, 2);
+        expect(config.backend, 'cpu');
+        expect(config.threads, 5);
+        expect(config.flashAttention, isFalse);
+        expect(config.vaeDirectConvolution, isFalse);
+        expect(driver.budgetDevices, isEmpty);
+      },
+    );
 
     test('negative threads are rejected', () async {
       await expectLater(
@@ -1441,6 +1634,202 @@ void main() {
   });
 
   group('generate', () {
+    test(
+      'legacy/custom backend without tiling probe refuses opt-in only',
+      () async {
+        final old = _LegacySession(driver.session);
+        driver.sessionOverride = old;
+        final engine = await load(_sdxs());
+        await expectLater(
+          engine.generate(
+            const TiledImageGenerationRequest(
+              prompt: 'a',
+              vaeTiling: ImageVaeTiling(),
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(driver.session.requests, isEmpty);
+        await engine.generateImage(const ImageGenerationRequest(prompt: 'a'));
+        expect(driver.session.requests.single.vaeTiling, isNull);
+      },
+    );
+
+    test(
+      'unknown runtime refuses tiling while ordinary requests still work',
+      () async {
+        driver.status = StableDiffusionRuntimeStatus.available(
+          version: 'unknown',
+          commit: 'unknown',
+          devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
+        );
+        final engine = await load(_sdxs());
+        await expectLater(
+          engine.generate(
+            const TiledImageGenerationRequest(
+              prompt: 'a',
+              vaeTiling: ImageVaeTiling(),
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await engine.generateImage(const ImageGenerationRequest(prompt: 'a'));
+      },
+    );
+
+    test(
+      'tiled cancellation, disposal and subsequent ordinary reuse stay isolated',
+      () async {
+        final engine = await load(
+          _sdxs(),
+          params: const ImageConditioningCacheParams(capacity: 0),
+        );
+        driver.session.gate = Completer<void>();
+        final task = await engine.generate(
+          const TiledImageGenerationRequest(
+            prompt: 'a',
+            steps: 4,
+            vaeTiling: ImageVaeTiling(),
+          ),
+        );
+        task.cancel();
+        driver.session.gate!.complete();
+        expect(
+          (await task.done).state,
+          ImageGenerationCompletionState.cancelled,
+        );
+        driver.session.gate = null;
+        await engine.generateImage(const ImageGenerationRequest(prompt: 'a'));
+        expect(driver.session.requests.map((r) => r.vaeTiling != null), [
+          true,
+          false,
+        ]);
+        driver.session.gate = Completer<void>();
+        final disposing = await engine.generate(
+          const TiledImageGenerationRequest(
+            prompt: 'a',
+            steps: 4,
+            vaeTiling: ImageVaeTiling(),
+          ),
+        );
+        final disposed = engine.dispose();
+        driver.session.gate!.complete();
+        await disposed;
+        expect(
+          (await disposing.done).state,
+          ImageGenerationCompletionState.cancelled,
+        );
+        expect(driver.session.disposedAfterGenerate, isTrue);
+      },
+    );
+
+    test(
+      'legacy implementation and subclass requests retain defaults',
+      () async {
+        final legacy = LegacyImageGenerationEngine();
+        await legacy.warmUp(width: 512, height: 512, guidanceScale: 1);
+        expect(legacy.warmUpCalls, 1);
+        final engine = await load(_sdxs());
+        for (final request in [
+          const LegacyImageGenerationRequest(),
+          const LegacyImageGenerationRequestSubclass(),
+        ]) {
+          await engine.generateImage(request);
+        }
+        expect(driver.session.requests.map((r) => r.vaeTiling), [null, null]);
+        expect(driver.session.requests.map((r) => r.prompt), [
+          'legacy stone',
+          'legacy subclass',
+        ]);
+      },
+    );
+
+    test(
+      'tiling refuses other family, decoder proof and device recipes',
+      () async {
+        for (final family in [
+          'SD 1.x',
+          'SDXS (512-DS)',
+          'SDXL',
+          'FLUX.1',
+          '',
+        ]) {
+          driver.session.modelVersion = family;
+          final engine = await load(_sdxs());
+          await expectLater(
+            engine.generate(
+              const TiledImageGenerationRequest(
+                prompt: 'a',
+                vaeTiling: ImageVaeTiling(),
+              ),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          await engine.generateImage(const ImageGenerationRequest(prompt: 'a'));
+        }
+        driver.session.modelVersion = 'SD 2.x';
+        driver.status = _available('Vulkan0\tNVIDIA L4\nCPU\tCPU\n');
+        final vulkan = await load(_sdxs());
+        await expectLater(
+          vulkan.generate(
+            const TiledImageGenerationRequest(
+              prompt: 'a',
+              vaeTiling: ImageVaeTiling(),
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await vulkan.generateImage(const ImageGenerationRequest(prompt: 'a'));
+        driver.status = _available('CPU\tApple M4\n');
+        driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
+        final tiny = await load(_sdxs());
+        await expectLater(
+          tiny.generate(
+            const TiledImageGenerationRequest(
+              prompt: 'a',
+              vaeTiling: ImageVaeTiling(),
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        final taesd = await load(_sdxs(null, _local(_taesd)));
+        await taesd.generateImage(
+          const TiledImageGenerationRequest(
+            prompt: 'a',
+            vaeTiling: ImageVaeTiling(),
+          ),
+        );
+      },
+    );
+
+    test(
+      'tiling and either circular axis are refused before task acquisition',
+      () async {
+        final engine = await load(_sdxs());
+        for (final (x, y) in [(true, false), (false, true), (true, true)]) {
+          await expectLater(
+            engine.generate(
+              SeamlessImageGenerationRequest(
+                prompt: 'a',
+                circularX: x,
+                circularY: y,
+                vaeTiling: const ImageVaeTiling(),
+              ),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        }
+        expect(driver.session.requests, isEmpty);
+        await engine.generateImage(
+          const SeamlessImageGenerationRequest(
+            prompt: 'a',
+            vaeTiling: ImageVaeTiling(),
+          ),
+        );
+        expect(driver.session.requests.single.vaeTiling, isNotNull);
+      },
+    );
+
     test('rejects invalid requests before starting', () async {
       final engine = await load(_sdxs());
 
@@ -1456,11 +1845,11 @@ void main() {
         const ImageGenerationRequest(prompt: 'a', seed: -1),
         const ImageGenerationRequest(prompt: 'a', count: 0),
         const ImageGenerationRequest(prompt: 'a', count: 17),
-        const ImageGenerationRequest(
+        const TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(tileWidth: 100),
         ),
-        const ImageGenerationRequest(
+        const TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(overlap: 0.75),
         ),
@@ -1504,7 +1893,7 @@ void main() {
       );
 
       await (await engine.generate(
-        const ImageGenerationRequest(prompt: 'a', vaeTiling: tiling),
+        const TiledImageGenerationRequest(prompt: 'a', vaeTiling: tiling),
       )).done;
       await (await engine.generate(
         const ImageGenerationRequest(prompt: 'a'),
@@ -1824,15 +2213,6 @@ void main() {
       expect(driver.session.requests.map((r) => r.vaeTiling), [null, null]);
     });
 
-    test('decodes in the tiles it is given', () async {
-      final engine = await load(_sdxs());
-      const tiling = ImageVaeTiling(tileWidth: 128, tileHeight: 128);
-
-      await engine.warmUp(guidanceScale: 1, vaeTiling: tiling);
-
-      expect(driver.session.requests.single.vaeTiling, same(tiling));
-    });
-
     test('falls back like a request, and a given side overrides it', () async {
       final engine = await load(_fluxModel());
 
@@ -1858,10 +2238,6 @@ void main() {
 
       await expectLater(
         engine.warmUp(width: 500),
-        throwsA(isA<LlamaImageGenerationException>()),
-      );
-      await expectLater(
-        engine.warmUp(vaeTiling: const ImageVaeTiling(tileHeight: 32)),
         throwsA(isA<LlamaImageGenerationException>()),
       );
 
@@ -1988,7 +2364,7 @@ void main() {
 StableDiffusionRuntimeStatus _available(String devices) =>
     StableDiffusionRuntimeStatus.available(
       version: 'master-929',
-      commit: '3f8527a',
+      commit: '0518b34',
       devices: parseStableDiffusionDeviceList(devices),
     );
 
@@ -2019,6 +2395,7 @@ final class _FakeDriver implements ImageGenerationDriver {
   ImageGenerationMemoryBudget? slowerBudget;
   Object? startError;
   final List<ImageGenerationSessionConfig> started = [];
+  ImageGenerationSession? sessionOverride;
   _FakeSession session = _FakeSession();
   Completer<void>? probeGate;
   Object? probeError;
@@ -2080,7 +2457,7 @@ final class _FakeDriver implements ImageGenerationDriver {
     }
     started.add(config);
     await startGate?.future;
-    return session;
+    return sessionOverride ?? session;
   }
 
   /// Holds header reads until completed.
@@ -2093,7 +2470,10 @@ final class _FakeDriver implements ImageGenerationDriver {
 /// Behaves like stable-diffusion.cpp: a generation clears the cancel flag
 /// when it starts, reports `0/steps` then each step, and checks the flag
 /// before every step and before decoding.
-final class _FakeSession implements ImageGenerationSession {
+final class _FakeSession
+    implements ImageGenerationSession, ImageVaeTilingSession {
+  @override
+  bool supportsVaeTiling = true;
   final List<ImageGenerationSessionRequest> requests = [];
   Completer<void>? gate;
   bool failNext = false;
@@ -2107,7 +2487,7 @@ final class _FakeSession implements ImageGenerationSession {
   bool disposedAfterGenerate = false;
 
   @override
-  String get modelVersion => 'SD 2.x';
+  String modelVersion = 'SD 2.x';
 
   @override
   Future<List<GeneratedImage>?> generate(
@@ -2281,4 +2661,20 @@ final class _RemoteTargetResolver implements ModelResolver {
     ModelSource source,
     ModelResolveRequest request,
   ) async => RemoteModelUrl(url, useBrowserCache: useBrowserCache);
+}
+
+final class _LegacySession implements ImageGenerationSession {
+  final ImageGenerationSession delegate;
+  _LegacySession(this.delegate);
+  @override
+  String get modelVersion => delegate.modelVersion;
+  @override
+  Future<List<GeneratedImage>?> generate(
+    ImageGenerationSessionRequest request,
+    void Function(int, int) onProgress,
+  ) => delegate.generate(request, onProgress);
+  @override
+  void cancel() => delegate.cancel();
+  @override
+  Future<void> dispose() => delegate.dispose();
 }

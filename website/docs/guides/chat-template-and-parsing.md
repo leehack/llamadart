@@ -49,7 +49,16 @@ print(result.format);
   `{'source_lang_code': 'en', 'target_lang_code': 'ko'}`, defaulting to
   `en-GB`; the `sourceLangCode` and `targetLangCode` parameters are
   deprecated.
-- `templateNow`: deterministic time injection for tests.
+- `templateNow`: deterministic time injection, including `strftime_now` and
+  date globals. For multi-turn chat, construct
+  `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.
+  Each listened request snapshots that session setting before context
+  preparation, so budgeting and generation use the same time. Changing it
+  affects the next request; each tool-loop round is a request. `reset()` keeps
+  it, and setting it to `null` restores the normal clock. Ordinary
+  `ChatSession` interfaces and application extensions remain compatible.
+  This controls Dart-rendered templates; LiteRT-LM runtime-owned templates
+  retain their runtime clock.
 - `responseFormat`: structured-output constraint; unrecognised shapes and
   schemas the grammar converter cannot represent throw
   `LlamaUnsupportedException`.
@@ -99,6 +108,18 @@ history, tools, media, and extra context stay structured inside the runtime.
 The Dart template registry is still used for template metadata, streamed output
 parsing, `engine.chatTemplate(...)`, web LiteRT-LM, and fallback prompt
 rendering when a request cannot use the native conversation path.
+
+For native CPU Qwen3-0.6B, use the updated
+[LiteRT-LM bundle](https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm)
+(revision `e6687177e00897731e7716267eebd4eba0dde7c2`, SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`).
+The older `8414150f` bundle can emit literal byte-level token spellings such
+as `ĠðŁĺĬ` instead of an emoji. A runtime upgrade alone does not repair its
+tokenizer; replace the model artifact. Preserve literal user text rather than
+rewriting these characters. The updated bundle is verified on macOS CPU;
+Linux/Windows CPU qualification runs in the maintained smoke workflow.
+GPU, iOS, Android and Web adoption still need separate validation
+([#554](https://github.com/leehack/llamadart/issues/554)).
 
 Native LiteRT-LM recognizes renamed Qwen 3 bundles only with a Qwen 3
 model-type declaration (metadata field 6), or the complete canonical Qwen 3

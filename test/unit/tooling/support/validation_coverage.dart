@@ -15,7 +15,10 @@ Map<String, String> validationSurfaces(Directory root) {
   final surfaces = <String, String>{};
   final declarations = _exports(root, 'lib/llamadart.dart', {});
   for (final (path, declaration, name) in declarations) {
-    final isEngine = name == 'LlamaEngine';
+    final isEngine =
+        name == 'LlamaEngine' ||
+        name == 'LlamaTextEmbedder' ||
+        name == 'LlamaReranker';
     final isExtension = name == 'LlamaEngineCompletionExtension';
     final isCapabilities = name.endsWith('Capabilities');
     if (!isEngine && !isExtension && !isCapabilities) continue;

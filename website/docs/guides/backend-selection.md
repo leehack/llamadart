@@ -4,6 +4,13 @@ sidebar_label: llama.cpp or LiteRT-LM
 description: Decide when to use GGUF with llama.cpp or .litertlm bundles with LiteRT-LM in llamadart.
 ---
 
+For pre-load desktop setup information, run `dart run llamadart:doctor --json`
+or call `collectLlamaRuntimeSetupReport()`; see the
+[setup report contract](../platforms/native-build-hooks#desktop-setup-report).
+It reports pinned publication policy and override presence. It does not choose
+or initialize a backend, validate GPU usability or replace loaded-model
+capabilities. Web/mobile require separate app/device/browser validation.
+
 ## Quick answer
 
 | Choose this | Best fit | Tradeoffs |
@@ -157,9 +164,12 @@ not retry on another device. Windows arm64 has no LiteRT-LM runtime.
 `ModelParams.validate()`, which every `LlamaEngine` load calls before any
 download, throws `LlamaArgumentException` when `device` contradicts another
 field: `cpu` with a GPU `preferredBackend`, `gpu` or `npu` with a CPU or BLAS
-`preferredBackend`, `gpuLayers: 0`, or `splitMode: ModelSplitMode.none` with a
-negative `mainGpu` (which llama.cpp runs on the CPU), or any explicit device
-with the deprecated `liteRtLmBackend`.
+`preferredBackend` or `gpuLayers: 0`, or any explicit device with the deprecated
+`liteRtLmBackend`. Native platforms also reject `gpu` or `npu` with
+`splitMode: ModelSplitMode.none` and a negative `mainGpu`, which native
+llama.cpp runs on the CPU. The WebGPU bridge ignores negative `mainGpu`
+values; explicit `gpu` still requires an adapter and active GPU layers after
+load.
 
 `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are deprecated
 and keep working until 1.0. Under `device: auto` they still choose the

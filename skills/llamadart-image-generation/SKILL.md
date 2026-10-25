@@ -60,6 +60,17 @@ core and `llamadart_stable_diffusion_flutter` together.
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64
   are unsupported. Windows needs the latest
   Microsoft Visual C++ v14 Redistributable (x64).
+- For repeating textures use `SeamlessImageGenerationRequest`, with independent
+  `circularX` and `circularY` flags (both default off). Its initial supported
+  recipe is native-detected SDXS (512-DS) with header-detected embedded tiny
+  decoder, no components, 512×512, CPU or Metal, loaded with
+  `flashAttention: false` and `vaeDirectConvolution: false`. Other families,
+  decoder overrides, sizes and options throw `LlamaUnsupportedException`.
+  This changes convolution padding in diffusion and VAE, not VAE tiling.
+  Keep seed, sampler, scheduler and guidance explicit for comparisons; inspect
+  a 2×2 repeat because arbitrary prompts/seeds are not quality guarantees.
+  Measured qualification is macOS arm64 CPU and Metal. See the image guide's
+  seamless-textures recipe and `doc/image_seamless_textures.md` for evidence.
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.
@@ -152,11 +163,15 @@ core and `llamadart_stable_diffusion_flutter` together.
   `flowShift` (flow-matching models only, greater than 0, at most 100);
   `null` keeps the runtime's default for the model. SDXL-Lightning wants
   `euler` with `sgmUniform`.
-- `vaeTiling: ImageVaeTiling()` decodes in overlapping tiles (output
+- `TiledImageGenerationRequest(vaeTiling: ImageVaeTiling(), prompt: ...)` decodes in overlapping tiles (output
   pixels, multiples of 64 from 64 to 2048, default 256; `overlap` 0 to 0.5,
   default 0.5) to cut the decoder's peak memory for large images or full
-  VAEs, at the cost of decode time and slight seam blending; `null` (the
-  default) decodes the whole image. Pass the same tiling to `warmUp`.
+  VAEs, at the cost of decode time and slight seam blending. Ordinary requests
+  and `warmUp` keep their original interface and defaults. Tiling accepts
+  header-verified SD 2.x checkpoints with embedded full VAE or TAESD on CPU/Metal;
+  SD-Turbo is measured, other accepted SD 2.x artifacts and phones are unmeasured.
+  Unknown proof, other families/backends, external full VAE/component overrides
+  and tiling combined with either circular axis throw `LlamaUnsupportedException`.
 - `load` checks every file exists and, unless
   `ImageModelParams(checkMemory: false)`, refuses a model whose estimate
   (file sizes plus a quarter plus 512 MiB, for the model's native size)
@@ -187,6 +202,15 @@ core and `llamadart_stable_diffusion_flutter` together.
   true` on iOS Metal throws `LlamaUnsupportedException` at load: every decode
   tripped the GPU watchdog and returned a corrupt image
   ([#1044](https://github.com/leehack/llamadart/issues/1044)).
+- `ImageConditioningCacheParams(capacity: ...)`: ordinary `ImageModelParams`
+  preserve the native default of 4 prompt-conditioning entries. `0` disables
+  reuse; positive values set an LRU entry limit up to `2147483647` (the signed 32-bit ABI
+  limit). Other values throw `LlamaImageGenerationException` before resolving
+  files. The capacity counts entries, not bytes; it belongs to the loaded
+  context and is freed on disposal. Load another engine to change it.
+  It does not enable approximate sampling caches or promise a speed/memory
+  improvement. The control is qualified with SDXS and SD-Turbo on macOS arm64
+  CPU/Metal; other platforms and families remain unmeasured for this option.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
   first runtime probe in a process (`checkRuntime()` or `load()`, both off
   the calling isolate) compiles the Metal library on Apple (about 16 s on an

@@ -57,6 +57,8 @@ export 'src/backends/backend.dart'
         BackendNextTokenScoringSupport,
         BackendPerfContextData,
         BackendPerformanceDiagnostics,
+        BackendReranking,
+        BackendRerankingOutput,
         BackendPromptSpeechToTextSupport,
         BackendRuntimeDiagnostics,
         BackendRuntimeIdentity,

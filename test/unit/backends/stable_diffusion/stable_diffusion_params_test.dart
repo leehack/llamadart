@@ -13,6 +13,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_model.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
+import 'package:llamadart/src/core/image/image_model_params.dart';
 
 String? _text(Pointer<Char> value) =>
     value == nullptr ? null : value.cast<Utf8>().toDartString();
@@ -26,6 +27,35 @@ void main() {
       final params = arena<sd.sd_ctx_params_t>();
       applyStableDiffusionContextParams(params, config, arena);
       return params;
+    }
+
+    for (final capacity in [
+      null,
+      0,
+      1,
+      ImageConditioningCacheParams.maxCapacity,
+    ]) {
+      test(
+        'maps conditioning capacity $capacity after runtime initialization',
+        () {
+          using((arena) {
+            final params = arena<sd.sd_ctx_params_t>();
+            // A distinctive initialized value proves null does not hardcode 4.
+            params.ref.conditioning_cache_size = 17;
+            applyStableDiffusionContextParams(
+              params,
+              ImageGenerationSessionConfig(
+                files: const {'model': '/m/sdxs.gguf'},
+                backend: null,
+                threads: 0,
+                conditioningCacheSize: capacity,
+              ),
+              arena,
+            );
+            expect(params.ref.conditioning_cache_size, capacity ?? 17);
+          });
+        },
+      );
     }
 
     test('writes every file role to its own path field', () {
@@ -309,6 +339,50 @@ void main() {
       seed: 42,
       count: 2,
     );
+
+    for (final (x, y) in [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
+      test('maps circular axes $x/$y without changing decoder tiling', () {
+        using((arena) {
+          final params = arena<sd.sd_img_gen_params_t>();
+          params.ref.vae_tiling_params.target_overlap = 0.37;
+          applyStableDiffusionGenerationParams(
+            params,
+            ImageGenerationSessionRequest(
+              prompt: 'stone',
+              negativePrompt: '',
+              width: 512,
+              height: 512,
+              steps: 4,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              circularX: x,
+              circularY: y,
+            ),
+            arena,
+          );
+          expect(params.ref.circular_x, x);
+          expect(params.ref.circular_y, y);
+          final bytes = params.cast<Uint8>().asTypedList(
+            sizeOf<sd.sd_img_gen_params_t>(),
+          );
+          expect(bytes[540], x ? 1 : 0);
+          expect(bytes[541], y ? 1 : 0);
+          expect(params.ref.vae_tiling_params.enabled, isFalse);
+          expect(params.ref.vae_tiling_params.rel_size_w, 0);
+          expect(params.ref.vae_tiling_params.rel_size_h, 0);
+          expect(
+            params.ref.vae_tiling_params.target_overlap,
+            closeTo(0.37, 0.00001),
+          );
+        });
+      });
+    }
 
     test('writes the prompt, size, seed, count, steps and guidance', () {
       using((arena) {

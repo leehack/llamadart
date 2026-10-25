@@ -2,8 +2,87 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
+import 'package:llamadart/src/core/image/image_generation_driver.dart';
 
 void main() {
+  test(
+    'circular recipe requires native family, decoder and runtime evidence',
+    () {
+      ImageGenerationSessionRequest request({
+        bool x = true,
+        bool y = false,
+        int width = 512,
+        int height = 512,
+      }) => ImageGenerationSessionRequest(
+        prompt: 'stone',
+        negativePrompt: '',
+        width: width,
+        height: height,
+        steps: 4,
+        guidanceScale: 1,
+        seed: 42,
+        count: 1,
+        circularX: x,
+        circularY: y,
+      );
+      ImageGenerationSessionConfig config({
+        bool verified = true,
+        bool flash = false,
+        bool direct = false,
+        Map<String, String> files = const {'model': '/a/renamed.gguf'},
+      }) => ImageGenerationSessionConfig(
+        files: files,
+        backend: 'cpu',
+        threads: 4,
+        seamlessRecipeVerified: verified,
+        flashAttention: flash,
+        vaeDirectConvolution: direct,
+      );
+      for (final (r, c, family) in [
+        (request(), config(verified: false), 'SDXS (512-DS)'),
+        (request(), config(), 'SD 1.x'),
+        (request(), config(), 'SD 2.x'),
+        (request(), config(), 'SDXL'),
+        (request(), config(), 'FLUX.1'),
+        (request(), config(), ''),
+        (request(width: 256), config(), 'SDXS (512-DS)'),
+        (request(height: 520), config(), 'SDXS (512-DS)'),
+        (request(), config(flash: true), 'SDXS (512-DS)'),
+        (request(), config(direct: true), 'SDXS (512-DS)'),
+        (
+          request(),
+          config(files: {'model': '/m/sdxs.gguf', 'vae': '/m/full'}),
+          'SDXS (512-DS)',
+        ),
+        (
+          request(),
+          config(files: {'model': '/m/sdxs.gguf', 'taesd': '/m/tiny'}),
+          'SDXS (512-DS)',
+        ),
+      ]) {
+        expect(
+          () => validateSeamlessImageGenerationRecipe(r, c, family),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        validateSeamlessImageGenerationRecipe(request(x: false), c, family);
+      }
+      for (final (x, y) in [(true, false), (false, true), (true, true)]) {
+        validateSeamlessImageGenerationRecipe(
+          request(x: x, y: y),
+          config(),
+          'SDXS (512-DS)',
+        );
+      }
+    },
+  );
+
+  test('dedicated circular request preserves ordinary defaults', () {
+    const request = SeamlessImageGenerationRequest(prompt: 'stone');
+    expect(request.circularX, isFalse);
+    expect(request.circularY, isFalse);
+    validateImageGenerationRequest(request);
+  });
+
   test('defaults to one image with the model defaults', () {
     const request = ImageGenerationRequest(prompt: 'a fox');
 
@@ -17,7 +96,7 @@ void main() {
     expect(request.sampler, isNull);
     expect(request.scheduler, isNull);
     expect(request.flowShift, isNull);
-    expect(request.vaeTiling, isNull);
+    expect(imageRequestVaeTiling(request), isNull);
     validateImageGenerationRequest(request);
   });
 
@@ -28,13 +107,13 @@ void main() {
     expect((tiling.tileWidth, tiling.tileHeight), (256, 256));
     expect(tiling.overlap, 0.5);
     validateImageGenerationRequest(
-      const ImageGenerationRequest(prompt: 'a', vaeTiling: tiling),
+      const TiledImageGenerationRequest(prompt: 'a', vaeTiling: tiling),
     );
   });
 
   test('accepts the bounds', () {
     for (final request in const [
-      ImageGenerationRequest(
+      TiledImageGenerationRequest(
         prompt: 'a',
         width: 64,
         height: 2048,
@@ -45,7 +124,7 @@ void main() {
         flowShift: 0.01,
         vaeTiling: ImageVaeTiling(tileWidth: 64, tileHeight: 2048, overlap: 0),
       ),
-      ImageGenerationRequest(
+      TiledImageGenerationRequest(
         prompt: 'a',
         width: 2048,
         height: 64,
@@ -97,7 +176,7 @@ void main() {
         isNaN,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(tileWidth: 0),
         ),
@@ -105,7 +184,7 @@ void main() {
         0,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(tileWidth: 96),
         ),
@@ -113,7 +192,7 @@ void main() {
         96,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(tileHeight: 32),
         ),
@@ -121,7 +200,7 @@ void main() {
         32,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(tileHeight: 2112),
         ),
@@ -129,7 +208,7 @@ void main() {
         2112,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(overlap: -0.1),
         ),
@@ -137,7 +216,7 @@ void main() {
         -0.1,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(overlap: 0.6),
         ),
@@ -145,7 +224,7 @@ void main() {
         0.6,
       ),
       (
-        ImageGenerationRequest(
+        TiledImageGenerationRequest(
           prompt: 'a',
           vaeTiling: ImageVaeTiling(overlap: double.nan),
         ),

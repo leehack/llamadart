@@ -207,6 +207,7 @@ class ImageGenerationEngine {
   final ImageGenerationSession _session;
   final StableDiffusionRuntimeStatus _runtime;
   final String _backendName;
+  final ImageGenerationSessionConfig _config;
   ImageGenerationTask? _activeTask;
   Future<void>? _disposal;
 
@@ -217,6 +218,7 @@ class ImageGenerationEngine {
     this._session,
     this._runtime,
     this._backendName,
+    this._config,
   );
 
   /// Probes the bundled runtime without loading a model.
@@ -356,6 +358,9 @@ class ImageGenerationEngine {
   ///   unused here. Also when
   ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
   ///   Metal backend, before any file is resolved or loaded.
+  /// - [LlamaImageGenerationException] for invalid [params], including a
+  ///   conditioning-cache capacity outside 0 through the signed 32-bit limit,
+  ///   before resolving model files.
   /// - [LlamaModelException] when a file is missing, is not an image-model
   ///   component (such as a LoRA or ControlNet), shares a role with another
   ///   file, or does not match the diffusion model; when no file holds
@@ -386,6 +391,19 @@ class ImageGenerationEngine {
         'GPU watchdog and returns a corrupt image '
         '(https://github.com/leehack/llamadart/issues/1044). Leave it null or '
         'set it to false, or load with ComputeDevice.cpu.',
+      );
+    }
+    final conditioningCacheSize = switch (params) {
+      ImageConditioningCacheParams(:final capacity) => capacity,
+      _ => null,
+    };
+    if (conditioningCacheSize != null &&
+        (conditioningCacheSize < 0 ||
+            conditioningCacheSize > ImageConditioningCacheParams.maxCapacity)) {
+      throw LlamaImageGenerationException(
+        'ImageConditioningCacheParams.capacity must be from 0 to '
+        '${ImageConditioningCacheParams.maxCapacity}.',
+        conditioningCacheSize,
       );
     }
     if (params.threads < 0) {
@@ -474,25 +492,42 @@ class ImageGenerationEngine {
 
     final operation = _acquireOperation();
     try {
-      final session = await driver.start(
-        ImageGenerationSessionConfig(
-          files: files,
-          backend: switch (params.device) {
-            ComputeDevice.cpu => 'cpu',
-            ComputeDevice.gpu => 'gpu',
-            ComputeDevice.auto || ComputeDevice.npu => null,
-          },
-          threads: params.threads,
-          flashAttention:
-              params.flashAttention ?? _flashAttentionByDefault(backendName),
-          vaeDirectConvolution:
-              params.vaeDirectConvolution ??
-              _vaeDirectConvolutionByDefault(
-                backendName,
-                tinyAutoencoder: assignment.decodesWithTinyAutoencoder,
-              ),
-        ),
+      final config = ImageGenerationSessionConfig(
+        files: files,
+        backend: switch (params.device) {
+          ComputeDevice.cpu => 'cpu',
+          ComputeDevice.gpu => 'gpu',
+          ComputeDevice.auto || ComputeDevice.npu => null,
+        },
+        threads: params.threads,
+        conditioningCacheSize: conditioningCacheSize,
+        vaeTilingRecipeVerified:
+            // v0.3.0 is the runtime whose tiling layout and decode are qualified.
+            (runtime.commit == '0518b34' ||
+                runtime.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec') &&
+            assignment.vaeTilingDecoderVerified &&
+            assignment.roles.containsKey(ImageModelRole.checkpoint) &&
+            assignment.roles.keys.every(
+              (role) =>
+                  role == ImageModelRole.checkpoint ||
+                  role == ImageModelRole.taesd,
+            ) &&
+            (backendName == 'CPU' || _isMetal(backendName)),
+        seamlessRecipeVerified:
+            assignment.decodesWithTinyAutoencoder &&
+            assignment.roles.length == 1 &&
+            assignment.roles.containsKey(ImageModelRole.checkpoint) &&
+            (backendName == 'CPU' || _isMetal(backendName)),
+        flashAttention:
+            params.flashAttention ?? _flashAttentionByDefault(backendName),
+        vaeDirectConvolution:
+            params.vaeDirectConvolution ??
+            _vaeDirectConvolutionByDefault(
+              backendName,
+              tinyAutoencoder: assignment.decodesWithTinyAutoencoder,
+            ),
       );
+      final session = await driver.start(config);
       if (download.cancelToken?.isCancelled ?? false) {
         // The native load cannot be interrupted; free what it allocated so
         // a cancelled load leaves nothing loaded.
@@ -510,6 +545,7 @@ class ImageGenerationEngine {
         session,
         runtime,
         backendName,
+        config,
       );
     } finally {
       _releaseOperation(operation);
@@ -561,6 +597,8 @@ class ImageGenerationEngine {
   /// [ImageGenerationCompletionState.cancelled]. [dispose] cancels the task.
   ///
   /// Throws [LlamaImageGenerationException] for an invalid request, and
+  /// [LlamaUnsupportedException] for an unqualified
+  /// [SeamlessImageGenerationRequest] recipe, and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running; these checks run before the returned future completes,
   /// and the one-generation slot is taken when this is called. A runtime
@@ -571,7 +609,6 @@ class ImageGenerationEngine {
   /// until the engine is disposed and the model loaded again.
   Future<ImageGenerationTask> generate(ImageGenerationRequest request) async {
     final effective = _resolve(request);
-    final operation = _acquireOperation();
     final resolved = ImageGenerationSessionRequest(
       prompt: effective.prompt,
       negativePrompt: effective.negativePrompt,
@@ -584,8 +621,28 @@ class ImageGenerationEngine {
       sampler: effective.sampler,
       scheduler: effective.scheduler,
       flowShift: effective.flowShift,
-      vaeTiling: effective.vaeTiling,
+      vaeTiling: imageRequestVaeTiling(request),
+      circularX: request is SeamlessImageGenerationRequest && request.circularX,
+      circularY: request is SeamlessImageGenerationRequest && request.circularY,
     );
+    validateSeamlessImageGenerationRecipe(
+      resolved,
+      _config,
+      _session.modelVersion,
+    );
+    validateImageVaeTilingRecipe(resolved, _config, _session.modelVersion);
+    if (resolved.vaeTiling != null &&
+        !switch (_session) {
+          ImageVaeTilingSession tiling => tiling.supportsVaeTiling,
+          _ => false,
+        }) {
+      throw LlamaUnsupportedException(
+        'This image-generation backend does not report support for '
+        'per-request VAE tiling. Use the pinned stable_diffusion v0.3.0 '
+        'runtime with a supported SD 2.x decoder recipe.',
+      );
+    }
+    final operation = _acquireOperation();
     final task = ImageGenerationTask._(_session.cancel);
     _activeTask = task;
     unawaited(_run(task, resolved, operation));
@@ -610,11 +667,10 @@ class ImageGenerationEngine {
   /// M4 Max with an empty Metal shader cache. GPU drivers and macOS cache
   /// compiled shaders on disk, so later launches are faster.
   ///
-  /// Use the size and [vaeTiling] the app will generate with: ggml picks some
-  /// pipelines by tensor size, so another size or a tiled decode can still
-  /// compile more. Unset values fall back as in [generate]. For a model
-  /// trained at 1024x1024 the warm-up costs one sampling step and a decode
-  /// at that size: about 2 to 4 s for
+  /// Use the size the app will generate: ggml picks some pipelines by tensor
+  /// size, so another size can still compile more. Unset values fall back
+  /// as in [generate]. For a model trained at 1024x1024 the warm-up costs
+  /// one sampling step and a decode at that size: about 2 to 4 s for
   /// SDXL-Lightning with TAESDXL on an M4 Max, and the same peak memory as
   /// an image, which the memory check in [load] covers where it runs (not
   /// on the Windows CPU).
@@ -625,16 +681,11 @@ class ImageGenerationEngine {
   /// before the next [generate] or [load]. [dispose] cancels a running
   /// warm-up, which then completes normally.
   ///
-  /// Throws [LlamaImageGenerationException] for an invalid size, guidance or
-  /// tiling, [LlamaStateException] after [dispose] or while another
+  /// Throws [LlamaImageGenerationException] for an invalid size or guidance,
+  /// [LlamaStateException] after [dispose] or while another
   /// generation or load is running, and [LlamaInferenceException] when the
   /// runtime fails the generation.
-  Future<void> warmUp({
-    int? width,
-    int? height,
-    double? guidanceScale,
-    ImageVaeTiling? vaeTiling,
-  }) async {
+  Future<void> warmUp({int? width, int? height, double? guidanceScale}) async {
     final request = ImageGenerationRequest(
       prompt: 'warm-up',
       width: width,
@@ -642,7 +693,6 @@ class ImageGenerationEngine {
       guidanceScale: guidanceScale,
       steps: 1,
       seed: 0,
-      vaeTiling: vaeTiling,
     );
     if (!_isGpu(_backendName)) {
       // Fail where a GPU warm-up would, so callers behave the same on both.
@@ -687,8 +737,10 @@ class ImageGenerationEngine {
       sampler: request.sampler,
       scheduler: request.scheduler,
       flowShift: request.flowShift,
-      vaeTiling: request.vaeTiling,
     );
+    if (imageRequestVaeTiling(request) != null) {
+      validateImageGenerationRequest(request);
+    }
     validateImageGenerationRequest(effective);
     return effective;
   }

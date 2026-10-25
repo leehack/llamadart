@@ -1920,6 +1920,50 @@ void main() {
       expect(nativeEngine.isReady, isFalse);
     });
 
+    test('native engine rejects GPU CPU placement before loading', () async {
+      final source = ModelSource.parse('https://example.com/model.gguf');
+      final downloadManager = MockModelDownloadManager(
+        ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/cache/model.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        ),
+      );
+      final nativeBackend = MockLlamaBackend();
+      final nativeEngine = LlamaEngine(
+        nativeBackend,
+        modelDownloadManager: downloadManager,
+      );
+      addTearDown(nativeEngine.dispose);
+
+      for (final mainGpu in [-1, -2]) {
+        await expectLater(
+          nativeEngine.setModel(
+            LlamaModel(source),
+            params: ModelParams(
+              device: ComputeDevice.gpu,
+              splitMode: ModelSplitMode.none,
+              mainGpu: mainGpu,
+            ),
+          ),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (e) => e.name,
+              'name',
+              'mainGpu',
+            ),
+          ),
+        );
+      }
+      expect(downloadManager.ensureModelCalls, 0);
+      expect(nativeBackend.modelLoadCalls, 0);
+      expect(nativeBackend.modelLoadFromUrlCalls, 0);
+      expect(nativeEngine.isReady, isFalse);
+    }, skip: const bool.fromEnvironment('dart.library.js_interop'));
+
     test(
       'native loadModelSource skips model load when download is cancelled',
       () async {

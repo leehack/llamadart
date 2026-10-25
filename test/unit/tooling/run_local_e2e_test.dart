@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -11,6 +12,76 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  test(
+    'Qwen scenario preserves UTF-8 stdout from the real child process',
+    () async {
+      final project = await Directory.systemTemp.createTemp(
+        'qwen-utf8-runner-',
+      );
+      addTearDown(() => project.delete(recursive: true));
+      await File('${project.path}/pubspec.yaml').writeAsString(
+        'name: qwen_stdout_fixture\nenvironment:\n  sdk: ^3.10.7\n',
+      );
+      final tool = await Directory('${project.path}/tool').create();
+      await File(
+        '${tool.path}/litert_lm_chat_features_smoke.dart',
+      ).writeAsString(
+        "import 'dart:convert';\n"
+        "import 'dart:io';\n"
+        'void main() {\n'
+        "  stdout.add(utf8.encode(jsonEncode({'decoded': 'Hello! 😊', "
+        "'literal': 'ĠðŁĺĬ', 'mixed': 'café 한글 日本語'})));\n"
+        '}\n',
+      );
+      final result = await runLocalE2e([
+        '--scenario',
+        'qwen3-litert-cpu-unicode',
+        '--model-path',
+        'fixture.litertlm',
+      ], projectRoot: project.path);
+      expect(result.exitCode, 0, reason: result.stderr);
+      final start = result.stdout.indexOf('{"decoded":');
+      expect(start, greaterThanOrEqualTo(0), reason: result.stdout);
+      expect(jsonDecode(result.stdout.substring(start)), {
+        'decoded': 'Hello! 😊',
+        'literal': 'ĠðŁĺĬ',
+        'mixed': 'café 한글 日本語',
+      });
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'text retrieval scenario requires both artifacts and opts into local tests',
+    () async {
+      const environment = {
+        'LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH': '/local/model.gguf',
+        'LLAMADART_EG2_RETRIEVAL_REFERENCE': '/local/reference.json',
+      };
+      for (final missing in environment.keys) {
+        final result = await runLocalE2e(
+          ['--scenario', 'text-embedding-retrieval', '--dry-run'],
+          projectRoot: '/repo',
+          environment: {...environment}..remove(missing),
+        );
+        expect(result.exitCode, 64);
+        expect(result.stderr, contains(missing));
+      }
+      final result = await runLocalE2e(
+        ['--scenario', 'text-embedding-retrieval', '--dry-run'],
+        projectRoot: '/repo',
+        environment: environment,
+      );
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('embeddinggemma2_retrieval_e2e_test.dart'),
+      );
+      expect(result.stdout, contains('--run-skipped'));
+      expect(result.stdout, contains('--tags local-only'));
+    },
+  );
+
   test(
     'native multimodal embedding qualification requires local weights and references',
     () async {
@@ -39,6 +110,47 @@ void main() {
         contains('multimodal_embedding_native_e2e_test.dart'),
       );
       expect(result.stdout, contains('--tags local-only'));
+    },
+  );
+
+  test(
+    'Qwen Unicode scenario wires the exact fixture and forces CPU',
+    () async {
+      final result = await runLocalE2e(
+        const [
+          '--scenario',
+          'qwen3-litert-cpu-unicode',
+          '--model-path',
+          'models/Qwen3-0.6B.litertlm',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('LITERT_LM_TOKENIZER_FIXTURE=qwen3-0.6b'));
+      expect(
+        result.stdout,
+        contains(
+          'tool/litert_lm_chat_features_smoke.dart '
+          'models/Qwen3-0.6B.litertlm cpu',
+        ),
+      );
+      for (final args in [
+        ['--scenario', 'qwen3-litert-cpu-unicode', '--dry-run'],
+        [
+          '--scenario',
+          'qwen3-litert-cpu-unicode',
+          '--model-path',
+          'model',
+          '--backend',
+          'gpu',
+          '--dry-run',
+        ],
+      ]) {
+        final invalid = await runLocalE2e(args, projectRoot: '/repo');
+        expect(invalid.exitCode, 64);
+      }
     },
   );
 
@@ -176,6 +288,7 @@ void main() {
       expect(result.stdout, contains('litert-lm-asr-smoke'));
       expect(result.stdout, contains('decision-model-smoke'));
       expect(result.stdout, contains('decision-model-web-smoke'));
+      expect(result.stdout, contains('web-speech-task-cancel'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -1734,6 +1847,32 @@ dev_dependencies:
       ).readAsStringSync();
       expect(e2e, contains("@Tags(['local-only', 'e2e'])"));
       expect(e2e, contains("'../../../build/decision_web_e2e/'"));
+    });
+
+    test('dry-runs Web speech cancellation with pinned assets and '
+        'the WebGPU Chrome platform', () async {
+      final result = await runLocalE2e(
+        const ['--scenario', 'web-speech-task-cancel', '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Scenario: web-speech-task-cancel'));
+      expect(
+        result.stdout,
+        contains(
+          'WEBGPU_BRIDGE_OUT_DIR=/repo/build/web_speech_task_cancel/bridge '
+          'bash scripts/fetch_webgpu_bridge_assets.sh',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test -p chrome-webgpu --run-skipped -t local-only '
+          'test/e2e/webgpu/speech_task_cancellation_e2e_test.dart',
+        ),
+      );
     });
 
     test('defines the chrome-webgpu platform with WebGPU and '

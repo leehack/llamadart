@@ -1290,6 +1290,16 @@ class HighRiskReadinessEvaluator {
       final referenced = refs
           .map((ref) => (ref as Map)['path'] as String)
           .toSet();
+      final harnessTest = entry.key.startsWith(
+        'packages/llamadart_validation/test/',
+      );
+      final harnessRefs = referenced.where(_isValidationHarnessProductionPath);
+      if ((harnessTest && harnessRefs.length != referenced.length) ||
+          (harnessRefs.isNotEmpty &&
+              !harnessTest &&
+              !entry.key.startsWith('test/unit/tooling/'))) {
+        return 'Private harness evidence must use paired harness or root tooling tests: ${entry.key}.';
+      }
       final pairedScript = _nativeSyncPythonTests[entry.key];
       if (pairedScript != null) {
         final command = proof['command'] as String;
@@ -1730,7 +1740,12 @@ class HighRiskReadinessEvaluator {
       path.startsWith('tool/') ||
       path.startsWith('hook/') ||
       path.startsWith('packages/genkit_llamadart/lib/') ||
+      _isValidationHarnessProductionPath(path) ||
       isWorkflowPath(path);
+
+  static bool _isValidationHarnessProductionPath(String path) =>
+      path.startsWith('packages/llamadart_validation/lib/') ||
+      path == 'packages/llamadart_validation/assets/capability_coverage.json';
 
   static bool _isProductionTestPath(String path) {
     if (path.startsWith('/') ||
@@ -1747,7 +1762,8 @@ class HighRiskReadinessEvaluator {
     }
     if (_nativeSyncPythonTests.containsKey(path)) return true;
     return (path.startsWith('test/') ||
-            path.startsWith('packages/genkit_llamadart/test/')) &&
+            path.startsWith('packages/genkit_llamadart/test/') ||
+            path.startsWith('packages/llamadart_validation/test/')) &&
         path.endsWith('_test.dart');
   }
 

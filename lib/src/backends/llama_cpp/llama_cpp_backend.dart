@@ -19,6 +19,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
+import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import 'worker.dart';
@@ -38,6 +39,7 @@ class NativeLlamaBackend
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendBatchEmbeddings,
+        BackendReranking,
         BackendMultimodalEmbeddings,
         BackendNextTokenScoring,
         BackendStatePersistence,
@@ -90,7 +92,10 @@ class NativeLlamaBackend
   /// If a worker spawned by this backend exits unexpectedly, pending work
   /// fails with [LlamaStateException] and existing model/context handles are
   /// invalid. Dispose this backend and create a fresh one before reloading.
-  /// This does not recover native allocations owned by an abandoned worker.
+  /// A worker that exits frees the native objects it held, such as its
+  /// models, contexts, token batches and sampler chains; an object a native
+  /// call was still creating when the worker was killed stays allocated until
+  /// the process exits.
   /// An externally supplied [initialSendPort] has no owned isolate to monitor.
   NativeLlamaBackend({
     SendPort? initialSendPort,
@@ -824,6 +829,82 @@ class NativeLlamaBackend
     }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Embedding failed');
+  }
+
+  @override
+  Future<int> createRerankingContext(
+    int modelHandle,
+    ModelParams params,
+  ) async {
+    await _ensureIsolate();
+    final port = _openResponsePort();
+    _dispatchRequest(
+      port,
+      RerankingContextCreateRequest(modelHandle, params, port.sendPort),
+    );
+    final response = await _receiveResponse(port);
+    if (response is ErrorResponse) throw _workerError(response);
+    if (response is! HandleResponse) {
+      throw LlamaContextException('Reranking context creation failed.');
+    }
+    return response.handle;
+  }
+
+  @override
+  Future<LlamaRerankingCapabilities> getRerankingCapabilities(
+    int contextHandle,
+  ) async {
+    if (!_isReady || _sendPort == null) {
+      return LlamaRerankingCapabilities(
+        isSupported: false,
+        unsupportedReason: 'Load a native reranker model first.',
+      );
+    }
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      RerankingCapabilitiesRequest(contextHandle, rp.sendPort),
+    );
+    final response = await _receiveResponse(rp);
+    if (response is RerankingCapabilitiesResponse) return response.capabilities;
+    if (response is ErrorResponse) throw _workerError(response);
+    throw LlamaInferenceException('Reranking capability probe failed.');
+  }
+
+  @override
+  Future<BackendRerankingOutput> rerank(
+    int contextHandle,
+    String query,
+    List<String> documents,
+  ) async {
+    final flag = _NativeCancelFlag(_cancelFlagAllocator);
+    final rp = _openResponsePort();
+    try {
+      final request = RerankRequest(
+        contextHandle,
+        query,
+        List<String>.of(documents),
+        flag.address,
+        rp.sendPort,
+      );
+      _embeddingCancelFlags.add(flag);
+      await _ensureIsolate();
+      _dispatchRequest(rp, request);
+      final response = await _receiveResponse(rp);
+      if (response is RerankResponse) {
+        _stalePerformanceContexts.remove(contextHandle);
+        return response.output;
+      }
+      if (response is ErrorResponse) throw _workerError(response);
+      throw LlamaInferenceException('Native reranking failed.');
+    } finally {
+      if (_workerFailure != null) {
+        await Future.wait(_workerExits.values.toList());
+      }
+      _closeResponsePort(rp);
+      _embeddingCancelFlags.remove(flag);
+      flag.free();
+    }
   }
 
   @override

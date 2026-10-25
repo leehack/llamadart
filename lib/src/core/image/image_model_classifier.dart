@@ -656,10 +656,14 @@ class ImageModelAssignment {
   /// checkpoint whose header shows an embedded one.
   final bool decodesWithTinyAutoencoder;
 
+  /// Header proof of a four-channel embedded full VAE or TAESD decoder.
+  final bool vaeTilingDecoderVerified;
+
   /// Creates an assignment.
   const ImageModelAssignment(
     this.roles, {
     required this.decodesWithTinyAutoencoder,
+    this.vaeTilingDecoderVerified = false,
   });
 }
 
@@ -678,14 +682,20 @@ Future<ImageModelAssignment> assignImageModelRoles(
   final roles = <ImageModelRole, int>{};
   final latents = <ImageModelRole, int>{};
   var embeddedTinyAutoencoder = false;
+  var embeddedFullVae = false;
   for (final (index, file) in files.indexed) {
     final name = describeImageModelFile(index);
     final explicit = file.role;
     ImageModelFileClassification? classification;
     try {
-      classification = classifyImageModelFile(
-        await readImageModelFileHeader(file.read),
-      );
+      final header = await readImageModelFileHeader(file.read);
+      classification = classifyImageModelFile(header);
+      if (classification.role == ImageModelRole.checkpoint &&
+          (explicit == null || explicit == ImageModelRole.checkpoint)) {
+        embeddedFullVae = header.tensors.any(
+          (tensor) => tensor.name == 'first_stage_model.decoder.conv_in.weight',
+        );
+      }
     } on FormatException {
       if (explicit == null) {
         throw LlamaModelException(
@@ -757,6 +767,11 @@ Future<ImageModelAssignment> assignImageModelRoles(
   }
   return ImageModelAssignment(
     roles,
+    vaeTilingDecoderVerified:
+        latents[ImageModelRole.checkpoint] == 4 &&
+        (roles.containsKey(ImageModelRole.taesd)
+            ? latents[ImageModelRole.taesd] == 4
+            : embeddedFullVae),
     decodesWithTinyAutoencoder:
         roles.containsKey(ImageModelRole.taesd) || embeddedTinyAutoencoder,
   );

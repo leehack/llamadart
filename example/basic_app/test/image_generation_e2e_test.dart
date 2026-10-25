@@ -14,6 +14,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:test/test.dart';
 
+import 'fixtures/image_conditioning_cache_comparison.dart';
 import 'fixtures/image_warmup_comparison.dart';
 
 // Real image generation through the stable_diffusion runtime this example
@@ -462,6 +463,30 @@ void main() {
     });
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 
+  for (final device in [ComputeDevice.cpu, ComputeDevice.auto]) {
+    for (final (label, path) in [
+      ('SDXS', sdxsPath),
+      ('SD-Turbo', sdTurboPath),
+    ]) {
+      test(
+        'conditioning cache preserves $label pixels on ${device.name}',
+        () async {
+          if (path == null) {
+            markTestSkipped(
+              'Set ${label == 'SDXS' ? 'LLAMADART_SDXS_MODEL' : 'LLAMADART_SD_TURBO_MODEL'}',
+            );
+            return;
+          }
+          await compareImageConditioningCache(
+            model: ImageGenerationModel(ModelSource.path(path)),
+            device: device,
+            label: label,
+          );
+        },
+      );
+    }
+  }
+
   test('SD-Turbo with TAESD generates in one step', () async {
     // A skip: argument would not apply: the scenario passes --run-skipped.
     if (sdTurboPath == null) {
@@ -499,7 +524,7 @@ void main() {
     }
   });
 
-  test('VAE tiling decodes SD-Turbo\'s full VAE in tiles with a smaller '
+  test('VAE tiling decodes SD-Turbo\'s full VAE and TAESD in tiles with a smaller '
       'compute buffer on each device, and an untiled request after it is '
       'unchanged', () async {
     // A skip: argument would not apply: the scenario passes --run-skipped.
@@ -524,87 +549,167 @@ void main() {
     }
 
     final measured = <String>{};
-    for (final device in [ComputeDevice.auto, ComputeDevice.cpu]) {
-      final engine = await ImageGenerationEngine.load(
-        ImageGenerationModel(ModelSource.path(sdTurboPath)),
-        params: ImageModelParams(device: device),
-      );
-      try {
-        final backendName = (await engine.capabilities).backendName!;
-        if (!measured.add(backendName)) {
-          continue;
-        }
+    for (final decoder in ['vae', if (taesdPath != null) 'taesd']) {
+      for (final device in [ComputeDevice.auto, ComputeDevice.cpu]) {
+        final engine = await ImageGenerationEngine.load(
+          ImageGenerationModel(
+            ModelSource.path(sdTurboPath),
+            components: [
+              if (decoder == 'taesd')
+                ImageModelComponent.auto(ModelSource.path(taesdPath!)),
+            ],
+          ),
+          params: ImageModelParams(device: device),
+        );
+        try {
+          final backendName = (await engine.capabilities).backendName!;
+          if (!measured.add('$decoder/$backendName')) {
+            continue;
+          }
 
-        Future<({GeneratedImage image, List<String> log})> run(
-          ImageVaeTiling? tiling,
-        ) async {
-          final start = records.length;
-          final result = await engine.generateImage(
-            ImageGenerationRequest(
-              prompt: 'a lighthouse at dusk',
+          Future<({GeneratedImage image, List<String> log})> run(
+            ImageVaeTiling? tiling,
+          ) async {
+            final start = records.length;
+            final result = await engine.generateImage(
+              tiling == null
+                  ? ImageGenerationRequest(
+                      prompt: 'a lighthouse at dusk',
+                      width: 512,
+                      height: 512,
+                      steps: 1,
+                      guidanceScale: 1,
+                      seed: 42,
+                    )
+                  : TiledImageGenerationRequest(
+                      prompt: 'a lighthouse at dusk',
+                      width: 512,
+                      height: 512,
+                      steps: 1,
+                      guidanceScale: 1,
+                      seed: 42,
+                      vaeTiling: tiling,
+                    ),
+            );
+            return (
+              image: result.images.single,
+              log: [for (final r in records.skip(start)) r.message],
+            );
+          }
+
+          final untiled = await run(null);
+          final tiled = await run(const ImageVaeTiling());
+          final again = await run(null);
+
+          const buffer = r'(?:vae|tae) compute buffer size: ([\d.]+) MB';
+          const decode = r'decode_first_stage completed, taking ([\d.]+)s';
+          final untiledMb = logged(untiled.log, buffer);
+          final tiledMb = logged(tiled.log, buffer);
+          final a = untiled.image.pixels;
+          final b = tiled.image.pixels;
+          var sum = 0;
+          var largest = 0;
+          for (var i = 0; i < a.length; i++) {
+            final d = (a[i] - b[i]).abs();
+            sum += d;
+            largest = max(largest, d);
+          }
+          print(
+            'VAE_TILING $decoder $backendName 512x512 tile 256 overlap 0.5: VAE compute '
+            'buffer $untiledMb MB untiled, $tiledMb MB tiled; decode '
+            '${logged(untiled.log, decode)} s untiled, '
+            '${logged(tiled.log, decode)} s tiled; pixel difference mean '
+            '${(sum / a.length).toStringAsFixed(2)}, max $largest of 255',
+          );
+          if (outputDir != null) {
+            final name = backendName.toLowerCase();
+            File(
+              '$outputDir/sd-turbo-512-$name-$decoder-untiled.png',
+            ).writeAsBytesSync(untiled.image.toPng());
+            File(
+              '$outputDir/sd-turbo-512-$name-$decoder-tiled-256.png',
+            ).writeAsBytesSync(tiled.image.toPng());
+          }
+
+          expect(
+            tiled.log,
+            contains(contains('VAE decode tile size: 256x256 pixels')),
+          );
+          for (final log in [untiled.log, again.log]) {
+            expect(log, isNot(contains(contains('VAE decode tile size'))));
+          }
+          final actualBackend = backendName.startsWith('MTL')
+              ? RegExp(r'(?:vae|tae) compute buffer size: .*MB\(VRAM\) on MTL')
+              : RegExp(r'(?:vae|tae) compute buffer size: .* on CPU');
+          expect(
+            tiled.log.any(actualBackend.hasMatch),
+            isTrue,
+            reason:
+                'Decoder must execute on the measured backend, not fall back',
+          );
+          if (outputDir != null) {
+            File(
+              '$outputDir/sd-turbo-$decoder-${backendName.toLowerCase()}-native.log',
+            ).writeAsStringSync(
+              [...untiled.log, ...tiled.log, ...again.log].join('\n'),
+            );
+          }
+          expect(untiledMb, isNotNull);
+          expect(tiledMb, lessThan(untiledMb! / 2));
+          expect((tiled.image.width, tiled.image.height), (512, 512));
+          // Tiles blend where they overlap, so pixels differ slightly.
+          expect(sum / a.length, lessThan(decoder == 'vae' ? 4 : 12));
+          expect(again.image.pixels, a);
+          Future<ImageGenerationTask> longTask() => engine.generate(
+            const TiledImageGenerationRequest(
+              prompt: 'a forest',
               width: 512,
               height: 512,
-              steps: 1,
+              steps: 20,
               guidanceScale: 1,
               seed: 42,
-              vaeTiling: tiling,
+              vaeTiling: ImageVaeTiling(),
             ),
           );
-          return (
-            image: result.images.single,
-            log: [for (final r in records.skip(start)) r.message],
+          final cancelled = await longTask();
+          var sawSampling = false;
+          await for (final event in cancelled.events) {
+            if (event case ImageGenerationProgressEvent(
+              phase: ImageGenerationPhase.sampling,
+              step: final step,
+            )) {
+              if (step >= 1) {
+                sawSampling = true;
+                cancelled.cancel();
+              }
+            }
+          }
+          expect(sawSampling, isTrue);
+          expect(
+            (await cancelled.done).state,
+            ImageGenerationCompletionState.cancelled,
           );
+          expect((await run(const ImageVaeTiling())).image.pixels, b);
+          expect((await run(null)).image.pixels, a);
+          final disposing = await longTask();
+          Future<void>? disposal;
+          await for (final event in disposing.events) {
+            if (event case ImageGenerationProgressEvent(
+              phase: ImageGenerationPhase.sampling,
+              step: final step,
+            )) {
+              if (step >= 1) disposal ??= engine.dispose();
+            }
+          }
+          expect(disposal, isNotNull);
+          await disposal;
+          expect(
+            (await disposing.done).state,
+            ImageGenerationCompletionState.cancelled,
+          );
+        } finally {
+          await engine.dispose();
         }
-
-        final untiled = await run(null);
-        final tiled = await run(const ImageVaeTiling());
-        final again = await run(null);
-
-        const buffer = r'vae compute buffer size: ([\d.]+) MB';
-        const decode = r'decode_first_stage completed, taking ([\d.]+)s';
-        final untiledMb = logged(untiled.log, buffer);
-        final tiledMb = logged(tiled.log, buffer);
-        final a = untiled.image.pixels;
-        final b = tiled.image.pixels;
-        var sum = 0;
-        var largest = 0;
-        for (var i = 0; i < a.length; i++) {
-          final d = (a[i] - b[i]).abs();
-          sum += d;
-          largest = max(largest, d);
-        }
-        print(
-          'VAE_TILING $backendName 512x512 tile 256 overlap 0.5: VAE compute '
-          'buffer $untiledMb MB untiled, $tiledMb MB tiled; decode '
-          '${logged(untiled.log, decode)} s untiled, '
-          '${logged(tiled.log, decode)} s tiled; pixel difference mean '
-          '${(sum / a.length).toStringAsFixed(2)}, max $largest of 255',
-        );
-        if (outputDir != null) {
-          final name = backendName.toLowerCase();
-          File(
-            '$outputDir/sd-turbo-512-$name-vae-untiled.png',
-          ).writeAsBytesSync(untiled.image.toPng());
-          File(
-            '$outputDir/sd-turbo-512-$name-vae-tiled-256.png',
-          ).writeAsBytesSync(tiled.image.toPng());
-        }
-
-        expect(
-          tiled.log,
-          contains(contains('VAE decode tile size: 256x256 pixels')),
-        );
-        for (final log in [untiled.log, again.log]) {
-          expect(log, isNot(contains(contains('VAE decode tile size'))));
-        }
-        expect(untiledMb, isNotNull);
-        expect(tiledMb, lessThan(untiledMb! / 2));
-        expect((tiled.image.width, tiled.image.height), (512, 512));
-        // Tiles blend where they overlap, so pixels differ slightly.
-        expect(sum / a.length, lessThan(4));
-        expect(again.image.pixels, a);
-      } finally {
-        await engine.dispose();
       }
     }
   });
