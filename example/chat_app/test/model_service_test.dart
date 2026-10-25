@@ -409,6 +409,8 @@ void main() {
   );
 
   test('cancellation interrupts integrity verification', () async {
+    // Keep bulk-transfer throughput out of the verification-start deadline.
+    testData = List.generate(64 * 1024, (i) => i % 256);
     final verificationStarted = Completer<void>();
     service = TestModelService(
       tempDir,
@@ -426,10 +428,10 @@ void main() {
       modelSource: RemoteModelAssetSource(
         url: '$baseUrl/model.gguf',
         filename: 'cancelled-verification-model.gguf',
-        sizeBytes: testDataSize,
+        sizeBytes: testData.length,
         sha256: sha256.convert(testData).toString(),
       ),
-      sizeBytes: testDataSize,
+      sizeBytes: testData.length,
     );
     final cancelToken = CancelToken();
     Object? failure;
@@ -442,6 +444,10 @@ void main() {
       onSuccess: (_) => fail('Cancelled verification unexpectedly completed.'),
       onError: (error) => failure = error,
     );
+    addTearDown(() async {
+      cancelToken.cancel('test cleanup');
+      await download.timeout(const Duration(seconds: 1));
+    });
     await verificationStarted.future.timeout(const Duration(seconds: 2));
     cancelToken.cancel('test verification cancellation');
     await download.timeout(const Duration(seconds: 1));
