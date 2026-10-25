@@ -70,6 +70,7 @@ const _appNames = <String>{
   'GpuDeviceType',
   'GrammarTrigger',
   'GrammarTriggerType',
+  'ImageConditioningCacheParams',
   'ImageGenerationCapabilities',
   'ImageGenerationCompletion',
   'ImageGenerationCompletionState',

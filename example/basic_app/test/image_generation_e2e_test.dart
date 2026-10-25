@@ -13,6 +13,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:test/test.dart';
 
+import 'fixtures/image_conditioning_cache_comparison.dart';
 import 'fixtures/image_warmup_comparison.dart';
 
 // Real image generation through the stable_diffusion runtime this example
@@ -460,6 +461,30 @@ void main() {
       );
     });
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
+  for (final device in [ComputeDevice.cpu, ComputeDevice.auto]) {
+    for (final (label, path) in [
+      ('SDXS', sdxsPath),
+      ('SD-Turbo', sdTurboPath),
+    ]) {
+      test(
+        'conditioning cache preserves $label pixels on ${device.name}',
+        () async {
+          if (path == null) {
+            markTestSkipped(
+              'Set ${label == 'SDXS' ? 'LLAMADART_SDXS_MODEL' : 'LLAMADART_SD_TURBO_MODEL'}',
+            );
+            return;
+          }
+          await compareImageConditioningCache(
+            model: ImageGenerationModel(ModelSource.path(path)),
+            device: device,
+            label: label,
+          );
+        },
+      );
+    }
+  }
 
   test('SD-Turbo with TAESD generates in one step', () async {
     // A skip: argument would not apply: the scenario passes --run-skipped.

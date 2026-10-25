@@ -14,6 +14,9 @@ final class ImageGenerationSessionConfig {
   /// runtime default.
   final String? backend;
 
+  /// Conditioning-cache entry limit; `null` preserves the runtime default.
+  final int? conditioningCacheSize;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -28,6 +31,7 @@ final class ImageGenerationSessionConfig {
     required this.files,
     required this.backend,
     required this.threads,
+    this.conditioningCacheSize,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });

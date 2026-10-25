@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Control retained image prompt conditioning with `ImageConditioningCacheParams`; zero disables reuse and ordinary settings preserve the runtime default.
+
 - Web GGUF loads with `device: ComputeDevice.gpu`, `splitMode: ModelSplitMode.none` and a negative `mainGpu` reach WebGPU instead of failing native CPU-placement validation; an unavailable or inactive GPU still throws ([#915](https://github.com/leehack/llamadart/issues/915)).
 - Cancel a queued Web generation, speech-to-text or speech-synthesis task without stopping another request running on the bridge ([#1371](https://github.com/leehack/llamadart/issues/1371)).
 

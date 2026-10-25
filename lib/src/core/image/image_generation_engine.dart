@@ -356,6 +356,9 @@ class ImageGenerationEngine {
   ///   unused here. Also when
   ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
   ///   Metal backend, before any file is resolved or loaded.
+  /// - [LlamaImageGenerationException] for invalid [params], including a
+  ///   conditioning-cache capacity outside 0 through the signed 32-bit limit,
+  ///   before resolving model files.
   /// - [LlamaModelException] when a file is missing, is not an image-model
   ///   component (such as a LoRA or ControlNet), shares a role with another
   ///   file, or does not match the diffusion model; when no file holds
@@ -386,6 +389,19 @@ class ImageGenerationEngine {
         'GPU watchdog and returns a corrupt image '
         '(https://github.com/leehack/llamadart/issues/1044). Leave it null or '
         'set it to false, or load with ComputeDevice.cpu.',
+      );
+    }
+    final conditioningCacheSize = switch (params) {
+      ImageConditioningCacheParams(:final capacity) => capacity,
+      _ => null,
+    };
+    if (conditioningCacheSize != null &&
+        (conditioningCacheSize < 0 ||
+            conditioningCacheSize > ImageConditioningCacheParams.maxCapacity)) {
+      throw LlamaImageGenerationException(
+        'ImageConditioningCacheParams.capacity must be from 0 to '
+        '${ImageConditioningCacheParams.maxCapacity}.',
+        conditioningCacheSize,
       );
     }
     if (params.threads < 0) {
@@ -483,6 +499,7 @@ class ImageGenerationEngine {
             ComputeDevice.auto || ComputeDevice.npu => null,
           },
           threads: params.threads,
+          conditioningCacheSize: conditioningCacheSize,
           flashAttention:
               params.flashAttention ?? _flashAttentionByDefault(backendName),
           vaeDirectConvolution:

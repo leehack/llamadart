@@ -125,9 +125,10 @@ void main() {
 
     Future<StableDiffusionImageWorker> start({
       LlamaLogLevel logLevel = LlamaLogLevel.none,
+      ImageGenerationSessionConfig config = _config,
     }) async {
       final worker = await StableDiffusionImageWorker.start(
-        _config,
+        config,
         resolveCalls: runtime.resolver,
         progressTimer: timers.start,
         logLevel: logLevel,
@@ -207,6 +208,23 @@ void main() {
 
       expect(runtime.loadedModelPath, '/models/sdxs.gguf');
     });
+
+    for (final capacity in [null, 0, 1, 64]) {
+      test(
+        'worker load reads conditioning capacity $capacity across isolates',
+        () async {
+          await start(
+            config: ImageGenerationSessionConfig(
+              files: _config.files,
+              backend: _config.backend,
+              threads: _config.threads,
+              conditioningCacheSize: capacity,
+            ),
+          );
+          expect(runtime.loadedConditioningCacheSize, capacity ?? 4);
+        },
+      );
+    }
 
     test('a generation marks its start, reads the reports after the reply '
         'and stops its timer', () async {

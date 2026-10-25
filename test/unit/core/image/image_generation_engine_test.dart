@@ -8,6 +8,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_engine.dart';
 
+import '../../../support/legacy_image_model_params.dart';
 import '../../../support/image_model_headers.dart';
 
 const _model = '/models/sd-turbo.gguf';
@@ -584,6 +585,93 @@ void main() {
     test('a GGUF source format loads like no format', () async {
       await load(_sdxs(ModelSource.path(_model, format: ModelFormat.gguf)));
     });
+
+    for (final capacity in [
+      null,
+      0,
+      1,
+      ImageConditioningCacheParams.maxCapacity,
+    ]) {
+      test(
+        'forwards conditioning cache capacity $capacity to the session',
+        () async {
+          final engine = await load(
+            _sdxs(),
+            params: capacity == null
+                ? const ImageModelParams()
+                : ImageConditioningCacheParams(capacity: capacity),
+          );
+          expect(
+            engine.params is ImageConditioningCacheParams,
+            capacity != null,
+          );
+          expect(driver.started.single.conditioningCacheSize, capacity);
+        },
+      );
+    }
+
+    for (final capacity in [-1, ImageConditioningCacheParams.maxCapacity + 1]) {
+      test(
+        'rejects conditioning cache capacity $capacity before file resolution',
+        () async {
+          await expectLater(
+            load(
+              _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+              params: ImageConditioningCacheParams(capacity: capacity),
+            ),
+            throwsA(
+              isA<LlamaImageGenerationException>().having(
+                (error) => error.message,
+                'message',
+                contains('ImageConditioningCacheParams.capacity'),
+              ),
+            ),
+          );
+          expect(downloads.calls, isEmpty);
+          expect(driver.started, isEmpty);
+        },
+      );
+    }
+
+    test(
+      'legacy external implementations and subclasses preserve default cache settings',
+      () async {
+        for (final legacy in [
+          const LegacyImageModelParams(),
+          const LegacyImageModelSubclass(),
+        ]) {
+          final engine = await load(_sdxs(), params: legacy);
+          expect(engine.params, same(legacy));
+          final config = driver.started.last;
+          expect(config.conditioningCacheSize, isNull);
+          expect(config.backend, 'cpu');
+          expect(config.threads, legacy.threads);
+        }
+      },
+    );
+
+    test(
+      'explicit cache settings preserve every inherited runtime option',
+      () async {
+        const params = ImageConditioningCacheParams(
+          capacity: 2,
+          device: ComputeDevice.cpu,
+          threads: 5,
+          checkMemory: false,
+          flashAttention: false,
+          vaeDirectConvolution: false,
+        );
+        final engine = await load(_sdxs(), params: params);
+        expect(engine.params, same(params));
+        final config = driver.started.single;
+        expect(config.conditioningCacheSize, 2);
+        expect(config.backend, 'cpu');
+        expect(config.threads, 5);
+        expect(config.flashAttention, isFalse);
+        expect(config.vaeDirectConvolution, isFalse);
+        expect(driver.budgetDevices, isEmpty);
+      },
+    );
 
     test('negative threads are rejected', () async {
       await expectLater(

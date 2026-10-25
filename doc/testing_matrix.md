@@ -402,6 +402,8 @@ dart run tool/testing/run_local_e2e.dart \
 # through the resolver, 683 MB on the first run, and
 # LLAMADART_IMAGE_SPLIT_MODEL (a split model's files, comma separated in any
 # order) to check role detection on a real split model. It also checks the
+# disabled/default/one-entry conditioning-cache pixel parity, hits, eviction,
+# cancellation/reuse and reload on CPU and the automatic device; the
 # runtime's reason in the error of a rejected load, the runtime's messages in
 # the log handler, and on macOS the runtime's GPU memory figure.
 dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \

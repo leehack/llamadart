@@ -454,6 +454,11 @@ engine downloads each `ModelSource` (local path, URL or `hf://`) like
 for the files and settings of each validated model, download options, memory
 checks and known limits.
 
+Image loads also accept `ImageConditioningCacheParams(capacity: 0)` to
+turn off prompt-conditioning reuse, or a positive entry limit. Unset keeps
+the runtime default of four entries. This does not enable approximate
+sampling caches; see the guide's [conditioning cache](https://llamadart.leehack.com/docs/next/guides/image-generation#conditioning-cache).
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |

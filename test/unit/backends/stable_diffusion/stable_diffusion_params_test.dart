@@ -11,6 +11,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_binding
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_model.dart';
+import 'package:llamadart/src/core/image/image_model_params.dart';
 
 String? _text(Pointer<Char> value) =>
     value == nullptr ? null : value.cast<Utf8>().toDartString();
@@ -24,6 +25,35 @@ void main() {
       final params = arena<sd.sd_ctx_params_t>();
       applyStableDiffusionContextParams(params, config, arena);
       return params;
+    }
+
+    for (final capacity in [
+      null,
+      0,
+      1,
+      ImageConditioningCacheParams.maxCapacity,
+    ]) {
+      test(
+        'maps conditioning capacity $capacity after runtime initialization',
+        () {
+          using((arena) {
+            final params = arena<sd.sd_ctx_params_t>();
+            // A distinctive initialized value proves null does not hardcode 4.
+            params.ref.conditioning_cache_size = 17;
+            applyStableDiffusionContextParams(
+              params,
+              ImageGenerationSessionConfig(
+                files: const {'model': '/m/sdxs.gguf'},
+                backend: null,
+                threads: 0,
+                conditioningCacheSize: capacity,
+              ),
+              arena,
+            );
+            expect(params.ref.conditioning_cache_size, capacity ?? 17);
+          });
+        },
+      );
     }
 
     test('writes every file role to its own path field', () {
