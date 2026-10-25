@@ -17,6 +17,11 @@ final class ImageGenerationSessionConfig {
   /// Conditioning-cache entry limit; `null` preserves the runtime default.
   final int? conditioningCacheSize;
 
+  /// Whether headers verified an embedded tiny decoder without overrides
+  /// on a qualified CPU or Metal device.
+  /// Used only by the bounded SDXS seamless-texture recipe.
+  final bool seamlessRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -32,6 +37,7 @@ final class ImageGenerationSessionConfig {
     required this.backend,
     required this.threads,
     this.conditioningCacheSize,
+    this.seamlessRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -72,6 +78,12 @@ final class ImageGenerationSessionRequest {
   /// Flow shift, or `null` for the runtime default.
   final double? flowShift;
 
+  /// Whether convolution boundaries wrap horizontally.
+  final bool circularX;
+
+  /// Whether convolution boundaries wrap vertically.
+  final bool circularY;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -85,6 +97,8 @@ final class ImageGenerationSessionRequest {
     this.sampler,
     this.scheduler,
     this.flowShift,
+    this.circularX = false,
+    this.circularY = false,
   });
 }
 

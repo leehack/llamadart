@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
 import '../../core/image/image_generation_driver.dart';
+import '../../core/image/image_generation_request.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/config/log_level.dart';
 import '../isolate_shutdown_releases.dart';
@@ -72,6 +73,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   final StableDiffusionCalls _calls;
   final StableDiffusionProgressTimer _progressTimer;
   final Pointer<sd.sd_ctx_t> _context;
+  final ImageGenerationSessionConfig _config;
   bool _cancelRequested = false;
   bool _disposed = false;
   bool _stopped = false;
@@ -88,6 +90,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     this._calls,
     this._progressTimer,
     this._context,
+    this._config,
     this.modelVersion,
   );
 
@@ -143,6 +146,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
         calls,
         progressTimer,
         Pointer.fromAddress(loaded.context),
+        config,
         loaded.modelVersion,
       );
     } catch (_) {
@@ -166,6 +170,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     if (_backendFailed) {
       throw stableDiffusionBackendFailure();
     }
+    validateSeamlessImageGenerationRecipe(request, _config, modelVersion);
     final reports = calloc<sd.sd_dart_progress_t>(_reportsPerRead);
     final latest = calloc<Uint64>();
     // Reports are process-wide and numbered: everything after the newest one

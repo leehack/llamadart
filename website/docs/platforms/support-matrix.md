@@ -66,6 +66,13 @@ other image platforms and families have not been measured for this control.
 It adds no Web image runtime or approximate sampling cache. See
 [Conditioning cache](../guides/image-generation#conditioning-cache).
 
+Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
+flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
+512×512, flash attention and direct VAE convolutions disabled; CPU and actual
+Metal were measured on macOS arm64. Other platforms are unmeasured, other GPUs
+and model/decoder recipes are refused. See
+[seamless textures](../guides/image-generation#seamless-textures).
+
 ## Compute device
 
 `ModelParams.device` (`ComputeDevice`) applies to every runtime. `auto` keeps

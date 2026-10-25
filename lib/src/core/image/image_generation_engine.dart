@@ -207,6 +207,7 @@ class ImageGenerationEngine {
   final ImageGenerationSession _session;
   final StableDiffusionRuntimeStatus _runtime;
   final String _backendName;
+  final ImageGenerationSessionConfig _config;
   ImageGenerationTask? _activeTask;
   Future<void>? _disposal;
 
@@ -217,6 +218,7 @@ class ImageGenerationEngine {
     this._session,
     this._runtime,
     this._backendName,
+    this._config,
   );
 
   /// Probes the bundled runtime without loading a model.
@@ -490,26 +492,30 @@ class ImageGenerationEngine {
 
     final operation = _acquireOperation();
     try {
-      final session = await driver.start(
-        ImageGenerationSessionConfig(
-          files: files,
-          backend: switch (params.device) {
-            ComputeDevice.cpu => 'cpu',
-            ComputeDevice.gpu => 'gpu',
-            ComputeDevice.auto || ComputeDevice.npu => null,
-          },
-          threads: params.threads,
-          conditioningCacheSize: conditioningCacheSize,
-          flashAttention:
-              params.flashAttention ?? _flashAttentionByDefault(backendName),
-          vaeDirectConvolution:
-              params.vaeDirectConvolution ??
-              _vaeDirectConvolutionByDefault(
-                backendName,
-                tinyAutoencoder: assignment.decodesWithTinyAutoencoder,
-              ),
-        ),
+      final config = ImageGenerationSessionConfig(
+        files: files,
+        backend: switch (params.device) {
+          ComputeDevice.cpu => 'cpu',
+          ComputeDevice.gpu => 'gpu',
+          ComputeDevice.auto || ComputeDevice.npu => null,
+        },
+        threads: params.threads,
+        conditioningCacheSize: conditioningCacheSize,
+        seamlessRecipeVerified:
+            assignment.decodesWithTinyAutoencoder &&
+            assignment.roles.length == 1 &&
+            assignment.roles.containsKey(ImageModelRole.checkpoint) &&
+            (backendName == 'CPU' || _isMetal(backendName)),
+        flashAttention:
+            params.flashAttention ?? _flashAttentionByDefault(backendName),
+        vaeDirectConvolution:
+            params.vaeDirectConvolution ??
+            _vaeDirectConvolutionByDefault(
+              backendName,
+              tinyAutoencoder: assignment.decodesWithTinyAutoencoder,
+            ),
       );
+      final session = await driver.start(config);
       if (download.cancelToken?.isCancelled ?? false) {
         // The native load cannot be interrupted; free what it allocated so
         // a cancelled load leaves nothing loaded.
@@ -527,6 +533,7 @@ class ImageGenerationEngine {
         session,
         runtime,
         backendName,
+        config,
       );
     } finally {
       _releaseOperation(operation);
@@ -578,6 +585,8 @@ class ImageGenerationEngine {
   /// [ImageGenerationCompletionState.cancelled]. [dispose] cancels the task.
   ///
   /// Throws [LlamaImageGenerationException] for an invalid request, and
+  /// [LlamaUnsupportedException] for an unqualified
+  /// [SeamlessImageGenerationRequest] recipe, and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running; these checks run before the returned future completes,
   /// and the one-generation slot is taken when this is called. A runtime
@@ -588,7 +597,6 @@ class ImageGenerationEngine {
   /// until the engine is disposed and the model loaded again.
   Future<ImageGenerationTask> generate(ImageGenerationRequest request) async {
     final effective = _resolve(request);
-    final operation = _acquireOperation();
     final resolved = ImageGenerationSessionRequest(
       prompt: effective.prompt,
       negativePrompt: effective.negativePrompt,
@@ -601,7 +609,15 @@ class ImageGenerationEngine {
       sampler: effective.sampler,
       scheduler: effective.scheduler,
       flowShift: effective.flowShift,
+      circularX: request is SeamlessImageGenerationRequest && request.circularX,
+      circularY: request is SeamlessImageGenerationRequest && request.circularY,
     );
+    validateSeamlessImageGenerationRecipe(
+      resolved,
+      _config,
+      _session.modelVersion,
+    );
+    final operation = _acquireOperation();
     final task = ImageGenerationTask._(_session.cancel);
     _activeTask = task;
     unawaited(_run(task, resolved, operation));

@@ -460,3 +460,22 @@ Android x86_64 and LiteRT-LM Web embeddings are unavailable.
 ```bash
 dart run bin/llamadart_litert_embedding_example.dart /path/model.litertlm /path/image.png
 ```
+
+### Seamless SDXS texture recipe
+
+Use `SeamlessImageGenerationRequest(circularX: true, circularY: true, ...)`
+with SDXS's embedded tiny decoder at 512×512. Load with
+`flashAttention: false` and `vaeDirectConvolution: false`. Both axes default
+to off; decoder overrides and unqualified families/options throw. The
+[guide](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
+includes a complete example. The maintained real-model suite saves 2×2
+repeat PNGs and checks both numerical seams and cancellation/reuse:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario image-seamless-textures \
+  --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
+```
+
+Run this command from the repository root. On a CPU-only host set
+`LLAMADART_TEXTURE_DEVICES=cpu`; the default requires CPU and actual Metal.
+See `doc/image_seamless_textures.md` for the independent native comparison.

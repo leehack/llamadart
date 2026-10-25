@@ -81,6 +81,7 @@ const _appNames = <String>{
   'ImageGenerationPhase',
   'ImageGenerationProgressEvent',
   'ImageGenerationRequest',
+  'SeamlessImageGenerationRequest',
   'ImageGenerationResult',
   'ImageGenerationSampler',
   'ImageGenerationScheduler',

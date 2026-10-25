@@ -101,7 +101,9 @@ void applyStableDiffusionGenerationParams(
     ..width = request.width
     ..height = request.height
     ..seed = request.seed
-    ..batch_count = request.count;
+    ..batch_count = request.count
+    ..circular_x = request.circularX
+    ..circular_y = request.circularY;
   params.ref.sample_params
     ..sample_steps = request.steps
     ..guidance.txt_cfg = request.guidanceScale
