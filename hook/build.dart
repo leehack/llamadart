@@ -1553,8 +1553,9 @@ Future<void> _emitLiteRtLmAssets({
 /// On Windows both bundles ship the Visual C++ runtime app-locally. When both
 /// copies carry a Windows version resource, the newer file version serves
 /// both, as Microsoft keeps the runtime backward compatible, and a tie keeps
-/// the llama.cpp copy. Identical unversioned files share one copy; different
-/// unversioned files fail the build instead of guessing.
+/// the llama.cpp copy. When either copy lacks a version resource, identical
+/// files share one copy and different files fail the build instead of
+/// guessing.
 Future<void> _shareLibraryWithLlamaCpp({
   required String liteRtLmPath,
   required String llamaCppPath,

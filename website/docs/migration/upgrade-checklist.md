@@ -49,9 +49,9 @@ For the 0.15-to-0.16 changes, follow the
 `ModelParams` fields the model's runtime would ignore now throw
 `LlamaUnsupportedException`; move LiteRT-LM options to `LiteRtLmModelParams`.
 Upgrade core and every Apple companion to `0.16.x` together: companions
-`0.16.0` require `>=0.16.0 <0.17.0`, LiteRT-LM companion `0.16.1` requires
-`>=0.16.1 <0.17.0`, and core `0.16.x` accepts no earlier stable_diffusion
-companion.
+`0.16.0` require `>=0.16.0 <0.17.0`, LiteRT-LM companions `0.16.1` and
+`0.16.2` require `>=0.16.1 <0.17.0` and `>=0.16.2 <0.17.0`, and core `0.16.x`
+accepts no earlier stable_diffusion companion.
 
 ### 0.15.x: media embeddings and Apple companions
 
