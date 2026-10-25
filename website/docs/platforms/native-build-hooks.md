@@ -8,7 +8,10 @@ The `llamadart` build hook (`hook/build.dart`) downloads prebuilt llama.cpp and
 LiteRT-LM runtimes for the target platform, so apps never compile C++. The hook
 reports the downloaded `.so`, `.dylib` and `.dll` files as `package:code_assets`
 code assets, and the Flutter or Dart build bundles them into the APK, IPA or
-desktop app. On macOS, the hook does not report LiteRT-LM libraries: they stay
+desktop app. On Linux and Windows, LiteRT-LM loads from the app bundle (beside
+the executable, in its `lib/` directory, or in `../lib/` for a `dart build cli`
+executable in `bin/`), and from the hook cache under `dart run` and
+`dart test`; `LLAMADART_LITERT_LM_LIB_DIR` overrides both. On macOS, the hook does not report LiteRT-LM libraries: they stay
 in the hook cache inside the resolved `llamadart` package. `dart run` loads
 them from there and a `dart build cli` bundle needs
 `LLAMADART_LITERT_LM_LIB_DIR`. A Flutter macOS app gets them from the

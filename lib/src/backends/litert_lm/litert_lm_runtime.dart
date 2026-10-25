@@ -250,6 +250,99 @@ List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
   };
 }
 
+/// Directories, in probe order, where a Linux or Windows build places the
+/// LiteRT-LM code assets reported by the build hook, relative to the app
+/// executable at [executablePath]: beside it (Flutter Windows), in `lib/`
+/// beside it (Flutter Linux) and, only for an executable in `bin/`, in
+/// `../lib/` (`dart build cli`), so a Flutter app never looks outside its
+/// own folder.
+///
+/// `DynamicLibrary.open` cannot resolve the `package:` asset ids the hook
+/// reports, so a relocated app must find these files by path.
+List<String> liteRtLmBundleLibraryDirectoryCandidatesForAbi(
+  String executablePath,
+  Abi abi,
+) {
+  if (abi != Abi.linuxX64 && abi != Abi.linuxArm64 && abi != Abi.windowsX64) {
+    return const <String>[];
+  }
+  final executableDir = path.dirname(path.absolute(executablePath));
+  return <String>[
+    executableDir,
+    path.join(executableDir, 'lib'),
+    if (path.basename(executableDir).toLowerCase() == 'bin')
+      path.normalize(path.join(executableDir, '..', 'lib')),
+  ];
+}
+
+/// The first [liteRtLmBundleLibraryDirectoryCandidatesForAbi] directory that
+/// holds every [liteRtLmRequiredLibrariesForAbi] library, or null.
+Directory? liteRtLmFindBundleLibraryDirectoryForAbi(
+  String executablePath,
+  Abi abi,
+) {
+  for (final candidate in liteRtLmBundleLibraryDirectoryCandidatesForAbi(
+    executablePath,
+    abi,
+  )) {
+    final dir = Directory(candidate);
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+      return dir;
+    }
+  }
+  return null;
+}
+
+/// Resolves the directory holding the complete LiteRT-LM library set for
+/// [abi] (see [liteRtLmIsCacheDirectoryForAbi]), in precedence order:
+///
+/// 1. [libDirOverride] (`LLAMADART_LITERT_LM_LIB_DIR`), when complete;
+/// 2. the app bundle around [executablePath]
+///    ([liteRtLmFindBundleLibraryDirectoryForAbi]);
+/// 3. the `.dart_tool/llamadart/litert_lm/<version>` hook cache in any of
+///    [searchRoots] or their ancestors.
+///
+/// [searchRoots] is only called when the first two steps find nothing.
+Directory? liteRtLmResolveRuntimeDirectoryForAbi(
+  Abi abi, {
+  required String? libDirOverride,
+  required String executablePath,
+  required Iterable<Directory> Function() searchRoots,
+}) {
+  if (libDirOverride != null && libDirOverride.isNotEmpty) {
+    final dir = Directory(libDirOverride);
+    if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+      return dir.absolute;
+    }
+  }
+
+  final bundleDir = liteRtLmFindBundleLibraryDirectoryForAbi(
+    executablePath,
+    abi,
+  );
+  if (bundleDir != null) {
+    return bundleDir;
+  }
+
+  final cacheDirectoryCandidates = liteRtLmCacheDirectoryCandidatesForAbi(abi);
+  for (final root in searchRoots()) {
+    Directory? current = root;
+    while (current != null) {
+      for (final cacheDirectoryCandidate in cacheDirectoryCandidates) {
+        final candidate = Directory(
+          '${current.path}/.dart_tool/llamadart/litert_lm/'
+          '$_litertLmVersion/$cacheDirectoryCandidate',
+        );
+        if (liteRtLmIsCacheDirectoryForAbi(candidate, abi)) {
+          return candidate;
+        }
+      }
+      current = current.parent.path == current.path ? null : current.parent;
+    }
+  }
+  return null;
+}
+
 /// Internal helper used by the LiteRT-LM runtime to locate iOS native assets.
 List<String> liteRtLmIosLibraryCandidatesForAbi(Abi abi) {
   return switch (abi) {
@@ -370,19 +463,44 @@ String? liteRtLmPrimaryLibraryForAbi(Abi abi) {
   };
 }
 
+/// Companions that other LiteRT-LM libraries import, in load order. Windows
+/// binds an import to an already loaded module of the same name before it
+/// searches the executable's directory, System32, the working directory and
+/// `PATH`, so opening these first keeps every import inside the runtime
+/// directory, including the `bin\` and `lib\` split of `dart build cli`.
+List<String> _liteRtLmCompanionDependenciesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.windowsX64 => const <String>[
+      'vcruntime140.dll',
+      'vcruntime140_1.dll',
+      'vcruntime140_threads.dll',
+      'msvcp140.dll',
+      'webgpu_dawn.dll',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// [liteRtLmRequiredLibrariesForAbi] minus the primary library and
-/// [liteRtLmNonPreloadedLibrariesForAbi], in the same order. The runtime opens
-/// these before the primary library when it loads a Linux or Windows extracted
-/// cache directory.
+/// [liteRtLmNonPreloadedLibrariesForAbi]: imported dependencies first, then
+/// the rest in inventory order. The runtime opens these before the primary
+/// library when it loads a Linux or Windows runtime directory.
 List<String> liteRtLmCompanionLibrariesForAbi(Abi abi) {
   final primary = liteRtLmPrimaryLibraryForAbi(abi);
   if (primary == null) {
     return const <String>[];
   }
   final nonPreloaded = liteRtLmNonPreloadedLibrariesForAbi(abi);
-  return liteRtLmRequiredLibrariesForAbi(abi)
+  final companions = liteRtLmRequiredLibrariesForAbi(abi)
       .where((library) => library != primary && !nonPreloaded.contains(library))
-      .toList(growable: false);
+      .toList();
+  final dependencies = _liteRtLmCompanionDependenciesForAbi(
+    abi,
+  ).where(companions.contains).toList();
+  return <String>[
+    ...dependencies,
+    ...companions.where((library) => !dependencies.contains(library)),
+  ];
 }
 
 /// Internal helper used by the LiteRT-LM runtime to locate this package's
@@ -2109,34 +2227,12 @@ class LiteRtLmRuntimeClient {
   }
 
   Directory? _findLiteRtLmCacheDirForAbi(Abi abi) {
-    final envPath = Platform.environment[_litertLmLibDirEnv];
-    if (envPath != null && envPath.isNotEmpty) {
-      final dir = Directory(envPath);
-      if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
-        return dir.absolute;
-      }
-    }
-
-    final cacheDirectoryCandidates = liteRtLmCacheDirectoryCandidatesForAbi(
+    return liteRtLmResolveRuntimeDirectoryForAbi(
       abi,
+      libDirOverride: Platform.environment[_litertLmLibDirEnv],
+      executablePath: Platform.resolvedExecutable,
+      searchRoots: _candidateSearchRoots,
     );
-
-    for (final root in _candidateSearchRoots()) {
-      Directory? current = root;
-      while (current != null) {
-        for (final cacheDirectoryCandidate in cacheDirectoryCandidates) {
-          final candidate = Directory(
-            '${current.path}/.dart_tool/llamadart/litert_lm/'
-            '$_litertLmVersion/$cacheDirectoryCandidate',
-          );
-          if (liteRtLmIsCacheDirectoryForAbi(candidate, abi)) {
-            return candidate;
-          }
-        }
-        current = current.parent.path == current.path ? null : current.parent;
-      }
-    }
-    return null;
   }
 
   List<Directory> _candidateSearchRoots() {
