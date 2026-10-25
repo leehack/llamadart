@@ -281,13 +281,14 @@ These bounded controls do not qualify every output length or load setting.
 
 The `chrome-webgpu` test pages enable SharedArrayBuffer with browser flags but
 remain non-isolated (`crossOriginIsolated == false`), so the bridge caps native
-threads at one. In that harness, with the staged Qwen3-TTS fixture and pinned
-assets `v0.1.73`, the 4096/4096 batch profile aborts even on fresh one- and
-eight-frame synthesis, before cancellation. The 512/256 fresh controls succeed.
-This #1371 diagnostic does not establish the behavior of an ordinary isolated
-production page or the native cause of the abort. Set both optional batch
-values to 4096 and run the maintained `TTS 1-frame baseline without
-cancellation` test to reproduce the harness observation.
+threads at one. In the [#1371 controls recorded in PR #1418](https://github.com/leehack/llamadart/pull/1418),
+with that run's staged Qwen3-TTS fixture and bridge manifest, the 4096/4096 batch
+profile aborted even on fresh one- and eight-frame synthesis, before
+cancellation. The 512/256 fresh controls succeeded. This historical diagnostic
+does not establish the behavior of other artifacts, an ordinary isolated
+production page or the native cause of the abort. To repeat it, use the recorded
+artifacts, set both optional batch values to 4096 and run the maintained
+`TTS 1-frame baseline without cancellation` test.
 
 ## Platform Rows
 
