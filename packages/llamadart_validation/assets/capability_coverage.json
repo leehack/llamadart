@@ -134,6 +134,16 @@
   "mappings": [
     {
       "surfaces": [
+        "matrix:Deterministic session template time"
+      ],
+      "exemption": {
+        "id": "session-template-clock",
+        "reason": "The history pack does not assert template clock semantics. Production-path VM and Chrome tests cover real strftime_now rendering, request snapshots, context trimming, structured output, tool loops and compatibility with existing ChatSession implementations and application extensions. Runtime-owned LiteRT-LM templates retain their runtime clock. A versioned clock scenario remains tracked separately.",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
         "api:LlamaTextEmbedder.new",
         "api:LlamaTextEmbedder.engine",
         "api:LlamaTextEmbedder.profile",

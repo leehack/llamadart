@@ -642,7 +642,7 @@ void main() {
 
   test('every round carries the session templateNow', () async {
     final now = DateTime.utc(2026, 1, 2, 3, 4, 5);
-    final budgeted = ChatSession(engine, maxContextTokens: 1000)
+    final budgeted = TemplateTimeChatSession(engine, maxContextTokens: 1000)
       ..templateNow = now;
     engine.replies
       ..add(scriptedCalls([('call_1', 'weather', '{"city":"Seoul"}')]))
@@ -660,7 +660,7 @@ void main() {
 
   test('completeWithTools carries the session templateNow', () async {
     final now = DateTime.utc(2026, 1, 2, 3, 4, 5);
-    final budgeted = ChatSession(engine, maxContextTokens: 1000)
+    final budgeted = TemplateTimeChatSession(engine, maxContextTokens: 1000)
       ..templateNow = now;
     engine.replies.add(scriptedAnswer('Done.'));
 
@@ -673,8 +673,8 @@ void main() {
   });
 
   test('templateNow is stored per session', () {
-    final a = ChatSession(engine)..templateNow = DateTime.utc(2026);
-    final b = ChatSession(engine);
+    final a = TemplateTimeChatSession(engine)..templateNow = DateTime.utc(2026);
+    final b = TemplateTimeChatSession(engine);
 
     expect(a.templateNow, DateTime.utc(2026));
     expect(b.templateNow, isNull);

@@ -49,9 +49,16 @@ print(result.format);
   `{'source_lang_code': 'en', 'target_lang_code': 'ko'}`, defaulting to
   `en-GB`; the `sourceLangCode` and `targetLangCode` parameters are
   deprecated.
-- `templateNow`: deterministic time injection for tests. On a `ChatSession`, set
-  `session.templateNow`; every request and context-budget render of that
-  session uses it.
+- `templateNow`: deterministic time injection, including `strftime_now` and
+  date globals. For multi-turn chat, construct
+  `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.
+  Each listened request snapshots that session setting before context
+  preparation, so budgeting and generation use the same time. Changing it
+  affects the next request; each tool-loop round is a request. `reset()` keeps
+  it, and setting it to `null` restores the normal clock. Ordinary
+  `ChatSession` interfaces and application extensions remain compatible.
+  This controls Dart-rendered templates; LiteRT-LM runtime-owned templates
+  retain their runtime clock.
 - `responseFormat`: structured-output constraint; unrecognised shapes and
   schemas the grammar converter cannot represent throw
   `LlamaUnsupportedException`.

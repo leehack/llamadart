@@ -191,6 +191,10 @@ class ChatSession {
     final cancellation = GenerationCancellation.forEngine(_engine);
     final zone = Zone.current;
     return cancellation.request((request) async* {
+      final templateNow = switch (this) {
+        TemplateTimeChatSession(:final templateNow) => templateNow,
+        _ => null,
+      };
       ChatCompletionRequestPlanner.rejectUnsupportedResponseFormat(
         _engine.backend,
         responseFormat,
@@ -234,6 +238,7 @@ class ChatSession {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
         );
 
         final messages = _buildMessages();
@@ -354,6 +359,7 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    required DateTime? templateNow,
   }) async {
     edits.beginContextPreparation();
     final limit = maxContextTokens ?? await _engine.getContextSize();
@@ -385,6 +391,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
     );
     edits.ensureUnchanged();
     if (fullTokenCount <= targetLimit) return true;
@@ -405,6 +412,7 @@ class ChatSession {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
         );
 
         edits.ensureUnchanged();
@@ -435,6 +443,7 @@ class ChatSession {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
     );
     if (!compacted) {
       // Even retaining the root request and newest coherent protocol exchange
@@ -459,6 +468,7 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    required DateTime? templateNow,
   }) async {
     final anchorIndex = _history.indexWhere(
       (message) =>
@@ -499,6 +509,7 @@ class ChatSession {
         enableThinking: enableThinking,
         responseFormat: responseFormat,
         chatTemplateKwargs: chatTemplateKwargs,
+        templateNow: templateNow,
       );
       edits.ensureUnchanged();
       if (tokenCount <= targetLimit) {
@@ -522,6 +533,7 @@ class ChatSession {
     required bool enableThinking,
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
+    required DateTime? templateNow,
   }) async {
     final template = await _engine.chatTemplate(
       messages,
@@ -707,24 +719,26 @@ final Expando<List<LlamaChatMessage>> _mutableHistories = Expando(
 List<LlamaChatMessage>? mutableChatSessionHistory(ChatSession session) =>
     _mutableHistories[session];
 
-final Expando<DateTime> _templateNows = Expando('llamadart.chatSessionNow');
-
-/// Deterministic template time for a [ChatSession].
+/// A chat session with an explicit template clock.
 ///
-/// This is an extension rather than a member so that subclasses and classes
-/// that `implements ChatSession` keep compiling; it is stored per session.
-extension ChatSessionTemplateNow on ChatSession {
-  /// The time the chat template sees as "now" for this session's requests.
-  ///
-  /// Forwarded as [LlamaEngine.create]'s `templateNow` by [ChatSession.create]
-  /// and everything built on it ([ChatSession.send],
-  /// [ChatSession.createStructuredJson], `sendWithTools`,
-  /// `completeWithTools`), and used by the context-budget renders so trimming
-  /// sees the prompt the request sends. Null, the default, leaves the
-  /// template's own clock.
-  DateTime? get templateNow => _templateNows[this];
+/// Each listened request snapshots [templateNow] before context preparation,
+/// and uses it for every budget render and the generation request. Changing it
+/// during a request affects the next request only. Tool-loop rounds each start
+/// a request. [ChatSession.reset] keeps this setting.
+///
+/// The separate type preserves the public interface of [ChatSession] and does
+/// not introduce an extension that can collide with application extensions.
+final class TemplateTimeChatSession extends ChatSession {
+  /// Time supplied to the template; null preserves the engine's normal clock.
+  DateTime? templateNow;
 
-  set templateNow(DateTime? value) => _templateNows[this] = value;
+  /// Creates a session whose prompts use [templateNow].
+  TemplateTimeChatSession(
+    super.engine, {
+    this.templateNow,
+    super.maxContextTokens,
+    super.systemPrompt,
+  });
 }
 
 /// One-shot replies for [ChatSession].

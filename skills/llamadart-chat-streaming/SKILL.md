@@ -20,6 +20,12 @@ description: >-
     every call and append the assistant reply yourself.
   - `engine.generate(prompt)` only for an already-rendered raw prompt; it skips
     the chat template.
+- For reproducible Dart-rendered template dates, use
+  `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.
+  Each listened request snapshots the value before budget rendering and
+  generation. A change affects the next request (including a tool-loop round);
+  `reset()` keeps the setting and `null` restores the normal clock.
+  Runtime-owned LiteRT-LM templates retain their runtime clock.
 - Embedded and custom Jinja templates accept `\xHH` string escapes;
   `\x00` matches NUL, and `\\x41` preserves literal `\x41`. A malformed
   escape raises `LlamaException` naming the template source. A valid template

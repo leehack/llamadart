@@ -213,6 +213,10 @@ requesting an isolate kill alone does not stop an in-flight native call.
 For multi-turn chat, wrap the same engine in `ChatSession` and let it maintain
 history:
 [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session).
+For reproducible Dart-rendered prompt dates, use
+`TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.
+Each request uses one time for budgeting and generation; `null` uses the
+normal clock. Runtime-owned LiteRT-LM templates keep their runtime clock.
 
 ## What It Supports
 
