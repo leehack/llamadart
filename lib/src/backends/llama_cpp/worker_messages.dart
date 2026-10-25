@@ -1100,3 +1100,15 @@ class RerankResponse {
   /// All class outputs and labels.
   final BackendRerankingOutput output;
 }
+
+/// Explicit RANK context creation after classifier verification.
+class RerankingContextCreateRequest extends WorkerRequest {
+  /// Creates a request for the owning reranker loader.
+  RerankingContextCreateRequest(this.modelHandle, this.params, super.sendPort);
+
+  /// Loaded model to verify.
+  final int modelHandle;
+
+  /// Standard context/device limits, with explicit RANK pooling.
+  final ModelParams params;
+}

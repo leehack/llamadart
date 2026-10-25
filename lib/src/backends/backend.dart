@@ -1192,6 +1192,13 @@ abstract class BackendStatePersistenceSupport {
 
 /// Optional native cross-encoder capability. Existing backends need not implement it.
 abstract class BackendReranking {
+  /// Creates a fresh explicit RANK context for the owning reranker loader.
+  ///
+  /// Verify a real classifier head and its output count first. Ordinary model
+  /// loads retain their context configuration. The caller frees this context
+  /// with [LlamaBackend.contextFree], including when preparation fails.
+  Future<int> createRerankingContext(int modelHandle, ModelParams params);
+
   /// Probes the actual loaded context; interface presence is not evidence of support.
   Future<LlamaRerankingCapabilities> getRerankingCapabilities(
     int contextHandle,

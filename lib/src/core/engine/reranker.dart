@@ -1,16 +1,60 @@
+import '../../backends/backend.dart';
 import '../exceptions.dart';
+import '../models/inference/model_params.dart';
+import '../models/model_source.dart';
 import '../models/inference/reranking.dart';
 import 'engine.dart';
 
 /// Ranks documents against a query with a loaded cross-encoder reranker.
 ///
-/// Native llama.cpp rank-pooled GGUF models are supported. WebGPU, LiteRT-LM
+/// Native llama.cpp rank-pooled GGUF models are supported; [load] also prepares
+/// verified BERT/Jina classifiers whose metadata omits RANK. WebGPU, LiteRT-LM
 /// and ordinary embedding/chat models report unsupported. This wrapper borrows
 /// [engine]; await calls before switching models or disposing it. It neither
 /// owns a model nor changes the engine's embedding API.
 final class LlamaReranker {
   /// Borrows an existing engine, including its context and cancellation policy.
-  const LlamaReranker(this.engine);
+  const LlamaReranker(this.engine) : _ownsEngine = false;
+
+  LlamaReranker._owned(this.engine) : _ownsEngine = true;
+
+  final bool _ownsEngine;
+
+  /// Loads and owns a native GGUF reranker, explicitly creating a RANK context.
+  ///
+  /// Use this for BERT/Jina models that omit rank-pooling metadata. The loader
+  /// verifies a real classifier tensor and its output width before selecting
+  /// RANK. Ordinary model contexts are unchanged. Unsupported backends or a
+  /// missing/unverifiable classifier throw [LlamaUnsupportedException].
+  /// Dispose this helper to release its engine; failed preparation also frees it.
+  static Future<LlamaReranker> load(
+    LlamaModel model, {
+    LlamaCppModelParams params = const LlamaCppModelParams(),
+  }) async {
+    final engine = LlamaEngine(LlamaBackend());
+    try {
+      if (engine.backend is! BackendReranking) {
+        throw LlamaUnsupportedException(
+          'Reranker loading requires native llama.cpp; Web and LiteRT-LM are unsupported.',
+        );
+      }
+      if (params.loras.isNotEmpty || model.projector != null) {
+        throw LlamaUnsupportedException(
+          'The owning reranker loader accepts a text-only classifier without LoRA adapters or a multimodal projector.',
+        );
+      }
+      await engine.setModel(model, params: params);
+      await engine.initializeRerankingContext(params);
+      return LlamaReranker._owned(engine);
+    } catch (_) {
+      await engine.dispose();
+      rethrow;
+    }
+  }
+
+  /// Frees an engine created by [load]; borrowed engines remain caller-owned.
+  Future<void> dispose() =>
+      _ownsEngine ? engine.dispose() : Future<void>.value();
 
   /// Existing engine; a separate reranker model normally uses its own engine.
   final LlamaEngine engine;

@@ -3823,6 +3823,36 @@ Future<(LlamaEngine, List<String>)> loadLlamaEngine(
 
 /// Internal reranker integration, deliberately excluded from public exports.
 extension LlamaRerankingEngineAccess on LlamaEngine {
+  /// Replaces the initial context only while the owning reranker is preparing.
+  Future<void> initializeRerankingContext(ModelParams params) async {
+    _ensureReady();
+    final candidate = backend;
+    if (candidate is! BackendReranking) {
+      throw LlamaUnsupportedException(
+        'Native reranker loading is unavailable on this backend.',
+      );
+    }
+    final epoch = _modelEpoch;
+    final previous = _contextHandle!;
+    final next = await (candidate as BackendReranking).createRerankingContext(
+      _modelHandle!,
+      params,
+    );
+    try {
+      if (epoch != _modelEpoch || isDisposed) {
+        throw LlamaStateException(
+          'The reranker model changed during initialization.',
+        );
+      }
+      await backend.contextFree(previous);
+    } catch (_) {
+      await backend.contextFree(next);
+      rethrow;
+    }
+    _contextHandle = next;
+    _stalePerformanceContext = null;
+  }
+
   /// Loaded-context probe used by `LlamaReranker` without extending engine SPI.
   Future<LlamaRerankingCapabilities> get backendRerankingCapabilities async {
     if (isDisposed || !_isReady || _contextHandle == null) {

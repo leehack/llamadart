@@ -30,6 +30,12 @@ void main() {
       true,
     ),
     (
+      'bge',
+      'LLAMADART_RERANK_BGE_MODEL',
+      'a43c7c9b11a4c1517e5bf95151960e1621d1b72f7a493364b01e386cf1aaa1d3',
+      false,
+    ),
+    (
       'jina',
       'LLAMADART_RERANK_JINA_MODEL',
       'ad9f450c1053a431e2e3746d1f9f7768fb9183cf0796e046983a3449dca093c2',
@@ -47,11 +53,15 @@ void main() {
         final corpus = jsonDecode(File(_corpus).readAsStringSync()) as Map;
         final version = await Process.run(server!, ['--version']);
         expect('${version.stdout}${version.stderr}', contains(_upstream));
-        final raw = await Process.run(oracle!, [model, _corpus]);
+        final raw = await Process.run(oracle!, [
+          model,
+          _corpus,
+          gpu ? 'metal' : 'cpu',
+        ]);
         expect(raw.exitCode, 0, reason: raw.stderr.toString());
         final reference = jsonDecode(raw.stdout.toString()) as Map;
         expect(reference['upstream_commit'], _upstream);
-        final engine = await LlamaEngine.load(
+        final helper = await LlamaReranker.load(
           LlamaModel(ModelSource.path(model)),
           params: LlamaCppModelParams(
             contextSize: 2048,
@@ -64,8 +74,8 @@ void main() {
             gpuLayers: gpu ? 99 : 0,
           ),
         );
-        addTearDown(engine.dispose);
-        final helper = LlamaReranker(engine);
+        addTearDown(helper.dispose);
+        final engine = helper.engine;
         final capabilities = await helper.capabilities;
         expect(capabilities.isSupported, isTrue);
         expect(capabilities.classifierLabels, reference['labels']);
@@ -90,7 +100,8 @@ void main() {
           '-ub',
           '2048',
           '-ngl',
-          '0',
+          gpu ? '99' : '0',
+          if (!gpu) ...['--no-op-offload', '--no-kv-offload', '-fa', 'off'],
           '-t',
           '4',
           '-tb',
@@ -128,14 +139,18 @@ void main() {
         }
         expect(ready, isTrue, reason: log.toString());
         var maxError = 0.0;
+        var maxSingleError = 0.0;
+        var maxBatchSingleDrift = 0.0;
         final cases = corpus['cases'] as List;
         for (var c = 0; c < cases.length; c++) {
           final item = cases[c] as Map;
           final query = item['query'] as String;
           final documents = (item['documents'] as List).cast<String>();
-          final expected =
-              ((reference['cases'] as List)[c] as Map)['scores'] as List;
+          final expectedCase = (reference['cases'] as List)[c] as Map;
+          final expected = expectedCase['grouped'] as List;
+          final expectedSingle = expectedCase['single'] as List;
           final batch = await helper.rerank(query, documents);
+          final singles = <int, LlamaRerankResult>{};
           for (final result in batch) {
             final values = (expected[result.index] as List).cast<num>();
             for (var j = 0; j < values.length; j++) {
@@ -150,10 +165,20 @@ void main() {
             final single = (await helper.rerank(query, [
               documents[result.index],
             ])).single;
+            singles[result.index] = single;
             for (var j = 0; j < values.length; j++) {
+              final error =
+                  (single.classifierScores[j] -
+                          ((expectedSingle[result.index] as List)[j] as num))
+                      .abs();
+              if (error > maxSingleError) maxSingleError = error;
+              final drift =
+                  (single.classifierScores[j] - result.classifierScores[j])
+                      .abs();
+              if (drift > maxBatchSingleDrift) maxBatchSingleDrift = drift;
               expect(
                 single.classifierScores[j],
-                closeTo(result.classifierScores[j], 2e-4),
+                closeTo((expectedSingle[result.index] as List)[j] as num, 2e-4),
               );
             }
           }
@@ -169,7 +194,7 @@ void main() {
           for (final row in upstream.cast<Map>()) {
             final index = row['index'] as int;
             expect(
-              batch.singleWhere((result) => result.index == index).score,
+              singles[index]!.score,
               closeTo(row['relevance_score'] as num, 2e-4),
             );
           }
@@ -204,7 +229,9 @@ void main() {
               .convert(File(_corpus).readAsBytesSync())
               .toString(),
           'cases': cases.length,
-          'max_absolute_class_score_error': maxError,
+          'max_absolute_grouped_class_score_error': maxError,
+          'max_absolute_single_class_score_error': maxSingleError,
+          'max_batch_single_drift_informational': maxBatchSingleDrift,
         };
         final outputDir = env['LLAMADART_RERANK_EVIDENCE_DIR'];
         if (outputDir != null) {

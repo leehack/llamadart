@@ -7,6 +7,12 @@ import 'package:test/test.dart';
 import 'engine_test.dart';
 
 class _Backend extends MockLlamaBackend implements BackendReranking {
+  @override
+  Future<int> createRerankingContext(
+    int modelHandle,
+    ModelParams params,
+  ) async => 3;
+
   LlamaRerankingCapabilities support = LlamaRerankingCapabilities(
     isSupported: true,
     classifierLabels: ['yes', 'no'],
@@ -51,6 +57,14 @@ void main() {
     return engine;
   }
 
+  test('disposing a borrowed wrapper leaves its engine usable', () async {
+    final backend = _Backend();
+    final engine = await load(backend);
+    final helper = LlamaReranker(engine);
+    await helper.dispose();
+    expect(engine.isDisposed, isFalse);
+    expect(await helper.rerank('q', ['a', 'b', 'c']), hasLength(3));
+  });
   test(
     'sorts native scores, preserves ties, duplicates, labels and input bytes',
     () async {

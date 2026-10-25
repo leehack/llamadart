@@ -10,7 +10,7 @@ Future<void> main(List<String> arguments) async {
     exitCode = 64;
     return;
   }
-  final engine = await LlamaEngine.load(
+  final reranker = await LlamaReranker.load(
     LlamaModel(ModelSource.path(arguments.single)),
     params: const LlamaCppModelParams(
       gpuLayers: 0,
@@ -22,7 +22,6 @@ Future<void> main(List<String> arguments) async {
     ),
   );
   try {
-    final reranker = LlamaReranker(engine);
     final support = await reranker.capabilities;
     if (!support.isSupported) {
       throw LlamaUnsupportedException(support.unsupportedReason!);
@@ -40,6 +39,6 @@ Future<void> main(List<String> arguments) async {
       stdout.writeln('${result.score}: ${documents[result.index]}');
     }
   } finally {
-    await engine.dispose();
+    await reranker.dispose();
   }
 }

@@ -301,7 +301,9 @@ qualify the loaded model. Query and corpus dimensions must match. The default
 raw profile and existing `embed` calls retain their original behavior.
 
 To improve retrieved candidates with a cross-encoder, load a separate rank-pooled
-GGUF and use `LlamaReranker(engine)`. Probe `await reranker.capabilities`, then
+GGUF with `LlamaReranker.load(model, params: ...)`, or borrow an already
+rank-pooled engine with `LlamaReranker(engine)`. The owning loader verifies a
+classifier head before selecting RANK for BERT/Jina files that omit that metadata. Probe `await reranker.capabilities`, then
 call `reranker.rerank(query, documents)`: results retain original indices,
 all classifier scores and labels. Output zero matches llama-server; choose
 `scoreIndex` explicitly for another class. Native llama.cpp only; scores remain

@@ -762,6 +762,20 @@ class NativeAutoBackend
   }
 
   @override
+  Future<int> createRerankingContext(int modelHandle, ModelParams params) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendReranking) {
+      return (delegate as BackendReranking).createRerankingContext(
+        modelHandle,
+        params,
+      );
+    }
+    throw LlamaUnsupportedException(
+      'Explicit reranker loading requires the native llama.cpp runtime.',
+    );
+  }
+
+  @override
   Future<LlamaRerankingCapabilities> getRerankingCapabilities(
     int contextHandle,
   ) async {

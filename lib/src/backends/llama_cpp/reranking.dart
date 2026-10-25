@@ -2,6 +2,24 @@ part of 'llama_cpp_service.dart';
 
 /// Native query/document classifier scoring on the service's owned context.
 extension NativeReranking on LlamaCppService {
+  /// Explicit owning-load path, requiring a real classifier tensor directory.
+  int createRerankingContext(int modelHandle, ModelParams params) {
+    final model = _models[modelHandle];
+    if (model == null) {
+      throw LlamaStateException('The reranker model is no longer loaded.');
+    }
+    final info = _calls.rerankingModelInfo(model.pointer);
+    final source = model.sourcePath;
+    if ((info.encoder && info.decoder) ||
+        source == null ||
+        !hasRerankingClassifier(source, info.labels.length)) {
+      throw LlamaUnsupportedException(
+        'Explicit native reranker loading requires a GGUF with a verified classifier head matching n_cls_out; ordinary chat/embedding models and unverified tensor directories are unsupported.',
+      );
+    }
+    return createContext(modelHandle, params, reranking: true);
+  }
+
   /// Checks effective pooling and actual allocated limits before inference.
   LlamaRerankingCapabilities getRerankingCapabilities(int contextHandle) {
     final context = _contexts[contextHandle];

@@ -120,6 +120,63 @@ void main() {
       );
     },
   );
+  test(
+    'explicit classifier load creates RANK without changing the normal context',
+    () {
+      final ordinary = load(pooling: 1);
+      final params = const ModelParams(
+        gpuLayers: 0,
+        contextSize: 128,
+        batchSize: 128,
+        microBatchSize: 128,
+        maxParallelSequences: 2,
+      );
+      // The fixture is the first model allocated by this service.
+      final explicit = service.createRerankingContext(1, params);
+      expect(service.getRerankingCapabilities(ordinary).isSupported, isFalse);
+      expect(service.getRerankingCapabilities(explicit).isSupported, isTrue);
+      expect(service.rerank(explicit, 'q', ['a']).scores.single, hasLength(2));
+    },
+  );
+  test('explicit load rejects a normal model without a classifier head', () {
+    final path = '${dir.path}/ordinary.gguf';
+    writeSyntheticLlamaGguf(path);
+    const params = ModelParams(gpuLayers: 0, contextSize: 64);
+    final model = service.loadModel(path, params);
+    expect(
+      () => service.createRerankingContext(model, params),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+  });
+  test(
+    'owning public loader handles and disposes a verified non-RANK classifier',
+    () async {
+      final path = '${dir.path}/owning.gguf';
+      writeSyntheticModernBertGguf(
+        path,
+        poolingType: 1,
+        classifierLabels: ['positive'],
+      );
+      final helper = await LlamaReranker.load(
+        LlamaModel(ModelSource.path(path)),
+        params: const LlamaCppModelParams(
+          gpuLayers: 0,
+          preferredBackend: GpuBackend.cpu,
+          contextSize: 128,
+          batchSize: 128,
+          microBatchSize: 128,
+        ),
+      );
+      expect((await helper.capabilities).isSupported, isTrue);
+      expect(
+        (await helper.rerank('q', ['d'])).single.classifierScores,
+        hasLength(1),
+      );
+      await helper.dispose();
+      await helper.dispose();
+      expect(helper.engine.isDisposed, isTrue);
+    },
+  );
   test('fallback vocabulary framing treats user special strings literally', () {
     final context = load(slots: 1);
     service.rerank(context, '<s>', ['</s>']);

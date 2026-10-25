@@ -436,8 +436,37 @@ to macOS arm64; GPU/NPU and Web embeddings remain unavailable.
 ## Cross-encoder reranking
 
 Retrieve a candidate set with embeddings, then score query/document pairs with
-a separate rank-pooled GGUF reranker. `LlamaReranker` borrows its loaded engine;
-it does not load or dispose the model and adds no members to `LlamaEngine`.
+a separate rank-pooled GGUF reranker. `LlamaReranker(engine)` borrows an already rank-pooled engine. For published
+BERT/Jina rerankers that omit rank metadata, use the owning factory:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> rerankLocal(String modelPath) async {
+  final reranker = await LlamaReranker.load(
+    LlamaModel(ModelSource.path(modelPath)),
+    params: const LlamaCppModelParams(
+      contextSize: 2048, batchSize: 2048, microBatchSize: 2048,
+      maxParallelSequences: 4,
+    ),
+  );
+  try {
+    final results = await reranker.rerank('capital of France', [
+      'Paris is the capital of France.', 'Rome is the capital of Italy.',
+    ]);
+    print(results.first.index);
+  } finally {
+    await reranker.dispose();
+  }
+}
+```
+
+The factory verifies a bounded GGUF classifier tensor directory and matching
+output width before explicitly selecting RANK. It rejects unverified or ordinary
+models, LoRA adapters and multimodal projectors. Normal engine loads retain
+their original pooling configuration. `dispose()` releases an owned engine;
+on a borrowed helper it leaves the caller's engine alive. Existing engine and
+backend interfaces gain no required members.
 
 ```dart
 import 'package:llamadart/llamadart.dart';

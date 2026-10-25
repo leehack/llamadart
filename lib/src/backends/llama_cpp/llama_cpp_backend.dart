@@ -832,6 +832,25 @@ class NativeLlamaBackend
   }
 
   @override
+  Future<int> createRerankingContext(
+    int modelHandle,
+    ModelParams params,
+  ) async {
+    await _ensureIsolate();
+    final port = _openResponsePort();
+    _dispatchRequest(
+      port,
+      RerankingContextCreateRequest(modelHandle, params, port.sendPort),
+    );
+    final response = await _receiveResponse(port);
+    if (response is ErrorResponse) throw _workerError(response);
+    if (response is! HandleResponse) {
+      throw LlamaContextException('Reranking context creation failed.');
+    }
+    return response.handle;
+  }
+
+  @override
   Future<LlamaRerankingCapabilities> getRerankingCapabilities(
     int contextHandle,
   ) async {

@@ -15,7 +15,11 @@ description: >-
 ## Guidelines
 
 - For cross-encoder reranking, use a separate loaded rank-pooled GGUF engine and
-  `LlamaReranker(engine)`. Probe `await reranker.capabilities`; only native
+  `LlamaReranker(engine)` for an already rank-pooled context, or own a model with
+  `await LlamaReranker.load(model, params: ...)`. The owning loader verifies a
+  classifier tensor/count before selecting RANK for BERT/Jina files missing
+  rank metadata; it rejects LoRA/projector inputs. `dispose()` frees an owned
+  engine and leaves a borrowed one alive. Probe `await reranker.capabilities`; only native
   llama.cpp is supported, and ordinary embeddings/chat models are rejected.
   Call `reranker.rerank(query, documents, topN: 5)` and use each result's original
   `index` to select the candidate. All native class scores and nullable labels

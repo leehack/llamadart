@@ -37,6 +37,7 @@ import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
 import 'lazy_grammar_triggers.dart';
 import 'load_device_selection.dart';
+import 'reranking_classifier.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
@@ -4312,7 +4313,11 @@ class LlamaCppService {
   ///
   /// Returns a handle to the created context.
   /// Throws an [Exception] if the model handle is invalid or context creation fails.
-  int createContext(int modelHandle, ModelParams params) {
+  int createContext(
+    int modelHandle,
+    ModelParams params, {
+    bool reranking = false,
+  }) {
     final model = _models[modelHandle];
     if (model == null) {
       throw Exception("Invalid model handle");
@@ -4389,6 +4394,10 @@ class LlamaCppService {
       );
     }
 
+    if (reranking) {
+      ctxParams.pooling_type = llama_pooling_type.LLAMA_POOLING_TYPE_RANK;
+      ctxParams.embeddings = true;
+    }
     final ctxPtr = _calls.createContext(model.pointer, ctxParams);
     IsolateShutdownReleases.current.hold(
       ShutdownStage.context,

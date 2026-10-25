@@ -237,6 +237,18 @@ void runLlamaWorkerForTesting(
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
+          case RerankingContextCreateRequest():
+            await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
+            message.sendPort.send(
+              HandleResponse(
+                service.createRerankingContext(
+                  message.modelHandle,
+                  message.params,
+                ),
+              ),
+            );
+
           case ContextCreateRequest():
             final handle = service.createContext(
               message.modelHandle,
