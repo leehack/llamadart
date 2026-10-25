@@ -25,6 +25,69 @@ import 'package:test/test.dart';
 
 void main() {
   group('ChatCompletionStreamParser', () {
+    for (final valid in [true, false]) {
+      test(
+        'fixed-clock prompt preserves split tool output (valid=$valid)',
+        () async {
+          final rendered = ChatTemplateEngine.render(
+            templateSource:
+                '{{ messages | tojson }}{{ tools | tojson }}'
+                '<tool_call>'
+                "{% if strftime_now('%Y') == '1984' %}<think>{% endif %}",
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+            ],
+            metadata: const {},
+            tools: [_weatherTool],
+            now: DateTime.utc(1984, 6, 1),
+          );
+          expect(rendered.prompt, endsWith('<think>'));
+          expect(rendered.thinkingForcedOpen, isTrue);
+          final envelope = valid
+              ? '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+                    '</tool_call>'
+              : '<tool_call>{"name":"weather","arguments":{"city":"Par';
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(
+              'Plan.</think>Visible.$envelope'.split(''),
+            ),
+            templateResult: rendered,
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'Hermes',
+            completionId: 'fixed-clock-$valid',
+            tools: [_weatherTool],
+          ).toList();
+          expect(
+            chunks.map((c) => c.choices.single.delta.thinking ?? '').join(),
+            'Plan.',
+          );
+          expect(
+            chunks.map((c) => c.choices.single.delta.content ?? '').join(),
+            valid ? 'Visible.' : 'Visible.$envelope',
+          );
+          final calls = chunks
+              .expand(
+                (c) =>
+                    c.choices.single.delta.toolCalls ??
+                    const <LlamaCompletionChunkToolCall>[],
+              )
+              .toList();
+          expect(calls, hasLength(valid ? 1 : 0));
+          if (valid) {
+            expect(calls.single.function!.name, 'weather');
+            expect(jsonDecode(calls.single.function!.arguments!), {
+              'city': 'Paris',
+            });
+          }
+          expect(
+            chunks.last.finishReason,
+            valid ? LlamaFinishReason.toolCalls : LlamaFinishReason.stop,
+          );
+        },
+      );
+    }
+
     test('streams plain content chunks and a final stop chunk', () async {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.fromIterable(['hel', 'lo']),
