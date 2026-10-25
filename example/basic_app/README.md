@@ -356,6 +356,11 @@ Image CLI flags (`bin/llamadart_image_example.dart`):
 - `--device`: `auto`, `cpu` or `gpu`. `--threads`: CPU threads (`0`: all
   physical cores).
 
+- `--conditioning-cache-size`: Retained prompt-conditioning entries, from 0
+  to `2147483647`; `0` disables reuse, and omission preserves the native
+  default of 4. This is an entry limit, not a byte limit or approximation
+  cache. For example, add `--conditioning-cache-size 0` to any image command.
+
 With model files on disk, the local-only test runs real generation, including
 determinism, cancellation and the one-generation-at-a-time guard:
 
@@ -365,6 +370,12 @@ LLAMADART_SD_TURBO_MODEL=/models/sd_turbo-f16-q8_0.gguf \
 LLAMADART_TAESD=/models/taesd.safetensors \
   dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
 ```
+
+The same suite compares disabled/default/one-entry conditioning caches on
+CPU and the automatic device using SDXS and SD-Turbo's full VAE. It requires
+exact pixels for repeated and changed prompts, eviction, cancellation/reuse,
+and disposal/reload, and verifies native cache-hit messages. Select just
+these cases with `--name 'conditioning cache'`.
 
 Set `LLAMADART_IMAGE_SPLIT_MODEL` to a split model's local files, comma
 separated in any order (such as FLUX.1-schnell's transformer, `ae`, CLIP-L

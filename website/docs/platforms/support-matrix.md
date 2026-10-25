@@ -58,6 +58,14 @@ and remain less qualified; directories and managed shard sets have no public
 loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
 Container support does not extend the model/device qualification above.
 
+Image prompt-conditioning reuse can be disabled or limited by entry count
+with `ImageConditioningCacheParams(capacity: ...)`; ordinary settings preserve
+four entries.
+This option is qualified with SDXS and SD-Turbo on macOS arm64 CPU/Metal;
+other image platforms and families have not been measured for this control.
+It adds no Web image runtime or approximate sampling cache. See
+[Conditioning cache](../guides/image-generation#conditioning-cache).
+
 ## Compute device
 
 `ModelParams.device` (`ComputeDevice`) applies to every runtime. `auto` keeps

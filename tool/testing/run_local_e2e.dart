@@ -760,7 +760,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
           'Run experimental ImageGenerationEngine on SDXS through the opt-in '
-          'stable_diffusion runtime; SD-Turbo too when '
+          'stable_diffusion runtime, including CPU/automatic-device '
+          'conditioning-cache parity, hits, eviction, cancellation/reuse and '
+          'reload; SD-Turbo too when '
           'LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
           'LLAMADART_SDXL_LIGHTNING_MODEL is set, and SDXS from its pinned '
           'Hugging Face file when LLAMADART_IMAGE_HF_CACHE '

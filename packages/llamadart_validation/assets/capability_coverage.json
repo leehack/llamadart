@@ -213,7 +213,7 @@
       ],
       "exemption": {
         "id": "image-capabilities",
-        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim.",
+        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim. ImageConditioningCacheParams.capacity has maintained engine/worker tests and image-generation-smoke qualification on SDXS/SD-Turbo CPU and Metal; it has no versioned validation-pack case yet. Approximation caching remains https://github.com/leehack/llamadart/issues/1233.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

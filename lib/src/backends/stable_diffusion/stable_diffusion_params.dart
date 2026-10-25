@@ -53,6 +53,9 @@ void applyStableDiffusionContextParams(
         vae: params.ref.vae_conv_direct,
       ),
     );
+  if (config.conditioningCacheSize case final capacity?) {
+    params.ref.conditioning_cache_size = capacity;
+  }
   if (config.threads > 0) {
     params.ref.n_threads = config.threads;
   }

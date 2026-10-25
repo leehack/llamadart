@@ -68,7 +68,8 @@ const _maxGpus = 4;
 const _generationErrorLength = _gpus + _maxGpus * _gpuBytes;
 const _generationError = _generationErrorLength + 8;
 const _generationErrorBytes = 1024;
-const _stateBytes = _generationError + _generationErrorBytes;
+const _conditioningCacheSize = _generationError + _generationErrorBytes;
+const _stateBytes = _conditioningCacheSize + 4;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -189,6 +190,10 @@ final class FakeStableDiffusionRuntime {
   /// empty string when they had none.
   String get loadedModelPath =>
       Pointer<Utf8>.fromAddress(_state.address + _modelPath).toDartString();
+
+  /// Conditioning capacity read by the worker's native load.
+  int get loadedConditioningCacheSize =>
+      _state.cast<Int32>()[_conditioningCacheSize ~/ 4];
 
   /// Non-null file paths read from the last load's native parameters.
   Map<String, String> get loadedFiles => {
@@ -462,6 +467,7 @@ final class _FakeCalls {
           ? 'sd_dart_new_sd_ctx'
           : 'sd_dart_new_sd_ctx:before-enable',
     );
+    _ints[_conditioningCacheSize ~/ 4] = params.ref.conditioning_cache_size;
     final modelPath = params.ref.model_path == nullptr
         ? ''
         : params.ref.model_path.cast<Utf8>().toDartString();
@@ -547,6 +553,7 @@ final class _FakeCalls {
         _record('sd_ctx_params_init');
         // What sd_ctx_params_init leaves, whatever the caller wrote before.
         params.ref.model_path = nullptr;
+        params.ref.conditioning_cache_size = 4;
       },
       supportsImageGeneration: (context) {
         _record('sd_ctx_supports_image_generation$_held');
