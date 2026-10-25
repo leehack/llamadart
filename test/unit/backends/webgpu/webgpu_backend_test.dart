@@ -1546,6 +1546,51 @@ void main() {
         expect(requestedGpuLayerCounts, isEmpty);
       });
 
+      for (final mainGpu in [-1, -2]) {
+        for (final gpuState in ['active', 'no adapter', 'inactive runtime']) {
+          test('engine routes gpu with negative mainGpu $mainGpu to WebGPU '
+              '($gpuState)', () async {
+            addTearDown(
+              fakeNavigatorGpu(
+                gpuState == 'no adapter'
+                    ? FakeWebGpu.noAdapter
+                    : FakeWebGpu.adapter,
+              ),
+            );
+            runtimeGpuActive = gpuState != 'inactive runtime';
+            final engine = LlamaEngine(
+              WebAutoBackend(webGpuFactory: () => backend),
+            );
+            addTearDown(engine.dispose);
+            final load = engine.setModel(
+              LlamaModel(ModelSource.parse(url)),
+              params: ModelParams(
+                device: ComputeDevice.gpu,
+                splitMode: ModelSplitMode.none,
+                mainGpu: mainGpu,
+              ),
+            );
+
+            if (gpuState == 'no adapter') {
+              await expectLater(load, unsupported('no WebGPU adapter'));
+              expect(requestedGpuLayerCounts, isEmpty);
+              expect(engine.isReady, isFalse);
+            } else {
+              if (gpuState == 'active') {
+                await load;
+                expect(engine.isReady, isTrue);
+              } else {
+                await expectLater(load, unsupported('without GPU layers'));
+                expect(engine.isReady, isFalse);
+              }
+              expect(requestedGpuLayerCounts, [ModelParams.maxGpuLayers]);
+              expect(lastRequestedSplitMode, ModelSplitMode.none.llamaCppValue);
+              expect(lastRequestedMainGpu, mainGpu);
+            }
+          });
+        }
+      }
+
       test('gpu never retries on a CPU rung', () async {
         addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
         failLoads(message: 'memory access out of bounds', firstAttempts: 1);

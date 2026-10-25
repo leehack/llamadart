@@ -60,6 +60,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   Firefox 129+, Safari 17.4+) can still lack an adapter, features or memory.
   Prove a first load with a small quantized GGUF, `contextSize: 2048` or less
   and `gpuLayers: 0`, then raise GPU offload.
+- `device: ComputeDevice.gpu` requires a WebGPU adapter and active GPU layers
+  after load. The bridge ignores negative `mainGpu` values, including with
+  `splitMode: ModelSplitMode.none`; use `device: ComputeDevice.cpu` to select
+  WebAssembly CPU execution.
 - Expect automatic fallback: a failed GPU load retries on CPU, then at smaller
   context sizes, then on the other core (wasm32/wasm64) for memory-pressure
   failures. Safari with assets that lack the adaptive GPU probe is forced to

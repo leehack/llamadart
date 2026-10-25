@@ -384,7 +384,7 @@ void main() {
       }
     });
 
-    test('gpu and npu reject a negative mainGpu with splitMode none', () {
+    test('negative mainGpu with splitMode none uses platform semantics', () {
       for (final device in [ComputeDevice.gpu, ComputeDevice.npu]) {
         for (final mainGpu in [-1, -2]) {
           expect(
@@ -393,7 +393,9 @@ void main() {
               splitMode: ModelSplitMode.none,
               mainGpu: mainGpu,
             ).validate,
-            rejects('mainGpu', mainGpu, 'splitMode none and mainGpu'),
+            const bool.fromEnvironment('dart.library.js_interop')
+                ? returnsNormally
+                : rejects('mainGpu', mainGpu, 'splitMode none and mainGpu'),
             reason: '$device with mainGpu $mainGpu',
           );
         }
