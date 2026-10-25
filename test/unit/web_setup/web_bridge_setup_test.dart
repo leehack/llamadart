@@ -477,8 +477,11 @@ void main() {
 
       final String problem = (await check()).single;
 
-      expect(problem, contains('llama_webgpu_bridge.js'));
-      expect(problem.length, lessThan(300));
+      expect(problem, startsWith(indexHtml.path));
+      final String diagnostic = problem.substring(indexHtml.path.length);
+      expect(diagnostic, contains('llama_webgpu_bridge.js'));
+      expect(diagnostic, contains('...'));
+      expect(diagnostic.length, lessThan(300));
     });
   });
 
