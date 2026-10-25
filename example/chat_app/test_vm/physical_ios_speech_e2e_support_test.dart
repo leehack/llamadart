@@ -1022,19 +1022,25 @@ void main() {
       }
     });
 
-    test('canonicalizes cache paths after runtime resolution', () async {
-      final resolved = await _createResolvedAppCacheConfig(cacheDir);
+    test(
+      'canonicalizes cache paths after runtime resolution',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
 
-      final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
-        resolved,
-      );
-      final canonicalRoot = await cacheDir.resolveSymbolicLinks();
+        final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+          resolved,
+        );
+        final canonicalRoot = await cacheDir.resolveSymbolicLinks();
 
-      expect(canonical.resolvedAppCacheDirectoryPath, canonicalRoot);
-      expect(canonical.qwen3AsrModelPath, startsWith('$canonicalRoot/'));
-      expect(canonical.ttsOutputPath, '$canonicalRoot/output/tts.wav');
-      expect(await File(canonical.ttsOutputPath).exists(), isFalse);
-    });
+        expect(canonical.resolvedAppCacheDirectoryPath, canonicalRoot);
+        expect(canonical.qwen3AsrModelPath, startsWith('$canonicalRoot/'));
+        expect(canonical.ttsOutputPath, '$canonicalRoot/output/tts.wav');
+        expect(await File(canonical.ttsOutputPath).exists(), isFalse);
+      },
+      skip: Platform.isWindows
+          ? 'The physical-iOS filesystem contract requires POSIX cache paths.'
+          : false,
+    );
 
     test(
       'rejects an input symlink that escapes the runtime cache',
@@ -1071,26 +1077,32 @@ void main() {
       skip: Platform.isWindows ? 'Symlink privileges are not portable.' : false,
     );
 
-    test('writes exclusively and deletes only the canonical output', () async {
-      final resolved = await _createResolvedAppCacheConfig(cacheDir);
-      final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
-        resolved,
-      );
-      final bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
+    test(
+      'writes exclusively and deletes only the canonical output',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+          resolved,
+        );
+        final bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
 
-      final output = await writePhysicalIosSpeechOutputExclusive(
-        canonical,
-        bytes,
-      );
-      expect(await output.readAsBytes(), bytes);
-      await expectLater(
-        writePhysicalIosSpeechOutputExclusive(canonical, bytes),
-        throwsA(isA<StateError>()),
-      );
+        final output = await writePhysicalIosSpeechOutputExclusive(
+          canonical,
+          bytes,
+        );
+        expect(await output.readAsBytes(), bytes);
+        await expectLater(
+          writePhysicalIosSpeechOutputExclusive(canonical, bytes),
+          throwsA(isA<StateError>()),
+        );
 
-      await deletePhysicalIosSpeechOutput(canonical);
-      expect(await output.exists(), isFalse);
-    });
+        await deletePhysicalIosSpeechOutput(canonical);
+        expect(await output.exists(), isFalse);
+      },
+      skip: Platform.isWindows
+          ? 'The physical-iOS filesystem contract requires POSIX cache paths.'
+          : false,
+    );
 
     test(
       'refuses to delete an output replaced by a symbolic link',
@@ -1131,6 +1143,9 @@ void main() {
         expect(canonical.asrAudioPath, '$canonicalRoot/inputs/asr.wav');
         expect(canonical.liteRtAsrAudioPath, '$canonicalRoot/inputs/asr.wav');
       },
+      skip: Platform.isWindows
+          ? 'The physical-iOS filesystem contract requires POSIX cache paths.'
+          : false,
     );
 
     test(
