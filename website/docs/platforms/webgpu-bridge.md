@@ -22,6 +22,11 @@ capabilities throw `LlamaUnsupportedException`. Runtime generation, embedding
 and scoring failures throw `LlamaInferenceException`; LoRA fetch failures remain
 `LlamaModelException`.
 
+`device: ComputeDevice.gpu` requires a WebGPU adapter and active GPU layers
+after load. The bridge ignores negative `mainGpu` values, including with
+`splitMode: ModelSplitMode.none`, and keeps the default GPU index; use
+`device: ComputeDevice.cpu` to request the WebAssembly CPU runtime.
+
 ## Requirements
 
 | Browser | Minimum | Notes |

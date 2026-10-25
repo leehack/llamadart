@@ -256,8 +256,9 @@ class ModelParams {
   /// Backend-specific device ordering is defined by llama.cpp and the active
   /// backend. Upstream llama.cpp uses this value to select the single GPU when
   /// [splitMode] is [ModelSplitMode.none], where a negative value loads the
-  /// model on the CPU. Defaults to 0 to preserve llama.cpp's default
-  /// behavior.
+  /// model on the CPU on native platforms. The WebGPU bridge ignores negative
+  /// values and keeps its default GPU index. Defaults to 0 to preserve
+  /// llama.cpp's default behavior.
   final int mainGpu;
 
   /// Initial LoRA adapters to load along with the model.
@@ -603,8 +604,8 @@ class ModelParams {
   /// - [ComputeDevice.cpu] with a GPU [preferredBackend] (Vulkan, Metal,
   ///   CUDA, OpenCL or HIP);
   /// - [ComputeDevice.gpu] or [ComputeDevice.npu] with a CPU or BLAS
-  ///   [preferredBackend], with [gpuLayers] set to 0, or with [splitMode]
-  ///   [ModelSplitMode.none] and a negative [mainGpu].
+  ///   [preferredBackend], with [gpuLayers] set to 0, or, on native platforms,
+  ///   with [splitMode] [ModelSplitMode.none] and a negative [mainGpu].
   ///
   /// `LlamaEngine` model loads call it before any download or native call,
   /// so callers don't have to remember it; call it directly to validate a
@@ -705,9 +706,11 @@ class ModelParams {
         invalidValue: gpuLayers,
       );
     }
-    // llama.cpp reads main_gpu only under split_mode NONE, where a negative
-    // value drops every device and loads the whole model on the CPU.
-    if (splitMode == ModelSplitMode.none && mainGpu < 0) {
+    // The WebGPU bridge ignores negative main_gpu values; native llama.cpp
+    // instead drops every device under split_mode NONE and loads on the CPU.
+    if (!const bool.fromEnvironment('dart.library.js_interop') &&
+        splitMode == ModelSplitMode.none &&
+        mainGpu < 0) {
       throw LlamaArgumentException(
         'ModelParams.device ${device.name} cannot be combined with splitMode '
         'none and mainGpu $mainGpu, which llama.cpp runs on the CPU. Set '
