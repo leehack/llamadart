@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Generate repeating SDXS textures with independent X/Y circular axes through `SeamlessImageGenerationRequest`; the initial recipe qualifies its embedded tiny decoder at 512×512 on CPU and Metal ([#1234](https://github.com/leehack/llamadart/issues/1234)).
 - Control retained image prompt conditioning with `ImageConditioningCacheParams`; zero disables reuse and ordinary settings preserve the runtime default.
 
 - Add opt-in EmbeddingGemma-2 query/document/title helpers and 768/512/256/128-dimensional output controls with normalization after truncation; existing raw embedding calls are unchanged ([#1126](https://github.com/leehack/llamadart/issues/1126)).

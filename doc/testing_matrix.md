@@ -957,3 +957,11 @@ cancellation and reuse. It never downloads weights. Set the environment and
 follow [the native embedding procedure](multimodal_embeddings_native.md), then
 run `run_local_e2e.dart --scenario native-multimodal-embeddings --dry-run`
 before the real scenario.
+
+## Seamless texture qualification
+
+`image-seamless-textures` runs the maintained local-only SDXS recipe through
+`example/basic_app/test/image_seamless_textures_e2e_test.dart`. See
+[the recipe and native-reference procedure](image_seamless_textures.md).
+Set `LLAMADART_TEXTURE_DEVICES=cpu` on a host without Metal; this qualifies
+CPU only. The default `cpu,metal` requires an actual `MTL` backend for Metal.

@@ -159,6 +159,34 @@ void main() {
       return worker;
     }
 
+    test(
+      'direct worker circular requests reject an unqualified native family',
+      () async {
+        final worker = await loaded();
+        await expectLater(
+          worker.generate(
+            const ImageGenerationSessionRequest(
+              prompt: 'stone',
+              negativePrompt: '',
+              width: 512,
+              height: 512,
+              steps: 4,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              circularX: true,
+            ),
+            (_, _) {},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('caller'), isEmpty);
+        expect(runtime.calls('worker'), isEmpty);
+        await worker.generate(_request(), (_, _) {});
+      },
+    );
+
     /// The records the calling isolate's logger hands its handler from now
     /// on, at [level].
     List<(LlamaLogLevel, String)> records({
