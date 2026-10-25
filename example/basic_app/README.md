@@ -41,6 +41,13 @@ Custom Jinja chat templates accept `\xHH` string escapes. Use
 `engine.chatTemplate(...)` to inspect the rendered prompt before generation;
 see [chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing).
 
+For a reproducible date in a ChatML prompt, run
+`dart run bin/llamadart_template_time_example.dart /path/to/chatml-model.gguf`.
+It uses `TemplateTimeChatSession` with January 2, 2026 and an explicit ChatML
+template containing `strftime_now`. Use a ChatML-compatible model. Each
+request snapshots the session clock for context budgeting and generation;
+set `templateNow` to `null` to return to the normal clock.
+
 To try an imported JSON Schema with nested array arguments, run:
 
 ```bash

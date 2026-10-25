@@ -182,9 +182,13 @@ abstract class ChatTemplateHandler {
     required Map<String, String> metadata,
     required Map<String, dynamic> context,
   }) {
+    final templateNow = DateTime.tryParse(
+      metadata[internalTemplateNowMetadataKey] ?? '',
+    );
     return template.render(<String, dynamic>{
       ...chatTemplateKwargsFromMetadata(metadata),
       ...context,
+      if (templateNow != null) 'strftime_now': strftimeNow(templateNow),
     });
   }
 

@@ -6,6 +6,8 @@ import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
+import '../../../support/chat_session_application_extension.dart';
+import '../../../support/legacy_chat_session.dart';
 import '../../../support/scripted_chat_engine.dart';
 
 class MockLlamaBackend implements LlamaBackend, BackendAvailability {
@@ -1680,6 +1682,242 @@ void main() {
 
         expect(decoded, {'ok': true});
         expectForwarded();
+      });
+    });
+
+    group('templateNow', () {
+      final now = DateTime.utc(2026, 1, 2, 3, 4, 5);
+      late ScriptedChatEngine scripted;
+      late TemplateTimeChatSession forwarding;
+
+      setUp(() {
+        scripted = ScriptedChatEngine();
+        forwarding = TemplateTimeChatSession(scripted, maxContextTokens: 1000)
+          ..templateNow = now;
+      });
+
+      void expectForwarded() {
+        expect(scripted.createTemplateNows, [now]);
+        expect(scripted.templateTemplateNows, isNotEmpty);
+        expect(scripted.templateTemplateNows, everyElement(now));
+      }
+
+      test('reaches the request and the budget render of create', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        await forwarding.create([const LlamaTextContent('hi')]).drain<void>();
+
+        expectForwarded();
+      });
+
+      test('reaches the request and the budget render of send', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        await forwarding.send('hi');
+
+        expectForwarded();
+      });
+
+      test('reaches the request and the budget render of '
+          'createStructuredJson', () async {
+        scripted.replies.add(scriptedAnswer('{"ok":true}'));
+
+        await forwarding.createStructuredJson([
+          const LlamaTextContent('status'),
+        ], output: LlamaStructuredOutput.jsonObject(decoder: (json) => json));
+
+        expectForwarded();
+      });
+
+      test('reaches every render of a context-budget compaction', () async {
+        scripted.countFor = (messages) => messages.length * 100;
+        scripted.replies.add(scriptedAnswer('done'));
+        final compacting =
+            TemplateTimeChatSession(scripted, maxContextTokens: 450)
+              ..templateNow = now
+              ..addMessage(
+                const LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'task',
+                ),
+              )
+              ..addMessage(
+                const LlamaChatMessage.fromText(
+                  role: LlamaChatRole.assistant,
+                  text: 'call',
+                ),
+              )
+              ..addMessage(
+                const LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'result',
+                  continuesPreviousTurn: true,
+                ),
+              )
+              ..addMessage(
+                const LlamaChatMessage.fromText(
+                  role: LlamaChatRole.assistant,
+                  text: 'call again',
+                ),
+              );
+
+        await compacting.create([
+          const LlamaTextContent('result again'),
+        ], continuesPreviousTurn: true).drain<void>();
+
+        expect(scripted.requests.single.length, lessThan(5));
+        expect(scripted.templateTemplateNows.length, greaterThan(1));
+        expect(scripted.templateTemplateNows, everyElement(now));
+        expect(scripted.createTemplateNows, [now]);
+      });
+
+      test('reaches every render of a context-budget turn drop', () async {
+        scripted.countFor = (messages) => messages.length * 100;
+        scripted.replies.add(scriptedAnswer('done'));
+        final dropping = TemplateTimeChatSession(
+          scripted,
+          maxContextTokens: 450,
+        )..templateNow = now;
+        for (var turn = 0; turn < 4; turn++) {
+          dropping
+            ..addMessage(
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'question $turn',
+              ),
+            )
+            ..addMessage(
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.assistant,
+                text: 'answer $turn',
+              ),
+            );
+        }
+
+        await dropping.create([const LlamaTextContent('next')]).drain<void>();
+
+        expect(scripted.requests.single.length, lessThan(9));
+        expect(scripted.templateTemplateNows.length, greaterThan(2));
+        expect(scripted.templateTemplateNows, everyElement(now));
+      });
+
+      test('defaults to null', () async {
+        scripted.replies.add(scriptedAnswer('hello'));
+
+        forwarding.templateNow = null;
+        await forwarding.send('hi');
+
+        expect(scripted.createTemplateNows, [null]);
+        expect(scripted.templateTemplateNows, everyElement(isNull));
+      });
+
+      test(
+        'snapshots time before budget rendering and changes next request',
+        () async {
+          final later = now.add(const Duration(days: 1));
+          scripted.countFor = (_) {
+            forwarding.templateNow = later;
+            return 1;
+          };
+          scripted.replies
+            ..add(scriptedAnswer('first'))
+            ..add(scriptedAnswer('second'));
+
+          await forwarding.send('first');
+          expectForwarded();
+
+          await forwarding.send('second');
+          expect(scripted.createTemplateNows, [now, later]);
+          expect(scripted.templateTemplateNows, [now, later]);
+        },
+      );
+
+      test(
+        'reads the configured time when the stream is listened to',
+        () async {
+          final later = now.add(const Duration(days: 1));
+          scripted.replies.add(scriptedAnswer('hello'));
+          final stream = forwarding.create([const LlamaTextContent('hi')]);
+          forwarding.templateNow = later;
+
+          await stream.drain<void>();
+
+          expect(scripted.createTemplateNows, [later]);
+          expect(scripted.templateTemplateNows, everyElement(later));
+        },
+      );
+
+      test(
+        'reset keeps the clock while clearing conversation history',
+        () async {
+          scripted.replies
+            ..add(scriptedAnswer('first'))
+            ..add(scriptedAnswer('second'));
+          await forwarding.send('first');
+          forwarding.reset();
+          expect(forwarding.history, isEmpty);
+
+          await forwarding.send('second');
+
+          expect(scripted.requests.last, hasLength(1));
+          expect(scripted.createTemplateNows, [now, now]);
+        },
+      );
+
+      test(
+        'ordinary sessions keep application templateNow extensions',
+        () async {
+          final ordinary = ChatSession(scripted, maxContextTokens: 1000);
+          scripted.replies.add(scriptedAnswer('hello'));
+
+          expect(ordinary.templateNow, DateTime.utc(1984, 6, 1));
+          await ordinary.send('hi');
+
+          expect(scripted.createTemplateNows, [null]);
+          expect(scripted.templateTemplateNows, everyElement(isNull));
+        },
+      );
+      test(
+        'legacy interface implementations can delegate timed requests',
+        () async {
+          scripted.replies.add(scriptedAnswer('{"ok":true}'));
+          final legacy = LegacyChatSession(forwarding);
+          final decoded = await legacy.createStructuredJson([
+            const LlamaTextContent('status'),
+          ], output: LlamaStructuredOutput.jsonObject(decoder: (json) => json));
+          expect(decoded, {'ok': true});
+          expectForwarded();
+        },
+      );
+
+      test('clock changes during a failed request affect the retry', () async {
+        final later = now.add(const Duration(days: 1));
+        scripted.onRequest = (_, _) {
+          forwarding.templateNow = later;
+          throw StateError('rejected');
+        };
+        await expectLater(forwarding.send('first'), throwsStateError);
+        expect(forwarding.history, isEmpty);
+        scripted.onRequest = null;
+        scripted.replies.add(scriptedAnswer('retry'));
+        await forwarding.send('retry');
+        expect(scripted.createTemplateNows, [now, later]);
+        expect(scripted.templateTemplateNows, [now, later]);
+        expect(scripted.requests.last.single.content, 'retry');
+      });
+
+      test('the production renderer sends the configured timestamp', () async {
+        final timedBackend = MockLlamaBackend()
+          ..chatTemplate =
+              "{{ strftime_now('%Y-%m-%d %H:%M:%S') }} "
+              "{% for message in messages %}{{ message['content'] }}{% endfor %}";
+        final timedEngine = LlamaEngine(timedBackend);
+        addTearDown(timedEngine.dispose);
+        await timedEngine.loadModel('time-test.gguf');
+        timedBackend.queueResponse('done');
+        final timed = TemplateTimeChatSession(timedEngine, templateNow: now);
+        await timed.send('hello');
+        expect(timedBackend.lastPrompt, startsWith('2026-01-02 03:04:05'));
       });
     });
 

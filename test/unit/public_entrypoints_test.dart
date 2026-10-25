@@ -227,6 +227,7 @@ const _appNames = <String>{
   'SpeechToTextTask',
   'SpeechToTextTranscript',
   'StateLoadResult',
+  'TemplateTimeChatSession',
   'TemplateToolCallSerialization',
   'TextToSpeechAdapter',
   'TextToSpeechCapabilities',
@@ -296,6 +297,7 @@ void main() {
         'LiteRtLmAsrBackend',
         'LiteRtLmAsrModelPreset',
         'LiteRtLmAsrRuntimeConfig',
+        'TemplateTimeChatSession',
         'TemplateToolCallSerialization',
       ]),
     );
