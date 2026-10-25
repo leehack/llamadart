@@ -300,6 +300,13 @@ The profile is your assertion of model compatibility; it does not identify or
 qualify the loaded model. Query and corpus dimensions must match. The default
 raw profile and existing `embed` calls retain their original behavior.
 
+To improve retrieved candidates with a cross-encoder, load a separate rank-pooled
+GGUF and use `LlamaReranker(engine)`. Probe `await reranker.capabilities`, then
+call `reranker.rerank(query, documents)`: results retain original indices,
+all classifier scores and labels. Output zero matches llama-server; choose
+`scoreIndex` explicitly for another class. Native llama.cpp only; scores remain
+model-specific and are never normalized. See [reranking](website/docs/guides/embeddings.md#cross-encoder-reranking).
+
 For ordered image/audio content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports

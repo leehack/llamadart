@@ -402,6 +402,30 @@ void runLlamaWorkerForTesting(
             service.freeDecisionHead(message.headHandle);
             message.sendPort.send(DoneResponse());
 
+          case RerankingCapabilitiesRequest():
+            await waitForActiveGenerate();
+            message.sendPort.send(
+              RerankingCapabilitiesResponse(
+                service.getRerankingCapabilities(message.contextHandle),
+              ),
+            );
+
+          case RerankRequest():
+            await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
+            message.sendPort.send(
+              RerankResponse(
+                service.rerank(
+                  message.contextHandle,
+                  message.query,
+                  message.documents,
+                  cancelToken: Pointer<Int8>.fromAddress(
+                    message.cancelTokenAddress,
+                  ),
+                ),
+              ),
+            );
+
           case EmbeddingCapabilitiesRequest():
             message.sendPort.send(
               EmbeddingCapabilitiesResponse(

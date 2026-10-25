@@ -8,6 +8,10 @@ independent retrieval qualification. The existing embedding CLI remains raw.
 
 A clean, organized CLI application demonstrating the capabilities of the `llamadart` package. It supports both interactive conversation mode and single-response mode.
 
+For native cross-encoder reranking, run `dart run bin/llamadart_reranking_example.dart
+<path/to/reranker.gguf>`. This CPU example loads local weights, probes RANK
+pooling and prints candidate documents by the native classifier score.
+
 ## Features
 
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.

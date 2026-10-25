@@ -18,6 +18,7 @@ File writeSyntheticModernBertGguf(
   String path, {
   int? poolingType,
   List<String>? classifierLabels,
+  String? rerankTemplate,
   bool decisionTokens = false,
   int contextLength = 1024,
   int seed = 0,
@@ -39,6 +40,8 @@ File writeSyntheticModernBertGguf(
         '$arch.pooling_type': _GgufValue.uint32(poolingType),
       if (classifierLabels != null)
         '$arch.classifier.output_labels': _GgufValue.strings(classifierLabels),
+      if (rerankTemplate != null)
+        'tokenizer.chat_template.rerank': _GgufValue.string(rerankTemplate),
       if (decisionTokens) ...{
         'tokenizer.ggml.seperator_token_id': _GgufValue.uint32(2),
         'tokenizer.ggml.mask_token_id': _GgufValue.uint32(0),

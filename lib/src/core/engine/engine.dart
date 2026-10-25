@@ -28,6 +28,7 @@ import '../llama_logging.dart';
 import '../models/inference/model_params.dart';
 import '../models/inference/model_params_runtime_support.dart';
 import '../models/inference/embedding.dart';
+import '../models/inference/reranking.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/inference/next_token_scores.dart';
@@ -3817,6 +3818,82 @@ Future<(LlamaEngine, List<String>)> loadLlamaEngine(
       // The load failure is the error the caller needs.
     }
     rethrow;
+  }
+}
+
+/// Internal reranker integration, deliberately excluded from public exports.
+extension LlamaRerankingEngineAccess on LlamaEngine {
+  /// Loaded-context probe used by `LlamaReranker` without extending engine SPI.
+  Future<LlamaRerankingCapabilities> get backendRerankingCapabilities async {
+    if (isDisposed || !_isReady || _contextHandle == null) {
+      return LlamaRerankingCapabilities(
+        isSupported: false,
+        unsupportedReason: isDisposed
+            ? LlamaEngine._disposedMessage
+            : 'Load a reranker model first.',
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendReranking) {
+      return LlamaRerankingCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The active backend has no native reranking capability; use llama.cpp with a rank-pooled GGUF model.',
+      );
+    }
+    return (candidate as BackendReranking).getRerankingCapabilities(
+      _contextHandle!,
+    );
+  }
+
+  /// Low-level reranking dispatch; applications use `LlamaReranker`.
+  Future<BackendRerankingOutput> rerankBackend(
+    String query,
+    List<String> documents,
+    int scoreIndex,
+  ) async {
+    _ensureReady();
+    final epoch = _modelEpoch;
+    final cancelEpoch = _embeddingCancelEpoch;
+    final context = _contextHandle!;
+    final support = await backendRerankingCapabilities;
+    if (epoch != _modelEpoch || context != _contextHandle || isDisposed) {
+      throw LlamaStateException(
+        'The model changed during reranking; retry on the loaded model.',
+      );
+    }
+    if (cancelEpoch != _embeddingCancelEpoch) {
+      throw LlamaInferenceException('Reranking cancelled before dispatch.');
+    }
+    if (!support.isSupported) {
+      throw LlamaUnsupportedException(
+        support.unsupportedReason ??
+            'Native reranking is unavailable for this model/runtime.',
+      );
+    }
+    if (scoreIndex < 0 || scoreIndex >= support.classifierLabels.length) {
+      throw LlamaArgumentException(
+        'Reranking scoreIndex must identify an available classifier output.',
+      );
+    }
+    if (documents.isEmpty) {
+      return BackendRerankingOutput(
+        scores: const [],
+        classifierLabels: support.classifierLabels,
+      );
+    }
+    final result = await _contextCall(
+      () => (backend as BackendReranking).rerank(context, query, documents),
+    );
+    if (epoch != _modelEpoch || context != _contextHandle || isDisposed) {
+      throw LlamaStateException(
+        'The model changed during reranking; discard these scores and retry.',
+      );
+    }
+    if (cancelEpoch != _embeddingCancelEpoch) {
+      throw LlamaInferenceException('Reranking cancelled.');
+    }
+    return result;
   }
 }
 

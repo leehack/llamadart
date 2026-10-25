@@ -27,6 +27,7 @@ import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/embedding.dart';
+import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
@@ -47,6 +48,7 @@ import 'native_barrier_api.dart';
 import 'vulkan_device_probe.dart';
 
 part 'multimodal_embedding.dart';
+part 'reranking.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 final int _nativeStatusException =

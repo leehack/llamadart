@@ -134,6 +134,26 @@
   "mappings": [
     {
       "surfaces": [
+        "api:LlamaReranker.new",
+        "api:LlamaReranker.engine",
+        "api:LlamaReranker.capabilities",
+        "api:LlamaReranker.rerank",
+        "api:LlamaReranker.cancel",
+        "capability:LlamaRerankingCapabilities.isSupported",
+        "capability:LlamaRerankingCapabilities.unsupportedReason",
+        "capability:LlamaRerankingCapabilities.classifierLabels",
+        "capability:LlamaRerankingCapabilities.maxInputTokens",
+        "capability:LlamaRerankingCapabilities.maxParallelSequences",
+        "matrix:Reranking"
+      ],
+      "exemption": {
+        "id": "native-reranking",
+        "reason": "The local-only native-reranking scenario compares full classifier outputs and server output zero against exact pinned upstream for named-template two-class Qwen3 and single-output fallback Jina, with batching, overflow, cancellation and lifecycle controls. Deterministic tests cover framing, optional-backend rejection and buffer lifetime. A versioned cross-platform validation pack remains separate; local receipts do not qualify other platforms or model families.",
+        "issue": "https://github.com/leehack/llamadart/issues/323"
+      }
+    },
+    {
+      "surfaces": [
         "api:LlamaTextEmbedder.new",
         "api:LlamaTextEmbedder.engine",
         "api:LlamaTextEmbedder.profile",

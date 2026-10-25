@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Rerank retrieved documents with `LlamaReranker` on native rank-pooled GGUF models, preserving classifier scores, labels and document indices ([#323](https://github.com/leehack/llamadart/issues/323)).
+
 - Control retained image prompt conditioning with `ImageConditioningCacheParams`; zero disables reuse and ordinary settings preserve the runtime default.
 
 - Add opt-in EmbeddingGemma-2 query/document/title helpers and 768/512/256/128-dimensional output controls with normalization after truncation; existing raw embedding calls are unchanged ([#1126](https://github.com/leehack/llamadart/issues/1126)).
