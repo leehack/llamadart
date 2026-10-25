@@ -8,6 +8,10 @@ independent retrieval qualification. The existing embedding CLI remains raw.
 
 A clean, organized CLI application demonstrating the capabilities of the `llamadart` package. It supports both interactive conversation mode and single-response mode.
 
+For native cross-encoder reranking, run `dart run bin/llamadart_reranking_example.dart
+<path/to/reranker.gguf>`. This CPU example loads local weights, probes RANK
+pooling and prints candidate documents by the native classifier score.
+
 ## Features
 
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.
@@ -467,3 +471,22 @@ Android x86_64 and LiteRT-LM Web embeddings are unavailable.
 ```bash
 dart run bin/llamadart_litert_embedding_example.dart /path/model.litertlm /path/image.png
 ```
+
+### Seamless SDXS texture recipe
+
+Use `SeamlessImageGenerationRequest(circularX: true, circularY: true, ...)`
+with SDXS's embedded tiny decoder at 512×512. Load with
+`flashAttention: false` and `vaeDirectConvolution: false`. Both axes default
+to off; decoder overrides and unqualified families/options throw. The
+[guide](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
+includes a complete example. The maintained real-model suite saves 2×2
+repeat PNGs and checks both numerical seams and cancellation/reuse:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario image-seamless-textures \
+  --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
+```
+
+Run this command from the repository root. On a CPU-only host set
+`LLAMADART_TEXTURE_DEVICES=cpu`; the default requires CPU and actual Metal.
+See `doc/image_seamless_textures.md` for the independent native comparison.

@@ -237,6 +237,18 @@ void runLlamaWorkerForTesting(
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
+          case RerankingContextCreateRequest():
+            await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
+            message.sendPort.send(
+              HandleResponse(
+                service.createRerankingContext(
+                  message.modelHandle,
+                  message.params,
+                ),
+              ),
+            );
+
           case ContextCreateRequest():
             final handle = service.createContext(
               message.modelHandle,
@@ -401,6 +413,30 @@ void runLlamaWorkerForTesting(
           case DecisionHeadFreeRequest():
             service.freeDecisionHead(message.headHandle);
             message.sendPort.send(DoneResponse());
+
+          case RerankingCapabilitiesRequest():
+            await waitForActiveGenerate();
+            message.sendPort.send(
+              RerankingCapabilitiesResponse(
+                service.getRerankingCapabilities(message.contextHandle),
+              ),
+            );
+
+          case RerankRequest():
+            await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
+            message.sendPort.send(
+              RerankResponse(
+                service.rerank(
+                  message.contextHandle,
+                  message.query,
+                  message.documents,
+                  cancelToken: Pointer<Int8>.fromAddress(
+                    message.cancelTokenAddress,
+                  ),
+                ),
+              ),
+            );
 
           case EmbeddingCapabilitiesRequest():
             message.sendPort.send(

@@ -60,7 +60,7 @@ export 'src/core/image/image_generation_events.dart';
 export 'src/core/image/image_generation_model.dart';
 export 'src/core/image/image_model_params.dart';
 export 'src/core/image/image_generation_request.dart'
-    show ImageGenerationRequest;
+    show ImageGenerationRequest, SeamlessImageGenerationRequest;
 
 // Decision models
 export 'src/core/decision/decision_engine.dart'
@@ -92,6 +92,8 @@ export 'src/backends/backend.dart'
 // Models - Inference
 export 'src/core/models/inference/embedding.dart';
 export 'src/core/engine/text_embedder.dart';
+export 'src/core/engine/reranker.dart';
+export 'src/core/models/inference/reranking.dart';
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/next_token_scores.dart';
 export 'src/core/models/inference/generation_params.dart';

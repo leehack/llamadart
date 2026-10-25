@@ -1,5 +1,6 @@
 import '../exceptions.dart';
 import 'image_generation_model.dart';
+import 'image_generation_driver.dart';
 
 /// A request to generate one or more images from a text prompt.
 class ImageGenerationRequest {
@@ -93,6 +94,46 @@ class ImageGenerationRequest {
   });
 }
 
+/// A text-to-image request with independently repeatable texture axes.
+///
+/// Both axes default to off. When either is enabled, the initial qualified
+/// recipe is SDXS (512-DS) with its header-detected embedded tiny decoder,
+/// no component overrides, 512 by 512 pixels, and CPU or Metal computation.
+/// Load with `flashAttention: false` and `vaeDirectConvolution: false`.
+/// Other families, decoders, sizes and runtime options throw
+/// [LlamaUnsupportedException] before generation starts.
+///
+/// The runtime applies circular padding to both diffusion and decoder
+/// convolutions. Inspect a repeated tile: this improves continuity but does
+/// not promise that every prompt and seed produces a useful texture.
+///
+/// This separate type preserves existing implementations and subclasses of
+/// [ImageGenerationRequest]. Ordinary requests keep their original behavior.
+final class SeamlessImageGenerationRequest extends ImageGenerationRequest {
+  /// Wraps left and right convolution boundaries.
+  final bool circularX;
+
+  /// Wraps top and bottom convolution boundaries.
+  final bool circularY;
+
+  /// Creates a request with independently optional circular axes.
+  const SeamlessImageGenerationRequest({
+    required super.prompt,
+    super.negativePrompt,
+    super.width,
+    super.height,
+    super.steps,
+    super.guidanceScale,
+    super.seed,
+    super.count,
+    super.sampler,
+    super.scheduler,
+    super.flowShift,
+    this.circularX = false,
+    this.circularY = false,
+  });
+}
+
 /// Throws [LlamaImageGenerationException] naming the first invalid field of
 /// [request].
 void validateImageGenerationRequest(ImageGenerationRequest request) {
@@ -155,6 +196,33 @@ void validateImageGenerationRequest(ImageGenerationRequest request) {
       'flowShift must be greater than 0 and at most '
       '${ImageGenerationRequest.maxFlowShift}.',
       flowShift,
+    );
+  }
+}
+
+/// Rejects circular generation outside the measured SDXS decoder recipe.
+/// Checks the native family and header evidence, never the model filename.
+void validateSeamlessImageGenerationRecipe(
+  ImageGenerationSessionRequest request,
+  ImageGenerationSessionConfig config,
+  String modelVersion,
+) {
+  if (!request.circularX && !request.circularY) return;
+  if (modelVersion != 'SDXS (512-DS)' ||
+      !config.seamlessRecipeVerified ||
+      config.files.length != 1 ||
+      !config.files.containsKey('model') ||
+      request.width != 512 ||
+      request.height != 512 ||
+      config.flashAttention ||
+      config.vaeDirectConvolution) {
+    throw LlamaUnsupportedException(
+      'Seamless textures require stable_diffusion v0.3.0 SDXS (512-DS), '
+      'its header-detected embedded tiny decoder without component overrides '
+      'on CPU or Metal, '
+      '512 by 512 pixels, flashAttention: false and '
+      'vaeDirectConvolution: false. This model or decoder recipe is '
+      'not qualified for circular padding.',
     );
   }
 }

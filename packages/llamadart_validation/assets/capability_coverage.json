@@ -144,6 +144,28 @@
     },
     {
       "surfaces": [
+        "api:LlamaReranker.new",
+        "api:LlamaReranker.engine",
+        "api:LlamaReranker.capabilities",
+        "api:LlamaReranker.rerank",
+        "api:LlamaReranker.cancel",
+        "capability:LlamaRerankingCapabilities.isSupported",
+        "capability:LlamaRerankingCapabilities.unsupportedReason",
+        "capability:LlamaRerankingCapabilities.classifierLabels",
+        "capability:LlamaRerankingCapabilities.maxInputTokens",
+        "capability:LlamaRerankingCapabilities.maxParallelSequences",
+        "matrix:Reranking",
+        "api:LlamaReranker.load",
+        "api:LlamaReranker.dispose"
+      ],
+      "exemption": {
+        "id": "native-reranking",
+        "reason": "The local-only native-reranking scenario compares full classifier outputs and server output zero against exact pinned upstream for named-template two-class Qwen3 and single-output fallback Jina/BGE, with batching, overflow, cancellation and lifecycle controls. Deterministic tests cover framing, optional-backend rejection, bounded classifier-directory verification, explicit RANK loading and buffer lifetime. A versioned cross-platform validation pack remains separate; local receipts do not qualify other platforms or model families.",
+        "issue": "https://github.com/leehack/llamadart/issues/323"
+      }
+    },
+    {
+      "surfaces": [
         "api:LlamaTextEmbedder.new",
         "api:LlamaTextEmbedder.engine",
         "api:LlamaTextEmbedder.profile",
@@ -223,7 +245,7 @@
       ],
       "exemption": {
         "id": "image-capabilities",
-        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim. ImageConditioningCacheParams.capacity has maintained engine/worker tests and image-generation-smoke qualification on SDXS/SD-Turbo CPU and Metal; it has no versioned validation-pack case yet. Approximation caching remains https://github.com/leehack/llamadart/issues/1233.",
+        "reason": "Dedicated image profiles and device evidence exist, but reported image capability fields are not yet bound to versioned validation feature/case IDs. This is a coverage-map gap, not a new runtime support claim. ImageConditioningCacheParams.capacity has maintained engine/worker tests and image-generation-smoke qualification on SDXS/SD-Turbo CPU and Metal; it has no versioned validation-pack case yet. SeamlessImageGenerationRequest circularX/circularY has maintained API/ABI refusal tests and image-seamless-textures CPU/Metal quality and cancellation qualification for SDXS; versioned pack case IDs remain open in https://github.com/leehack/llamadart/issues/1234. Approximation caching remains https://github.com/leehack/llamadart/issues/1233.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

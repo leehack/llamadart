@@ -27,6 +27,7 @@ import '../../core/models/inference/gpu_layer_count.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/embedding.dart';
+import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
@@ -36,6 +37,7 @@ import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
 import 'lazy_grammar_triggers.dart';
 import 'load_device_selection.dart';
+import 'reranking_classifier.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
@@ -47,6 +49,7 @@ import 'native_barrier_api.dart';
 import 'vulkan_device_probe.dart';
 
 part 'multimodal_embedding.dart';
+part 'reranking.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 final int _nativeStatusException =
@@ -4310,7 +4313,11 @@ class LlamaCppService {
   ///
   /// Returns a handle to the created context.
   /// Throws an [Exception] if the model handle is invalid or context creation fails.
-  int createContext(int modelHandle, ModelParams params) {
+  int createContext(
+    int modelHandle,
+    ModelParams params, {
+    bool reranking = false,
+  }) {
     final model = _models[modelHandle];
     if (model == null) {
       throw Exception("Invalid model handle");
@@ -4387,6 +4394,10 @@ class LlamaCppService {
       );
     }
 
+    if (reranking) {
+      ctxParams.pooling_type = llama_pooling_type.LLAMA_POOLING_TYPE_RANK;
+      ctxParams.embeddings = true;
+    }
     final ctxPtr = _calls.createContext(model.pointer, ctxParams);
     IsolateShutdownReleases.current.hold(
       ShutdownStage.context,

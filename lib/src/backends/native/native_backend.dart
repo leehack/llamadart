@@ -11,6 +11,7 @@ import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
+import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
@@ -50,6 +51,7 @@ class NativeAutoBackend
         BackendEmbeddingsSupport,
         BackendMultimodalEmbeddings,
         BackendBatchEmbeddings,
+        BackendReranking,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -756,6 +758,56 @@ class NativeAutoBackend
     }
     throw UnsupportedError(
       'The selected native backend does not support embeddings.',
+    );
+  }
+
+  @override
+  Future<int> createRerankingContext(int modelHandle, ModelParams params) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendReranking) {
+      return (delegate as BackendReranking).createRerankingContext(
+        modelHandle,
+        params,
+      );
+    }
+    throw LlamaUnsupportedException(
+      'Explicit reranker loading requires the native llama.cpp runtime.',
+    );
+  }
+
+  @override
+  Future<LlamaRerankingCapabilities> getRerankingCapabilities(
+    int contextHandle,
+  ) async {
+    final delegate = _delegate;
+    if (delegate is BackendReranking) {
+      return (delegate as BackendReranking).getRerankingCapabilities(
+        contextHandle,
+      );
+    }
+    return LlamaRerankingCapabilities(
+      isSupported: false,
+      unsupportedReason:
+          'Native reranking requires the llama.cpp runtime and a rank-pooled GGUF model; LiteRT-LM does not expose it.',
+    );
+  }
+
+  @override
+  Future<BackendRerankingOutput> rerank(
+    int contextHandle,
+    String query,
+    List<String> documents,
+  ) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendReranking) {
+      return (delegate as BackendReranking).rerank(
+        contextHandle,
+        query,
+        documents,
+      );
+    }
+    throw LlamaUnsupportedException(
+      'The selected native runtime does not support reranking.',
     );
   }
 

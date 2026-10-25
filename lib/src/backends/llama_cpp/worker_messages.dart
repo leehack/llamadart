@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../backend.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/embedding.dart';
+import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/next_token_scores.dart';
@@ -1047,4 +1048,67 @@ class WorkerHandshake {
     this.dartLogLevel = LlamaLogLevel.none,
     this.logPort,
   });
+}
+
+/// Loaded-context reranking capability request.
+class RerankingCapabilitiesRequest extends WorkerRequest {
+  /// Creates a capability request.
+  RerankingCapabilitiesRequest(this.contextHandle, super.sendPort);
+
+  /// Context to probe.
+  final int contextHandle;
+}
+
+/// Complete native reranking request with a caller-owned cancellation flag.
+class RerankRequest extends WorkerRequest {
+  /// Creates a request; the caller retains the flag until the reply or worker exit.
+  RerankRequest(
+    this.contextHandle,
+    this.query,
+    this.documents,
+    this.cancelTokenAddress,
+    super.sendPort,
+  );
+
+  /// Loaded context.
+  final int contextHandle;
+
+  /// Verbatim query.
+  final String query;
+
+  /// Verbatim documents in input order.
+  final List<String> documents;
+
+  /// Shared cancellation flag address.
+  final int cancelTokenAddress;
+}
+
+/// Loaded-context reranking probe response.
+class RerankingCapabilitiesResponse {
+  /// Creates a response.
+  RerankingCapabilitiesResponse(this.capabilities);
+
+  /// Probed capabilities.
+  final LlamaRerankingCapabilities capabilities;
+}
+
+/// Complete, input-ordered native classifier response.
+class RerankResponse {
+  /// Creates a response.
+  RerankResponse(this.output);
+
+  /// All class outputs and labels.
+  final BackendRerankingOutput output;
+}
+
+/// Explicit RANK context creation after classifier verification.
+class RerankingContextCreateRequest extends WorkerRequest {
+  /// Creates a request for the owning reranker loader.
+  RerankingContextCreateRequest(this.modelHandle, this.params, super.sendPort);
+
+  /// Loaded model to verify.
+  final int modelHandle;
+
+  /// Standard context/device limits, with explicit RANK pooling.
+  final ModelParams params;
 }

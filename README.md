@@ -304,6 +304,15 @@ The profile is your assertion of model compatibility; it does not identify or
 qualify the loaded model. Query and corpus dimensions must match. The default
 raw profile and existing `embed` calls retain their original behavior.
 
+To improve retrieved candidates with a cross-encoder, load a separate rank-pooled
+GGUF with `LlamaReranker.load(model, params: ...)`, or borrow an already
+rank-pooled engine with `LlamaReranker(engine)`. The owning loader verifies a
+classifier head before selecting RANK for BERT/Jina files that omit that metadata. Probe `await reranker.capabilities`, then
+call `reranker.rerank(query, documents)`: results retain original indices,
+all classifier scores and labels. Output zero matches llama-server; choose
+`scoreIndex` explicitly for another class. Native llama.cpp only; scores remain
+model-specific and are never normalized. See [reranking](website/docs/guides/embeddings.md#cross-encoder-reranking).
+
 For ordered image/audio content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
 `await engine.embeddingCapabilities` after loading. Native llama.cpp supports
@@ -471,6 +480,14 @@ Image loads also accept `ImageConditioningCacheParams(capacity: 0)` to
 turn off prompt-conditioning reuse, or a positive entry limit. Unset keeps
 the runtime default of four entries. This does not enable approximate
 sampling caches; see the guide's [conditioning cache](https://llamadart.leehack.com/docs/next/guides/image-generation#conditioning-cache).
+
+For repeatable textures, `SeamlessImageGenerationRequest(circularX: true,
+circularY: true, ...)` enables independent axes. The initial qualified recipe
+is SDXS with its embedded tiny decoder at 512×512 on CPU or Metal, with
+`flashAttention: false` and `vaeDirectConvolution: false`; other recipes
+throw. Both axes default off. Inspect repeated output and see the guide's
+[seamless texture recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
+for its measured scope and quality criteria.
 
 ## Choosing a Runtime
 
