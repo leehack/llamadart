@@ -313,7 +313,7 @@
       ],
       "exemption": {
         "id": "speech-capabilities",
-        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. This slice does not claim every speech flag or negative path is qualified.",
+        "reason": "Dedicated speech profiles/runners exist, but their reported capability fields are not yet bound to versioned validation feature/case IDs. The web-speech-task-cancel local E2E separately covers direct/worker task isolation and bounded reuse with explicit TTS batch 512/micro-batch 256 (#1371); it does not bind these capability fields or qualify every speech flag or negative path.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

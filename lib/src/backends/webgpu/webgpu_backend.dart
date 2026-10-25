@@ -1950,8 +1950,9 @@ class WebGpuLlamaBackend
         if (identical(_generationAbort, generationAbort)) {
           _generationAbort = null;
         }
+        // The signal names this request; cancel() could stop another request
+        // that owns the bridge while this completion is still queued.
         abortController.abort();
-        bridge.cancel();
         if (!controller.isClosed) {
           return controller.close();
         }
@@ -2471,8 +2472,9 @@ class WebGpuLlamaBackend
     if (controller == null) {
       return;
     }
+    // Startup can still be awaiting a queued capability probe while another
+    // operation owns the bridge; its global cancel would stop that operation.
     controller.abort();
-    _bridge?.cancel();
   }
 
   /// Reports the options that the loaded bridge assets'

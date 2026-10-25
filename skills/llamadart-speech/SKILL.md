@@ -144,8 +144,10 @@ description: >-
 - Cancellation is cooperative: `task.cancel()` or `await session.cancel()`.
   `done` then reports `cancelled`, and `task.result` throws
   `LlamaStateException`. `task.cancel()` stops only that task; it does not
-  cancel other requests on the same `LlamaEngine`. A streaming session's `events`
-  still report a failure as a stream error (also on `session.done`), so give
+  cancel other requests on the same `LlamaEngine`. With the pinned Web bridge,
+  this includes queued STT generation and TTS startup waiting for a capability probe.
+  Use `task.cancel()` for one task; `engine.cancelGeneration()` requests global generation cancellation.
+  A streaming session's `events` still report a failure as a stream error (also on `session.done`), so give
   its `listen` an `onError`. Cancelling or pausing the `events`
   subscription does not stop or throttle inference. The speech engine's
   `dispose()`, and `unloadModel()` and `dispose()` on its `LlamaEngine`,

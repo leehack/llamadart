@@ -651,6 +651,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'routing, decision engine, or WebGPU bridge pin changes.',
   ),
   TestMatrixRow(
+    id: 'web-speech-task-cancel',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real Qwen3-ASR and Qwen3-TTS task cancellation through the pinned '
+        'bridge direct and worker paths: another request remains intact, '
+        'cancelled tasks emit no final event, and the engine remains reusable; '
+        'CPU placement by default; TTS batch 512/micro-batch 256 with bounded '
+        'one/eight-frame controls; WebGPU qualification only with positive '
+        'gpuLayers and verified WebGPU execution',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'web-speech-task-cancel',
+    useWhen:
+        'Speech task cancellation, WebGPU request ownership, direct/worker '
+        'dispatch, or bridge pin changes. Stage the real input config in '
+        'build/web_speech_task_cancel/config.json; see doc/testing_matrix.md.',
+  ),
+  TestMatrixRow(
     id: 'web-text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',

@@ -162,6 +162,10 @@ partial events first. `task.result` returns the transcript or throws the
 failure, or `LlamaStateException` when the task is cancelled; `task.done`
 reports the same outcome as a `SpeechToTextCompletion` and never throws.
 
+`task.cancel()` stops only its request. With the pinned Web bridge assets this
+also holds when the speech request is queued behind another active request. Await `task.done` before
+reusing a speech context; `engine.cancelGeneration()` is global cancellation.
+
 ## Add a model family
 
 To recognize speech with another audio chat model on `LlamaEngine`, extend

@@ -122,6 +122,7 @@ void main() {
       expect(ids, contains('physical-ios-speech-e2e'));
       expect(ids, contains('decision-model-smoke'));
       expect(ids, contains('decision-model-web-smoke'));
+      expect(ids, contains('web-speech-task-cancel'));
       expect(ids, contains('image-generation-smoke'));
       expect(ids, contains('image-exit-teardown'));
       expect(ids, contains('chat-app-image-generation-smoke'));
@@ -218,6 +219,7 @@ void main() {
       }
       expect(referenced, contains('decision-model-smoke'));
       expect(referenced, contains('decision-model-web-smoke'));
+      expect(referenced, contains('web-speech-task-cancel'));
       expect(referenced, contains('image-generation-smoke'));
       expect(referenced, contains('image-exit-teardown'));
       expect(referenced, contains('chat-app-macos-quit'));

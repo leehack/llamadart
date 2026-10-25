@@ -882,6 +882,40 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'web-speech-task-cancel',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Check real STT/TTS task cancellation isolation and engine reuse '
+          'through the direct and worker paths of the pinned WebGPU bridge.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+          environment: {
+            'WEBGPU_BRIDGE_OUT_DIR':
+                '${context.projectRoot}/build/web_speech_task_cancel/bridge',
+          },
+          description: 'Fetch pinned WebGPU bridge assets for the test server',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'chrome-webgpu',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/webgpu/speech_task_cancellation_e2e_test.dart',
+          ],
+          description: 'Web speech task cancellation isolation and reuse',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'llama-cpp-speculative-benchmark',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
