@@ -14,6 +14,17 @@ Linux and web. Full docs: https://llamadart.leehack.com
 
 ## Guidelines
 
+- For a model-free macOS/Linux/Windows setup snapshot, use
+  `dart run llamadart:doctor [--json]` or
+  `await collectLlamaRuntimeSetupReport()`. It reports pinned publication policy
+  and only set/unset native override names. Exit 0 means a report was produced;
+  loading, emitted assets, GPU/backend and model capabilities remain unchecked.
+  The collector performs no native initialization or network work, but `dart run`
+  can prepare/download native assets or fail in its build hook before main.
+  Web/mobile throw `LlamaUnsupportedException`; a Dart CLI report does not
+  validate a Flutter app/device/browser. Keep `web_setup --check` as separate
+  offline asset advice and use loaded-model capabilities for feature decisions.
+
 - In custom backends and fakes, declare URL-load callbacks as
   `void Function(double progress)? onProgress` (0.14+), including
   `BackendModelFormatRouting.modelLoadFromUrlAs`. Forward progress fractions

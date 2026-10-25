@@ -39,6 +39,15 @@ Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.
 
 ## Requirements
 
+For a model-free desktop setup report, run `dart run llamadart:doctor` or
+`dart run llamadart:doctor --json` on macOS, Linux or Windows. The public
+`collectLlamaRuntimeSetupReport()` API returns the same snapshot. It reports
+pinned publication policy and override presence; native loading, selected
+backend/GPU, emitted assets and model capabilities remain unchecked. Exit 0
+means a report was produced. The collector uses no native initialization or
+network; `dart run` can prepare/download assets through its build hook or fail
+before main. See [setup report scope](https://llamadart.leehack.com/docs/platforms/native-build-hooks#desktop-setup-report).
+
 - Dart SDK `>=3.10.7`
 - Flutter SDK `>=3.38.0` for Flutter apps
 - iOS deployment target `16.4` or newer for Flutter iOS apps. For LiteRT-LM

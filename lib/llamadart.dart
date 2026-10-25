@@ -34,6 +34,12 @@
 /// ```
 library;
 
+export 'src/core/diagnostics/runtime_setup_report.dart'
+    show
+        LlamaRuntimeSetupReport,
+        LlamaRuntimeSetupRuntime,
+        collectLlamaRuntimeSetupReport;
+
 // Engine & Chat
 export 'src/core/engine/engine.dart'
     show LlamaEngine, LlamaEngineCompletionExtension;
