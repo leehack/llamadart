@@ -9,9 +9,9 @@ import 'engine.dart';
 ///
 /// Native llama.cpp rank-pooled GGUF models are supported; [load] also prepares
 /// verified BERT/Jina classifiers whose metadata omits RANK. WebGPU, LiteRT-LM
-/// and ordinary embedding/chat models report unsupported. This wrapper borrows
-/// [engine]; await calls before switching models or disposing it. It neither
-/// owns a model nor changes the engine's embedding API.
+/// and ordinary embedding/chat models report unsupported. The constructor
+/// borrows [engine]; [load] owns it until [dispose]. Await calls before changing
+/// its model or disposing it. Existing embedding APIs remain unchanged.
 final class LlamaReranker {
   /// Borrows an existing engine, including its context and cancellation policy.
   const LlamaReranker(this.engine) : _ownsEngine = false;
@@ -56,7 +56,7 @@ final class LlamaReranker {
   Future<void> dispose() =>
       _ownsEngine ? engine.dispose() : Future<void>.value();
 
-  /// Existing engine; a separate reranker model normally uses its own engine.
+  /// Inference engine, owned by this helper only when created through [load].
   final LlamaEngine engine;
 
   /// Explicit model/runtime probe; unloaded or disposed engines are unsupported.

@@ -31,7 +31,8 @@ description: >-
   limits to fit input and set `maxParallelSequences` above one for independent
   sequence batching. `topN` does not reduce scoring compute. Cancellation via
   `reranker.cancel()` affects the borrowed engine and waits for a native pass;
-  await operations before model changes and dispose the engine yourself.
+  await operations before model changes, then dispose the owning helper or
+  the caller-owned engine.
 
 - For a known EmbeddingGemma-2 model, opt into `LlamaTextEmbedder` with
   `profile: LlamaEmbeddingProfile.embeddingGemma2` and common query/corpus

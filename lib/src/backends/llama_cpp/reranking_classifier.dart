@@ -37,17 +37,18 @@ bool hasRerankingClassifier(String source, int outputs) {
       final rank = reader.u32();
       if (rank < 1 || rank > 4) return false;
       final shape = [for (var d = 0; d < rank; d++) reader.u64()];
-      reader.skip(12); // Tensor type and byte offset; weights stay unread.
+      reader.skip(12); // Tensor type and payload offset are not dereferenced.
       if (name == 'cls.output.weight') projection = shape;
       if (name == 'cls.weight') classifier = shape;
     }
     final head = projection ?? classifier;
-    // Jina tiny has a direct single-output cls.weight without cls.output.
+    // GGUF elides trailing unit dimensions; native loaders read [width] as
+    // [width, 1]. Jina tiny also omits the separate cls.output projection.
     return outputs > 0 &&
         head != null &&
-        head.length == 2 &&
         head[0] > 0 &&
-        head[1] == outputs;
+        ((head.length == 1 && outputs == 1) ||
+            (head.length == 2 && head[1] == outputs));
   } on Object {
     return false;
   }

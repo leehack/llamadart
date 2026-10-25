@@ -63,7 +63,24 @@ void main() {
       isFalse,
     );
     expect(
-      hasRerankingClassifier(header('cls.output.weight', [1]).path, 1),
+      hasRerankingClassifier(header('cls.output.weight', [384]).path, 2),
+      isFalse,
+    );
+    expect(hasRerankingClassifier(header('cls.weight', [384]).path, 1), isTrue);
+    expect(
+      hasRerankingClassifier(header('cls.output.weight', [1024]).path, 1),
+      isTrue,
+    );
+    expect(
+      hasRerankingClassifier(header('cls.output.weight', [16, 1, 1]).path, 1),
+      isFalse,
+    );
+    expect(
+      hasRerankingClassifier(header('cls.output.weight', [0, 1]).path, 1),
+      isFalse,
+    );
+    expect(
+      hasRerankingClassifier(header('cls.output.weight', [384, 0]).path, 1),
       isFalse,
     );
     expect(

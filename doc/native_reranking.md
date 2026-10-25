@@ -39,7 +39,8 @@ sequence IDs, classifier width, preflight, unsupported paths, cancellation,
 reuse, immutable results and RPC buffer lifetime. They do not qualify a real
 reranker. The local-only scenario compares full class vectors at matching single/grouped
 geometries and the primary upstream server's output zero. The portable owner
-uses GGML_NATIVE=OFF; host-native kernels give different quantized scores.
+uses GGML_NATIVE=OFF and Apple Accelerate vector math; host-native kernels or
+disabling Accelerate gives different classifier scores.
 Batch geometry can also change scores, so no cross-geometry identity is assumed. Other platforms require separate
 receipts; do not infer their qualification from the native API or a macOS run.
 
@@ -55,7 +56,7 @@ mkdir -p .dart_tool/rerank_oracle/source
 git -C "$LLAMA_CPP_CHECKOUT" archive 620d2225cc436ab0b001e3200e590e3b286ef9ab \
   | tar -x -C .dart_tool/rerank_oracle/source
 cmake -S .dart_tool/rerank_oracle/source -B .dart_tool/rerank_oracle/build \
-  -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_METAL=ON -DGGML_BLAS=OFF \
+  -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DGGML_METAL=ON -DGGML_BLAS=OFF -DGGML_ACCELERATE=ON \
   -DGGML_METAL_EMBED_LIBRARY=ON -DGGML_METAL_USE_BF16=OFF \
   -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_SERVER=ON \
   -DLLAMA_BUILD_COMMIT=620d2225cc436ab0b001e3200e590e3b286ef9ab \

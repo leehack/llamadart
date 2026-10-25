@@ -76,6 +76,8 @@ void main() {
         );
         addTearDown(helper.dispose);
         final engine = helper.engine;
+        final activeBackend = await engine.getBackendName();
+        expect(activeBackend.toLowerCase(), contains(gpu ? 'metal' : 'cpu'));
         final capabilities = await helper.capabilities;
         expect(capabilities.isSupported, isTrue);
         expect(capabilities.classifierLabels, reference['labels']);
@@ -223,6 +225,7 @@ void main() {
         final receipt = {
           'family': family,
           'backend': gpu ? 'metal' : 'cpu',
+          'active_backend': activeBackend,
           'model_sha256': hash,
           'upstream_commit': _upstream,
           'corpus_sha256': sha256
