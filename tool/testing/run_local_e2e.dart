@@ -1097,6 +1097,32 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'native-reranking',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify native reranking against pinned upstream full-class and server oracles with local Qwen3/Jina weights; see doc/native_reranking.md.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '--tags',
+            'local-only',
+            'test/e2e/backends/native_reranking_e2e_test.dart',
+          ],
+          description:
+              'Native reranking CPU/Metal reference qualification; no downloads',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'text-embedding-retrieval',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

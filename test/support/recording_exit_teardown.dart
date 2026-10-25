@@ -22,7 +22,11 @@ typedef FakeMediaEval =
 /// where it was.
 final class RecordingExitTeardown {
   /// Records calls on their way to [real].
-  RecordingExitTeardown(this.real, {this.evalMedia});
+  RecordingExitTeardown(
+    this.real, {
+    this.evalMedia,
+    this.recordTokenRows = false,
+  });
 
   /// The projector the fake `llama_dart_mtmd_init_from_file` returns.
   static final Pointer<mtmd_context> projector = Pointer.fromAddress(0x30);
@@ -68,6 +72,13 @@ final class RecordingExitTeardown {
 
   /// Token count of the batch of each `llama_dart_decode` so far.
   final List<int> decodedTokens = <int>[];
+
+  /// Whether to snapshot explicit token/sequence rows for reranking tests.
+  final bool recordTokenRows;
+
+  /// Complete token and sequence rows of guarded decode calls.
+  final List<List<int>> decodedTokenIds = [];
+  final List<List<int>> decodedSequenceIds = [];
 
   /// The [owned] objects not passed to `llama_dart_exit_free` yet.
   List<int> get unfreed => [
@@ -174,6 +185,14 @@ final class RecordingExitTeardown {
     decode: (ctx, batch) {
       final proceeds = _proceeds('llama_dart_decode');
       decodedTokens.add(batch.n_tokens);
+      if (recordTokenRows) {
+        decodedTokenIds.add([
+          for (var i = 0; i < batch.n_tokens; i++) batch.token[i],
+        ]);
+        decodedSequenceIds.add([
+          for (var i = 0; i < batch.n_tokens; i++) batch.seq_id[i][0],
+        ]);
+      }
       return proceeds ? real.decode(ctx, batch) : _statusException;
     },
     encode: (ctx, batch) {

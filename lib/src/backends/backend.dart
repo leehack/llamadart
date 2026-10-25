@@ -4,6 +4,7 @@ import '../core/decision/decision_question.dart';
 import '../core/engine/engine_observer.dart';
 import '../core/exceptions.dart';
 import '../core/models/inference/embedding.dart';
+import '../core/models/inference/reranking.dart';
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/generation_usage.dart';
@@ -1187,4 +1188,49 @@ abstract class BackendStatePersistence {
 abstract class BackendStatePersistenceSupport {
   /// Whether state save/load calls are expected to be supported by this backend.
   bool get supportsStatePersistence;
+}
+
+/// Optional native cross-encoder capability. Existing backends need not implement it.
+abstract class BackendReranking {
+  /// Creates a fresh explicit RANK context for the owning reranker loader.
+  ///
+  /// Verify a real classifier head and its output count first. Ordinary model
+  /// loads retain their context configuration. The caller frees this context
+  /// with [LlamaBackend.contextFree], including when preparation fails.
+  Future<int> createRerankingContext(int modelHandle, ModelParams params);
+
+  /// Probes the actual loaded context; interface presence is not evidence of support.
+  Future<LlamaRerankingCapabilities> getRerankingCapabilities(
+    int contextHandle,
+  );
+
+  /// Scores complete query/document pairs in input order, preserving all classes.
+  ///
+  /// Preflight the entire batch before inference, never truncate or return
+  /// partial results, and use [LlamaBackend.cancelGeneration] for cancellation.
+  /// Unsupported combinations throw [LlamaUnsupportedException]; overflow,
+  /// cancellation and execution failures throw [LlamaInferenceException].
+  Future<BackendRerankingOutput> rerank(
+    int contextHandle,
+    String query,
+    List<String> documents,
+  );
+}
+
+/// Native classifier outputs for one complete reranking request.
+final class BackendRerankingOutput {
+  /// Snapshots scores and labels; every row has one value per label.
+  BackendRerankingOutput({
+    required List<List<double>> scores,
+    required List<String?> classifierLabels,
+  }) : scores = List<List<double>>.unmodifiable(
+         scores.map((row) => List<double>.unmodifiable(row)),
+       ),
+       classifierLabels = List<String?>.unmodifiable(classifierLabels);
+
+  /// One complete classifier vector per input document, in input order.
+  final List<List<double>> scores;
+
+  /// Classifier labels in model order, null where absent.
+  final List<String?> classifierLabels;
 }

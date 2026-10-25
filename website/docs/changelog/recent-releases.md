@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Rerank retrieved documents with `LlamaReranker` on native rank-pooled GGUF models, preserving classifier scores, labels and document indices ([#323](https://github.com/leehack/llamadart/issues/323)).
+
 - Generate repeating SDXS textures with independent X/Y circular axes through `SeamlessImageGenerationRequest`; the initial recipe qualifies its embedded tiny decoder at 512×512 on CPU and Metal ([#1234](https://github.com/leehack/llamadart/issues/1234)).
 - Control retained image prompt conditioning with `ImageConditioningCacheParams`; zero disables reuse and ordinary settings preserve the runtime default.
 

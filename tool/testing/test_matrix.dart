@@ -408,6 +408,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Native multimodal embedding or mixed-batch changes; set local model/reference paths per doc/multimodal_embeddings_native.md. No downloads.',
   ),
   TestMatrixRow(
+    id: 'native-reranking',
+    tier: 'targeted',
+    mode: 'local-only',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario native-reranking',
+    covers:
+        'Qwen3 named-template/multiclass and Jina fallback/single-score parity against pinned upstream; batching, overflow, cancellation and lifecycle',
+    useWhen:
+        'Native reranker APIs, classifier output or pair framing changes. Requires local weights and exact oracle paths per doc/native_reranking.md; no downloads.',
+  ),
+  TestMatrixRow(
     id: 'text-embedding-retrieval',
     tier: 'targeted',
     mode: 'local-only; pinned official EG2 weights and reference',
