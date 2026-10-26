@@ -7,25 +7,22 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.16.3
 
-- Add opt-in decoder tiling with `TiledImageGenerationRequest` for SD 2.x checkpoints on CPU/Metal, measured with SD-Turbo full VAE and TAESD; ordinary requests keep their API and defaults ([#1231](https://github.com/leehack/llamadart/issues/1231)).
+- Recommend the corrected Qwen3-0.6B LiteRT-LM model bundle for native CPU to preserve split-token emoji; replace the older model artifact rather than relying on a runtime upgrade.
+- Inspect desktop setup with `collectLlamaRuntimeSetupReport()` and `dart run llamadart:doctor [--json]`. Reports separate pinned publication policy from unchecked native loading, GPU/backend selection and model behavior. Exit 0 means report generation, not runtime validation ([#124](https://github.com/leehack/llamadart/issues/124)).
+- Set reproducible dates in Dart-rendered chat templates with `TemplateTimeChatSession` and explicit clocks for `strftime_now` ([#859](https://github.com/leehack/llamadart/issues/859)).
+- Rerank documents with `LlamaReranker` on native rank-pooled GGUF models, preserving classifier scores, labels and document indices ([#323](https://github.com/leehack/llamadart/issues/323)).
+- Generate repeating textures with independent X/Y axes through `SeamlessImageGenerationRequest`; the initial SDXS embedded-tiny-decoder recipe is qualified at 512×512 on CPU and Metal ([#1234](https://github.com/leehack/llamadart/issues/1234)).
+- Add opt-in spatial VAE tiling with `TiledImageGenerationRequest` and `ImageVaeTiling`, qualified on SD-Turbo full VAE/TAESD with macOS CPU and Metal. Decoder buffers are about one quarter of untiled size, with longer decoding; other SD 2.x checkpoints remain unmeasured, and unsupported families, backends and circular-axis combinations are refused ([#1231](https://github.com/leehack/llamadart/issues/1231)).
+- Control retained image prompt conditioning with `ImageConditioningCacheParams`; zero disables reuse, while ordinary settings preserve the runtime default.
+- Add opt-in EmbeddingGemma-2 query/document/title helpers and normalized 768/512/256/128-dimensional outputs. Existing raw embedding calls are unchanged ([#1126](https://github.com/leehack/llamadart/issues/1126)).
+- Fix explicit Web GGUF GPU placement with `splitMode: ModelSplitMode.none` and negative `mainGpu`; unavailable or inactive GPUs still throw ([#915](https://github.com/leehack/llamadart/issues/915)).
+- Cancel queued Web generation, speech-to-text or speech-synthesis tasks without stopping another request running on the bridge ([#1371](https://github.com/leehack/llamadart/issues/1371)).
 
-- Recommend the corrected Qwen3-0.6B LiteRT-LM bundle for native CPU to preserve split-token emoji.
-- Add a model-free desktop setup report API and `dart run llamadart:doctor [--json]`, separating pinned publication policy from unchecked native/model behavior ([#124](https://github.com/leehack/llamadart/issues/124)).
+- Keep default WebGPU bridge assets at `v0.1.73` (unchanged from 0.16.2).
 
-- Add `TemplateTimeChatSession` for reproducible prompt dates and apply explicit template clocks to `strftime_now` ([#859](https://github.com/leehack/llamadart/issues/859)).
-- Aligned default WebGPU bridge assets to `v0.1.73`: Web `embed()` and `embedBatch()` throw `LlamaUnsupportedException` for rank-pooled rerankers instead of returning an invalid vector built from classifier scores, and `LlamaEmbeddingInputTooLongException` for an input that must fit one micro-batch but is longer, instead of embedding only part of it or aborting the runtime, as native does ([llama-web-bridge#194](https://github.com/leehack/llama-web-bridge/pull/194)). Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native `v0.7.0-2`, which the manifest records; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`.
-- Correct the `LlamaVideoContent` rejection text: on desktop it now points to a projector without a vision encoder instead of saying video support is built out, and it names Android and iOS as the platforms whose artifacts lack video ([#320](https://github.com/leehack/llamadart/issues/320)).
-- Native LiteRT-LM reports `length` instead of `stop` when a reply reaches `maxTokens` or fills the context, and automatic `sendWithTools`/`completeWithTools` loops run on it, stopping `truncated` without running tools on a cut-off reply. This needs a runtime whose `stream_proxy_finish_reason_abi_version` export returns 1 (litert-lm-native `v0.18.0-3` or later, including the default pin); on older runtimes loops still throw `LlamaUnsupportedException`. `LiteRtLmRuntimeClient` adds `supportsFinishReasons` and `lastFinishReason`. Web LiteRT-LM is unchanged ([#919](https://github.com/leehack/llamadart/issues/919)).
-- Rerank retrieved documents with `LlamaReranker` on native rank-pooled GGUF models, preserving classifier scores, labels and document indices ([#323](https://github.com/leehack/llamadart/issues/323)).
-
-- Generate repeating SDXS textures with independent X/Y circular axes through `SeamlessImageGenerationRequest`; the initial recipe qualifies its embedded tiny decoder at 512×512 on CPU and Metal ([#1234](https://github.com/leehack/llamadart/issues/1234)).
-- Control retained image prompt conditioning with `ImageConditioningCacheParams`; zero disables reuse and ordinary settings preserve the runtime default.
-
-- Add opt-in EmbeddingGemma-2 query/document/title helpers and 768/512/256/128-dimensional output controls with normalization after truncation; existing raw embedding calls are unchanged ([#1126](https://github.com/leehack/llamadart/issues/1126)).
-- Web GGUF loads with `device: ComputeDevice.gpu`, `splitMode: ModelSplitMode.none` and a negative `mainGpu` reach WebGPU instead of failing native CPU-placement validation; an unavailable or inactive GPU still throws ([#915](https://github.com/leehack/llamadart/issues/915)).
-- Cancel a queued Web generation, speech-to-text or speech-synthesis task without stopping another request running on the bridge ([#1371](https://github.com/leehack/llamadart/issues/1371)).
+Web runtime baseline (unchanged): upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, native `v0.7.0-2`; Web LiteRT-LM `@litert-lm/core@0.18.0`. Bridge manifest SHA-256: `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`.
 
 ## 0.16.2
 
