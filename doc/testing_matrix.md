@@ -1028,3 +1028,26 @@ native-test step's hosted timestamps; neither their sum nor the difference
 isolates build-hook cost, CPU time, billing or a causal speedup. This advances
 [#532's measurement work](https://github.com/leehack/llamadart/issues/532);
 the full-gate median targets and integration policy remain separate.
+
+## LiteRT-LM Web text history
+
+`litert-lm-web-text-history` serves an existing local model on loopback port
+5198 and runs Chrome with the `chrome-webgpu` test configuration. It downloads
+no model. List scenarios and dry-run before execution:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-text-history \
+  --model-path /path/to/gemma-4-E2B-it-web.litertlm --backend gpu --dry-run
+```
+
+Remove `--dry-run` for the real run. The model must match the requested JS
+backend; native bundles are not automatically Web-compatible. The test records
+the model SHA-256/size, pinned JS module URL, browser and (when requested) WebGPU
+adapter. Direct JS and Dart wrapper engines run serially with matching settings.
+Ordered recall and system forwarding require positive results and no-history /
+no-system controls that fail if the preface is bypassed. Session reset and
+cancel/reuse must pass. A load failure on either route leaves semantic paths
+unqualified; a browser adapter alone establishes no model GPU execution.
+The model-free Chrome suite separately checks routing, API skew and typed
+unsupported roles/options. Remaining tool/media/template work stays in
+[#1152](https://github.com/leehack/llamadart/issues/1152).

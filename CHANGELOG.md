@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preserve ordered system/user/assistant text history on LiteRT-LM Web runtimes with the published conversation APIs; unsupported roles and controls now fail explicitly ([#1152](https://github.com/leehack/llamadart/issues/1152)).
+
 ## 0.16.3
 
 - Recommend the corrected Qwen3-0.6B LiteRT-LM model bundle for native CPU to preserve split-token emoji; replace the older model artifact rather than relying on a runtime upgrade.

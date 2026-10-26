@@ -7,6 +7,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/llamadart.dart' as api;
+import 'package:llamadart/backend.dart' as spi;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
@@ -61,6 +62,257 @@ void main() {
 
   setUp(_clearGlobals);
   tearDown(_clearGlobals);
+
+  for (final (preface, historyApi, expected) in [
+    (false, true, false),
+    (true, false, false),
+    (true, true, true),
+  ]) {
+    test(
+      'text history probes consumed preface=$preface historyApi=$historyApi',
+      () async {
+        var prompts = 0;
+        _installFakeEngine(
+          textHistory: preface,
+          historyApi: historyApi,
+          chunks: [_messageChunk('ok')],
+          onPrompt: (_) => prompts++,
+        );
+        final backend = LiteRtLmBackend();
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        expect(backend.supportsMultiTurnChat, isFalse);
+        await engine.loadModelFromUrl('model.litertlm');
+        expect((await engine.capabilities).supportsMultiTurnChat, expected);
+        expect(prompts, 0, reason: 'Capability probe must run no inference');
+        final request = engine.create(const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: 'Be terse.',
+          ),
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).toList();
+        if (expected) {
+          expect((await request).map((c) => c.text).join(), 'ok');
+        } else {
+          await expectLater(request, throwsA(isA<LlamaUnsupportedException>()));
+          expect(prompts, 0);
+          expect(
+            (await engine.create(const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ]).toList()).map((c) => c.text).join(),
+            'ok',
+          );
+        }
+        await engine.dispose();
+        expect(backend.supportsMultiTurnChat, isFalse);
+      },
+    );
+  }
+
+  test(
+    'default Web router forwards session history and isolates reset/other sessions',
+    () async {
+      final prefaces = <Object?>[];
+      final prompts = <String>[];
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ack')],
+        onPrompt: prompts.add,
+        onCreateConversation: (config) =>
+            prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      expect((await engine.capabilities).supportsMultiTurnChat, isTrue);
+      final session = api.ChatSession(
+        engine,
+        maxContextTokens: 0,
+        systemPrompt: 'Be terse.',
+      );
+      await session.send('Remember PINE.');
+      await session.send('Which word?');
+      expect(prefaces, [
+        {
+          'messages': [
+            {'role': 'system', 'content': 'Be terse.'},
+          ],
+        },
+        {
+          'messages': [
+            {'role': 'system', 'content': 'Be terse.'},
+            {'role': 'user', 'content': 'Remember PINE.'},
+            {'role': 'assistant', 'content': 'ack'},
+          ],
+        },
+      ]);
+      session.reset(keepSystemPrompt: false);
+      await session.send('fresh');
+      final other = api.ChatSession(engine, maxContextTokens: 0);
+      await other.send('other');
+      expect(prefaces.skip(2), [null, null]);
+      expect(prompts, ['Remember PINE.', 'Which word?', 'fresh', 'other']);
+    },
+  );
+
+  test(
+    'structured text rejects unsupported roles/options before inference and recovers',
+    () async {
+      var prompts = 0;
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ok')],
+        onPrompt: (_) => prompts++,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      const user = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'hi',
+      );
+      for (final role in [
+        LlamaChatRole.tool,
+        LlamaChatRole.system,
+        LlamaChatRole.assistant,
+      ]) {
+        await expectLater(
+          engine.create([
+            LlamaChatMessage.fromText(role: role, text: 'x'),
+          ]).toList(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
+      await expectLater(
+        engine.create(const [user], enableThinking: false).toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        engine
+            .create(const [user], chatTemplateKwargs: const {'ignored': true})
+            .toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        engine.create(const [user], parallelToolCalls: true).toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        engine.create(const [
+          user,
+        ], toolChoice: api.ToolChoice.required).toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        engine
+            .create(
+              const [user],
+              tools: [
+                api.ToolDefinition(
+                  name: 'tool',
+                  description: 'test',
+                  parameters: const [],
+                ),
+              ],
+            )
+            .toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        engine.create([
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [LlamaThinkingContent('private')],
+          ),
+        ]).toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(prompts, 0);
+      expect(
+        (await engine.create(const [user]).toList()).map((c) => c.text).join(),
+        'ok',
+      );
+      expect(prompts, 1);
+    },
+  );
+
+  test(
+    'unknown legacy roles are typed errors before template rendering',
+    () async {
+      var prompts = 0;
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ok')],
+        onPrompt: (_) => prompts++,
+      );
+      final engine = LlamaEngine(spi.LlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      await expectLater(
+        engine.create(const [
+          LlamaChatMessage(role: 'developer', content: 'unsupported'),
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).toList(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(prompts, 0);
+    },
+  );
+
+  test('cancellation/reset does not seed another public session', () async {
+    final fake = _installQueueFakeEngine(textHistory: true);
+    final engine = LlamaEngine(spi.LlamaBackend());
+    addTearDown(() async {
+      fake.finishAll();
+      await engine.dispose();
+    });
+    await engine.loadModelFromUrl('model.litertlm');
+    final old = api.ChatSession(
+      engine,
+      maxContextTokens: 0,
+      systemPrompt: 'OLD SECRET',
+    );
+    final done = Completer<void>();
+    Object? cancelledError;
+    final subscription = old
+        .create(const [LlamaTextContent('old')])
+        .listen(
+          (_) {},
+          onDone: done.complete,
+          onError: (Object error) => cancelledError = error,
+        );
+    await (await fake.started(0)).holding;
+    old.reset(keepSystemPrompt: false);
+    engine.cancelGeneration();
+    (await fake.started(0)).finish();
+    await done.future.timeout(const Duration(seconds: 2));
+    await subscription.cancel();
+    expect(
+      cancelledError,
+      anyOf(
+        isNull,
+        isA<LlamaStateException>().having(
+          (error) => error.message,
+          'early cancel',
+          'Generation was cancelled before any output.',
+        ),
+      ),
+    );
+    final other = api.ChatSession(engine, maxContextTokens: 0);
+    final request = other.send('fresh');
+    (await fake.started(1)).finish();
+    expect((await request).text, 'fresh;');
+    expect(old.history, isEmpty);
+    expect(fake.prefaces, [
+      {
+        'messages': [
+          {'role': 'system', 'content': 'OLD SECRET'},
+        ],
+      },
+      null,
+    ]);
+  });
 
   for (final decoration in ['', '  \n', 'suffix']) {
     test(
@@ -593,10 +845,13 @@ void main() {
   }
 
   test(
-    'routes high-level single-turn text through JS conversation runtime',
+    'forwards ordered text history through JS preface without replay',
     () async {
       String? lastPrompt;
+      JSObject? config;
       _installFakeEngine(
+        textHistory: true,
+        onCreateConversation: (value) => config = value,
         chunks: <JSAny?>[_messageChunk('4')],
         onPrompt: (prompt) {
           lastPrompt = prompt;
@@ -620,7 +875,7 @@ void main() {
           ),
           LlamaChatMessage.fromText(
             role: LlamaChatRole.user,
-            text: 'This older user turn is not forwarded by LiteRT-LM web.',
+            text: 'Remember PINE.',
           ),
           LlamaChatMessage.fromText(
             role: LlamaChatRole.assistant,
@@ -639,6 +894,14 @@ void main() {
 
       expect(text, '4');
       expect(lastPrompt, 'What is 2+2?');
+      expect(config!.getProperty<JSObject>('preface'.toJS).dartify(), {
+        'messages': [
+          {'role': 'system', 'content': 'Answer as JSON.'},
+          {'role': 'user', 'content': 'Remember PINE.'},
+          {'role': 'assistant', 'content': 'Older assistant turn.'},
+        ],
+      });
+      expect((await engine.capabilities).supportsMultiTurnChat, isTrue);
       await engine.dispose();
     },
   );
@@ -712,7 +975,7 @@ void main() {
           const GenerationParams(speculativeDecoding: true),
         ),
         emitsError(
-          isA<UnsupportedError>().having(
+          isA<LlamaUnsupportedException>().having(
             (error) => error.message.toString(),
             'message',
             contains('speculativeDecoding'),
@@ -745,7 +1008,7 @@ void main() {
           const GenerationParams(presencePenalty: 1.5),
         ),
         emitsError(
-          isA<UnsupportedError>().having(
+          isA<LlamaUnsupportedException>().having(
             (error) => error.message.toString(),
             'message',
             contains('presencePenalty'),
@@ -885,7 +1148,7 @@ void main() {
           const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 16)),
         ),
         emitsError(
-          isA<UnsupportedError>().having(
+          isA<LlamaUnsupportedException>().having(
             (error) => error.message.toString(),
             'message',
             contains('thinkingBudget'),
@@ -919,7 +1182,7 @@ void main() {
           parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
         ),
         emitsError(
-          isA<UnsupportedError>().having(
+          isA<LlamaUnsupportedException>().having(
             (error) => error.message.toString(),
             'message',
             contains('image frames'),
@@ -956,7 +1219,7 @@ void main() {
             GenerationParams(speculativeDecodingConfig: config),
           ),
           emitsError(
-            isA<UnsupportedError>().having(
+            isA<LlamaUnsupportedException>().having(
               (error) => error.message.toString(),
               'message',
               contains('speculativeDecodingConfig'),
@@ -1113,39 +1376,30 @@ void main() {
     }
   });
 
-  test('ignores the load template and an empty custom template, and rejects '
-      'a non-empty one', () async {
+  test('rejects every load/custom template override explicitly', () async {
     _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
-
     final backend = LiteRtLmBackend();
-    try {
-      final modelHandle = await backend.modelLoadFromUrl(
-        'https://example.com/model.litertlm',
-        const ModelParams(chatTemplate: 'load {{ messages }}'),
-      );
-      const messages = <Map<String, dynamic>>[
-        {'role': 'user', 'content': 'hello'},
-      ];
-
-      expect(await backend.applyChatTemplate(modelHandle, messages), 'hello');
-      expect(
-        await backend.applyChatTemplate(
-          modelHandle,
-          messages,
-          customTemplate: '',
-        ),
-        'hello',
-      );
+    addTearDown(backend.dispose);
+    for (final template in ['', 'custom {{ messages }}']) {
       await expectLater(
-        backend.applyChatTemplate(
-          modelHandle,
-          messages,
-          customTemplate: 'custom {{ messages }}',
+        backend.modelLoadFromUrl(
+          'model.litertlm',
+          ModelParams(chatTemplate: template),
         ),
-        throwsUnsupportedError,
+        throwsA(isA<LlamaUnsupportedException>()),
       );
-    } finally {
-      await backend.dispose();
+    }
+    final model = await backend.modelLoadFromUrl(
+      'model.litertlm',
+      const ModelParams(),
+    );
+    for (final template in ['', 'custom {{ messages }}']) {
+      await expectLater(
+        backend.applyChatTemplate(model, const [
+          {'role': 'user', 'content': 'hi'},
+        ], customTemplate: template),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
     }
   });
 
@@ -2085,6 +2339,39 @@ void main() {
       expect(fake.runs, hasLength(1));
     });
 
+    test(
+      'contextFree while conversation creation waits sends no stale prompt',
+      () async {
+        final gate = Completer<void>();
+        fake.delayNextConversation = gate.future;
+        final generation = _CollectedGeneration(
+          backend.generate(1, 'stale', params),
+        );
+        await _settle();
+        final deleted = fake.allConversationsDeleted;
+        await backend.contextFree(1);
+        gate.complete();
+        await generation.done;
+        expect(generation.error, isNull);
+        expect(fake.runs, isEmpty);
+        expect(fake.allConversationsDeleted, deleted + 1);
+      },
+    );
+
+    test('contextFree and stream cleanup delete a conversation once', () async {
+      final generation = _CollectedGeneration(
+        backend.generate(1, 'active', params),
+      );
+      final run = await fake.started(0);
+      await run.holding;
+      final deleted = fake.allConversationsDeleted;
+      await backend.contextFree(1);
+      run.finish();
+      await generation.done;
+      expect(run.cancelCalls, 1);
+      expect(fake.allConversationsDeleted, deleted + 1);
+    });
+
     test('contextFree ends a queued generation without running it', () async {
       final first = _CollectedGeneration(backend.generate(1, 'first', params));
       final firstRun = await fake.started(0);
@@ -2361,6 +2648,8 @@ void _installFakeEngine({
   void Function()? onCancel,
   void Function()? onReaderCancel,
   required List<JSAny?> chunks,
+  bool textHistory = false,
+  bool historyApi = true,
 }) {
   final engineClass = JSObject();
   engineClass.setProperty(
@@ -2371,15 +2660,30 @@ void _installFakeEngine({
       engine.setProperty(
         'createConversation'.toJS,
         ((JSObject config) {
-          onCreateConversation?.call(config);
-          return Future<JSObject>.value(
-            _fakeConversation(
-              chunks: chunks,
-              onPrompt: onPrompt,
-              onCancel: onCancel,
-              onReaderCancel: onReaderCancel,
-            ),
-          ).toJS;
+          final preface = textHistory
+              ? config.getProperty<JSAny?>('preface'.toJS)
+              : null;
+          if (preface == null) onCreateConversation?.call(config);
+          final conversation = _fakeConversation(
+            chunks: chunks,
+            onPrompt: onPrompt,
+            onCancel: onCancel,
+            onReaderCancel: onReaderCancel,
+          );
+          if (historyApi) {
+            conversation.setProperty(
+              'getHistory'.toJS,
+              (() => Future<JSAny?>.value(<JSAny?>[].toJS).toJS).toJS,
+            );
+          }
+          if (preface != null &&
+              (preface as JSObject)
+                  .getProperty<JSArray>('messages'.toJS)
+                  .toDart
+                  .isNotEmpty) {
+            onCreateConversation?.call(config);
+          }
+          return Future<JSObject>.value(conversation).toJS;
         }).toJS,
       );
       engine.setProperty(
@@ -2553,7 +2857,12 @@ final class _QueueFakeRun {
 }
 
 final class _QueueFakeEngine {
-  _QueueFakeEngine({required this.rejectOnCancel});
+  _QueueFakeEngine({required this.rejectOnCancel, this.textHistory = false});
+
+  final bool textHistory;
+  final List<Object?> prefaces = [];
+  Future<void>? delayNextConversation;
+  int allConversationsDeleted = 0;
 
   /// Whether `cancel()` rejects the held read, as `@litert-lm/core` 0.18.0
   /// does with its cancelled status.
@@ -2582,24 +2891,37 @@ final class _QueueFakeEngine {
     }
   }
 
-  Future<JSObject> _createConversation() async {
+  Future<JSObject> _createConversation(JSObject config) async {
     conversationsCreated += 1;
+    final delay = delayNextConversation;
+    delayNextConversation = null;
+    await delay;
+    final preface = textHistory
+        ? config.getProperty<JSAny?>('preface'.toJS)?.dartify()
+        : null;
     final gate = failNextConversation;
     failNextConversation = null;
     if (gate != null) {
       await gate;
       throw StateError('createConversation failed');
     }
-    return _conversation();
+    return _conversation(preface);
   }
 
-  JSObject _conversation() {
+  JSObject _conversation(Object? preface) {
     _QueueFakeRun? run;
     final conversation = JSObject();
+    if (textHistory) {
+      conversation.setProperty(
+        'getHistory'.toJS,
+        (() => Future<JSAny?>.value(<JSAny?>[].toJS).toJS).toJS,
+      );
+    }
     conversation.setProperty(
       'sendMessageStreaming'.toJS,
       ((String prompt) {
         final current = run = _QueueFakeRun(prompt);
+        prefaces.add(preface);
         runs.add(current);
         _started[runs.length - 1].complete(current);
         return _streamOf(current);
@@ -2619,7 +2941,8 @@ final class _QueueFakeEngine {
     conversation.setProperty(
       'delete'.toJS,
       (() {
-        conversationsDeleted += 1;
+        allConversationsDeleted += 1;
+        if (run != null) conversationsDeleted += 1;
         return Future<JSAny?>.value(null).toJS;
       }).toJS,
     );
@@ -2671,8 +2994,14 @@ final class _QueueFakeEngine {
   }
 }
 
-_QueueFakeEngine _installQueueFakeEngine({bool rejectOnCancel = false}) {
-  final fake = _QueueFakeEngine(rejectOnCancel: rejectOnCancel);
+_QueueFakeEngine _installQueueFakeEngine({
+  bool rejectOnCancel = false,
+  bool textHistory = false,
+}) {
+  final fake = _QueueFakeEngine(
+    rejectOnCancel: rejectOnCancel,
+    textHistory: textHistory,
+  );
   final engineClass = JSObject();
   engineClass.setProperty(
     'create'.toJS,
@@ -2680,7 +3009,7 @@ _QueueFakeEngine _installQueueFakeEngine({bool rejectOnCancel = false}) {
       final engine = JSObject();
       engine.setProperty(
         'createConversation'.toJS,
-        ((JSObject config) => fake._createConversation().toJS).toJS,
+        ((JSObject config) => fake._createConversation(config).toJS).toJS,
       );
       engine.setProperty(
         'delete'.toJS,

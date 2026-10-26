@@ -295,6 +295,10 @@ class ChatCompletionRequestPlanner {
     required ToolChoice toolChoice,
     required bool parallelToolCalls,
   }) {
+    final registered = registeredNativeChatGeneratorOf(backend);
+    if (registered != null && registered.supportsNativeChatGeneration) {
+      return registered;
+    }
     if (backend is! BackendNativeChatGeneration) {
       return null;
     }

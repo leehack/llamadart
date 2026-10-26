@@ -138,9 +138,10 @@ abstract class LlamaBackend {
   /// native LiteRT-LM.
   ///
   /// The WebGPU backend cannot render either and throws
-  /// `LlamaUnsupportedException`. LiteRT-LM web renders no template: it
-  /// returns the last message's text, ignores the load template and an empty
-  /// [customTemplate], and throws `UnsupportedError` for a non-empty one.
+  /// `LlamaUnsupportedException`. LiteRT-LM Web renders no template: it
+  /// accepts one user text message only, rejects custom/load template overrides
+  /// with `LlamaUnsupportedException`, and forwards structured history through
+  /// `LlamaEngine.create` or `ChatSession.create` instead.
   /// `LlamaEngine.chatTemplate` renders both on every backend.
   ///
   /// Returns the formatted prompt string.
@@ -228,6 +229,32 @@ abstract class BackendNativeChatGeneration {
     DateTime? templateNow,
   });
 }
+
+/// Internal validation before Dart template rendering reads message roles.
+abstract class BackendChatMessageValidation {
+  /// Rejects messages the structured runtime cannot represent.
+  void validateChatMessages(List<LlamaChatMessage> messages);
+}
+
+// Keep adapters off exported backend classes so existing implementations and
+// subclasses do not acquire new required members.
+final Expando<BackendNativeChatGeneration? Function()> _chatGenerators =
+    Expando<BackendNativeChatGeneration? Function()>();
+
+/// Registers an internal structured-chat adapter for [backend].
+///
+/// Registered adapters validate every chat request, including requests that
+/// cannot fall back to a rendered string without losing roles or options.
+void registerNativeChatGenerator(
+  Object backend,
+  BackendNativeChatGeneration? Function() generator,
+) {
+  _chatGenerators[backend] = generator;
+}
+
+/// Returns the registered structured-chat adapter, when one is active.
+BackendNativeChatGeneration? registeredNativeChatGeneratorOf(Object backend) =>
+    _chatGenerators[backend]?.call();
 
 /// Optional backend capability for backends whose worker isolate keeps its
 /// own Dart logger and forwards its records to the main isolate.

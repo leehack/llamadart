@@ -1674,6 +1674,12 @@ class LlamaEngine {
     return _generationCancellation.request((request) {
       Stream<LlamaCompletionChunk> chunks() async* {
         _ensureReady();
+        final structuredChat = registeredNativeChatGeneratorOf(backend);
+        if (structuredChat is BackendChatMessageValidation) {
+          (structuredChat as BackendChatMessageValidation).validateChatMessages(
+            messages,
+          );
+        }
         await _rejectUnsupportedVideoInput(
           messages.expand((message) => message.parts),
         );

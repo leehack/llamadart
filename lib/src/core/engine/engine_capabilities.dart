@@ -82,14 +82,16 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// Whether the model sees the whole conversation passed to
   /// `LlamaEngine.create`.
   ///
-  /// False on LiteRT-LM web, which passes only the latest message's text to
-  /// the model; history, tools and the thinking switch do not reach it.
+  /// LiteRT-LM Web supports system/user/assistant text only when its loaded
+  /// runtime consumes a conversation preface and exposes a working history API.
+  /// It requires a final user message; tools and thinking/media parts are
+  /// rejected. The probe does not qualify a particular model's behavior.
   final bool supportsMultiTurnChat;
 
   /// Whether tools passed to `LlamaEngine.create` reach the model and its
   /// output is parsed for tool calls.
   ///
-  /// False on LiteRT-LM web, which ignores tools. How well a model calls
+  /// False on LiteRT-LM Web, which rejects tool declarations and messages. How well a model calls
   /// tools still depends on its chat template. `ToolChoice.required` also
   /// needs [supportsGrammar] for Hermes-style templates, and
   /// [supportsLazyGrammar] for templates whose tool-call grammar waits for a

@@ -202,7 +202,7 @@ JavaScript runtime.
 | Next-token log-probabilities | Supported on native and on WebGPU bridge assets `v0.1.52+` | Not exposed |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
 | LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU bridge assets `v0.1.54+` | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
-| Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: single-turn text only; no structured chat/tool forwarding yet. |
+| Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: ordered system/user/assistant text; tool declarations and tool messages are rejected. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated tool grammar is skipped, strict `responseFormat` requests fail early, and explicit grammar params are rejected |
 | Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
@@ -228,10 +228,30 @@ Bundle keys, module availability and selector names are in
 
 ## LiteRT-LM on web
 
-LiteRT-LM web is narrower than native LiteRT-LM: it forwards single-turn text
-prompts to `@litert-lm/core` and does not yet preserve `ChatSession` history,
-system prompts, or tool declarations. It rejects the native-only `liteRtLm*`
-runtime fields because the browser API does not expose matching controls.
+LiteRT-LM Web forwards ordered system/user/assistant text through
+`ConversationConfig.preface.messages` and sends the final user text once.
+`engine.create(messages)` supplies the full transcript; `ChatSession` manages
+it for you. A new runtime conversation is created and deleted for every request,
+so reset/cancelled requests retain no hidden runtime history. `session.reset()`
+keeps the system prompt by default; use `reset(keepSystemPrompt: false)` to clear it.
+
+Check `supportsMultiTurnChat` after loading. The adapter probes that
+`createConversation` consumes its `preface` option and that `getHistory()` runs
+and returns an array. An older/missing API reports false and rejects history or
+system prompts with `LlamaUnsupportedException`; one user text still works.
+The probe runs no inference and does not qualify a model's semantic behavior.
+Use a browser-compatible bundle; the JS package documents Gemma 4 E2B/E4B
+`-web.litertlm` files. A native `.litertlm` file is not interchangeable.
+
+This slice rejects tool declarations/results, thinking/media parts, a final
+assistant/system message, custom templates (including an empty override),
+`enableThinking: false`, template kwargs, explicit template clocks and native-only
+`liteRtLm*` controls. Default thinking remains the model's behavior; no template
+replacement or thinking-budget support is implied. Raw `generate` sends one user
+text. Low-level `backend.applyChatTemplate` accepts one user message only; use
+`engine.create` for structured history. Automatic tool loops remain unavailable.
+The remaining #1152 scope is tracked in
+[the runtime gap](https://github.com/leehack/llamadart/issues/1152).
 
 ## Measure before choosing
 

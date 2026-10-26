@@ -72,6 +72,12 @@ class WebAutoBackend
   }) : _webGpuFactory =
            webGpuFactory ?? (() => webBackend ?? WebGpuLlamaBackend()),
        _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend()) {
+    registerNativeChatGenerator(this, () {
+      final delegate = _delegate;
+      return delegate == null
+          ? null
+          : registeredNativeChatGeneratorOf(delegate);
+    });
     if (webBackend != null) {
       _delegate = webBackend;
       _delegateKind = LlamaRuntime.llamaCpp;

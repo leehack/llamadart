@@ -962,6 +962,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'No GPU, device, or Web qualification.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-web-text-history',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Ordered system/user/assistant Web text history, matching pinned JS reference, no-history/no-system bypass controls, reset and cancellation/reuse',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-web-text-history --model-path <existing-model.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM Web conversation serialization, runtime capability probe, ChatSession history or system prompts. Repeat with the affected model/backend; no other browser/backend or tool/media/template support is implied.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',
