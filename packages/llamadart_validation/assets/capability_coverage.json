@@ -447,7 +447,11 @@
         "capability:LlamaEngineCapabilities.supportsMultiTurnChat",
         "matrix:Multi-turn ChatSession"
       ],
-      "pack": "history"
+      "exemption": {
+        "issue": "https://github.com/leehack/llamadart/issues/1152",
+        "reason": "The existing C06.history pack covers native GGUF profiles, not the new LiteRT-LM Web preface/system path. Production-path Chrome tests cover ordered text, old/missing APIs, typed rejection and reset/cancellation isolation; the maintained litert-lm-web-text-history local runner compares a pinned JS reference and preface-bypass controls on an identified browser/model. A dedicated versioned Web validation profile and broader tool/media/template parity remain open in #1152. No model qualification is inferred from these inventory bindings.",
+        "id": "litert-web-text-history-profile"
+      }
     },
     {
       "surfaces": [

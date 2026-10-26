@@ -1,6 +1,9 @@
 import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/chat/chat_message.dart';
+import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/tools/tool_definition.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
@@ -16,6 +19,9 @@ import '../webgpu/webgpu_backend.dart';
 
 /// Creates a web backend that can route between multiple web runtimes.
 LlamaBackend createBackend() => WebAutoBackend();
+
+/// Creates the explicit LiteRT-LM Web text-history router.
+LlamaBackend createTextHistoryBackend() => WebAutoBackend.withTextHistory();
 
 /// Uses the unified web backend implementation.
 ///
@@ -77,6 +83,20 @@ class WebAutoBackend
       _delegateKind = LlamaRuntime.llamaCpp;
     }
   }
+
+  /// Creates an internal Web router with LiteRT-LM text history enabled.
+  ///
+  /// Only a delegate exposing the native chat SPI receives structured chat.
+  /// The original constructor preserves legacy/custom subclass dispatch.
+  factory WebAutoBackend.withTextHistory({
+    LlamaBackend? webBackend,
+    LlamaBackend Function()? webGpuFactory,
+    LlamaBackend Function()? liteRtLmFactory,
+  }) => _TextHistoryWebAutoBackend(
+    webBackend: webBackend,
+    webGpuFactory: webGpuFactory,
+    liteRtLmFactory: liteRtLmFactory,
+  );
 
   @override
   bool get isReady => _delegate?.isReady ?? false;
@@ -777,5 +797,75 @@ class WebAutoBackend
       );
     }
     return delegate;
+  }
+}
+
+// The explicit text-history factory selects this private subtype without
+// changing the required members or dispatch of the public generative class.
+final class _TextHistoryWebAutoBackend extends WebAutoBackend
+    implements BackendNativeChatGeneration, BackendChatMessageValidation {
+  _TextHistoryWebAutoBackend({
+    super.webBackend,
+    super.webGpuFactory,
+    LlamaBackend Function()? liteRtLmFactory,
+  }) : super(
+         liteRtLmFactory: liteRtLmFactory ?? LiteRtLmBackend.withTextHistory,
+       );
+
+  @override
+  bool get supportsNativeChatGeneration {
+    final delegate = _delegate;
+    return delegate is BackendNativeChatGeneration &&
+        (delegate as BackendNativeChatGeneration).supportsNativeChatGeneration;
+  }
+
+  @override
+  bool get requiresStructuredChatInput {
+    final delegate = _delegate;
+    return delegate is BackendChatMessageValidation &&
+        (delegate as BackendChatMessageValidation).requiresStructuredChatInput;
+  }
+
+  @override
+  void validateChatMessages(List<LlamaChatMessage> messages) {
+    final delegate = _delegate;
+    if (delegate is BackendChatMessageValidation) {
+      (delegate as BackendChatMessageValidation).validateChatMessages(messages);
+    }
+  }
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendNativeChatGeneration) {
+      throw LlamaUnsupportedException(
+        'The selected Web runtime has no structured chat API.',
+      );
+    }
+    return (delegate as BackendNativeChatGeneration).generateChat(
+      contextHandle,
+      messages,
+      params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+    );
   }
 }

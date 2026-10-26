@@ -14,7 +14,7 @@ class ChatService {
   bool _disposed = false;
 
   ChatService({LlamaEngine? engine})
-    : _engine = engine ?? LlamaEngine(LlamaBackend());
+    : _engine = engine ?? LlamaEngine(LlamaBackend.withTextHistory());
 
   /// The underlying LlamaEngine instance.
   LlamaEngine get engine => _engine;
@@ -168,7 +168,7 @@ class ChatService {
             topP: settings.topP,
             seed: 1,
           ),
-          enableThinking: false,
+          enableThinking: kIsWeb,
         )
         .listen(
           (_) {

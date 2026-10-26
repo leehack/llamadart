@@ -13,6 +13,64 @@ import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
   test(
+    'LiteRT Web history requires an explicit backend and local model',
+    () async {
+      for (final args in [
+        ['--scenario', 'litert-lm-web-text-history', '--dry-run'],
+        [
+          '--scenario',
+          'litert-lm-web-text-history',
+          '--model-path',
+          'model.litertlm',
+          '--dry-run',
+        ],
+        [
+          '--scenario',
+          'litert-lm-web-text-history',
+          '--model-path',
+          'model.litertlm',
+          '--backend',
+          'npu',
+          '--dry-run',
+        ],
+        [
+          '--scenario',
+          'litert-lm-web-text-history',
+          '--backend',
+          'cpu',
+          '--dry-run',
+        ],
+      ]) {
+        expect((await runLocalE2e(args, projectRoot: '/repo')).exitCode, 64);
+      }
+      for (final backend in ['cpu', 'gpu']) {
+        final result = await runLocalE2e(
+          [
+            '--scenario',
+            'litert-lm-web-text-history',
+            '--model-path',
+            'models/existing.litertlm',
+            '--backend',
+            backend,
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains(
+            'python3 tool/testing/litert_text_history_web_e2e.py --model-path models/existing.litertlm --backend $backend',
+          ),
+        );
+        expect(result.stdout, isNot(contains('build web')));
+        expect(result.stdout, isNot(contains('download')));
+      }
+    },
+  );
+
+  test(
     'Qwen scenario preserves UTF-8 stdout from the real child process',
     () async {
       final project = await Directory.systemTemp.createTemp(

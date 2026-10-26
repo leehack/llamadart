@@ -74,6 +74,15 @@ budget and, when the budget allows, at least 128 tokens.
 `session.lastRequestFitContext` is `false` when the active turn still did not
 fit after trimming.
 
+On the LiteRT-LM Web text-history path, exact JS tokenization and template
+rendering are unavailable. The session estimates the full transcript from its
+UTF-8 JSON serialization (approximately one token per three bytes), including
+system and previous turns. `lastRequestFitContext` describes that estimate,
+not an exact runtime token count. The JS runtime still applies its own model
+template and context limits; the accounting serialization is never sent as a
+replacement prompt. Stored assistant reasoning remains in application history
+but is omitted from the model-visible transcript and its accounting.
+
 ## In a Flutter app
 
 Create the engine and session once in a long-lived owner, such as a service,

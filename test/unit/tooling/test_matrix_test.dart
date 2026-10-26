@@ -9,6 +9,24 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test(
+    'LiteRT Web history matrix selects the direct-runtime control scenario',
+    () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'litert-lm-web-text-history',
+      );
+      expect(row.tier, 'targeted');
+      expect(row.mode, 'local-only');
+      expect(row.covers, contains('no-history/no-system'));
+      expect(row.command, contains('--scenario litert-lm-web-text-history'));
+      final scenario = buildLocalE2eScenarios().singleWhere(
+        (scenario) => scenario.name == row.id,
+      );
+      expect(scenario.requiresDevice, isFalse);
+      expect(scenario.description, contains('existing local model'));
+    },
+  );
+
   test('text profile row selects the official retrieval production scenario', () {
     final row = testMatrixRows.singleWhere(
       (r) => r.id == 'text-embedding-retrieval',

@@ -1809,8 +1809,12 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  bool get _usesLiteRtLmWebThinkingDefaults =>
+      kIsWeb && _engineCapabilities.runtime == LlamaRuntime.liteRtLm;
+
   Map<String, dynamic>? _thinkingTemplateKwargs() {
-    if (_settings.thinkingEnabled && _settings.thinkingBudgetTokens <= 0) {
+    if (_usesLiteRtLmWebThinkingDefaults ||
+        (_settings.thinkingEnabled && _settings.thinkingBudgetTokens <= 0)) {
       return null;
     }
 
@@ -2121,7 +2125,9 @@ class ChatProvider extends ChangeNotifier {
               params: effectiveParams,
               tools: toolsForTurn,
               toolChoice: toolsForTurn != null ? ToolChoice.auto : null,
-              enableThinking: _settings.thinkingEnabled,
+              enableThinking: _usesLiteRtLmWebThinkingDefaults
+                  ? true
+                  : _settings.thinkingEnabled,
               chatTemplateKwargs: templateKwargs,
             ),
             thinkingEnabled: _settings.thinkingEnabled,
@@ -4422,6 +4428,14 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void _updateThinkingControlSupport() {
+    if (_usesLiteRtLmWebThinkingDefaults) {
+      _thinkingControlsSupported = false;
+      _addInfoMessage(
+        'Thinking controls are unavailable for LiteRT-LM Web; the model uses '
+        'its default thinking behavior.',
+      );
+      return;
+    }
     _thinkingControlsSupported = _engineCapabilities.supportsMultiTurnChat;
     if (_thinkingControlsSupported || !_settings.thinkingEnabled) {
       return;

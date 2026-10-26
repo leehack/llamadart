@@ -11,6 +11,9 @@ import 'package:web/web.dart';
 
 import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/chat/chat_message.dart';
+import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/tools/tool_definition.dart';
 import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/config/compute_device.dart';
@@ -33,6 +36,12 @@ import 'litert_lm_templates.dart';
 /// preload the package and expose `window.LiteRtLmEngine = module.Engine`, or
 /// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
 /// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm`.
+///
+/// [LiteRtLmBackend.withTextHistory] opts into ordered system/user/assistant
+/// text through a probed conversation preface. The original constructor retains
+/// single-user-text dispatch and existing subclass generation overrides.
+/// Tools, media, custom templates and explicit thinking/template controls are
+/// unavailable. Raw [generate] sends one user text.
 class LiteRtLmBackend
     implements
         BackendRuntimeIdentity,
@@ -50,9 +59,8 @@ class LiteRtLmBackend
   static const Duration _enginePollInterval = Duration(milliseconds: 100);
   static const String _defaultModelCacheName =
       'llamadart-webgpu-model-cache-v1';
-  // The current @litert-lm/core web API accepts one string prompt and applies
-  // the model's chat wrapper internally. Until the JS API exposes structured
-  // messages/tools, keep the Dart template intentionally single-turn.
+  // Supplies parser metadata; the opted-in private subtype sends the original
+  // messages through a preface. Raw generation remains one user turn.
   static const String _passthroughLatestMessageTemplate =
       '{% for message in messages %}'
       '{% if loop.last %}{{ message["content"] }}{% endif %}'
@@ -69,8 +77,10 @@ class LiteRtLmBackend
   _LiteRtLmWebConversation? _activeConversation;
   _LiteRtLmWebRun? _activeRun;
   _LiteRtLmWebRun? _queuedRun;
+  final Expando<Future<void>> _conversationDeletes = Expando<Future<void>>();
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _isReady = false;
+  bool _supportsTextHistory = false;
   bool _hasContext = false;
   bool _cancelRequested = false;
   int _nextModelHandle = 1;
@@ -101,6 +111,28 @@ class LiteRtLmBackend
        _readyTimeout = readyTimeout ?? _engineReadyTimeout,
        _preferredBackend = _normalizeBackendOverride(preferredBackend);
 
+  /// Creates a backend with ordered system/user/assistant text history.
+  ///
+  /// Requires the loaded runtime to consume `preface` and expose `getHistory`.
+  /// The final message must be user text. Tools, media and template/thinking
+  /// controls throw [LlamaUnsupportedException]. The original constructor's
+  /// subclass dispatch contract remains unchanged. Session budgets use a
+  /// full-transcript UTF-8 estimate; exact JS tokenization is unavailable.
+  factory LiteRtLmBackend.withTextHistory({
+    Object? initialSendPort,
+    @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
+    String? preferredBackend,
+    String? moduleUrl,
+    Duration? readyTimeout,
+  }) => _TextHistoryLiteRtLmBackend(
+    initialSendPort: initialSendPort,
+    preferredBackend: preferredBackend,
+    moduleUrl: moduleUrl,
+    readyTimeout: readyTimeout,
+  );
+
+  bool get _textHistoryEnabled => false;
+
   @override
   String? get generationLimitUnsupportedReason =>
       'LiteRT-LM Web @litert-lm/core@0.18.0 does not expose a reliable generation termination reason. '
@@ -122,8 +154,9 @@ class LiteRtLmBackend
   @override
   bool get supportsGrammarConstraints => false;
 
-  /// The web runtime takes one prompt string, so only the latest message
-  /// reaches the model.
+  /// False for this legacy single-user-text constructor.
+  /// [LiteRtLmBackend.withTextHistory] probes the loaded runtime's preface and
+  /// history API before reporting system/user/assistant text support.
   @override
   bool get supportsMultiTurnChat => false;
 
@@ -213,12 +246,15 @@ class LiteRtLmBackend
     final consoleGuard = _installScopedConsoleGuard();
     try {
       _engine = await constructor.create(settings).toDart;
+      _supportsTextHistory =
+          _textHistoryEnabled && await _probeTextHistory(_engine!);
       _modelHandle = _nextModelHandle++;
       _isReady = true;
       onProgress?.call(1);
       return _modelHandle!;
     } catch (error) {
       _isReady = false;
+      _supportsTextHistory = false;
       _modelHandle = null;
       _contextHandle = null;
       _modelUrl = null;
@@ -252,6 +288,7 @@ class LiteRtLmBackend
   @override
   Future<void> contextFree(int contextHandle) async {
     _requireContextHandle(contextHandle);
+    _cancelActiveRun();
     _hasContext = false;
     _contextHandle = null;
     _closeQueuedRun();
@@ -274,6 +311,14 @@ class LiteRtLmBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
+  }) => _generateWithHistory(contextHandle, prompt, params, parts: parts);
+
+  Stream<List<int>> _generateWithHistory(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+    List<Map<String, String>> history = const [],
   }) {
     final run = _LiteRtLmWebRun();
     late final StreamController<List<int>> controller;
@@ -295,8 +340,15 @@ class LiteRtLmBackend
             ..close();
           return;
         }
-        subscription = _generateRun(run, contextHandle, prompt, params, parts)
-            .listen(
+        subscription =
+            _generateRun(
+              run,
+              contextHandle,
+              prompt,
+              params,
+              parts,
+              history,
+            ).listen(
               controller.add,
               onError: controller.addError,
               onDone: () {
@@ -335,16 +387,17 @@ class LiteRtLmBackend
     String prompt,
     GenerationParams params,
     List<LlamaContentPart>? parts,
+    List<Map<String, String>> history,
   ) async* {
     final engine = _requireContextHandle(contextHandle);
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
-      throw UnsupportedError(
+      _throwChatUnsupported(
         'LiteRT-LM Web video input is not supported through llamadart. '
         'Extract and send image frames instead.',
       );
     }
     if (_hasMediaParts(parts)) {
-      throw UnsupportedError(
+      _throwChatUnsupported(
         'LiteRtLmBackend web does not support media parts.',
       );
     }
@@ -357,7 +410,7 @@ class LiteRtLmBackend
     }
 
     final conversation = await engine
-        .createConversation(_createConversationConfig(params))
+        .createConversation(_createConversationConfig(params, history: history))
         .toDart;
     _activeConversation = conversation;
 
@@ -365,7 +418,10 @@ class LiteRtLmBackend
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     try {
-      if (_cancelRequested) {
+      if (_cancelRequested ||
+          !identical(engine, _engine) ||
+          contextHandle != _contextHandle ||
+          !_hasContext) {
         return;
       }
       final stream = _withScopedConsoleGuardedStream(
@@ -466,8 +522,10 @@ class LiteRtLmBackend
       'general.architecture': 'litert-lm',
       'general.file_type': 'litertlm',
       'llamadart.backend': 'LiteRT-LM web',
-      'llamadart.litert_lm_web.chat_scope': 'single-turn-text',
-      'llamadart.litert_lm_web.structured_chat': 'false',
+      'llamadart.litert_lm_web.chat_scope': supportsMultiTurnChat
+          ? 'system-user-assistant-text'
+          : 'single-turn-text',
+      'llamadart.litert_lm_web.structured_chat': '$supportsMultiTurnChat',
       'tokenizer.chat_template':
           _chatTemplate ?? _passthroughLatestMessageTemplate,
     };
@@ -591,14 +649,23 @@ class LiteRtLmBackend
     bool addAssistant = true,
   }) async {
     _requireModelHandle(modelHandle);
-    if (customTemplate != null && customTemplate.isNotEmpty) {
-      throw UnsupportedError(
+    if (customTemplate != null &&
+        (_textHistoryEnabled || customTemplate.isNotEmpty)) {
+      _throwChatUnsupported(
         'LiteRtLmBackend web does not apply custom chat templates directly.',
       );
     }
 
     if (messages.isEmpty) {
       return '';
+    }
+    if (_textHistoryEnabled &&
+        (messages.length != 1 || messages.single['role'] != 'user')) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM Web applyChatTemplate cannot represent structured history '
+        'as a prompt string. Use LlamaEngine.create or ChatSession.create '
+        'with system/user/assistant text messages.',
+      );
     }
     return _contentTextFromTemplateMap(messages.last['content']);
   }
@@ -751,7 +818,10 @@ class LiteRtLmBackend
     return settings;
   }
 
-  JSObject _createConversationConfig(GenerationParams params) {
+  JSObject _createConversationConfig(
+    GenerationParams params, {
+    List<Map<String, String>> history = const [],
+  }) {
     final samplerParams = JSObject();
     samplerParams.setProperty(
       'k'.toJS,
@@ -774,7 +844,46 @@ class LiteRtLmBackend
 
     final config = JSObject();
     config.setProperty('sessionConfig'.toJS, sessionConfig);
+    if (history.isNotEmpty) {
+      config.setProperty('preface'.toJS, {'messages': history}.jsify());
+    }
     return config;
+  }
+
+  Future<bool> _probeTextHistory(_LiteRtLmWebEngine engine) async {
+    _LiteRtLmWebConversation? conversation;
+    var consumedPreface = false;
+    // getHistory omits the preface. Observe option consumption separately so
+    // legacy runtimes cannot silently accept and ignore the history option.
+    try {
+      final preface = <String, Object>{'messages': <Object>[]}.jsify();
+      final config = _createConversationConfig(const GenerationParams());
+      final descriptor = JSObject()
+        ..setProperty(
+          'get'.toJS,
+          (() {
+            consumedPreface = true;
+            return preface;
+          }).toJS,
+        );
+      globalContext
+          .getProperty<JSObject>('Object'.toJS)
+          .callMethod<JSAny?>(
+            'defineProperty'.toJS,
+            config,
+            'preface'.toJS,
+            descriptor,
+          );
+      conversation = await engine.createConversation(config).toDart;
+      final history = await conversation
+          .callMethod<JSPromise<JSAny?>>('getHistory'.toJS)
+          .toDart;
+      return consumedPreface && history != null && history.isA<JSArray>();
+    } catch (_) {
+      return false;
+    } finally {
+      if (conversation != null) await _deleteConversation(conversation);
+    }
   }
 
   _LiteRtLmWebEngine _requireEngine() {
@@ -971,7 +1080,7 @@ class LiteRtLmBackend
     }
     if (content is Map) {
       if (_isUnsupportedTemplateContentPart(content)) {
-        throw UnsupportedError(
+        _throwChatUnsupported(
           'LiteRtLmBackend web does not support multimodal chat-template '
           'content.',
         );
@@ -986,7 +1095,7 @@ class LiteRtLmBackend
       for (final part in content) {
         if (part is Map) {
           if (_isUnsupportedTemplateContentPart(part)) {
-            throw UnsupportedError(
+            _throwChatUnsupported(
               'LiteRtLmBackend web does not support multimodal chat-template '
               'content.',
             );
@@ -1023,6 +1132,7 @@ class LiteRtLmBackend
   }
 
   Future<void> _disposeEngine() async {
+    _cancelActiveRun();
     _closeQueuedRun();
     final conversation = _activeConversation;
     _activeConversation = null;
@@ -1033,6 +1143,7 @@ class LiteRtLmBackend
     final engine = _engine;
     _engine = null;
     _isReady = false;
+    _supportsTextHistory = false;
     _hasContext = false;
     _modelHandle = null;
     _contextHandle = null;
@@ -1050,7 +1161,12 @@ class LiteRtLmBackend
     }
   }
 
-  Future<void> _deleteConversation(
+  Future<void> _deleteConversation(_LiteRtLmWebConversation conversation) =>
+      _conversationDeletes[conversation] ??= _deleteConversationOnce(
+        conversation,
+      );
+
+  Future<void> _deleteConversationOnce(
     _LiteRtLmWebConversation conversation,
   ) async {
     try {
@@ -1239,6 +1355,12 @@ class LiteRtLmBackend
       );
     }
 
+    if (_textHistoryEnabled && params.chatTemplate != null) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM Web @litert-lm/core@0.18.0 has no custom chat-template '
+        'setter. Use the model-provided template or native LiteRT-LM.',
+      );
+    }
     params.validate();
     checkModelParamsSupportedBy(params, LlamaRuntime.liteRtLm, web: true);
   }
@@ -1254,6 +1376,11 @@ class LiteRtLmBackend
         'from $_activeBackend to $requested.',
       );
     }
+  }
+
+  Never _throwChatUnsupported(String message) {
+    if (_textHistoryEnabled) throw LlamaUnsupportedException(message);
+    throw UnsupportedError(message);
   }
 
   void _validateGenerationParams(GenerationParams params) {
@@ -1303,7 +1430,7 @@ class LiteRtLmBackend
     if (unsupported.isEmpty) {
       return;
     }
-    throw UnsupportedError(
+    _throwChatUnsupported(
       'LiteRtLmBackend web does not support llama.cpp-specific '
       'GenerationParams: ${unsupported.join(', ')}. Supported LiteRT-LM web '
       'generation options are maxTokens, temp, topK, topP, seed, and '
@@ -1445,6 +1572,134 @@ class LiteRtLmBackend
     }
     throw ArgumentError(
       'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
+    );
+  }
+}
+
+// Only the additive factory creates this SPI subtype. Existing subclasses of
+// the public generative constructor keep dispatch through their public hooks.
+final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
+    implements BackendNativeChatGeneration, BackendChatMessageValidation {
+  _TextHistoryLiteRtLmBackend({
+    super.initialSendPort,
+    super.preferredBackend,
+    super.moduleUrl,
+    super.readyTimeout,
+  });
+
+  // The runtime owns its tokenizer/template. Dart's budget fallback must see
+  // every turn, while generation still receives the original structured input.
+  static const String _accountingTemplate =
+      '[{% for message in messages %}'
+      '{"role":{{ message["role"] | tojson }},'
+      '"content":{{ (message["content"] or "") | tojson }}}'
+      '{% if not loop.last %},{% endif %}'
+      '{% endfor %}]';
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async {
+    final metadata = await super.modelMetadata(modelHandle);
+    metadata['tokenizer.chat_template'] = _accountingTemplate;
+    metadata['llamadart.litert_lm_web.prompt_accounting'] =
+        'utf8-byte-estimate';
+    return metadata;
+  }
+
+  @override
+  bool get _textHistoryEnabled => true;
+
+  @override
+  bool get supportsMultiTurnChat => _isReady && _supportsTextHistory;
+
+  @override
+  bool get supportsNativeChatGeneration => isReady;
+
+  @override
+  bool get requiresStructuredChatInput => true;
+
+  @override
+  void validateChatMessages(List<LlamaChatMessage> messages) {
+    _textMessages(messages);
+  }
+
+  List<Map<String, String>> _textMessages(List<LlamaChatMessage> messages) {
+    const runtime = 'LiteRT-LM Web @litert-lm/core@0.18.0';
+    if (messages.isEmpty) {
+      throw LlamaUnsupportedException(
+        '$runtime needs a final user text message.',
+      );
+    }
+    final history = <Map<String, String>>[];
+    for (final message in messages) {
+      final role = message.roleEnum?.name ?? message.roleString;
+      if (!const ['system', 'user', 'assistant'].contains(role) ||
+          message.parts.any(
+            (part) =>
+                part is! LlamaTextContent &&
+                !(role == 'assistant' && part is LlamaThinkingContent),
+          )) {
+        throw LlamaUnsupportedException(
+          '$runtime supports only system/user/assistant text; '
+          'tools, media and user/system thinking content are unavailable.',
+        );
+      }
+      history.add({'role': role!, 'content': message.content});
+    }
+    if (history.last['role'] != 'user') {
+      throw LlamaUnsupportedException(
+        '$runtime text history needs a final user message; assistant '
+        'continuation and system-only generation are unavailable.',
+      );
+    }
+    if (history.length > 1 && !supportsMultiTurnChat) {
+      throw LlamaUnsupportedException(
+        'The loaded LiteRT-LM Web runtime did not consume preface.messages '
+        'or expose getHistory. Text history and system prompts require '
+        'the published @litert-lm/core@0.18.0 conversation APIs.',
+      );
+    }
+    return history;
+  }
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) async* {
+    const runtime = 'LiteRT-LM Web @litert-lm/core@0.18.0';
+    if ((tools?.isNotEmpty ?? false) ||
+        toolChoice == ToolChoice.required ||
+        parallelToolCalls) {
+      throw LlamaUnsupportedException(
+        '$runtime supports text history only; tool declarations, required '
+        'tools and parallel tool calls are unavailable (see #1152 and #919).',
+      );
+    }
+    if (!enableThinking ||
+        (chatTemplateKwargs?.isNotEmpty ?? false) ||
+        sourceLangCode != null ||
+        targetLangCode != null ||
+        templateNow != null) {
+      throw LlamaUnsupportedException(
+        '$runtime text history does not expose thinking, template kwargs, '
+        'language or template-clock controls. Use the model defaults.',
+      );
+    }
+    final history = _textMessages(messages);
+    yield* _generateWithHistory(
+      contextHandle,
+      history.last['content']!,
+      params,
+      history: history.sublist(0, history.length - 1),
     );
   }
 }

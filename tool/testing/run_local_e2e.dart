@@ -1250,6 +1250,28 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'litert-lm-web-text-history',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Compare ordered Web text history/system prompts with pinned JS and bypass controls using an existing local model.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/litert_text_history_web_e2e.py',
+            '--model-path',
+            context.modelPath!,
+            '--backend',
+            context.backend,
+          ],
+          description:
+              'LiteRT Web text history, direct-runtime controls, reset and cancellation (local port 5198)',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-multimodal-embedding',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2052,6 +2074,14 @@ Future<LocalE2eResult> runLocalE2e(
           'Unknown local E2E scenario: $scenarioName\nUse --list to inspect scenarios.\n',
     );
   }
+  if (scenario.name == 'litert-lm-web-text-history' &&
+      !const ['cpu', 'gpu'].contains(parsed.backend)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--backend cpu or gpu is required for litert-lm-web-text-history.\n',
+    );
+  }
   if (parsed.mmprojPath != null && parsed.modelPath == null) {
     return LocalE2eResult(64, stderr: '--mmproj-path requires --model-path.\n');
   }
@@ -2199,6 +2229,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
+          scenario.name == 'litert-lm-web-text-history' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'qwen3-litert-cpu-unicode' ||
           scenario.name == 'native-prompt-cancel' ||

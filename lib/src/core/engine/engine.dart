@@ -1674,6 +1674,12 @@ class LlamaEngine {
     return _generationCancellation.request((request) {
       Stream<LlamaCompletionChunk> chunks() async* {
         _ensureReady();
+        final structuredChat = backend;
+        if (structuredChat is BackendChatMessageValidation) {
+          (structuredChat as BackendChatMessageValidation).validateChatMessages(
+            messages,
+          );
+        }
         await _rejectUnsupportedVideoInput(
           messages.expand((message) => message.parts),
         );
@@ -1861,6 +1867,10 @@ class LlamaEngine {
   /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
   /// wins.
+  ///
+  /// LiteRT-LM Web text-history factories return full-transcript JSON for
+  /// session budget estimation here, not the runtime's rendered model template.
+  /// Exact JS tokenization is unavailable; generation uses the original messages.
   ///
   /// Set [includeTokenCount] to false to skip the prompt tokenization pass
   /// and reduce per-request overhead when token count is not needed.

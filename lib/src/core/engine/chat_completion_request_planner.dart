@@ -299,6 +299,11 @@ class ChatCompletionRequestPlanner {
       return null;
     }
     final nativeBackend = backend as BackendNativeChatGeneration;
+    if (backend is BackendChatMessageValidation &&
+        (backend as BackendChatMessageValidation).requiresStructuredChatInput &&
+        nativeBackend.supportsNativeChatGeneration) {
+      return nativeBackend;
+    }
     return _canUseNativeChatGeneration(
           nativeBackend,
           messages,

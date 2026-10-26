@@ -276,13 +276,14 @@ flutter test --run-skipped -t local-only \
      `.litertlm` URLs through `@litert-lm/core@0.18.0`; `web/index.html` sets a
      default module URL that apps can override with
      `window.__llamadartLiteRtLmModuleUrl`.
-   - LiteRT-LM Web is currently a single-turn text runtime. Because
-     `@litert-lm/core` accepts one prompt string and applies its own chat
-     wrapper internally, the chat app cannot pass structured chat history,
-     tool declarations, tool choice, or thinking-budget/template controls to
-     web `.litertlm` models. The app disables Function Calling and Thinking
-     controls for this runtime; use GGUF/WebGPU or native LiteRT-LM when those
-     structured controls are required.
+   - The chat app explicitly uses `LlamaBackend.withTextHistory()` to forward
+     ordered system/user/assistant text through the probed LiteRT-LM Web
+     conversation API. The runtime still applies its own model template.
+     Function Calling and Thinking controls remain unavailable: the app uses
+     model-default thinking without changing saved preferences. Tools, media
+     and template/thinking controls are outside this text-history slice.
+     Existing core default backends and the Genkit adapter do not opt in
+     automatically.
    - The Gemma 4 E2B LiteRT-LM preset uses the native `.litertlm` bundle on
      Android, iOS arm64/arm64 simulator, macOS, Linux, and Windows x64; it uses
      the `-web.litertlm` bundle on Flutter Web. The example excludes the iOS
@@ -684,9 +685,11 @@ await prefs.setInt('preferred_backend', backendIndex);
   `dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke`.
   This builds the Flutter web app, serves it with COOP/COEP headers, loads the
   `gemma-4-E2B-it-web.litertlm` bundle through `@litert-lm/core`, and captures
-  streamed single-turn LiteRT-LM text output in Playwright. LiteRT-LM web does
-  not yet preserve chat history, system prompts, or tool declarations through
-  `@litert-lm/core`.
+  streamed single-turn LiteRT-LM text output in Playwright. That smoke does
+  not qualify ordered history or system forwarding. Use the maintained
+  `litert-lm-web-text-history` local scenario with an existing compatible model
+  for matched direct-JS history/system and cancellation controls; dry-run it
+  first. Tool declarations remain unavailable.
 - `.litertlm` web loads do **not** use the browser Cache Storage prefetch (that
   cache is only read back by the llama.cpp/GGUF bridge); `@litert-lm/core`
   fetches the model URL itself. Browser HTTP cache may avoid some network

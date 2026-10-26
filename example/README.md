@@ -60,6 +60,34 @@ flutter pub get
 flutter run
 ```
 
+For LiteRT-LM Web text chat, choose a browser-compatible bundle and check the
+loaded runtime before relying on history or system instructions:
+
+```dart
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.parse('https://your-host/model-web.litertlm')),
+  backend: LlamaBackend.withTextHistory(),
+);
+final capabilities = await engine.capabilities;
+if (!capabilities.supportsMultiTurnChat) {
+  throw LlamaUnsupportedException('This Web runtime cannot preserve history.');
+}
+final session = ChatSession(engine, systemPrompt: 'Answer briefly.');
+await session.send('Remember PINE.');
+final reply = await session.send('Which word did I ask you to remember?');
+session.reset(keepSystemPrompt: false);
+```
+
+For a direct Web backend, opt in with `LiteRtLmBackend.withTextHistory()`.
+The portable `LlamaBackend.withTextHistory()` factory selects this path on Web
+and preserves normal native routing. Existing default/direct constructors keep
+single-user-text routing for LiteRT Web models, reporting multi-turn support
+false; custom/GGUF delegate capabilities remain unchanged.
+
+Only system/user/assistant text is forwarded on this Web path. Keep tools,
+media and custom template/thinking controls out of the request; they raise
+`LlamaUnsupportedException` ([#1152](https://github.com/leehack/llamadart/issues/1152)).
+
 ### 3. API Server (`llamadart_server/`)
 A Relic-based HTTP server example showing:
 - OpenAI-compatible endpoint surface (`/v1/models`, `/v1/chat/completions`)
