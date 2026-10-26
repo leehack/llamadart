@@ -263,6 +263,57 @@ void main() {
     }
   });
 
+  test(
+    'text-history opt-in preserves native format checks and URL fallback',
+    () async {
+      final backend = LlamaBackend.withTextHistory();
+      addTearDown(backend.dispose);
+      final checks = backend as BackendModelParamsCheck;
+
+      checks.checkModelParams(const LlamaCppModelParams(), ModelFormat.gguf);
+      expect(
+        () => checks.checkModelParams(
+          const LiteRtLmModelParams(),
+          ModelFormat.gguf,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'runtime mismatch',
+            contains('LiteRtLmModelParams configures LiteRT-LM (.litertlm)'),
+          ),
+        ),
+      );
+      expect(
+        () => checks.checkModelParams(
+          const LlamaCppModelParams(),
+          ModelFormat.liteRtLm,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'runtime mismatch',
+            contains('LlamaCppModelParams configures llama.cpp (GGUF) models'),
+          ),
+        ),
+      );
+      expect(backend.supportsUrlLoading, isFalse);
+      expect(
+        () => backend.modelLoadFromUrl(
+          'https://example.invalid/model.gguf',
+          const ModelParams(),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'download fallback',
+            contains('llamadart download/cache before modelLoad'),
+          ),
+        ),
+      );
+    },
+  );
+
   group('checkModelParams before any download', () {
     void onAbi(Abi abi) {
       debugLiteRtLmAbiOverride = abi;
