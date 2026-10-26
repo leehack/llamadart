@@ -228,7 +228,7 @@ Bundle keys, module availability and selector names are in
 
 ## LiteRT-LM on web
 
-The default `LlamaBackend()` Web router and
+`LlamaBackend.withTextHistory()` and the direct Web factory
 `LiteRtLmBackend.withTextHistory()` forward ordered system/user/assistant text
 through `ConversationConfig.preface.messages` and send the final user text once.
 `engine.create(messages)` supplies the full transcript; `ChatSession` manages
@@ -236,9 +236,11 @@ it for you. A new runtime conversation is created and deleted for every request,
 so reset/cancelled requests retain no hidden runtime history. `session.reset()`
 keeps the system prompt by default; use `reset(keepSystemPrompt: false)` to clear it.
 
-The original direct LiteRT constructor and legacy internal router keep their existing single-user-text dispatch for LiteRT models,
+Existing `LlamaBackend()` and direct LiteRT constructors retain their prior
+single-user-text routing for LiteRT Web models,
 reporting multi-turn support false. Custom/GGUF delegate capabilities remain
-unchanged.
+unchanged. The portable opt-in preserves native selection and behavior. Existing
+clients, including the Genkit adapter, do not adopt Web history automatically.
 
 Check `supportsMultiTurnChat` after loading. The adapter probes that
 `createConversation` consumes its `preface` option and that `getHistory()` runs
@@ -249,10 +251,12 @@ Session trimming estimates the complete transcript from UTF-8 JSON bytes;
 exact JS tokenizer/template accounting is unavailable. `engine.chatTemplate`
 returns this accounting serialization on the opted-in path. It does not replace
 the model's JS template or the original structured messages sent for generation.
+Stored assistant reasoning is omitted from replay/accounting; visible text,
+including an empty assistant reply, is preserved.
 Use a browser-compatible bundle; the JS package documents Gemma 4 E2B/E4B
 `-web.litertlm` files. A native `.litertlm` file is not interchangeable.
 
-This slice rejects tool declarations/results, thinking/media parts, a final
+This slice rejects tool declarations/results, media and user/system thinking parts, a final
 assistant/system message, custom templates (including an empty override),
 `enableThinking: false`, template kwargs, explicit template clocks and native-only
 `liteRtLm*` controls. Default thinking remains the model's behavior; no template

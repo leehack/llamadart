@@ -391,13 +391,13 @@ class LiteRtLmBackend
   ) async* {
     final engine = _requireContextHandle(contextHandle);
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
-      throw LlamaUnsupportedException(
+      _throwChatUnsupported(
         'LiteRT-LM Web video input is not supported through llamadart. '
         'Extract and send image frames instead.',
       );
     }
     if (_hasMediaParts(parts)) {
-      throw LlamaUnsupportedException(
+      _throwChatUnsupported(
         'LiteRtLmBackend web does not support media parts.',
       );
     }
@@ -649,8 +649,9 @@ class LiteRtLmBackend
     bool addAssistant = true,
   }) async {
     _requireModelHandle(modelHandle);
-    if (customTemplate != null) {
-      throw LlamaUnsupportedException(
+    if (customTemplate != null &&
+        (_textHistoryEnabled || customTemplate.isNotEmpty)) {
+      _throwChatUnsupported(
         'LiteRtLmBackend web does not apply custom chat templates directly.',
       );
     }
@@ -658,14 +659,15 @@ class LiteRtLmBackend
     if (messages.isEmpty) {
       return '';
     }
-    if (messages.length != 1 || messages.single['role'] != 'user') {
+    if (_textHistoryEnabled &&
+        (messages.length != 1 || messages.single['role'] != 'user')) {
       throw LlamaUnsupportedException(
         'LiteRT-LM Web applyChatTemplate cannot represent structured history '
         'as a prompt string. Use LlamaEngine.create or ChatSession.create '
         'with system/user/assistant text messages.',
       );
     }
-    return _contentTextFromTemplateMap(messages.single['content']);
+    return _contentTextFromTemplateMap(messages.last['content']);
   }
 
   @override
@@ -1078,7 +1080,7 @@ class LiteRtLmBackend
     }
     if (content is Map) {
       if (_isUnsupportedTemplateContentPart(content)) {
-        throw UnsupportedError(
+        _throwChatUnsupported(
           'LiteRtLmBackend web does not support multimodal chat-template '
           'content.',
         );
@@ -1093,7 +1095,7 @@ class LiteRtLmBackend
       for (final part in content) {
         if (part is Map) {
           if (_isUnsupportedTemplateContentPart(part)) {
-            throw UnsupportedError(
+            _throwChatUnsupported(
               'LiteRtLmBackend web does not support multimodal chat-template '
               'content.',
             );
@@ -1353,7 +1355,7 @@ class LiteRtLmBackend
       );
     }
 
-    if (params.chatTemplate != null) {
+    if (_textHistoryEnabled && params.chatTemplate != null) {
       throw LlamaUnsupportedException(
         'LiteRT-LM Web @litert-lm/core@0.18.0 has no custom chat-template '
         'setter. Use the model-provided template or native LiteRT-LM.',
@@ -1374,6 +1376,11 @@ class LiteRtLmBackend
         'from $_activeBackend to $requested.',
       );
     }
+  }
+
+  Never _throwChatUnsupported(String message) {
+    if (_textHistoryEnabled) throw LlamaUnsupportedException(message);
+    throw UnsupportedError(message);
   }
 
   void _validateGenerationParams(GenerationParams params) {
@@ -1423,7 +1430,7 @@ class LiteRtLmBackend
     if (unsupported.isEmpty) {
       return;
     }
-    throw LlamaUnsupportedException(
+    _throwChatUnsupported(
       'LiteRtLmBackend web does not support llama.cpp-specific '
       'GenerationParams: ${unsupported.join(', ')}. Supported LiteRT-LM web '
       'generation options are maxTokens, temp, topK, topP, seed, and '
@@ -1582,7 +1589,12 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
 
   // The runtime owns its tokenizer/template. Dart's budget fallback must see
   // every turn, while generation still receives the original structured input.
-  static const String _accountingTemplate = '{{ messages | tojson }}';
+  static const String _accountingTemplate =
+      '[{% for message in messages %}'
+      '{"role":{{ message["role"] | tojson }},'
+      '"content":{{ (message["content"] or "") | tojson }}}'
+      '{% if not loop.last %},{% endif %}'
+      '{% endfor %}]';
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
@@ -1621,10 +1633,14 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
     for (final message in messages) {
       final role = message.roleEnum?.name ?? message.roleString;
       if (!const ['system', 'user', 'assistant'].contains(role) ||
-          message.parts.any((part) => part is! LlamaTextContent)) {
+          message.parts.any(
+            (part) =>
+                part is! LlamaTextContent &&
+                !(role == 'assistant' && part is LlamaThinkingContent),
+          )) {
         throw LlamaUnsupportedException(
           '$runtime supports only system/user/assistant text; '
-          'tool, thinking and media content are unavailable.',
+          'tools, media and user/system thinking content are unavailable.',
         );
       }
       history.add({'role': role!, 'content': message.content});

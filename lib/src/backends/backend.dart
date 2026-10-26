@@ -26,6 +26,14 @@ abstract class LlamaBackend {
   /// Factory to create the appropriate backend for the current platform.
   factory LlamaBackend() => createBackend();
 
+  /// Opts into ordered LiteRT-LM Web text history and system prompts.
+  ///
+  /// Web requires a runtime with the published conversation/preface APIs;
+  /// unsupported thinking, tools, media and template controls throw explicitly.
+  /// Native selection and behavior are the same as [LlamaBackend.new].
+  /// The original default factory retains its existing Web behavior.
+  factory LlamaBackend.withTextHistory() => createTextHistoryBackend();
+
   /// Whether the backend is currently initialized and ready for inference.
   bool get isReady;
 
@@ -138,10 +146,12 @@ abstract class LlamaBackend {
   /// native LiteRT-LM.
   ///
   /// The WebGPU backend cannot render either and throws
-  /// `LlamaUnsupportedException`. LiteRT-LM Web renders no template: it
-  /// accepts one user text message only, rejects custom/load template overrides
-  /// with `LlamaUnsupportedException`, and forwards structured history through
-  /// `LlamaEngine.create` or `ChatSession.create` instead.
+  /// `LlamaUnsupportedException`. LiteRT-LM Web's original constructor returns
+  /// the last message's text, ignores its load template and an empty custom
+  /// override, and rejects a non-empty override with `UnsupportedError`.
+  /// Its explicit text-history factory accepts one user text message here and
+  /// rejects overrides with `LlamaUnsupportedException`; use high-level chat
+  /// for ordered structured history on that path.
   /// `LlamaEngine.chatTemplate` renders both on every backend.
   ///
   /// Returns the formatted prompt string.

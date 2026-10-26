@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Preserve ordered system/user/assistant text history on LiteRT-LM Web runtimes with the published conversation APIs; unsupported roles and controls now fail explicitly ([#1152](https://github.com/leehack/llamadart/issues/1152)).
+- Opt into ordered system/user/assistant text history on LiteRT-LM Web with `LlamaBackend.withTextHistory()`; the chat app adopts it, and unavailable controls fail explicitly ([#1152](https://github.com/leehack/llamadart/issues/1152)).
 
 ## 0.16.3
 

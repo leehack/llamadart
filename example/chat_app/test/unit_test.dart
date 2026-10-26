@@ -15,6 +15,8 @@ import 'package:llamadart_chat_example/services/model_service_base.dart'
 import 'package:path/path.dart' as p;
 
 import 'mocks.dart';
+import 'support/litert_web_runtime_fake.dart'
+    if (dart.library.js_interop) 'support/litert_web_runtime_fake_web.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -500,11 +502,15 @@ void main() {
         expect(liteRtWebProvider.templateSupportsTools, isFalse);
         expect(liteRtWebProvider.thinkingControlsSupported, isFalse);
         expect(liteRtWebProvider.settings.toolsEnabled, isFalse);
-        expect(liteRtWebProvider.settings.thinkingEnabled, isFalse);
+        expect(liteRtWebProvider.settings.thinkingEnabled, kIsWeb);
         expect(
           liteRtWebProvider.messages.map((message) => message.text),
           containsAll(<Matcher>[
-            contains('it passes only the latest message to the model'),
+            contains(
+              kIsWeb
+                  ? 'the model uses its default thinking behavior'
+                  : 'it passes only the latest message to the model',
+            ),
             contains('it does not pass tools to the model'),
           ]),
         );
@@ -513,7 +519,7 @@ void main() {
         liteRtWebProvider.updateThinkingEnabled(true);
 
         expect(liteRtWebProvider.settings.toolsEnabled, isFalse);
-        expect(liteRtWebProvider.settings.thinkingEnabled, isFalse);
+        expect(liteRtWebProvider.settings.thinkingEnabled, kIsWeb);
       },
     );
 
@@ -1676,6 +1682,165 @@ void main() {
       expect(provider.messages, isEmpty);
     });
 
+    for (final output in ['<think>plan</think>answer', '<think>plan</think>']) {
+      test(
+        'LiteRT Web restores a conversation with generated reasoning: $output',
+        () async {
+          installLiteRtWebRuntimeFake();
+          addTearDown(restoreLiteRtWebRuntime);
+          liteRtWebFakeOutput = output;
+          const settings = ChatSettings(
+            modelPath: 'https://example.com/model.litertlm',
+            thinkingEnabled: true,
+            preferredBackend: GpuBackend.cpu,
+            gpuLayers: 0,
+          );
+          final restoredProvider = ChatProvider(
+            chatService: ChatService(),
+            settingsService: MockSettingsService()..settings = settings,
+            initialSettings: settings,
+            enableWebModelPrefetch: false,
+          );
+          addTearDown(restoredProvider.dispose);
+          await restoredProvider.loadModel();
+          expect(
+            restoredProvider.isLoaded,
+            isTrue,
+            reason: restoredProvider.error,
+          );
+          await restoredProvider.sendMessage('hello');
+          expect(restoredProvider.error, isNull);
+          expect(
+            restoredProvider.messages.last.parts
+                ?.whereType<LlamaThinkingContent>()
+                .single
+                .thinking,
+            'plan',
+          );
+          final original = restoredProvider.activeConversationId;
+          restoredProvider.createConversation();
+          await restoredProvider.switchConversation(original);
+          liteRtWebFakeOutput = 'next answer';
+          await restoredProvider.sendMessage('next');
+          expect(restoredProvider.error, isNull);
+          expect(restoredProvider.messages.last.text, 'next answer');
+          final previous = restoredProvider.messages
+              .where((message) => !message.isUser && !message.isInfo)
+              .first;
+          expect(
+            previous.parts?.whereType<LlamaThinkingContent>().single.thinking,
+            'plan',
+          );
+        },
+        skip: !kIsWeb,
+      );
+    }
+
+    test('default ChatService explicitly opts into Web text history', () async {
+      installLiteRtWebRuntimeFake();
+      addTearDown(restoreLiteRtWebRuntime);
+      final service = ChatService();
+      addTearDown(service.dispose);
+      await service.init(
+        const ChatSettings(
+          modelPath: 'https://example.com/model.litertlm',
+          gpuLayers: 0,
+          preferredBackend: GpuBackend.cpu,
+        ),
+        eagerLoadMultimodalProjector: false,
+        eagerWarmUpLiteRtLmRuntime: false,
+      );
+      expect((await service.engine.capabilities).supportsMultiTurnChat, isTrue);
+      final session = ChatSession(service.engine, systemPrompt: 'Be terse.');
+      expect(
+        (await session.send(
+          'hi',
+          params: const GenerationParams(maxTokens: 1),
+        )).text,
+        'ok',
+      );
+    }, skip: !kIsWeb);
+
+    test(
+      'LiteRT Web preserves disabled thinking prefs and sends model defaults',
+      () async {
+        const settings = ChatSettings(
+          modelPath: 'https://example.com/model.litertlm',
+          thinkingEnabled: false,
+          thinkingBudgetTokens: 256,
+        );
+        final engine = _ThinkingControlCaptureEngine()
+          ..loadedCapabilities = const LlamaEngineCapabilities(
+            isSupported: true,
+            runtime: LlamaRuntime.liteRtLm,
+            supportsMultiTurnChat: true,
+          );
+        final settingsService = MockSettingsService()..settings = settings;
+        final customProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: settingsService,
+          initialSettings: settings,
+          enableWebModelPrefetch: false,
+        );
+        addTearDown(customProvider.dispose);
+        await customProvider.loadModel();
+        expect(customProvider.thinkingControlsSupported, isFalse);
+        expect(customProvider.settings.thinkingEnabled, isFalse);
+        expect(customProvider.settings.thinkingBudgetTokens, 256);
+        await customProvider.sendMessage('hello');
+        expect(engine.lastEnableThinking, isTrue);
+        expect(engine.lastTemplateKwargs, isNull);
+        expect(engine.lastParams?.thinkingBudget, isNull);
+        expect(customProvider.messages.last.text, 'ok');
+        expect(customProvider.settings.thinkingEnabled, isFalse);
+        expect(customProvider.settings.thinkingBudgetTokens, 256);
+      },
+      skip: !kIsWeb,
+    );
+
+    test('native LiteRT preserves explicit thinking controls', () async {
+      final engine = _ThinkingControlCaptureEngine()
+        ..loadedCapabilities = const LlamaEngineCapabilities(
+          isSupported: true,
+          runtime: LlamaRuntime.liteRtLm,
+          supportsMultiTurnChat: true,
+          supportsThinkingBudget: true,
+        );
+      final customProvider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(modelPath: 'model.litertlm'),
+      );
+      addTearDown(customProvider.dispose);
+      await customProvider.loadModel();
+      expect(customProvider.thinkingControlsSupported, isTrue);
+      customProvider.updateThinkingEnabled(false);
+      customProvider.updateThinkingBudgetTokens(256);
+      await customProvider.sendMessage('hello');
+      expect(engine.lastEnableThinking, isFalse);
+      expect(engine.lastTemplateKwargs?['enable_thinking'], isFalse);
+      expect(engine.lastTemplateKwargs?['thinking_budget'], 256);
+    }, skip: kIsWeb);
+
+    test('LiteRT warmup uses model-default thinking only on Web', () async {
+      final engine = _ThinkingControlCaptureEngine()
+        ..loadedCapabilities = const LlamaEngineCapabilities(
+          isSupported: true,
+          runtime: LlamaRuntime.liteRtLm,
+          supportsMultiTurnChat: true,
+        );
+      final service = ChatService(engine: engine);
+      addTearDown(service.dispose);
+      await service.init(
+        const ChatSettings(
+          modelPath: 'https://example.com/model.litertlm',
+          maxTokens: 1,
+        ),
+      );
+      expect(engine.lastEnableThinking, kIsWeb);
+      expect(engine.lastTemplateKwargs, isNull);
+    });
+
     test('passes thinking controls to generation call', () async {
       final engine = _ThinkingControlCaptureEngine();
       final customProvider = ChatProvider(
@@ -2632,6 +2797,7 @@ class _SinglePassToolCallEngine extends MockLlamaEngine {
 }
 
 class _ThinkingControlCaptureEngine extends MockLlamaEngine {
+  GenerationParams? lastParams;
   bool? lastEnableThinking;
   Map<String, dynamic>? lastTemplateKwargs;
 
@@ -2649,6 +2815,7 @@ class _ThinkingControlCaptureEngine extends MockLlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
+    lastParams = params;
     lastEnableThinking = enableThinking;
     lastTemplateKwargs = chatTemplateKwargs;
 

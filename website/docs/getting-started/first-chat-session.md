@@ -80,7 +80,8 @@ UTF-8 JSON serialization (approximately one token per three bytes), including
 system and previous turns. `lastRequestFitContext` describes that estimate,
 not an exact runtime token count. The JS runtime still applies its own model
 template and context limits; the accounting serialization is never sent as a
-replacement prompt.
+replacement prompt. Stored assistant reasoning remains in application history
+but is omitted from the model-visible transcript and its accounting.
 
 ## In a Flutter app
 

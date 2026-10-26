@@ -199,14 +199,23 @@ void main() {
 
     Future<String> adapted(
       List<Map<String, String>> history,
-      String prompt,
-    ) async {
+      String prompt, {
+      bool hiddenEmptyAssistant = false,
+    }) async {
       final messages = [
         for (final message in history)
-          LlamaChatMessage.fromText(
-            role: LlamaChatRole.values.byName(message['role']!),
-            text: message['content']!,
-          ),
+          if (hiddenEmptyAssistant &&
+              message['role'] == 'assistant' &&
+              message['content']!.isEmpty)
+            const LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [LlamaThinkingContent('private plan')],
+            )
+          else
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.values.byName(message['role']!),
+              text: message['content']!,
+            ),
         LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt),
       ];
       return (await engine.create(messages, params: params).toList())
@@ -219,6 +228,10 @@ void main() {
       {'role': 'assistant', 'content': 'I will remember PINE.'},
       {'role': 'user', 'content': 'Replace my secret word with CEDAR.'},
       {'role': 'assistant', 'content': 'Your secret word is now CEDAR.'},
+    ];
+    const emptyAssistant = [
+      {'role': 'user', 'content': 'Remember my secret word PINE.'},
+      {'role': 'assistant', 'content': ''},
     ];
     const recall = 'What is my latest secret word? Reply with only the word.';
     const system = [
@@ -234,6 +247,7 @@ void main() {
     final outputs = <String, String>{};
     try {
       outputs['directHistory'] = await reference(history, recall);
+      outputs['directEmptyAssistant'] = await reference(emptyAssistant, recall);
       outputs['withoutHistory'] = await reference([], recall);
       outputs['directSystem'] = await reference(system, request);
       outputs['withoutSystem'] = await reference([], request);
@@ -264,11 +278,21 @@ void main() {
     expect(adapterError, isNull, reason: 'Adapter model load must pass.');
     expect((await engine.capabilities).supportsMultiTurnChat, isTrue);
     outputs['adapterHistory'] = await adapted(history, recall);
+    outputs['adapterEmptyAssistant'] = await adapted(
+      emptyAssistant,
+      recall,
+      hiddenEmptyAssistant: true,
+    );
     outputs['adapterSystem'] = await adapted(system, request);
     print(
       'LITERT_TEXT_HISTORY_RESULT ${jsonEncode({...manifest, 'module': moduleUrl, 'browser': window.navigator.userAgent, 'outputs': outputs})}',
     );
     expect(outputs['directHistory']!.toUpperCase(), contains('CEDAR'));
+    expect(outputs['directEmptyAssistant']!.toUpperCase(), contains('PINE'));
+    expect(
+      outputs['adapterEmptyAssistant']!.trim(),
+      outputs['directEmptyAssistant']!.trim(),
+    );
     expect(outputs['adapterHistory']!.trim(), outputs['directHistory']!.trim());
     expect(outputs['withoutHistory']!.toUpperCase(), isNot(contains('CEDAR')));
     expect(outputs['directSystem']!.toUpperCase(), contains('ORCHID'));

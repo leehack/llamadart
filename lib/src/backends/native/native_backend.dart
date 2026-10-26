@@ -28,6 +28,9 @@ import 'model_format_probe.dart';
 /// Creates the native backend for the current platform.
 LlamaBackend createBackend() => NativeAutoBackend();
 
+/// Preserves native runtime selection for the portable text-history opt-in.
+LlamaBackend createTextHistoryBackend() => createBackend();
+
 /// Native backend router that chooses an engine from the model format.
 ///
 /// The file header picks the runtime: GGUF files use llama.cpp and LiteRT-LM

@@ -20,13 +20,17 @@ description: >-
     every call and append the assistant reply yourself.
   - `engine.generate(prompt)` only for an already-rendered raw prompt; it skips
     the chat template.
-- The default `LlamaBackend()` Web router and explicit
-  `LiteRtLmBackend.withTextHistory()` factory support ordered system/user/assistant text through
+- Opt in with the portable `LlamaBackend.withTextHistory()` factory, or the
+  direct Web `LiteRtLmBackend.withTextHistory()` factory, for ordered
+  system/user/assistant text through
   `engine.create` and `ChatSession` when the loaded runtime's preface/history
   API probe passes; check `supportsMultiTurnChat` after loading. Each request
-  owns a new conversation and supplies its transcript once. Use a Web-compatible
-  `.litertlm` bundle. The original direct LiteRT constructor preserves subclass hooks
-  and single-user-text routing, reporting multi-turn support false. Tools, tool/thinking/media parts, a final assistant/system
+  owns a new conversation and supplies its visible transcript once. Stored
+  assistant reasoning stays in app history and is omitted from replay/accounting. Use a Web-compatible
+  `.litertlm` bundle. Existing default/direct constructors keep legacy LiteRT
+  Web single-user-text
+  routing and subclass hooks. Native selection is unchanged; Genkit adoption is
+  separate. On this Web path, tools, tool/media and user/system thinking parts, a final assistant/system
   message, custom templates, `enableThinking: false`, template kwargs and explicit
   template clocks throw `LlamaUnsupportedException`. Model-default thinking stays
   unchanged. Old runtimes reject history/system input and retain one-user-text

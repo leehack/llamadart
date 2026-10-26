@@ -18,7 +18,10 @@ import '../litert_lm/litert_lm_backend_web.dart';
 import '../webgpu/webgpu_backend.dart';
 
 /// Creates a web backend that can route between multiple web runtimes.
-LlamaBackend createBackend() => WebAutoBackend.withTextHistory();
+LlamaBackend createBackend() => WebAutoBackend();
+
+/// Creates the explicit LiteRT-LM Web text-history router.
+LlamaBackend createTextHistoryBackend() => WebAutoBackend.withTextHistory();
 
 /// Uses the unified web backend implementation.
 ///
@@ -81,7 +84,7 @@ class WebAutoBackend
     }
   }
 
-  /// Creates the default Web router with LiteRT-LM text history enabled.
+  /// Creates an internal Web router with LiteRT-LM text history enabled.
   ///
   /// Only a delegate exposing the native chat SPI receives structured chat.
   /// The original constructor preserves legacy/custom subclass dispatch.
@@ -797,7 +800,7 @@ class WebAutoBackend
   }
 }
 
-// The default LlamaBackend factory opts into this private subtype without
+// The explicit text-history factory selects this private subtype without
 // changing the required members or dispatch of the public generative class.
 final class _TextHistoryWebAutoBackend extends WebAutoBackend
     implements BackendNativeChatGeneration, BackendChatMessageValidation {

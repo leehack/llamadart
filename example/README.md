@@ -64,6 +64,10 @@ For LiteRT-LM Web text chat, choose a browser-compatible bundle and check the
 loaded runtime before relying on history or system instructions:
 
 ```dart
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.parse('https://your-host/model-web.litertlm')),
+  backend: LlamaBackend.withTextHistory(),
+);
 final capabilities = await engine.capabilities;
 if (!capabilities.supportsMultiTurnChat) {
   throw LlamaUnsupportedException('This Web runtime cannot preserve history.');
@@ -75,10 +79,10 @@ session.reset(keepSystemPrompt: false);
 ```
 
 For a direct Web backend, opt in with `LiteRtLmBackend.withTextHistory()`.
-The normal `LlamaBackend()` factory selects this path automatically for
-`.litertlm` models. The original direct LiteRT constructor and legacy internal
-router keep their existing single-user-text dispatch for LiteRT models,
-reporting multi-turn support false; custom/GGUF delegate capabilities remain unchanged.
+The portable `LlamaBackend.withTextHistory()` factory selects this path on Web
+and preserves normal native routing. Existing default/direct constructors keep
+single-user-text routing for LiteRT Web models, reporting multi-turn support
+false; custom/GGUF delegate capabilities remain unchanged.
 
 Only system/user/assistant text is forwarded on this Web path. Keep tools,
 media and custom template/thinking controls out of the request; they raise
