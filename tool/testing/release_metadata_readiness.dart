@@ -20,12 +20,16 @@ const releaseMetadataDocs = <String>{
   'packages/llamadart_litert_lm_flutter/README.md',
   'packages/llamadart_stable_diffusion_flutter/README.md',
 };
-const releaseMetadataLock = 'example/chat_app/pubspec.lock';
-const releaseMetadataPaths = <String>{
-  'pubspec.yaml',
-  releaseMetadataLock,
-  ...releaseMetadataDocs,
+const releaseMetadataLocks = <String, String>{
+  'example/chat_app/pubspec.lock': '../..',
+  'packages/llamadart_validation/pubspec.lock': '../..',
+  'website/examples/observability/pubspec.lock': '../../..',
 };
+final Set<String> releaseMetadataPaths = Set<String>.unmodifiable({
+  'pubspec.yaml',
+  ...releaseMetadataLocks.keys,
+  ...releaseMetadataDocs,
+});
 
 /// A literal Git blob and its mode; no candidate code is executed.
 typedef ReadinessFile = ({String mode, String contents});
@@ -37,14 +41,10 @@ typedef ReadinessFilePair = ({ReadinessFile base, ReadinessFile head});
 /// remain on the ordinary changed-production-test route. All pairs must come
 /// from the evaluator's exact Git base/head, never from the evidence JSON.
 String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
-  if (!files.keys.toSet().containsAll({
-        'pubspec.yaml',
-        releaseMetadataLock,
-        ...releaseMetadataDocs,
-      }) ||
+  if (!files.keys.toSet().containsAll(releaseMetadataPaths) ||
       files.keys.any((path) => !releaseMetadataPaths.contains(path))) {
-    return 'Metadata release requires the complete fixed core pubspec, generated '
-        'chat lock and current release-document inventory.';
+    return 'Metadata release requires the complete fixed core pubspec, three generated '
+        'consumer locks and current release-document inventory.';
   }
   for (final entry in files.entries) {
     if (entry.value.base.mode != '100644' ||
@@ -73,10 +73,12 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
         'dependencies, SDK, hooks, overrides and other bytes must stay identical.';
   }
 
-  final lock = files[releaseMetadataLock];
-  if (lock != null && !_validLock(lock, oldVersion, newVersion)) {
-    return 'Generated chat lock may change only the matching local llamadart '
-        'version; package inventory, paths, hashes and SDK must stay identical.';
+  for (final entry in releaseMetadataLocks.entries) {
+    if (!_validLock(files[entry.key]!, oldVersion, newVersion, entry.value)) {
+      return 'Generated consumer lock ${entry.key} may change only the matching '
+          'local llamadart version; package inventory, paths, hashes and SDK '
+          'must stay identical.';
+    }
   }
   for (final path in releaseMetadataDocs) {
     final pair = files[path];
@@ -177,7 +179,12 @@ String? _packageVersion(String source) {
   }
 }
 
-bool _validLock(ReadinessFilePair pair, String oldVersion, String newVersion) {
+bool _validLock(
+  ReadinessFilePair pair,
+  String oldVersion,
+  String newVersion,
+  String expectedPath,
+) {
   try {
     for (final source in [pair.base.contents, pair.head.contents]) {
       final parsed = loadYaml(source);
@@ -188,7 +195,7 @@ bool _validLock(ReadinessFilePair pair, String oldVersion, String newVersion) {
       if (core is! YamlMap || core['source'] != 'path') return false;
       final description = core['description'];
       if (description is! YamlMap ||
-          description['path'] != '../..' ||
+          description['path'] != expectedPath ||
           description['relative'] != true) {
         return false;
       }

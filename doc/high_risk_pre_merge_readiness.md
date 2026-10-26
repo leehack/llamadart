@@ -184,9 +184,12 @@ not a `metadata_only` flag or a caller-provided inventory:
   outside inert code examples. Executable `mdx-code-block` fences are rejected.
   Historical changelog tails are excluded from that syntax check only after
   proving byte equality. Narrative prose still needs independent review.
-- The generated `example/chat_app/pubspec.lock` must change only the
-  matching local `llamadart` version. Path, source, inventory, hashes, SDK and
-  all other bytes remain identical. Pub must generate the lock normally.
+- All three generated consumer locks are required: `example/chat_app/pubspec.lock`,
+  `packages/llamadart_validation/pubspec.lock` and
+  `website/examples/observability/pubspec.lock`. Each changes only the matching
+  local `llamadart` version. The first two resolve `../..`; observability
+  resolves `../../..`. Path source, relative flag, inventory, hashes, SDK and
+  all other bytes remain identical. Pub must generate every lock normally.
 - All changed paths are existing non-executable regular files; additions,
   deletions, copies, renames and mode changes are excluded.
 - The existing release verifier and named regression test are unchanged

@@ -24,6 +24,7 @@ example/chat_app/test/flutter_shutdown_e2e_test.dart @leehack
 example/chat_app/test/fixtures/flutter_shutdown_observer.c @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
 tool/testing/high_risk_readiness.dart @leehack
+tool/testing/release_metadata_readiness.dart @leehack
 tool/testing/high_risk_readiness_evidence.schema.json @leehack
 tool/testing/high_risk_readiness_evidence.v1.schema.json @leehack
 tool/testing/run_template_parity_suites.sh @leehack

@@ -220,6 +220,12 @@ Map<String, dynamic> metadataEvidence() {
   return evidence;
 }
 
+const metadataLockPaths = <String, String>{
+  'example/chat_app/pubspec.lock': '../..',
+  'packages/llamadart_validation/pubspec.lock': '../..',
+  'website/examples/observability/pubspec.lock': '../../..',
+};
+
 Map<String, Map<String, ReadinessFile>> metadataFiles() {
   ReadinessFile file(String text) => (mode: '100644', contents: text);
   final base = <String, ReadinessFile>{
@@ -232,16 +238,29 @@ Map<String, Map<String, ReadinessFile>> metadataFiles() {
             ? '# Changes\n\n## Unreleased\n\n* Update.\n\n## 0.8.22\n\n* History.\n'
             : '# Install\n\n```yaml\ndependencies:\n  llamadart: ^0.8.22\n```\n',
       ),
-    releaseMetadataLock: file(
-      'packages:\n  llamadart:\n    dependency: "direct main"\n    description:\n      path: "../.."\n      relative: true\n    source: path\n    version: "0.8.22"\nsdks:\n  dart: ">=3.13.0 <4.0.0"\n',
-    ),
+    for (final lock in metadataLockPaths.entries)
+      lock.key: file(
+        'packages:\n  llamadart:\n    dependency: "direct main"\n'
+        '    description:\n      path: "${lock.value}"\n'
+        '      relative: true\n    source: path\n'
+        '    version: "0.8.22"\n'
+        '  yaml:\n    dependency: transitive\n'
+        '    description:\n      name: yaml\n      sha256: abc123\n'
+        '      url: "https://pub.dev"\n    source: hosted\n'
+        '    version: "3.1.3"\n'
+        'sdks:\n  dart: ">=3.13.0 <4.0.0"\n',
+      ),
     releaseMetadataVerifier: file('// maintained verifier\n'),
     releaseMetadataTest: file(
       '// existing negative companion pin regressions\n',
     ),
   };
   final head = Map<String, ReadinessFile>.from(base);
-  for (final path in releaseMetadataPaths) {
+  for (final path in [
+    'pubspec.yaml',
+    ...releaseMetadataDocs,
+    ...metadataLockPaths.keys,
+  ]) {
     final old = base[path]!;
     head[path] = file(
       path.contains('CHANGELOG') || path.contains('recent-releases')
@@ -261,7 +280,11 @@ Future<HighRiskReadinessResult> evaluateMetadata({
     changes:
         changes ??
         [
-          for (final path in releaseMetadataPaths)
+          for (final path in [
+            'pubspec.yaml',
+            ...releaseMetadataDocs,
+            ...metadataLockPaths.keys,
+          ])
             RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
         ],
     files: files ?? metadataFiles(),
@@ -800,25 +823,19 @@ void main() {
         }
       },
     );
-    test(
-      'omitting a required lock or current document cannot hide stale metadata',
-      () async {
-        for (final omitted in releaseMetadataPaths) {
-          final changes = [
-            for (final path in releaseMetadataPaths)
-              if (path != omitted)
-                RepositoryChange(
-                  path: path,
-                  kind: RepositoryChangeKind.modified,
-                ),
-          ];
-          expectFailure(
-            await evaluateMetadata(changes: changes),
-            ReadinessFailureClassification.invalidReleaseMetadata,
-          );
-        }
-      },
-    );
+    for (final omitted in releaseMetadataPaths) {
+      test('omitting required $omitted rejects stale metadata', () async {
+        final changes = [
+          for (final path in releaseMetadataPaths)
+            if (path != omitted)
+              RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+        ];
+        expectFailure(
+          await evaluateMetadata(changes: changes),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      });
+    }
     test(
       'real Git blobs authorize only the committed metadata candidate',
       () async {
@@ -970,7 +987,7 @@ void main() {
       }
     });
     test(
-      'existing release proof remains high risk and externally unverified',
+      'complete three-lock release remains high risk and externally unverified',
       () async {
         final result = await evaluateMetadata();
         expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
@@ -1049,30 +1066,114 @@ void main() {
       );
     }
 
-    for (final mutation in <String, String Function(String)>{
-      'source': (s) => s.replaceFirst('source: path', 'source: hosted'),
-      'path': (s) => s.replaceFirst('../..', '../evil'),
-      'SDK': (s) => s.replaceFirst('3.13.0', '3.14.0'),
-      'extra package': (s) =>
-          s.replaceFirst('sdks:', '  evil:\n    version: "1.0.0"\nsdks:'),
-      'wrong version': (s) => s.replaceFirst('0.8.23', '0.8.24'),
-      'hash': (s) =>
-          s.replaceFirst('source: path', 'sha256: evil\n    source: path'),
-    }.entries) {
-      test('lock ${mutation.key} rejects', () async {
-        final files = metadataFiles();
-        files[headSha]![releaseMetadataLock] = (
-          mode: '100644',
-          contents: mutation.value(
-            files[headSha]![releaseMetadataLock]!.contents,
-          ),
-        );
-        expectFailure(
-          await evaluateMetadata(files: files),
-          ReadinessFailureClassification.invalidReleaseMetadata,
-        );
-      });
+    for (final lock in metadataLockPaths.entries) {
+      for (final mutation in <String, String Function(String)>{
+        'source': (s) => s.replaceFirst('source: path', 'source: hosted'),
+        'path': (s) => s.replaceFirst(lock.value, '../evil'),
+        'relative': (s) => s.replaceFirst('relative: true', 'relative: false'),
+        'SDK': (s) => s.replaceFirst('3.13.0', '3.14.0'),
+        'dependency': (s) => s.replaceFirst('"3.1.3"', '"9.0.0"'),
+        'extra package': (s) =>
+            s.replaceFirst('sdks:', '  evil:\n    version: "1.0.0"\nsdks:'),
+        'wrong version': (s) => s.replaceFirst('0.8.23', '0.8.24'),
+        'hash': (s) => s.replaceFirst('abc123', 'wronghash'),
+        'duplicate core': (s) => s.replaceFirst(
+          '  yaml:',
+          '  llamadart:\n    version: "0.8.23"\n  yaml:',
+        ),
+        'malformed core': (s) =>
+            s.replaceFirst('  llamadart:\n', '  llamadart: [unterminated\n'),
+      }.entries) {
+        test('${lock.key} ${mutation.key} rejects independently', () async {
+          final files = metadataFiles();
+          final original = files[headSha]![lock.key]!;
+          final mutated = mutation.value(original.contents);
+          expect(mutated, isNot(original.contents));
+          files[headSha]![lock.key] = (mode: original.mode, contents: mutated);
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        });
+      }
+      for (final identity in ['source', 'path', 'relative']) {
+        test('${lock.key} rejects consistently wrong $identity', () async {
+          final files = metadataFiles();
+          for (final sha in [baseSha, headSha]) {
+            final original = files[sha]![lock.key]!;
+            final mutated = switch (identity) {
+              'source' => original.contents.replaceFirst(
+                'source: path',
+                'source: hosted',
+              ),
+              'path' => original.contents.replaceFirst(lock.value, '../evil'),
+              _ => original.contents.replaceFirst(
+                'relative: true',
+                'relative: false',
+              ),
+            };
+            files[sha]![lock.key] = (mode: original.mode, contents: mutated);
+          }
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        });
+      }
+      for (final mode in ['100755', '120000']) {
+        test('${lock.key} rejects mode $mode', () async {
+          final files = metadataFiles();
+          final original = files[headSha]![lock.key]!;
+          files[headSha]![lock.key] = (mode: mode, contents: original.contents);
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        });
+      }
+      for (final kind in [
+        RepositoryChangeKind.added,
+        RepositoryChangeKind.deleted,
+        RepositoryChangeKind.renamed,
+        RepositoryChangeKind.typeChanged,
+      ]) {
+        test('${lock.key} rejects ${kind.name}', () async {
+          final changes = [
+            for (final path in releaseMetadataPaths)
+              RepositoryChange(
+                path: path,
+                kind: path == lock.key ? kind : RepositoryChangeKind.modified,
+                previousPath:
+                    path == lock.key && kind == RepositoryChangeKind.renamed
+                    ? 'old/pubspec.lock'
+                    : null,
+              ),
+          ];
+          expectFailure(
+            await evaluateMetadata(changes: changes),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        });
+      }
     }
+    test('extra consumer lock cannot enter the finite inventory', () async {
+      final files = metadataFiles();
+      const extra = 'example/other/pubspec.lock';
+      for (final sha in [baseSha, headSha]) {
+        files[sha]![extra] = files[sha]![metadataLockPaths.keys.first]!;
+      }
+      expectFailure(
+        await evaluateMetadata(
+          files: files,
+          changes: [
+            for (final path in releaseMetadataPaths)
+              RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+            RepositoryChange(path: extra, kind: RepositoryChangeKind.modified),
+          ],
+        ),
+        ReadinessFailureClassification.invalidReleaseMetadata,
+      );
+    });
 
     for (final path in [
       releaseMetadataVerifier,
