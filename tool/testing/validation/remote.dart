@@ -19,6 +19,23 @@ Object? _freeze(Object? value) => value is Map
     ? List<dynamic>.unmodifiable(value.map(_freeze))
     : value;
 
+// Budget inputs are decimal USD. Scaling their binary doubles can cross a cent
+// boundary, so round the canonical decimal form with integer arithmetic.
+BigInt _usdCents(num value, {required bool roundUp}) {
+  final parts = value.toString().toLowerCase().split('e');
+  final decimal = parts.first.split('.');
+  final coefficient = BigInt.parse(decimal.join());
+  final exponent = parts.length == 1 ? 0 : int.parse(parts.last);
+  final fractionalDigits = decimal.length == 1 ? 0 : decimal.last.length;
+  final shift = exponent + 2 - fractionalDigits;
+  if (shift >= 0) return coefficient * BigInt.from(10).pow(shift);
+  final divisor = BigInt.from(10).pow(-shift);
+  final cents = coefficient ~/ divisor;
+  return roundUp && coefficient.remainder(divisor) != BigInt.zero
+      ? cents + BigInt.one
+      : cents;
+}
+
 /// Explicit provider/account configuration and immutable upload identity.
 class RemotePlan {
   RemotePlan(Map<String, dynamic> input)
@@ -45,8 +62,17 @@ class RemotePlan {
       blaze && (settings['budget'] as Map?)?['funding'] == 'free_allowance';
 
   /// Gross cost reservation, before any free allowance or promotional credit.
-  int get reservedUsdCents =>
-      (((settings['budget'] as Map)['maximum_run_usd'] as num) * 100).ceil();
+  /// Fractional cents round up; exact decimal cents remain unchanged.
+  int get reservedUsdCents {
+    final cents = _usdCents(
+      (settings['budget'] as Map)['maximum_run_usd'] as num,
+      roundUp: true,
+    );
+    if (!cents.isValidInt) {
+      throw StateError('USD reservation exceeds the supported integer range');
+    }
+    return cents.toInt();
+  }
 
   void validate() {
     if (json['schema_version'] != 1 ||
@@ -444,7 +470,7 @@ class RemoteController {
               )
             : now().toUtc().subtract(const Duration(hours: 24));
         var count = 0;
-        var reserved = 0;
+        var reserved = BigInt.zero;
         var reservedMinutes = 0;
         final allowanceChecked = plan.usesFreeAllowance
             ? DateTime.parse(
@@ -474,7 +500,7 @@ class RemoteController {
                     'Earlier Blaze submission has no cost reservation',
                   );
                 }
-                reserved += cost;
+                reserved += BigInt.from(cost);
                 final dispatched = DateTime.parse(
                   previous['dispatched_at'] as String,
                 );
@@ -495,7 +521,8 @@ class RemoteController {
         if (plan.blaze) {
           final total =
               (plan.settings['budget'] as Map)['maximum_total_usd'] as num;
-          if (reserved + plan.reservedUsdCents > (total * 100).floor()) {
+          if (reserved + BigInt.from(plan.reservedUsdCents) >
+              _usdCents(total, roundUp: false)) {
             throw StateError(
               'Blaze budget is already reserved by earlier submissions',
             );

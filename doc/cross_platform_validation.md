@@ -777,7 +777,10 @@ fixed `window_start`, `expires_at` no more than 24 hours later, and positive
 dispatch. Refresh `verified_at` within 15 minutes of each run, without moving
 the authorized window or increasing its cap. All amounts are USD: record any
 conservative conversion, tax and auxiliary-cost allowance in the evidence.
-Do not copy a CAD credit balance into `available_usd`.
+Do not copy a CAD credit balance into `available_usd`. Decimal USD reservations
+round fractional cents up and the batch cap rounds them down; exact cent values
+stay exact (two $1.10 reservations fit a $2.20 cap). Existing journal reservations
+remain unchanged when a later run checks the cap.
 
 `funding: "credit"` also requires a fresh credit receipt that verifies Test Lab
 eligibility, at least twice the entire batch budget available, and two hours
