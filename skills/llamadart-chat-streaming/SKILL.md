@@ -30,7 +30,9 @@ description: >-
   message, custom templates, `enableThinking: false`, template kwargs and explicit
   template clocks throw `LlamaUnsupportedException`. Model-default thinking stays
   unchanged. Old runtimes reject history/system input and retain one-user-text
-  completion. This text slice leaves tools/media/template work in
+  completion. Budget trimming uses a full-transcript UTF-8 estimate because
+  the JS tokenizer/template count is unavailable; accounting JSON is not sent
+  as a replacement model prompt. This text slice leaves tools/media/template work in
   [#1152](https://github.com/leehack/llamadart/issues/1152).
 - For reproducible Dart-rendered template dates, use
   `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.

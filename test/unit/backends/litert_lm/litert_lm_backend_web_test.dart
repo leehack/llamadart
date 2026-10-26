@@ -235,6 +235,134 @@ void main() {
   }
 
   test(
+    'default session budget trims completed history before JS forwarding',
+    () async {
+      final prefaces = <Object?>[];
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ok')],
+        onCreateConversation: (config) =>
+            prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl(
+        'model.litertlm',
+        modelParams: const ModelParams(contextSize: 128),
+      );
+      final session = api.ChatSession(engine);
+      session.addMessage(
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'PINE ' * 1000,
+        ),
+      );
+      session.addMessage(
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: 'ack',
+        ),
+      );
+      await session.send('hi', params: const GenerationParams(maxTokens: 1));
+      expect(session.lastRequestFitContext, isTrue);
+      expect(prefaces, [
+        null,
+      ], reason: 'The completed oversized turn must be trimmed, not sent.');
+      expect(session.history.map((message) => message.content), ['hi', 'ok']);
+    },
+  );
+
+  test(
+    'default session budget reports an oversized system prompt as not fitting',
+    () async {
+      final prefaces = <Object?>[];
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ok')],
+        onCreateConversation: (config) =>
+            prefaces.add(config.getProperty<JSAny?>('preface'.toJS)?.dartify()),
+      );
+      final engine = LlamaEngine(spi.LlamaBackend());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl(
+        'model.litertlm',
+        modelParams: const ModelParams(contextSize: 128),
+      );
+      final system = 'ORCHID ' * 1000;
+      final session = api.ChatSession(engine, systemPrompt: system);
+      await session.send('hi', params: const GenerationParams(maxTokens: 1));
+      expect(session.lastRequestFitContext, isFalse);
+      expect(prefaces, [
+        {
+          'messages': [
+            {'role': 'system', 'content': system},
+          ],
+        },
+      ]);
+    },
+  );
+
+  test(
+    'full transcript accounting never replaces structured JS messages',
+    () async {
+      JSObject? config;
+      String? sent;
+      _installFakeEngine(
+        textHistory: true,
+        chunks: [_messageChunk('ok')],
+        onCreateConversation: (value) => config = value,
+        onPrompt: (value) => sent = value,
+      );
+      final engine = LlamaEngine(LiteRtLmBackend.withTextHistory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      const messages = [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text: 'Be terse.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Remember PINE.',
+        ),
+        LlamaChatMessage.fromText(role: LlamaChatRole.assistant, text: 'ack'),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Which word?',
+        ),
+      ];
+      final accounting = await engine.chatTemplate(messages);
+      expect(
+        accounting.tokenCount,
+        isNull,
+        reason: 'No exact JS tokenizer is exposed.',
+      );
+      final serialized = jsonDecode(accounting.prompt) as List;
+      expect(serialized.map((message) => (message as Map)['role']), [
+        'system',
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(serialized.map((message) => (message as Map)['content']), [
+        'Be terse.',
+        'Remember PINE.',
+        'ack',
+        'Which word?',
+      ]);
+      await engine.create(messages).toList();
+      expect(sent, 'Which word?');
+      expect(config!.getProperty<JSObject>('preface'.toJS).dartify(), {
+        'messages': [
+          {'role': 'system', 'content': 'Be terse.'},
+          {'role': 'user', 'content': 'Remember PINE.'},
+          {'role': 'assistant', 'content': 'ack'},
+        ],
+      });
+    },
+  );
+
+  test(
     'default Web router forwards session history and isolates reset/other sessions',
     () async {
       final prefaces = <Object?>[];

@@ -245,6 +245,10 @@ Check `supportsMultiTurnChat` after loading. The adapter probes that
 and returns an array. An older/missing API reports false and rejects history or
 system prompts with `LlamaUnsupportedException`; one user text still works.
 The probe runs no inference and does not qualify a model's semantic behavior.
+Session trimming estimates the complete transcript from UTF-8 JSON bytes;
+exact JS tokenizer/template accounting is unavailable. `engine.chatTemplate`
+returns this accounting serialization on the opted-in path. It does not replace
+the model's JS template or the original structured messages sent for generation.
 Use a browser-compatible bundle; the JS package documents Gemma 4 E2B/E4B
 `-web.litertlm` files. A native `.litertlm` file is not interchangeable.
 

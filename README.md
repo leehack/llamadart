@@ -372,7 +372,8 @@ Automatic tool loops remain unavailable ([#1152](https://github.com/leehack/llam
 For a direct Web backend, opt in with `LiteRtLmBackend.withTextHistory()`.
 The original direct LiteRT constructor and legacy internal router keep their existing single-user-text dispatch for LiteRT models,
 reporting multi-turn support false. Custom/GGUF delegate capabilities remain
-unchanged.
+unchanged. Text-history session budgets estimate the complete UTF-8 transcript;
+exact JS tokenizer/template counts are unavailable.
 
 After `cancelGeneration()`, LiteRT-LM Web treats only the runtime's exact
 `Task cancelled` error as a normal end. Other runtime failures still surface as

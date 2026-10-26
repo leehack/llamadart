@@ -275,7 +275,7 @@ void main() {
     expect(outputs['adapterSystem']!.trim(), outputs['directSystem']!.trim());
     expect(outputs['withoutSystem']!.toUpperCase(), isNot(contains('ORCHID')));
 
-    final historySession = ChatSession(engine, maxContextTokens: 0);
+    final historySession = ChatSession(engine);
     expect(
       (await historySession.send(
         'Remember my secret word PINE. Reply ACK only.',

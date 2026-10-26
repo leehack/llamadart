@@ -1868,6 +1868,10 @@ class LlamaEngine {
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
   /// wins.
   ///
+  /// LiteRT-LM Web text-history factories return full-transcript JSON for
+  /// session budget estimation here, not the runtime's rendered model template.
+  /// Exact JS tokenization is unavailable; generation uses the original messages.
+  ///
   /// Set [includeTokenCount] to false to skip the prompt tokenization pass
   /// and reduce per-request overhead when token count is not needed.
   ///

@@ -116,7 +116,8 @@ class LiteRtLmBackend
   /// Requires the loaded runtime to consume `preface` and expose `getHistory`.
   /// The final message must be user text. Tools, media and template/thinking
   /// controls throw [LlamaUnsupportedException]. The original constructor's
-  /// subclass dispatch contract remains unchanged.
+  /// subclass dispatch contract remains unchanged. Session budgets use a
+  /// full-transcript UTF-8 estimate; exact JS tokenization is unavailable.
   factory LiteRtLmBackend.withTextHistory({
     Object? initialSendPort,
     @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
@@ -1578,6 +1579,19 @@ final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
     super.moduleUrl,
     super.readyTimeout,
   });
+
+  // The runtime owns its tokenizer/template. Dart's budget fallback must see
+  // every turn, while generation still receives the original structured input.
+  static const String _accountingTemplate = '{{ messages | tojson }}';
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async {
+    final metadata = await super.modelMetadata(modelHandle);
+    metadata['tokenizer.chat_template'] = _accountingTemplate;
+    metadata['llamadart.litert_lm_web.prompt_accounting'] =
+        'utf8-byte-estimate';
+    return metadata;
+  }
 
   @override
   bool get _textHistoryEnabled => true;
