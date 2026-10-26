@@ -7,6 +7,12 @@ import 'package:test/test.dart';
 
 import 'support/bounded_process.dart';
 
+// Windows subprocess initialization has stalled in CI (#1295). This is the
+// total child budget; the Python HTTP contract keeps its own 20-second limit.
+final _processTimeout = Platform.isWindows
+    ? const Duration(seconds: 120)
+    : const Duration(seconds: 20);
+
 void main() {
   test(
     'Web history driver serves model input and propagates child status',
@@ -14,22 +20,29 @@ void main() {
       final result = await runBoundedProcess(
         Platform.isWindows ? 'python' : 'python3',
         ['-B', '-c', _exerciseDriver],
-        timeout: const Duration(seconds: 20),
+        timeout: _processTimeout,
       );
       expect(result.exitCode, 37, reason: '${result.stdout}\n${result.stderr}');
       expect(result.stdout, contains('LITERT_TEXT_HISTORY_INPUT '));
       expect(result.stdout, contains('DRIVER_HTTP_CONTRACT_PASSED'));
     },
+    timeout: Timeout(_processTimeout + const Duration(seconds: 10)),
   );
 }
 
 const _exerciseDriver = r'''
+print('DRIVER_PHASE child-entry', flush=True)
+import faulthandler
+faulthandler.dump_traceback_later(15)
+
 import hashlib
 import json
+import os
 import pathlib
 import runpy
 import sys
 import tempfile
+import threading
 import unittest
 import urllib.error
 import urllib.request
@@ -37,9 +50,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path('tool/testing').resolve()))
 import serve_static_with_headers
+print('DRIVER_PHASE imports-complete', flush=True)
 
 check = unittest.TestCase()
 servers = []
+contract_watchdog = None
 real_server = serve_static_with_headers.ThreadingTcpServer
 
 def ephemeral_server(address, handler):
@@ -50,7 +65,17 @@ def ephemeral_server(address, handler):
 
 payload = b'\x00tiny LiteRT-LM fixture\xff\x10'
 
+def contract_timed_out():
+    print('DRIVER_PHASE http-contract-timeout', flush=True)
+    faulthandler.dump_traceback()
+    os._exit(124)
+
 def child(command):
+    global contract_watchdog
+    print('DRIVER_PHASE http-contract-entry', flush=True)
+    contract_watchdog = threading.Timer(20, contract_timed_out)
+    contract_watchdog.daemon = True
+    contract_watchdog.start()
     check.assertEqual(command, [
         'dart', 'test', '-p', 'chrome-webgpu', '--run-skipped',
         '-t', 'local-only',
@@ -119,17 +144,26 @@ def child(command):
     print('DRIVER_HTTP_CONTRACT_PASSED', flush=True)
     return 37
 
-with tempfile.TemporaryDirectory(prefix='litert_web_driver_') as scratch:
-    model = pathlib.Path(scratch) / 'tiny.litertlm'
-    model.write_bytes(payload)
-    sys.argv = ['litert_text_history_web_e2e.py', '--model-path', str(model)]
-    # Keep the real server/handler while avoiding the model E2E's fixed port.
-    with patch.object(serve_static_with_headers, 'ThreadingTcpServer', ephemeral_server):
-        with patch('subprocess.call', side_effect=child) as call:
-            try:
-                runpy.run_path('tool/testing/litert_text_history_web_e2e.py',
-                               run_name='__main__')
-            except SystemExit as result:
-                call.assert_called_once()
-                raise
+try:
+    with tempfile.TemporaryDirectory(prefix='litert_web_driver_') as scratch:
+        model = pathlib.Path(scratch) / 'tiny.litertlm'
+        model.write_bytes(payload)
+        sys.argv = ['litert_text_history_web_e2e.py', '--model-path', str(model)]
+        # Keep the real server/handler while avoiding the model E2E's fixed port.
+        with patch.object(serve_static_with_headers, 'ThreadingTcpServer', ephemeral_server):
+            with patch('subprocess.call', side_effect=child) as call:
+                print('DRIVER_PHASE runpy-entry', flush=True)
+                try:
+                    runpy.run_path('tool/testing/litert_text_history_web_e2e.py',
+                                   run_name='__main__')
+                except SystemExit:
+                    print('DRIVER_PHASE driver-exited', flush=True)
+                    call.assert_called_once()
+                    raise
+finally:
+    faulthandler.cancel_dump_traceback_later()
+    if contract_watchdog is not None:
+        contract_watchdog.cancel()
+        contract_watchdog.join()
+    print('DRIVER_PHASE cleanup-complete', flush=True)
 ''';
