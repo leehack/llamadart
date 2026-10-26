@@ -872,7 +872,7 @@ jobs:
         env:
           GGML_METAL_DEVICES: "0"
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
-        run: dart test -p vm -j 1 --exclude-tags local-only
+        run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl
 
       - name: Check the LiteRT-LM cache canary
         if: ${{ !cancelled() }}
@@ -882,6 +882,19 @@ jobs:
       - name: Verify Flutter Apple companion cache transitions
         if: runner.os == 'macOS'
         run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
+
+      - name: Summarize native test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/native_test_events.jsonl') != '' }}
+        run: dart tool/ci/native_test_timing.dart .dart_tool/native_test_events.jsonl .dart_tool/native_test_timing.json
+
+      - name: Upload native test timing
+        if: ${{ !cancelled() && hashFiles('.dart_tool/native_test_timing.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-test-timing-${{ matrix.os }}-${{ github.run_attempt }}
+          path: .dart_tool/native_test_timing.json
+          if-no-files-found: error
+          retention-days: 14
 
   native-prompt-reuse-parity:
     needs: changes

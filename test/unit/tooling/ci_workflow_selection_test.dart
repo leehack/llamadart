@@ -567,7 +567,10 @@ void main() {
       final nativeSteps = jobs['test-other-os']['steps'] as List;
       expect(
         nativeSteps.any(
-          (s) => s['run'] == 'dart test -p vm -j 1 --exclude-tags local-only',
+          (s) =>
+              s['run'] ==
+              'dart test -p vm -j 1 --exclude-tags local-only '
+                  '--file-reporter=json:.dart_tool/native_test_events.jsonl',
         ),
         isTrue,
       );

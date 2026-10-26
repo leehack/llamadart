@@ -1002,3 +1002,29 @@ until their model-backed runs pass.
 [the recipe and native-reference procedure](image_seamless_textures.md).
 Set `LLAMADART_TEXTURE_DEVICES=cpu` on a host without Metal; this qualifies
 CPU only. The default `cpu,metal` requires an actual `MTL` backend for Metal.
+
+## Native test timing
+
+The macOS/Windows `Test Native` jobs retain their existing selection,
+single-suite concurrency, cache canary and separate Apple companion check.
+The additional JSON file reporter records test intervals; the ordinary reporter
+and test exit status are unchanged. `native-test-timing-<os>-<attempt>` artifacts
+contain sanitized suite paths, source lines, test IDs, intervals, hidden/skip
+flags and results. Test names, printed messages and errors stay out of the
+uploaded summary. Hidden intervals include suite loading and group setup or
+teardown; they are not separately classified as build-hook time.
+
+To summarize a local run, use an isolated system temp directory on macOS and run:
+
+```bash
+dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl
+dart tool/ci/native_test_timing.dart .dart_tool/native_test_events.jsonl .dart_tool/native_test_timing.json
+```
+
+The summary marks missing terminal results or unfinished tests incomplete.
+Malformed/truncated JSON produces no report. Intervals can overlap, and the
+reporter excludes startup before its initialization. Compare them with the
+native-test step's hosted timestamps; neither their sum nor the difference
+isolates build-hook cost, CPU time, billing or a causal speedup. This advances
+[#532's measurement work](https://github.com/leehack/llamadart/issues/532);
+the full-gate median targets and integration policy remain separate.
