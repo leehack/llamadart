@@ -74,6 +74,12 @@ final reply = await session.send('Which word did I ask you to remember?');
 session.reset(keepSystemPrompt: false);
 ```
 
+For a direct Web backend, opt in with `LiteRtLmBackend.withTextHistory()`.
+The normal `LlamaBackend()` factory selects this path automatically for
+`.litertlm` models. The original direct LiteRT constructor and legacy internal
+router keep their existing single-user-text dispatch for LiteRT models,
+reporting multi-turn support false; custom/GGUF delegate capabilities remain unchanged.
+
 Only system/user/assistant text is forwarded on this Web path. Keep tools,
 media and custom template/thinking controls out of the request; they raise
 `LlamaUnsupportedException` ([#1152](https://github.com/leehack/llamadart/issues/1152)).

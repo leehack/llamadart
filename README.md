@@ -359,8 +359,8 @@ models before creating a context. Embedding inputs that need one-pass attention
 or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.
 See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning)
 and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
-LiteRT-LM Web forwards ordered system/user/assistant text through the published
-`@litert-lm/core@0.18.0` conversation APIs. Check
+The default `LlamaBackend()` Web router forwards ordered system/user/assistant
+text through the published `@litert-lm/core@0.18.0` conversation APIs. Check
 `(await engine.capabilities).supportsMultiTurnChat` after loading: an older
 runtime that ignores the preface or lacks `getHistory()` rejects history and
 system prompts. Use `engine.create(messages)` or `ChatSession`; each request
@@ -368,6 +368,11 @@ recreates its conversation from the supplied transcript. Tool declarations,
 tool/thinking/media message parts, assistant continuation, custom templates,
 explicit thinking switches, template kwargs and template clocks are rejected.
 Automatic tool loops remain unavailable ([#1152](https://github.com/leehack/llamadart/issues/1152)).
+
+For a direct Web backend, opt in with `LiteRtLmBackend.withTextHistory()`.
+The original direct LiteRT constructor and legacy internal router keep their existing single-user-text dispatch for LiteRT models,
+reporting multi-turn support false. Custom/GGUF delegate capabilities remain
+unchanged.
 
 After `cancelGeneration()`, LiteRT-LM Web treats only the runtime's exact
 `Task cancelled` error as a normal end. Other runtime failures still surface as

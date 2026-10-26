@@ -37,10 +37,11 @@ import 'litert_lm_templates.dart';
 /// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
 /// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm`.
 ///
-/// High-level chat forwards ordered system/user/assistant text through a
-/// conversation preface after probing the loaded runtime's API. A final user
-/// message is required. Tools, media, custom templates and explicit thinking
-/// or template controls are unavailable. Raw [generate] sends one user text.
+/// [LiteRtLmBackend.withTextHistory] opts into ordered system/user/assistant
+/// text through a probed conversation preface. The original constructor retains
+/// single-user-text dispatch and existing subclass generation overrides.
+/// Tools, media, custom templates and explicit thinking/template controls are
+/// unavailable. Raw [generate] sends one user text.
 class LiteRtLmBackend
     implements
         BackendRuntimeIdentity,
@@ -58,8 +59,8 @@ class LiteRtLmBackend
   static const Duration _enginePollInterval = Duration(milliseconds: 100);
   static const String _defaultModelCacheName =
       'llamadart-webgpu-model-cache-v1';
-  // Only supplies parser metadata. Structured chat uses the original messages
-  // through the registered adapter, while raw generation remains one user turn.
+  // Supplies parser metadata; the opted-in private subtype sends the original
+  // messages through a preface. Raw generation remains one user turn.
   static const String _passthroughLatestMessageTemplate =
       '{% for message in messages %}'
       '{% if loop.last %}{{ message["content"] }}{% endif %}'
@@ -108,9 +109,28 @@ class LiteRtLmBackend
     Duration? readyTimeout,
   }) : _moduleUrl = moduleUrl,
        _readyTimeout = readyTimeout ?? _engineReadyTimeout,
-       _preferredBackend = _normalizeBackendOverride(preferredBackend) {
-    registerNativeChatGenerator(this, () => _LiteRtLmWebChat(this));
-  }
+       _preferredBackend = _normalizeBackendOverride(preferredBackend);
+
+  /// Creates a backend with ordered system/user/assistant text history.
+  ///
+  /// Requires the loaded runtime to consume `preface` and expose `getHistory`.
+  /// The final message must be user text. Tools, media and template/thinking
+  /// controls throw [LlamaUnsupportedException]. The original constructor's
+  /// subclass dispatch contract remains unchanged.
+  factory LiteRtLmBackend.withTextHistory({
+    Object? initialSendPort,
+    @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
+    String? preferredBackend,
+    String? moduleUrl,
+    Duration? readyTimeout,
+  }) => _TextHistoryLiteRtLmBackend(
+    initialSendPort: initialSendPort,
+    preferredBackend: preferredBackend,
+    moduleUrl: moduleUrl,
+    readyTimeout: readyTimeout,
+  );
+
+  bool get _textHistoryEnabled => false;
 
   @override
   String? get generationLimitUnsupportedReason =>
@@ -133,10 +153,11 @@ class LiteRtLmBackend
   @override
   bool get supportsGrammarConstraints => false;
 
-  /// Whether the loaded runtime consumed a conversation preface and exposed
-  /// a working history API. Only system/user/assistant text is supported.
+  /// False for this legacy single-user-text constructor.
+  /// [LiteRtLmBackend.withTextHistory] probes the loaded runtime's preface and
+  /// history API before reporting system/user/assistant text support.
   @override
-  bool get supportsMultiTurnChat => _isReady && _supportsTextHistory;
+  bool get supportsMultiTurnChat => false;
 
   @override
   bool get supportsToolCalling => false;
@@ -224,7 +245,8 @@ class LiteRtLmBackend
     final consoleGuard = _installScopedConsoleGuard();
     try {
       _engine = await constructor.create(settings).toDart;
-      _supportsTextHistory = await _probeTextHistory(_engine!);
+      _supportsTextHistory =
+          _textHistoryEnabled && await _probeTextHistory(_engine!);
       _modelHandle = _nextModelHandle++;
       _isReady = true;
       onProgress?.call(1);
@@ -1546,15 +1568,28 @@ class LiteRtLmBackend
   }
 }
 
-// An adapter preserves the exported backend's existing implements contract.
-final class _LiteRtLmWebChat
+// Only the additive factory creates this SPI subtype. Existing subclasses of
+// the public generative constructor keep dispatch through their public hooks.
+final class _TextHistoryLiteRtLmBackend extends LiteRtLmBackend
     implements BackendNativeChatGeneration, BackendChatMessageValidation {
-  _LiteRtLmWebChat(this.backend);
-
-  final LiteRtLmBackend backend;
+  _TextHistoryLiteRtLmBackend({
+    super.initialSendPort,
+    super.preferredBackend,
+    super.moduleUrl,
+    super.readyTimeout,
+  });
 
   @override
-  bool get supportsNativeChatGeneration => backend.isReady;
+  bool get _textHistoryEnabled => true;
+
+  @override
+  bool get supportsMultiTurnChat => _isReady && _supportsTextHistory;
+
+  @override
+  bool get supportsNativeChatGeneration => isReady;
+
+  @override
+  bool get requiresStructuredChatInput => true;
 
   @override
   void validateChatMessages(List<LlamaChatMessage> messages) {
@@ -1586,7 +1621,7 @@ final class _LiteRtLmWebChat
         'continuation and system-only generation are unavailable.',
       );
     }
-    if (history.length > 1 && !backend.supportsMultiTurnChat) {
+    if (history.length > 1 && !supportsMultiTurnChat) {
       throw LlamaUnsupportedException(
         'The loaded LiteRT-LM Web runtime did not consume preface.messages '
         'or expose getHistory. Text history and system prompts require '
@@ -1630,7 +1665,7 @@ final class _LiteRtLmWebChat
       );
     }
     final history = _textMessages(messages);
-    yield* backend._generateWithHistory(
+    yield* _generateWithHistory(
       contextHandle,
       history.last['content']!,
       params,

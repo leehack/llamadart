@@ -46,7 +46,7 @@ void main() {
             ..sort();
       print('LITERT_TEXT_HISTORY_RESOURCES ${jsonEncode(resources)}');
     });
-    final backend = LiteRtLmBackend(moduleUrl: moduleUrl);
+    final backend = LiteRtLmBackend.withTextHistory(moduleUrl: moduleUrl);
     final engine = LlamaEngine(backend);
     addTearDown(engine.dispose);
     const params = GenerationParams(

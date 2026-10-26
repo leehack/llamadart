@@ -232,29 +232,12 @@ abstract class BackendNativeChatGeneration {
 
 /// Internal validation before Dart template rendering reads message roles.
 abstract class BackendChatMessageValidation {
+  /// Whether this runtime must validate chat rather than fall back to a string.
+  bool get requiresStructuredChatInput;
+
   /// Rejects messages the structured runtime cannot represent.
   void validateChatMessages(List<LlamaChatMessage> messages);
 }
-
-// Keep adapters off exported backend classes so existing implementations and
-// subclasses do not acquire new required members.
-final Expando<BackendNativeChatGeneration? Function()> _chatGenerators =
-    Expando<BackendNativeChatGeneration? Function()>();
-
-/// Registers an internal structured-chat adapter for [backend].
-///
-/// Registered adapters validate every chat request, including requests that
-/// cannot fall back to a rendered string without losing roles or options.
-void registerNativeChatGenerator(
-  Object backend,
-  BackendNativeChatGeneration? Function() generator,
-) {
-  _chatGenerators[backend] = generator;
-}
-
-/// Returns the registered structured-chat adapter, when one is active.
-BackendNativeChatGeneration? registeredNativeChatGeneratorOf(Object backend) =>
-    _chatGenerators[backend]?.call();
 
 /// Optional backend capability for backends whose worker isolate keeps its
 /// own Dart logger and forwards its records to the main isolate.

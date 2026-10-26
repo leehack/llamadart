@@ -9,6 +9,7 @@ import 'dart:js_interop_unsafe';
 import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/backend.dart' as spi;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
+import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -26,6 +27,61 @@ import 'package:test/test.dart';
 import 'package:web/web.dart';
 
 import '../../../support/fake_navigator_gpu.dart';
+
+mixin _GenerateOverride on spi.LlamaBackend {
+  int generateCalls = 0;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) {
+    generateCalls++;
+    return Stream.value(utf8.encode('OVERRIDE'));
+  }
+}
+
+mixin _NativeChatOverride on spi.LlamaBackend
+    implements spi.BackendNativeChatGeneration {
+  int nativeCalls = 0;
+
+  @override
+  bool get supportsNativeChatGeneration => true;
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<api.ToolDefinition>? tools,
+    api.ToolChoice toolChoice = api.ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) {
+    nativeCalls++;
+    return Stream.value(utf8.encode('EXPLICIT'));
+  }
+}
+
+final class _LegacyLiteRtGenerate extends LiteRtLmBackend
+    with _GenerateOverride {}
+
+final class _LegacyLiteRtNative extends LiteRtLmBackend
+    with _NativeChatOverride {}
+
+final class _LegacyWebGenerate extends WebAutoBackend with _GenerateOverride {
+  _LegacyWebGenerate() : super(liteRtLmFactory: LiteRtLmBackend.new);
+}
+
+final class _LegacyWebNative extends WebAutoBackend with _NativeChatOverride {
+  _LegacyWebNative() : super(liteRtLmFactory: LiteRtLmBackend.new);
+}
 
 void main() {
   for (final device in [ComputeDevice.cpu, ComputeDevice.gpu]) {
@@ -63,6 +119,74 @@ void main() {
   setUp(_clearGlobals);
   tearDown(_clearGlobals);
 
+  for (final (name, spi.LlamaBackend Function() factory) in [
+    ('LiteRtLmBackend', _LegacyLiteRtGenerate.new),
+    ('WebAutoBackend', _LegacyWebGenerate.new),
+  ]) {
+    test(
+      '$name legacy subclass generate override serves raw and chat requests',
+      () async {
+        _installFakeEngine(
+          textHistory: true,
+          chunks: [_messageChunk('RUNTIME')],
+        );
+        final backend = factory();
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl('model.litertlm');
+        expect((await engine.capabilities).supportsMultiTurnChat, isFalse);
+        expect(await engine.generate('raw').join(), 'OVERRIDE');
+        final chunks = await engine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'chat'),
+        ]).toList();
+        expect(chunks.map((chunk) => chunk.text).join(), 'OVERRIDE');
+        expect((backend as _GenerateOverride).generateCalls, 2);
+      },
+    );
+  }
+  for (final (name, spi.LlamaBackend Function() factory) in [
+    ('LiteRtLmBackend', _LegacyLiteRtNative.new),
+    ('WebAutoBackend', _LegacyWebNative.new),
+  ]) {
+    test('$name explicit native SPI override serves chat requests', () async {
+      _installFakeEngine(textHistory: true, chunks: [_messageChunk('RUNTIME')]);
+      final backend = factory();
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
+      final chunks = await engine.create(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'chat'),
+      ]).toList();
+      expect(chunks.map((chunk) => chunk.text).join(), 'EXPLICIT');
+      expect((backend as _NativeChatOverride).nativeCalls, 1);
+    });
+  }
+  for (final (name, factory, expected)
+      in <(String, spi.LlamaBackend Function(), String)>[
+        ('legacy generate', _LegacyLiteRtGenerate.new, 'OVERRIDE'),
+        ('explicit native SPI', _LegacyLiteRtNative.new, 'EXPLICIT'),
+      ]) {
+    test(
+      'text-history factory router preserves $name custom delegate',
+      () async {
+        _installFakeEngine(
+          textHistory: true,
+          chunks: [_messageChunk('RUNTIME')],
+        );
+        final engine = LlamaEngine(
+          WebAutoBackend.withTextHistory(liteRtLmFactory: factory),
+        );
+        addTearDown(engine.dispose);
+        await engine.loadModelFromUrl('model.litertlm');
+        expect((await engine.capabilities).supportsMultiTurnChat, isFalse);
+        final chunks = await engine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'chat'),
+        ]).toList();
+        expect(chunks.map((chunk) => chunk.text).join(), expected);
+      },
+    );
+  }
+
   for (final (preface, historyApi, expected) in [
     (false, true, false),
     (true, false, false),
@@ -78,7 +202,7 @@ void main() {
           chunks: [_messageChunk('ok')],
           onPrompt: (_) => prompts++,
         );
-        final backend = LiteRtLmBackend();
+        final backend = LiteRtLmBackend.withTextHistory();
         final engine = LlamaEngine(backend);
         addTearDown(engine.dispose);
         expect(backend.supportsMultiTurnChat, isFalse);
@@ -858,7 +982,7 @@ void main() {
         },
       );
 
-      final engine = LlamaEngine(LiteRtLmBackend());
+      final engine = LlamaEngine(LiteRtLmBackend.withTextHistory());
       await engine.loadModelFromUrl(
         'https://example.com/gemma-4-E2B-it-web.litertlm',
         modelParams: const ModelParams(

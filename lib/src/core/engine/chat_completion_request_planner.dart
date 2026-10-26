@@ -295,14 +295,15 @@ class ChatCompletionRequestPlanner {
     required ToolChoice toolChoice,
     required bool parallelToolCalls,
   }) {
-    final registered = registeredNativeChatGeneratorOf(backend);
-    if (registered != null && registered.supportsNativeChatGeneration) {
-      return registered;
-    }
     if (backend is! BackendNativeChatGeneration) {
       return null;
     }
     final nativeBackend = backend as BackendNativeChatGeneration;
+    if (backend is BackendChatMessageValidation &&
+        (backend as BackendChatMessageValidation).requiresStructuredChatInput &&
+        nativeBackend.supportsNativeChatGeneration) {
+      return nativeBackend;
+    }
     return _canUseNativeChatGeneration(
           nativeBackend,
           messages,

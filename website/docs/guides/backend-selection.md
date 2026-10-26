@@ -228,12 +228,17 @@ Bundle keys, module availability and selector names are in
 
 ## LiteRT-LM on web
 
-LiteRT-LM Web forwards ordered system/user/assistant text through
-`ConversationConfig.preface.messages` and sends the final user text once.
+The default `LlamaBackend()` Web router and
+`LiteRtLmBackend.withTextHistory()` forward ordered system/user/assistant text
+through `ConversationConfig.preface.messages` and send the final user text once.
 `engine.create(messages)` supplies the full transcript; `ChatSession` manages
 it for you. A new runtime conversation is created and deleted for every request,
 so reset/cancelled requests retain no hidden runtime history. `session.reset()`
 keeps the system prompt by default; use `reset(keepSystemPrompt: false)` to clear it.
+
+The original direct LiteRT constructor and legacy internal router keep their existing single-user-text dispatch for LiteRT models,
+reporting multi-turn support false. Custom/GGUF delegate capabilities remain
+unchanged.
 
 Check `supportsMultiTurnChat` after loading. The adapter probes that
 `createConversation` consumes its `preface` option and that `getHistory()` runs

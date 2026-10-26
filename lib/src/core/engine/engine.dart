@@ -1674,7 +1674,7 @@ class LlamaEngine {
     return _generationCancellation.request((request) {
       Stream<LlamaCompletionChunk> chunks() async* {
         _ensureReady();
-        final structuredChat = registeredNativeChatGeneratorOf(backend);
+        final structuredChat = backend;
         if (structuredChat is BackendChatMessageValidation) {
           (structuredChat as BackendChatMessageValidation).validateChatMessages(
             messages,

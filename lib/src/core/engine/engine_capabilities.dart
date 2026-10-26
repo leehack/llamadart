@@ -82,7 +82,8 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// Whether the model sees the whole conversation passed to
   /// `LlamaEngine.create`.
   ///
-  /// LiteRT-LM Web supports system/user/assistant text only when its loaded
+  /// The default Web router and explicit `withTextHistory` factories support
+  /// LiteRT-LM system/user/assistant text only when their loaded
   /// runtime consumes a conversation preface and exposes a working history API.
   /// It requires a final user message; tools and thinking/media parts are
   /// rejected. The probe does not qualify a particular model's behavior.
