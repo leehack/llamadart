@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.3
+  llamadart: ^0.16.4
 ```
 
 Then resolve packages:
@@ -54,7 +54,7 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.3
+  llamadart: ^0.16.4
   llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.16.2 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in

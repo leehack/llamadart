@@ -7,9 +7,13 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.16.4
 
 - Opt into ordered system/user/assistant text history on LiteRT-LM Web with `LlamaBackend.withTextHistory()`; the chat app adopts it, and unavailable controls fail explicitly ([#1152](https://github.com/leehack/llamadart/issues/1152)).
+
+- Keep default WebGPU bridge assets at `v0.1.73` (unchanged from 0.16.3).
+
+Web runtime baseline (unchanged): upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, native `v0.7.0-2`; Web LiteRT-LM `@litert-lm/core@0.18.0`. Bridge manifest SHA-256: `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`.
 
 ## 0.16.3
 
