@@ -1618,6 +1618,154 @@ void main() {
     return RemotePlan(json);
   }
 
+  RemotePlan decimalBudgetPlan({
+    String id = 'qa-one',
+    required num perRun,
+    required num total,
+  }) {
+    final json =
+        jsonDecode(
+              jsonEncode(blazePlan(id: id, funding: 'approved_charges').json),
+            )
+            as Map<String, dynamic>;
+    json['settings']['test_timeout_minutes'] = 1;
+    json['settings']['budget']['maximum_run_usd'] = perRun;
+    json['settings']['budget']['maximum_total_usd'] = total;
+    return RemotePlan(json);
+  }
+
+  test('Blaze reserves decimal USD without binary cent rounding', () {
+    for (final (amount, cents) in <(num, int)>[
+      (1.10, 110),
+      (0.07, 7),
+      (0.29, 29),
+      (1, 100),
+      (2.001, 201),
+      (1.1000000000000003, 111),
+      (1e-7, 1),
+    ]) {
+      expect(
+        decimalBudgetPlan(perRun: amount, total: 3).reservedUsdCents,
+        cents,
+        reason: 'USD $amount',
+      );
+    }
+  });
+
+  test('Blaze rejects a reservation that cannot fit in its journal', () async {
+    final provider = FakeProvider();
+    final result = await controller(
+      provider,
+    ).run(decimalBudgetPlan(perRun: 1e18, total: 1e19));
+    expect(result['phase'], 'PREFLIGHT_FAILED');
+    expect(
+      () => decimalBudgetPlan(perRun: 1e18, total: 1e19).reservedUsdCents,
+      throwsA(
+        isA<StateError>().having(
+          (error) => '$error',
+          'reason',
+          contains('supported integer range'),
+        ),
+      ),
+    );
+    expect(provider.starts, 0);
+  });
+
+  test(
+    'Blaze accepts two decimal reservations exactly at the batch cap',
+    () async {
+      final provider = FakeProvider();
+      final control = controller(provider);
+      for (var i = 0; i < 2; i++) {
+        final result = await control.run(
+          decimalBudgetPlan(id: 'qa-decimal-$i', perRun: 1.10, total: 2.20),
+        );
+        expect(result['phase'], 'COMPLETE');
+        expect(result['reserved_usd_cents'], 110);
+      }
+      final rejected = await control.run(
+        decimalBudgetPlan(id: 'qa-decimal-over', perRun: 0.10, total: 2.20),
+      );
+      expect(rejected['phase'], 'PREFLIGHT_FAILED');
+      expect(provider.starts, 2);
+    },
+  );
+
+  test(
+    'Blaze rounds a fractional-cent total down without shrinking cents',
+    () async {
+      final provider = FakeProvider();
+      final control = controller(provider);
+      expect(
+        (await control.run(
+          decimalBudgetPlan(perRun: 0.29, total: 0.29),
+        ))['phase'],
+        'COMPLETE',
+      );
+      expect(
+        (await control.run(
+          decimalBudgetPlan(id: 'qa-fraction-over', perRun: 0.10, total: 0.389),
+        ))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(provider.starts, 1);
+    },
+  );
+
+  test('Blaze rejects invalid USD inputs before provider calls', () async {
+    final provider = FakeProvider();
+    final control = controller(provider);
+    var index = 0;
+    for (final (field, value) in <(String, Object)>[
+      ('maximum_run_usd', '1.10'),
+      ('maximum_total_usd', '2.20'),
+      ('maximum_run_usd', 0),
+      ('maximum_total_usd', -1),
+    ]) {
+      final json =
+          jsonDecode(jsonEncode(blazePlan(id: 'qa-invalid-${index++}').json))
+              as Map<String, dynamic>;
+      json['settings']['budget'][field] = value;
+      expect(
+        (await control.run(RemotePlan(json)))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+    }
+    for (final (field, value) in <(String, double)>[
+      ('maximum_run_usd', double.nan),
+      ('maximum_total_usd', double.infinity),
+    ]) {
+      final json =
+          jsonDecode(jsonEncode(blazePlan().json)) as Map<String, dynamic>;
+      json['settings']['budget'][field] = value;
+      expect(() => RemotePlan(json).validateBudget(now), throwsStateError);
+    }
+    expect(provider.calls, isEmpty);
+  });
+
+  test(
+    'Blaze retains earlier integer reservations without recomputing USD',
+    () async {
+      final provider = FakeProvider();
+      final control = controller(provider);
+      await control.run(decimalBudgetPlan(perRun: 1.10, total: 2.20));
+      final file = File(p.join(runs.path, 'qa-one', 'orchestration.json'));
+      final previous = jsonDecode(file.readAsStringSync()) as Map;
+      for (final cents in [111, 0x7fffffffffffffff]) {
+        previous['reserved_usd_cents'] = cents;
+        file.writeAsStringSync(jsonEncode(previous));
+        expect(
+          (await control.run(
+            decimalBudgetPlan(id: 'qa-two-$cents', perRun: 1.10, total: 2.20),
+          ))['phase'],
+          'PREFLIGHT_FAILED',
+          reason: 'Keep prior reservation $cents without integer overflow',
+        );
+      }
+      expect(provider.starts, 1);
+    },
+  );
+
   test('billing mode is explicit and live account must match', () async {
     Map<String, dynamic> billing = {'billingEnabled': false};
     final provider = GcloudProvider(
