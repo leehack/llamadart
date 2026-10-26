@@ -7,6 +7,8 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
 ## 0.16.3
 
 - Recommend the corrected Qwen3-0.6B LiteRT-LM model bundle for native CPU to preserve split-token emoji; replace the older model artifact rather than relying on a runtime upgrade.
