@@ -38,8 +38,10 @@ validated on phones and desktops: SDXS-512 and SD-Turbo.
 SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (validated
 on macOS Metal only), and [other families](#other-families) load the same
 way; the [recipes](#recipes) give each one's files and settings. Bounded image-to-image and binary-mask editing are available through
-`ImageEditingRequest` on the [CPU recipe below](#image-editing). LoRA and
-ControlNet have no public image-generation API yet.
+`ImageEditingRequest` on the [CPU recipe below](#image-editing), and an
+SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on the
+[bounded CPU recipe](#controlnet). LoRA has no public image-generation API
+yet.
 
 ## Support
 
@@ -155,8 +157,8 @@ upstream and FP8 CPU qualification are tracked in
 [stable-diffusion-native#20](https://github.com/leehack/stable-diffusion-native/issues/20).
 `checkRuntime()` reports runtime/device availability, not support for every
 model. Use [Support](#support) and the recipe's platform evidence separately.
-The public model roles do not include LoRA, ControlNet, upscaler or external
-tokenizer inputs.
+The public model roles do not include LoRA, upscaler or external tokenizer
+inputs; `controlNet` loads only in the [ControlNet recipe](#controlnet).
 
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
 GGUF) are refused with `LlamaUnsupportedException` on Metal, including
@@ -264,13 +266,14 @@ stops there. Each file gets one `ImageModelRole`:
 | `taesd` | A tiny autoencoder that replaces the VAE decoder | Any family with a matching one |
 | `clipL`, `clipG`, `t5xxl` | Text encoders | SDXL-style, SD 3.5, FLUX |
 | `llm` | A language-model text encoder | Z-Image, Qwen-Image |
+| `controlNet` | A ControlNet, loaded with the model | SD 1.x, in the [ControlNet recipe](#controlnet) |
 
 The set needs exactly one `checkpoint` or `diffusionModel` and at most one
 file per role. `load` throws `LlamaModelException`, naming files by position
 (the main file, component 1, ...) and never by path, for:
 
-- a LoRA adapter, ControlNet, upscaler or vision projector, which text to
-  image does not load;
+- a LoRA adapter, upscaler or vision projector, which text to image does not
+  load;
 - `taesd_decoder.safetensors`, a decoder-only export the runtime rejects
   (use `diffusion_pytorch_model.safetensors`);
 - two files in one role, a checkpoint plus separate diffusion weights, or no
@@ -1289,3 +1292,61 @@ Run `example/basic_app/bin/image_editing.dart` with a local full checkpoint;
 it creates a decoded RGB fixture without a codec dependency. Maintainers can
 reproduce the independent C comparison, mask/strength measurements and
 cancellation checks in [the qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/image_editing.md).
+
+## ControlNet
+
+A ControlNet steers sampling toward a control map, such as Canny edges, a
+depth map or a pose skeleton. Pass it as a component next to its base
+checkpoint; its header gives it `ImageModelRole.controlNet`. It loads with
+the model and stays loaded until `dispose`: requests cannot swap it, and
+ordinary requests generate without it.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.path('v1-5-pruned-emaonly.safetensors'),
+    components: [
+      ImageModelComponent.auto(
+        ModelSource.path('control_v11p_sd15_canny.safetensors'),
+      ),
+    ],
+  ),
+  params: const ImageModelParams(
+    device: ComputeDevice.cpu,
+    flashAttention: false,
+    vaeDirectConvolution: false,
+  ),
+);
+if ((await engine.capabilities).supportsControlNet) {
+  final result = await engine.generateImage(
+    ControlNetImageGenerationRequest(
+      prompt: 'a small wooden house in a green meadow',
+      control: ImageControlNetCondition(
+        image: ImageEditingPixels.rgb(width: 512, height: 512, pixels: edges),
+        strength: 1,
+      ),
+      steps: 20,
+      seed: 42,
+    ),
+  );
+}
+```
+
+The bounded recipe requires stable-diffusion-native `v0.3.0` (upstream
+`0518b34`) on macOS with `ComputeDevice.cpu`, `flashAttention: false` and
+`vaeDirectConvolution: false`, and exactly an SD 1.x checkpoint with its
+embedded full VAE plus an SD 1.x ControlNet in the original (lllyasviel)
+layout, as Safetensors or GGUF. The headers must show a 768-wide text context
+in both and a three-channel hint block. Other families, Diffusers-layout or
+`.pth` ControlNets, extra components, devices and platforms throw
+`LlamaUnsupportedException` when the model loads. Real SD 1.x qualification is
+pending; see [the qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/image_controlnet.md).
+
+The control image is the finished map: llamadart runs no edge, depth or pose
+detector and does not resize it. Supply decoded RGB with the output's
+dimensions, multiples of 64 from 64 through 2048; the request takes its size
+from the image. `strength` scales the ControlNet's residuals from 0 (none) to
+2, default 0.9. The image is copied and stays owned through cancellation.
+When the runtime reports that the ControlNet pass failed, the task fails with
+`LlamaInferenceException` instead of returning an image that ignored the
+control. Run `example/basic_app/bin/image_controlnet.dart` with local files.

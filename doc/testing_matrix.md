@@ -1104,3 +1104,12 @@ recipe: owned RGB inputs, binary-mask polarity, strength, ordinary defaults
 reset, cancellation/reuse and reload, with optional exact direct-C references.
 See [the fixture, gates and provenance](image_editing.md). No GPU/device or
 other SD 2.x model qualification is inferred.
+
+### Bounded ControlNet
+
+`image-controlnet` runs the maintained local-only SD 1.x checkpoint plus
+original-layout SD 1.x ControlNet macOS CPU recipe: control image and strength
+effects, strength-0 and ordinary reset equivalence, cancellation/reuse and
+reload, with optional exact direct-C references. See
+[the fixture, gates and provenance](image_controlnet.md). No GPU/device,
+SD 2.x/SDXL or Diffusers-layout ControlNet qualification is inferred.

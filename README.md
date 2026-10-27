@@ -577,6 +577,17 @@ and aligned binary masks; there is no implicit decode, resize or alpha handling.
 See the [editing recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#image-editing)
 and runnable `example/basic_app/bin/image_editing.dart`.
 
+For ControlNet, load an SD 1.x ControlNet as an `ImageModelComponent` next to
+its checkpoint (it is detected as `ImageModelRole.controlNet`) and use
+`ControlNetImageGenerationRequest` with an `ImageControlNetCondition`. Check
+`(await engine.capabilities).supportsControlNet`: the bounded recipe is an
+SD 1.x checkpoint with its embedded full VAE plus an original-layout SD 1.x
+ControlNet on macOS CPU, with flash attention and direct VAE convolution off;
+other recipes are refused at load. The caller supplies the finished control
+map (edges, depth, pose); no preprocessor runs. Real SD 1.x qualification is
+pending. See the [ControlNet recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#controlnet)
+and `example/basic_app/bin/image_controlnet.dart`.
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |

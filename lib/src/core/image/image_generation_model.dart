@@ -5,7 +5,8 @@ import 'local_image_set_model.dart';
 ///
 /// `ImageGenerationEngine.load` detects each file's role from its header;
 /// set one with [ImageModelComponent.new] only for a file it cannot
-/// classify. Load errors also name files by role.
+/// classify. Load errors also name files by role. Roles may be added; include
+/// a default case in switches.
 enum ImageModelRole {
   /// A full checkpoint: diffusion weights, usually with their VAE and text
   /// encoders, such as SD 1.x, 2.x, SDXL or SD 3.5 Medium single files.
@@ -32,6 +33,12 @@ enum ImageModelRole {
 
   /// A language-model text encoder, such as Qwen3-4B for Z-Image.
   llm,
+
+  /// A ControlNet, which steers sampling toward the control image of a
+  /// `ControlNetImageGenerationRequest`. It loads with the model and stays
+  /// loaded until disposal; requests cannot swap it. Only the bounded recipe
+  /// that `ControlNetImageGenerationRequest` describes loads one.
+  controlNet,
 }
 
 /// A file of an image model besides its main file.

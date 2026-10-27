@@ -288,6 +288,66 @@ abstract final class ImageModelHeaders {
     ('control_model.input_blocks.0.0.weight', [320, 4, 3, 3]),
   ]);
 
+  /// An SD 1.x safetensors checkpoint with its full VAE. The cross-attention
+  /// key of its first attention block takes a [contextWidth]-wide text
+  /// context: 768 for SD 1.x, 1024 for SD 2.x.
+  static Uint8List sd15Checkpoint({int contextWidth = 768}) =>
+      safetensorsHeader([
+        ('model.diffusion_model.input_blocks.0.0.weight', [320, 4, 3, 3]),
+        (
+          'model.diffusion_model.input_blocks.1.1.transformer_blocks.0.attn2.'
+              'to_k.weight',
+          [320, contextWidth],
+        ),
+        ('model.diffusion_model.out.2.weight', [4, 320, 3, 3]),
+        ('first_stage_model.decoder.conv_in.weight', [512, 4, 3, 3]),
+        (
+          'cond_stage_model.transformer.text_model.final_layer_norm.weight',
+          [768],
+        ),
+      ]);
+
+  /// An SD 1.x ControlNet in the original (lllyasviel) layout, as in
+  /// `control_v11p_sd15_canny`, with names under [prefix]; shapes follow
+  /// stable-diffusion.cpp's `ControlNetBlock` for SD 1.x.
+  static Uint8List sd15ControlNet({
+    String prefix = 'control_model.',
+    int contextWidth = 768,
+    int hintChannels = 3,
+    bool gguf = false,
+  }) {
+    final tensors = <FixtureTensor>[
+      ('${prefix}input_hint_block.0.weight', [16, hintChannels, 3, 3]),
+      ('${prefix}input_blocks.0.0.weight', [320, 4, 3, 3]),
+      (
+        '${prefix}input_blocks.1.1.transformer_blocks.0.attn2.to_k.weight',
+        [320, contextWidth],
+      ),
+      ('${prefix}zero_convs.0.0.weight', [320, 320, 1, 1]),
+      ('${prefix}middle_block_out.0.weight', [1280, 1280, 1, 1]),
+    ];
+    return gguf
+        ? ggufHeader(
+            tensors: [
+              for (final (name, shape) in tensors)
+                (name, shape.reversed.toList()),
+            ],
+          )
+        : safetensorsHeader(tensors);
+  }
+
+  /// An SD 1.x ControlNet in the Diffusers layout, which stable-diffusion.cpp
+  /// converts only for SDXL.
+  static final Uint8List diffusersControlNet = safetensorsHeader([
+    ('controlnet_cond_embedding.conv_in.weight', [16, 3, 3, 3]),
+    (
+      'down_blocks.0.attentions.0.transformer_blocks.0.attn2.to_k.weight',
+      [320, 768],
+    ),
+    ('controlnet_down_blocks.0.weight', [320, 320, 1, 1]),
+    ('controlnet_mid_block.weight', [1280, 1280, 1, 1]),
+  ]);
+
   /// An ESRGAN upscaler.
   static final Uint8List upscaler = safetensorsHeader([
     ('conv_first.weight', [64, 3, 3, 3]),

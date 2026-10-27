@@ -19,6 +19,10 @@ const _flux = '/models/flux1-schnell.gguf';
 const _ae = '/models/ae.safetensors';
 const _clipL = '/models/clip_l.gguf';
 const _t5xxl = '/models/t5xxl.gguf';
+const _sd15 = '/models/sd15.safetensors';
+const _sd2Base = '/models/sd2-context.safetensors';
+const _canny = '/models/control_sd15_canny.safetensors';
+const _diffusersCanny = '/models/diffusers_canny.safetensors';
 const _gib = 1 << 30;
 
 ModelSource _local(String path) => ModelSource.path(path);
@@ -37,6 +41,17 @@ ImageGenerationModel _sdxs([ModelSource? model, ModelSource? taesd]) =>
 
 /// FLUX.1-schnell's four local files, main file first, components in
 /// [order] of `ae`, CLIP-L and T5-XXL.
+/// An SD 1.x checkpoint (or [base]) with the original-layout ControlNet (or
+/// [control]) and any [extra] files.
+ImageGenerationModel _controlNetModel({
+  String base = _sd15,
+  String control = _canny,
+  List<ImageModelComponent> extra = const [],
+}) => ImageGenerationModel(
+  _local(base),
+  components: [ImageModelComponent.auto(_local(control)), ...extra],
+);
+
 ImageGenerationModel _fluxModel([List<int> order = const [0, 1, 2]]) {
   const parts = [_ae, _clipL, _t5xxl];
   return ImageGenerationModel(
@@ -468,6 +483,270 @@ void main() {
         final reloaded = await load(_sdxs(), params: params);
         await reloaded.generateImage(edit());
         expect(driver.session.requests.single.initialImage!.pixels[17], 91);
+      },
+    );
+  });
+
+  group('ControlNet', () {
+    const params = ImageModelParams(
+      device: ComputeDevice.cpu,
+      flashAttention: false,
+      vaeDirectConvolution: false,
+    );
+    ControlNetImageGenerationRequest control({
+      double strength = 0.6,
+      ImageEditingPixels? image,
+    }) => ControlNetImageGenerationRequest(
+      prompt: 'a house',
+      control: ImageControlNetCondition(
+        image:
+            image ??
+            ImageEditingPixels.rgb(
+              width: 128,
+              height: 64,
+              pixels: Uint8List(128 * 64 * 3)..[23] = 201,
+            ),
+        strength: strength,
+      ),
+      steps: 4,
+    );
+
+    test('a header-verified ControlNet loads with the model and requests map '
+        'owned control input, then ordinary requests reset it', () async {
+      driver.session.modelVersion = 'SD 1.x';
+      final engine = await load(_controlNetModel(), params: params);
+      final config = driver.started.single;
+      expect(config.files, {'model': _sd15, 'controlNet': _canny});
+      expect(config.controlNetRecipeVerified, isTrue);
+      expect(config.imageEditingRecipeVerified, isFalse);
+      expect(config.vaeTilingRecipeVerified, isFalse);
+      expect(engine.roles.map((role, source) => MapEntry(role, source.path)), {
+        ImageModelRole.checkpoint: _sd15,
+        ImageModelRole.controlNet: _canny,
+      });
+      final capabilities = await engine.capabilities;
+      expect(capabilities.supportsControlNet, isTrue);
+      expect(capabilities.supportsImageEditing, isFalse);
+      await engine.generateImage(control());
+      final mapped = driver.session.requests.single;
+      expect(mapped.controlImage!.pixels[23], 201);
+      expect(mapped.controlImage!.channels, 3);
+      expect(
+        (mapped.width, mapped.height, mapped.controlStrength),
+        (128, 64, 0.6),
+      );
+      expect(mapped.initialImage, isNull);
+      await engine.generateImage(const ImageGenerationRequest(prompt: 'plain'));
+      final plain = driver.session.requests.last;
+      expect((plain.controlImage, plain.controlStrength), (null, null));
+      await engine.dispose();
+      expect((await engine.capabilities).supportsControlNet, isFalse);
+    });
+
+    test(
+      'unqualified ControlNet loads refuse before the native load',
+      () async {
+        for (final kind in [
+          'host',
+          'runtime',
+          'auto device',
+          'gpu device',
+          'default flash attention',
+          'default direct convolution',
+          'flash attention',
+          'direct convolution',
+          'SD 2.x base',
+          'Diffusers layout',
+          'extra component',
+          'explicit role without header proof',
+        ]) {
+          driver = _FakeDriver();
+          downloads = _FakeDownloads(driver);
+          debugImageGenerationDriverOverride = driver;
+          driver.session.modelVersion = 'SD 1.x';
+          if (kind == 'host') driver.operatingSystem = 'linux';
+          if (kind == 'runtime') {
+            driver.status = StableDiffusionRuntimeStatus.available(
+              version: 'unknown',
+              commit: 'unknown',
+              devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
+            );
+          }
+          final model = switch (kind) {
+            'SD 2.x base' => _controlNetModel(base: _sd2Base),
+            'Diffusers layout' => _controlNetModel(control: _diffusersCanny),
+            'extra component' => _controlNetModel(
+              extra: [ImageModelComponent.auto(_local(_taesd))],
+            ),
+            'explicit role without header proof' => ImageGenerationModel(
+              _local(_sd15),
+              components: [
+                ImageModelComponent(
+                  _local('/models/control.pth'),
+                  role: ImageModelRole.controlNet,
+                ),
+              ],
+            ),
+            _ => _controlNetModel(),
+          };
+          driver.sizes['/models/control.pth'] = 700 << 20;
+          await expectLater(
+            load(
+              model,
+              params: ImageModelParams(
+                device: switch (kind) {
+                  'auto device' => ComputeDevice.auto,
+                  'gpu device' => ComputeDevice.gpu,
+                  _ => ComputeDevice.cpu,
+                },
+                flashAttention: switch (kind) {
+                  'default flash attention' => null,
+                  'flash attention' => true,
+                  _ => false,
+                },
+                vaeDirectConvolution: switch (kind) {
+                  'default direct convolution' => null,
+                  'direct convolution' => true,
+                  _ => false,
+                },
+              ),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('ControlNet'),
+              ),
+            ),
+            reason: kind,
+          );
+          expect(driver.started, isEmpty, reason: kind);
+        }
+      },
+    );
+
+    test(
+      'a native family or ControlNet probe mismatch frees the loaded model',
+      () async {
+        for (final kind in ['family', 'probe', 'legacy session']) {
+          driver = _FakeDriver();
+          downloads = _FakeDownloads(driver);
+          debugImageGenerationDriverOverride = driver;
+          driver.session.modelVersion = kind == 'family' ? 'SD 2.x' : 'SD 1.x';
+          driver.session.supportsControlNet = kind != 'probe';
+          if (kind == 'legacy session') {
+            driver.sessionOverride = _LegacySession(driver.session);
+          }
+          await expectLater(
+            load(_controlNetModel(), params: params),
+            throwsA(isA<LlamaUnsupportedException>()),
+            reason: kind,
+          );
+          expect(driver.started, hasLength(1), reason: kind);
+          expect(driver.session.disposed, isTrue, reason: kind);
+          final next = await load(_sdxs(), params: params);
+          await next.dispose();
+        }
+      },
+    );
+
+    test('a session that stops reporting the ControlNet clears the capability '
+        'and refuses control before the task starts', () async {
+      driver.session.modelVersion = 'SD 1.x';
+      final engine = await load(_controlNetModel(), params: params);
+      driver.session.supportsControlNet = false;
+      expect((await engine.capabilities).supportsControlNet, isFalse);
+      await expectLater(
+        engine.generate(control()),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(driver.session.requests, isEmpty);
+      await engine.generateImage(const ImageGenerationRequest(prompt: 'plain'));
+      expect(driver.session.requests.single.controlImage, isNull);
+    });
+
+    test('control requests refuse on models without a ControlNet', () async {
+      for (final model in [_sdxs(), ImageGenerationModel(_local(_sd15))]) {
+        driver.session = _FakeSession()..modelVersion = 'SD 1.x';
+        final engine = await load(model, params: params);
+        expect(driver.started.last.controlNetRecipeVerified, isFalse);
+        expect((await engine.capabilities).supportsControlNet, isFalse);
+        await expectLater(
+          engine.generate(control()),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(driver.session.requests, isEmpty);
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'plain'),
+        );
+        await engine.dispose();
+      }
+    });
+
+    test(
+      'invalid control input fails before native work and allows reuse',
+      () async {
+        driver.session.modelVersion = 'SD 1.x';
+        final engine = await load(_controlNetModel(), params: params);
+        for (final strength in [-0.5, 2.5, double.nan, double.infinity]) {
+          await expectLater(
+            engine.generate(control(strength: strength)),
+            throwsA(isA<LlamaImageGenerationException>()),
+            reason: '$strength',
+          );
+        }
+        await expectLater(
+          engine.generate(
+            control(
+              image: ImageEditingPixels.mask(
+                width: 64,
+                height: 64,
+                pixels: Uint8List(64 * 64),
+              ),
+            ),
+          ),
+          throwsA(isA<LlamaImageGenerationException>()),
+        );
+        expect(driver.session.requests, isEmpty);
+        for (final strength in [0.0, 2.0]) {
+          await engine.generateImage(control(strength: strength));
+          expect(driver.session.requests.last.controlStrength, strength);
+        }
+      },
+    );
+
+    test(
+      'cancel dispose overlap and reload keep control input owned',
+      () async {
+        driver.session.modelVersion = 'SD 1.x';
+        final engine = await load(_controlNetModel(), params: params);
+        driver.session.gate = Completer<void>();
+        final task = await engine.generate(control());
+        await expectLater(
+          engine.generate(control()),
+          throwsA(isA<LlamaStateException>()),
+        );
+        task.cancel();
+        driver.session.gate!.complete();
+        expect(
+          (await task.done).state,
+          ImageGenerationCompletionState.cancelled,
+        );
+        driver.session.gate = Completer<void>();
+        final pending = await engine.generate(control());
+        final disposal = engine.dispose();
+        expect(driver.session.disposed, isFalse);
+        driver.session.gate!.complete();
+        await disposal;
+        expect(
+          (await pending.done).state,
+          ImageGenerationCompletionState.cancelled,
+        );
+        expect(driver.session.disposedAfterGenerate, isTrue);
+        driver.session = _FakeSession()..modelVersion = 'SD 1.x';
+        final reloaded = await load(_controlNetModel(), params: params);
+        await reloaded.generateImage(control());
+        expect(driver.session.requests.single.controlImage!.pixels[23], 201);
       },
     );
   });
@@ -2769,6 +3048,10 @@ final class _FakeDriver implements ImageGenerationDriver {
     _ae: 320 << 20,
     _clipL: 120 << 20,
     _t5xxl: 5 * _gib,
+    _sd15: 2 * _gib,
+    _sd2Base: 2 * _gib,
+    _canny: 700 << 20,
+    _diffusersCanny: 700 << 20,
   };
   final Map<String, Uint8List> headers = {
     _model: ImageModelHeaders.sdTurboCheckpoint,
@@ -2777,6 +3060,10 @@ final class _FakeDriver implements ImageGenerationDriver {
     _ae: ImageModelHeaders.fluxVae,
     _clipL: ImageModelHeaders.clipL,
     _t5xxl: ImageModelHeaders.t5xxl,
+    _sd15: ImageModelHeaders.sd15Checkpoint(),
+    _sd2Base: ImageModelHeaders.sd15Checkpoint(contextWidth: 1024),
+    _canny: ImageModelHeaders.sd15ControlNet(),
+    _diffusersCanny: ImageModelHeaders.diffusersControlNet,
   };
   ImageGenerationMemoryBudget? budget;
   ImageGenerationMemoryBudget? slowerBudget;
@@ -2861,11 +3148,14 @@ final class _FakeSession
     implements
         ImageGenerationSession,
         ImageVaeTilingSession,
-        ImageEditingSession {
+        ImageEditingSession,
+        ImageControlNetSession {
   @override
   bool supportsVaeTiling = true;
   @override
   bool supportsImageEditing = true;
+  @override
+  bool supportsControlNet = true;
   final List<ImageGenerationSessionRequest> requests = [];
   Completer<void>? gate;
   bool failNext = false;

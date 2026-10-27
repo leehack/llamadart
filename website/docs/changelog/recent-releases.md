@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
 - Return images from tools with `LlamaToolResultContent.content` or a handler's `LlamaToolOutput` on native llama.cpp with a vision projector and Hermes-style templates (qualified on Qwen3-VL), rendered as llama-server renders them; check `LlamaEngineCapabilities.toolResultMedia`. Other formats, runtimes, audio, video and URL-only images throw `LlamaUnsupportedException` ([#1008](https://github.com/leehack/llamadart/issues/1008)).

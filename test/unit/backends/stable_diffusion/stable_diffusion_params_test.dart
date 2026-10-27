@@ -73,6 +73,7 @@ void main() {
               'clipG': '/m/clip_g.gguf',
               't5xxl': '/m/t5xxl.gguf',
               'llm': '/m/qwen3.gguf',
+              'controlNet': '/m/control_sd15_canny.safetensors',
             },
             backend: 'gpu',
             threads: 6,
@@ -87,6 +88,10 @@ void main() {
         expect(_text(params.clip_g_path), '/m/clip_g.gguf');
         expect(_text(params.t5xxl_path), '/m/t5xxl.gguf');
         expect(_text(params.llm_path), '/m/qwen3.gguf');
+        expect(
+          _text(params.control_net_path),
+          '/m/control_sd15_canny.safetensors',
+        );
         expect(_text(params.backend), 'gpu');
         expect(params.n_threads, 6);
         expect(params.eager_load, isTrue);
@@ -142,6 +147,7 @@ void main() {
           params.ref.clip_g_path,
           params.ref.t5xxl_path,
           params.ref.llm_path,
+          params.ref.control_net_path,
           params.ref.backend,
         ]) {
           expect(field, nullptr);
@@ -399,6 +405,58 @@ void main() {
       });
     },
   );
+
+  test('ControlNet image and strength reach the native struct as copies', () {
+    final rgb = Uint8List.fromList(List.generate(128 * 64 * 3, (i) => i % 253));
+    final control = ImageEditingPixels.rgb(width: 128, height: 64, pixels: rgb);
+    rgb.fillRange(0, rgb.length, 0);
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      applyStableDiffusionGenerationParams(
+        params,
+        ImageGenerationSessionRequest(
+          prompt: 'a house',
+          negativePrompt: '',
+          width: 128,
+          height: 64,
+          steps: 4,
+          guidanceScale: 7,
+          seed: 42,
+          count: 1,
+          controlImage: control,
+          controlStrength: 1.25,
+        ),
+        arena,
+      );
+      final mapped = params.ref.control_image;
+      expect((mapped.width, mapped.height, mapped.channel), (128, 64, 3));
+      expect(mapped.data.asTypedList(128 * 64 * 3), control.pixels);
+      expect(params.ref.control_strength, closeTo(1.25, 0.000001));
+      expect(params.ref.init_image.data, nullptr);
+      control.pixels[0] = 99;
+      expect(mapped.data[0], 0);
+    });
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      params.ref.control_strength = 0.9;
+      applyStableDiffusionGenerationParams(
+        params,
+        const ImageGenerationSessionRequest(
+          prompt: 'plain',
+          negativePrompt: '',
+          width: 64,
+          height: 64,
+          steps: 1,
+          guidanceScale: 1,
+          seed: 42,
+          count: 1,
+        ),
+        arena,
+      );
+      expect(params.ref.control_image.data, nullptr);
+      expect(params.ref.control_strength, closeTo(0.9, 0.000001));
+    });
+  });
 
   group('applyStableDiffusionGenerationParams', () {
     const request = ImageGenerationSessionRequest(

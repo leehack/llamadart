@@ -2,6 +2,17 @@
 
 This document covers the major breaking upgrade paths.
 
+<a id="unreleased-image-model-role-controlnet"></a>
+
+## Unreleased: `ImageModelRole.controlNet`
+
+`ImageModelRole` gains `controlNet`. A `switch` over `ImageModelRole` without
+a default case no longer compiles; add the case or a default. A file whose
+header shows ControlNet tensor names is now assigned this role instead of
+failing classification: outside the bounded SD 1.x macOS CPU recipe,
+`ImageGenerationEngine.load` throws `LlamaUnsupportedException` instead of
+`LlamaModelException`.
+
 <a id="015x-to-0160-upgrade-guide"></a>
 
 ## `0.15.x` -> `0.16.0`: upgrade guide
