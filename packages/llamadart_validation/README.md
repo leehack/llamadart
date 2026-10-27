@@ -17,7 +17,7 @@ dart test -p vm test/unit/tooling/validation_coverage_test.dart
 CI rejects missing/stale/duplicate mappings, invented cases, missing profiles
 and cases that no declared profile selects. Exemptions need a concrete reason
 and a GitHub issue. The test prints the current gap inventory; do not maintain
-a second copied list. Multimodal chat, LoRA, state, scoring, speculative
+a second copied list. Multimodal chat, LoRA, scoring, speculative
 decoding and sampling still need dedicated pack work.
 Speech/image profiles exist, while their individual reported capability
 contracts remain explicitly exempt pending case-ID bindings.
@@ -290,3 +290,30 @@ pack coverage remains NOT_RUN until locked inputs and adapters are qualified;
 the Web builder rejects these native profiles before downloading. Local JIT
 runs cannot supply portable runtime evidence. This private pack changes no
 public core API or release changelog.
+
+## State persistence pack
+
+Catalog 11 adds `state_persistence` and P01–P04. `state-gguf-cpu` locks
+Stories15M, CPU, context 256 and batch/micro-batch 8. The exported API saves
+prompt-only KV, disposes its source, and restores on fresh engines. Tolerant
+next-token score comparisons and context sensitivity prove retained history;
+observer usage and native prompt-evaluation counters prove reduced work.
+Scoring and generation use separate engine lifetimes. Full-work controls
+run without a snapshot and with reuse disabled.
+
+Missing storage/counters, unknown model configuration and unqualified host
+identity stay NOT_RUN. Known unsupported runtimes run typed rejection and
+recovery under P01; positive storage cases are scoped to native GGUF CPU.
+IO hosts supply a temporary workspace; browser/common imports stay IO-free.
+Each invalid load is followed by fresh score and generation recovery engines,
+because corrupt loads need not preserve their context. Negative cases cover
+missing, garbage, short and incompatible headers, zero/oversized capacity and
+capacity below the saved token count. The importer reconstructs raw score,
+usage, counter, artifact recipe, identity and lifetime checks.
+
+Run the [CPU procedure](../../doc/cross_platform_validation.md#catalog-11-state-persistence-pack).
+This proves KV persistence only: no RNG/sampler/logit checkpoint, exact greedy
+continuation, cross-build compatibility or arbitrary different-model refusal.
+A journal is evidence within the harness trust model, not binary attestation;
+artifact hashes/recipes do not authenticate bytes without an external resolver.
+Catalogs 1–10 retain their existing inventories, hashes and contracts.

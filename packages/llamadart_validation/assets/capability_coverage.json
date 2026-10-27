@@ -130,6 +130,19 @@
       "profiles": [
         "assets/profiles/chat-gguf-cpu.json"
       ]
+    },
+    {
+      "id": "state_persistence",
+      "cases": [
+        "P01.capability",
+        "P02.roundtrip",
+        "P03.restore_reuse",
+        "P04.invalid_recovery"
+      ],
+      "profiles": [
+        "assets/profiles/state-gguf-cpu.json"
+      ],
+      "notes": "Catalog 11 binds the public KV persistence obligation. CPU Stories15M is the initial diagnostic profile; pack mapping is not qualification of another model, platform, sampler/RNG checkpoint or arbitrary cross-model rejection."
     }
   ],
   "mappings": [
@@ -384,11 +397,7 @@
         "api:LlamaEngine.supportsStatePersistence",
         "matrix:State persistence"
       ],
-      "exemption": {
-        "id": "state-persistence",
-        "reason": "State round-trip, reload and unsupported-path contracts need a dedicated pack; generic lifecycle cases do not cover state persistence.",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
+      "pack": "state_persistence"
     },
     {
       "surfaces": [

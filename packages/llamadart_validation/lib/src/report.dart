@@ -7,6 +7,7 @@ import 'manifest.dart';
 import 'placement.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
+import 'state_evidence.dart';
 
 /// Validates the event journal and produces all report formats from one source.
 class ValidationReport {
@@ -228,6 +229,28 @@ class ValidationReport {
           event['status'] == 'PASS' &&
           !validTokenizationCaseEvidence(id, event, profile)) {
         problems.add('Invalid tokenization case evidence: $id');
+      }
+      if (profile != null &&
+          id.startsWith('P') &&
+          event['status'] == 'PASS' &&
+          !validStateCaseEvidence(
+            id,
+            event,
+            profile,
+            web: (manifest['environment'] as Map?)?['web'] == true,
+            diagnostics:
+                events
+                    .where(
+                      (entry) =>
+                          entry['case_id'] == 'C01.load' &&
+                          entry['status'] == 'PASS',
+                    )
+                    .map((entry) => entry['diagnostics'])
+                    .whereType<Map>()
+                    .firstOrNull ??
+                const {},
+          )) {
+        problems.add('Invalid state case evidence: $id');
       }
       if (profile?.isEmbedding == true &&
           (manifest['environment'] as Map?)?['web'] == true &&

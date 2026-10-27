@@ -209,7 +209,8 @@
           "guards",
           "performance",
           "structured_output",
-          "tokenization"
+          "tokenization",
+          "state_persistence"
         ]
       }
     },
@@ -382,6 +383,11 @@
           "properties": {}
         },
         "native_json_schema_capability": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "state_persistence": {
           "type": "object",
           "additionalProperties": false,
           "properties": {}

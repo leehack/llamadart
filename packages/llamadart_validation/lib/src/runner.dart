@@ -13,11 +13,13 @@ import 'inflight_evidence.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 import 'runtime_environment.dart';
+import 'state_evidence.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
 
 part 'decision_runner.dart';
 part 'embedding_runner.dart';
+part 'state_runner.dart';
 part 'structured_runner.dart';
 part 'tokenization_runner.dart';
 
@@ -72,7 +74,10 @@ abstract interface class ValidationEngine {
 
 /// Runs inference through the exported llamadart API on every platform.
 class PublicValidationEngine
-    with _PublicDecisionValidation, _PublicStructuredValidation
+    with
+        _PublicDecisionValidation,
+        _PublicStructuredValidation,
+        _PublicStateValidation
     implements ValidationEngine, TokenCountValidationEngine {
   /// Uses the public engine; a factory allows isolated adapter verification.
   /// [decisionHead] and [decisionConfig] are the prepared decision files or
@@ -83,16 +88,25 @@ class PublicValidationEngine
     this.decisionHead,
     this.decisionConfig,
     this.projector,
-  }) : _engineFactory = engineFactory ?? (() => LlamaEngine(LlamaBackend()));
+  }) : _engineFactory = engineFactory;
   final NpuExecutionMonitor? npu;
   final String? projector;
   @override
   final String? decisionHead;
   @override
   final String? decisionConfig;
-  final LlamaEngine Function() _engineFactory;
+  final LlamaEngine Function()? _engineFactory;
   @override
-  late LlamaEngine _engine = _engineFactory();
+  final _stateObserver = _StateObserver();
+  bool _recordStateUsage = false;
+  LlamaEngine _createEngine() =>
+      _engineFactory?.call() ??
+      LlamaEngine(
+        LlamaBackend(),
+        observers: _recordStateUsage ? [_stateObserver] : const [],
+      );
+  @override
+  late LlamaEngine _engine = _createEngine();
   @override
   bool get isWeb => const bool.fromEnvironment('dart.library.js_interop');
   bool _disposed = false;
@@ -100,9 +114,10 @@ class PublicValidationEngine
   @override
   Future<void> load(String location, ValidationProfile profile) async {
     requireValidationRuntimeEnvironment();
+    _recordStateUsage = profile.focusFeatures.contains('state_persistence');
     profile.requireRunnable(verifiedAndroidNpuHost: npu != null, web: isWeb);
     if (_disposed) {
-      _engine = _engineFactory();
+      _engine = _createEngine();
       _disposed = false;
     }
     await LlamaLogging.configure(level: LlamaLogLevel.info);
@@ -555,12 +570,16 @@ class ValidationRunner {
     this.caseTimeout = const Duration(seconds: 60),
     this.decisionReference,
     this.embeddingAssets,
+    this.stateWorkspaceFactory,
   });
 
   final ValidationProfile profile;
   final ValidationEngine engine;
   final ValidationEventSink emit;
   final Duration caseTimeout;
+
+  /// Host storage is optional; its absence leaves storage cases incomplete.
+  final Future<StateValidationWorkspace> Function()? stateWorkspaceFactory;
   Map<String, dynamic> _structuredEnvironment = const {};
   Map<String, dynamic> _structuredPreparation = const {};
 
@@ -1376,6 +1395,7 @@ class ValidationRunner {
     if (id.startsWith('E')) return _embeddingCase(id);
     if (id.startsWith('D')) return _decisionCase(id, location);
     if (id.startsWith('S')) return _structuredCase(id);
+    if (id.startsWith('P')) return _stateCase(id, location);
     if (id.startsWith('T')) return _tokenizationCase(id);
     if (profile.nativeReference &&
         [

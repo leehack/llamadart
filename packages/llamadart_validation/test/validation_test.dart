@@ -448,9 +448,34 @@ class FakeEngine implements ValidationEngine, StructuredValidationEngine {
 
 /// Release-selection double includes the new public token-count boundary.
 class CountingFakeEngine extends FakeEngine
-    implements TokenCountValidationEngine {
+    implements TokenCountValidationEngine, StateValidationEngine {
   @override
   Future<int> getTokenCount(String text) async => (await tokenize(text)).length;
+  @override
+  bool get supportsStatePersistence => false;
+  @override
+  bool get supportsNextTokenScoring => false;
+  @override
+  Future<List<int>> tokenizeStatePrompt(String text) =>
+      throw UnimplementedError();
+  @override
+  Future<Map<String, dynamic>> scoreStatePrompt(
+    String text, {
+    List<int> candidates = const [],
+    int topK = 0,
+    required bool reuse,
+  }) => throw UnimplementedError();
+  @override
+  Future<bool> saveState(String path, List<int> tokens) async =>
+      throw LlamaUnsupportedException('LiteRT state unsupported');
+  @override
+  Future<List<int>> loadState(String path, int capacity) async =>
+      throw LlamaUnsupportedException('LiteRT state unsupported');
+  @override
+  Future<Map<String, dynamic>> generateStatePrompt(
+    String text, {
+    required bool reuse,
+  }) => throw UnimplementedError();
 }
 
 /// Removes the records that catalog [version] did not derive for [selected],
