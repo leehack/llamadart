@@ -132,3 +132,19 @@ bool isThinkingForcedOpen(String prompt, {String startTag = '<think>'}) {
 
   return trimmed.endsWith(startTag);
 }
+
+/// Returns the thinking flag a request renders, parses and streams with.
+///
+/// A boolean `enable_thinking` in [chatTemplateKwargs] overrides
+/// [enableThinking], as in llama-server; failing that, a boolean `thinking`
+/// does. Any other value leaves [enableThinking] in effect.
+bool effectiveEnableThinking(
+  bool enableThinking,
+  Map<String, dynamic>? chatTemplateKwargs,
+) {
+  for (final key in const ['enable_thinking', 'thinking']) {
+    final value = chatTemplateKwargs?[key];
+    if (value is bool) return value;
+  }
+  return enableThinking;
+}

@@ -75,4 +75,53 @@ void main() {
     expect(isThinkingForcedOpen('<think>\n'), isTrue);
     expect(isThinkingForcedOpen('hello'), isFalse);
   });
+
+  group('effectiveEnableThinking', () {
+    test('a boolean enable_thinking kwarg overrides the flag', () {
+      expect(effectiveEnableThinking(false, {'enable_thinking': true}), isTrue);
+      expect(
+        effectiveEnableThinking(true, {'enable_thinking': false}),
+        isFalse,
+      );
+    });
+
+    test('a boolean thinking kwarg applies without enable_thinking', () {
+      expect(effectiveEnableThinking(false, {'thinking': true}), isTrue);
+      expect(effectiveEnableThinking(true, {'thinking': false}), isFalse);
+      expect(
+        effectiveEnableThinking(false, {
+          'enable_thinking': 'yes',
+          'thinking': true,
+        }),
+        isTrue,
+      );
+    });
+
+    test('enable_thinking wins over a conflicting thinking kwarg', () {
+      expect(
+        effectiveEnableThinking(true, {
+          'enable_thinking': false,
+          'thinking': true,
+        }),
+        isFalse,
+      );
+    });
+
+    test('non-boolean values and absent kwargs keep the flag', () {
+      for (final value in <Object?>['true', 'false', 1, 0, null, [], {}]) {
+        for (final flag in [true, false]) {
+          expect(
+            effectiveEnableThinking(flag, {
+              'enable_thinking': value,
+              'thinking': value,
+            }),
+            flag,
+            reason: '$value',
+          );
+        }
+      }
+      expect(effectiveEnableThinking(true, null), isTrue);
+      expect(effectiveEnableThinking(false, const {}), isFalse);
+    });
+  });
 }
