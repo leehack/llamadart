@@ -2192,56 +2192,52 @@ void main() {
       }
     });
 
-    test(
-      'a GPU engine that fails to start throws '
-      'LlamaUnsupportedException, and LlamaModelException under auto',
-      () async {
-        if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
-          markTestSkipped('No LiteRT-LM GPU backend on this platform.');
-          return;
-        }
-        for (final device in [ComputeDevice.gpu, ComputeDevice.auto]) {
-          final service = LiteRtLmService(
-            clientFactory: () => _FakeLiteRtLmRuntimeClient(
-              initializeError: LiteRtLmEngineCreateError(
-                'delegate init failed.',
-              ),
-            ),
-            // No cache directory is passed, so the message names none.
-            useTempCacheDir: false,
+    test('a GPU engine that fails to start throws '
+        'LlamaUnsupportedException, and LlamaModelException under auto when '
+        'the CPU fails too', () async {
+      if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+        markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+        return;
+      }
+      for (final device in [ComputeDevice.gpu, ComputeDevice.auto]) {
+        final service = LiteRtLmService(
+          clientFactory: () => _FakeLiteRtLmRuntimeClient(
+            initializeError: LiteRtLmEngineCreateError('delegate init failed.'),
+          ),
+          // No cache directory is passed, so the message names none.
+          useTempCacheDir: false,
+        );
+        try {
+          final params = ModelParams(
+            device: device,
+            preferredBackend: GpuBackend.metal,
           );
-          try {
-            final params = ModelParams(
-              device: device,
-              preferredBackend: GpuBackend.metal,
-            );
-            final model = await service.loadModel(modelFile.path, params);
-            service.createContext(model, params);
+          final model = await service.loadModel(modelFile.path, params);
+          service.createContext(model, params);
 
-            await expectLater(
-              service.tokenize(model, 'hi', true),
-              device == ComputeDevice.gpu
-                  ? unsupported([
-                      'ComputeDevice.gpu',
-                      'gpu engine',
-                      Platform.operatingSystem,
-                      'model file',
-                      'delegate init failed. Load with ComputeDevice.cpu',
-                    ])
-                  : throwsA(
-                      isA<LlamaModelException>().having(
-                        (error) => error.message,
-                        'message',
-                        'delegate init failed.',
-                      ),
+          await expectLater(
+            service.tokenize(model, 'hi', true),
+            device == ComputeDevice.gpu
+                ? unsupported([
+                    'ComputeDevice.gpu',
+                    'gpu engine',
+                    Platform.operatingSystem,
+                    'model file',
+                    'delegate init failed. Load with ComputeDevice.cpu',
+                  ])
+                : throwsA(
+                    isA<LlamaModelException>().having(
+                      (error) => error.message,
+                      'message',
+                      'delegate init failed.',
                     ),
-            );
-          } finally {
-            service.dispose();
-          }
+                  ),
+          );
+        } finally {
+          service.dispose();
         }
-      },
-    );
+      }
+    });
 
     test('an engine that fails to start with a caller-supplied cache '
         'directory names it as a possible cause', () async {
@@ -3035,6 +3031,397 @@ void main() {
       service.dispose();
     }
   }, testOn: '!windows');
+
+  group('ComputeDevice.auto GPU engine fallback', () {
+    final records = <LlamaLogRecord>[];
+
+    setUp(() {
+      records.clear();
+      LlamaLogger.instance.setLevel(LlamaLogLevel.warn);
+      LlamaLogger.instance.setHandler(records.add);
+    });
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
+    bool skipWithoutGpu() {
+      if (liteRtLmNativeGpuSupportedOnCurrentPlatform()) return false;
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return true;
+    }
+
+    void expectOneFallbackWarning(Object gpuError) {
+      expect(records, hasLength(1));
+      expect(records.single.level, LlamaLogLevel.warn);
+      expect(
+        records.single.message,
+        allOf(
+          contains('ComputeDevice.auto'),
+          contains('GPU engine'),
+          contains('retrying on the CPU'),
+          contains('ComputeDevice.cpu'),
+        ),
+      );
+      expect(records.single.error, same(gpuError));
+    }
+
+    for (final (name, params) in [
+      ('the platform default', const ModelParams()),
+      (
+        'a GPU preferredBackend hint',
+        const ModelParams(preferredBackend: GpuBackend.metal),
+      ),
+    ]) {
+      test('a GPU engine that fails to start under $name runs on the CPU '
+          'with a warning', () async {
+        if (skipWithoutGpu()) return;
+        if (params.preferredBackend == GpuBackend.auto &&
+            liteRtLmDefaultNativeBackendForCurrentPlatform() !=
+                liteRtLmGpuBackend) {
+          markTestSkipped('ComputeDevice.auto selects the CPU here.');
+          return;
+        }
+        final gpuError = LiteRtLmEngineCreateError('delegate init failed.');
+        final gpu = _FakeLiteRtLmRuntimeClient(initializeError: gpuError);
+        final cpu = _FakeLiteRtLmRuntimeClient();
+        final clients = [gpu, cpu];
+        var nextClient = 0;
+        final service = LiteRtLmService(
+          clientFactory: () => clients[nextClient++],
+          useTempCacheDir: false,
+        );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+          await startEngine(service, cpu, model, params);
+
+          expect(nextClient, 2);
+          expect(gpu.lastBackend, 'gpu');
+          expect(gpu.disposeCount, 1);
+          expect(cpu.lastBackend, 'cpu');
+          expect(cpu.lastVisionBackend, isNull);
+          expect(cpu.lastAudioBackend, isNull);
+          expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+          expect(service.getResolvedGpuLayers(), 0);
+          expectOneFallbackWarning(gpuError);
+
+          cpu.tokenizeResult = const [7];
+          expect(await service.tokenize(model, 'again', true), [7]);
+          expect(nextClient, 2);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('the CPU retry recomputes the cache directory for a CPU '
+        'engine', () async {
+      if (skipWithoutGpu()) return;
+      final bundle = await readOnlyBundle();
+      if (bundle == null) return;
+      final gpuError = LiteRtLmEngineCreateError('no gpu.');
+      final gpu = _FakeLiteRtLmRuntimeClient(initializeError: gpuError);
+      final cpu = _FakeLiteRtLmRuntimeClient();
+      final clients = [gpu, cpu];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+        useTempCacheDir: false,
+      );
+      try {
+        const params = ModelParams(preferredBackend: GpuBackend.metal);
+        final model = await service.loadModel(bundle.path, params);
+        await startEngine(service, cpu, model, params);
+
+        expect(nextClient, 2);
+        expect(gpu.lastCacheDir, ':nocache');
+        expect(cpu.lastBackend, 'cpu');
+        expect(cpu.lastCacheDir, isNull);
+        expectOneFallbackWarning(gpuError);
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
+
+    test('the CPU retry after a working GPU audio engine runs the vision '
+        'and audio executors on the CPU', () async {
+      if (skipWithoutGpu()) return;
+      final gpuAudio = _FakeLiteRtLmRuntimeClient();
+      final gpuError = StateError('GPU engine is incompatible');
+      final gpu = _FakeLiteRtLmRuntimeClient(initializeError: gpuError);
+      final gpuWithCpuAudio = _FakeLiteRtLmRuntimeClient(
+        initializeError: StateError('GPU vision executor is incompatible'),
+      );
+      final cpu = _FakeLiteRtLmRuntimeClient();
+      final recreated = _FakeLiteRtLmRuntimeClient();
+      final clients = [gpuAudio, gpu, gpuWithCpuAudio, cpu, recreated];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+        useTempCacheDir: false,
+      );
+      final imageFile = File('${tempDir.path}/fallback-image.png');
+      await imageFile.writeAsBytes(const <int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+      ]);
+      List<LlamaChatMessage> media(int images) => [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Describe the image and audio.'),
+            for (var i = 0; i < images; i++)
+              LlamaImageContent(path: imageFile.path),
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[1, 2, 3])),
+          ],
+        ),
+      ];
+      try {
+        const params = ModelParams(preferredBackend: GpuBackend.metal);
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        final audioOnly = service
+            .generateChat(
+              context,
+              media(0),
+              const GenerationParams(maxTokens: 8),
+            )
+            .toList();
+        await gpuAudio.generateStarted.future;
+        await gpuAudio.generated.close();
+        await audioOnly;
+        expect(gpuAudio.lastBackend, 'gpu');
+        expect(gpuAudio.lastAudioBackend, 'gpu');
+
+        final chunks = service
+            .generateChat(
+              context,
+              media(1),
+              const GenerationParams(maxTokens: 8),
+            )
+            .toList();
+        await cpu.generateStarted.future;
+        await cpu.generated.close();
+        await chunks;
+
+        expect(gpu.lastBackend, 'gpu');
+        expect(gpu.lastVisionBackend, 'gpu');
+        expect(gpu.lastAudioBackend, 'gpu');
+        expect(gpuWithCpuAudio.lastBackend, 'gpu');
+        expect(gpuWithCpuAudio.lastAudioBackend, 'cpu');
+        expect(cpu.lastBackend, 'cpu');
+        expect(cpu.lastVisionBackend, 'cpu');
+        expect(cpu.lastAudioBackend, 'cpu');
+        expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+        expectOneFallbackWarning(gpuError);
+
+        final again = service
+            .generateChat(
+              context,
+              media(2),
+              const GenerationParams(maxTokens: 8),
+            )
+            .toList();
+        await recreated.generateStarted.future;
+        await recreated.generated.close();
+        await again;
+
+        expect(nextClient, 5);
+        expect(recreated.lastBackend, 'cpu');
+        expect(recreated.lastVisionBackend, 'cpu');
+        expect(recreated.lastAudioBackend, 'cpu');
+        expect(records, hasLength(1));
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final (name, gpuError, cpuError, matcher)
+        in <(String, Object, Object, Matcher Function(Object gpuError))>[
+          (
+            'an engine creation error',
+            LiteRtLmEngineCreateError('delegate init failed.'),
+            LiteRtLmEngineCreateError('cpu init failed.'),
+            (_) => isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              'delegate init failed.',
+            ),
+          ),
+          (
+            'another error',
+            StateError('GPU state is broken'),
+            StateError('CPU state is broken'),
+            same,
+          ),
+        ]) {
+      test('a failed CPU retry rethrows the GPU error for $name', () async {
+        if (skipWithoutGpu()) return;
+        final clients = [
+          _FakeLiteRtLmRuntimeClient(initializeError: gpuError),
+          _FakeLiteRtLmRuntimeClient(initializeError: cpuError),
+        ];
+        var nextClient = 0;
+        final service = LiteRtLmService(
+          clientFactory: () => clients[nextClient++],
+          useTempCacheDir: false,
+        );
+        try {
+          const params = ModelParams(preferredBackend: GpuBackend.metal);
+          final model = await service.loadModel(modelFile.path, params);
+          service.createContext(model, params);
+
+          await expectLater(
+            service.tokenize(model, 'hi', true),
+            throwsA(matcher(gpuError)),
+          );
+          expect(nextClient, 2);
+          expect(clients.first.lastBackend, 'gpu');
+          expect(clients.last.lastBackend, 'cpu');
+          expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+          expectOneFallbackWarning(gpuError);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    for (final (name, loadParams, contextParams, backendOverride, matcher)
+        in <(String, ModelParams, ModelParams, String?, Matcher)>[
+          (
+            'ComputeDevice.gpu',
+            const ModelParams(device: ComputeDevice.gpu),
+            const ModelParams(device: ComputeDevice.gpu),
+            null,
+            isA<LlamaUnsupportedException>(),
+          ),
+          (
+            'ComputeDevice.gpu in the context only',
+            const ModelParams(preferredBackend: GpuBackend.metal),
+            const ModelParams(device: ComputeDevice.gpu),
+            null,
+            isA<LlamaUnsupportedException>(),
+          ),
+          (
+            'ComputeDevice.gpu at load with an automatic context',
+            const ModelParams(device: ComputeDevice.gpu),
+            const ModelParams(),
+            null,
+            isA<LlamaModelException>(),
+          ),
+          (
+            'the deprecated liteRtLmBackend gpu',
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+            null,
+            isA<LlamaModelException>(),
+          ),
+          (
+            'the deprecated liteRtLmBackend gpu at load only',
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+            const ModelParams(),
+            null,
+            isA<LlamaModelException>(),
+          ),
+          (
+            'the deprecated liteRtLmBackend gpu in the context only',
+            const ModelParams(preferredBackend: GpuBackend.metal),
+            const ModelParams(
+              preferredBackend: GpuBackend.metal,
+              liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+            ),
+            null,
+            isA<LlamaModelException>(),
+          ),
+          (
+            'the deprecated LiteRtLmBackend preferredBackend gpu',
+            const ModelParams(),
+            const ModelParams(),
+            'gpu',
+            isA<LlamaModelException>(),
+          ),
+        ]) {
+      test('a GPU engine that fails to start under $name is not retried on '
+          'the CPU', () async {
+        if (skipWithoutGpu()) return;
+        final clients = [
+          _FakeLiteRtLmRuntimeClient(
+            initializeError: LiteRtLmEngineCreateError('no gpu.'),
+          ),
+          _FakeLiteRtLmRuntimeClient(),
+        ];
+        var nextClient = 0;
+        final service = LiteRtLmService(
+          clientFactory: () => clients[nextClient++],
+          useTempCacheDir: false,
+        );
+        try {
+          final model = await service.loadModel(
+            modelFile.path,
+            loadParams,
+            backendOverride: backendOverride,
+          );
+          service.createContext(model, contextParams);
+
+          await expectLater(
+            service.tokenize(model, 'hi', true),
+            throwsA(matcher),
+          );
+          expect(nextClient, 1);
+          expect(clients.first.lastBackend, 'gpu');
+          expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+          expect(records, isEmpty);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a CPU engine that fails to start under ComputeDevice.auto is not '
+        'retried', () async {
+      final clients = [
+        _FakeLiteRtLmRuntimeClient(
+          initializeError: LiteRtLmEngineCreateError('no cpu.'),
+        ),
+        _FakeLiteRtLmRuntimeClient(),
+      ];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+        useTempCacheDir: false,
+      );
+      try {
+        const params = ModelParams(gpuLayers: 0);
+        final model = await service.loadModel(modelFile.path, params);
+        service.createContext(model, params);
+
+        await expectLater(
+          service.tokenize(model, 'hi', true),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              'no cpu.',
+            ),
+          ),
+        );
+        expect(nextClient, 1);
+        expect(clients.first.lastBackend, 'cpu');
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+  });
 
   for (final readOnly in [true, false]) {
     final device = readOnly ? ComputeDevice.cpu : ComputeDevice.gpu;

@@ -30,15 +30,16 @@ void main() {
   // The real service behind the real backend and engine, in this isolate,
   // with a runtime client whose engine creation returns no engine.
   Future<({LlamaEngine engine, List<_NoEngineClient> clients})> load(
-    ModelParams params,
-  ) async {
+    ModelParams params, {
+    Set<String> failingBackends = const {'cpu', 'gpu'},
+  }) async {
     final clients = <_NoEngineClient>[];
     final handshake = ReceivePort();
     runLiteRtLmWorkerForTesting(
       handshake.sendPort,
       LiteRtLmService(
         clientFactory: () {
-          final client = _NoEngineClient();
+          final client = _NoEngineClient(failingBackends);
           clients.add(client);
           return client;
         },
@@ -94,7 +95,8 @@ void main() {
   });
 
   test('a GPU engine the runtime cannot create under ComputeDevice.auto '
-      'fails each first use with LlamaModelException', () async {
+      'is retried on the CPU, and each first use fails with the GPU error '
+      'when the CPU fails too', () async {
     if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
       markTestSkipped('No LiteRT-LM GPU backend on this platform.');
       return;
@@ -135,8 +137,34 @@ void main() {
       ]) {
         await expectLater(firstUse(), engineCreateFailure, reason: entryPoint);
       }
-      expect(loaded.clients.map((client) => client.backend).toSet(), {'gpu'});
+      expect(loaded.clients.map((client) => client.backend), [
+        for (var i = 0; i < 8; i++) ...['gpu', 'cpu'],
+      ]);
       expect(loaded.clients.every((client) => client.conversations == 0), true);
+      expect(await engine.getBackendName(), 'LiteRT-LM gpu');
+    } finally {
+      await loaded.engine.dispose();
+    }
+  });
+
+  test('a GPU engine the runtime cannot create under ComputeDevice.auto '
+      'runs on the CPU, which the backend name reports', () async {
+    if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return;
+    }
+    final loaded = await load(
+      const ModelParams(preferredBackend: GpuBackend.vulkan),
+      failingBackends: const {'gpu'},
+    );
+    try {
+      final engine = loaded.engine;
+      expect(await engine.getBackendName(), 'LiteRT-LM gpu');
+      expect(await engine.tokenize('Hello'), [1]);
+      expect(loaded.clients.map((client) => client.backend), ['gpu', 'cpu']);
+      expect(await engine.getBackendName(), 'LiteRT-LM cpu');
+      expect(await engine.getTokenCount('Hello again'), 1);
+      expect(loaded.clients, hasLength(2));
     } finally {
       await loaded.engine.dispose();
     }
@@ -146,6 +174,9 @@ void main() {
 const _nativeError = 'LiteRT-LM reported INTERNAL (13): no GPU device.';
 
 class _NoEngineClient extends LiteRtLmRuntimeClient {
+  _NoEngineClient(this.failingBackends);
+
+  final Set<String> failingBackends;
   String? backend;
   int conversations = 0;
 
@@ -169,6 +200,7 @@ class _NoEngineClient extends LiteRtLmRuntimeClient {
     int? numberOfThreads,
   }) async {
     this.backend = backend;
+    if (!failingBackends.contains(backend)) return;
     liteRtLmCheckEngineCreated(
       0,
       backend: backend,
@@ -179,6 +211,9 @@ class _NoEngineClient extends LiteRtLmRuntimeClient {
 
   @override
   void setMinLogLevel(int level) {}
+
+  @override
+  List<int> tokenize(String text, {bool addSpecial = true}) => const [1];
 
   @override
   void createConversation({

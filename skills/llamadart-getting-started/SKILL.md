@@ -110,9 +110,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `ComputeDevice.gpu` or `npu` runs there or throws
   `LlamaUnsupportedException`, never on another device; native LiteRT-LM
   reports a GPU or NPU delegate that fails to start from the first
-  generation or `tokenize`, and under `auto` an engine it cannot create
-  throws `LlamaModelException` there. Leave `device` at `auto` for each
-  runtime's default.
+  generation or `tokenize`. Under `auto` it retries a GPU engine that fails
+  to start on the CPU with a warning (`getBackendName()` then reports
+  `LiteRT-LM cpu`) and throws the GPU error if the CPU fails too. Leave
+  `device` at `auto` for each runtime's default.
   `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are
   deprecated. Keep `contextSize` no larger than the app needs: memory grows
   with it.
