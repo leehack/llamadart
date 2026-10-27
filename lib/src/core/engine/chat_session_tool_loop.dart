@@ -15,12 +15,14 @@ import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
+import '../models/tools/tool_output.dart';
 import '../models/tools/tool_params.dart';
 
 /// Runs a tool call that has no [ToolDefinition.handler], or that names a
 /// tool missing from the `tools` list, and returns its result.
 ///
-/// The result may be any JSON-compatible value.
+/// The result may be any JSON-compatible value, or a [LlamaToolOutput] for
+/// text or media after it.
 typedef LlamaToolCallCallback =
     FutureOr<Object?> Function(LlamaToolCallContent call);
 
@@ -194,7 +196,8 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// Each round collects a reply with [ChatSession.create]. When the reply
   /// calls tools, the calls run concurrently, and each result is added to
   /// [ChatSession.history], in call order, as a `LlamaChatRole.tool` message
-  /// holding a [LlamaToolResultContent] with the call's id and name. The
+  /// holding a [LlamaToolResultContent] with the call's id and name; a
+  /// [LlamaToolOutput] result becomes its `result` and `content`. The
   /// next round continues the turn without a new user message. Empty [parts]
   /// continue the current turn, for example after the caller added results
   /// for [LlamaToolLoopResult.pendingToolCalls].
@@ -433,13 +436,7 @@ extension ChatSessionToolLoopExtension on ChatSession {
           for (final (index, call) in reply.toolCalls.indexed) {
             final message = LlamaChatMessage.withContent(
               role: LlamaChatRole.tool,
-              content: [
-                LlamaToolResultContent(
-                  id: call.id,
-                  name: call.name,
-                  result: results[index],
-                ),
-              ],
+              content: [_toolResult(call, results[index])],
             );
             turn.add(message);
           }
@@ -844,6 +841,17 @@ Map<String, dynamic> _argumentsOf(LlamaToolCallContent call) {
     invalidValue: call.rawJson,
   );
 }
+
+LlamaToolResultContent _toolResult(LlamaToolCallContent call, Object? result) =>
+    switch (result) {
+      LlamaToolOutput(:final output, :final content) => LlamaToolResultContent(
+        id: call.id,
+        name: call.name,
+        result: output,
+        content: content,
+      ),
+      _ => LlamaToolResultContent(id: call.id, name: call.name, result: result),
+    };
 
 Future<Object?> _runTool(
   LlamaToolCallContent call,

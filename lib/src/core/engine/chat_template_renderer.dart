@@ -2,7 +2,7 @@ import '../exceptions.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_template_result.dart';
-import '../models/chat/content_part.dart';
+import '../models/chat/tool_result_parts.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_template_engine.dart';
@@ -23,15 +23,10 @@ typedef ChatTemplateTokenizer =
 class ChatTemplateRenderer {
   const ChatTemplateRenderer._();
 
-  /// Whether [messages] carry an image, audio or video part.
-  static bool carriesMedia(List<LlamaChatMessage> messages) => messages.any(
-    (message) => message.parts.any(
-      (part) =>
-          part is LlamaImageContent ||
-          part is LlamaAudioContent ||
-          part is LlamaVideoContent,
-    ),
-  );
+  /// Whether [messages] carry an image, audio or video part, including one
+  /// in a tool result's `content`.
+  static bool carriesMedia(List<LlamaChatMessage> messages) =>
+      messages.any((message) => partsInPromptOrder(message).any(isMediaPart));
 
   /// Names the template [render] uses when no `tool_use` variant or
   /// `customTemplate` applies, for render-failure messages.

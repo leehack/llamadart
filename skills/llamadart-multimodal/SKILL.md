@@ -46,10 +46,13 @@ description: >-
 - Put media in a message with
   `LlamaChatMessage.withContent(role: ..., content: [...])`, or pass the parts
   to `ChatSession.create`. Place media before the text that refers to it.
-- Keep image/audio in user messages, separate from tool results. Tool-role
-  media and media alongside `LlamaToolResultContent` under any role throw
-  `LlamaUnsupportedException` in `create` and `chatTemplate`, including
-  session history budgeting. Return text or JSON tool results instead.
+- Keep image/audio in user messages, separate from tool results. A tool's
+  images go in `LlamaToolResultContent.content` only when
+  `(await engine.capabilities).toolResultMedia` contains
+  `LlamaToolResultMedia.image` (native llama.cpp, vision projector,
+  Hermes-style template such as Qwen3-VL). Tool-role media and media alongside
+  `LlamaToolResultContent` under any role throw `LlamaUnsupportedException` in
+  `create` and `chatTemplate`, including session history budgeting.
 - Media sources that each runtime actually reads:
   - `LlamaImageContent(path: ...)` or `LlamaImageContent(bytes: ...)` with
     encoded JPEG/PNG bytes. Prefer `path` on native.

@@ -251,10 +251,13 @@ fallback when model template metadata is empty. See
 - Gemma 2/3/3n and legacy Mistral tool-result retries fold an immediately
   following user message into the result turn; successfully rendered histories
   stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
-- Tool messages accept text or JSON results. Image/audio parts on the tool role,
-  or alongside `LlamaToolResultContent` under any role, throw
-  `LlamaUnsupportedException` in `create` and `chatTemplate`. Send media in a
-  separate user message; tool-result media transport remains unsupported.
+- Tool results can carry images in `LlamaToolResultContent.content` (or a
+  handler's `LlamaToolOutput`) on native llama.cpp with a vision projector and a
+  Hermes-style template, qualified on Qwen3-VL; check
+  `LlamaEngineCapabilities.toolResultMedia`. Other runtimes, formats, audio and
+  video throw `LlamaUnsupportedException`, as do image/audio parts beside
+  `LlamaToolResultContent` or on the tool role
+  ([tool-result media](https://llamadart.leehack.com/docs/guides/tool-calling#tool-result-media)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   `dart run llamadart:web_setup` vendors the pinned, checksum-verified bridge

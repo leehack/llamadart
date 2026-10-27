@@ -68,6 +68,8 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/templates/Mistral-7B-Instruct-v0_2.jinja': '00001000',
   'test/fixtures/templates/Phi-4-mini-instruct-reasoning.jinja': '10001000',
   'test/fixtures/templates/Qwen3-4B.jinja': '11111011',
+  // Qwen3-VL is pinned from llama-server 620d2225c `/props`.
+  'test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja': '11111101',
   'test/fixtures/templates/Qwen3_5-0_8B.jinja': '11111111',
   'test/fixtures/templates/SmolVLM-500M-Instruct.jinja': '10000100',
   'test/fixtures/templates/TranslateGemma-2B-it.jinja': '00000100',

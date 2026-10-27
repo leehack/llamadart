@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../core/decision/decision_question.dart';
+import '../core/engine/engine_capabilities.dart';
 import '../core/engine/engine_observer.dart';
 import '../core/exceptions.dart';
 import '../core/models/inference/embedding.dart';
@@ -442,6 +443,21 @@ abstract class BackendDirectMediaInput {
   ///
   /// Both are false when no model is loaded or the backend cannot tell.
   Future<({bool vision, bool audio})> directMediaInput();
+}
+
+/// Optional backend capability for media in `LlamaToolResultContent.content`.
+///
+/// The backend takes each such part at its marker in the prompt that
+/// `LlamaEngine.create` renders, in the order the parts were passed, through
+/// [BackendChatPromptGeneration] or [LlamaBackend.generate]. The engine
+/// reports a type in `LlamaEngineCapabilities.toolResultMedia`, and accepts
+/// a request carrying it, only when [toolResultMedia] has it and the loaded
+/// projector takes that media. Without this interface, tool-result media
+/// throw [LlamaUnsupportedException].
+abstract class BackendToolResultMedia {
+  /// The media types the backend places at a tool result's markers; empty
+  /// when it places none, as when no model is loaded.
+  Set<LlamaToolResultMedia> get toolResultMedia;
 }
 
 /// Optional backend capability for how much of a chat request the loaded

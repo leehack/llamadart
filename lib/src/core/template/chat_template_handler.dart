@@ -85,6 +85,10 @@ abstract class ChatTemplateHandler {
             caps != null &&
             caps.supportsTypedContent &&
             !caps.supportsStringContent,
+        stringContentOnly:
+            caps != null &&
+            caps.supportsStringContent &&
+            !caps.supportsTypedContent,
         toolResultsAsUser: polyfill,
         toolCallsAsContent: polyfill && !caps.supportsToolCalls,
       );

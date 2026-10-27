@@ -30,8 +30,9 @@ example.
 `create` and `chatTemplate` reject tool-role image/audio content with
 `LlamaUnsupportedException` before rendering or backend dispatch, including
 media alongside `LlamaToolResultContent` under another role. Session context
-budgeting applies the same check to history. Send text or JSON tool results
-and put media in a separate user message; see [tool calling](./tool-calling).
+budgeting applies the same check to history. Tool images go in
+`LlamaToolResultContent.content` instead, where the engine reports them; see
+[tool-result media](./tool-calling#tool-result-media).
 
 ## Generation pipeline (visual)
 

@@ -15,6 +15,7 @@ import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_capabilities.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/embedding.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
@@ -1568,6 +1569,10 @@ void main() {
 
   test('reports the llama.cpp runtime', () {
     expect(NativeLlamaBackend().runtime, LlamaRuntime.llamaCpp);
+  });
+
+  test('places only images at tool-result markers', () {
+    expect(NativeLlamaBackend().toolResultMedia, {LlamaToolResultMedia.image});
   });
 
   test(
