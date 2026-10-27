@@ -193,7 +193,7 @@ quantization/mmap option. Weights load eagerly; see the
 
 #### Pinned-runtime format checks
 
-With the pinned `stable-diffusion-native v0.3.0` (`0518b34` plus the owner
+With the pinned `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
 pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
 through `ImageGenerationEngine` on macOS arm64 CPU:
 

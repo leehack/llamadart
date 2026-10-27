@@ -7,6 +7,8 @@ It requires hashed local inputs and independent native reference images.
 
 ## Qualified inputs and settings
 
+Requalified on stable-diffusion-native `v0.3.0-1` (2026-10-27): every result below is byte-identical to the `v0.3.0` measurement ([#922](https://github.com/leehack/llamadart/issues/922)).
+
 The source is `Green-Sky/SD-Turbo-GGUF` at immutable revision
 `19a31586d02d64a73b4419bc193b3ecfaf38e1f0`, file `sd_turbo-f16.gguf`.
 The repository's LFS digest and size match the local file: 2,612,748,512 bytes.
@@ -38,12 +40,13 @@ output equals its separately initialized guarded direct-C reference and the
 GGUF baseline: SHA-256
 `f08a13f24bbe3fee369616e1d2308468dacbcd78af3c09162ddd46405f532ec6`.
 
-The native artifact is `stable-diffusion-native v0.3.0`, upstream
-`0518b34374761cb82aeda5ad3c2f0686fdad2cec` plus `pickle_line_span.patch`.
+The native artifact is `stable-diffusion-native v0.3.0-1`, upstream
+`be486498eadc29dc3cd234d944c2180ed42b1415` plus `pickle_line_span.patch`, `fp8_metal_f16_load.patch` and
+`lora_immediate_fallback.patch`.
 Its macOS arm64 archive SHA-256 is
-`6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`.
+`79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`.
 The extracted direct-C dylib is
-`473c26f963f6020e45665be3fcaabb81ddb5d69a5c8a22f2e2bf5fc171338af5`;
+`3e864a0cc18a963fe3e3f26edc269ce9a0966e631e3fc06982e9051bcb8f7d0b`;
 the hook can rewrite install names in its installed copy. Archive provenance
 and the actual installed-library bytes remain separate observations.
 

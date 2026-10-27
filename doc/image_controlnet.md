@@ -3,7 +3,7 @@
 `ControlNetImageGenerationRequest` adds a copied, decoded RGB control map and
 a strength to text-to-image generation with a ControlNet loaded as an
 `ImageModelRole.controlNet` component. The admitted recipe is the pinned
-stable-diffusion-native v0.3.0 runtime on macOS CPU, `flashAttention: false`,
+stable-diffusion-native v0.3.0-1 runtime on macOS CPU, `flashAttention: false`,
 `vaeDirectConvolution: false`, exactly one SD 1.x checkpoint with a
 header-detected embedded full VAE, and one SD 1.x ControlNet in the original
 (lllyasviel) layout. Everything else is refused when the model loads.
@@ -16,6 +16,8 @@ by direct-C pipeline evidence on the pinned runtime (below). Only this recipe
 is qualified.
 
 ## Admission and runtime path
+
+Requalified on stable-diffusion-native `v0.3.0-1` (2026-10-27): every result below is byte-identical to the `v0.3.0` measurement ([#922](https://github.com/leehack/llamadart/issues/922)).
 
 - Load: the header classifier gives a ControlNet file
   `ImageModelRole.controlNet`. Admission needs header proof of a four-channel
@@ -49,9 +51,9 @@ is qualified.
 
 ## Pipeline evidence on the pinned runtime (synthetic ControlNet)
 
-Direct C against `stable-diffusion-native-runtime-macos-arm64-v0.3.0.tar.gz`
-(SHA-256 `6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`,
-upstream `0518b34374761cb82aeda5ad3c2f0686fdad2cec`), macOS arm64 CPU,
+Direct C against `stable-diffusion-native-runtime-macos-arm64-v0.3.0-1.tar.gz`
+(SHA-256 `79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`,
+upstream `be486498eadc29dc3cd234d944c2180ed42b1415`), macOS arm64 CPU,
 `sd_turbo-f16-q8_0.gguf` (SD 2.x), 256 square, Euler/discrete, 2 steps, CFG 1,
 seed 42. The ControlNet was synthetic: SD-Turbo's F16 UNet encoder copied
 under `control_model.` (ControlNet's training initialization), a random hint
@@ -103,8 +105,8 @@ square, CPU 4 threads, Euler/discrete 8 steps, CFG 7, seed 42. Modes are
 ordinary text, house at 1, house at 0, cross at 1, house at 2, ordinary text
 reset. Record the checkpoint, ControlNet and runtime SHA-256 with the result.
 
-Measured inputs (pinned runtime `stable-diffusion-native-runtime-macos-arm64-v0.3.0.tar.gz`,
-SHA-256 `6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`):
+Measured inputs (pinned runtime `stable-diffusion-native-runtime-macos-arm64-v0.3.0-1.tar.gz`,
+SHA-256 `79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`):
 
 | File | Source (Hugging Face revision) | SHA-256 |
 | --- | --- | --- |
