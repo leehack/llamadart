@@ -150,7 +150,11 @@ not allow rollback within either channel. The manual sync workflow exposes the
 same gate as its `allow_nightly_channel` checkbox and leaves it disabled by
 default.
 Stable releases must provide `assets.json`, `SHA256SUMS`, every supported bundle,
-and hook contract version 1. New stable or nightly wrapper forms require
+and hook contract version 1 or 2. Contract 2 publishes backend sidecars
+(`module: backend-*`, such as `windows-x64-cuda12`); the sync pins each one in
+`llamaCppBackendSidecarSpecs` from its release digest and records the contract
+in `llamaCppHookContractVersion`, so the hook fetches a sidecar only when its
+backend is selected. New stable or nightly wrapper forms require
 `assets.json`, `native_release_tag`, and the retained `tag` compatibility alias;
 older base or legacy-wrapper manifests with only `tag` remain valid.
 Manifest checksums must agree with both `SHA256SUMS` and GitHub release asset
@@ -258,7 +262,8 @@ Use this checklist in native sync PRs:
 - For a stable-channel llama.cpp native sync, confirm the release tag is an
   upstream-aligned `vMAJOR.MINOR.PATCH` or an explicitly selected wrapper rebuild,
   `assets.json` records the correct distinct native/upstream tags and hook
-  contract version 1, and its artifact checksums match the release assets.
+  contract version 1 or 2, and its artifact checksums match the release
+  assets.
 - For LiteRT-LM schema 2 releases, confirm the manifest's exact upstream and
   native commits, ABI/capabilities, platform list, artifact digests, and
   Linux/Windows real-model smoke evidence before changing any pin.

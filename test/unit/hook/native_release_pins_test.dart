@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/native_release_manifest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:test/test.dart';
 
@@ -144,6 +145,27 @@ void main() {
     for (final MapEntry(key: bundle, value: digest)
         in llamaCppBundleSha256.entries) {
       expect(digest, matches(sha256Pattern), reason: bundle);
+    }
+  });
+
+  test('llama.cpp pins a hook contract this hook supports', () {
+    expect(
+      supportedNativeHookContractVersions,
+      contains(llamaCppHookContractVersion),
+    );
+  });
+
+  test('llama.cpp backend sidecars extend a pinned bundle once each', () {
+    final keys = <String>{};
+    for (final spec in llamaCppBackendSidecarSpecs) {
+      expect(llamaCppBundleSha256, contains(spec.bundle), reason: spec.archive);
+      expect(spec.archive, startsWith('${spec.bundle}-'));
+      expect(llamaCppBundleSha256, isNot(contains(spec.archive)));
+      expect(spec.sha256, matches(sha256Pattern), reason: spec.archive);
+      expect(keys.add('${spec.bundle}/${spec.backend}'), isTrue);
+    }
+    if (llamaCppHookContractVersion < 2) {
+      expect(llamaCppBackendSidecarSpecs, isEmpty);
     }
   });
 

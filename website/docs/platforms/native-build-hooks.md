@@ -364,10 +364,16 @@ Selection rules:
   module.
 - CUDA runtime DLLs (`cudart64_*`, `cublas64_*`, `cublaslt64_*`) ship only with
   `cuda`, and OpenBLAS libraries only with `blas`.
-- Modules are selected after download. On `windows-x64` the pinned archive is
-  about 700 MiB, mostly CUDA DLLs, and the hook downloads it once per pinned
-  release even when `cuda` is not selected. It is cached under the llamadart
-  package's `.dart_tool/llamadart/native_bundles/`. To skip the download, set
+- Modules are selected after download. A `windows-x64` release with hook
+  contract 2 publishes `ggml-cuda.dll` and its CUDA runtime DLLs as a separate
+  `llamadart-native-windows-x64-cuda12-<tag>.tar.gz`, which the hook downloads
+  and verifies only when `cuda` is selected for `windows-x64`. If such a
+  release lists no CUDA archive, selecting `cuda` fails the build with
+  `NativeHookContractException` instead of falling back. Contract 1 releases,
+  including the pinned `v0.7.0-2`, ship CUDA inside the `windows-x64` archive,
+  about 700 MiB, which the hook downloads even when `cuda` is not selected.
+  Archives are cached under the llamadart package's
+  `.dart_tool/llamadart/native_bundles/`. To skip the download, set
   `llamadart_native_path` to a local archive or bundle.
 - On `windows-x64`, the hook rejects a bundle whose `cuda` module lacks the
   cudart and cuBLAS DLLs, or whose `blas` module lacks OpenBLAS.
@@ -467,19 +473,28 @@ hooks:
   target and a `SHA256SUMS` that lists it; otherwise the build fails before
   using the archive. The pinned release is verified against digests in
   `lib/src/hook/native_release_pins.dart` instead.
+- Before downloading from an overridden release, the hook reads its
+  `assets.json` and fails with `NativeHookContractException` when it needs a
+  hook contract other than 1 or 2. A release without `assets.json` counts as
+  contract 1. llamadart before 0.17 does not check the contract: pointed at a
+  contract 2 release, it warns and builds `windows-x64` without CUDA.
 - The hook keeps the release's `SHA256SUMS` beside the cached archive under
   the llamadart package's `.dart_tool/llamadart/native_bundles/`. A cached archive that it lists is
   used without network access; any download is checked against a freshly
   fetched `SHA256SUMS`. To build an override offline, pre-seed both files in
   the directory the error names (`SHA256SUMS` as UTF-8 or ASCII text), or use
-  `llamadart_native_path`.
+  `llamadart_native_path`. A `cuda` build of a contract 2 release also needs
+  the release's `assets.json` and its CUDA archive, which the hook caches the
+  same way.
 - `llamadart_native_repository` takes an `owner/repo` slug or a
   `https://github.com/owner/repo` URL.
 - `llamadart_native_path` wins over downloads. It can point at an archive, an
   extracted bundle directory, or a directory containing `<tag>/<bundle>/`,
   `<bundle>/`, or the expected archive. Relative paths resolve from the
   `pubspec.yaml` that sets them. Local bundles are trusted as given; the hook
-  does not check their digests.
+  does not check their digests. A local `windows-x64` bundle of a contract 2
+  release ships CUDA only when the `windows-x64-cuda12` archive is extracted
+  into the same directory.
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
