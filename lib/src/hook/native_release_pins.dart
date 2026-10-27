@@ -77,6 +77,37 @@ const llamaCppBundleSha256 = <String, String>{
       '0bec255d9336eab934f601408f2871b53f83a29432587e01b0fa71a4d33840e2',
 };
 
+/// The `hook_contract_version` of the [llamaCppTag] release's `assets.json`.
+const llamaCppHookContractVersion = 1;
+
+/// A backend module that [llamaCppTag] publishes as its own archive,
+/// `llamadart-native-<archive>-<llamaCppTag>.tar.gz`, extracted over the
+/// [bundle] archive when [backend] is selected.
+class LlamaCppBackendSidecarSpec {
+  /// Core bundle the sidecar extends, such as `windows-x64`.
+  final String bundle;
+
+  /// Backend the sidecar adds, such as `cuda`.
+  final String backend;
+
+  /// Archive key, such as `windows-x64-cuda12`.
+  final String archive;
+
+  /// SHA-256 of the published `.tar.gz` archive.
+  final String sha256;
+
+  /// Creates a spec for the [archive] sidecar.
+  const LlamaCppBackendSidecarSpec({
+    required this.bundle,
+    required this.backend,
+    required this.archive,
+    required this.sha256,
+  });
+}
+
+/// Every backend sidecar archive the [llamaCppTag] release publishes.
+const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[];
+
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
 const liteRtLmReleaseTag = 'v0.18.1-4';
 

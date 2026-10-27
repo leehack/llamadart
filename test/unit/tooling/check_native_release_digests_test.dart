@@ -39,6 +39,10 @@ String release(
   ],
 });
 
+final Map<String, String> llamaCppPins = {
+  ...llamaCppBundleSha256,
+  for (final spec in llamaCppBackendSidecarSpecs) spec.archive: spec.sha256,
+};
 final Map<String, String> liteRtLmPins = {
   for (final spec in liteRtLmBundleSpecs) spec.bundle: spec.sha256,
 };
@@ -257,7 +261,7 @@ void main() {
       fetched = [];
       tokens = {};
       bodies = {
-        llamaCppSumsUrl: sums(llamaCppBundleSha256),
+        llamaCppSumsUrl: sums(llamaCppPins),
         stableDiffusionSumsUrl: stableDiffusionSums(stableDiffusionPins),
         liteRtLmReleaseUrl: release(liteRtLmPins),
       };
@@ -293,11 +297,8 @@ void main() {
     });
 
     test('fails and names a drifted llama.cpp bundle', () async {
-      final bundle = llamaCppBundleSha256.keys.first;
-      bodies[llamaCppSumsUrl] = sums({
-        ...llamaCppBundleSha256,
-        bundle: 'f' * 64,
-      });
+      final bundle = llamaCppPins.keys.first;
+      bodies[llamaCppSumsUrl] = sums({...llamaCppPins, bundle: 'f' * 64});
       expect(await runCli(), 1);
       expect(err.toString(), contains('$bundle pins'));
       expect(err.toString(), contains('sync_native_release_pins.py'));
@@ -385,9 +386,9 @@ void main() {
 
     test('checks every pinned bundle of every runtime', () async {
       final sources = <String, String Function(String bundle)>{
-        for (final bundle in llamaCppBundleSha256.keys)
+        for (final bundle in llamaCppPins.keys)
           'llama.cpp $bundle': (bundle) => bodies[llamaCppSumsUrl] = sums({
-            ...llamaCppBundleSha256,
+            ...llamaCppPins,
             bundle: 'f' * 64,
           }),
         for (final bundle in stableDiffusionPins.keys)
@@ -404,7 +405,7 @@ void main() {
       expect(
         sources,
         hasLength(
-          llamaCppBundleSha256.length +
+          llamaCppPins.length +
               stableDiffusionBundleSpecs.length +
               liteRtLmBundleSpecs.length,
         ),
@@ -452,7 +453,7 @@ void main() {
     test('reads local copies instead of fetching them', () async {
       final code = await runCli([
         '--llama-cpp-sums',
-        write('llama', sums(llamaCppBundleSha256)),
+        write('llama', sums(llamaCppPins)),
         '--stable-diffusion-sums',
         write('sd', stableDiffusionSums(stableDiffusionPins)),
         '--litert-lm-release',
@@ -502,11 +503,11 @@ void main() {
     });
 
     test('main sets the process exit code', () async {
-      final bundle = llamaCppBundleSha256.keys.first;
+      final bundle = llamaCppPins.keys.first;
       addTearDown(() => exitCode = 0);
       await check_native_release_digests.main([
         '--llama-cpp-sums',
-        write('llama', sums({...llamaCppBundleSha256, bundle: 'f' * 64})),
+        write('llama', sums({...llamaCppPins, bundle: 'f' * 64})),
         '--stable-diffusion-sums',
         write('sd', stableDiffusionSums(stableDiffusionPins)),
         '--litert-lm-release',

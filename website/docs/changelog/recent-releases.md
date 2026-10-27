@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- The build hook reads llamadart-native hook contract 2: it downloads a backend sidecar archive, such as Windows x64 CUDA, only when that backend is selected, and an overridden release that needs an unsupported contract fails the build with `NativeHookContractException` ([#812](https://github.com/leehack/llamadart/issues/812)).
 - Pin stable-diffusion-native `v0.3.0-1` (stable-diffusion.cpp master-1017), which loads FP8 image weights as F16 on Metal: FP8 checkpoints now generate on Metal instead of being refused. The bounded image recipes are requalified on it, and Flutter iOS/macOS apps need the matching `llamadart_stable_diffusion_flutter` release ([#1446](https://github.com/leehack/llamadart/issues/1446)).
 - Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
