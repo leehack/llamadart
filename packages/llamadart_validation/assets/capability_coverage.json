@@ -551,7 +551,7 @@
       "exemption": {
         "id": "bounded-image-controlnet",
         "issue": "https://github.com/leehack/llamadart/issues/1224",
-        "reason": "Load-time SD 1.x ControlNet admission, owned control input, worker probe/failure detection and native mapping have maintained unit tests plus the local-only image-controlnet macOS CPU direct-C scenario; real SD 1.x qualification and a versioned validation-pack profile remain open in #1224. Inventory presence is not platform/model qualification."
+        "reason": "Load-time SD 1.x ControlNet admission, owned control input, worker probe/failure detection and native mapping have maintained unit tests plus the local-only image-controlnet macOS CPU direct-C scenario; real SD 1.5 plus canny ControlNet qualification passed on macOS CPU (doc/image_controlnet.md); a versioned validation-pack profile remains open in #1224. Inventory presence is not platform/model qualification."
       }
     }
   ]

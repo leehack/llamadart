@@ -388,13 +388,20 @@ class ImageGenerationEngine {
   ///   conditioning-cache capacity outside 0 through the signed 32-bit limit,
   ///   before resolving model files.
   /// - [LlamaModelException] when a file is missing, is not an image-model
-  ///   component (such as a LoRA or ControlNet), shares a role with another
-  ///   file, or does not match the diffusion model; when no file holds
-  ///   diffusion weights; when the model does not fit; when the runtime
+  ///   component (such as a LoRA), shares a role with another file, or does
+  ///   not match the diffusion model; when no file holds diffusion weights
+  ///   (including a ControlNet loaded without a checkpoint); when the model
+  ///   does not fit; when the runtime
   ///   cannot load it, with the reason the runtime logged when it logged
   ///   one; and what the download manager throws for a failed download.
   /// - [LlamaStateException] when [download]'s cancel token cancels the
   ///   load, and while another generation or load is running.
+  /// - [LlamaUnsupportedException] for a ControlNet component outside the
+  ///   bounded recipe (pinned runtime, macOS CPU, flash attention and direct
+  ///   VAE convolution off, an SD 1.x checkpoint with its embedded full VAE
+  ///   plus an original-layout SD 1.x ControlNet and no other component), and
+  ///   when the loaded runtime does not report the ControlNet or an SD 1.x
+  ///   model.
   /// - [LlamaUnsupportedException] for FP8 GGUF/Safetensors weights on
   ///   Metal, including automatic Metal selection, before native context
   ///   creation. Use [ComputeDevice.cpu] or compatible non-FP8 weights.
@@ -747,9 +754,13 @@ class ImageGenerationEngine {
   /// so the task can run up to one more step before it reports
   /// [ImageGenerationCompletionState.cancelled]. [dispose] cancels the task.
   ///
-  /// Throws [LlamaImageGenerationException] for an invalid request, and
+  /// Throws [LlamaImageGenerationException] for an invalid request, including
+  /// a [ControlNetImageGenerationRequest] whose control image is not RGB at
+  /// the output size or whose strength is outside 0 through 2, and
   /// [LlamaUnsupportedException] for an unqualified
-  /// [SeamlessImageGenerationRequest] recipe, and
+  /// [SeamlessImageGenerationRequest] recipe, and for a
+  /// [ControlNetImageGenerationRequest] when no ControlNet is loaded or the
+  /// request combines it with image editing, VAE tiling or circular axes, and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running; these checks run before the returned future completes,
   /// and the one-generation slot is taken when this is called. A runtime
