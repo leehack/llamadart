@@ -319,6 +319,165 @@ void main() {
       },
     );
 
+    group('ControlNet', () {
+      const controlConfig = ImageGenerationSessionConfig(
+        files: {
+          'model': '/models/renamed-sd15.safetensors',
+          'controlNet': '/models/renamed-canny.safetensors',
+        },
+        backend: 'cpu',
+        threads: 1,
+        controlNetRecipeVerified: true,
+      );
+      ImageGenerationSessionRequest controlRequest(ImageEditingPixels image) =>
+          ImageGenerationSessionRequest(
+            prompt: 'a house',
+            negativePrompt: '',
+            width: 64,
+            height: 64,
+            steps: 4,
+            guidanceScale: 7,
+            seed: 42,
+            count: 1,
+            controlImage: image,
+            controlStrength: 1.5,
+          );
+
+      test('control input survives worker transport, held cancellation and '
+          'reset, after the load proves the ControlNet', () async {
+        runtime.modelVersion = 'SD 1.x';
+        final worker = await start(config: controlConfig);
+        expect(worker.modelVersion, 'SD 1.x');
+        expect(worker.supportsControlNet, isTrue);
+        expect(worker.supportsImageEditing, isFalse);
+        expect(
+          runtime.loadedFiles['controlNet'],
+          '/models/renamed-canny.safetensors',
+        );
+        await runtime.flush();
+        expect(
+          runtime.calls('worker'),
+          containsAllInOrder([
+            'sd_dart_new_sd_ctx',
+            'sd_ctx_has_control_net+held',
+          ]),
+        );
+        final rgb = Uint8List.fromList(
+          List.generate(64 * 64 * 3, (i) => i % 247),
+        );
+        final image = ImageEditingPixels.rgb(
+          width: 64,
+          height: 64,
+          pixels: rgb,
+        );
+        final original = [
+          64,
+          64,
+          3,
+          rgb.fold<int>(0, (a, b) => a + b),
+          [
+            for (var i = 0; i < rgb.length; i++) rgb[i] * (i + 1),
+          ].fold<int>(0, (a, b) => a + b),
+          1.5,
+        ];
+        runtime
+          ..holdStart = true
+          ..pauseAfter = 0;
+        final generation = worker.generate(controlRequest(image), (_, _) {});
+        await runtime.imageInputHeld();
+        expect(runtime.controlInputSnapshot(), original);
+        rgb.fillRange(0, rgb.length, 0);
+        image.pixels.fillRange(0, rgb.length, 255);
+        worker.cancel();
+        runtime.holdStart = false;
+        await runtime.pausedIn(generation);
+        expect(runtime.controlInputSnapshot(afterHold: true), original);
+        timers.poll();
+        runtime.resume();
+        expect(await generation, isNull);
+        runtime.pauseAfter = -1;
+        await worker.generate(_request(), (_, _) {});
+        expect(runtime.controlInputSnapshot().take(5), everyElement(0));
+      });
+
+      test('a ControlNet compute failure fails the generation instead of '
+          'returning an uncontrolled image', () async {
+        runtime.modelVersion = 'SD 1.x';
+        final worker = await start(config: controlConfig);
+        runtime
+          ..generationErrors =
+              'diffusion_engine.cpp:2392 - controlnet compute failed'
+          ..returnImagesDespiteError = true;
+        final image = ImageEditingPixels.rgb(
+          width: 64,
+          height: 64,
+          pixels: Uint8List(64 * 64 * 3),
+        );
+        await expectLater(
+          worker.generate(controlRequest(image), (_, _) {}),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('ControlNet'), contains('control image')),
+            ),
+          ),
+        );
+        runtime.generationErrors = null;
+        expect(await worker.generate(controlRequest(image), (_, _) {}), [
+          isA<GeneratedImage>(),
+        ]);
+      });
+
+      test('direct worker refuses control input without a proven ControlNet, '
+          'its log or the SD 1.x family, before generation', () async {
+        for (final kind in ['probe', 'older', 'no file', 'family']) {
+          runtime.modelVersion = kind == 'family' ? 'SD 2.x' : 'SD 1.x';
+          runtime.hideControlNet = kind == 'probe';
+          runtime.olderRelease = kind == 'older';
+          final worker = await start(
+            config: kind == 'no file'
+                ? const ImageGenerationSessionConfig(
+                    files: {'model': '/models/sd15.safetensors'},
+                    backend: 'cpu',
+                    threads: 1,
+                    controlNetRecipeVerified: true,
+                  )
+                : controlConfig,
+          );
+          expect(worker.supportsControlNet, isFalse, reason: kind);
+          await runtime.flush();
+          if (kind == 'no file') {
+            expect(
+              runtime.calls('worker'),
+              isNot(contains('sd_ctx_has_control_net+held')),
+            );
+          }
+          runtime.clearCalls();
+          await expectLater(
+            worker.generate(
+              controlRequest(
+                ImageEditingPixels.rgb(
+                  width: 64,
+                  height: 64,
+                  pixels: Uint8List(64 * 64 * 3),
+                ),
+              ),
+              (_, _) {},
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+            reason: kind,
+          );
+          await runtime.flush();
+          expect(runtime.calls('worker'), isEmpty, reason: kind);
+          await worker.dispose();
+          runtime
+            ..hideControlNet = false
+            ..olderRelease = false;
+        }
+      });
+    });
+
     test(
       'direct worker refuses image editing without recipe proof before generation',
       () async {

@@ -108,6 +108,16 @@ void main() {
         'CLIP-G': (ImageModelHeaders.clipG, ImageModelRole.clipG, null),
         'T5-XXL': (ImageModelHeaders.t5xxl, ImageModelRole.t5xxl, null),
         'Qwen3': (ImageModelHeaders.qwen3Llm, ImageModelRole.llm, null),
+        'ControlNet': (
+          ImageModelHeaders.controlNet,
+          ImageModelRole.controlNet,
+          null,
+        ),
+        'Diffusers ControlNet': (
+          ImageModelHeaders.diffusersControlNet,
+          ImageModelRole.controlNet,
+          null,
+        ),
       };
       for (final MapEntry(key: name, value: (bytes, role, channels))
           in cases.entries) {
@@ -121,10 +131,6 @@ void main() {
     test('names what a non-component file is', () async {
       final cases = <String, (Uint8List, ImageModelFileKind)>{
         'LoRA': (ImageModelHeaders.lora, ImageModelFileKind.lora),
-        'ControlNet': (
-          ImageModelHeaders.controlNet,
-          ImageModelFileKind.controlNet,
-        ),
         'upscaler': (ImageModelHeaders.upscaler, ImageModelFileKind.upscaler),
         'mmproj': (ImageModelHeaders.mmproj, ImageModelFileKind.visionEncoder),
         'decoder-only TAESD': (
@@ -139,6 +145,62 @@ void main() {
         expect(classification.role, isNull, reason: name);
       }
     });
+
+    test(
+      'reads text-context width and hint channels for ControlNet admission',
+      () async {
+        final cases = <String, (Uint8List, int?, int?)>{
+          'SD 1.x checkpoint': (ImageModelHeaders.sd15Checkpoint(), 768, null),
+          'SD 2.x context checkpoint': (
+            ImageModelHeaders.sd15Checkpoint(contextWidth: 1024),
+            1024,
+            null,
+          ),
+          'checkpoint without an attention key': (
+            ImageModelHeaders.sdTurboCheckpoint,
+            null,
+            null,
+          ),
+          'original ControlNet': (ImageModelHeaders.sd15ControlNet(), 768, 3),
+          'unprefixed ControlNet': (
+            ImageModelHeaders.sd15ControlNet(prefix: ''),
+            768,
+            3,
+          ),
+          'GGUF ControlNet': (
+            ImageModelHeaders.sd15ControlNet(gguf: true),
+            768,
+            3,
+          ),
+          'SD 2.x ControlNet': (
+            ImageModelHeaders.sd15ControlNet(contextWidth: 1024),
+            1024,
+            3,
+          ),
+          'four-channel hint': (
+            ImageModelHeaders.sd15ControlNet(hintChannels: 4),
+            768,
+            4,
+          ),
+          'ControlNet missing zero convolutions': (
+            ImageModelHeaders.controlNet,
+            null,
+            null,
+          ),
+          'Diffusers ControlNet': (
+            ImageModelHeaders.diffusersControlNet,
+            null,
+            null,
+          ),
+        };
+        for (final MapEntry(key: name, value: (bytes, width, hint))
+            in cases.entries) {
+          final classification = await _classify(bytes);
+          expect(classification.crossAttentionWidth, width, reason: name);
+          expect(classification.controlHintChannels, hint, reason: name);
+        }
+      },
+    );
 
     test('a checkpoint reports an embedded tiny autoencoder', () async {
       expect(
@@ -467,6 +529,96 @@ void main() {
       },
     );
 
+    test(
+      'ControlNet admission requires SD 1.x checkpoint and ControlNet proof',
+      () async {
+        final checkpoint = ImageModelHeaders.sd15Checkpoint();
+        final control = ImageModelHeaders.sd15ControlNet();
+        for (final (name, headers, expected) in <(String, List<Object>, bool)>[
+          ('SD 1.x pair', [checkpoint, control], true),
+          ('order', [control, checkpoint], true),
+          (
+            'explicit agreeing role',
+            [checkpoint, (control, ImageModelRole.controlNet)],
+            true,
+          ),
+          (
+            'GGUF ControlNet',
+            [checkpoint, ImageModelHeaders.sd15ControlNet(gguf: true)],
+            true,
+          ),
+          ('no ControlNet', [checkpoint], false),
+          (
+            'SD 2.x base',
+            [ImageModelHeaders.sd15Checkpoint(contextWidth: 1024), control],
+            false,
+          ),
+          (
+            'SD 2.x ControlNet',
+            [checkpoint, ImageModelHeaders.sd15ControlNet(contextWidth: 1024)],
+            false,
+          ),
+          (
+            'four-channel hint',
+            [checkpoint, ImageModelHeaders.sd15ControlNet(hintChannels: 4)],
+            false,
+          ),
+          (
+            'Diffusers layout',
+            [checkpoint, ImageModelHeaders.diffusersControlNet],
+            false,
+          ),
+          (
+            'explicit role without a header',
+            [checkpoint, (Uint8List(8), ImageModelRole.controlNet)],
+            false,
+          ),
+          (
+            'explicit role over another layout',
+            [checkpoint, (ImageModelHeaders.taesd, ImageModelRole.controlNet)],
+            false,
+          ),
+          (
+            'unknown checkpoint width',
+            [ImageModelHeaders.sdTurboCheckpoint, control],
+            false,
+          ),
+          (
+            'tiny embedded decoder',
+            [ImageModelHeaders.sdxsCheckpoint, control],
+            false,
+          ),
+          (
+            'extra component',
+            [checkpoint, control, ImageModelHeaders.taesd],
+            false,
+          ),
+          (
+            'split diffusion model',
+            [
+              ImageModelHeaders.fluxDiffusion,
+              ImageModelHeaders.fluxVae,
+              control,
+            ],
+            false,
+          ),
+        ]) {
+          final assignment = await _assign(headers);
+          expect(assignment.controlNetRecipeVerified, expected, reason: name);
+          if (expected) {
+            expect(assignment.roles.keys, {
+              ImageModelRole.checkpoint,
+              ImageModelRole.controlNet,
+            }, reason: name);
+          }
+        }
+        await expectLater(
+          _assign([checkpoint, control, control]),
+          _modelError(contains('both controlNet files')),
+        );
+      },
+    );
+
     test('assigns roles whatever the order of the files', () async {
       final assignment = await _assign([
         ImageModelHeaders.t5xxl,
@@ -510,7 +662,6 @@ void main() {
     test('refuses non-component files, naming them by position', () async {
       final cases = <Uint8List, String>{
         ImageModelHeaders.lora: 'Component 1 is a LoRA adapter',
-        ImageModelHeaders.controlNet: 'Component 1 is a ControlNet',
         ImageModelHeaders.upscaler: 'Component 1 is an upscaler',
         ImageModelHeaders.mmproj: 'Component 1 is a vision encoder',
         ImageModelHeaders.decoderOnlyTaesd:

@@ -1786,6 +1786,51 @@ dev_dependencies:
       },
     );
 
+    test('ControlNet qualification requires a checkpoint and ControlNet and '
+        'selects the maintained CPU suite', () async {
+      for (final (arguments, environment) in [
+        (
+          const ['--scenario', 'image-controlnet', '--dry-run'],
+          const {'LLAMADART_SD15_CONTROLNET': '/canny.safetensors'},
+        ),
+        (
+          const [
+            '--scenario',
+            'image-controlnet',
+            '--model-path',
+            '/sd15.safetensors',
+            '--dry-run',
+          ],
+          const <String, String>{},
+        ),
+      ]) {
+        final missing = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: environment,
+        );
+        expect(missing.exitCode, 64);
+        expect(missing.stderr, contains('LLAMADART_SD15_CONTROLNET'));
+        expect(missing.stderr, contains('--model-path <sd15-checkpoint>'));
+      }
+      final ready = await runLocalE2e(
+        const [
+          '--scenario',
+          'image-controlnet',
+          '--model-path',
+          '/sd15.safetensors',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+        environment: const {'LLAMADART_SD15_CONTROLNET': '/canny.safetensors'},
+      );
+      expect(ready.exitCode, 0);
+      expect(ready.stdout, contains('test/image_controlnet_e2e_test.dart'));
+      expect(ready.stdout, contains('LLAMADART_SD15_MODEL=/sd15.safetensors'));
+      expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
+    });
+
     test(
       'container qualification requires both manifest and independent references',
       () async {

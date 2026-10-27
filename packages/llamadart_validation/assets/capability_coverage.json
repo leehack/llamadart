@@ -543,6 +543,16 @@
         "issue": "https://github.com/leehack/llamadart/issues/1221",
         "reason": "Owned RGB/binary-mask requests have maintained API validation, engine/worker/ABI refusal and lifetime tests plus the image-editing macOS CPU SD-Turbo full-VAE direct-C qualification scenario. Versioned image-editing pack/profile cases remain open in #1221; inventory presence is not platform/model qualification."
       }
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.supportsControlNet"
+      ],
+      "exemption": {
+        "id": "bounded-image-controlnet",
+        "issue": "https://github.com/leehack/llamadart/issues/1224",
+        "reason": "Load-time SD 1.x ControlNet admission, owned control input, worker probe/failure detection and native mapping have maintained unit tests plus the local-only image-controlnet macOS CPU direct-C scenario; real SD 1.x qualification and a versioned validation-pack profile remain open in #1224. Inventory presence is not platform/model qualification."
+      }
     }
   ]
 }

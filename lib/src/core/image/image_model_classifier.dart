@@ -382,9 +382,6 @@ enum ImageModelFileKind {
   /// A LoRA adapter.
   lora,
 
-  /// A ControlNet.
-  controlNet,
-
   /// An image upscaler.
   upscaler,
 
@@ -418,6 +415,15 @@ class ImageModelFileClassification {
   /// SDXS.
   final bool embedsTinyAutoencoder;
 
+  /// Width of the text context the first cross-attention block of a UNet
+  /// checkpoint or original-layout ControlNet takes: 768 for SD 1.x, 1024
+  /// for SD 2.x. `null` when the header does not show it.
+  final int? crossAttentionWidth;
+
+  /// Input channels of an original-layout ControlNet's hint block; `null`
+  /// for other files and layouts.
+  final int? controlHintChannels;
+
   /// Creates a classification.
   const ImageModelFileClassification(
     this.kind,
@@ -425,6 +431,8 @@ class ImageModelFileClassification {
     this.role,
     this.latentChannels,
     this.embedsTinyAutoencoder = false,
+    this.crossAttentionWidth,
+    this.controlHintChannels,
   });
 
   const ImageModelFileClassification._role(
@@ -432,6 +440,8 @@ class ImageModelFileClassification {
     this.signals, {
     this.latentChannels,
     this.embedsTinyAutoencoder = false,
+    this.crossAttentionWidth,
+    this.controlHintChannels,
   }) : kind = ImageModelFileKind.component;
 }
 
@@ -477,9 +487,23 @@ ImageModelFileClassification classifyImageModelFile(
         (name) =>
             name.contains('input_hint_block') || name.startsWith('controlnet_'),
       )) {
-    return const ImageModelFileClassification(
-      ImageModelFileKind.controlNet,
+    // stable-diffusion.cpp strips `control_model.` and loads SD 1.x
+    // ControlNets only in this layout; it converts Diffusers names for SDXL.
+    final prefix = hasPrefix('control_model.') ? 'control_model.' : '';
+    final hint = byName['${prefix}input_hint_block.0.weight'];
+    final original =
+        hint != null &&
+        byName.containsKey('${prefix}zero_convs.0.0.weight') &&
+        byName.containsKey('${prefix}middle_block_out.0.weight');
+    return ImageModelFileClassification._role(
+      ImageModelRole.controlNet,
       'ControlNet tensor names',
+      crossAttentionWidth: original
+          ? _crossAttentionWidth(byName, header.isGguf, prefix)
+          : null,
+      controlHintChannels: original
+          ? _convInputChannels(hint, header.isGguf)
+          : null,
     );
   }
 
@@ -502,6 +526,11 @@ ImageModelFileClassification classifyImageModelFile(
         'model.diffusion_model.',
       ),
       embedsTinyAutoencoder: hasPrefix('first_stage_model.decoder.layers.'),
+      crossAttentionWidth: _crossAttentionWidth(
+        byName,
+        header.isGguf,
+        'model.diffusion_model.',
+      ),
     );
   }
 
@@ -626,6 +655,22 @@ int? _convInputChannels(ImageModelTensor? weight, bool isGguf) {
   return isGguf ? weight.shape[2] : weight.shape[1];
 }
 
+/// Input width of the cross-attention key in the first attention block of a
+/// UNet whose names start with [prefix]: torch stores `[out, in]`, GGUF the
+/// reverse.
+int? _crossAttentionWidth(
+  Map<String, ImageModelTensor> byName,
+  bool isGguf,
+  String prefix,
+) {
+  final key =
+      byName['${prefix}input_blocks.1.1.transformer_blocks.0.attn2.to_k.weight'];
+  if (key == null || key.shape.length != 2) {
+    return null;
+  }
+  return isGguf ? key.shape[0] : key.shape[1];
+}
+
 /// Latent channels of diffusion weights whose names start with [prefix].
 ///
 /// A UNet's output convolution gives them exactly; its input can take more
@@ -679,11 +724,16 @@ class ImageModelAssignment {
   /// Header proof of a four-channel embedded full VAE or TAESD decoder.
   final bool vaeTilingDecoderVerified;
 
+  /// Header proof of exactly an SD 1.x checkpoint with its embedded full VAE
+  /// and an original-layout SD 1.x ControlNet with a three-channel hint.
+  final bool controlNetRecipeVerified;
+
   /// Creates an assignment.
   const ImageModelAssignment(
     this.roles, {
     required this.decodesWithTinyAutoencoder,
     this.vaeTilingDecoderVerified = false,
+    this.controlNetRecipeVerified = false,
   });
 }
 
@@ -691,7 +741,7 @@ class ImageModelAssignment {
 /// caller set one.
 ///
 /// Throws [LlamaModelException] for a file that is not an image-model
-/// component (a LoRA, ControlNet, upscaler, vision encoder, decoder-only
+/// component (a LoRA, upscaler, vision encoder, decoder-only
 /// TAESD or unknown layout), for two files in one role, for a set without
 /// diffusion weights or with both a checkpoint and separate diffusion
 /// weights, and for a VAE or TAESD whose latent channels differ from the
@@ -701,6 +751,8 @@ Future<ImageModelAssignment> assignImageModelRoles(
 ) async {
   final roles = <ImageModelRole, int>{};
   final latents = <ImageModelRole, int>{};
+  final contextWidths = <ImageModelRole, int>{};
+  int? controlHintChannels;
   var embeddedTinyAutoencoder = false;
   var embeddedFullVae = false;
   for (final (index, file) in files.indexed) {
@@ -743,6 +795,14 @@ Future<ImageModelAssignment> assignImageModelRoles(
         : null;
     if (channels != null) {
       latents[role] = channels;
+    }
+    if (classification?.role == role) {
+      if (classification!.crossAttentionWidth case final width?) {
+        contextWidths[role] = width;
+      }
+      if (role == ImageModelRole.controlNet) {
+        controlHintChannels = classification.controlHintChannels;
+      }
     }
     if (role == ImageModelRole.checkpoint &&
         (classification?.embedsTinyAutoencoder ?? false)) {
@@ -794,6 +854,16 @@ Future<ImageModelAssignment> assignImageModelRoles(
             : embeddedFullVae),
     decodesWithTinyAutoencoder:
         roles.containsKey(ImageModelRole.taesd) || embeddedTinyAutoencoder,
+    controlNetRecipeVerified:
+        roles.length == 2 &&
+        roles.containsKey(ImageModelRole.checkpoint) &&
+        roles.containsKey(ImageModelRole.controlNet) &&
+        latents[ImageModelRole.checkpoint] == 4 &&
+        embeddedFullVae &&
+        !embeddedTinyAutoencoder &&
+        contextWidths[ImageModelRole.checkpoint] == 768 &&
+        contextWidths[ImageModelRole.controlNet] == 768 &&
+        controlHintChannels == 3,
   );
 }
 
@@ -809,9 +879,6 @@ ImageModelRole _detectedRole(
     ImageModelFileKind.lora =>
       'a LoRA adapter, which image generation does '
           'not load yet',
-    ImageModelFileKind.controlNet =>
-      'a ControlNet, which image generation '
-          'does not load yet',
     ImageModelFileKind.upscaler =>
       'an upscaler, which image generation does '
           'not load',

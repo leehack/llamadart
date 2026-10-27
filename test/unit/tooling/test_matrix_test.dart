@@ -62,6 +62,19 @@ void main() {
       );
     },
   );
+  test('ControlNet matrix identifies its bounded CPU qualification', () {
+    final row = testMatrixRows.singleWhere((r) => r.id == 'image-controlnet');
+    expect(row.tier, 'targeted');
+    expect(row.mode, 'local-only');
+    expect(row.covers, contains('macOS CPU'));
+    expect(row.covers, contains('direct-C'));
+    final scenario = buildLocalE2eScenarios().singleWhere(
+      (s) => s.name == row.id,
+    );
+    expect(scenario.requiresDevice, isFalse);
+    expect(row.command, contains('--scenario image-controlnet'));
+    expect(row.command, contains('LLAMADART_SD15_CONTROLNET='));
+  });
   test('image editing matrix identifies its bounded CPU qualification', () {
     final row = testMatrixRows.singleWhere((r) => r.id == 'image-editing');
     expect(row.tier, 'targeted');

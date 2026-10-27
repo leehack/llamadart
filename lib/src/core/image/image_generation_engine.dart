@@ -14,6 +14,7 @@ import '../models/model_source.dart';
 import '../models/model_file_store.dart';
 import '../models/model_target_file.dart';
 import 'generated_image.dart';
+import 'image_control_net_request.dart';
 import 'image_editing_request.dart';
 import 'image_generation_driver.dart';
 import 'image_generation_driver_stub.dart'
@@ -70,6 +71,11 @@ class ImageGenerationCapabilities implements EngineCapabilities {
   /// recipes; ordinary text-to-image support is independent.
   final bool supportsImageEditing;
 
+  /// Whether the loaded model holds a ControlNet and the runtime supports
+  /// `ControlNetImageGenerationRequest` with it. False before load, for a
+  /// model without a ControlNet, and after disposal.
+  final bool supportsControlNet;
+
   /// Maximum concurrent generations: one per process.
   final int maxConcurrentTasks;
 
@@ -84,6 +90,7 @@ class ImageGenerationCapabilities implements EngineCapabilities {
     this.supportsCancellation = false,
     this.supportsLocalSafetensorsSets = false,
     this.supportsImageEditing = false,
+    this.supportsControlNet = false,
     this.maxConcurrentTasks = 0,
   });
 }
@@ -548,6 +555,36 @@ class ImageGenerationEngine {
       }
       throwIfCancelled();
     }
+    final flashAttention =
+        params.flashAttention ?? _flashAttentionByDefault(backendName);
+    final vaeDirectConvolution =
+        params.vaeDirectConvolution ??
+        _vaeDirectConvolutionByDefault(
+          backendName,
+          tinyAutoencoder: assignment.decodesWithTinyAutoencoder,
+        );
+    final loadsControlNet = assignment.roles.containsKey(
+      ImageModelRole.controlNet,
+    );
+    final controlNetRecipeVerified =
+        loadsControlNet &&
+        driver.operatingSystem == 'macos' &&
+        backendName == 'CPU' &&
+        _isQualifiedRuntime(runtime) &&
+        assignment.controlNetRecipeVerified &&
+        !flashAttention &&
+        !vaeDirectConvolution;
+    if (loadsControlNet && !controlNetRecipeVerified) {
+      throw LlamaUnsupportedException(
+        'Loading a ControlNet requires the pinned stable_diffusion v0.3.0 '
+        'runtime on macOS with ComputeDevice.cpu, flashAttention: false and '
+        'vaeDirectConvolution: false, and exactly an SD 1.x checkpoint with '
+        'its embedded full VAE plus an SD 1.x ControlNet in the original '
+        '(lllyasviel) layout whose header shows a 768-wide text context and '
+        'a three-channel hint. Other families, Diffusers or .pth ControlNets, '
+        'extra components, devices and platforms are not qualified.',
+      );
+    }
     var weightBytes = snapshot?.totalBytes ?? 0;
     if (snapshot == null) {
       for (final (index, path) in paths.indexed) {
@@ -583,19 +620,18 @@ class ImageGenerationEngine {
         },
         threads: params.threads,
         conditioningCacheSize: conditioningCacheSize,
+        controlNetRecipeVerified: controlNetRecipeVerified,
         imageEditingRecipeVerified:
             driver.operatingSystem == 'macos' &&
             backendName == 'CPU' &&
-            (runtime.commit == '0518b34' ||
-                runtime.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec') &&
+            _isQualifiedRuntime(runtime) &&
             assignment.vaeTilingDecoderVerified &&
             !assignment.decodesWithTinyAutoencoder &&
             assignment.roles.length == 1 &&
             assignment.roles.containsKey(ImageModelRole.checkpoint),
         vaeTilingRecipeVerified:
             // v0.3.0 is the runtime whose tiling layout and decode are qualified.
-            (runtime.commit == '0518b34' ||
-                runtime.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec') &&
+            _isQualifiedRuntime(runtime) &&
             assignment.vaeTilingDecoderVerified &&
             assignment.roles.containsKey(ImageModelRole.checkpoint) &&
             assignment.roles.keys.every(
@@ -609,16 +645,19 @@ class ImageGenerationEngine {
             assignment.roles.length == 1 &&
             assignment.roles.containsKey(ImageModelRole.checkpoint) &&
             (backendName == 'CPU' || _isMetal(backendName)),
-        flashAttention:
-            params.flashAttention ?? _flashAttentionByDefault(backendName),
-        vaeDirectConvolution:
-            params.vaeDirectConvolution ??
-            _vaeDirectConvolutionByDefault(
-              backendName,
-              tinyAutoencoder: assignment.decodesWithTinyAutoencoder,
-            ),
+        flashAttention: flashAttention,
+        vaeDirectConvolution: vaeDirectConvolution,
       );
       final session = await driver.start(config);
+      if (loadsControlNet &&
+          (session.modelVersion != 'SD 1.x' || !_supportsControlNet(session))) {
+        await session.dispose();
+        throw LlamaUnsupportedException(
+          'The model did not load as the qualified SD 1.x ControlNet recipe: '
+          'the runtime detected ${session.modelVersion.isEmpty ? 'no model family' : session.modelVersion} '
+          'or does not report the loaded ControlNet and its errors.',
+        );
+      }
       if (snapshot != null && session.modelVersion != 'SD 2.x') {
         await session.dispose();
         throw LlamaUnsupportedException(
@@ -679,6 +718,10 @@ class ImageGenerationEngine {
             ImageEditingSession editing => editing.supportsImageEditing,
             _ => false,
           },
+      supportsControlNet:
+          _config.controlNetRecipeVerified &&
+          _session.modelVersion == 'SD 1.x' &&
+          _supportsControlNet(_session),
       maxConcurrentTasks: 1,
     );
   }
@@ -737,6 +780,12 @@ class ImageGenerationEngine {
           : null,
       mask: request is ImageEditingRequest ? request.mask : null,
       strength: request is ImageEditingRequest ? request.strength : null,
+      controlImage: request is ControlNetImageGenerationRequest
+          ? request.control.image
+          : null,
+      controlStrength: request is ControlNetImageGenerationRequest
+          ? request.control.strength
+          : null,
     );
     validateSeamlessImageGenerationRecipe(
       resolved,
@@ -745,6 +794,14 @@ class ImageGenerationEngine {
     );
     validateImageVaeTilingRecipe(resolved, _config, _session.modelVersion);
     validateImageEditingRecipe(resolved, _config, _session.modelVersion);
+    validateImageControlNetRecipe(resolved, _config, _session.modelVersion);
+    if (resolved.controlImage != null && !_supportsControlNet(_session)) {
+      throw LlamaUnsupportedException(
+        'This image-generation backend does not report a loaded ControlNet. '
+        'Load an SD 1.x ControlNet with its checkpoint on the pinned '
+        'stable_diffusion v0.3.0 runtime with the supported macOS CPU recipe.',
+      );
+    }
     if (resolved.initialImage != null &&
         !switch (_session) {
           ImageEditingSession editing => editing.supportsImageEditing,
@@ -953,7 +1010,20 @@ class ImageGenerationEngine {
     ImageModelRole.clipG: 'clipG',
     ImageModelRole.t5xxl: 't5xxl',
     ImageModelRole.llm: 'llm',
+    ImageModelRole.controlNet: 'controlNet',
   };
+
+  /// Whether [status] is the pinned v0.3.0 runtime the bounded image
+  /// recipes were qualified on.
+  static bool _isQualifiedRuntime(StableDiffusionRuntimeStatus status) =>
+      status.commit == '0518b34' ||
+      status.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec';
+
+  static bool _supportsControlNet(ImageGenerationSession session) =>
+      switch (session) {
+        ImageControlNetSession control => control.supportsControlNet,
+        _ => false,
+      };
 
   static ImageGenerationDriver get _driver =>
       debugImageGenerationDriverOverride ?? createImageGenerationDriver();
