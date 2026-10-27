@@ -71,7 +71,9 @@ void validateJsonSchemaChatRequest(
   if (hasTools || requiredTools || parallelToolCalls) {
     reason = 'tools and parallel tool calls';
   } else if (enableThinking || params.thinkingBudget != null) {
-    reason = 'thinking; pass enableThinking: false without a thinking budget';
+    reason =
+        'thinking; pass enableThinking: false, set no enable_thinking or '
+        'thinking chat template kwarg to true, and set no thinking budget';
   } else if (params.isSpeculativeDecodingEnabled) {
     reason = 'speculative decoding';
   } else if (params.stopSequences.isNotEmpty) {

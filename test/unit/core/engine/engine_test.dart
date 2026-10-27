@@ -1163,6 +1163,37 @@ void main() {
       expect(runtime.schemaCalls, 0);
       expect(runtime.nativeGenerateChatCalls, 0);
     });
+    test('a boolean thinking kwarg decides schema admission', () async {
+      final completion = await schemaEngine
+          .create(
+            messages,
+            responseFormat: format,
+            chatTemplateKwargs: const {'enable_thinking': false},
+          )
+          .collect();
+      expect(completion.text, '{"verdict":"A"}');
+      expect(runtime.schemaCalls, 1);
+
+      await expectLater(
+        schemaEngine
+            .create(
+              messages,
+              enableThinking: false,
+              responseFormat: format,
+              chatTemplateKwargs: const {'thinking': true},
+            )
+            .drain<void>(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('enable_thinking or thinking chat template kwarg'),
+          ),
+        ),
+      );
+      expect(runtime.schemaCalls, 1);
+      expect(runtime.nativeGenerateChatCalls, 0);
+    });
     test(
       'first session schema turn admits its provider and commits streamed history',
       () async {
