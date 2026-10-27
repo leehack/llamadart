@@ -76,7 +76,7 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.4
+  llamadart: ^0.16.5
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -107,7 +107,7 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.4
+  llamadart: ^0.16.5
   llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.16.2 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in

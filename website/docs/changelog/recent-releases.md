@@ -7,23 +7,19 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.16.5
 
 - Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.
 - Refuse FP8 image weights on Metal before native loading can abort the process; explicit CPU loading remains available.
-
-- Native state restores report `LlamaArgumentException` for token capacities outside 1..context size.
-- Add a CPU state-persistence validation pack with cold KV restore, reduced-work controls, typed rejection and recovery checks.
-
 - Enforce bounded JSON Schema text output with native LiteRT-LM on macOS arm64 CPU and canonical Qwen3 models.
-- Add an opt-in isolated desktop native diagnostic command with privacy-safe loader and ABI observations.
-
-- Document and validate complete image checkpoint container layouts on macOS CPU.
-- Add verified local Safetensors checkpoint sets with owned caching for the bounded SD-Turbo macOS CPU recipe.
+- Reduce startup compilation overhead for `llamadart:doctor` and add opt-in isolated desktop native diagnostics with privacy-safe loader and ABI observations.
 - Add owned RGB image-to-image inputs and binary-mask editing for the bounded macOS CPU SD 2.x full-VAE recipe.
+- Document and validate complete image checkpoint containers on macOS CPU, and add verified local Safetensors checkpoint sets with owned caching for the bounded SD-Turbo macOS CPU recipe.
+- Add CPU state-persistence validation with cold KV restore, reduced-work controls, typed rejection and recovery checks; native restores reject token capacities outside 1..context size with `LlamaArgumentException`.
 
-- Reduce startup compilation overhead for `llamadart:doctor`.
-- Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
+- Keep default WebGPU bridge assets at `v0.1.73` (unchanged from 0.16.4).
+
+Web runtime baseline (unchanged): upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`, native `v0.7.0-2`; Web LiteRT-LM `@litert-lm/core@0.18.0`. Bridge manifest SHA-256: `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`.
 
 ## 0.16.4
 
