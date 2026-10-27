@@ -253,7 +253,12 @@ The feature-by-runtime table is in the
     that cannot run the requested strategy, or an EAGLE3 or DFlash draft
     built for another hidden size, is not kept and throws
     `LlamaUnsupportedException`; one the bridge cannot fetch or load throws
-    `LlamaModelException`.
+    `LlamaModelException`. With bridge assets `v0.1.75+`, a draft context
+    that does not fit, such as an EAGLE3 draft at `nBatch`/`nUbatch` 2048 on
+    wasm32, throws `LlamaUnsupportedException` naming smaller batches or
+    memory64, and the target model stays usable; older assets leak it until
+    the runtime aborts
+    ([llama-web-bridge#198](https://github.com/leehack/llama-web-bridge/pull/198)).
   - `mtp` runs the model's own MTP layers, so load the model with
     `ModelParams(loadMtp: true)`; an MTP `draftModel` throws
     `LlamaUnsupportedException`.
@@ -326,7 +331,10 @@ The feature-by-runtime table is in the
   document, or a `blob:` URL. `download` must stay at its defaults, and
   `onProgress` reports a fraction from 0 to 1: with a projector, the model
   fetch fills the first half and progress reaches 1 once the projector has
-  loaded.
+  loaded. With bridge assets `v0.1.74+`, an uncached model's progress follows
+  its download, and a cancelled or failed load leaves nothing in Cache Storage;
+  older assets report progress only once the whole file is cached
+  ([llama-web-bridge#195](https://github.com/leehack/llama-web-bridge/pull/195)).
 - `LlamaEngine.scoreNextToken(...)` needs bridge assets `v0.1.52+`; older
   assets report `supportsNextTokenScoring == false`.
 
@@ -393,23 +401,23 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.73`, with local vendored assets
-identified as `v0.1.73-local-v0.7.0`.
+The example currently pins bridge assets to `v0.1.76`, with local vendored assets
+identified as `v0.1.76-local-v0.7.0`.
 
-- The pinned `v0.1.73` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
+- The pinned `v0.1.76` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
   (`v0.7.0-2`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-  even though the bridge asset tag `v0.1.73` differs from the native runtime tag
-  `v0.7.0-2`. Pinned artifact provenance: release `422794693`, tag commit
-  `78430396ad1a53d5058d3999727a539379a5e635`, bridge source
-  `5340be9e71684c946d864a9f14f2e63a542ac025`, manifest SHA-256
-  `f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`. The
+  even though the bridge asset tag `v0.1.76` differs from the native runtime tag
+  `v0.7.0-2`. Pinned artifact provenance: release `426014694`, tag commit
+  `7ce0ad051c63f11ebb1d5ca0cf395f2a17c37dc3`, bridge source
+  `883376ddfae4f8d70b1970fa7d180217475aab58`, manifest SHA-256
+  `90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`. The
   bridge manifest records native `v0.7.0-2`. They include the API-version-1 media embedding contract.
   Extraction and state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.73 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.76 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -417,7 +425,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.73';
+  window.__llamadartBridgeAssetsTag = 'v0.1.76';
 </script>
 ```
 

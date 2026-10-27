@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Aligned default WebGPU bridge assets to `v0.1.76`: repeated Web media embedding batches on the wasm32 core no longer abort ([llama-web-bridge#200](https://github.com/leehack/llama-web-bridge/pull/200)); a speculative draft that does not fit throws `LlamaUnsupportedException` instead of leaking until the runtime aborts, and a model whose context does not fit fails its load instead of aborting ([#198](https://github.com/leehack/llama-web-bridge/pull/198)); and uncached model loads report progress as they download ([#195](https://github.com/leehack/llama-web-bridge/pull/195)). Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native `v0.7.0-2`, which the manifest records; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`.
 - Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
