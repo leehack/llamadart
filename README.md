@@ -251,6 +251,10 @@ fallback when model template metadata is empty. See
 - Gemma 2/3/3n and legacy Mistral tool-result retries fold an immediately
   following user message into the result turn; successfully rendered histories
   stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
+- Tool messages accept text or JSON results. Image/audio parts on the tool role,
+  or alongside `LlamaToolResultContent` under any role, throw
+  `LlamaUnsupportedException` in `create` and `chatTemplate`. Send media in a
+  separate user message; tool-result media transport remains unsupported.
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   `dart run llamadart:web_setup` vendors the pinned, checksum-verified bridge

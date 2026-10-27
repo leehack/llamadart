@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.
+
 - Native state restores report `LlamaArgumentException` for token capacities outside 1..context size.
 - Add a CPU state-persistence validation pack with cold KV restore, reduced-work controls, typed rejection and recovery checks.
 
