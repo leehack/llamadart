@@ -107,6 +107,66 @@ doctor work remain in [#124](https://github.com/leehack/llamadart/issues/124);
 loaded-model capability semantics remain separate in
 [#861](https://github.com/leehack/llamadart/issues/861).
 
+## Isolated native check
+
+Opt into a separate model-free Dart desktop command for one runtime:
+
+```bash
+dart run llamadart:doctor_native --runtime llama_cpp --json
+dart run llamadart:doctor_native --runtime litert_lm
+dart run llamadart:doctor_native --runtime stable_diffusion
+```
+
+The command preserves the setup snapshot under `setup` and reports a separate
+`native_probe`. It reads only the current ABI's supported absolute-file entries
+from the local native-assets descriptor next to the active package config.
+Those are local declarations, which can be stale; they do not prove the assets
+compiled into a consuming app. It never guesses a release from file paths,
+hashes or expected publication policy, or searches neighboring caches after a
+declared target fails. Overrides are reported only as set/unset and can differ
+from the checked declaration.
+
+Each invocation starts one bounded child process, opens declared files, resolves
+a small fixed symbol group, and reads compile-time llama.cpp/LiteRT ABI markers.
+Stable Diffusion checks symbols only. No engine, model, device enumeration, GPU
+probe or inference is started; native constructors can still run when a library
+opens. Raw child output and loader errors are discarded. Only fixed result codes
+and remediation text reach either renderer. The child runs no hook, network or
+shell command; the outer `dart run` build hook can still prepare assets before
+main. The source helper ships with the package; compiled executables, Flutter
+SPM/in-process assets and app/device/browser validation are outside this check.
+
+The coordinator starts one 30-second budget at entry, covering metadata,
+manifest processing, child startup/work, pipe drains and IPC results. Forced
+termination, reaping and cleanup have one additional three-second reserve.
+Manifest content is read inside the timed child, so a concurrent replacement
+cannot strand a parent file open. Non-regular files and manifest/IPC symlinks
+are refused before opening. Parent IPC reads happen only after confirmed child
+exit, using its small private files with no other writer. This assumes responsive
+local filesystem operations; it does not promise interruption of arbitrary
+kernel/network-filesystem stalls or protection against hostile same-user path
+replacement. This is not a sandbox for malicious native code.
+
+`SURFACE_OBSERVED` means the declared files opened and the selected symbols/ABI
+markers were observed in that child. It does not prove all bindings, production
+loader resolution, a loaded owner release, usable hardware or model execution.
+Windows direct file loading can differ from production's sibling-DLL search;
+its failure is not proof the backend is unavailable. `production_loader`,
+`emitted_app_libraries`, GPU, model and inference remain unchecked, and
+`loaded_release` remains unknown. Native Windows/Linux execution is not
+qualified by the macOS artifact checks.
+
+`ASSET_NOT_DECLARED` means this local descriptor has no selected runtime; check
+the intended build selection. Missing/invalid descriptors, missing files,
+loader failures, missing symbols, unknown ABI markers, child failures and
+timeouts have separate fixed codes. A timeout or child failure has no hardware
+diagnosis. Exit 0 means a report was produced, including a failed check; exit 1
+means no report and exit 64 means invalid arguments. Use the codes for automation.
+The default `doctor` and `collectLlamaRuntimeSetupReport()` continue to load no
+native library and spawn no process. Broader diagnostics and pre-load capability
+semantics remain in [#124](https://github.com/leehack/llamadart/issues/124) and
+[#861](https://github.com/leehack/llamadart/issues/861).
+
 ## Choose runtime families
 
 `llamadart_native_runtimes` keeps whole runtimes out of the app when it ships

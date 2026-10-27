@@ -14,6 +14,14 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 
 ## At a glance
 
+Desktop source-CLI diagnostics can opt into
+`dart run llamadart:doctor_native --runtime llama_cpp --json` (or
+`litert_lm` / `stable_diffusion`) to check a declared artifact in an isolated
+process. It checks selected symbols/static ABI markers, without device or model
+initialization. This adds no runtime/platform/model capability: production loader
+behavior, loaded release identity, emitted app assets and GPU/inference remain
+unchecked. See [scope and limits](./native-build-hooks#isolated-native-check).
+
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Android (arm64, x64) | CPU; Vulkan experimental, device-dependent; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
