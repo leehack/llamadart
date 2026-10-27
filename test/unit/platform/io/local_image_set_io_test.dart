@@ -7,7 +7,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/core/image/local_image_set_io.dart';
+import 'package:llamadart/src/platform/io/local_image_set_io.dart';
 import 'package:llamadart/src/core/image/local_image_set_model.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_status.dart';

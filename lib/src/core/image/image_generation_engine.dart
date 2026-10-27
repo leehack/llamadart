@@ -25,7 +25,7 @@ import 'image_model_classifier.dart';
 import 'image_model_params.dart';
 import 'local_image_set_model.dart';
 import 'local_image_set_stub.dart'
-    if (dart.library.io) 'local_image_set_io.dart';
+    if (dart.library.io) '../../platform/io/local_image_set_io.dart';
 
 /// Image-generation support of the runtime, from
 /// `ImageGenerationEngine.checkRuntime`, and of a loaded engine, from

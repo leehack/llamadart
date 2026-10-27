@@ -5,13 +5,13 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
-import '../exceptions.dart';
-import '../models/download/model_download_manager.dart';
-import '../models/model_file_store.dart';
-import '../models/model_load_options.dart';
-import '../models/model_resolver.dart';
-import '../models/model_source.dart';
-import 'local_image_set_model.dart';
+import '../../core/exceptions.dart';
+import '../../core/models/download/model_download_manager.dart';
+import '../../core/models/model_file_store.dart';
+import '../../core/models/model_load_options.dart';
+import '../../core/models/model_resolver.dart';
+import '../../core/models/model_source.dart';
+import '../../core/image/local_image_set_model.dart';
 
 const _indexName = 'model.safetensors.index.json';
 const _maxHeaderBytes = 1024 * 1024;
