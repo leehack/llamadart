@@ -342,8 +342,9 @@ Important caveats:
   tested CPU/model configuration, but is not a general fidelity guarantee.
 - Pass a `tokenCapacity` large enough for the saved prompt token sequence. The
   current context size is usually a safe default. On a ready, idle native
-  llama.cpp context, zero or negative capacity throws `LlamaArgumentException`
-  without invalidating the context; retry with a positive capacity.
+  llama.cpp context, capacity outside 1..context size throws
+  `LlamaArgumentException` without invalidating the context; retry within those
+  bounds.
 
 ## LiteRT-LM interrupted cleanup
 

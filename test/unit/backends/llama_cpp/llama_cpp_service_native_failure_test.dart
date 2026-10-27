@@ -405,19 +405,25 @@ void main() {
     );
   });
 
-  test('nonpositive state token capacity makes no guarded state-load calls '
+  test('invalid state token capacity makes no guarded state-load calls '
       'and does not poison its context', () {
     start();
     final path = '${dir.path}/capacity.bin';
     recorder.calls.clear();
-    for (final capacity in [0, -1]) {
+    final contextCapacity = service.getContextSize(context);
+    for (final capacity in [0, -1, contextCapacity + 1]) {
       expect(
         () => service.stateLoadFile(context, path, capacity),
         throwsA(
           isA<LlamaArgumentException>().having(
             (error) => error.message,
             'message',
-            allOf(contains('tokenCapacity'), contains('positive')),
+            allOf(
+              contains('tokenCapacity'),
+              contains(
+                capacity > contextCapacity ? 'context size' : 'positive',
+              ),
+            ),
           ),
         ),
       );

@@ -120,12 +120,18 @@ void main() async {
     final unusedPath = '${tmpDir.path}/oversized-capacity.bin';
     expect(
       () => engine.stateLoadFile(unusedPath, tokenCapacity: 257),
-      throwsA(isA<Exception>()),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('tokenCapacity'), contains('context size (256)')),
+        ),
+      ),
     );
   });
 
-  for (final capacity in [0, -1]) {
-    test('nonpositive token capacity $capacity stays typed through the worker '
+  for (final capacity in [0, -1, 257]) {
+    test('invalid token capacity $capacity stays typed through the worker '
         'and permits a valid restore', () async {
       final guarded = await LlamaEngine.load(
         LlamaModel(ModelSource.path(modelFile.path)),
@@ -151,7 +157,10 @@ void main() async {
             isA<LlamaArgumentException>().having(
               (error) => error.message,
               'message',
-              allOf(contains('tokenCapacity'), contains('positive')),
+              allOf(
+                contains('tokenCapacity'),
+                contains(capacity > 256 ? 'context size (256)' : 'positive'),
+              ),
             ),
           ),
         );

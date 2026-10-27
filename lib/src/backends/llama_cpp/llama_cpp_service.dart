@@ -7931,8 +7931,8 @@ class LlamaCppService {
   ///
   /// Wraps `llama_state_load_file`. Throws on failure (corrupt file,
   /// schema mismatch, etc.).
-  /// A nonpositive capacity throws [LlamaArgumentException] before native
-  /// state-load work and leaves a usable, idle context unchanged.
+  /// A capacity outside 1..context size throws [LlamaArgumentException] before
+  /// native state-load work and leaves a usable, idle context unchanged.
   List<int> stateLoadFile(int contextHandle, String path, int tokenCapacity) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
@@ -7956,10 +7956,11 @@ class LlamaCppService {
     }
     final contextCapacity = llama_n_ctx(ctx.pointer);
     if (tokenCapacity > contextCapacity) {
-      throw ArgumentError.value(
-        tokenCapacity,
-        'tokenCapacity',
-        'must not exceed context size ($contextCapacity)',
+      throw LlamaArgumentException(
+        'tokenCapacity must not exceed context size ($contextCapacity); '
+        'received $tokenCapacity.',
+        name: 'tokenCapacity',
+        invalidValue: tokenCapacity,
       );
     }
     _calls.synchronize(ctx.pointer);

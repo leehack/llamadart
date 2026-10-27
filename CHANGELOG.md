@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Native state restores report `LlamaArgumentException` for zero or negative token capacities.
+- Native state restores report `LlamaArgumentException` for token capacities outside 1..context size.
 - Reduce startup compilation overhead for `llamadart:doctor`.
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 
