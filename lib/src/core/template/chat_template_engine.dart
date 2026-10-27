@@ -79,6 +79,9 @@ class ChatTemplateEngine {
   /// On dart2wasm, stack overflow cannot be caught and may trap or hang
   /// instead of throwing this exception.
   ///
+  /// A boolean `enable_thinking` in [chatTemplateKwargs], or failing that a
+  /// boolean `thinking`, overrides [enableThinking], as in llama-server.
+  ///
   /// [mediaMarker] is written where each image, audio or video part was.
   /// Pass one that message text cannot hold to tell the parts from a
   /// placeholder string a message quotes.

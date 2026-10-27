@@ -10,6 +10,7 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
+- A boolean `enable_thinking` or `thinking` chat template kwarg now overrides `enableThinking`, as in llama-server, and DeepSeek V3.1 forces its thought open from `enableThinking` alone ([#750](https://github.com/leehack/llamadart/issues/750)).
 
 ## 0.16.5
 
