@@ -17,6 +17,7 @@ import 'package:llamadart/src/core/template/response_format.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -334,6 +335,70 @@ void main() {
       );
     },
   );
+
+  test('a response format after a forced-open thought takes the thought '
+      'first', () {
+    for (final media in [false, true]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource:
+            '{%- for message in messages -%}'
+            '{%- for part in message.content -%}{{ part.text }}{%- endfor -%}'
+            '{%- endfor -%}<think>',
+        messages: [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              if (media) const LlamaImageContent(path: '/tmp/photo.png'),
+              const LlamaTextContent('What is 2+2?'),
+            ],
+          ),
+        ],
+        metadata: const {},
+        responseFormat: const {
+          'type': 'json_schema',
+          'json_schema': {
+            'schema': {
+              'type': 'object',
+              'properties': {
+                'answer': {'type': 'integer'},
+              },
+              'required': ['answer'],
+            },
+          },
+        },
+      );
+      expect(rendered.thinkingForcedOpen, isTrue);
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [
+          'plan</think>{"answer": 4}',
+          '</think>\n\n{"answer": 4}',
+          'a <think> b </thin </think>{"answer": 4}',
+        ],
+        invalid: [
+          '{"answer": 4}',
+          'plan</think>',
+          'plan</think>x</think>{"answer": 4}',
+          'plan</think>{"answer": "4"}',
+        ],
+      );
+    }
+  });
+
+  test('a thought end tag whose first character recurs bounds the thought', () {
+    const endTag = '<|end|><|begin|>assistant<|content|>';
+    _expectGrammar(
+      validator,
+      ToolCallGrammarUtils.afterForcedOpenThought('root ::= "ok"\n', endTag),
+      valid: [
+        '${endTag}ok',
+        'a <|end|> <|end|><|begin|>x $endTag ok',
+        '<|end|><|end|><|begin|>assistant<|end|>${endTag}ok',
+      ],
+      invalid: ['ok', 'a${endTag}b${endTag}ok', '<|end|>${endTag}x'],
+    );
+  });
 
   test('LiteRT Qwen normalized history preserves compiled JSON schema', () {
     for (final thinking in [true, false]) {

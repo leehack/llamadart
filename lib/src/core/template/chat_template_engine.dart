@@ -321,11 +321,7 @@ class ChatTemplateEngine {
         responseSchema,
         thinkingEndTag: handler.thinkingEndTag,
       );
-      return _normalizeGrammarLazyForToolChoice(
-        withGrammar,
-        toolChoice,
-        thinkingEndTag: handler.thinkingEndTag,
-      );
+      return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
     }
 
     // Other templates cannot consume transport objects. Keep media in the
@@ -386,11 +382,7 @@ class ChatTemplateEngine {
       responseSchema,
       thinkingEndTag: handler.thinkingEndTag,
     );
-    return _normalizeGrammarLazyForToolChoice(
-      withGrammar,
-      toolChoice,
-      thinkingEndTag: handler.thinkingEndTag,
-    );
+    return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
   }
 
   /// Runs a handler [render], turning an [Exception] that is not already a
@@ -538,14 +530,10 @@ class ChatTemplateEngine {
     return result;
   }
 
-  /// Makes a [ToolChoice.required] grammar apply from the first token. A lazy
-  /// grammar that becomes eager after a forced-open thought first takes the
-  /// rest of the thought and [thinkingEndTag].
   static LlamaChatTemplateResult _normalizeGrammarLazyForToolChoice(
     LlamaChatTemplateResult result,
-    ToolChoice toolChoice, {
-    required String thinkingEndTag,
-  }) {
+    ToolChoice toolChoice,
+  ) {
     if (toolChoice != ToolChoice.required) {
       return result;
     }
@@ -564,12 +552,7 @@ class ChatTemplateEngine {
     return LlamaChatTemplateResult(
       prompt: result.prompt,
       format: result.format,
-      grammar: result.grammarLazy && result.thinkingForcedOpen
-          ? ToolCallGrammarUtils.afterForcedOpenThought(
-              result.grammar!,
-              thinkingEndTag,
-            )
-          : result.grammar,
+      grammar: result.grammar,
       grammarLazy: false,
       additionalStops: result.additionalStops,
       preservedTokens: result.preservedTokens,

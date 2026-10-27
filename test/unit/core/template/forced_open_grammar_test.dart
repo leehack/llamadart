@@ -34,6 +34,14 @@ final ToolDefinition _tool = ToolDefinition(
   parameters: [ToolParam.string('location', required: true)],
 );
 
+// Required-call grammars that end a forced-open thought themselves: the
+// DeepSeek R1 grammar may start with `</think>`, and a Qwen3-Coder XML
+// `<tool_call>` ends the thought in its parse.
+const Set<ChatFormat> _closesThoughtItself = {
+  ChatFormat.deepseekR1,
+  ChatFormat.qwen3CoderXml,
+};
+
 // A grammar applies from the first token, so after a forced-open thought it
 // must take the rest of the thought and its end tag first, or the response
 // format or tool call is parsed as reasoning.
@@ -119,6 +127,12 @@ void main() {
                 .split('\n')
                 .firstWhere((line) => line.startsWith('root ::= '));
             if (!root.startsWith('root ::= think-body ')) {
+              if (!request.schema &&
+                  _closesThoughtItself.contains(
+                    ChatFormat.values[result.format],
+                  )) {
+                continue;
+              }
               failures.add('$label: grammar forbids the thought');
               continue;
             }
@@ -146,5 +160,41 @@ void main() {
 
     expect(failures, isEmpty);
     expect(forcedOpenEager, greaterThan(0));
+  });
+
+  test('a required GLM-4.7-Flash call after a forced-open thought parses as '
+      'a tool call', () {
+    final result = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/llama_cpp_templates/GLM-4.7-Flash.jinja',
+      ).readAsStringSync(),
+      messages: [
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather in Paris?',
+        ),
+      ],
+      metadata: const {},
+      tools: [_tool],
+      toolChoice: ToolChoice.required,
+    );
+    expect(result.format, ChatFormat.glm45.index);
+    expect(result.thinkingForcedOpen, isTrue);
+    expect(
+      result.grammar,
+      startsWith('root ::= think-body "</think>" think-space ('),
+    );
+
+    final parsed = ChatTemplateEngine.parse(
+      result.format,
+      'plan</think><tool_call>get_weather\n<arg_key>location</arg_key>\n'
+      '<arg_value>Paris</arg_value>\n</tool_call>',
+      thinkingForcedOpen: true,
+      tools: [_tool],
+    );
+    expect(parsed.reasoningContent, 'plan');
+    expect(parsed.toolCalls.map((call) => call.function?.name), [
+      'get_weather',
+    ]);
   });
 }
