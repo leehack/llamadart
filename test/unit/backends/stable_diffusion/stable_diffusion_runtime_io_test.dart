@@ -6,7 +6,6 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -39,33 +38,6 @@ void main() {
 
         expect(status.loadsFp8AsF16OnMetal, fp8Metal);
       }
-    });
-
-    test('the bundled API reports FP8-as-F16 on Metal only for a runtime '
-        'that resolves the upstream 1017 functions', () {
-      StableDiffusionCalls? resolve({
-        String releaseTag = StableDiffusionCalls.fp8MetalNativeRelease,
-        Set<String> missing = const {},
-      }) => StableDiffusionCalls.tryResolve(
-        symbol: (name) => missing.contains(name)
-            ? throw ArgumentError("Couldn't resolve native function '$name'")
-            : Pointer.fromAddress(0x1000),
-        releaseTag: releaseTag,
-      );
-      bool loads(StableDiffusionCalls? Function() resolveCalls) =>
-          BundledStableDiffusionApi(
-            resolveCalls: resolveCalls,
-          ).loadsFp8AsF16OnMetal();
-
-      expect(loads(resolve), isTrue);
-      expect(loads(() => null), isFalse);
-      expect(
-        loads(
-          () => resolve(missing: StableDiffusionCalls.fp8MetalSymbols.toSet()),
-        ),
-        isFalse,
-      );
-      expect(loads(() => resolve(releaseTag: 'v0.3.0')), isFalse);
     });
 
     test('records the log at the given level before the device list, which '

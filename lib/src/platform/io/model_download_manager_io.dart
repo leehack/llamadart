@@ -377,17 +377,36 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     ModelLoadOptions options,
     Future<T> Function(bool locked) action,
   ) async {
+    final lock = await _lockEntry(
+      cacheDir,
+      throwIfBusy: () => _throwIfCancelled(options),
+    );
+    try {
+      return await action(lock != null);
+    } finally {
+      await lock?.release();
+    }
+  }
+
+  /// Takes [cacheDir]'s cross-process entry lock, calling [throwIfBusy]
+  /// whenever another holder has it, or returns null when the cache root
+  /// cannot be locked.
+  Future<ModelCacheEntryLock?> _lockEntry(
+    Directory cacheDir, {
+    required void Function() throwIfBusy,
+  }) async {
     final root = cacheDir.parent;
-    // Lock files live outside the entry directories, which remove() and
-    // prune() delete: a holder's lock on a deleted file would not exclude a
-    // process that recreates the file.
+    // Lock files live outside the entry directories, which remove(), prune()
+    // and clear() delete, and are never deleted themselves: a waiter that
+    // opened a lock file before it was unlinked would take a lock that no
+    // longer excludes a process that recreates the file.
     final lockDirectory = Directory(path.join(root.path, _lockDirectoryName));
     ModelCacheEntryLock? lock;
     try {
       await lockDirectory.create(recursive: true);
       lock = await modelCacheEntryLocker(
         path.join(lockDirectory.path, '${path.basename(cacheDir.path)}.lock'),
-        throwIfCancelled: () => _throwIfCancelled(options),
+        throwIfCancelled: throwIfBusy,
       );
     } on FileSystemException {
       lock = null;
@@ -395,10 +414,43 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     if (lock == null) {
       warnModelCacheLockUnavailableOnce(root.path);
     }
+    return lock;
+  }
+
+  /// Runs [action] holding [cacheDir]'s isolate and entry locks, without
+  /// waiting for them: returns false, and does not run [action], while
+  /// another caller in any isolate or process holds either.
+  Future<bool> _tryWithEntryLocks(
+    Directory cacheDir,
+    Future<void> Function() action,
+  ) async {
+    final key = _cacheLockKey(cacheDir);
+    if (_cacheLocks.containsKey(key)) {
+      return false;
+    }
+    final current = Completer<void>();
+    _cacheLocks[key] = current.future;
     try {
-      return await action(lock != null);
+      final ModelCacheEntryLock? lock;
+      try {
+        lock = await _lockEntry(
+          cacheDir,
+          throwIfBusy: () => throw const _EntryBusy(),
+        );
+      } on _EntryBusy {
+        return false;
+      }
+      try {
+        await action();
+      } finally {
+        await lock?.release();
+      }
+      return true;
     } finally {
-      await lock?.release();
+      if (identical(_cacheLocks[key], current.future)) {
+        _cacheLocks.remove(key);
+      }
+      current.complete();
     }
   }
 
@@ -542,19 +594,70 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     return entries.isEmpty ? null : entries.first;
   }
 
+  /// Removes the entries for [cacheKey] under [cacheDirectory].
+  ///
+  /// Throws [ModelCacheEntryInUseException], after removing the others, when
+  /// an entry is in use: another isolate or process holds its entry lock, or
+  /// on Windows a process has its model file open.
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {
-    await _removeByCacheKey(cacheKey, cacheDirectory: cacheDirectory);
+    final inUse = <String>[];
+    await _removeByCacheKey(
+      cacheKey,
+      cacheDirectory: cacheDirectory,
+      inUse: inUse,
+    );
+    _throwIfInUse(inUse);
   }
 
+  /// Removes every entry under [cacheDirectory] and keeps its `.locks`
+  /// directory.
+  ///
+  /// Throws [ModelCacheEntryInUseException], after removing the others, when
+  /// an entry is in use; see [remove].
   @override
   Future<void> clear({String? cacheDirectory}) async {
     final root = _rootDirectory(cacheDirectory);
-    if (await root.exists()) {
-      await root.delete(recursive: true);
+    if (!await root.exists()) {
+      return;
     }
+    final inUse = <String>[];
+    for (final entity in await root.list(followLinks: false).toList()) {
+      final name = path.basename(entity.path);
+      if (name == _lockDirectoryName) {
+        continue;
+      }
+      if (entity is! Directory) {
+        await entity.delete(recursive: true);
+        continue;
+      }
+      final result = await _removeCacheDirectory(
+        entity,
+        cacheDirectory: cacheDirectory,
+      );
+      if (result == _Removal.inUse) {
+        inUse.add(entity.path);
+      }
+    }
+    _throwIfInUse(inUse);
   }
 
+  void _throwIfInUse(List<String> entryDirectories) {
+    if (entryDirectories.isEmpty) {
+      return;
+    }
+    throw ModelCacheEntryInUseException(
+      '${entryDirectories.length} model cache '
+      '${entryDirectories.length == 1 ? 'entry is' : 'entries are'} in use '
+      'and ${entryDirectories.length == 1 ? 'was' : 'were'} not removed.',
+      entryDirectories: entryDirectories,
+    );
+  }
+
+  /// Prunes entries under [cacheDirectory] and returns the removed ones.
+  ///
+  /// Skips an entry that is in use (see [remove]) or that was used after
+  /// this call listed it.
   @override
   Future<List<ModelCacheEntry>> prune({
     Duration? maxAge,
@@ -792,28 +895,35 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     if (!verification.isValid) {
       return null;
     }
+    final refreshed = ModelCacheEntry(
+      sourceCanonicalKey: entry.sourceCanonicalKey,
+      cacheKey: entry.cacheKey,
+      fileName: entry.fileName,
+      filePath: entry.filePath,
+      bytes: verification.bytes!,
+      sha256: verification.sha256 ?? entry.sha256,
+      etag: entry.etag,
+      lastModified: entry.lastModified,
+      createdAt: entry.createdAt,
+      updatedAt: DateTime.now().toUtc(),
+      expiresAt: entry.expiresAt,
+    );
+    await _tryWriteMetadata(metadataFile, refreshed);
+    return refreshed;
+  }
+
+  /// Writes [entry] to [metadataFile] when it can. A verified entry stays a
+  /// cache hit when its metadata cannot be written, as in a read-only cache
+  /// root.
+  Future<void> _tryWriteMetadata(
+    File metadataFile,
+    ModelCacheEntry entry,
+  ) async {
     try {
-      final refreshed = ModelCacheEntry(
-        sourceCanonicalKey: entry.sourceCanonicalKey,
-        cacheKey: entry.cacheKey,
-        fileName: entry.fileName,
-        filePath: entry.filePath,
-        bytes: verification.bytes!,
-        sha256: verification.sha256 ?? entry.sha256,
-        etag: entry.etag,
-        lastModified: entry.lastModified,
-        createdAt: entry.createdAt,
-        updatedAt: DateTime.now().toUtc(),
-        expiresAt: entry.expiresAt,
-      );
-      await _writeMetadata(metadataFile, refreshed);
-      return refreshed;
-    } on FileSystemException {
-      await _deleteIfExists(metadataFile);
-      return null;
+      await _writeMetadata(metadataFile, entry);
     } on IOException {
-      await _deleteIfExists(metadataFile);
-      return null;
+      // The previous metadata, if any, is still intact: it is only replaced
+      // by a rename.
     }
   }
 
@@ -839,7 +949,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         now,
         sha256Digest: verifiedSha256,
       );
-      await _writeMetadata(metadataFile, recovered);
+      await _tryWriteMetadata(metadataFile, recovered);
       return recovered;
     } on FileSystemException {
       await _deleteIfExists(metadataFile);
@@ -1323,10 +1433,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         final entry = await _readMetadata(metadataFile);
         final entryFile = _entryFileInCacheDirectory(entry, entity);
         if (entryFile != null && !await entryFile.exists()) {
-          if (await _removeCacheDirectory(
+          final result = await _removeCacheDirectory(
             entity,
             cacheDirectory: cacheDirectory,
-          )) {
+            stillRemovable: () async => !await entryFile.exists(),
+          );
+          if (result == _Removal.removed) {
             removed.add(entry);
           }
         }
@@ -1338,33 +1450,35 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     return removed;
   }
 
-  Future<List<ModelCacheEntry>> _removeByCacheKey(
+  Future<void> _removeByCacheKey(
     String cacheKey, {
+    required List<String> inUse,
     String? cacheDirectory,
   }) async {
-    final removed = <ModelCacheEntry>[];
     for (final metadataFile in await _candidateMetadataFiles(
       cacheKey,
       cacheDirectory: cacheDirectory,
     )) {
+      final ModelCacheEntry entry;
       try {
-        final entry = await _readMetadata(metadataFile);
-        if (entry.cacheKey != cacheKey ||
-            _entryFileInCacheDirectory(entry, metadataFile.parent) == null) {
-          continue;
-        }
-        if (await _removeCacheDirectory(
-          metadataFile.parent,
-          cacheDirectory: cacheDirectory,
-        )) {
-          removed.add(entry);
-        }
+        entry = await _readMetadata(metadataFile);
       } catch (_) {
         // Ignore malformed metadata so a corrupt entry does not block removing
         // other cache directories with the same key prefix.
+        continue;
+      }
+      if (entry.cacheKey != cacheKey ||
+          _entryFileInCacheDirectory(entry, metadataFile.parent) == null) {
+        continue;
+      }
+      final result = await _removeCacheDirectory(
+        metadataFile.parent,
+        cacheDirectory: cacheDirectory,
+      );
+      if (result == _Removal.inUse) {
+        inUse.add(metadataFile.parent.path);
       }
     }
-    return removed;
   }
 
   File? _entryFileInCacheDirectory(ModelCacheEntry entry, Directory directory) {
@@ -1377,36 +1491,102 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     return File(filePath);
   }
 
+  /// Removes [entry] unless it is in use or its metadata changed since it was
+  /// listed: a cache hit refreshes `updatedAt` under the entry lock.
   Future<bool> _removeEntry(
     ModelCacheEntry entry, {
     String? cacheDirectory,
   }) async {
-    return _removeCacheDirectory(
-      Directory(path.dirname(entry.filePath)),
+    final directory = Directory(path.dirname(entry.filePath));
+    final result = await _removeCacheDirectory(
+      directory,
       cacheDirectory: cacheDirectory,
+      stillRemovable: () async {
+        try {
+          final current = await _readMetadata(
+            File(path.join(directory.path, _metadataFileName)),
+          );
+          return current.filePath == entry.filePath &&
+              current.updatedAt == entry.updatedAt;
+        } catch (_) {
+          return false;
+        }
+      },
     );
+    return result == _Removal.removed;
   }
 
-  Future<bool> _removeCacheDirectory(
+  Future<_Removal> _removeCacheDirectory(
     Directory directory, {
     String? cacheDirectory,
+    Future<bool> Function()? stillRemovable,
   }) async {
     final rootPath = path.normalize(
       path.absolute(_rootDirectory(cacheDirectory).path),
     );
     final directoryPath = path.normalize(path.absolute(directory.path));
     if (path.equals(directoryPath, rootPath) ||
-        !path.isWithin(rootPath, directoryPath)) {
-      return false;
+        !path.isWithin(rootPath, directoryPath) ||
+        path.basename(directoryPath) == _lockDirectoryName) {
+      return _Removal.skipped;
     }
     final cacheDirectoryToRemove = Directory(directoryPath);
-    if (!await cacheDirectoryToRemove.exists()) {
-      return false;
+    var result = _Removal.skipped;
+    Future<void> remove() async {
+      if (!await cacheDirectoryToRemove.exists() ||
+          (stillRemovable != null && !await stillRemovable())) {
+        return;
+      }
+      result = await _deleteEntryDirectory(cacheDirectoryToRemove);
     }
-    await cacheDirectoryToRemove.delete(recursive: true);
-    return true;
+
+    // noCache downloads take no entry lock, and a lock file per transient
+    // directory would never be deleted.
+    if (_transientDirectoryName.hasMatch(path.basename(directoryPath))) {
+      await remove();
+      return result;
+    }
+    if (!await _tryWithEntryLocks(cacheDirectoryToRemove, remove)) {
+      return _Removal.inUse;
+    }
+    return result;
+  }
+
+  /// Deletes the model files first, so an entry whose model file Windows
+  /// refuses to delete, because a process has it open or mapped, keeps its
+  /// metadata and stays usable.
+  Future<_Removal> _deleteEntryDirectory(Directory directory) async {
+    try {
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is File && path.basename(entity.path) != _metadataFileName) {
+          await entity.delete();
+        }
+      }
+      await directory.delete(recursive: true);
+      return _Removal.removed;
+    } on FileSystemException catch (error) {
+      if (Platform.isWindows &&
+          _windowsFileInUseErrors.contains(error.osError?.errorCode)) {
+        return _Removal.inUse;
+      }
+      rethrow;
+    }
   }
 }
+
+enum _Removal { removed, inUse, skipped }
+
+/// Thrown from a lock wait to give up instead of waiting.
+final class _EntryBusy implements Exception {
+  const _EntryBusy();
+}
+
+final RegExp _transientDirectoryName = RegExp(r'-[0-9a-f]{12}-nocache-\d+$');
+
+/// `ERROR_ACCESS_DENIED`, which also reports deleting a mapped file,
+/// `ERROR_SHARING_VIOLATION`, `ERROR_LOCK_VIOLATION` and
+/// `ERROR_USER_MAPPED_FILE`.
+const Set<int> _windowsFileInUseErrors = <int>{5, 32, 33, 1224};
 
 class _PartMetadata {
   const _PartMetadata({this.etag, this.lastModified});

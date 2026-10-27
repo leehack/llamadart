@@ -154,6 +154,24 @@ class LlamaStateException extends LlamaException {
   LlamaStateException(super.message, [super.details]);
 }
 
+/// Exception thrown by `ModelDownloadManager.remove` and `clear` when they
+/// leave cache entries in place because another caller is using them.
+///
+/// An entry is in use while any isolate or process downloads or verifies it
+/// under its cache entry lock, and on Windows also while a process has its
+/// model file open or mapped. Every other matching entry was removed; retry
+/// once that work finishes.
+class ModelCacheEntryInUseException extends LlamaStateException {
+  /// Creates a new [ModelCacheEntryInUseException].
+  ModelCacheEntryInUseException(
+    super.message, {
+    required List<String> entryDirectories,
+  }) : entryDirectories = List<String>.unmodifiable(entryDirectories);
+
+  /// Paths of the cache entry directories left in place.
+  final List<String> entryDirectories;
+}
+
 /// Exception thrown when an image-generation request or image buffer is
 /// invalid.
 class LlamaImageGenerationException extends LlamaException {

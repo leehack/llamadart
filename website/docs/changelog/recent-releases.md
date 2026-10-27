@@ -9,7 +9,6 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Aligned default WebGPU bridge assets to `v0.1.76`: repeated Web media embedding batches on the wasm32 core no longer abort ([llama-web-bridge#200](https://github.com/leehack/llama-web-bridge/pull/200)); a speculative draft that does not fit throws `LlamaUnsupportedException` instead of leaking until the runtime aborts, and a model whose context does not fit fails its load instead of aborting ([#198](https://github.com/leehack/llama-web-bridge/pull/198)); and uncached model loads report progress as they download ([#195](https://github.com/leehack/llama-web-bridge/pull/195)). Upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab` matches native `v0.7.0-2`, which the manifest records; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`.
 - The build hook reads llamadart-native hook contract 2: it downloads a backend sidecar archive, such as Windows x64 CUDA, only when that backend is selected, and an overridden release that needs an unsupported contract fails the build with `NativeHookContractException` ([#812](https://github.com/leehack/llamadart/issues/812)).
 - Pin stable-diffusion-native `v0.3.0-1` (stable-diffusion.cpp master-1017), which loads FP8 image weights as F16 on Metal: FP8 checkpoints now generate on Metal instead of being refused. The bounded image recipes are requalified on it, and Flutter iOS/macOS apps need the matching `llamadart_stable_diffusion_flutter` release ([#1446](https://github.com/leehack/llamadart/issues/1446)).
 - Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
@@ -20,6 +19,8 @@ For canonical full release notes, use:
 - A boolean `enable_thinking` or `thinking` chat template kwarg now overrides `enableThinking`, as in llama-server, and DeepSeek V3.1 forces its thought open from `enableThinking` alone ([#750](https://github.com/leehack/llamadart/issues/750)).
 - Processes and isolates sharing a model cache root, such as `sharedCache()`, `userSelected(...)` or `appGroup(...)` directories, now download each entry once instead of returning a file another process is still writing, and never cache a file whose length differs from the one the server reported ([#1444](https://github.com/leehack/llamadart/issues/1444)).
 - A tool result whose first text is empty no longer renders a leading newline before the next text part on string-only chat templates, as llama-server does ([#1468](https://github.com/leehack/llamadart/issues/1468)).
+- `DefaultModelDownloadManager.remove`, `prune` and `clear` no longer delete a cache entry another isolate or process is downloading: `remove` and `clear` remove the rest and throw `ModelCacheEntryInUseException`, and `prune` skips it ([#1467](https://github.com/leehack/llamadart/issues/1467)).
+- A cache hit on a read-only model cache root returns the cached entry instead of reporting that no cached model is available.
 
 ## 0.16.5
 

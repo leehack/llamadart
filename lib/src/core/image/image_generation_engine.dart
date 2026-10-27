@@ -403,13 +403,12 @@ class ImageGenerationEngine {
   ///   when the loaded runtime does not report the ControlNet or an SD 1.x
   ///   model.
   /// - [LlamaUnsupportedException] for FP8 GGUF/Safetensors weights on
-  ///   Metal (including automatic Metal selection) when the runtime is older
-  ///   than stable-diffusion-native v0.3.0-1; v0.3.0-1 and newer load them as
-  ///   F16. The refusal comes before native context creation. Use
-  ///   [ComputeDevice.cpu] or compatible non-FP8 weights there.
-  ///   Uninspectable GGUF/Safetensors headers and ordinary JSON shard
-  ///   indexes are also refused on Metal on such an older runtime because
-  ///   their tensor dtypes cannot be checked.
+  ///   Metal, including automatic Metal selection, before native context
+  ///   creation, when the runtime is older than stable-diffusion-native
+  ///   v0.3.0-1, which loads them as F16 instead. Use [ComputeDevice.cpu] or
+  ///   compatible non-FP8 weights there. Uninspectable GGUF/Safetensors
+  ///   headers and ordinary JSON shard indexes are also refused on Metal on
+  ///   such a runtime because their tensor dtypes cannot be checked.
   /// - [LlamaArgumentException] when [download] sets a bearer token or
   ///   headers for remote files on more than one origin.
   static Future<ImageGenerationEngine> load(

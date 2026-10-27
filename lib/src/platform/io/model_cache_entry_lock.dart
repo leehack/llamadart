@@ -16,7 +16,8 @@ abstract interface class ModelCacheEntryLock {
 
 /// Takes the exclusive lock at [lockPath], creating the file if needed, and
 /// waits while another isolate or process holds it, calling
-/// [throwIfCancelled] between attempts.
+/// [throwIfCancelled] between attempts. An exception from [throwIfCancelled]
+/// stops the wait and propagates without the lock.
 ///
 /// Completes with `null` when the file system cannot lock [lockPath]; callers
 /// then lose cross-process exclusion, not correctness.

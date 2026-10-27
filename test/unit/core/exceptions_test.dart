@@ -23,6 +23,21 @@ void main() {
     },
   );
 
+  test('a cache entry in use is a state error that keeps its paths out of '
+      'the message', () {
+    final directories = <String>['/cache/model-0123456789ab'];
+    final error = ModelCacheEntryInUseException(
+      '1 model cache entry is in use and was not removed.',
+      entryDirectories: directories,
+    );
+    directories.clear();
+
+    expect(error, isA<LlamaStateException>());
+    expect(error.entryDirectories, <String>['/cache/model-0123456789ab']);
+    expect(() => error.entryDirectories.add('/other'), throwsUnsupportedError);
+    expect(error.toString(), isNot(contains('/cache')));
+  });
+
   group('LlamaException Tests', () {
     test('LlamaModelException properties', () {
       final ex = LlamaModelException('Fail to load', 'err_code_1');

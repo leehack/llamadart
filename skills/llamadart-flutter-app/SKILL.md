@@ -105,7 +105,9 @@ or shipping runtimes the app does not use.
   `userSelected(...)`, `appGroup(...)`) take a cross-process file lock per
   entry, so a second caller waits and reuses the download. Processes on
   llamadart 0.16 or older do not take the lock; sharing a root with them can
-  repeat a download, never corrupt the entry.
+  repeat a download, never corrupt the entry. `remove` and `clear` skip
+  entries in use there and then throw `ModelCacheEntryInUseException`;
+  `prune` skips them.
   In an iOS App Group container, finish or cancel a download (or hold a
   background task) before the app is suspended: iOS kills apps suspended while
   holding a lock there (`0xdead10cc`).
@@ -409,8 +411,11 @@ class ModelDownloadScreenModel {
     final ModelCacheEntry? entry = await manager.get(
       ModelSource.parse(uri).cacheKey,
     );
-    if (entry != null) {
+    if (entry == null) return;
+    try {
       await manager.remove(entry.cacheKey);
+    } on ModelCacheEntryInUseException {
+      // Another isolate or app is downloading it; retry later.
     }
   }
 

@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.76`.
+Default pinned tag in the example is `v0.1.73`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.76 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.73 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -90,17 +90,17 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.76';
+  window.__llamadartBridgeAssetsTag = 'v0.1.73';
 </script>
 ```
 
 That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
 (`v0.7.0-2`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-even though the bridge asset tag `v0.1.76` differs from the native runtime tag
-`v0.7.0-2`. Provenance for this immutable consumer artifact: release `426014694`,
-tag commit `7ce0ad051c63f11ebb1d5ca0cf395f2a17c37dc3`, bridge source
-`883376ddfae4f8d70b1970fa7d180217475aab58`, and manifest SHA-256
-`90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`. The bridge
+even though the bridge asset tag `v0.1.73` differs from the native runtime tag
+`v0.7.0-2`. Provenance for this immutable consumer artifact: release `422794693`,
+tag commit `78430396ad1a53d5058d3999727a539379a5e635`, bridge source
+`5340be9e71684c946d864a9f14f2e63a542ac025`, and manifest SHA-256
+`f89c41d151b7df0cbe4f5e97f95563e31e0968c13e65a630e4e0dba28adb1d44`. The bridge
 manifest records native `v0.7.0-2`.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
@@ -178,24 +178,6 @@ physical playback, intelligibility or speaker-reference fidelity.
   an invalid vector built from classifier scores, embed only part of the input or abort
   the runtime
   ([llama-web-bridge#194](https://github.com/leehack/llama-web-bridge/pull/194)).
-- `v0.1.74+`: on a model cache miss, load progress follows the download
-  instead of arriving once the whole file is cached, and a cancelled or failed
-  load leaves nothing cached
-  ([llama-web-bridge#195](https://github.com/leehack/llama-web-bridge/pull/195)).
-- `v0.1.75+`: a speculative draft context that cannot be allocated, such as an
-  EAGLE3 draft at `nBatch`/`nUbatch` 2048 on wasm32, is freed and its
-  generation throws `LlamaUnsupportedException` naming smaller batches or
-  memory64, instead of leaking until the runtime aborts; a model whose context
-  does not fit rejects its load instead of aborting
-  ([llama-web-bridge#198](https://github.com/leehack/llama-web-bridge/pull/198)).
-  The bridge also accepts `grammarLazy`, `grammarTriggers` and `grammarRoot`
-  behind a `lazyGrammar` probe
-  ([#199](https://github.com/leehack/llama-web-bridge/pull/199)); llamadart
-  does not send them yet, so `supportsLazyGrammar` stays false
-  ([#1480](https://github.com/leehack/llamadart/issues/1480)).
-- `v0.1.76+`: the projector GGUF is freed once loaded, so repeated wasm32
-  media batches no longer abort on a compute buffer allocation
-  ([llama-web-bridge#200](https://github.com/leehack/llama-web-bridge/pull/200)).
 
 ### Media embeddings
 
@@ -220,8 +202,7 @@ the bridge owns settling queued/active operations before freeing its runtime.
 Await cancelled embedding futures before reuse.
 
 Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
-hardware WebGPU was not exercised. Repeated media batches are qualified only on
-memory64; `v0.1.76+` stops the wasm32 abort on the second batch. See
+hardware WebGPU was not exercised. Repeated media batches require memory64. See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
 
 ### Per-request cancellation

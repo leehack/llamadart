@@ -51,29 +51,6 @@ void main() {
       'user_image_then_tool_image',
       Qwen3VlToolMediaFixture.userImageThenToolImage(),
     ),
-    (
-      'image_empty_text',
-      Qwen3VlToolMediaFixture.singleResult(
-        result: null,
-        parts: [
-          Qwen3VlToolMediaFixture.red,
-          const LlamaTextContent(''),
-          const LlamaTextContent('x'),
-        ],
-      ),
-    ),
-    (
-      'text_empty_image_empty_text',
-      Qwen3VlToolMediaFixture.singleResult(
-        result: 'a',
-        parts: [
-          const LlamaTextContent(''),
-          Qwen3VlToolMediaFixture.red,
-          const LlamaTextContent(''),
-          const LlamaTextContent('b'),
-        ],
-      ),
-    ),
   ]) {
     test('Qwen3-VL renders $name as llama-server does', () {
       expect(_render(messages).prompt, upstream.prompt(name));
@@ -128,20 +105,6 @@ void main() {
     (
       'string_only_empty_middle_part',
       Qwen3VlToolMediaFixture.textOnly(parts: ['', 'x']),
-    ),
-    (
-      'string_only_whitespace_result',
-      Qwen3VlToolMediaFixture.singleResult(
-        result: ' ',
-        parts: [const LlamaTextContent('x')],
-      ),
-    ),
-    (
-      'string_only_newline_part_first',
-      Qwen3VlToolMediaFixture.singleResult(
-        result: null,
-        parts: [const LlamaTextContent('\n'), const LlamaTextContent('x')],
-      ),
     ),
   ]) {
     test('text-only content renders $name as llama-server does', () {
