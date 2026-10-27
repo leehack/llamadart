@@ -5,10 +5,57 @@ import 'manifest.dart';
 
 /// Capability flags the structured-output pack expects for [runtime]
 /// (`native`, `web` or `litert`).
-Map<String, Object?> expectedStructuredCapabilities(String runtime) =>
-    Map<String, Object?>.from(
-      (structuredOutputFixture['capabilities'] as Map)[runtime] as Map,
-    );
+Map<String, Object?> expectedStructuredCapabilities(
+  String runtime, {
+  int catalogVersion = validationCatalogVersion,
+  ValidationProfile? profile,
+  Map environment = const {},
+  Map diagnostics = const {},
+  Map preparation = const {},
+}) {
+  final expected = Map<String, Object?>.from(
+    (structuredOutputFixture['capabilities'] as Map)[runtime] as Map,
+  );
+  if (catalogVersion >= 10 && runtime == 'litert') {
+    const lock = nativeJsonSchemaCapabilityFixture;
+    if (profile == null) {
+      expected['structured_output'] = null;
+    } else if (profile.runtime != 'litert' ||
+        profile.nativeReference ||
+        (lock['excluded_family_model_sha256'] as List).contains(
+          profile.modelHash,
+        ) ||
+        profile.backend != lock['requested_backend'] ||
+        environment['web'] == true ||
+        (environment['os'] != null && environment['os'] != lock['os']) ||
+        (environment['build_abi'] != null &&
+            environment['build_abi'] != lock['abi']) ||
+        (diagnostics['backend_name'] != null &&
+            '${diagnostics['backend_name']}'.toLowerCase() !=
+                lock['actual_backend'])) {
+      expected['structured_output'] = false;
+    } else {
+      final verified =
+          profile.modelHash == lock['model_sha256'] &&
+          profile.model['bytes'] == lock['model_bytes'] &&
+          preparation['verified'] == true &&
+          preparation['sha256'] == lock['model_sha256'] &&
+          preparation['bytes'] == lock['model_bytes'] &&
+          environment['os'] == lock['os'] &&
+          environment['build_os'] == lock['os'] &&
+          environment['build_abi'] == lock['abi'] &&
+          environment['litert_tag'] == lock['runtime_tag'] &&
+          environment['runtime_payload_verified'] == true &&
+          RegExp(
+            r'^[a-f0-9]{64}$',
+          ).hasMatch('${environment['runtime_bundle_sha256']}') &&
+          '${diagnostics['backend_name']}'.toLowerCase() ==
+              lock['actual_backend'];
+      expected['structured_output'] = verified ? true : null;
+    }
+  }
+  return expected;
+}
 
 /// The fixture section for [name].
 Map<String, dynamic> structuredFixture(String name) =>
@@ -181,13 +228,33 @@ bool validStructuredCaseEvidence(
   String id,
   Map<String, dynamic> record, {
   required String runtime,
+  int catalogVersion = validationCatalogVersion,
+  ValidationProfile? profile,
+  Map environment = const {},
+  Map diagnostics = const {},
+  Map preparation = const {},
 }) {
   final constrained = record['constrained'];
   final content = constrained is Map ? constrained['content'] : null;
   switch (id) {
     case 'S01.capabilities':
-      return canonicalJson(record['reported']) ==
-          canonicalJson(expectedStructuredCapabilities(runtime));
+      final expected = expectedStructuredCapabilities(
+        runtime,
+        catalogVersion: catalogVersion,
+        profile: profile,
+        environment: environment,
+        diagnostics: diagnostics,
+        preparation: preparation,
+      );
+      return expected['structured_output'] != null &&
+          canonicalJson(record['reported']) == canonicalJson(expected) &&
+          (catalogVersion < 10 ||
+              runtime != 'litert' ||
+              (record['native_schema_admitted'] ==
+                      expected['structured_output'] &&
+                  record['diagnostics'] is Map &&
+                  (record['diagnostics'] as Map)['backend_name'] ==
+                      diagnostics['backend_name']));
     case 'S02.json_object':
       final decoded = content is String ? decodeJsonOr(content, _notJson) : 0;
       return !structuredControlConforms(id, record) &&

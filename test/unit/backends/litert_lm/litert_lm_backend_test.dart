@@ -32,6 +32,115 @@ import 'package:test/test.dart';
 
 void main() {
   test(
+    'native schema admission is delegated, request scoped and reset on reload',
+    () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const [],
+        detokenizeResponse: '',
+        generationChunks: [utf8.encode('{}')],
+      );
+      final direct = LiteRtLmBackend(initialSendPort: worker.sendPort);
+      final backend = NativeAutoBackend(liteRtLmFactory: () => direct);
+      try {
+        await backend.modelLoad(
+          'Qwen3.litertlm',
+          const ModelParams(device: api.ComputeDevice.cpu),
+        );
+        expect(backend.supportsJsonSchemaChatGeneration, isFalse);
+        worker.schemaAdmissionError = LiteRtLmErrorResponse(
+          'missing provider',
+          kind: 'llamaUnsupported',
+        );
+        await expectLater(
+          backend.prepareJsonSchemaChat(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(backend.supportsJsonSchemaChatGeneration, isFalse);
+        expect(
+          () => backend.generateChatWithJsonSchema(
+            1,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+            ],
+            const GenerationParams(),
+            jsonSchema: {'type': 'object'},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        worker.schemaAdmissionError = null;
+        await backend.prepareJsonSchemaChat();
+        expect(backend.supportsJsonSchemaChatGeneration, isTrue);
+        expect(
+          await backend
+              .generateChatWithJsonSchema(
+                1,
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'p',
+                  ),
+                ],
+                const GenerationParams(),
+                jsonSchema: {'type': 'object'},
+              )
+              .toList(),
+          [utf8.encode('{}')],
+        );
+        final request = worker.requests
+            .whereType<LiteRtLmGenerateChatRequest>()
+            .single;
+        expect(request.jsonSchema, '{"type":"object"}');
+        expect(request.enableThinking, isFalse);
+        expect(request.params.grammar, isNull);
+        expect(worker.requests.whereType<LiteRtLmGenerateRequest>(), isEmpty);
+        await backend.contextCreate(
+          1,
+          const ModelParams(device: api.ComputeDevice.cpu),
+        );
+        expect(backend.supportsJsonSchemaChatGeneration, isFalse);
+        await backend.prepareJsonSchemaChat();
+        expect(backend.supportsJsonSchemaChatGeneration, isTrue);
+        await backend.contextFree(1);
+        expect(backend.supportsJsonSchemaChatGeneration, isFalse);
+        for (final freeContext in [false, true]) {
+          final started = worker.schemaAdmissionStarted = Completer<void>();
+          final gate = worker.schemaAdmissionGate = Completer<void>();
+          final admission = backend.prepareJsonSchemaChat();
+          await started.future;
+          if (freeContext) {
+            await backend.contextFree(1);
+          } else {
+            await backend.contextCreate(
+              1,
+              const ModelParams(device: api.ComputeDevice.cpu),
+            );
+          }
+          final rejected = expectLater(
+            admission,
+            throwsA(isA<LlamaStateException>()),
+          );
+          gate.complete();
+          await rejected;
+          expect(backend.supportsJsonSchemaChatGeneration, isFalse);
+        }
+        await backend.modelLoad(
+          'Qwen3-next.litertlm',
+          const ModelParams(device: api.ComputeDevice.cpu),
+        );
+        expect(backend.supportsJsonSchemaChatGeneration, isFalse);
+        expect(
+          (backend as BackendGrammarConstraintsSupport)
+              .supportsGrammarConstraints,
+          isFalse,
+        );
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    },
+  );
+
+  test(
     'embedding cancellation during worker startup prevents dispatch',
     () async {
       final startup = ReceivePort();
@@ -3175,6 +3284,9 @@ class _FakeLiteRtLmWorker {
   final bool reportsFinishReasons;
   final BackendGenerationLimit? generationLimit;
   LiteRtLmErrorResponse? modelLoadErrorResponse;
+  LiteRtLmErrorResponse? schemaAdmissionError;
+  Completer<void>? schemaAdmissionStarted;
+  Completer<void>? schemaAdmissionGate;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
   final Completer<LiteRtLmGenerateRequest> generateReceived =
@@ -3239,6 +3351,20 @@ class _FakeLiteRtLmWorker {
         } else {
           message.sendPort.send(
             LiteRtLmDoneResponse(generationLimit: generationLimit),
+          );
+        }
+      case LiteRtLmJsonSchemaPrepareRequest():
+        schemaAdmissionStarted?.complete();
+        final gate = schemaAdmissionGate;
+        if (gate == null) {
+          message.sendPort.send(schemaAdmissionError ?? LiteRtLmDoneResponse());
+        } else {
+          unawaited(
+            gate.future.then(
+              (_) => message.sendPort.send(
+                schemaAdmissionError ?? LiteRtLmDoneResponse(),
+              ),
+            ),
           );
         }
       case LiteRtLmModelLoadRequest():

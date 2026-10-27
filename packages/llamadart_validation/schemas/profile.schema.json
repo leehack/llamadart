@@ -371,10 +371,17 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "expected_prefix": {"type": "string"}
+            "expected_prefix": {
+              "type": "string"
+            }
           }
         },
         "structured_output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "native_json_schema_capability": {
           "type": "object",
           "additionalProperties": false,
           "properties": {}

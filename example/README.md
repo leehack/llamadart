@@ -9,6 +9,7 @@ A simple console application showing:
 - Model loading
 - Context creation
 - Tokenization
+- Native LiteRT-LM CPU JSON Schema (`bin/llamadart_litert_json_example.dart`)
 - Text generation
 - Embedding generation
 - Decision-model answers with `DecisionEngine`

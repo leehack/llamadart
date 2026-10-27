@@ -338,6 +338,7 @@ void main() {
       'BackendGenerationLimitSupport',
       'BackendGpuEnumeration',
       'BackendGrammarConstraintsSupport',
+      'BackendJsonSchemaChatGeneration',
       'BackendLazyGrammarSupport',
       'BackendModelFileTypeDiagnostics',
       'BackendModelFormatRouting',

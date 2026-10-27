@@ -384,8 +384,22 @@ annotation-only schemas accept any JSON value; `{}` retains its object grammar.
 Patterns must be anchored `^...$` sequences of safe literals, positive character
 classes/ranges and groups, with group alternation and repetition counts up to
 1024; unsupported regex constructs are rejected. Backends without
-grammar constraints, including current LiteRT-LM native and web paths, still
-fail early for strict structured output.
+grammar constraints still fail early for strict output unless they expose a
+separate admitted JSON Schema provider. Native LiteRT-LM has that bounded path
+on macOS arm64 CPU with canonical Qwen3 text models; LiteRT-LM Web does not.
+
+For native LiteRT-LM, pass `enableThinking: false`. The native subset accepts
+`json_object` and object schemas with scalar properties, `required`, scalar
+`enum`/`const`, and boolean `additionalProperties`. Nested schemas, arrays,
+references, unions, patterns, formats and bounds are rejected before generation,
+as are tools, media, custom templates, speculation and caller stop sequences.
+`await engine.capabilities` admits the actual provider and may initialize the
+loaded model; it reports structured output independently of GBNF support.
+Model-backed qualification covers the corrected Qwen3-0.6B CPU artifact (SHA-256
+`c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108`); other
+canonical Qwen3 models still need their own qualification.
+A token/context cutoff can still leave partial JSON; final helper validation
+remains necessary.
 
 `ChatSession` takes the same `responseFormat` on `session.create(...)` and has
 `session.createStructuredJson(parts, output: output)` for multi-turn structured

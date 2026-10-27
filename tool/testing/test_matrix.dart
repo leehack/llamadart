@@ -973,6 +973,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'LiteRT-LM Web conversation serialization, runtime capability probe, ChatSession history or system prompts. Repeat with the affected model/backend; no other browser/backend or tool/media/template support is implied.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-json-schema',
+    tier: 'high-risk',
+    mode: 'local-only; macOS arm64 CPU',
+    covers:
+        'Adversarial native JSON Schema enforcement, separate GBNF capability, scalar object subset, per-request reset, history/system, cancellation and length cutoff',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-json-schema --model-path <corrected-Qwen3-0.6B.litertlm> --backend cpu',
+    useWhen:
+        'Changing native schema constraints, provider admission or request transport. Fixed corrected Qwen3 artifact; no GPU, Web or other-platform qualification.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',

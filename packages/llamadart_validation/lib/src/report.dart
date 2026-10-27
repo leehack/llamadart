@@ -205,6 +205,21 @@ class ValidationReport {
                 : (manifest['environment'] as Map?)?['web'] == true
                 ? 'web'
                 : 'native',
+            catalogVersion: knownCatalog ?? 1,
+            profile: profile,
+            environment: manifest['environment'] as Map? ?? const {},
+            preparation: manifest['preparation'] as Map? ?? const {},
+            diagnostics:
+                events
+                    .where(
+                      (entry) =>
+                          entry['case_id'] == 'C01.load' &&
+                          entry['status'] == 'PASS',
+                    )
+                    .map((entry) => entry['diagnostics'])
+                    .whereType<Map>()
+                    .firstOrNull ??
+                const {},
           )) {
         problems.add('Invalid structured-output case evidence: $id');
       }

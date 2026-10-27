@@ -177,6 +177,8 @@ class ValidationProfile {
               (entry) =>
                   !validationFixtures.containsKey(entry.key) ||
                   entry.value is! Map ||
+                  (entry.key == 'native_json_schema_capability' &&
+                      (entry.value as Map).isNotEmpty) ||
                   (entry.value as Map).entries.any(
                     (field) =>
                         !validationFixtures[entry.key]!.containsKey(
@@ -408,6 +410,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 10) resolved.remove('native_json_schema_capability');
     if (version < 9) resolved.remove('tokenization');
     if (version < 8) resolved.remove('structured_output');
     if (version < 6) resolved.remove('inflight');

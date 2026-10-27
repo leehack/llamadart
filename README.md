@@ -293,7 +293,12 @@ reports what it supports: image and audio input, embeddings, multi-turn chat,
 tools, structured output and grammars, each sampling control
 (`penalty`, `presencePenalty`, `minP`, `thinkingBudget`), and the speculative
 decoding strategies it runs. Branch on these instead of the model's file
-extension or backend name. Native llama.cpp reports thinking-budget support
+extension or backend name. Native LiteRT-LM can enforce object JSON schemas on macOS arm64 CPU with the
+canonical Qwen3 text template and an admitted native provider. Use
+`enableThinking: false`; tools, media, speculation, caller stops, custom
+templates and schemas beyond scalar properties/required/enum/const are
+rejected. GBNF and LiteRT-LM Web schema constraints remain unsupported.
+Native llama.cpp reports thinking-budget support
 only when the runtime exports its reasoning-budget API. Native LiteRT-LM
 reports `penalty` and `presencePenalty`, which count only the tokens of the
 current send, and a thinking budget for bundles with a thinking channel, such

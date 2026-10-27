@@ -86,6 +86,7 @@ class _RecordingClient extends LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
     String? loraPath,
+    bool jsonSchemaConstraints = false,
   }) {
     promptTemplates.add(promptTemplate);
     super.createConversation(
@@ -112,6 +113,7 @@ class _RecordingClient extends LiteRtLmRuntimeClient {
     double? repetitionPenalty,
     double? presencePenalty,
     int? thinkingTokenBudget,
+    String? jsonSchema,
   }) {
     try {
       sentPrompts.add(

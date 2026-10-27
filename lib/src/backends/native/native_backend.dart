@@ -61,6 +61,7 @@ class NativeAutoBackend
         BackendStatePersistenceSupport,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
+        BackendJsonSchemaChatGeneration,
         BackendChatPromptGeneration,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
@@ -116,6 +117,51 @@ class NativeAutoBackend
           .supportsGrammarConstraints;
     }
     return true;
+  }
+
+  @override
+  bool get supportsJsonSchemaChatGeneration {
+    final delegate = _delegate;
+    return delegate is BackendJsonSchemaChatGeneration &&
+        (delegate as BackendJsonSchemaChatGeneration)
+            .supportsJsonSchemaChatGeneration;
+  }
+
+  @override
+  Future<void> prepareJsonSchemaChat() async {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendJsonSchemaChatGeneration) {
+      throw LlamaUnsupportedException(
+        'The selected backend has no native JSON Schema chat provider.',
+      );
+    }
+    await (delegate as BackendJsonSchemaChatGeneration).prepareJsonSchemaChat();
+  }
+
+  @override
+  Stream<List<int>> generateChatWithJsonSchema(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendJsonSchemaChatGeneration) {
+      return (delegate as BackendJsonSchemaChatGeneration)
+          .generateChatWithJsonSchema(
+            contextHandle,
+            messages,
+            params,
+            jsonSchema: jsonSchema,
+            chatTemplateKwargs: chatTemplateKwargs,
+            templateNow: templateNow,
+          );
+    }
+    throw LlamaUnsupportedException(
+      'The selected backend has no native JSON Schema chat provider.',
+    );
   }
 
   @override

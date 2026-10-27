@@ -203,7 +203,7 @@ JavaScript runtime.
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
 | LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU bridge assets `v0.1.54+` | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: ordered system/user/assistant text; tool declarations and tool messages are rejected. |
-| Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated tool grammar is skipped, strict `responseFormat` requests fail early, and explicit grammar params are rejected |
+| Grammar / constrained decoding | Supported by llama.cpp-backed paths | GBNF is unsupported and explicit grammar params are rejected; a separate native JSON Schema route supports canonical Qwen3 text on macOS arm64 CPU with thinking disabled and a bounded scalar-object subset; other strict combinations fail early |
 | Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
 

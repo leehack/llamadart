@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import '../../backends/backend.dart';
+import 'json_schema_chat_request.dart';
 import '../exceptions.dart';
 import '../grammar/llama_cpp_grammar_limits.dart';
 import '../llama_logger.dart';
@@ -27,6 +30,8 @@ class ChatCompletionRequestPlan {
     required this.nativeChatBackend,
     required this.parseToolCallsEnabled,
     this.excludesPromptFromPenalties = false,
+    this.jsonSchemaBackend,
+    this.jsonSchema,
   });
 
   /// Rendered template and parser metadata.
@@ -43,6 +48,12 @@ class ChatCompletionRequestPlan {
   /// generation.
   final BackendNativeChatGeneration? nativeChatBackend;
 
+  /// Optional direct-schema generator; its payload is never GBNF.
+  final BackendJsonSchemaChatGeneration? jsonSchemaBackend;
+
+  /// Validated immutable request snapshot for the direct-schema route.
+  final Map<String, dynamic>? jsonSchema;
+
   /// Whether final streaming output should be parsed for tool calls.
   final bool parseToolCallsEnabled;
 
@@ -52,7 +63,8 @@ class ChatCompletionRequestPlan {
   final bool excludesPromptFromPenalties;
 
   /// Whether this plan should call the backend-native chat API.
-  bool get usesNativeChatGeneration => nativeChatBackend != null;
+  bool get usesNativeChatGeneration =>
+      nativeChatBackend != null || jsonSchemaBackend != null;
 }
 
 /// Builds backend-specific generation inputs for chat-completion requests.
@@ -66,6 +78,7 @@ class ChatCompletionRequestPlanner {
     required List<LlamaChatMessage> messages,
     required ToolChoice toolChoice,
     required bool parallelToolCalls,
+    bool enableThinking = false,
     GenerationParams? params,
     List<ToolDefinition>? tools,
     Map<String, dynamic>? responseFormat,
@@ -74,10 +87,34 @@ class ChatCompletionRequestPlanner {
       backend,
       responseFormat,
     );
-    final stops = {
-      ...templateResult.stopSequences,
-      ...?params?.stopSequences,
-    }.toList();
+    final schemaBackend =
+        strictResponseFormat && !supportsGrammarConstraints(backend)
+        ? backend as BackendJsonSchemaChatGeneration
+        : null;
+    Map<String, dynamic>? nativeSchema;
+    if (schemaBackend != null) {
+      validateJsonSchemaChatRequest(
+        messages,
+        params ?? const GenerationParams(),
+        hasTools: tools?.isNotEmpty ?? false,
+        requiredTools: toolChoice == ToolChoice.required,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+      );
+      if (templateResult.thinkingForcedOpen) {
+        throw LlamaUnsupportedException(
+          'Native JSON Schema chat cannot use a forced-open thinking template.',
+        );
+      }
+      nativeSchema =
+          jsonDecode(
+                jsonSchemaChatPayload(responseFormatSchema(responseFormat)!),
+              )
+              as Map<String, dynamic>;
+    }
+    final stops = schemaBackend != null
+        ? <String>[]
+        : {...templateResult.stopSequences, ...?params?.stopSequences}.toList();
 
     _logTemplateResult(templateResult, stops);
 
@@ -203,6 +240,8 @@ class ChatCompletionRequestPlanner {
       nativeChatBackend: nativeChatBackend,
       parseToolCallsEnabled: parseToolCallsEnabled,
       excludesPromptFromPenalties: skipsLazyTemplateGrammar,
+      jsonSchemaBackend: schemaBackend,
+      jsonSchema: nativeSchema,
     );
   }
 
@@ -239,6 +278,22 @@ class ChatCompletionRequestPlanner {
     );
   }
 
+  /// Admits an optional native provider before rendering or session edits.
+  static Future<void> prepareResponseFormat(
+    LlamaBackend backend,
+    Map<String, dynamic>? responseFormat,
+  ) async {
+    final schema = responseFormatSchema(responseFormat);
+    if (schema != null &&
+        !supportsGrammarConstraints(backend) &&
+        backend is BackendJsonSchemaChatGeneration) {
+      jsonSchemaChatPayload(schema);
+      await (backend as BackendJsonSchemaChatGeneration)
+          .prepareJsonSchemaChat();
+    }
+    rejectUnsupportedResponseFormat(backend, responseFormat);
+  }
+
   /// Whether [responseFormat] requests strict structured output.
   ///
   /// Throws [LlamaUnsupportedException] for an unrecognised shape, or for a
@@ -250,13 +305,15 @@ class ChatCompletionRequestPlanner {
     Map<String, dynamic>? responseFormat,
   ) {
     if (responseFormatSchema(responseFormat) == null) return false;
-    if (!supportsGrammarConstraints(backend)) {
+    if (!supportsGrammarConstraints(backend) &&
+        !(backend is BackendJsonSchemaChatGeneration &&
+            (backend as BackendJsonSchemaChatGeneration)
+                .supportsJsonSchemaChatGeneration)) {
       throw LlamaUnsupportedException(
         'Strict responseFormat output requires '
         'grammar-constrained decoding, but the active backend does not '
-        'support grammar constraints. For example, LiteRT-LM native and web '
-        'currently do not expose public runtime wiring for JSON-schema/Lark '
-        'constraints; '
+        'support grammar constraints or an admitted native JSON Schema provider. '
+        'LiteRT-LM Web has no qualified schema constraint API; '
         'use a grammar-capable backend such as llama.cpp, or omit '
         'responseFormat for best-effort JSON output.',
       );

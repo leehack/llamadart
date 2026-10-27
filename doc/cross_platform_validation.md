@@ -2058,3 +2058,19 @@ journal checks only. Exact upstream token IDs, special-token insertion/rendering
 normalization-specific tokenizers, other model families, Web, LiteRT-LM and
 physical devices require their own runs and any needed model-specific oracles.
 The pack adds no blanket platform qualification or device campaign.
+
+## Catalog 10: native JSON Schema capability
+
+S01.capabilities version 2 adds a fixed, versioned predicate for the corrected
+Qwen3-0.6B CPU profile on macOS arm64 with the verified v0.18.1-4 payload and
+actual LiteRT-LM CPU diagnostics. It expects structured output true with GBNF
+and lazy grammar false. Provider admission cannot waive that expectation.
+Known excluded hosts/delegates expect false; unprofiled models or insufficient
+provenance produce NOT_RUN/incomplete. The importer reconstructs this predicate
+from the journal identity and load diagnostics; altered identities or a forced
+capability/admission cannot establish PASS. Catalogs 1–9 remain unchanged.
+
+This case checks capability reporting, not schema enforcement. The maintained
+`litert-lm-json-schema` local scenario separately qualifies the bounded native
+CPU scalar-object path, adversarial control, request reset, system/history,
+cancellation/reuse and length cutoff. See [the matrix](testing_matrix.md).

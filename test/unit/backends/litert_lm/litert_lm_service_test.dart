@@ -58,6 +58,139 @@ void main() {
     }
   });
 
+  group('native JSON Schema admission', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    late _FakeLiteRtLmRuntimeClient client;
+    late LiteRtLmService service;
+    setUp(() async {
+      client = _FakeLiteRtLmRuntimeClient()..jsonSchemaSupport = true;
+      service = LiteRtLmService(
+        clientFactory: () => client,
+        jsonSchemaPlatformSupported: () => true,
+      );
+      await service.loadModel(
+        (await modelFile.copy('${tempDir.path}/Qwen3-0.6B.litertlm')).path,
+        params,
+      );
+    });
+    tearDown(() async {
+      final unused = client.generateCount == 0
+          ? client.generated.stream.drain<void>()
+          : null;
+      await client.generated.close();
+      await unused;
+      service.dispose();
+    });
+    test(
+      'constructs a model provider before admitting and sends a per-request schema',
+      () async {
+        final context = service.createContext(1, params);
+        await service.prepareJsonSchemaChat();
+        expect(client.lastJsonSchemaConfig, isTrue);
+        final stream = service
+            .generateJsonSchemaChat(
+              context,
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+              ],
+              const GenerationParams(),
+              jsonSchema: '{"type":"object"}',
+            )
+            .toList();
+        await client.generateStarted.future;
+        expect(client.lastJsonSchemaConfig, isTrue);
+        expect(client.lastJsonSchema, '{"type":"object"}');
+        client.generated.add('{}');
+        await client.generated.close();
+        expect(await stream, [utf8.encode('{}')]);
+      },
+    );
+    for (final excluded in ['host', 'delegate', 'family', 'template']) {
+      test('rejects unqualified $excluded before native admission', () async {
+        service.dispose();
+        service = LiteRtLmService(
+          clientFactory: () => client,
+          jsonSchemaPlatformSupported: () => excluded != 'host',
+        );
+        final selected = excluded == 'delegate'
+            ? const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu)
+            : excluded == 'template'
+            ? const ModelParams(
+                liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                chatTemplate: '{{ messages }}',
+              )
+            : params;
+        await service.loadModel(
+          excluded == 'family'
+              ? modelFile.path
+              : '${tempDir.path}/Qwen3-0.6B.litertlm',
+          selected,
+        );
+        await expectLater(
+          service.prepareJsonSchemaChat(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(client.createConversationCount, 0);
+        expect(client.generateCount, 0);
+      });
+    }
+    test('missing optional API never admits or starts generation', () async {
+      client.jsonSchemaSupport = false;
+      await expectLater(
+        service.prepareJsonSchemaChat(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(client.generateCount, 0);
+      expect(client.createConversationCount, 0);
+    });
+    test(
+      'provider construction failure cannot be treated as support',
+      () async {
+        final context = service.createContext(1, params);
+        client.onCreateConversation = () =>
+            throw StateError('/private/model-secret invalid EOS');
+        await expectLater(
+          service.prepareJsonSchemaChat(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'redacted native diagnostic',
+              isNot(contains('model-secret')),
+            ),
+          ),
+        );
+        expect(client.generateCount, 0);
+        client.onCreateConversation = null;
+        await service.prepareJsonSchemaChat();
+        expect(client.lastJsonSchemaConfig, isTrue);
+        client.onCreateConversation = () =>
+            throw StateError('/private/model-secret schema-secret');
+        await expectLater(
+          service
+              .generateJsonSchemaChat(
+                context,
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'p',
+                  ),
+                ],
+                const GenerationParams(),
+                jsonSchema: '{"type":"object"}',
+              )
+              .toList(),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (e) => e.message,
+              'redacted schema diagnostic',
+              isNot(contains('secret')),
+            ),
+          ),
+        );
+      },
+    );
+  });
+
   group('bundleCapabilities', () {
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
     late ({bool vision, bool audio, bool speculativeDecoding})? declared;
@@ -6867,6 +7000,12 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   double? lastRepetitionPenalty;
   double? lastPresencePenalty;
   int? lastThinkingTokenBudget;
+  bool jsonSchemaSupport = false;
+  bool? lastJsonSchemaConfig;
+  String? lastJsonSchema;
+  @override
+  bool get supportsJsonSchemaConstraints => jsonSchemaSupport;
+
   bool samplingPenalties = true;
   bool thinkingBudget = true;
   LiteRtLmFinishReason? finishReason;
@@ -6960,8 +7099,10 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
     String? loraPath,
+    bool jsonSchemaConstraints = false,
   }) {
     _checkNotDisposed();
+    lastJsonSchemaConfig = jsonSchemaConstraints;
     lastTemperature = temperature;
     lastTopK = topK;
     lastTopP = topP;
@@ -7055,9 +7196,11 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     double? repetitionPenalty,
     double? presencePenalty,
     int? thinkingTokenBudget,
+    String? jsonSchema,
   }) {
     _checkNotDisposed();
     lastMessageJson = messageJson;
+    lastJsonSchema = jsonSchema;
     lastRepetitionPenalty = repetitionPenalty;
     lastPresencePenalty = presencePenalty;
     lastThinkingTokenBudget = thinkingTokenBudget;

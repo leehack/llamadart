@@ -68,9 +68,25 @@ streamed partial/final parsing and a JSON Schema tool. Each constrained request
 asks for output an unconstrained model would not produce; an unconstrained
 control that already conforms leaves the case NOT_RUN. The importer rechecks
 passing evidence with an independent schema check. LiteRT profiles run only
-`S01` (all flags false) and WebGPU omits the lazy-grammar case. Older journals
+`S01` (catalogs 8–9 retain their all-false expectation) and WebGPU omits the lazy-grammar case. Older journals
 keep their catalogs. See
 [the runbook](../../doc/cross_platform_validation.md#catalog-8-structured-output-pack).
+
+## Catalog 10 native schema capability
+
+`S01.capabilities` version 2 keeps grammar/lazy flags false for LiteRT-LM and
+computes the structured-output expectation from the locked corrected Qwen3
+CPU profile, verified macOS arm64/runtime payload identity and actual CPU
+delegate diagnostics. Provider admission is supplemental, never the oracle.
+Known excluded hosts/delegates expect false; unprofiled model bytes or missing
+provenance remain NOT_RUN/incomplete, not evidence of unsupported behavior.
+An unexpected refusal on the known-supported profile fails. The importer
+recomputes the expectation and binds diagnostics to the load case. Catalogs
+1–9 and their fixture hashes retain their original contracts.
+
+S01 is capability evidence only. Native enforcement and lifecycle coverage is
+the `litert-lm-json-schema` local scenario; no broader schema, Web, GPU or
+other-model qualification follows from a capability flag.
 
 ## Tokenization pack
 

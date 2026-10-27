@@ -1357,6 +1357,32 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'litert-lm-json-schema',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify bounded native JSON Schema chat on macOS arm64 CPU.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_json_schema_e2e_test.dart',
+          ],
+          environment: {'LITERT_LM_MODEL': context.modelPath ?? ''},
+          description: 'Native CPU schema enforcement and lifecycle',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2105,12 +2131,13 @@ Future<LocalE2eResult> runLocalE2e(
           '--model-path and --head-path are required for decision-model-smoke.\n',
     );
   }
-  if (scenario.name == 'qwen3-litert-cpu-unicode' &&
+  if ((scenario.name == 'qwen3-litert-cpu-unicode' ||
+          scenario.name == 'litert-lm-json-schema') &&
       parsed.backendProvided &&
       parsed.backend != 'cpu') {
-    return const LocalE2eResult(
+    return LocalE2eResult(
       64,
-      stderr: 'qwen3-litert-cpu-unicode requires --backend cpu.\n',
+      stderr: '${scenario.name} requires --backend cpu.\n',
     );
   }
   if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
@@ -2228,6 +2255,7 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
+          scenario.name == 'litert-lm-json-schema' ||
           scenario.name == 'litert-lm-multimodal-embedding' ||
           scenario.name == 'litert-lm-web-text-history' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||

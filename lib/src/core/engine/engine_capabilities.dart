@@ -104,8 +104,11 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// Whether a strict `responseFormat` (`json_object` or `json_schema`) is
   /// enforced through grammar-constrained decoding.
   ///
-  /// False on LiteRT-LM. WebGPU rejects a strict `responseFormat` combined
-  /// with tools, since that needs [supportsLazyGrammar].
+  /// Native LiteRT-LM admits its provider for canonical Qwen3 text chat on
+  /// macOS arm64 CPU. That bounded schema route requires thinking disabled
+  /// and rejects tools, media, speculation, caller stops and wider schemas;
+  /// [supportsGrammar] remains false. Probing may initialize the loaded model.
+  /// LiteRT-LM Web remains unsupported. WebGPU rejects strict output with tools.
   final bool supportsStructuredOutput;
 
   /// Whether [GenerationParams.grammar], [GenerationParams.grammarTriggers]

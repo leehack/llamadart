@@ -23,8 +23,8 @@ class FakeEngine implements ValidationEngine, StructuredValidationEngine {
   @override
   bool isWeb = false;
 
-  /// LiteRT profiles select only the capability contract, whose flags are
-  /// all false there.
+  /// Models the excluded-platform LiteRT contract; unprofiled hosts remain
+  /// incomplete in catalog 10.
   @override
   Future<LlamaEngineCapabilities> structuredCapabilities() async =>
       const LlamaEngineCapabilities(isSupported: true);
@@ -490,6 +490,7 @@ void dropUndeclared(
 Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
   FakeEngine engine, {
   ValidationProfile? selected,
+  Map<String, dynamic> environment = const {},
 }) async {
   final events = <Map<String, dynamic>>[];
   await ValidationRunner(
@@ -513,6 +514,7 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
       'hook_sha256': List.filled(64, 'b').join(),
       'native_tag': 'v0.4.0',
       'litert_tag': '0.17.0-3',
+      ...environment,
     },
   );
   return (
@@ -707,11 +709,12 @@ void main() {
       isNot(contains('accelerator_evidence_missing')),
     );
 
-    final incomplete = await run(
+    final complete = await run(
       CountingFakeEngine(),
       selected: profile(release: true),
+      environment: {'os': 'android'},
     );
-    expect(incomplete.report.qualificationGaps, isEmpty);
+    expect(complete.report.qualificationGaps, isEmpty);
     final broken = await run(FakeEngine()..failOnLoad = 1);
     expect(
       broken.report.qualificationGaps,
@@ -2046,6 +2049,7 @@ void main() {
     final result = await run(
       CountingFakeEngine(),
       selected: profile(release: true),
+      environment: {'os': 'android'},
     );
     expect(result.report.qualified, isTrue);
     expect(
