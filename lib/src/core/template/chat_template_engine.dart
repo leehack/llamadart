@@ -10,48 +10,13 @@ import '../models/chat/content_part.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
+import 'chat_format_registry.dart';
 import 'chat_parse_result.dart';
 import 'peg_chat_parser.dart';
 import 'chat_template_handler.dart';
 import 'media_placeholders.dart';
-import 'handlers/cohere2_moe_handler.dart';
-import 'handlers/command_r7b_handler.dart';
-import 'handlers/deepseek_r1_handler.dart';
-import 'handlers/deepseek_dsml_handler.dart';
-import 'handlers/deepseek_v3_handler.dart';
-import 'handlers/apertus_handler.dart';
-import 'handlers/apriel15_handler.dart';
-import 'handlers/exaone_moe_handler.dart';
-import 'handlers/firefunction_v2_handler.dart';
-import 'handlers/function_gemma_handler.dart';
-import 'handlers/functionary_v31_llama31_handler.dart';
-import 'handlers/functionary_v32_handler.dart';
-import 'handlers/gemma_handler.dart';
-import 'handlers/gemma4_handler.dart';
 import 'handlers/generic_handler.dart';
-import 'handlers/glm45_handler.dart';
-import 'handlers/gpt_oss_handler.dart';
-import 'handlers/granite_handler.dart';
 import 'handlers/hermes_handler.dart';
-import 'handlers/hunyuan_v3_handler.dart';
-import 'handlers/kimi_k2_handler.dart';
-import 'handlers/kimi_k3_handler.dart';
-import 'handlers/lfm2_handler.dart';
-import 'handlers/laguna_handler.dart';
-import 'handlers/llama3_handler.dart';
-import 'handlers/magistral_handler.dart';
-import 'handlers/minimax_m2_handler.dart';
-import 'handlers/minimax_m1_m3_handler.dart';
-import 'handlers/ministral_handler.dart';
-import 'handlers/mistral_handler.dart';
-import 'handlers/muse_glimmer_handler.dart';
-import 'handlers/minicpm5_handler.dart';
-import 'handlers/nemotron_v2_handler.dart';
-import 'handlers/qwen3_coder_xml_handler.dart';
-import 'handlers/seed_oss_handler.dart';
-import 'handlers/solar_open_handler.dart';
-import 'handlers/translate_gemma_handler.dart';
-import 'handlers/xiaomi_mimo_handler.dart';
 import 'response_format.dart';
 import 'tool_schema_utils.dart';
 import 'thinking_utils.dart';
@@ -116,7 +81,10 @@ class ChatTemplateEngine {
 
   /// Returns the handler for the given [format].
   static ChatTemplateHandler handlerFor(ChatFormat format) {
-    return _handlers.putIfAbsent(format, () => _createHandler(format));
+    return _handlers.putIfAbsent(
+      format,
+      () => chatFormatRegistration(format).createHandler(),
+    );
   }
 
   /// Detects the [ChatFormat] from a template source string.
@@ -759,113 +727,6 @@ class ChatTemplateEngine {
       startTag: resolved.handler.thinkingStartTag,
       endTag: resolved.handler.thinkingEndTag,
     );
-  }
-
-  /// Creates a handler instance for the given format.
-  static ChatTemplateHandler _createHandler(ChatFormat format) {
-    switch (format) {
-      case ChatFormat.hermes:
-        return HermesHandler();
-      case ChatFormat.llama3:
-      case ChatFormat.llama3BuiltinTools:
-        return Llama3Handler();
-      case ChatFormat.firefunctionV2:
-        return FirefunctionV2Handler();
-      case ChatFormat.functionaryV32:
-        return FunctionaryV32Handler();
-      case ChatFormat.functionaryV31Llama31:
-        return FunctionaryV31Llama31Handler();
-      case ChatFormat.mistralNemo:
-        return MistralHandler();
-      case ChatFormat.ministral:
-        return MinistralHandler();
-      case ChatFormat.magistral:
-        return MagistralHandler();
-      case ChatFormat.lfm2:
-        return Lfm2Handler();
-      case ChatFormat.deepseekR1:
-        return DeepseekR1Handler();
-      case ChatFormat.deepseekV3:
-        return DeepseekV3Handler();
-      case ChatFormat.functionGemma:
-        return FunctionGemmaHandler();
-      case ChatFormat.gemma:
-        return GemmaHandler();
-      case ChatFormat.gemma4:
-        return Gemma4Handler();
-      case ChatFormat.commandR7B:
-        return CommandR7BHandler();
-      case ChatFormat.cohere2Moe:
-        return Cohere2MoeHandler();
-      case ChatFormat.granite:
-        return GraniteHandler();
-      case ChatFormat.glm45:
-        return Glm45Handler();
-      case ChatFormat.kimiK2:
-        return KimiK2Handler();
-      case ChatFormat.qwen3CoderXml:
-        return Qwen3CoderXmlHandler();
-      case ChatFormat.minimaxM2:
-        return MinimaxM2Handler();
-      case ChatFormat.minicpm5:
-        return MiniCpm5Handler();
-      case ChatFormat.hunyuanV3:
-        return HunyuanV3Handler();
-      case ChatFormat.kimiK3:
-        return KimiK3Handler();
-      case ChatFormat.minimaxM1:
-        return MinimaxM1Handler();
-      case ChatFormat.minimaxM3:
-        return MinimaxM3Handler();
-      case ChatFormat.deepseekV4:
-        return DeepseekV4Handler();
-      case ChatFormat.deepseekV32:
-        return DeepseekV32Handler();
-      case ChatFormat.museGlimmer:
-        return MuseGlimmerHandler();
-      case ChatFormat.laguna:
-        return LagunaHandler();
-      case ChatFormat.gptOss:
-        return GptOssHandler();
-      case ChatFormat.seedOss:
-        return SeedOssHandler();
-      case ChatFormat.nemotronV2:
-        return NemotronV2Handler();
-      case ChatFormat.apertus:
-        return ApertusHandler();
-      case ChatFormat.xiaomiMimo:
-        return XiaomiMimoHandler();
-      case ChatFormat.apriel15:
-        return Apriel15Handler();
-      case ChatFormat.solarOpen:
-        return SolarOpenHandler();
-      case ChatFormat.exaoneMoe:
-        return ExaoneMoeHandler();
-      case ChatFormat.translateGemma:
-        return TranslateGemmaHandler();
-      case ChatFormat.pegSimple:
-        return GenericHandler(
-          format: ChatFormat.pegSimple,
-          toolCallSerialization: TemplateToolCallSerialization.none,
-        );
-      case ChatFormat.pegNative:
-        return GenericHandler(
-          format: ChatFormat.pegNative,
-          toolCallSerialization: TemplateToolCallSerialization.none,
-        );
-      case ChatFormat.pegConstructed:
-        return GenericHandler(
-          format: ChatFormat.pegConstructed,
-          toolCallSerialization: TemplateToolCallSerialization.none,
-        );
-      case ChatFormat.generic:
-        return GenericHandler();
-      case ChatFormat.contentOnly:
-        return GenericHandler(
-          format: ChatFormat.contentOnly,
-          toolCallSerialization: TemplateToolCallSerialization.none,
-        );
-    }
   }
 
   static LlamaChatTemplateResult _withFormat(
