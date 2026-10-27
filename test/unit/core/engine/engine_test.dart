@@ -1065,6 +1065,43 @@ class CanonicalToolBackend extends LimitReportingMockBackend {
   bool get supportsGrammarConstraints => true;
 }
 
+class JsonSchemaMockBackend extends NativeChatMockBackend
+    implements BackendJsonSchemaChatGeneration {
+  bool admitted = false;
+  bool rejectProvider = false;
+  int providerAdmissions = 0;
+  int schemaCalls = 0;
+  Map<String, dynamic>? schema;
+  @override
+  bool get supportsJsonSchemaChatGeneration => admitted;
+  @override
+  Future<void> prepareJsonSchemaChat() async {
+    if (admitted) return;
+    providerAdmissions++;
+    if (rejectProvider) {
+      throw LlamaUnsupportedException('Provider unavailable.');
+    }
+    admitted = true;
+  }
+
+  @override
+  Stream<List<int>> generateChatWithJsonSchema(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    schemaCalls++;
+    schema = jsonSchema;
+    lastNativeParams = params;
+    lastNativeMessages = messages;
+    yield utf8.encode('{"verdict":');
+    yield utf8.encode('"A"}');
+  }
+}
+
 void main() {
   late MockLlamaBackend backend;
   late LlamaEngine engine;
@@ -1072,6 +1109,126 @@ void main() {
   setUp(() {
     backend = MockLlamaBackend();
     engine = LlamaEngine(backend);
+  });
+
+  group('native JSON Schema chat', () {
+    late JsonSchemaMockBackend runtime;
+    late LlamaEngine schemaEngine;
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+    ];
+    const format = {
+      'type': 'json_schema',
+      'json_schema': {
+        'schema': {
+          'type': 'object',
+          'properties': {
+            'verdict': {'type': 'string', 'const': 'A'},
+          },
+          'required': ['verdict'],
+          'additionalProperties': false,
+        },
+      },
+    };
+    setUp(() async {
+      runtime = JsonSchemaMockBackend();
+      schemaEngine = LlamaEngine(runtime);
+      await schemaEngine.loadModel('model.litertlm');
+    });
+    tearDown(() => schemaEngine.dispose());
+    test(
+      'separate schema route preserves raw streaming and keeps GBNF unsupported',
+      () async {
+        final completion = await schemaEngine
+            .create(messages, enableThinking: false, responseFormat: format)
+            .collect();
+        expect(completion.text, '{"verdict":"A"}');
+        expect(runtime.schemaCalls, 1);
+        expect(runtime.nativeGenerateChatCalls, 0);
+        expect(runtime.lastGenerationPrompt, isNull);
+        expect(runtime.schema, (format['json_schema']! as Map)['schema']);
+        expect(runtime.lastNativeParams!.grammar, isNull);
+        expect(runtime.lastNativeParams!.stopSequences, isEmpty);
+        expect(completion.usage, isNull);
+        final capabilities = await schemaEngine.capabilities;
+        expect(capabilities.supportsStructuredOutput, isTrue);
+        expect(capabilities.supportsGrammar, isFalse);
+      },
+    );
+    test('thinking default is rejected rather than silently changed', () async {
+      await expectLater(
+        schemaEngine.create(messages, responseFormat: format).drain<void>(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(runtime.schemaCalls, 0);
+      expect(runtime.nativeGenerateChatCalls, 0);
+    });
+    test(
+      'first session schema turn admits its provider and commits streamed history',
+      () async {
+        expect(runtime.admitted, isFalse);
+        expect(runtime.providerAdmissions, 0);
+        final session = ChatSession(schemaEngine, maxContextTokens: 0);
+        final completion = await session
+            .create(
+              [LlamaTextContent('hello')],
+              enableThinking: false,
+              responseFormat: format,
+            )
+            .collect();
+        expect(completion.text, '{"verdict":"A"}');
+        expect(completion.finishReason, LlamaFinishReason.stop);
+        expect(runtime.providerAdmissions, 1);
+        expect(runtime.schemaCalls, 1);
+        expect(runtime.schema, (format['json_schema']! as Map)['schema']);
+        expect(runtime.nativeGenerateChatCalls, 0);
+        expect(runtime.lastGenerationPrompt, isNull);
+        expect(session.history.map((message) => message.role), [
+          LlamaChatRole.user,
+          LlamaChatRole.assistant,
+        ]);
+        expect(session.history.first.content, 'hello');
+        expect(session.history.last.content, '{"verdict":"A"}');
+      },
+    );
+    test(
+      'failed admission rolls back session history without generation',
+      () async {
+        runtime.rejectProvider = true;
+        final session = ChatSession(schemaEngine, maxContextTokens: 0);
+        await expectLater(
+          session
+              .create(
+                [LlamaTextContent('p')],
+                enableThinking: false,
+                responseFormat: format,
+              )
+              .drain<void>(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(session.history, isEmpty);
+        expect(runtime.schemaCalls, 0);
+      },
+    );
+    test('invalid subset cannot fall back to ordinary native chat', () async {
+      await expectLater(
+        schemaEngine
+            .create(
+              messages,
+              enableThinking: false,
+              responseFormat: const {
+                'type': 'json_schema',
+                'json_schema': {
+                  'schema': {'type': 'array'},
+                },
+              },
+            )
+            .drain<void>(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(runtime.schemaCalls, 0);
+      expect(runtime.nativeGenerateChatCalls, 0);
+    });
   });
 
   group('canonical schema tool loops', () {
@@ -4127,7 +4284,9 @@ void main() {
                 .having(
                   (error) => error.message,
                   'message',
-                  contains('LiteRT-LM native and web currently do not expose'),
+                  contains(
+                    'LiteRT-LM Web has no qualified schema constraint API',
+                  ),
                 )
                 .having(
                   (error) => error.message,

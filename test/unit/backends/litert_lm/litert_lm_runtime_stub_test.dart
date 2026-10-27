@@ -39,3 +39,15 @@ void main() {
     });
   });
 }
+
+// Compile-only twin contract. The real constructor above always throws, so no
+// legitimate stub instance can execute these members; their bodies have no
+// runtime coverage claim.
+bool schemaCapabilityContract(LiteRtLmRuntimeClient client) =>
+    client.supportsJsonSchemaConstraints;
+
+void schemaConversationContract(LiteRtLmRuntimeClient client) =>
+    client.createConversation(jsonSchemaConstraints: true);
+
+Stream<String> schemaMessageContract(LiteRtLmRuntimeClient client) =>
+    client.generateMessageJson('{}', jsonSchema: '{"type":"object"}');

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../../core/llama_logger.dart';
+import '../../core/engine/json_schema_chat_request.dart';
+import '../../core/models/inference/tool_choice.dart';
 import '../native_token_stream_batcher.dart';
 import 'litert_lm_service.dart';
 import 'worker_messages.dart';
@@ -186,6 +188,10 @@ void runLiteRtLmWorkerForTesting(
               ),
             );
 
+          case LiteRtLmJsonSchemaPrepareRequest():
+            await service.prepareJsonSchemaChat();
+            message.sendPort.send(LiteRtLmDoneResponse());
+
           case LiteRtLmModelFreeRequest():
             service.freeModel(message.modelHandle);
             message.sendPort.send(LiteRtLmDoneResponse());
@@ -247,17 +253,36 @@ void runLiteRtLmWorkerForTesting(
                 message.sendPort.send(LiteRtLmDoneResponse());
                 return;
               }
-              final stream = service.generateChat(
-                message.contextHandle,
-                message.messages,
-                message.params,
-                tools: message.tools,
-                toolChoice: message.toolChoice,
-                parallelToolCalls: message.parallelToolCalls,
-                enableThinking: message.enableThinking,
-                chatTemplateKwargs: message.chatTemplateKwargs,
-                templateNow: message.templateNow,
-              );
+              if (message.jsonSchema != null) {
+                validateJsonSchemaChatRequest(
+                  message.messages,
+                  message.params,
+                  hasTools: message.tools?.isNotEmpty ?? false,
+                  requiredTools: message.toolChoice == ToolChoice.required,
+                  parallelToolCalls: message.parallelToolCalls,
+                  enableThinking: message.enableThinking,
+                );
+              }
+              final stream = message.jsonSchema != null
+                  ? service.generateJsonSchemaChat(
+                      message.contextHandle,
+                      message.messages,
+                      message.params,
+                      jsonSchema: message.jsonSchema!,
+                      chatTemplateKwargs: message.chatTemplateKwargs,
+                      templateNow: message.templateNow,
+                    )
+                  : service.generateChat(
+                      message.contextHandle,
+                      message.messages,
+                      message.params,
+                      tools: message.tools,
+                      toolChoice: message.toolChoice,
+                      parallelToolCalls: message.parallelToolCalls,
+                      enableThinking: message.enableThinking,
+                      chatTemplateKwargs: message.chatTemplateKwargs,
+                      templateNow: message.templateNow,
+                    );
               final batcher = NativeTokenStreamBatcher(
                 tokenThreshold: message.params.streamBatchTokenThreshold,
                 byteThreshold: message.params.streamBatchByteThreshold,

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Source-derived obligation inventory only. Existing pack bindings do not assert execution, platform/backend qualification or completeness of every semantic branch. Exemptions remain open work.",
+  "description": "Source-derived obligation inventory only. Existing pack bindings do not assert execution, platform/backend qualification or completeness of every semantic branch. Exemptions remain open work. Native LiteRT-LM catalog 10 S01 records capability admission only; the maintained litert-lm-json-schema local scenario supplies bounded CPU enforcement evidence. Wider schema/platform pack qualification remains https://github.com/leehack/llamadart/issues/174.",
   "packs": [
     {
       "id": "batching",
@@ -96,7 +96,8 @@
         "S08.tools.schema"
       ],
       "profiles": [
-        "assets/profiles/structured-gguf-cpu.json"
+        "assets/profiles/structured-gguf-cpu.json",
+        "assets/profiles/chat-litert-cpu.json"
       ]
     },
     {

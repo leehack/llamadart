@@ -50,6 +50,7 @@ export 'src/backends/backend.dart'
         BackendGpuEnumeration,
         BackendGrammarConstraintsSupport,
         BackendLazyGrammarSupport,
+        BackendJsonSchemaChatGeneration,
         BackendModelFileTypeDiagnostics,
         BackendModelFormatRouting,
         BackendNativeChatGeneration,

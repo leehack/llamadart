@@ -11,6 +11,8 @@ import 'engine_capabilities.dart';
 import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
+import 'json_schema_chat_request.dart';
+import '../template/response_format.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
 import '../models/config/gpu_backend.dart';
@@ -254,6 +256,17 @@ class LlamaEngine {
     final grammar = ChatCompletionRequestPlanner.supportsGrammarConstraints(
       candidate,
     );
+    var nativeSchema = false;
+    if (!grammar && candidate is BackendJsonSchemaChatGeneration) {
+      try {
+        await (candidate as BackendJsonSchemaChatGeneration)
+            .prepareJsonSchemaChat();
+        nativeSchema = (candidate as BackendJsonSchemaChatGeneration)
+            .supportsJsonSchemaChatGeneration;
+      } on LlamaException {
+        nativeSchema = false;
+      }
+    }
     final lazyGrammar =
         grammar && ChatCompletionRequestPlanner.supportsLazyGrammar(candidate);
 
@@ -290,7 +303,7 @@ class LlamaEngine {
       supportsNextTokenScoring: nextTokenScoring,
       supportsMultiTurnChat: multiTurnChat,
       supportsToolCalling: toolCalling,
-      supportsStructuredOutput: grammar,
+      supportsStructuredOutput: grammar || nativeSchema,
       supportsGrammar: grammar,
       supportsLazyGrammar: lazyGrammar,
       supportsPenalty: generation.penalty,
@@ -1588,14 +1601,15 @@ class LlamaEngine {
   /// Use [LlamaStructuredOutput.responseFormat] or [createStructuredJson] for a
   /// typed helper that also validates and decodes the final JSON output.
   ///
-  /// Backends without grammar-constrained decoding, including LiteRT-LM native
-  /// and web today, throw [LlamaUnsupportedException] for strict
-  /// [responseFormat] requests instead of silently running unconstrained
-  /// generation.
-  ///
-  /// Structured output is separate from tool-call parsing: LiteRT-LM can still
-  /// parse compatible best-effort tool-call text, but it does not currently
-  /// enforce arbitrary JSON-schema constraints.
+  /// Native LiteRT-LM also accepts `json_object` and object schemas with scalar
+  /// properties, `required`, scalar `enum`/`const` and boolean
+  /// `additionalProperties` on macOS arm64 CPU with the canonical Qwen3 text
+  /// template and an admitted native provider. Pass `enableThinking: false`;
+  /// tools, media, custom templates, speculation, caller stops and broader
+  /// schemas are rejected. Its GBNF grammar support remains false.
+  /// LiteRT-LM Web and other unsupported combinations throw
+  /// [LlamaUnsupportedException] before generation. Schema enforcement is
+  /// separate from best-effort tool-call parsing.
   ///
   /// On native llama.cpp, image or audio input that the loaded multimodal
   /// projector has no encoder for throws [LlamaUnsupportedException]. A
@@ -1689,6 +1703,28 @@ class LlamaEngine {
         final effectiveTools = tools;
         final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
 
+        if (responseFormatSchema(responseFormat) != null &&
+            !ChatCompletionRequestPlanner.supportsGrammarConstraints(backend) &&
+            backend is BackendJsonSchemaChatGeneration) {
+          validateJsonSchemaChatRequest(
+            messages,
+            params ?? const GenerationParams(),
+            hasTools: effectiveTools?.isNotEmpty ?? false,
+            requiredTools: effectiveToolChoice == ToolChoice.required,
+            parallelToolCalls: parallelToolCalls,
+            enableThinking: enableThinking,
+          );
+        }
+        if (responseFormatSchema(responseFormat) != null &&
+            !ChatCompletionRequestPlanner.supportsGrammarConstraints(backend) &&
+            backend is BackendJsonSchemaChatGeneration) {
+          await ChatCompletionRequestPlanner.prepareResponseFormat(
+            backend,
+            responseFormat,
+          );
+          if (request.isCancelled()) return;
+        }
+
         // Apply chat template with tools - returns grammar for constraining
         final chatMediaMarker = _chatPromptMediaMarkerFor(messages);
         final result = await _renderChatTemplate(
@@ -1711,6 +1747,7 @@ class LlamaEngine {
           tools: effectiveTools,
           toolChoice: effectiveToolChoice,
           parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
           responseFormat: responseFormat,
         );
 
@@ -1725,7 +1762,8 @@ class LlamaEngine {
 
         final tokenStream = plan.usesNativeChatGeneration
             ? _generateNativeChat(
-                plan.nativeChatBackend!,
+                plan.jsonSchemaBackend ?? plan.nativeChatBackend!,
+                jsonSchema: plan.jsonSchema,
                 messages,
                 params: plan.generationParams,
                 tools: effectiveTools,
@@ -2121,9 +2159,10 @@ class LlamaEngine {
   }
 
   Stream<String> _generateNativeChat(
-    BackendNativeChatGeneration nativeBackend,
+    Object nativeBackend,
     List<LlamaChatMessage> messages, {
     required GenerationParams params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     required ToolChoice toolChoice,
     required bool parallelToolCalls,
@@ -2147,17 +2186,27 @@ class LlamaEngine {
       try {
         reachedBackend = true;
         _beginContextCall(requestContext, requestEpoch);
-        final stream = nativeBackend.generateChat(
-          _contextHandle!,
-          messages,
-          resolvedParams,
-          tools: tools,
-          toolChoice: toolChoice,
-          parallelToolCalls: parallelToolCalls,
-          enableThinking: enableThinking,
-          chatTemplateKwargs: chatTemplateKwargs,
-          templateNow: templateNow,
-        );
+        final stream = jsonSchema != null
+            ? (nativeBackend as BackendJsonSchemaChatGeneration)
+                  .generateChatWithJsonSchema(
+                    _contextHandle!,
+                    messages,
+                    resolvedParams,
+                    jsonSchema: jsonSchema,
+                    chatTemplateKwargs: chatTemplateKwargs,
+                    templateNow: templateNow,
+                  )
+            : (nativeBackend as BackendNativeChatGeneration).generateChat(
+                _contextHandle!,
+                messages,
+                resolvedParams,
+                tools: tools,
+                toolChoice: toolChoice,
+                parallelToolCalls: parallelToolCalls,
+                enableThinking: enableThinking,
+                chatTemplateKwargs: chatTemplateKwargs,
+                templateNow: templateNow,
+              );
 
         await for (final token in _cancellableText(
           stream,

@@ -210,6 +210,30 @@ void markPromptExcludedFromPenalties(GenerationParams params) {
 bool isPromptExcludedFromPenalties(GenerationParams params) =>
     _promptExcludedFromPenalties[params] ?? false;
 
+/// Optional, bounded JSON-Schema text-chat capability, separate from GBNF.
+///
+/// Admission may initialize the loaded model and must construct its provider;
+/// symbol presence alone is not model support. The route accepts object schemas
+/// with scalar properties, required, enum, const and additionalProperties.
+/// Tools, media, thinking, caller stops and speculative decoding are excluded.
+abstract class BackendJsonSchemaChatGeneration {
+  /// True only after successful provider admission for the loaded model.
+  bool get supportsJsonSchemaChatGeneration;
+
+  /// Admits the loaded model or throws a typed unsupported/runtime error.
+  Future<void> prepareJsonSchemaChat();
+
+  /// Streams schema-constrained text chat with thinking explicitly disabled.
+  Stream<List<int>> generateChatWithJsonSchema(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  });
+}
+
 /// Optional backend capability for native structured chat generation.
 ///
 /// Backends that implement this can receive chat messages and tools directly

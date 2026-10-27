@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
+import '../template/response_format.dart';
 import 'engine.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
@@ -195,10 +197,21 @@ class ChatSession {
         TemplateTimeChatSession(:final templateNow) => templateNow,
         _ => null,
       };
-      ChatCompletionRequestPlanner.rejectUnsupportedResponseFormat(
-        _engine.backend,
-        responseFormat,
-      );
+      if (_engine.backend is BackendJsonSchemaChatGeneration &&
+          !ChatCompletionRequestPlanner.supportsGrammarConstraints(
+            _engine.backend,
+          ) &&
+          responseFormatSchema(responseFormat) != null) {
+        await ChatCompletionRequestPlanner.prepareResponseFormat(
+          _engine.backend,
+          responseFormat,
+        );
+      } else {
+        ChatCompletionRequestPlanner.rejectUnsupportedResponseFormat(
+          _engine.backend,
+          responseFormat,
+        );
+      }
       final edits = _TurnEdits(this);
 
       // Add user message if parts provided

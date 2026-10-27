@@ -193,6 +193,7 @@ class _NoEngineClient extends LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
     String? loraPath,
+    bool jsonSchemaConstraints = false,
   }) {
     conversations += 1;
   }
