@@ -17,8 +17,14 @@ class ImageModelTensor {
   /// outermost first.
   final List<int> shape;
 
+  /// Safetensors dtype, when read from that container.
+  final String? dtype;
+
+  /// GGUF tensor type wire value, when read from that container.
+  final int? ggufType;
+
   /// Creates a tensor description.
-  const ImageModelTensor(this.name, this.shape);
+  const ImageModelTensor(this.name, this.shape, {this.dtype, this.ggufType});
 }
 
 /// The metadata and tensor list of a GGUF or safetensors file.
@@ -109,17 +115,19 @@ const Map<int, int> _ggufScalarBytes = <int, int>{
 };
 
 /// Reads the header of a GGUF or safetensors file through [read], fetching
-/// only the header bytes.
+/// only the header bytes. Set [stopAtLanguageModelArchitecture] to false
+/// when every tensor type is needed, including language-model encoders.
 ///
 /// Throws [FormatException] when the file is neither, or its header is
 /// truncated or implausible.
 Future<ImageModelFileHeader> readImageModelFileHeader(
-  ImageModelFileReader read,
-) async {
+  ImageModelFileReader read, {
+  bool stopAtLanguageModelArchitecture = true,
+}) async {
   final reader = _HeaderReader(read);
   final magic = await reader.bytes(4);
   if (ascii.decode(magic, allowInvalid: true) == 'GGUF') {
-    return _readGguf(reader);
+    return _readGguf(reader, stopAtLanguageModelArchitecture);
   }
   reader.position = 0;
   final length = await reader.u64();
@@ -145,7 +153,15 @@ Future<ImageModelFileHeader> readImageModelFileHeader(
     if (shape is! List || shape.any((dim) => dim is! int)) {
       throw const FormatException('Malformed safetensors header.');
     }
-    tensors.add(ImageModelTensor(name, shape.cast<int>()));
+    tensors.add(
+      ImageModelTensor(
+        name,
+        shape.cast<int>(),
+        dtype: info is Map && info['dtype'] is String
+            ? info['dtype'] as String
+            : null,
+      ),
+    );
   }
   return ImageModelFileHeader(
     isGguf: false,
@@ -197,7 +213,10 @@ Future<bool> _readGgufKeys(
   return false;
 }
 
-Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
+Future<ImageModelFileHeader> _readGguf(
+  _HeaderReader reader,
+  bool stopAtLanguageModelArchitecture,
+) async {
   await reader.u32();
   final tensorCount = _checkedCount(
     await reader.u64(),
@@ -208,6 +227,7 @@ Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
     reader,
     metadata,
     (key, value) =>
+        stopAtLanguageModelArchitecture &&
         key == 'general.architecture' &&
         imageModelLanguageModelArchitectures.contains(value),
   )) {
@@ -226,9 +246,9 @@ Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
       throw const FormatException('Malformed GGUF tensor info.');
     }
     final shape = <int>[for (var d = 0; d < dims; d++) await reader.u64()];
-    await reader.u32();
+    final type = await reader.u32();
     await reader.u64();
-    tensors.add(ImageModelTensor(name, shape));
+    tensors.add(ImageModelTensor(name, shape, ggufType: type));
   }
   return ImageModelFileHeader(
     isGguf: true,

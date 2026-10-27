@@ -404,6 +404,15 @@ check that the next load reuses the cache.
 To compare containers without downloading models, supply comma-separated local
 files with **identical tensor values**, baseline first:
 
+- FP8 image weights are refused before native construction on Metal, including
+  automatic selection. Use `--device cpu` or compatible non-FP8 weights; CPU
+  selection preserves native dtype admission and does not qualify every FP8 model
+  ([#1446](https://github.com/leehack/llamadart/issues/1446)).
+- For a bounded FP8 CPU generation check with an existing model, set
+  `LLAMADART_IMAGE_FP8_MODEL` and run
+  `dart test --run-skipped -t local-only test/image_fp8_cpu_e2e_test.dart`.
+  It verifies the pinned runtime, FP8 header, CPU generation and disposal,
+  and records model/output hashes; `LLAMADART_IMAGE_OUTPUT_DIR` saves artifacts.
 - `LLAMADART_IMAGE_CHECKPOINT_FORMATS`: a GGUF/Safetensors baseline followed
   by compatible checkpoint variants. Candidates use an explicit checkpoint role.
 - `LLAMADART_TAESD_FORMATS`: a full TAESD baseline followed by compatible

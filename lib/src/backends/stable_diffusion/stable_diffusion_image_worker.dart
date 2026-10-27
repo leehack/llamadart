@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
 
@@ -10,6 +11,7 @@ import '../../core/image/generated_image.dart';
 import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_driver.dart';
 import '../../core/image/image_generation_request.dart';
+import '../../core/image/image_model_metal_preflight.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/config/log_level.dart';
 import '../isolate_shutdown_releases.dart';
@@ -17,6 +19,7 @@ import '../worker_log_message.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 import 'stable_diffusion_calls.dart';
 import 'stable_diffusion_log.dart';
+import 'stable_diffusion_memory.dart';
 import 'stable_diffusion_params.dart';
 
 /// Resolves the native calls of a worker; `null` when the runtime lacks them.
@@ -124,7 +127,10 @@ final class StableDiffusionImageWorker
   /// Throws [LlamaModelException] when the runtime cannot load the files as
   /// an image model, with the runtime's reason when it gives one, and
   /// [LlamaUnsupportedException] when the runtime does not export the
-  /// functions of [StableDiffusionCalls].
+  /// functions of [StableDiffusionCalls], or FP8 weights would reach Metal.
+  /// On Apple platforms an unspecified backend may select Metal; use `cpu`
+  /// explicitly for FP8 weights. The preflight inspects every regular file
+  /// before any native context is constructed.
   static Future<StableDiffusionImageWorker> start(
     ImageGenerationSessionConfig config, {
     StableDiffusionCallsResolver resolveCalls = StableDiffusionCalls.tryResolve,
@@ -134,6 +140,37 @@ final class StableDiffusionImageWorker
     final calls = resolveCalls();
     if (calls == null) {
       throw stableDiffusionWrapperUnsupported();
+    }
+    if ((Platform.isMacOS || Platform.isIOS) &&
+        !{'cpu', 'blas'}.contains(config.backend?.toLowerCase())) {
+      for (final role in const [
+        'model',
+        'diffusionModel',
+        'vae',
+        'taesd',
+        'clipL',
+        'clipG',
+        't5xxl',
+        'llm',
+      ]) {
+        final path = config.files[role];
+        if (path == null) continue;
+        // Missing files still get the runtime's existing load failure.
+        if (FileSystemEntity.typeSync(path) == FileSystemEntityType.directory) {
+          throw LlamaUnsupportedException(
+            'Cannot verify directory model tensor dtypes before Metal context '
+            'creation. Use individual GGUF or Safetensors components, or '
+            'ComputeDevice.cpu (https://github.com/leehack/llamadart/issues/1446).',
+          );
+        }
+        if (!File(path).existsSync()) continue;
+        await validateImageModelMetalDtypes(
+          (offset, length) =>
+              readStableDiffusionFileRange(path, offset, length),
+          name: role == 'model' ? 'the checkpoint' : 'the $role component',
+          isJsonIndex: path.endsWith('.json'),
+        );
+      }
     }
     // Registers the runtime's recorders, which is not synchronized with a
     // load: they have to be in place before the worker starts one. The log

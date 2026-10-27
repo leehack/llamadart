@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
@@ -21,6 +22,7 @@ import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 
 import '../../../support/fake_stable_diffusion_runtime.dart';
+import '../../../support/image_model_headers.dart';
 
 const _config = ImageGenerationSessionConfig(
   files: {'model': '/models/sdxs.gguf'},
@@ -138,6 +140,71 @@ void main() {
       workers.add(worker);
       return worker;
     }
+
+    test(
+      'FP8 Metal preflight precedes native context creation, CPU forwards',
+      () async {
+        final directory = Directory.systemTemp.createTempSync('image-fp8-');
+        addTearDown(() => directory.deleteSync(recursive: true));
+        final file = File('${directory.path}/private-weights.bin')
+          ..writeAsBytesSync(
+            safetensorsHeader(
+              [
+                ('model.diffusion_model.weight', [1]),
+              ],
+              dtype: 'F8_E4M3',
+              dataBytes: 1,
+            ),
+          );
+        for (final backend in [null, 'gpu', 'MTL0']) {
+          await expectLater(
+            start(
+              config: ImageGenerationSessionConfig(
+                files: {'model': file.path},
+                backend: backend,
+                threads: 1,
+              ),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          await runtime.flush();
+          expect(runtime.calls('worker'), isEmpty);
+          expect(runtime.calls('caller'), isEmpty);
+        }
+        final worker = await start(
+          config: ImageGenerationSessionConfig(
+            files: {'model': file.path},
+            backend: 'cpu',
+            threads: 1,
+          ),
+        );
+        await runtime.flush();
+        expect(
+          runtime
+              .calls('worker')
+              .any((call) => call.contains('sd_dart_new_sd_ctx')),
+          isTrue,
+        );
+        await worker.dispose();
+        runtime.clearCalls();
+        file.writeAsBytesSync(
+          safetensorsHeader([
+            ('model.diffusion_model.weight', [1]),
+          ], dataBytes: 2),
+        );
+        final metal = await start(
+          config: ImageGenerationSessionConfig(
+            files: {'model': file.path},
+            backend: 'gpu',
+            threads: 1,
+          ),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), contains('sd_dart_new_sd_ctx'));
+        await metal.dispose();
+      },
+      skip: !(Platform.isMacOS || Platform.isIOS),
+    );
 
     /// A started worker, with the calls of its load forgotten.
     test('concurrent disposal waits for the same worker cleanup', () async {

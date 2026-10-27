@@ -439,6 +439,15 @@ other layouts and platforms need their own qualification. See the
 [format and layout limits](https://llamadart.leehack.com/docs/next/guides/image-generation#weight-formats-and-layouts)
 before choosing files: a supported container does not imply every model works.
 
+FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
+GGUF) are refused with `LlamaUnsupportedException` on Metal, including
+`ComputeDevice.auto` when it selects Metal, before native context creation.
+Use `ComputeDevice.cpu` or compatible non-FP8 weights. Uninspectable
+GGUF/Safetensors headers and ordinary JSON shard indexes are also refused on
+Metal. This prevents the native abort tracked in
+[#1446](https://github.com/leehack/llamadart/issues/1446); selecting CPU keeps
+native dtype admission and does not qualify arbitrary FP8 models.
+
 - **Opt in** to the runtime (about 40 to 70 MB per target) in the app's
   `pubspec.yaml`, then run `flutter clean` once:
 

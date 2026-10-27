@@ -75,6 +75,15 @@ SD-Turbo F16/F32 checkpoint-index recipe on macOS CPU; arbitrary directories
 and Diffusers component layouts are unsupported. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
 Container support does not extend the model/device qualification above.
 
+FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
+GGUF) are refused with `LlamaUnsupportedException` on Metal, including
+`ComputeDevice.auto` when it selects Metal, before native context creation.
+Use `ComputeDevice.cpu` or compatible non-FP8 weights. Uninspectable
+GGUF/Safetensors headers and ordinary JSON shard indexes are also refused on
+Metal. This prevents the native abort tracked in
+[#1446](https://github.com/leehack/llamadart/issues/1446); selecting CPU keeps
+native dtype admission and does not qualify arbitrary FP8 models.
+
 Image prompt-conditioning reuse can be disabled or limited by entry count
 with `ImageConditioningCacheParams(capacity: ...)`; ordinary settings preserve
 four entries.
