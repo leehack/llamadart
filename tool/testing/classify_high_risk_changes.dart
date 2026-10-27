@@ -39,27 +39,32 @@ enum StructuredImpact {
 /// Minimum impacts implied by changed production paths. Evidence-only changes
 /// cannot expand a known production change into unrelated runtime behavior.
 Set<StructuredImpact> structuredImpactHints(Iterable<String> paths) {
-  final production = paths.where(
-    (path) => _isStructuredOutput(path) && !path.startsWith('test/'),
-  );
   final impacts = <StructuredImpact>{};
-  for (final path in production) {
-    if (path == 'lib/src/core/template/template_render_context.dart') {
-      impacts.add(StructuredImpact.inputRenderingHistory);
-    } else if (const {
-      'lib/src/core/template/peg_chat_parser.dart',
-      'lib/src/core/template/chat_parse_result.dart',
-      'lib/src/core/template/tool_call_fallback_parser.dart',
-    }.contains(path)) {
-      impacts.add(StructuredImpact.outputParsingStreaming);
-    } else if (path.startsWith('lib/src/core/grammar/')) {
-      impacts.add(StructuredImpact.grammarSchema);
-    } else {
-      // Handlers, shared utilities, exports, and unknown paths can mix effects.
-      impacts.addAll(StructuredImpact.values);
-    }
+  for (final path in paths) {
+    impacts.addAll(structuredProductionImpactHints(path) ?? const {});
   }
   return impacts.isEmpty ? StructuredImpact.values.toSet() : impacts;
+}
+
+/// A production path's conservative contribution, or `null` for evidence and
+/// unrelated paths. An absent contribution is not proof of no runtime effects.
+Set<StructuredImpact>? structuredProductionImpactHints(String path) {
+  if (!_isStructuredOutput(path) || path.startsWith('test/')) return null;
+  if (path == 'lib/src/core/template/template_render_context.dart') {
+    return {StructuredImpact.inputRenderingHistory};
+  }
+  if (const {
+    'lib/src/core/template/peg_chat_parser.dart',
+    'lib/src/core/template/chat_parse_result.dart',
+    'lib/src/core/template/tool_call_fallback_parser.dart',
+  }.contains(path)) {
+    return {StructuredImpact.outputParsingStreaming};
+  }
+  if (path.startsWith('lib/src/core/grammar/')) {
+    return {StructuredImpact.grammarSchema};
+  }
+  // Handlers, shared utilities, exports, and unknown paths can mix effects.
+  return StructuredImpact.values.toSet();
 }
 
 /// Platform-independent result of classifying paths read from standard input.
