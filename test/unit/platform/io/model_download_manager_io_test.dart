@@ -2663,6 +2663,10 @@ class _FakeHttpClientResponse extends StreamView<List<int>>
   int get contentLength => -1;
 
   @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+
+  @override
   final HttpHeaders headers = _FakeHttpHeaders();
 
   @override

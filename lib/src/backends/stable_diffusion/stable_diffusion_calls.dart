@@ -35,6 +35,8 @@ typedef _LogReadNative =
     Uint64 Function(Uint64, Pointer<Char>, Size, Pointer<Int32>, Pointer<Size>);
 typedef _LogDroppedNative = Uint64 Function();
 typedef _LastErrorNative = Size Function(Pointer<Char>, Size);
+typedef _FreeImageGenerationResultNative =
+    Void Function(Pointer<sd.sd_image_generation_result_t>);
 
 /// Every native call an image worker makes.
 ///
@@ -92,6 +94,7 @@ final class StableDiffusionCalls {
     required this.freeImages,
     this.log,
     this.gpu,
+    this.loadsFp8AsF16OnMetal = false,
   });
 
   /// The oldest `stable-diffusion-native` release that exports the `sd_dart_`
@@ -127,25 +130,48 @@ final class StableDiffusionCalls {
     'sd_dart_gpu_device_memory',
   ];
 
+  /// The first `stable-diffusion-native` release that loads FP8 weights a
+  /// Metal backend computes with as F16 instead of aborting the process
+  /// (leehack/stable-diffusion-native#29).
+  static const String fp8MetalNativeRelease = 'v0.3.0-1';
+
+  /// Functions that runtimes from [fp8MetalNativeRelease] on export and no
+  /// earlier release does.
+  ///
+  /// The FP8 fix is a carried patch with no export of its own, and
+  /// `sd_commit` names the upstream commit, which a build without the patch
+  /// shares. These are upstream master-1017's, which [fp8MetalNativeRelease]
+  /// first ships, so they tell an older runtime apart from the pinned one.
+  static const List<String> fp8MetalSymbols = [
+    'free_sd_image_generation_result',
+  ];
+
   /// Resolves the calls from the bundled runtime, or returns `null` when it
   /// does not export every one of [wrapperSymbols]. [log] and [gpu] are
   /// `null` when it does not export theirs.
   ///
   /// [symbol] replaces the lookup: it returns the address of the function
   /// exported under a name, and throws [ArgumentError] when there is none.
+  /// [releaseTag] replaces the hook-pinned [stableDiffusionReleaseTag], the
+  /// release whose checksum-verified archive or matching Apple companion the
+  /// build hook links.
   static StableDiffusionCalls? tryResolve({
     Pointer<NativeType> Function(String name)? symbol,
+    String releaseTag = stableDiffusionReleaseTag,
   }) {
     try {
-      return StableDiffusionCalls._fromSymbols(symbol ?? symbolAddress);
+      return StableDiffusionCalls._fromSymbols(
+        symbol ?? symbolAddress,
+        releaseTag,
+      );
     } on ArgumentError {
       return null;
     }
   }
 
   /// The address of the function the bundled runtime exports as [name], one
-  /// of [wrapperSymbols], [logSymbols] or [deviceMemorySymbols]; throws
-  /// [ArgumentError] when it exports none.
+  /// of [wrapperSymbols], [logSymbols], [deviceMemorySymbols] or
+  /// [fp8MetalSymbols]; throws [ArgumentError] when it exports none.
   static Pointer<NativeType> symbolAddress(String name) => switch (name) {
     'sd_dart_progress_enable' =>
       Native.addressOf<NativeFunction<_ProgressEnableNative>>(
@@ -194,6 +220,10 @@ final class StableDiffusionCalls {
       Native.addressOf<NativeFunction<_GpuDeviceMemoryNative>>(
         sd.sd_dart_gpu_device_memory,
       ),
+    'free_sd_image_generation_result' =>
+      Native.addressOf<NativeFunction<_FreeImageGenerationResultNative>>(
+        sd.free_sd_image_generation_result,
+      ),
     _ => throw ArgumentError.value(name, 'name', 'not bound'),
   };
 
@@ -201,6 +231,7 @@ final class StableDiffusionCalls {
   // bound without being part of the probe.
   factory StableDiffusionCalls._fromSymbols(
     Pointer<NativeType> Function(String name) symbol,
+    String releaseTag,
   ) {
     Pointer<NativeFunction<T>> function<T extends Function>(String name) =>
         symbol(name).cast();
@@ -266,6 +297,9 @@ final class StableDiffusionCalls {
           ).asFunction(),
         ),
       ),
+      loadsFp8AsF16OnMetal:
+          _releaseAtLeast(releaseTag, fp8MetalNativeRelease) &&
+          (optional(() => fp8MetalSymbols.map(symbol).toList()) != null),
     );
   }
 
@@ -347,6 +381,16 @@ final class StableDiffusionCalls {
   /// The runtime's GPU device queries, or `null` on a runtime older than
   /// [optionalNativeRelease].
   final StableDiffusionGpuCalls? gpu;
+
+  /// Whether the runtime loads FP8 weights a Metal backend computes with as
+  /// F16, so FP8 weights can reach a Metal context without aborting the
+  /// process.
+  ///
+  /// `true` only when the hook-pinned release is [fp8MetalNativeRelease] or
+  /// later and the runtime exports [fp8MetalSymbols]. Neither proves the
+  /// patch on its own: the pinned release is the build the hook verified,
+  /// and the symbols reject an older runtime that reached the process.
+  final bool loadsFp8AsF16OnMetal;
 }
 
 /// The GPU device queries of the stable_diffusion runtime.
@@ -446,3 +490,25 @@ LlamaUnsupportedException stableDiffusionWrapperUnsupported() =>
   assetId: _stableDiffusionAsset,
 )
 external void _cancelGeneration(Pointer<sd.sd_ctx_t> context, int mode);
+
+final RegExp _releaseTagPattern = RegExp(
+  r'^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([1-9][0-9]*))?$',
+);
+
+/// Whether stable-diffusion-native release [tag] is [floor] or later; `false`
+/// when either is not a `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-N` tag.
+bool _releaseAtLeast(String tag, String floor) {
+  List<int>? parse(String value) {
+    final match = _releaseTagPattern.firstMatch(value);
+    if (match == null) return null;
+    return [for (var i = 1; i <= 4; i++) int.parse(match.group(i) ?? '0')];
+  }
+
+  final release = parse(tag);
+  final minimum = parse(floor);
+  if (release == null || minimum == null) return false;
+  for (var i = 0; i < release.length; i++) {
+    if (release[i] != minimum[i]) return release[i] > minimum[i];
+  }
+  return true;
+}

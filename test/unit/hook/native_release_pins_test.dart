@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/native_release_manifest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:test/test.dart';
 
@@ -147,6 +148,27 @@ void main() {
     }
   });
 
+  test('llama.cpp pins a hook contract this hook supports', () {
+    expect(
+      supportedNativeHookContractVersions,
+      contains(llamaCppHookContractVersion),
+    );
+  });
+
+  test('llama.cpp backend sidecars extend a pinned bundle once each', () {
+    final keys = <String>{};
+    for (final spec in llamaCppBackendSidecarSpecs) {
+      expect(llamaCppBundleSha256, contains(spec.bundle), reason: spec.archive);
+      expect(spec.archive, startsWith('${spec.bundle}-'));
+      expect(llamaCppBundleSha256, isNot(contains(spec.archive)));
+      expect(spec.sha256, matches(sha256Pattern), reason: spec.archive);
+      expect(keys.add('${spec.bundle}/${spec.backend}'), isTrue);
+    }
+    if (llamaCppHookContractVersion < 2) {
+      expect(llamaCppBackendSidecarSpecs, isEmpty);
+    }
+  });
+
   test('LiteRT-LM cache version is the release tag without its v prefix', () {
     expect(liteRtLmReleaseTag, startsWith('v'));
     expect(liteRtLmVersion, liteRtLmReleaseTag.substring(1));
@@ -222,13 +244,13 @@ void main() {
     }
   });
 
-  test('stable_diffusion pins the qualified v0.3.0 release artifacts', () {
+  test('stable_diffusion pins the qualified v0.3.0-1 release artifacts', () {
     // Exact published owner manifest, independently checked against GitHub
     // asset digests before adoption. This also binds the Apple binary target.
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_1_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
@@ -256,7 +278,7 @@ void main() {
     final apple = artifacts.singleWhere(
       (artifact) =>
           artifact['file'] ==
-          'stable-diffusion-native-apple-xcframework-v0.3.0.zip',
+          'stable-diffusion-native-apple-xcframework-v0.3.0-1.zip',
     );
     final swift = File(
       'packages/llamadart_stable_diffusion_flutter/darwin/'
@@ -266,13 +288,13 @@ void main() {
     expect(swift, contains(apple['sha256'] as String));
   });
 
-  // v0.3.0 grew sd_ctx_params_t, so no XCFramework of an older pin matches
-  // the bindings.
+  // No older XCFramework is requalified: v0.3.0 aborts on FP8 weights on
+  // Metal, and earlier pins have a smaller sd_ctx_params_t.
   test('the SD hook accepts only the pinned Apple companion artifact', () {
     final manifest =
         jsonDecode(
               File(
-                'test/fixtures/native/stable_diffusion_v0_3_0_manifest.json',
+                'test/fixtures/native/stable_diffusion_v0_3_0_1_manifest.json',
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;

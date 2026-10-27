@@ -2,7 +2,8 @@
 // differs from what its pinned release publishes, so a manual pin edit cannot
 // ship digests every consumer build would reject:
 //
-// - `llamaCppBundleSha256` against the `llamaCppTag` release's `SHA256SUMS`;
+// - `llamaCppBundleSha256` and `llamaCppBackendSidecarSpecs` against the
+//   `llamaCppTag` release's `SHA256SUMS`;
 // - `stableDiffusionBundleSpecs` against the `stableDiffusionReleaseTag`
 //   release's `SHA256SUMS`;
 // - `liteRtLmBundleSpecs` against the GitHub asset digests of the
@@ -257,12 +258,15 @@ final class _DigestCheck {
 }
 
 final List<_DigestCheck> _checks = [
-  const _DigestCheck(
+  _DigestCheck(
     pinName: 'llamaCppBundleSha256',
     flag: '--llama-cpp-sums',
     repository: nativeReleaseRepository,
     tag: llamaCppTag,
-    pins: llamaCppBundleSha256,
+    pins: {
+      ...llamaCppBundleSha256,
+      for (final spec in llamaCppBackendSidecarSpecs) spec.archive: spec.sha256,
+    },
     archivePrefix: 'llamadart-native',
     kind: _SourceKind.sha256Sums,
   ),

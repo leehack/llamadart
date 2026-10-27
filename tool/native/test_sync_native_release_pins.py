@@ -3045,7 +3045,7 @@ class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
         self.current = pins.current_stable_diffusion_release_tag(self.source)
         self.checksum = re.search(
             r"const stableDiffusionAppleCompanionChecksums = <String, String>\{\s*"
-            r"'" + re.escape(self.current) + r"': '([0-9a-f]{64})'",
+            r"'" + re.escape(self.current) + r"':\s*'([0-9a-f]{64})'",
             self.source,
         ).group(1)
 
@@ -3402,7 +3402,13 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
         self.release_dir = self.root / "releases"
         self.release_dir.mkdir()
 
-    def write_release(self, tag: str) -> None:
+    def write_release(
+        self,
+        tag: str,
+        *,
+        contract: int = 1,
+        sidecar_artifacts: tuple[dict, ...] = (),
+    ) -> None:
         def asset(name: str) -> dict:
             return {
                 "name": name,
@@ -3420,16 +3426,22 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
             ),
             asset(f"llamadart-native-headers-{tag}.tar.gz"),
             asset(f"llamadart-native-apple-xcframework-{tag}.zip"),
+            *(asset(sidecar["file"]) for sidecar in sidecar_artifacts),
         ]
+        sidecar_fields = {sidecar["file"]: sidecar for sidecar in sidecar_artifacts}
         manifest = {
             "native_release_tag": tag,
             "tag": tag,
-            "hook_contract_version": pins.SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION,
+            "hook_contract_version": contract,
             "llama_cpp_commit": "d81235049384534c167caea52b85a694f6103d14",
             "native_commit": NATIVE_COMMIT,
             "llama_cpp_tag": pins.parse_native_release_tag(tag).upstream_tag,
             "artifacts": [
-                {"file": bundle["name"], "sha256": bundle["digest"][7:]}
+                {
+                    **sidecar_fields.get(bundle["name"], {}),
+                    "file": bundle["name"],
+                    "sha256": bundle["digest"][7:],
+                }
                 for bundle in bundles
             ],
         }
@@ -3448,8 +3460,18 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
             json.dumps(release), encoding="utf-8"
         )
 
-    def run_sync(self, tag: str, *extra: str) -> subprocess.CompletedProcess[str]:
-        self.write_release(tag)
+    def run_sync(
+        self,
+        tag: str,
+        *extra: str,
+        contract: int = 1,
+        sidecar_artifacts: tuple[dict, ...] = (),
+    ) -> subprocess.CompletedProcess[str]:
+        self.write_release(
+            tag,
+            contract=contract,
+            sidecar_artifacts=sidecar_artifacts,
+        )
         return subprocess.run(
             [
                 sys.executable,
@@ -3554,6 +3576,116 @@ class LlamaCppAppleCompanionCompatibilitySyncTest(unittest.TestCase):
                     f"version: {'0.13.1' if extra else '0.13.0'}\n",
                     pubspec.read_text(encoding="utf-8"),
                 )
+
+    def next_wrapper_tag(self) -> str:
+        current = pins.read_hook_native_tag(self.pins.read_text(encoding="utf-8"))
+        upstream = pins.parse_native_release_tag(current).upstream_tag
+        build = int(current.rsplit("-", 1)[1]) if "-" in current else 0
+        return f"{upstream}-{build + 1}"
+
+    @staticmethod
+    def cuda_sidecar(tag: str, **fields: str) -> dict:
+        return {
+            "module": "backend-cuda12",
+            "platform": "windows",
+            "arch": "x64",
+            "backend": "cuda",
+            "file": f"llamadart-native-windows-x64-cuda12-{tag}.tar.gz",
+            **fields,
+        }
+
+    def test_a_contract_2_release_pins_its_backend_sidecars(self) -> None:
+        target = self.next_wrapper_tag()
+        sidecar_file = f"llamadart-native-windows-x64-cuda12-{target}.tar.gz"
+
+        result = self.run_sync(
+            target,
+            contract=2,
+            sidecar_artifacts=(self.cuda_sidecar(target),),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        text = self.pins.read_text(encoding="utf-8")
+        self.assertIn("const llamaCppHookContractVersion = 2;", text)
+        self.assertIn(
+            "const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[\n"
+            "  LlamaCppBackendSidecarSpec(\n"
+            "    bundle: 'windows-x64',\n"
+            "    backend: 'cuda',\n"
+            "    archive: 'windows-x64-cuda12',\n"
+            f"    sha256: '{hashlib.sha256(sidecar_file.encode()).hexdigest()}',\n"
+            "  ),\n"
+            "];",
+            text,
+        )
+        self.assertEqual(pins.llama_cpp_bundle_names(text), list(pins._STABLE_NATIVE_BUNDLES))
+
+        resync = self.run_sync(target)
+        self.assertEqual(resync.returncode, 0, resync.stderr)
+        text = self.pins.read_text(encoding="utf-8")
+        self.assertIn("const llamaCppHookContractVersion = 1;", text)
+        self.assertIn(
+            "const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[];",
+            text,
+        )
+
+    def test_rejects_unsupported_contracts_and_malformed_sidecars(self) -> None:
+        target = self.next_wrapper_tag()
+        cases = {
+            "requires native hook contract 3": dict(contract=3),
+            "requires native hook contract True": dict(contract=True),
+            "under hook contract 1, which has none": dict(
+                sidecar_artifacts=(self.cuda_sidecar(target),),
+            ),
+            "has invalid backend": dict(
+                contract=2,
+                sidecar_artifacts=(self.cuda_sidecar(target, backend=""),),
+            ),
+            "extends unknown bundle linux-riscv64": dict(
+                contract=2,
+                sidecar_artifacts=(
+                    self.cuda_sidecar(
+                        target,
+                        platform="linux",
+                        arch="riscv64",
+                        file=f"llamadart-native-linux-riscv64-cuda12-{target}.tar.gz",
+                    ),
+                ),
+            ),
+            "is not named llamadart-native-windows-x64-<variant>": dict(
+                contract=2,
+                sidecar_artifacts=(
+                    self.cuda_sidecar(
+                        target,
+                        file=f"llamadart-native-linux-x64-cuda12-{target}.tar.gz",
+                    ),
+                ),
+            ),
+            "more than one cuda sidecar for windows-x64": dict(
+                contract=2,
+                sidecar_artifacts=(
+                    self.cuda_sidecar(target),
+                    self.cuda_sidecar(
+                        target,
+                        module="backend-cuda13",
+                        file=f"llamadart-native-windows-x64-cuda13-{target}.tar.gz",
+                    ),
+                ),
+            ),
+        }
+        original = self.pins.read_text(encoding="utf-8")
+        for message, release in cases.items():
+            with self.subTest(message=message):
+                result = self.run_sync(target, **release)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(self.pins.read_text(encoding="utf-8"), original)
+
+    def test_sidecar_pins_require_their_constants(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "llamaCppBackendSidecarSpecs"):
+            pins.replace_llama_cpp_backend_sidecars("const llamaCppTag = 'v0.6.0';\n", [])
+        with self.assertRaisesRegex(ReleaseError, "hook contract version"):
+            pins.replace_llama_cpp_hook_contract("const llamaCppTag = 'v0.6.0';\n", 2)
 
     def test_a_same_tag_resync_keeps_compatible_tags(self) -> None:
         original = self.pins.read_text(encoding="utf-8")

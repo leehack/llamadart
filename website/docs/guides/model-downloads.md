@@ -334,6 +334,11 @@ await manager.clear();
   same App Group. Apps from unrelated developers should accept user-picked
   files through the document picker and copy them into the app cache: the
   loaders take file paths, not content URIs or file descriptors.
+- A download into an App Group container holds a file lock there (see
+  [Locking](#reference-resume-locking-and-cache-metadata)). iOS terminates an
+  app that is suspended while holding a lock in a shared container
+  (`0xdead10cc`), so finish or cancel the download, or keep it running with a
+  background task, before the app is suspended.
 
 ## Limits
 
@@ -351,22 +356,52 @@ await manager.clear();
 
 ## Reference: resume, locking and cache metadata
 
-**Atomic writes.** Downloads go to a `.part` file, which becomes the cached
-model only after the HTTP stream and any SHA-256 check succeed.
+**Atomic writes.** Each download attempt writes its own
+`<file>.<random id>.part` file and renames it onto the model path only after
+the HTTP stream succeeds, the file's length matches the total the server
+reported (when it reported one for the decoded body; not for gzip-encoded
+responses) and any SHA-256 check passes. A shorter file is kept and resumed;
+a longer one is discarded and downloaded again. A failed or cancelled attempt
+leaves its bytes in `<file>.part` for the next resume.
 
 **Resume.** A retry or resume sends an HTTP `Range` request only when the
 partial file has a validator (`ETag` or `Last-Modified`); otherwise it
 restarts from byte zero. A server that answers a Range
 request with `200 OK` also restarts it from byte zero.
 
-**Locking.** Stable-cache downloads are serialized per cache entry within the
-process, including across `DefaultModelDownloadManager` instances that share a
-cache root. A same-entry caller waits for the active operation; cache-reusing
-policies then re-check the cache. Different entries download in parallel.
+**Locking.** Stable-cache operations are serialized per cache entry across
+`DefaultModelDownloadManager` instances, isolates and processes that share a
+cache root, such as two apps using `sharedCache()`, apps granted the same
+`userSelected(...)` directory, or an iOS app and its extension in one
+`appGroup(...)` container. Each entry has an exclusive OS file lock in
+`<cache root>/.locks/`. A same-entry caller waits for the active operation;
+cache-reusing policies then re-check the cache, including the file's length
+and checksum, so a waiter reuses the finished download or downloads again.
+Different entries download in parallel.
 Concurrent `refresh` calls each refresh in turn. `noCache` downloads are not
-coalesced. Cancelling a waiting caller takes effect after the active operation
-finishes and does not cancel it; cancelling the active download releases the
-lock so a later caller can retry or resume from a safe `.part` file.
+coalesced. In the same isolate, cancelling a waiting caller takes effect after
+the active operation finishes; a caller waiting on another isolate or process
+stops waiting at once. Neither cancels the active download. Cancelling the
+active download releases the lock so a later caller can retry or resume from
+`<file>.part`.
+
+The OS releases the lock when the holding process exits, including after a
+crash or kill, and the next holder resumes from the largest part file left
+behind and deletes the others.
+
+Only callers that take the lock are excluded from each other. Processes
+running llamadart 0.16 or older do not take it, and a manager whose cache root
+is not writable or whose file system refuses locks logs a warning once and
+falls back to serializing within its own isolate. Such a writer can download
+the same entry at the same time as a locked one, and a locked caller can
+resume from a part file that writer is still extending. A resume writes each
+byte at the offset its `Range` request named and only when the server's
+validator still matches, so both writers put the same bytes at the same
+offsets; any file longer than the server's total is discarded. The cost is a
+repeated download, not a corrupt entry. Without the lock, crashed attempts' part files
+also stay in place. Network file systems (NFS, SMB) are not supported for
+concurrent use from several machines; their locking depends on the server and
+client configuration.
 
 **Metadata.** Each entry has a versioned `metadata.json` sidecar next to the
 model file. An entry is reused only when the sidecar matches the cache key,

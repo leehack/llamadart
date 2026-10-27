@@ -404,9 +404,11 @@ class ImageGenerationEngine {
   ///   model.
   /// - [LlamaUnsupportedException] for FP8 GGUF/Safetensors weights on
   ///   Metal, including automatic Metal selection, before native context
-  ///   creation. Use [ComputeDevice.cpu] or compatible non-FP8 weights.
-  ///   Uninspectable GGUF/Safetensors headers and ordinary JSON shard indexes
-  ///   are also refused on Metal because their tensor dtypes cannot be checked.
+  ///   creation, when the runtime is older than stable-diffusion-native
+  ///   v0.3.0-1, which loads them as F16 instead. Use [ComputeDevice.cpu] or
+  ///   compatible non-FP8 weights there. Uninspectable GGUF/Safetensors
+  ///   headers and ordinary JSON shard indexes are also refused on Metal on
+  ///   such a runtime because their tensor dtypes cannot be checked.
   /// - [LlamaArgumentException] when [download] sets a bearer token or
   ///   headers for remote files on more than one origin.
   static Future<ImageGenerationEngine> load(
@@ -459,12 +461,9 @@ class ImageGenerationEngine {
           params.device != ComputeDevice.cpu ||
           params.flashAttention != false ||
           params.vaeDirectConvolution != false ||
-          !{
-            '0518b34',
-            '0518b34374761cb82aeda5ad3c2f0686fdad2cec',
-          }.contains(runtime.commit)) {
+          !_isQualifiedRuntime(runtime)) {
         throw LlamaUnsupportedException(
-          'Local checkpoint sets require the pinned SD v0.3.0 runtime on macOS CPU with explicit flash attention and direct VAE convolution off.',
+          'Local checkpoint sets require the pinned SD v0.3.0-1 runtime on macOS CPU with explicit flash attention and direct VAE convolution off.',
         );
       }
       snapshot = await resolveLocalImageSet(
@@ -552,7 +551,7 @@ class ImageGenerationEngine {
               ),
           ]);
     throwIfCancelled();
-    if (_isMetal(backendName)) {
+    if (_isMetal(backendName) && !runtime.loadsFp8AsF16OnMetal) {
       for (final (index, path) in paths.indexed) {
         await validateImageModelMetalDtypes(
           (offset, length) => driver.readFileRange(path, offset, length),
@@ -583,7 +582,7 @@ class ImageGenerationEngine {
         !vaeDirectConvolution;
     if (loadsControlNet && !controlNetRecipeVerified) {
       throw LlamaUnsupportedException(
-        'Loading a ControlNet requires the pinned stable_diffusion v0.3.0 '
+        'Loading a ControlNet requires the pinned stable_diffusion v0.3.0-1 '
         'runtime on macOS with ComputeDevice.cpu, flashAttention: false and '
         'vaeDirectConvolution: false, and exactly an SD 1.x checkpoint with '
         'its embedded full VAE plus an SD 1.x ControlNet in the original '
@@ -596,6 +595,13 @@ class ImageGenerationEngine {
     if (snapshot == null) {
       for (final (index, path) in paths.indexed) {
         weightBytes += _fileSize(driver, index, path);
+        if (params.checkMemory &&
+            _isMetal(backendName) &&
+            runtime.loadsFp8AsF16OnMetal) {
+          weightBytes += await imageModelFp8AsF16ExtraBytes(
+            (offset, length) => driver.readFileRange(path, offset, length),
+          );
+        }
       }
     }
     if (params.checkMemory) {
@@ -637,7 +643,7 @@ class ImageGenerationEngine {
             assignment.roles.length == 1 &&
             assignment.roles.containsKey(ImageModelRole.checkpoint),
         vaeTilingRecipeVerified:
-            // v0.3.0 is the runtime whose tiling layout and decode are qualified.
+            // v0.3.0-1 is the runtime whose tiling layout and decode are qualified.
             _isQualifiedRuntime(runtime) &&
             assignment.vaeTilingDecoderVerified &&
             assignment.roles.containsKey(ImageModelRole.checkpoint) &&
@@ -810,7 +816,7 @@ class ImageGenerationEngine {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report a loaded ControlNet. '
         'Load an SD 1.x ControlNet with its checkpoint on the pinned '
-        'stable_diffusion v0.3.0 runtime with the supported macOS CPU recipe.',
+        'stable_diffusion v0.3.0-1 runtime with the supported macOS CPU recipe.',
       );
     }
     if (resolved.initialImage != null &&
@@ -821,7 +827,7 @@ class ImageGenerationEngine {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for '
         'owned RGB/mask image editing. Use the pinned stable_diffusion '
-        'v0.3.0 runtime with the supported macOS CPU SD 2.x full-VAE recipe.',
+        'v0.3.0-1 runtime with the supported macOS CPU SD 2.x full-VAE recipe.',
       );
     }
     if (resolved.vaeTiling != null &&
@@ -831,7 +837,7 @@ class ImageGenerationEngine {
         }) {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for '
-        'per-request VAE tiling. Use the pinned stable_diffusion v0.3.0 '
+        'per-request VAE tiling. Use the pinned stable_diffusion v0.3.0-1 '
         'runtime with a supported SD 2.x decoder recipe.',
       );
     }
@@ -1024,11 +1030,11 @@ class ImageGenerationEngine {
     ImageModelRole.controlNet: 'controlNet',
   };
 
-  /// Whether [status] is the pinned v0.3.0 runtime the bounded image
-  /// recipes were qualified on.
+  /// Whether [status] is the pinned v0.3.0-1 runtime (upstream
+  /// master-1017) the bounded image recipes were qualified on.
   static bool _isQualifiedRuntime(StableDiffusionRuntimeStatus status) =>
-      status.commit == '0518b34' ||
-      status.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec';
+      status.commit == 'be48649' ||
+      status.commit == 'be486498eadc29dc3cd234d944c2180ed42b1415';
 
   static bool _supportsControlNet(ImageGenerationSession session) =>
       switch (session) {

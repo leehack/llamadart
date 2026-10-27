@@ -101,6 +101,14 @@ or shipping runtimes the app does not use.
   foreground Dart HTTP requests; a later session resumes from the `.part`
   file when the server allows it. Background downloads need a custom
   `ModelDownloadManager`.
+- Apps, isolates and extensions sharing one cache root (`sharedCache()`,
+  `userSelected(...)`, `appGroup(...)`) take a cross-process file lock per
+  entry, so a second caller waits and reuses the download. Processes on
+  llamadart 0.16 or older do not take the lock; sharing a root with them can
+  repeat a download, never corrupt the entry.
+  In an iOS App Group container, finish or cancel a download (or hold a
+  background task) before the app is suspended: iOS kills apps suspended while
+  holding a lock there (`0xdead10cc`).
 - If a fresh Flutter 3.47.1 macOS SwiftPM build reports generated macOS 12.0
   beside a companion requiring 14.0, use the
   [consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap):

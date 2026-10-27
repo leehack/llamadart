@@ -17,7 +17,8 @@ import '../../support/fake_stable_diffusion_runtime.dart';
 void main() {
   final path = Platform.environment['LLAMADART_IMAGE_FP8_MODEL'];
   test(
-    'real FP8 checkpoint refuses Metal before construction and forwards CPU',
+    'on a runtime without the FP8 load fix, a real FP8 checkpoint refuses '
+    'Metal before construction and forwards CPU',
     () async {
       final runtime = FakeStableDiffusionRuntime();
       final driver = _Driver(runtime);
@@ -90,8 +91,8 @@ final class _Driver implements ImageGenerationDriver {
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
-        version: 'master-929',
-        commit: '0518b34',
+        version: 'unknown',
+        commit: 'be48649',
         devices: parseStableDiffusionDeviceList('MTL0\tMetal\nCPU\tCPU\n'),
       );
   @override

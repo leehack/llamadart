@@ -127,6 +127,12 @@ void main() {
     _overrideTag,
     'SHA256SUMS',
   );
+  // These fixtures publish no assets.json, which reads as hook contract 1.
+  final overrideManifestUrl = releaseUrl(
+    'leehack/llamadart-native',
+    _overrideTag,
+    'assets.json',
+  );
 
   setUpAll(() async {
     for (final entity in touched) {
@@ -266,7 +272,11 @@ void main() {
         check: () {},
       );
 
-      expect(fixture.requests, [overrideSumsUrl, overrideArchiveUrl]);
+      expect(fixture.requests, [
+        overrideSumsUrl,
+        overrideManifestUrl,
+        overrideArchiveUrl,
+      ]);
       expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
       expect(
         File(path.join(overrideCacheDir.path, archiveName(_overrideTag))),
@@ -318,7 +328,11 @@ void main() {
           libraries = await _runHook(fixture, tag: _overrideTag, check: () {});
         });
 
-        expect(fixture.requests, [overrideSumsUrl, overrideArchiveUrl]);
+        expect(fixture.requests, [
+          overrideSumsUrl,
+          overrideManifestUrl,
+          overrideArchiveUrl,
+        ]);
         expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
         expect(
           log,
@@ -575,7 +589,11 @@ void main() {
             ),
           ),
         );
-        expect(fixture.requests, [overrideSumsUrl, overrideArchiveUrl]);
+        expect(fixture.requests, [
+          overrideSumsUrl,
+          overrideManifestUrl,
+          overrideArchiveUrl,
+        ]);
         expect(extractedDir, isNot(_exists));
       },
     );
@@ -707,7 +725,11 @@ void main() {
         check: () {},
       );
 
-      expect(fixture.requests, [overrideSumsUrl, archiveUrl]);
+      expect(fixture.requests, [
+        overrideSumsUrl,
+        overrideManifestUrl,
+        archiveUrl,
+      ]);
       expect(
         libraries['llamadart-windows-x64.dll'],
         'valid-llamadart-windows-x64.dll',
@@ -739,6 +761,11 @@ void main() {
     () async {
       final archive = _archive('fork');
       final sumsUrl = releaseUrl(_forkRepository, llamaCppTag, 'SHA256SUMS');
+      final manifestUrl = releaseUrl(
+        _forkRepository,
+        llamaCppTag,
+        'assets.json',
+      );
       final archiveUrl = releaseUrl(
         _forkRepository,
         llamaCppTag,
@@ -755,7 +782,7 @@ void main() {
         check: () {},
       );
 
-      expect(fixture.requests, [sumsUrl, archiveUrl]);
+      expect(fixture.requests, [sumsUrl, manifestUrl, archiveUrl]);
       expect(libraries['libllamadart.so'], 'fork-libllamadart.so');
     },
   );

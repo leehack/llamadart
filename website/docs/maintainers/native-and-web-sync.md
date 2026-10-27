@@ -150,7 +150,11 @@ not allow rollback within either channel. The manual sync workflow exposes the
 same gate as its `allow_nightly_channel` checkbox and leaves it disabled by
 default.
 Stable releases must provide `assets.json`, `SHA256SUMS`, every supported bundle,
-and hook contract version 1. New stable or nightly wrapper forms require
+and hook contract version 1 or 2. Contract 2 publishes backend sidecars
+(`module: backend-*`, such as `windows-x64-cuda12`); the sync pins each one in
+`llamaCppBackendSidecarSpecs` from its release digest and records the contract
+in `llamaCppHookContractVersion`, so the hook fetches a sidecar only when its
+backend is selected. New stable or nightly wrapper forms require
 `assets.json`, `native_release_tag`, and the retained `tag` compatibility alias;
 older base or legacy-wrapper manifests with only `tag` remain valid.
 Manifest checksums must agree with both `SHA256SUMS` and GitHub release asset
@@ -258,7 +262,8 @@ Use this checklist in native sync PRs:
 - For a stable-channel llama.cpp native sync, confirm the release tag is an
   upstream-aligned `vMAJOR.MINOR.PATCH` or an explicitly selected wrapper rebuild,
   `assets.json` records the correct distinct native/upstream tags and hook
-  contract version 1, and its artifact checksums match the release assets.
+  contract version 1 or 2, and its artifact checksums match the release
+  assets.
 - For LiteRT-LM schema 2 releases, confirm the manifest's exact upstream and
   native commits, ABI/capabilities, platform list, artifact digests, and
   Linux/Windows real-model smoke evidence before changing any pin.
@@ -350,6 +355,17 @@ the companion pinning `v0.3.0`. The runtime treats a null `flash_attn_mode` or
 is not seed-reproducible on Metal; `applyStableDiffusionContextParams` always
 writes both modes from the legacy flags, and `batched_cfg=false`. Map any new
 field whose initializer selects automatic behavior the same way.
+
+SD `v0.3.0-1` moves upstream to master-1017 and carries the FP8-on-Metal load
+fix as a patch. Upstream `generate_image` now returns owned results;
+`sd_dart_generate_image` keeps its image-array contract, and the removed
+`sd_ctx_supports_ref_image_conditioning` must not be bound. The patch adds no
+export and `sd_commit` names the upstream commit, so
+`StableDiffusionCalls.loadsFp8AsF16OnMetal` requires the hook-pinned tag at or
+after `fp8MetalNativeRelease` and the upstream-1017 `fp8MetalSymbols`. The
+bounded image recipes gate on the upstream commit
+(`ImageGenerationEngine._isQualifiedRuntime`): a repin that moves it reruns
+their `run_local_e2e.dart` scenarios before moving that gate.
 
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version
