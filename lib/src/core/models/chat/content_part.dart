@@ -208,8 +208,11 @@ class LlamaToolResultContent extends LlamaContentPart {
   /// or `bytes`, or a [LlamaAudioContent]. The tool turn holds [result] as
   /// text (a non-String result as JSON, a `null` result left out), then
   /// these parts, as llama.cpp's server renders a `tool` message whose
-  /// `content` is an array: text parts joined by a newline, and a media
-  /// marker at each media part. Media reach the model in that order.
+  /// `content` is an array. With a media part, the turn is one text: text
+  /// parts joined by a newline, and a media marker at each media part.
+  /// Media reach the model in that order. Without one, the template gets
+  /// the text parts as typed parts, or joined by a newline when it reads
+  /// only string content.
   ///
   /// Only formats qualified for tool-result content take a non-empty list;
   /// others throw [LlamaUnsupportedException]. Media also need the engine

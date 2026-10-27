@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../../engine/engine_capabilities.dart';
 import '../../exceptions.dart';
+import '../tools/tool_output.dart';
 import 'chat_message.dart';
 import 'content_part.dart';
 
@@ -59,12 +60,18 @@ Set<LlamaToolResultMedia> toolResultMediaIn(List<LlamaChatMessage> messages) =>
 /// Throws when a tool result in [messages] has a `content` part no runtime
 /// takes there.
 ///
-/// A nested tool call, tool result or thinking part throws
-/// [LlamaArgumentException]. A video part, or an image without a `path` or
+/// A nested tool call, tool result or thinking part, or a [LlamaToolOutput]
+/// `result`, throws [LlamaArgumentException]. A video part, or an image without a `path` or
 /// `bytes`, throws [LlamaUnsupportedException]; its message never holds the
 /// image URL, which may be signed.
 void validateToolResultContent(List<LlamaChatMessage> messages) {
   for (final result in _toolResults(messages)) {
+    if (result.result is LlamaToolOutput) {
+      throw LlamaArgumentException(
+        'LlamaToolResultContent.result holds a LlamaToolOutput. Pass its '
+        'output as result and its content as content.',
+      );
+    }
     for (final part in result.content) {
       switch (part) {
         case LlamaTextContent() || LlamaAudioContent():
@@ -96,17 +103,18 @@ void validateToolResultContent(List<LlamaChatMessage> messages) {
 
 /// [result] as one tool result whose `result` is the prompt text of the
 /// tool turn, with [mediaMarker] at each media part; [result] itself when
-/// its `content` is empty.
+/// its `content` has no media part.
 ///
 /// The text is built as llama.cpp's `common_chat_msg::to_json_oaicompat`
 /// joins a message's content parts when one is media: text parts are joined
 /// by a newline, and no newline goes before or after a marker. The `result`
-/// text comes first, and a `null` result is left out.
+/// text comes first, and a `null` result is left out. llama.cpp keeps
+/// text-only parts typed, so they are left to the template render.
 LlamaToolResultContent toolResultWithMediaMarkers(
   LlamaToolResultContent result,
   String mediaMarker,
 ) {
-  if (result.content.isEmpty) return result;
+  if (!result.content.any(isMediaPart)) return result;
   final text = StringBuffer();
   var lastWasMarker = false;
   void addText(String value) {

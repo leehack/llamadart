@@ -95,6 +95,9 @@ description: >-
   `LlamaToolResultMedia.image`, then return
   `LlamaToolOutput(output: {...}, content: [LlamaImageContent(bytes: ...)])`
   from the handler, or set `LlamaToolResultContent(..., content: [...])`.
+  In a manual loop, `invoke` returns that `LlamaToolOutput`: pass its
+  `output` as `result` and its `content` as `content`, never the output
+  itself as `result` (that throws `LlamaArgumentException`).
   Only native llama.cpp with a vision projector and a Hermes-style template
   (qualified on Qwen3-VL) takes it; other formats, runtimes, audio, video and
   URL-only images throw `LlamaUnsupportedException`.

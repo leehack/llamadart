@@ -528,6 +528,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'LLAMADART_TOOL_MEDIA_MMPROJ': context.mmprojPath!,
             if (context.backendProvided)
               'LLAMADART_TOOL_MEDIA_BACKEND': context.backend,
+            'LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE':
+                ?Platform.environment['LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE'],
           },
           description: 'Tool-result image E2E',
         ),

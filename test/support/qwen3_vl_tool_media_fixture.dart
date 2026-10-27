@@ -32,6 +32,42 @@ final class Qwen3VlToolMediaFixture {
   String prompt(String caseName) =>
       (json['cases'] as Map<String, dynamic>)[caseName]['prompt'] as String;
 
+  /// The upstream text-only case [caseName]: its `template`, `request` and
+  /// `prompt`.
+  Map<String, dynamic> textOnlyCase(String caseName) =>
+      (json['text_only_cases'] as Map<String, dynamic>)[caseName]
+          as Map<String, dynamic>;
+
+  /// Upstream text-only cases: a result `abc` with a text part `x`.
+  static List<LlamaChatMessage> textOnly() => const [
+    LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Look up the code.',
+    ),
+    LlamaChatMessage.withContent(
+      role: LlamaChatRole.assistant,
+      content: [
+        LlamaToolCallContent(
+          id: 'call_0',
+          name: 'lookup',
+          arguments: {},
+          rawJson: '{}',
+        ),
+      ],
+    ),
+    LlamaChatMessage.withContent(
+      role: LlamaChatRole.tool,
+      content: [
+        LlamaToolResultContent(
+          id: 'call_0',
+          name: 'lookup',
+          result: 'abc',
+          content: [LlamaTextContent('x')],
+        ),
+      ],
+    ),
+  ];
+
   /// Stand-in for the red photo the upstream request sent as a data URI.
   static final LlamaImageContent red = LlamaImageContent(
     bytes: Uint8List.fromList([1]),

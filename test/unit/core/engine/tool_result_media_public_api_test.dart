@@ -79,6 +79,17 @@ void main() {
       expect((await engine.capabilities).toolResultMedia, isEmpty);
     });
 
+    for (final audio in [false, true]) {
+      test('reports audio only when the projector takes audio '
+          '(projector audio: $audio)', () async {
+        final engine = await _loaded(_AudioToolMediaBackend(audio: audio));
+        expect((await engine.capabilities).toolResultMedia, {
+          LlamaToolResultMedia.image,
+          if (audio) LlamaToolResultMedia.audio,
+        });
+      });
+    }
+
     test('is empty before a model loads', () async {
       final engine = LlamaEngine(_ToolMediaBackend());
       addTearDown(engine.dispose);
@@ -166,6 +177,12 @@ void main() {
 
       test('$call: audio, which no backend places', () async {
         await expectRefused(_ToolMediaBackend(), [
+          _toolWith(const [LlamaAudioContent(path: '/a.wav')]),
+        ], _unsupported('Tool-result audio'));
+      });
+
+      test('$call: audio the projector does not take', () async {
+        await expectRefused(_AudioToolMediaBackend(audio: false), [
           _toolWith(const [LlamaAudioContent(path: '/a.wav')]),
         ], _unsupported('Tool-result audio'));
       });
@@ -404,6 +421,22 @@ class _ToolMediaBackend extends _CaptureBackend
   Set<LlamaToolResultMedia> get toolResultMedia => const {
     LlamaToolResultMedia.image,
   };
+}
+
+class _AudioToolMediaBackend extends _CaptureBackend
+    implements BackendToolResultMedia {
+  _AudioToolMediaBackend({required this.audio});
+
+  final bool audio;
+
+  @override
+  Set<LlamaToolResultMedia> get toolResultMedia => const {
+    LlamaToolResultMedia.image,
+    LlamaToolResultMedia.audio,
+  };
+
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async => audio;
 }
 
 /// Replies with [replies] in order, recording each prompt and its media.

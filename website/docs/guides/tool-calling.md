@@ -250,8 +250,13 @@ if ((await engine.capabilities).toolResultMedia
 The tool turn holds the result as text (JSON for a non-string result, nothing
 for `null`), then each `content` part in order: text parts joined by a
 newline, and a media marker at each image, exactly as llama-server renders a
-`tool` message whose `content` array has `image_url` parts. `toJson` emits that
-array shape. Images reach the model in prompt order.
+`tool` message whose `content` array has `image_url` parts. Without an image,
+templates that read typed content get the parts typed, as llama-server passes
+them. `toJson` emits that array shape. Images reach the model in prompt order.
+
+In a manual loop, `ToolDefinition.invoke` returns the handler's
+`LlamaToolOutput` as is: pass its `output` as `result` and its `content` as
+`content`. A `LlamaToolOutput` `result` throws `LlamaArgumentException`.
 
 Support is a chat-format property:
 

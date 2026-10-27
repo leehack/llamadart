@@ -125,43 +125,45 @@ void main() {
     });
   }
 
-  test('a handler output reaches the next model turn', () async {
-    final session = ChatSession(engine);
-    var calls = 0;
-    final result = await session.sendWithTools(
-      'Take one photo with the take_photo tool. When the photo comes back, '
-      'do not call any tool again: answer with the main color of the photo '
-      'in one word.',
-      tools: [
-        _camera((params) async {
-          calls += 1;
-          return LlamaToolOutput(
-            output: const {'ok': true},
-            content: [LlamaImageContent(bytes: photos['blue'])],
-          );
+  for (final color in ['red', 'blue']) {
+    test('a handler output reaches the next model turn ($color)', () async {
+      final session = ChatSession(engine);
+      var calls = 0;
+      final result = await session.sendWithTools(
+        'Take one photo with the take_photo tool. When the photo comes back, '
+        'do not call any tool again: answer with the main color of the photo '
+        'in one word.',
+        tools: [
+          _camera((params) async {
+            calls += 1;
+            return LlamaToolOutput(
+              output: const {'ok': true},
+              content: [LlamaImageContent(bytes: photos[color])],
+            );
+          }),
+        ],
+        toolChoice: ToolChoice.required,
+        params: const GenerationParams(
+          temp: 0,
+          penalty: 1,
+          seed: 1,
+          maxTokens: 96,
+        ),
+      );
+      stdout.writeln(
+        jsonEncode({
+          'case': 'tool-loop-$color',
+          'calls': calls,
+          'rounds': result.rounds,
+          'stop': result.stopReason.name,
+          'text': result.completion.text,
         }),
-      ],
-      toolChoice: ToolChoice.required,
-      params: const GenerationParams(
-        temp: 0,
-        penalty: 1,
-        seed: 1,
-        maxTokens: 96,
-      ),
-    );
-    stdout.writeln(
-      jsonEncode({
-        'case': 'tool-loop-blue',
-        'calls': calls,
-        'rounds': result.rounds,
-        'stop': result.stopReason.name,
-        'text': result.completion.text,
-      }),
-    );
-    expect(calls, greaterThanOrEqualTo(1));
-    expect(result.stopReason, LlamaToolLoopStopReason.completed);
-    expect(result.completion.text.toLowerCase(), contains('blue'));
-  });
+      );
+      expect(calls, greaterThanOrEqualTo(1));
+      expect(result.stopReason, LlamaToolLoopStopReason.completed);
+      expect(result.completion.text.toLowerCase(), contains(color));
+    });
+  }
 }
 
 ToolDefinition _camera(ToolHandler? handler) => ToolDefinition(

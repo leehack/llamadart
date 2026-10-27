@@ -141,5 +141,89 @@
       ],
       "prompt": "<|im_start|>user\n<__media__>Compare this with a new photo.<|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"take_photo\", \"arguments\": {\"camera\": \"front\"}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"ok\":true}<__media__>done\n</tool_response><|im_end|>\n<|im_start|>assistant\n"
     }
+  },
+  "text_only_cases": {
+    "typed_text_parts": {
+      "template": "templates/Qwen3-VL-2B-Instruct.jinja",
+      "template_sha256": "3636d0f0bd6bef02654cdffdc447b79cb2cef8ab02cc75267345946291a489e4",
+      "supports_typed_content": true,
+      "request": [
+        {
+          "role": "user",
+          "content": "Look up the code."
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "type": "function",
+              "function": {
+                "name": "lookup",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_0",
+          "name": "lookup",
+          "content": [
+            {
+              "type": "text",
+              "text": "abc"
+            },
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        }
+      ],
+      "prompt": "<|im_start|>user\nLook up the code.<|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"lookup\", \"arguments\": {}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\nabcx\n</tool_response><|im_end|>\n<|im_start|>assistant\n"
+    },
+    "string_only_text_parts": {
+      "template": "templates/Qwen3-4B.jinja",
+      "template_sha256": "5da44855ab7e0641774d5ed0ff0b4f89671d01df7d316e54d06557a962211cb4",
+      "supports_typed_content": false,
+      "request": [
+        {
+          "role": "user",
+          "content": "Look up the code."
+        },
+        {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_0",
+              "type": "function",
+              "function": {
+                "name": "lookup",
+                "arguments": "{}"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_0",
+          "name": "lookup",
+          "content": [
+            {
+              "type": "text",
+              "text": "abc"
+            },
+            {
+              "type": "text",
+              "text": "x"
+            }
+          ]
+        }
+      ],
+      "prompt": "<|im_start|>user\nLook up the code.<|im_end|>\n<|im_start|>assistant\n<tool_call>\n{\"name\": \"lookup\", \"arguments\": {}}\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\nabc\nx\n</tool_response><|im_end|>\n<|im_start|>assistant\n"
+    }
   }
 }

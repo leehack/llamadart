@@ -91,24 +91,18 @@ void main() {
     );
   });
 
-  test('text-only content joins the result with a newline', () {
-    final prompt = _render(const [
-      LlamaChatMessage.withContent(
-        role: LlamaChatRole.tool,
-        content: [
-          LlamaToolResultContent(
-            name: 'lookup',
-            result: {'n': 1},
-            content: [LlamaTextContent('a'), LlamaTextContent('b')],
-          ),
-        ],
-      ),
-    ]).prompt;
-    expect(
-      prompt,
-      contains('<tool_response>\n{"n":1}\na\nb\n</tool_response>'),
-    );
-  });
+  for (final name in ['typed_text_parts', 'string_only_text_parts']) {
+    test('text-only content renders $name as llama-server does', () {
+      final upstreamCase = upstream.textOnlyCase(name);
+      final prompt = _render(
+        Qwen3VlToolMediaFixture.textOnly(),
+        template: File(
+          'test/fixtures/${upstreamCase['template']}',
+        ).readAsStringSync(),
+      ).prompt;
+      expect(prompt, upstreamCase['prompt']);
+    });
+  }
 
   test('formats not qualified for tool-result content throw', () {
     for (final template in [

@@ -62,9 +62,16 @@ void main() {
       );
     });
 
-    test('returns a result without content unchanged', () {
-      const result = LlamaToolResultContent(name: 't', result: 1);
-      expect(toolResultWithMediaMarkers(result, _marker), same(result));
+    test('returns a result without media unchanged', () {
+      const plain = LlamaToolResultContent(name: 't', result: 1);
+      expect(toolResultWithMediaMarkers(plain, _marker), same(plain));
+      // llama.cpp keeps text-only parts typed for the template.
+      const textOnly = LlamaToolResultContent(
+        name: 't',
+        result: 1,
+        content: [LlamaTextContent('a')],
+      );
+      expect(toolResultWithMediaMarkers(textOnly, _marker), same(textOnly));
     });
   });
 
@@ -212,6 +219,26 @@ void main() {
             (error) => error.message,
             'message',
             contains('Video'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects a LlamaToolOutput result', () {
+      expect(
+        () => validateToolResultContent([
+          _tool(
+            const LlamaToolResultContent(
+              name: 't',
+              result: LlamaToolOutput(output: 1, content: [_image]),
+            ),
+          ),
+        ]),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            contains('LlamaToolOutput'),
           ),
         ),
       );
