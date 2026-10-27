@@ -310,7 +310,12 @@ void main() {
       await _waitForPartFile(entryDirectory(), server.holdAfter);
       final locked = manager.ensureModel(source());
       await server.headersHeld(2);
-      expect(server.ranges[1], 'bytes=${server.holdAfter}-');
+      // Windows refuses to rename a file another handle has open, so there
+      // the locked caller cannot adopt the in-flight file and starts afresh.
+      expect(
+        server.ranges[1],
+        Platform.isWindows ? isNull : 'bytes=${server.holdAfter}-',
+      );
       server.releaseRequest(1);
       final (unlockedBytes, unlockedDigest) = await unlocked.timeout(
         const Duration(seconds: 30),
