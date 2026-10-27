@@ -648,6 +648,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'SeamlessImageGenerationRequest, circular ABI wiring or decoder routing changes.',
   ),
   TestMatrixRow(
+    id: 'image-local-checkpoint-sets',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Bounded complete SD-Turbo F16/F32 Safetensors index/directory CPU recipe; immutable per-file identities, owned snapshots, aggregate bytes, source-removal lifetime, cache reuse, cancellation cleanup and native-reference parity; no Diffusers or editing/tiling/seamless qualification',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario image-local-checkpoint-sets --model-path <complete-sd-turbo.safetensors>',
+    useWhen:
+        'Local image-set resolution, cache/snapshot lifetime, model-set factory, aggregate accounting or checkpoint-set native mapping changes.',
+  ),
+  TestMatrixRow(
     id: 'image-exit-teardown',
     tier: 'targeted',
     mode: 'local-only',
