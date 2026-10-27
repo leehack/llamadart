@@ -1,4 +1,5 @@
 import '../models/model_source.dart';
+import 'local_image_set_model.dart';
 
 /// Runtime role of an image-model file.
 ///
@@ -56,8 +57,10 @@ class ImageModelComponent {
 /// not filename extensions. A compatible PyTorch `.ckpt`, `.pth` or `.pt`
 /// state-dict file needs an explicit [role] (or a component's role); this
 /// forwards it to the native loader, not a conversion or compatibility check.
-/// Real PyTorch checkpoint qualification remains incomplete. Local sources
-/// must be regular files; directories and managed shard sets are unsupported.
+/// Real PyTorch checkpoint qualification remains incomplete. Individual local sources
+/// must be regular files. [ImageGenerationModel.localSafetensorsSet] opts into
+/// the separately bounded complete-checkpoint set contract; arbitrary
+/// directories and Diffusers component layouts remain unsupported.
 /// Leave [ModelSource.format] unset for image files. A recognized container
 /// and role do not establish architecture, dtype or device compatibility.
 ///
@@ -81,6 +84,33 @@ class ImageModelComponent {
 ///
 /// Building a model does no network or file access.
 class ImageGenerationModel {
+  /// A verified local complete-checkpoint Safetensors index and its shards.
+  ///
+  /// [path] is a directory containing `model.safetensors.index.json`, or
+  /// that index itself. [sha256] must identify the index and every adjacent
+  /// shard by canonical numbered basename. Shards must be the complete
+  /// contiguous `model-00001-of-000NN.safetensors` set, with N from 1..16. Remote sources, Diffusers component layouts,
+  /// symlinks, extra shards/indexes and ambiguous mappings are rejected.
+  /// The bounded recipe is the qualified SD-Turbo F16/F32 tensor layout on
+  /// macOS CPU with the pinned SD v0.3.0 runtime, flash attention/direct VAE
+  /// convolution off. Other layouts/dtypes/devices are unsupported.
+  ///
+  /// [cacheDirectory] must be app-private and dedicated to owned sets. Files
+  /// are copied and hash-verified before atomic cache publication; original
+  /// contents may change after copying. Source topology must remain stable
+  /// during resolution. Published cache files must not be modified or removed
+  /// while any engine uses them; remove this cache only after disposal.
+  /// Cache reuse re-verifies every file. Failed/cancelled staging is removed;
+  /// a complete published set remains cached. This does no network access.
+  /// Only cancellation from `ModelLoadOptions` applies; per-file identities
+  /// replace its single checksum and this factory owns its cache location.
+  /// Building the model performs no IO and adds no legacy interface member.
+  factory ImageGenerationModel.localSafetensorsSet(
+    String path, {
+    required Map<String, String> sha256,
+    required String cacheDirectory,
+  }) = LocalImageSetModel;
+
   /// The main file, usually the checkpoint or diffusion model.
   final ModelSource source;
 

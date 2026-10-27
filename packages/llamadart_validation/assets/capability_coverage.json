@@ -502,6 +502,16 @@
         "matrix:Tool calling"
       ],
       "pack": "tools"
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.supportsLocalSafetensorsSets"
+      ],
+      "exemption": {
+        "id": "bounded-local-checkpoint-sets",
+        "issue": "https://github.com/leehack/llamadart/issues/1219",
+        "reason": "The bounded local complete SD-Turbo F16/F32 Safetensors set recipe has maintained path/identity/header/cache/cancellation/refusal tests and a native-reference directory/index CPU qualification scenario. A dedicated versioned validation-pack profile remains open in #1219. This inventory binding does not qualify generic Diffusers layouts, other tensor profiles, platforms or image-editing/tiling/seamless combinations."
+      }
     }
   ]
 }

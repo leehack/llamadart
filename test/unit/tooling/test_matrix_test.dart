@@ -9,6 +9,19 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test('local image-set matrix selects the bounded CPU fixture scenario', () {
+    final row = testMatrixRows.singleWhere(
+      (r) => r.id == 'image-local-checkpoint-sets',
+    );
+    expect(row.mode, 'local-only');
+    expect(row.covers, contains('source-removal'));
+    expect(
+      buildLocalE2eScenarios()
+          .singleWhere((s) => s.name == row.id)
+          .requiresDevice,
+      isFalse,
+    );
+  });
   test(
     'LiteRT Web history matrix selects the direct-runtime control scenario',
     () {

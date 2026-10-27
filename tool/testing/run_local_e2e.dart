@@ -826,6 +826,46 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-local-checkpoint-sets',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify the bounded complete SD-Turbo F16/F32 local index/directory recipe on macOS CPU, owned snapshots, aggregate accounting, cache reuse, source-removal lifetime, cancellation and reference parity.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'example/basic_app/test/fixtures/split_local_checkpoint.py',
+            context.modelPath!,
+            '${context.projectRoot}/build/local-image-set-fixture',
+          ],
+          description:
+              'Build the owned, content-verified two-shard qualification fixture',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/local_image_set_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_LOCAL_SET_FIXTURES':
+                '${context.projectRoot}/build/local-image-set-fixture',
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/local-image-sets',
+          },
+          description:
+              'Public complete-checkpoint directory/index qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2186,6 +2226,14 @@ Future<LocalE2eResult> runLocalE2e(
     return LocalE2eResult(
       64,
       stderr: '--model-path <sdxs.gguf> is required for ${scenario.name}.\n',
+    );
+  }
+  if (scenario.name == 'image-local-checkpoint-sets' &&
+      parsed.modelPath == null) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path <complete-sd-turbo.safetensors> is required for image-local-checkpoint-sets.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&

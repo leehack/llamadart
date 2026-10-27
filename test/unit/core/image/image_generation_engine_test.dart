@@ -85,6 +85,49 @@ void main() {
     debugImageGenerationDriverOverride = null;
   });
 
+  test(
+    'local set recipe gates precede filesystem, resolver and native load',
+    () async {
+      final model = ImageGenerationModel.localSafetensorsSet(
+        'not-read',
+        sha256: {
+          'model.safetensors.index.json': 'a' * 64,
+          'model-00001-of-00002.safetensors': 'b' * 64,
+        },
+        cacheDirectory: 'not-created',
+      );
+      for (final kind in ['host', 'runtime', 'device', 'flash', 'direct']) {
+        driver = _FakeDriver();
+        downloads = _FakeDownloads(driver);
+        debugImageGenerationDriverOverride = driver;
+        if (kind == 'host') {
+          driver.operatingSystem = 'linux';
+        }
+        if (kind == 'runtime') {
+          driver.status = StableDiffusionRuntimeStatus.available(
+            version: 'unknown',
+            commit: 'unknown',
+            devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
+          );
+        }
+        await expectLater(
+          load(
+            model,
+            params: ImageModelParams(
+              device: kind == 'device' ? ComputeDevice.gpu : ComputeDevice.cpu,
+              flashAttention: kind == 'flash',
+              vaeDirectConvolution: kind == 'direct',
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(downloads.calls, isEmpty);
+        expect(driver.started, isEmpty);
+        expect(driver.fileSizePaths, isEmpty);
+      }
+    },
+  );
+
   group('seamless textures', () {
     test(
       'circular flags survive resolution and ordinary requests reset them',

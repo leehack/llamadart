@@ -525,6 +525,16 @@ throw. Both axes default off. Inspect repeated output and see the guide's
 [seamless texture recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
 for its measured scope and quality criteria.
 
+For a complete local sharded checkpoint, use
+`ImageGenerationModel.localSafetensorsSet(path, sha256: trustedPerFileHashes,
+cacheDirectory: appPrivateSetCache)`. The initial recipe is the documented
+SD-Turbo F16/F32 tensor layout on macOS CPU with pinned SD v0.3.0 and explicit
+flash attention/direct VAE convolution off. It accepts the standard local index
+or its directory and verifies every shard into an owned cache before loading.
+Generic Diffusers layouts and editing/tiling/seamless combinations remain
+unsupported. See [local checkpoint sets](https://llamadart.leehack.com/docs/next/guides/image-generation#local-checkpoint-sets)
+and `example/basic_app/bin/local_image_set.dart`.
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |

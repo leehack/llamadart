@@ -59,8 +59,9 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 
 Image generation accepts compatible GGUF and Safetensors files directly,
 including mixed-format components. PyTorch checkpoints need explicit roles
-and remain less qualified; directories and managed shard sets have no public
-loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
+and remain less qualified. The opt-in `ImageGenerationModel.localSafetensorsSet`
+accepts only the bounded complete SD-Turbo F16/F32 checkpoint-index recipe on
+macOS CPU; arbitrary directories and Diffusers component layouts are unsupported. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
 Container support does not extend the model/device qualification above.
 
 Image prompt-conditioning reuse can be disabled or limited by entry count
@@ -323,3 +324,11 @@ backend modules and local bundles:
 Apps load the bridge assets themselves; see
 [Add the bridge to your app](./webgpu-bridge#add-the-bridge-to-your-app).
 Linux system libraries: [Linux prerequisites](./linux-prerequisites).
+
+
+Local checkpoint sets require per-file expected SHA-256 identities including
+the index, an app-private owned cache, pinned SD v0.3.0, and explicit flash
+attention/direct VAE convolution off. They report
+`supportsLocalSafetensorsSets` after admission. This text-to-image recipe does
+not enable editing, tiling or seamless combinations. See
+[the set contract](../guides/image-generation#local-checkpoint-sets).

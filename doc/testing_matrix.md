@@ -1051,3 +1051,13 @@ unqualified; a browser adapter alone establishes no model GPU execution.
 The model-free Chrome suite separately checks routing, API skew and typed
 unsupported roles/options. Remaining tool/media/template work stays in
 [#1152](https://github.com/leehack/llamadart/issues/1152).
+
+
+### Local complete image checkpoint sets
+
+`image-local-checkpoint-sets` exercises the bounded complete SD-Turbo F16/F32
+local index/directory recipe on macOS CPU. It builds owned two-shard fixtures,
+checks public/native-reference pixels, aggregate accounting, source-removal
+lifetime, cache reuse and cancellation cleanup/recovery. See
+[the fixed recipe and cache contract](local_image_sets.md). No generic Diffusers,
+new-family, editing/tiling/seamless, GPU or device qualification is inferred.

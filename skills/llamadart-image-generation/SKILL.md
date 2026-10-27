@@ -85,10 +85,29 @@ core and `llamadart_stable_diffusion_flutter` together.
   Detection uses headers, not filename extensions. Compatible PyTorch
   `.ckpt`/`.pth`/`.pt` state-dict files need explicit roles; real-checkpoint
   qualification is incomplete. An explicit role is not conversion or proof
-  of architecture/dtype support. Leave `ModelSource.format` unset. Local
-  directories and managed Safetensors shard sets have no public loading
-  contract; resolve compatible component files individually. The guide's
+  of architecture/dtype support. Leave `ModelSource.format` unset. Generic local
+  directories and Diffusers component layouts are unsupported. Complete
+  checkpoint sets use the separate bounded factory below; resolve other
+  compatible component files individually. The guide's
   **Weight formats and layouts** section gives the limits.
+- Complete local checkpoint sets opt in with
+  `ImageGenerationModel.localSafetensorsSet(path, sha256: trustedPerFileHashes,
+  cacheDirectory: appPrivateSetCache)`. The path is a directory with
+  `model.safetensors.index.json` or that regular index itself. The map includes
+  that index and the complete contiguous canonical `model-00001-of-000NN.safetensors`
+  basenames (N in 1..16). Arbitrary filename aliases are rejected. The initial supported
+  tensor-layout fingerprint is the documented complete SD-Turbo F16/F32 recipe
+  on macOS CPU, pinned SD v0.3.0, explicit flash/direct VAE off. Other families,
+  dtypes/layouts, devices, Diffusers, and editing/tiling/seamless combinations
+  refuse. Expected hashes must come from trusted app configuration, not from
+  re-hashing arbitrary input at load time. Files are verified while copying
+  into an owned cache and reverified on reuse. Keep source topology stable
+  during resolution, reserve the cache for these snapshots, and never mutate
+  or remove it while engines are alive. Original files may change after copy.
+  Cancellation removes this load's partial stage; a published snapshot remains
+  cached. Only the load cancel token applies; no credentials, remote redirect,
+  downloader options or automatic repository/shard fetch. Check the loaded
+  `supportsLocalSafetensorsSets` flag and see `doc/local_image_sets.md`.
 - Models: `ImageGenerationModel(mainSource, components: [...])`. Every file
   is a `ModelSource` (`ModelSource.path`, an HTTP(S) URL or `hf://owner/repo@
   sha/file`); pin a commit. The library has no presets: the app owns each

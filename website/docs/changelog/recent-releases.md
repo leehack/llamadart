@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add verified local Safetensors checkpoint sets with owned caching for the bounded SD-Turbo macOS CPU recipe.
+
 - Reduce startup compilation overhead for `llamadart:doctor`.
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 

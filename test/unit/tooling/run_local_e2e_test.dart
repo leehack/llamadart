@@ -1709,6 +1709,31 @@ dev_dependencies:
       },
     );
 
+    test(
+      'local image sets require a source and select builder plus public suite',
+      () async {
+        const args = ['--scenario', 'image-local-checkpoint-sets', '--dry-run'];
+        final missing = await runLocalE2e(
+          args,
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(missing.exitCode, 64);
+        final ready = await runLocalE2e(
+          [...args, '--model-path', '/full.safetensors'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(ready.exitCode, 0);
+        expect(
+          ready.stdout,
+          contains('split_local_checkpoint.py /full.safetensors'),
+        );
+        expect(ready.stdout, contains('test/local_image_set_e2e_test.dart'));
+        expect(ready.stdout, contains('/repo/build/local-image-set-fixture'));
+      },
+    );
+
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(
         const ['--scenario', 'image-generation-smoke', '--dry-run'],
