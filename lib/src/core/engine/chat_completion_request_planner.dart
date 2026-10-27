@@ -9,6 +9,7 @@ import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/content_part.dart';
+import '../models/chat/tool_result_parts.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
@@ -119,7 +120,7 @@ class ChatCompletionRequestPlanner {
     _logTemplateResult(templateResult, stops);
 
     final mediaParts = messages
-        .expand((message) => message.parts)
+        .expand(partsInPromptOrder)
         .toList(growable: false);
     final backendSupportsGrammarConstraints = supportsGrammarConstraints(
       backend,

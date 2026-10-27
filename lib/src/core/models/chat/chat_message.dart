@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'chat_role.dart';
 import 'content_part.dart';
+import 'tool_result_parts.dart';
 
 /// A message in a chat conversation history.
 ///
@@ -72,6 +73,9 @@ class LlamaChatMessage {
 
   /// Backward-compatible content getter (concatenates all text-like parts).
   ///
+  /// A tool result contributes its result, then the text parts of its
+  /// [LlamaToolResultContent.content]; media parts contribute nothing.
+  ///
   /// Note: This excludes [LlamaThinkingContent] (reasoning) by default to ensure
   /// the main response text is returned without internal monologue.
   String get content {
@@ -92,6 +96,9 @@ class LlamaChatMessage {
           } catch (_) {
             buffer.write(res.toString());
           }
+        }
+        for (final nested in part.content.whereType<LlamaTextContent>()) {
+          buffer.write(nested.text);
         }
       }
     }
@@ -157,7 +164,10 @@ class LlamaChatMessage {
   /// message with several [LlamaToolResultContent] parts.
   ///
   /// A message with one tool result becomes an OpenAI-style `tool` message
-  /// with top-level `tool_call_id`, `name` and `content`. With several
+  /// with top-level `tool_call_id`, `name` and `content`. A result with
+  /// [LlamaToolResultContent.content] has an array `content`, as
+  /// llama-server takes it: the result as a text part unless it is `null`,
+  /// then each of those parts. With several
   /// results, `content` is a list of one such `tool_call_id`/`name`/`content`
   /// map per result, in order. That shape is not valid Chat Completions input
   /// (llama-server rejects it), so send one `tool` message per result to an
@@ -234,7 +244,9 @@ class LlamaChatMessage {
       {
         'tool_call_id': result.id,
         'name': result.name,
-        'content': result.result,
+        'content': result.content.isEmpty
+            ? result.result
+            : toolResultContentJson(result),
       };
 
   /// Serializes the message to JSON, always keeping content as a list of parts.

@@ -179,12 +179,13 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes throw before generation | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
+| Tool-result media | Images with a vision projector and a Hermes-style template (qualified on Qwen3-VL) | No | No | No |
 
-Tool-result media transport is unsupported on every runtime. `create` and
-`chatTemplate` throw `LlamaUnsupportedException` for tool-role image/audio
-parts or media alongside `LlamaToolResultContent` under any role. Return text
-or JSON tool results and send media in a separate user message
-([tool results](../guides/tool-calling)).
+Tool-result media are `LlamaToolResultContent.content` parts;
+`LlamaEngineCapabilities.toolResultMedia` reports them. Other formats, audio,
+video and URL-only images throw `LlamaUnsupportedException`, as do tool-role
+image/audio parts and media alongside `LlamaToolResultContent` under any role
+([tool-result media](../guides/tool-calling#tool-result-media)).
 
 `LlamaEngine.supportsVideo` returns `false` on every runtime, and passing
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point

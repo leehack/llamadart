@@ -7,6 +7,7 @@ import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/content_part.dart';
+import '../models/chat/tool_result_parts.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
@@ -179,6 +180,20 @@ class ChatTemplateEngine {
       }
     }
 
+    if (carriesToolResultContent(messages)) {
+      validateToolResultContent(messages);
+      if (!chatFormatRegistration(
+        effectiveFormat,
+      ).traits.rendersToolResultContent) {
+        throw LlamaUnsupportedException(
+          'LlamaToolResultContent.content is not qualified for '
+          '$effectiveFormat chat templates. Only Hermes-style <tool_call> '
+          'templates, qualified on Qwen3-VL, render it; return a text or JSON '
+          'result without content for this template.',
+        );
+      }
+    }
+
     final handler = handlerFor(effectiveFormat);
 
     // 3. Prepare template capabilities and render context matching llama.cpp
@@ -199,7 +214,20 @@ class ChatTemplateEngine {
       chatTemplateKwargs: chatTemplateKwargs,
       now: now,
     );
-    var effectiveMessages = messages;
+    // A tool result's content becomes text in the result, with the marker at
+    // each media part, as llama.cpp's server renders an array tool message.
+    var effectiveMessages = carriesToolResultContent(messages)
+        ? [
+            for (final message in messages)
+              TemplateRenderContext.withToolResultMediaMarkers(
+                message,
+                mediaMarker,
+              ),
+          ]
+        : messages;
+    final toolResultMediaCount = toolResultMediaIn(messages).isEmpty
+        ? null
+        : messages.expand(partsInPromptOrder).where(isMediaPart).length;
 
     if (allowToolCalls && caps.supportsToolCalls && !caps.supportsTools) {
       LlamaLogger.instance.warning(
@@ -238,6 +266,7 @@ class ChatTemplateEngine {
     // content take it through renderWithMultimodalContent. Templates that
     // read only typed parts (e.g. SmolVLM's `message['content'][0]['type']`)
     // get it in a text part.
+    // Tool-result media are already marker text in their result.
     final hasMediaParts = effectiveMessages.any(
       (message) => message.parts.any(
         (part) => part is LlamaImageContent || part is LlamaAudioContent,
@@ -269,6 +298,12 @@ class ChatTemplateEngine {
       if (effectiveFormat == ChatFormat.contentOnly) {
         rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
       }
+      _requireMediaMarkers(
+        rendered.prompt,
+        mediaMarker: mediaMarker,
+        expected: toolResultMediaCount,
+        templateName: templateName,
+      );
 
       final withGrammar = _applyGrammar(
         rendered,
@@ -318,6 +353,12 @@ class ChatTemplateEngine {
     if (effectiveFormat == ChatFormat.contentOnly) {
       baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
     }
+    _requireMediaMarkers(
+      baseResult.prompt,
+      mediaMarker: mediaMarker,
+      expected: toolResultMediaCount,
+      templateName: templateName,
+    );
 
     // Apply grammar constraints for tool calls or response format
     final withGrammar = _applyGrammar(
@@ -682,6 +723,27 @@ class ChatTemplateEngine {
       startTag: resolved.handler.thinkingStartTag,
       endTag: resolved.handler.thinkingEndTag,
     );
+  }
+
+  /// Throws unless [prompt] holds [mediaMarker] exactly [expected] times.
+  ///
+  /// A template that drops or repeats a tool result's media marker would
+  /// leave a backend to place that media in another turn.
+  static void _requireMediaMarkers(
+    String prompt, {
+    required String mediaMarker,
+    required int? expected,
+    required String templateName,
+  }) {
+    if (expected == null) return;
+    final rendered = mediaMarker.allMatches(prompt).length;
+    if (rendered != expected) {
+      throw LlamaUnsupportedException(
+        'The chat template ($templateName) rendered $rendered media markers '
+        'for $expected media parts, so tool-result media would not stay in '
+        'their tool turn. Use a template that renders each tool result once.',
+      );
+    }
   }
 
   static LlamaChatTemplateResult _withFormat(

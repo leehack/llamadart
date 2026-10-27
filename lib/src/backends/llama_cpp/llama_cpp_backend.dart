@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 
 import '../backend.dart';
 import '../model_params_loras.dart';
+import '../../core/engine/engine_capabilities.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
@@ -50,6 +51,7 @@ class NativeLlamaBackend
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
         BackendChatPromptGeneration,
+        BackendToolResultMedia,
         BackendDartLogLevel {
   final Set<_NativeCancelFlag> _embeddingCancelFlags = {};
   Isolate? _isolate;
@@ -1151,6 +1153,13 @@ class NativeLlamaBackend
 
   @override
   LlamaRuntime get runtime => LlamaRuntime.llamaCpp;
+
+  // mtmd takes each media part at its marker wherever the prompt holds it.
+  // Only images are qualified (#1008).
+  @override
+  Set<LlamaToolResultMedia> get toolResultMedia => const {
+    LlamaToolResultMedia.image,
+  };
 
   @override
   Future<String> getBackendName() async {

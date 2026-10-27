@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
+import '../models/chat/tool_result_parts.dart';
 import 'media_placeholders.dart';
 import 'tool_call_parsing_utils.dart';
 
@@ -92,6 +93,12 @@ class TemplateRenderContext {
   /// list of parts, every string `content` becomes a list holding one text
   /// part, as llama.cpp's `messages_inp_normalizer` does.
   ///
+  /// A tool result's `content` becomes text with [mediaMarker] at each
+  /// media part, as [withToolResultMediaMarkers] describes. Text-only
+  /// `content` stays a list of text parts, or, when [stringContentOnly] marks
+  /// a template that reads only string content, those parts joined by a
+  /// newline, as the same normalizer does.
+  ///
   /// With [objectArguments], tool-call `arguments` that decode to a JSON
   /// object are passed as that object, as llama.cpp does for templates with
   /// `supports_object_arguments`; other arguments stay strings.
@@ -113,20 +120,24 @@ class TemplateRenderContext {
     String mediaMarker = mtmdMediaMarker,
     bool objectArguments = false,
     bool typedContentOnly = false,
+    bool stringContentOnly = false,
     bool toolResultsAsUser = false,
     bool toolCallsAsContent = false,
   }) {
     var renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
-    for (final message in splitToolResults(messages)) {
-      final rendered =
-          (multimodal ? _withMediaMarkers(message, mediaMarker) : message)
-              .toJson();
+    for (var message in splitToolResults(messages)) {
+      message = multimodal
+          ? _withMediaMarkers(message, mediaMarker)
+          : withToolResultMediaMarkers(message, mediaMarker);
+      final rendered = message.toJson();
       rendered['content'] ??= '';
       final toolResults = message.parts.whereType<LlamaToolResultContent>();
       if (toolResults.isNotEmpty) {
-        final result = toolResults.first.result;
-        rendered['content'] = result is String ? result : jsonEncode(result);
+        rendered['content'] = _toolResultContent(
+          toolResults.first,
+          stringContentOnly: stringContentOnly,
+        );
       }
       if (rendered['tool_calls'] is List) {
         hasToolCalls = true;
@@ -233,17 +244,53 @@ class TemplateRenderContext {
     LlamaChatMessage message,
     String mediaMarker,
   ) {
-    bool isMedia(LlamaContentPart part) =>
-        part is LlamaImageContent ||
-        part is LlamaAudioContent ||
-        part is LlamaVideoContent;
-    if (!message.parts.any(isMedia)) return message;
+    message = withToolResultMediaMarkers(message, mediaMarker);
+    if (!message.parts.any(isMediaPart)) return message;
     return message.copyWith(
       parts: [
         for (final part in message.parts)
-          isMedia(part) ? LlamaTextContent(mediaMarker) : part,
+          isMediaPart(part) ? LlamaTextContent(mediaMarker) : part,
       ],
     );
+  }
+
+  /// [message] with each tool result that has a media part turned into one
+  /// whose result is the tool turn's text, with [mediaMarker] at each media
+  /// part, as llama.cpp's server renders an array `tool` message.
+  static LlamaChatMessage withToolResultMediaMarkers(
+    LlamaChatMessage message,
+    String mediaMarker,
+  ) {
+    if (!message.parts.any(
+      (part) => part is LlamaToolResultContent && part.content.isNotEmpty,
+    )) {
+      return message;
+    }
+    return message.copyWith(
+      parts: [
+        for (final part in message.parts)
+          part is LlamaToolResultContent
+              ? toolResultWithMediaMarkers(part, mediaMarker)
+              : part,
+      ],
+    );
+  }
+
+  /// [result] as template `content`: its result text, or with text-only
+  /// `content`, the text parts llama.cpp keeps typed, joined by a newline
+  /// for a template that reads only string content.
+  static Object _toolResultContent(
+    LlamaToolResultContent result, {
+    required bool stringContentOnly,
+  }) {
+    if (result.content.isEmpty) {
+      final value = result.result;
+      return value is String ? value : jsonEncode(value);
+    }
+    final parts = toolResultContentJson(result);
+    return stringContentOnly
+        ? parts.map((part) => part['text'] as String).join('\n')
+        : parts;
   }
 
   static void _decodeObjectArguments(List<Map<String, dynamic>> messages) {

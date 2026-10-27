@@ -517,6 +517,24 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'input work.',
   ),
   TestMatrixRow(
+    id: 'tool-result-image-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'native llama.cpp image tool results on a Hermes-format vision model: '
+        'tool-turn photos read back by the model, and a handler '
+        'LlamaToolOutput image reaching the next sendWithTools round',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'tool-result-image-smoke --model-path <qwen3-vl.gguf> '
+        '--mmproj-path <mmproj.gguf> --backend cpu',
+    useWhen:
+        'LlamaToolResultContent.content, LlamaToolOutput or tool-result '
+        'media routing work. Use Qwen3-VL; for a closest-family model set '
+        'LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE to '
+        'test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja.',
+  ),
+  TestMatrixRow(
     id: 'gguf-audio-chat-smoke',
     tier: 'targeted',
     mode: 'local-only',

@@ -158,6 +158,20 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// or has media parts, a grammar or a thinking budget.
   final Set<SpeculativeDecodingStrategy> speculativeDecodingStrategies;
 
+  /// The media types `LlamaToolResultContent.content` can carry to the model;
+  /// empty when it can carry none.
+  ///
+  /// [LlamaToolResultMedia.image] is reported by native llama.cpp with a
+  /// loaded projector that reports vision, for a model whose chat template
+  /// (`ModelParams.chatTemplate` or the model's own) is in a format
+  /// qualified for tool-result content: Hermes-style `<tool_call>`
+  /// templates, qualified on Qwen3-VL. A request that renders through
+  /// another format, such as a per-call `customTemplate` or a response
+  /// schema with tools, still throws `LlamaUnsupportedException`, as does a
+  /// template that does not render each media part once in the prompt.
+  /// No runtime reports [LlamaToolResultMedia.audio] yet.
+  final Set<LlamaToolResultMedia> toolResultMedia;
+
   /// Creates a capability snapshot.
   const LlamaEngineCapabilities({
     required this.isSupported,
@@ -179,5 +193,16 @@ class LlamaEngineCapabilities implements EngineCapabilities {
     this.supportsThinkingBudget = false,
     this.supportsStreamBatching = false,
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
+    this.toolResultMedia = const <LlamaToolResultMedia>{},
   });
+}
+
+/// A media type that `LlamaToolResultContent.content` can carry, as
+/// `LlamaEngineCapabilities.toolResultMedia` reports it.
+enum LlamaToolResultMedia {
+  /// `LlamaImageContent` parts.
+  image,
+
+  /// `LlamaAudioContent` parts.
+  audio,
 }

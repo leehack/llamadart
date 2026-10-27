@@ -178,6 +178,9 @@ class ChatSession {
   ///   await session.create([]).textDeltas().forEach(stdout.write);
   /// }
   /// ```
+  /// A handler's `LlamaToolOutput` goes in as `result: output.output` and
+  /// `content: output.content`; a `LlamaToolOutput` `result` throws
+  /// [LlamaArgumentException].
   Stream<LlamaCompletionChunk> create(
     List<LlamaContentPart> parts, {
     GenerationParams? params,

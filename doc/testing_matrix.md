@@ -153,6 +153,7 @@ Pick targeted rows based on the touched surface:
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
+| Tool-result media (`LlamaToolResultContent.content`, `LlamaToolOutput`) | `root-vm`, `tool-result-image-smoke` |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
 | LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke` |
@@ -383,6 +384,11 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
   --mmproj-path models/Qwen3.5-0.8B-mmproj-F16.gguf \
   --image-path test/fixtures/image.png
 
+dart run tool/testing/run_local_e2e.dart --scenario tool-result-image-smoke \
+  --model-path /path/to/Qwen3VL-2B-Instruct-Q4_K_M.gguf \
+  --mmproj-path /path/to/mmproj-Qwen3VL-2B-Instruct-F16.gguf \
+  --backend cpu
+
 dart run tool/testing/run_local_e2e.dart --scenario gguf-audio-chat-smoke \
   --model-path /path/to/gemma-4-E2B-it-Q4_K_S.gguf \
   --backend metal \
@@ -563,6 +569,14 @@ defending a default `maxParallelSequences`, and the single benchmark when one
 data point is enough. Both are `local-only` and need a real embedding-capable
 GGUF model; `website/docs/guides/embeddings.md` documents the underlying scripts
 directly for ad hoc runs.
+
+`tool-result-image-smoke` checks that a photo in a tool result reaches the
+model: the model names the color of a red and a blue tool-turn photo, and a
+`sendWithTools` handler's `LlamaToolOutput` photo reaches the next round. For
+a closest-family model without Qwen3-VL weights, set
+`LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE=test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja`
+so the Qwen3-VL template is used. Its prompts match llama-server
+(`test/fixtures/qwen3_vl_tool_media_upstream.md`).
 
 The dedicated `gguf-audio-chat-smoke` scenario validates byte-backed audio
 question answering against `--expect` after model and projector initialization.
