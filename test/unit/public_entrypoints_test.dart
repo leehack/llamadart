@@ -71,6 +71,8 @@ const _appNames = <String>{
   'GrammarTrigger',
   'GrammarTriggerType',
   'ImageConditioningCacheParams',
+  'ImageEditingPixels',
+  'ImageEditingRequest',
   'ImageGenerationCapabilities',
   'ImageGenerationCompletion',
   'ImageGenerationCompletionState',
