@@ -26,11 +26,17 @@ final class StableDiffusionRuntimeStatus {
   /// Why the runtime cannot be used, or `null` when it can.
   final LlamaUnsupportedException? unavailableReason;
 
+  /// Whether the runtime loads FP8 weights as F16 on Metal, as
+  /// `StableDiffusionCalls.loadsFp8AsF16OnMetal` decides. Without it, FP8
+  /// weights abort the process when a Metal context is created.
+  final bool loadsFp8AsF16OnMetal;
+
   /// A runtime that loaded and answered the probe.
   const StableDiffusionRuntimeStatus.available({
     required String this.version,
     required String this.commit,
     required this.devices,
+    this.loadsFp8AsF16OnMetal = false,
   }) : unavailableReason = null;
 
   /// A runtime that cannot be used, for [reason].
@@ -39,7 +45,8 @@ final class StableDiffusionRuntimeStatus {
   ) : unavailableReason = reason,
       version = null,
       commit = null,
-      devices = const [];
+      devices = const [],
+      loadsFp8AsF16OnMetal = false;
 
   /// Whether the runtime loaded and answered the probe.
   bool get isAvailable => unavailableReason == null;

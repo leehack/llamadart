@@ -344,7 +344,7 @@ void validateSeamlessImageGenerationRecipe(
       config.flashAttention ||
       config.vaeDirectConvolution) {
     throw LlamaUnsupportedException(
-      'Seamless textures require stable_diffusion v0.3.0 SDXS (512-DS), '
+      'Seamless textures require stable_diffusion v0.3.0-1 SDXS (512-DS), '
       'its header-detected embedded tiny decoder without component overrides '
       'on CPU or Metal, '
       '512 by 512 pixels, flashAttention: false and '
@@ -366,7 +366,7 @@ void validateImageVaeTilingRecipe(
       modelVersion != 'SD 2.x' ||
       !config.vaeTilingRecipeVerified) {
     throw LlamaUnsupportedException(
-      'VAE tiling requires stable_diffusion v0.3.0, an SD 2.x checkpoint '
+      'VAE tiling requires stable_diffusion v0.3.0-1, an SD 2.x checkpoint '
       'with its embedded full VAE or a TAESD override on CPU or Metal, '
       'without circular axes or other component overrides. SD-Turbo is '
       'the qualified model; this model, decoder or device recipe is '

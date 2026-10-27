@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Pin stable-diffusion-native `v0.3.0-1` (stable-diffusion.cpp master-1017), which loads FP8 image weights as F16 on Metal: FP8 checkpoints now generate on Metal instead of being refused. The bounded image recipes are requalified on it, and Flutter iOS/macOS apps need the matching `llamadart_stable_diffusion_flutter` release ([#1446](https://github.com/leehack/llamadart/issues/1446)).
 - Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).

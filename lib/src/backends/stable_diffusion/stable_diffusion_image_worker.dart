@@ -144,10 +144,11 @@ final class StableDiffusionImageWorker
   /// Throws [LlamaModelException] when the runtime cannot load the files as
   /// an image model, with the runtime's reason when it gives one, and
   /// [LlamaUnsupportedException] when the runtime does not export the
-  /// functions of [StableDiffusionCalls], or FP8 weights would reach Metal.
-  /// On Apple platforms an unspecified backend may select Metal; use `cpu`
-  /// explicitly for FP8 weights. The preflight inspects every regular file
-  /// before any native context is constructed.
+  /// functions of [StableDiffusionCalls], or FP8 weights would reach Metal on
+  /// a runtime without [StableDiffusionCalls.loadsFp8AsF16OnMetal]. On Apple
+  /// platforms an unspecified backend may select Metal; use `cpu` explicitly
+  /// for FP8 weights there. That preflight inspects every regular file before
+  /// any native context is constructed.
   static Future<StableDiffusionImageWorker> start(
     ImageGenerationSessionConfig config, {
     StableDiffusionCallsResolver resolveCalls = StableDiffusionCalls.tryResolve,
@@ -159,6 +160,7 @@ final class StableDiffusionImageWorker
       throw stableDiffusionWrapperUnsupported();
     }
     if ((Platform.isMacOS || Platform.isIOS) &&
+        !calls.loadsFp8AsF16OnMetal &&
         !{'cpu', 'blas'}.contains(config.backend?.toLowerCase())) {
       for (final role in const [
         'model',
@@ -177,8 +179,10 @@ final class StableDiffusionImageWorker
         if (FileSystemEntity.typeSync(path) == FileSystemEntityType.directory) {
           throw LlamaUnsupportedException(
             'Cannot verify directory model tensor dtypes before Metal context '
-            'creation. Use individual GGUF or Safetensors components, or '
-            'ComputeDevice.cpu (https://github.com/leehack/llamadart/issues/1446).',
+            'creation on a stable_diffusion runtime older than '
+            '${StableDiffusionCalls.fp8MetalNativeRelease}. Use individual '
+            'GGUF or Safetensors components, or ComputeDevice.cpu '
+            '(https://github.com/leehack/llamadart/issues/1446).',
           );
         }
         if (!File(path).existsSync()) continue;

@@ -14,6 +14,16 @@ failing classification: outside the bounded SD 1.x macOS CPU recipe,
 `LlamaModelException`. A ControlNet loaded with no file holding diffusion
 weights (for example, alone) still throws `LlamaModelException`.
 
+<a id="unreleased-stable-diffusion-v0-3-0-1"></a>
+
+## Unreleased: stable_diffusion native runtime `v0.3.0-1`
+
+The hook and the stable_diffusion Apple companion source pin `v0.3.0-1`. A
+Flutter iOS or macOS build needs the companion release that pins it; a
+companion pinning `v0.3.0` fails with `Incompatible Apple stable_diffusion
+companion`, because that runtime aborts on FP8 weights on Metal, which this
+core now loads there. Upgrade core and companion together.
+
 <a id="015x-to-0160-upgrade-guide"></a>
 
 ## `0.15.x` -> `0.16.0`: upgrade guide
