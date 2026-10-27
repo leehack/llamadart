@@ -256,17 +256,18 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
 
     final cacheDir = _cacheDirectory(source, options);
-    if (options.cachePolicy == ModelCachePolicy.cacheOnly &&
-        !await File(path.join(cacheDir.path, source.fileName)).exists()) {
-      // A miss needs no lock directory, which a read-only cache root could not
-      // hold. Reading an entry that appears now would race its writer.
-      throw LlamaStateException(
-        'No cached model is available for ${_redactedSourceName(source)}.',
-      );
-    }
-    return _withCacheLock(
-      _cacheLockKey(cacheDir),
-      () => _withEntryLock(
+    return _withCacheLock(_cacheLockKey(cacheDir), () async {
+      if (options.cachePolicy == ModelCachePolicy.cacheOnly &&
+          !await File(path.join(cacheDir.path, source.fileName)).exists()) {
+        // A miss needs no lock directory, which a read-only cache root could
+        // not hold. Checked after this isolate's earlier calls for the entry,
+        // so a download they finish counts; reading an entry that appears
+        // later without the entry lock would race its writer.
+        throw LlamaStateException(
+          'No cached model is available for ${_redactedSourceName(source)}.',
+        );
+      }
+      return _withEntryLock(
         cacheDir,
         options,
         (locked) => _ensureModelUnlocked(
@@ -275,8 +276,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           onProgress,
           ownsPartFiles: locked,
         ),
-      ),
-    );
+      );
+    });
   }
 
   /// [ownsPartFiles] is true while this call holds the entry's cross-process

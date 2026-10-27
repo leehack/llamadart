@@ -11,6 +11,7 @@ import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/download/model_download_manager_base.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/platform/io/model_cache_entry_lock.dart';
@@ -390,6 +391,120 @@ void main() {
       expect(await File(entry.filePath).readAsBytes(), server.payload);
     }, testOn: '!windows');
 
+    test('a cacheOnly call waits for a download this isolate already '
+        'started', () async {
+      server.holdFirst = true;
+      final downloading = manager.ensureModel(source());
+      await server.firstResponseHeld;
+      final probe = manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      server.release();
+      await downloading;
+
+      final entry = await probe;
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+      expect(server.requestCount, 1);
+    });
+
+    test('a cacheOnly call that finds the file only after waiting reads it '
+        'under the entry lock', () async {
+      Directory(path.dirname(lockPath())).createSync(recursive: true);
+      final holder = await acquireModelCacheEntryLock(
+        lockPath(),
+        throwIfCancelled: () {},
+      );
+      expect(holder, isNotNull);
+      addTearDown(() => holder?.release());
+      final token = ModelDownloadCancelToken();
+      final blocked = manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(cancelToken: token),
+      );
+      final probe = manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      // The holder, another process, is mid-refresh: its new file is in place
+      // and its metadata still describes the old one.
+      final directory = entryDirectory()..createSync(recursive: true);
+      final file = File(path.join(directory.path, _fileName))
+        ..writeAsBytesSync(server.payload);
+      void writeMetadata(int bytes) {
+        final now = DateTime.now().toUtc();
+        File(path.join(directory.path, 'metadata.json')).writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'schema_version': 1,
+            ...ModelCacheEntry(
+              sourceCanonicalKey: source().metadataSourceKey,
+              cacheKey: source().cacheKey,
+              fileName: _fileName,
+              filePath: file.path,
+              bytes: bytes,
+              createdAt: now,
+              updatedAt: now,
+            ).toJson(),
+          }),
+        );
+      }
+
+      writeMetadata(7);
+      token.cancel();
+      await expectLater(blocked, throwsA(isA<LlamaStateException>()));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      writeMetadata(server.payload.length);
+      await holder!.release();
+
+      final entry = await probe;
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+      expect(server.requestCount, 0);
+    });
+
+    test('a resume whose file outgrows the reported total is discarded and '
+        'downloaded again', () async {
+      final directory = entryDirectory()..createSync(recursive: true);
+      File(
+        path.join(directory.path, '$_fileName.part'),
+      ).writeAsBytesSync(server.payload.sublist(0, 1000));
+      File(
+        path.join(directory.path, '$_fileName.part.json'),
+      ).writeAsStringSync(jsonEncode(<String, Object?>{'etag': server.etag}));
+      server.answerResumeWithSmallerTotal = true;
+
+      final entry = await manager.ensureModel(source());
+
+      expect(server.ranges, <String?>['bytes=1000-', null]);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    });
+
+    test('a discarded oversized resume leaves no part file or validator and '
+        'releases the lock', () async {
+      final directory = entryDirectory()..createSync(recursive: true);
+      File(
+        path.join(directory.path, '$_fileName.part'),
+      ).writeAsBytesSync(server.payload.sublist(0, 1000));
+      File(
+        path.join(directory.path, '$_fileName.part.json'),
+      ).writeAsStringSync(jsonEncode(<String, Object?>{'etag': server.etag}));
+      server.answerResumeWithSmallerTotal = true;
+
+      await expectLater(
+        manager.ensureModel(source(), options: ModelLoadOptions(maxRetries: 0)),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(leftovers(), isEmpty);
+
+      server.answerResumeWithSmallerTotal = false;
+      final entry = await DefaultModelDownloadManager(
+        defaultCacheDirectory: root.path,
+      ).ensureModel(source()).timeout(const Duration(seconds: 10));
+      expect(server.ranges, <String?>['bytes=1000-', null]);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    });
+
     test('never touches a metadata temp file another writer owns', () async {
       final directory = entryDirectory()..createSync(recursive: true);
       final foreign = File(path.join(directory.path, 'metadata.json.tmp'))
@@ -617,6 +732,10 @@ class _HoldingServer {
   /// Sends every body gzip-encoded, with the encoded Content-Length.
   bool gzipBody = false;
 
+  /// Answers every Range request with 100 bytes and a Content-Range total
+  /// 50 bytes past the requested start, so the resumed file outgrows it.
+  bool answerResumeWithSmallerTotal = false;
+
   /// Request numbers whose full response ends at [holdAfter] bytes.
   final Set<int> shortBodies = <int>{};
 
@@ -709,6 +828,21 @@ class _HoldingServer {
       final currentEtag = etag;
       if (currentEtag != null) {
         response.headers.set(HttpHeaders.etagHeader, currentEtag);
+      }
+      if (answerResumeWithSmallerTotal && range != null) {
+        final from = int.parse(
+          range.substring('bytes='.length).split('-').first,
+        );
+        response
+          ..statusCode = HttpStatus.partialContent
+          ..headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes $from-${from + 99}/${from + 50}',
+          )
+          ..headers.contentLength = 100
+          ..add(List<int>.filled(100, 1));
+        await response.close();
+        return;
       }
       final body = payloadOverrides[number] ?? payload;
       var start = 0;
