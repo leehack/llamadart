@@ -95,6 +95,33 @@ final class Qwen3VlToolMediaFixture {
     rawJson: '{"camera": "back"}',
   );
 
+  /// Upstream cases with one `take_photo` call whose result is [result] with
+  /// content [parts].
+  static List<LlamaChatMessage> singleResult({
+    required Object? result,
+    required List<LlamaContentPart> parts,
+  }) => [
+    const LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Take a photo.',
+    ),
+    const LlamaChatMessage.withContent(
+      role: LlamaChatRole.assistant,
+      content: [_front],
+    ),
+    LlamaChatMessage.withContent(
+      role: LlamaChatRole.tool,
+      content: [
+        LlamaToolResultContent(
+          id: 'call_0',
+          name: 'take_photo',
+          result: result,
+          content: parts,
+        ),
+      ],
+    ),
+  ];
+
   /// Upstream case `two_results`: two calls, the first result with JSON,
   /// a caption and the red photo, the second with only the blue photo.
   static List<LlamaChatMessage> twoResults() => [

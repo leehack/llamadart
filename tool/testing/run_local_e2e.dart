@@ -155,7 +155,8 @@ class LocalE2eRunContext {
     required this.expectProvided,
     required this.allowAnyResponse,
     required this.skipBuild,
-  });
+    Map<String, String>? environment,
+  }) : _environment = environment;
 
   final String projectRoot;
   final String device;
@@ -191,6 +192,10 @@ class LocalE2eRunContext {
   final bool expectProvided;
   final bool allowAnyResponse;
   final bool skipBuild;
+  final Map<String, String>? _environment;
+
+  /// The process environment scenarios read, or what a test injected.
+  Map<String, String> get environment => _environment ?? Platform.environment;
 
   String get chatAppDir => '$projectRoot/example/chat_app';
   String get webBuildUrl =>
@@ -529,7 +534,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             if (context.backendProvided)
               'LLAMADART_TOOL_MEDIA_BACKEND': context.backend,
             'LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE':
-                ?Platform.environment['LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE'],
+                ?context.environment['LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE'],
           },
           description: 'Tool-result image E2E',
         ),
@@ -2567,6 +2572,7 @@ Future<LocalE2eResult> runLocalE2e(
     expectProvided: parsed.expectProvided,
     allowAnyResponse: parsed.allowAnyResponse,
     skipBuild: parsed.skipBuild,
+    environment: environment,
   );
   final steps = scenario.steps(context);
 
