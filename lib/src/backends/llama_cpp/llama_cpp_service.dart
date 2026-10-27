@@ -46,6 +46,7 @@ import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 import 'mtmd_chunk_eval.dart';
 import 'native_barrier_api.dart';
+import 'native_library_candidates.dart';
 import 'vulkan_device_probe.dart';
 
 part 'multimodal_embedding.dart';
@@ -663,15 +664,6 @@ class LlamaCppService {
   );
   static const int _loadWithAlteredSearchPath = 0x00000008;
   static const int _semFailCriticalErrors = 0x0001;
-  static const Map<String, int> _androidCpuVariantPriority = <String, int>{
-    'android_armv9.2_2': 0,
-    'android_armv9.2_1': 1,
-    'android_armv9.0_1': 2,
-    'android_armv8.6_1': 3,
-    'android_armv8.2_2': 4,
-    'android_armv8.2_1': 5,
-    'android_armv8.0_1': 6,
-  };
   static const Map<SpeculativeDecodingStrategy, String>
   _llamaCppSpeculativeTypeNames = <SpeculativeDecodingStrategy, String>{
     SpeculativeDecodingStrategy.draftSimple: 'draft-simple',
@@ -2718,7 +2710,7 @@ class LlamaCppService {
       return true;
     }
 
-    final fileNameCandidates = _backendLibraryCandidateFileNames(backend);
+    final fileNameCandidates = _libraryCandidates.backend(backend);
     if (fileNameCandidates.isEmpty) {
       return false;
     }
@@ -2744,7 +2736,7 @@ class LlamaCppService {
       return false;
     }
 
-    final fileNameCandidates = _backendLibraryCandidateFileNames(backend);
+    final fileNameCandidates = _libraryCandidates.backend(backend);
     final candidates = <String>{};
     final backendModuleDirectory = _backendModuleDirectory;
     if (backendModuleDirectory != null) {
@@ -2760,7 +2752,7 @@ class LlamaCppService {
 
     final failures = BackendProbeFailures();
     if (backendModuleDirectory != null && fileNameCandidates.isEmpty) {
-      failures.add(_backendLibraryFileName(backend), 'file missing');
+      failures.add(_libraryCandidates.backendFileName(backend), 'file missing');
     }
     for (final candidate in candidates) {
       if (path.isAbsolute(candidate) && !File(candidate).existsSync()) {
@@ -2829,25 +2821,6 @@ class LlamaCppService {
       '${failures.describe()}.$missingLoader',
     );
     return false;
-  }
-
-  List<String> _backendAssetUriCandidates(String backend) {
-    final candidates = <String>{
-      'package:llamadart/$backend',
-      'package:llamadart/ggml_$backend',
-      'package:llamadart/ggml-$backend',
-    };
-
-    if (backend == 'cpu' && Platform.isAndroid) {
-      for (final variant in _androidCpuVariantPriority.keys) {
-        candidates.add(
-          'package:llamadart/ggml-cpu-${variant.replaceAll('.', '_')}',
-        );
-      }
-      candidates.add('package:llamadart/ggml-cpu');
-    }
-
-    return candidates.toList(growable: false);
   }
 
   Pointer<Void> _preloadWindowsBackendModule(
@@ -3054,7 +3027,7 @@ class LlamaCppService {
     String backend,
     BackendProbeFailures failures,
   ) {
-    final assetCandidates = _backendAssetUriCandidates(backend);
+    final assetCandidates = _libraryCandidates.backendAssetUris(backend);
     final recordAssetDiagnostics = backend == 'cpu' && Platform.isAndroid;
 
     for (final assetUri in assetCandidates) {
@@ -3163,8 +3136,8 @@ class LlamaCppService {
   }
 
   void _resolveGgmlFallbackFunctions() {
-    final fileNameCandidates = _ggmlLibraryCandidateFileNames();
-    final candidates = <String>[..._ggmlAssetUriCandidates()];
+    final fileNameCandidates = _libraryCandidates.ggml();
+    final candidates = <String>[..._libraryCandidates.ggmlAssetUris()];
     final filesystemCandidates = <String>{};
     final backendModuleDirectory = _backendModuleDirectory;
     if (backendModuleDirectory != null) {
@@ -3369,16 +3342,6 @@ class LlamaCppService {
       _ggmlBackendDevGetPropsFallback != null &&
       _ggmlBackendDevMemoryFallback != null;
 
-  List<String> _ggmlAssetUriCandidates() {
-    if (Platform.isWindows) {
-      return const <String>[
-        'package:llamadart/ggml',
-        'package:llamadart/ggml-base',
-      ];
-    }
-    return const <String>['package:llamadart/ggml'];
-  }
-
   void _resolveLogLevelFallbackFunction() {
     final directories = _llamadartFallbackLookupDirectories();
     final searchKey = directories.map(path.normalize).join('|');
@@ -3397,19 +3360,7 @@ class LlamaCppService {
     _logLevelFallbackLookupAttempted = true;
     _logLevelFallbackLookupSearchKey = searchKey;
 
-    final fileNameCandidates = _llamadartLibraryCandidateFileNames();
-    final candidates = <String>[..._llamadartAssetUriCandidates()];
-    final pattern = _llamadartLibraryPattern();
-    for (final directoryPath in directories) {
-      for (final fileName in fileNameCandidates) {
-        candidates.add(path.join(directoryPath, fileName));
-      }
-      for (final fileName in _matchingLibraryNames(directoryPath, pattern)) {
-        candidates.add(path.join(directoryPath, fileName));
-      }
-    }
-    // Keep bare-name fallback last so module-dir resolution wins when present.
-    candidates.addAll(fileNameCandidates);
+    final candidates = _libraryCandidates.wrapperPaths(directories);
 
     final failures = BackendProbeFailures();
     final seen = <String>{};
@@ -3681,38 +3632,21 @@ class LlamaCppService {
 
   static bool _fileExists(String filePath) => File(filePath).existsSync();
 
-  List<String> _llamadartWrapperLibraryCandidates() {
-    final candidates = <String>[..._llamadartAssetUriCandidates()];
-    final fileNameCandidates = _llamadartLibraryCandidateFileNames();
-    final pattern = _llamadartLibraryPattern();
-    for (final directoryPath in _llamadartFallbackLookupDirectories()) {
-      for (final fileName in fileNameCandidates) {
-        candidates.add(path.join(directoryPath, fileName));
-      }
-      for (final fileName in _matchingLibraryNames(directoryPath, pattern)) {
-        candidates.add(path.join(directoryPath, fileName));
-      }
-    }
-    candidates.addAll(fileNameCandidates);
+  List<String> _llamadartWrapperLibraryCandidates() =>
+      _libraryCandidates.wrapperPaths(_llamadartFallbackLookupDirectories());
 
-    final seen = <String>{};
-    return [
-      for (final candidate in candidates)
-        if (seen.add(candidate)) candidate,
-    ];
-  }
+  LlamaCppLibraryCandidates get _libraryCandidates => LlamaCppLibraryCandidates(
+    os: Platform.operatingSystem,
+    abi: _abi,
+    moduleDirectory: _backendModuleDirectory,
+    listFiles: _listFileNames,
+    fileExists: _fileExists,
+  );
 
-  List<String> _llamadartAssetUriCandidates() {
-    // Prefer asset-URI resolution so Windows split bundles can reliably resolve
-    // the wrapper helper library without relying on process cwd/search paths.
-    if (Platform.isWindows) {
-      return const <String>[
-        'package:llamadart/llamadart_wrapper',
-        'package:llamadart/llamadart',
-      ];
-    }
-    return const <String>['package:llamadart/llamadart'];
-  }
+  static List<String> _listFileNames(String directoryPath) => [
+    for (final entity in Directory(directoryPath).listSync())
+      if (entity is File) path.basename(entity.path),
+  ];
 
   List<String> _llamadartFallbackLookupDirectories() {
     final directories = <String>{};
@@ -3740,132 +3674,6 @@ class LlamaCppService {
     return directories.toList(growable: false);
   }
 
-  static String _ggmlLibraryFileName() {
-    if (Platform.isWindows) {
-      return 'ggml.dll';
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return 'libggml.dylib';
-    }
-    return 'libggml.so';
-  }
-
-  static String _llamadartLibraryFileName() {
-    if (Platform.isWindows) {
-      return 'llamadart.dll';
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return 'libllamadart.dylib';
-    }
-    return 'libllamadart.so';
-  }
-
-  List<String> _backendLibraryCandidateFileNames(String backend) {
-    final baseName = _backendLibraryFileName(backend);
-    final backendModuleDirectory = _backendModuleDirectory;
-    if (backendModuleDirectory == null) {
-      if (backend == 'cpu' && Platform.isAndroid) {
-        final variants = _androidCpuVariantPriority.keys
-            .map((variant) => 'libggml-cpu-$variant.so')
-            .toList(growable: false);
-        return <String>[...variants, baseName];
-      }
-      return <String>[baseName];
-    }
-
-    final candidates = <String>{};
-    final basePath = path.join(backendModuleDirectory, baseName);
-    if (File(basePath).existsSync()) {
-      candidates.add(baseName);
-    }
-    final dynamicNames = _matchingLibraryNames(
-      backendModuleDirectory,
-      _backendLibraryPattern(backend),
-    );
-    if (backend == 'cpu' && Platform.isAndroid) {
-      dynamicNames.sort(_compareAndroidCpuLibraryCandidates);
-    }
-    candidates.addAll(dynamicNames);
-    final resolved = candidates.toList(growable: false);
-    if (backend == 'cpu' && Platform.isAndroid) {
-      resolved.sort(_compareAndroidCpuLibraryCandidates);
-    }
-    return resolved;
-  }
-
-  static int _compareAndroidCpuLibraryCandidates(String a, String b) {
-    final rankA = _androidCpuLibraryCandidateRank(a);
-    final rankB = _androidCpuLibraryCandidateRank(b);
-    if (rankA != rankB) {
-      return rankA.compareTo(rankB);
-    }
-    return a.compareTo(b);
-  }
-
-  static int _androidCpuLibraryCandidateRank(String fileName) {
-    final lowered = fileName.toLowerCase();
-    if (lowered == 'libggml-cpu.so') {
-      return 1000;
-    }
-
-    final variantMatch = RegExp(
-      r'^libggml-cpu-([^/\\]+)\.so$',
-    ).firstMatch(lowered);
-    if (variantMatch == null) {
-      return 2000;
-    }
-
-    final variant = variantMatch.group(1)!;
-    return _androidCpuVariantPriority[variant] ?? 900;
-  }
-
-  List<String> _ggmlLibraryCandidateFileNames() {
-    final baseName = _ggmlLibraryFileName();
-    final candidates = <String>{baseName};
-    final backendModuleDirectory = _backendModuleDirectory;
-    if (backendModuleDirectory == null) {
-      return candidates.toList(growable: false);
-    }
-
-    final dynamicNames = _matchingLibraryNames(
-      backendModuleDirectory,
-      _ggmlLibraryPattern(),
-    );
-    candidates.addAll(dynamicNames);
-    return candidates.toList(growable: false);
-  }
-
-  List<String> _llamadartLibraryCandidateFileNames() {
-    final candidates = _llamadartStaticCandidateFileNames();
-    final backendModuleDirectory = _backendModuleDirectory;
-    if (backendModuleDirectory == null) {
-      return candidates.toList(growable: false);
-    }
-
-    final dynamicNames = _matchingLibraryNames(
-      backendModuleDirectory,
-      _llamadartLibraryPattern(),
-    );
-    candidates.addAll(dynamicNames);
-    return candidates.toList(growable: false);
-  }
-
-  Set<String> _llamadartStaticCandidateFileNames() {
-    final candidates = <String>{_llamadartLibraryFileName()};
-    if (Platform.isWindows) {
-      // Hook asset naming can expose wrapper helper as `llamadart_wrapper.dll`.
-      candidates.add('llamadart_wrapper.dll');
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      // Flutter Apple apps embed the native asset as a framework rather than
-      // as a bare libllamadart.dylib. Opening the framework binary directly
-      // makes dynamically discovered wrapper ABIs visible to FFI.
-      candidates.add(path.join('llamadart.framework', 'llamadart'));
-      candidates.add(path.join('llama.framework', 'llama'));
-    }
-    return candidates;
-  }
-
   /// Tries to load the ggml [backend] module from [moduleDirectory], as model
   /// loading does, for VM regression tests.
   bool debugTryLoadBackendModuleForTesting(
@@ -3879,59 +3687,6 @@ class LlamaCppService {
   /// Returns wrapper-library lookup candidates for VM regression tests.
   List<String> debugLlamadartWrapperLibraryCandidatesForTesting() {
     return _llamadartWrapperLibraryCandidates();
-  }
-
-  RegExp _backendLibraryPattern(String backend) {
-    final escapedBackend = RegExp.escape(backend);
-    if (Platform.isWindows) {
-      return RegExp('^ggml-$escapedBackend(?:-[^\\\\/]+)*\\.dll\$');
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return RegExp('^libggml-$escapedBackend(?:-[^\\\\/]+)*\\.dylib\$');
-    }
-    return RegExp('^libggml-$escapedBackend(?:-[^\\\\/]+)*\\.so\$');
-  }
-
-  RegExp _ggmlLibraryPattern() {
-    if (Platform.isWindows) {
-      return RegExp(r'^ggml(?:-[^.\\/]+)*\.dll$');
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return RegExp(r'^libggml(?:-[^.\\/]+)*\.dylib$');
-    }
-    return RegExp(r'^libggml(?:-[^.\\/]+)*\.so$');
-  }
-
-  RegExp _llamadartLibraryPattern() {
-    if (Platform.isWindows) {
-      return RegExp(r'^llamadart(?:[-_][^.\\/]+)*\.dll$');
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return RegExp(r'^libllamadart(?:[-_][^.\\/]+)*\.dylib$');
-    }
-    return RegExp(r'^libllamadart(?:[-_][^.\\/]+)*\.so$');
-  }
-
-  static List<String> _matchingLibraryNames(
-    String directoryPath,
-    RegExp regex,
-  ) {
-    try {
-      final names = <String>[];
-      for (final entity in Directory(directoryPath).listSync()) {
-        if (entity is! File) {
-          continue;
-        }
-        final name = path.basename(entity.path);
-        if (regex.hasMatch(name)) {
-          names.add(name);
-        }
-      }
-      names.sort();
-      return names;
-    } catch (_) {
-      return const [];
-    }
   }
 
   T _ggmlRegistryFallbackOr<T>(
@@ -4115,16 +3870,6 @@ class LlamaCppService {
         return true;
       },
     );
-  }
-
-  static String _backendLibraryFileName(String backend) {
-    if (Platform.isWindows) {
-      return 'ggml-$backend.dll';
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return 'libggml-$backend.dylib';
-    }
-    return 'libggml-$backend.so';
   }
 
   static bool _looksLikeGguf(File modelFile) {
@@ -9082,7 +8827,7 @@ class LlamaCppService {
     _mtmdFallbackLookupAttempted = true;
     _mtmdFallbackLookupDirectory = _backendModuleDirectory;
 
-    final fileNameCandidates = _mtmdLibraryCandidateFileNames();
+    final fileNameCandidates = _libraryCandidates.mtmd();
     final candidates = <String>{};
     final backendModuleDirectory = _backendModuleDirectory;
     if (backendModuleDirectory != null) {
@@ -9109,42 +8854,6 @@ class LlamaCppService {
 
     _mtmdFallbackApi = _MtmdApi.tryLoad(library);
     return _mtmdFallbackApi;
-  }
-
-  List<String> _mtmdLibraryCandidateFileNames() {
-    final baseName = _mtmdLibraryFileName();
-    final candidates = <String>{baseName};
-    final backendModuleDirectory = _backendModuleDirectory;
-    if (backendModuleDirectory == null) {
-      return candidates.toList(growable: false);
-    }
-
-    final dynamicNames = _matchingLibraryNames(
-      backendModuleDirectory,
-      _mtmdLibraryPattern(),
-    );
-    candidates.addAll(dynamicNames);
-    return candidates.toList(growable: false);
-  }
-
-  static String _mtmdLibraryFileName() {
-    if (Platform.isWindows) {
-      return 'mtmd.dll';
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return 'libmtmd.dylib';
-    }
-    return 'libmtmd.so';
-  }
-
-  RegExp _mtmdLibraryPattern() {
-    if (Platform.isWindows) {
-      return RegExp(r'^mtmd(?:-[^.\\/]+)*\.dll$');
-    }
-    if (Platform.isMacOS || Platform.isIOS) {
-      return RegExp(r'^libmtmd(?:-[^.\\/]+)*\.dylib$');
-    }
-    return RegExp(r'^libmtmd(?:-[^.\\/]+)*\.so$');
   }
 
   String _mtmdUnavailableMessage(String symbol) {
