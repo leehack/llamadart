@@ -659,6 +659,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Local image-set resolution, cache/snapshot lifetime, model-set factory, aggregate accounting or checkpoint-set native mapping changes.',
   ),
   TestMatrixRow(
+    id: 'image-editing',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'SD-Turbo embedded full-VAE macOS CPU RGB/mask ownership and polarity, strength, direct-C reference parity, cancellation/reuse, ordinary defaults reset and reload; other recipes unmeasured or refused',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario image-editing --model-path <sd-turbo.gguf>',
+    useWhen:
+        'ImageEditingRequest, image-editing capability, worker transport or init/mask/strength native mapping changes.',
+  ),
+  TestMatrixRow(
     id: 'image-exit-teardown',
     tier: 'targeted',
     mode: 'local-only',

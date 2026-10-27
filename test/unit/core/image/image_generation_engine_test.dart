@@ -128,6 +128,200 @@ void main() {
     },
   );
 
+  group('image editing', () {
+    final params = const ImageModelParams(
+      device: ComputeDevice.cpu,
+      flashAttention: false,
+      vaeDirectConvolution: false,
+    );
+    ImageEditingRequest edit({
+      double strength = 0.5,
+      ImageEditingPixels? mask,
+    }) => ImageEditingRequest(
+      prompt: 'paint',
+      initialImage: ImageEditingPixels.rgb(
+        width: 64,
+        height: 64,
+        pixels: Uint8List(64 * 64 * 3)..[17] = 91,
+      ),
+      mask: mask,
+      strength: strength,
+      steps: 4,
+    );
+
+    test(
+      'owned editing inputs survive resolution and ordinary requests reset',
+      () async {
+        final engine = await load(_sdxs(), params: params);
+        expect(driver.started.single.imageEditingRecipeVerified, isTrue);
+        expect((await engine.capabilities).supportsImageEditing, isTrue);
+        final mask = ImageEditingPixels.mask(
+          width: 64,
+          height: 64,
+          pixels: Uint8List(64 * 64)..[5] = 255,
+        );
+        await engine.generateImage(edit(mask: mask));
+        final mapped = driver.session.requests.single;
+        expect(mapped.initialImage!.pixels[17], 91);
+        expect(mapped.initialImage!.channels, 3);
+        expect(mapped.mask!.pixels[5], 255);
+        expect((mapped.width, mapped.height, mapped.strength), (64, 64, 0.5));
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'plain'),
+        );
+        final plain = driver.session.requests.last;
+        expect(
+          (plain.initialImage, plain.mask, plain.strength),
+          (null, null, null),
+        );
+        await engine.dispose();
+        expect((await engine.capabilities).supportsImageEditing, isFalse);
+      },
+    );
+
+    test(
+      'legacy and explicitly unsupported sessions refuse before task starts',
+      () async {
+        for (final legacy in [true, false]) {
+          driver.sessionOverride = legacy
+              ? _LegacySession(driver.session)
+              : null;
+          driver.session.supportsImageEditing = false;
+          final engine = await load(_sdxs(), params: params);
+          expect((await engine.capabilities).supportsImageEditing, isFalse);
+          await expectLater(
+            engine.generate(edit()),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(driver.session.requests, isEmpty);
+          await engine.generateImage(
+            const ImageGenerationRequest(prompt: 'plain'),
+          );
+          await engine.dispose();
+          driver.session = _FakeSession();
+        }
+      },
+    );
+
+    test(
+      'host runtime decoder device and native family are actual admission gates',
+      () async {
+        for (final kind in [
+          'host',
+          'runtime',
+          'decoder',
+          'device',
+          'family',
+          'flash',
+          'direct',
+        ]) {
+          driver = _FakeDriver();
+          downloads = _FakeDownloads(driver);
+          debugImageGenerationDriverOverride = driver;
+          if (kind == 'host') driver.operatingSystem = 'linux';
+          if (kind == 'runtime') {
+            driver.status = StableDiffusionRuntimeStatus.available(
+              version: 'unknown',
+              commit: 'unknown',
+              devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
+            );
+          }
+          if (kind == 'family') driver.session.modelVersion = 'SDXL';
+          final engine = await load(
+            _sdxs(null, kind == 'decoder' ? _local(_taesd) : null),
+            params: ImageModelParams(
+              device: kind == 'device' ? ComputeDevice.gpu : ComputeDevice.cpu,
+              flashAttention: kind == 'flash',
+              vaeDirectConvolution: kind == 'direct',
+            ),
+          );
+          expect(
+            (await engine.capabilities).supportsImageEditing,
+            isFalse,
+            reason: kind,
+          );
+          await expectLater(
+            engine.generate(edit()),
+            throwsA(isA<LlamaUnsupportedException>()),
+            reason: kind,
+          );
+          expect(driver.session.requests, isEmpty, reason: kind);
+          await engine.generateImage(
+            const ImageGenerationRequest(prompt: 'plain'),
+          );
+          await engine.dispose();
+        }
+      },
+    );
+
+    test(
+      'invalid strength and mask fail before native work and allow reuse',
+      () async {
+        final engine = await load(_sdxs(), params: params);
+        for (final strength in [0.0, -1.0, 1.01, double.nan, double.infinity]) {
+          await expectLater(
+            engine.generate(edit(strength: strength)),
+            throwsA(isA<LlamaImageGenerationException>()),
+          );
+        }
+        await expectLater(
+          engine.generate(
+            edit(
+              mask: ImageEditingPixels.mask(
+                width: 128,
+                height: 64,
+                pixels: Uint8List(128 * 64),
+              ),
+            ),
+          ),
+          throwsA(isA<LlamaImageGenerationException>()),
+        );
+        expect(driver.session.requests, isEmpty);
+        await engine.generateImage(edit(strength: 1));
+        expect(driver.session.requests.single.strength, 1);
+      },
+    );
+
+    test(
+      'cancel dispose overlap and reload preserve editing operation ownership',
+      () async {
+        final engine = await load(_sdxs(), params: params);
+        driver.session.gate = Completer<void>();
+        final task = await engine.generate(edit());
+        await expectLater(
+          engine.generate(edit()),
+          throwsA(isA<LlamaStateException>()),
+        );
+        task.cancel();
+        driver.session.gate!.complete();
+        expect(
+          (await task.done).state,
+          ImageGenerationCompletionState.cancelled,
+        );
+        driver.session.gate = null;
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'plain'),
+        );
+        expect(driver.session.requests.last.initialImage, isNull);
+        driver.session.gate = Completer<void>();
+        final pending = await engine.generate(edit());
+        final disposal = engine.dispose();
+        expect(driver.session.disposed, isFalse);
+        driver.session.gate!.complete();
+        await disposal;
+        expect(
+          (await pending.done).state,
+          ImageGenerationCompletionState.cancelled,
+        );
+        expect(driver.session.disposedAfterGenerate, isTrue);
+        driver.session = _FakeSession();
+        final reloaded = await load(_sdxs(), params: params);
+        await reloaded.generateImage(edit());
+        expect(driver.session.requests.single.initialImage!.pixels[17], 91);
+      },
+    );
+  });
+
   group('seamless textures', () {
     test(
       'circular flags survive resolution and ordinary requests reset them',
@@ -2514,9 +2708,14 @@ final class _FakeDriver implements ImageGenerationDriver {
 /// when it starts, reports `0/steps` then each step, and checks the flag
 /// before every step and before decoding.
 final class _FakeSession
-    implements ImageGenerationSession, ImageVaeTilingSession {
+    implements
+        ImageGenerationSession,
+        ImageVaeTilingSession,
+        ImageEditingSession {
   @override
   bool supportsVaeTiling = true;
+  @override
+  bool supportsImageEditing = true;
   final List<ImageGenerationSessionRequest> requests = [];
   Completer<void>? gate;
   bool failNext = false;

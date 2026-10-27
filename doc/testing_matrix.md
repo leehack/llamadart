@@ -1082,3 +1082,11 @@ checks public/native-reference pixels, aggregate accounting, source-removal
 lifetime, cache reuse and cancellation cleanup/recovery. See
 [the fixed recipe and cache contract](local_image_sets.md). No generic Diffusers,
 new-family, editing/tiling/seamless, GPU or device qualification is inferred.
+
+### Bounded image editing
+
+`image-editing` runs the maintained local-only SD-Turbo full-VAE macOS CPU
+recipe: owned RGB inputs, binary-mask polarity, strength, ordinary defaults
+reset, cancellation/reuse and reload, with optional exact direct-C references.
+See [the fixture, gates and provenance](image_editing.md). No GPU/device or
+other SD 2.x model qualification is inferred.

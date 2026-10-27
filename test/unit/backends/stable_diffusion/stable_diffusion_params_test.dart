@@ -11,6 +11,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_binding
     as sd;
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
+import 'package:llamadart/src/core/image/image_editing_request.dart';
 import 'package:llamadart/src/core/image/image_generation_model.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
 import 'package:llamadart/src/core/image/image_model_params.dart';
@@ -327,6 +328,77 @@ void main() {
       expect(data.getFloat32(368, Endian.host), 0.75);
     });
   }, testOn: 'mac-os || linux');
+
+  test(
+    'editing pixels strength and binary mask reach native struct with owned copies',
+    () {
+      final rgb = Uint8List.fromList(
+        List.generate(128 * 64 * 3, (i) => i % 256),
+      );
+      final mask = Uint8List(128 * 64)..fillRange(4096, 8192, 255);
+      final image = ImageEditingPixels.rgb(width: 128, height: 64, pixels: rgb);
+      final inputMask = ImageEditingPixels.mask(
+        width: 128,
+        height: 64,
+        pixels: mask,
+      );
+      rgb.fillRange(0, rgb.length, 0);
+      mask.fillRange(0, mask.length, 0);
+      using((arena) {
+        final params = arena<sd.sd_img_gen_params_t>();
+        applyStableDiffusionGenerationParams(
+          params,
+          ImageGenerationSessionRequest(
+            prompt: 'edit',
+            negativePrompt: '',
+            width: 128,
+            height: 64,
+            steps: 4,
+            guidanceScale: 1,
+            seed: 42,
+            count: 1,
+            initialImage: image,
+            mask: inputMask,
+            strength: 0.625,
+          ),
+          arena,
+        );
+        final input = params.ref.init_image;
+        final mappedMask = params.ref.mask_image;
+        expect((input.width, input.height, input.channel), (128, 64, 3));
+        expect(input.data.asTypedList(128 * 64 * 3), image.pixels);
+        expect(
+          (mappedMask.width, mappedMask.height, mappedMask.channel),
+          (128, 64, 1),
+        );
+        expect(mappedMask.data.asTypedList(128 * 64), inputMask.pixels);
+        expect(params.ref.strength, closeTo(0.625, 0.000001));
+        image.pixels[0] = 99;
+        expect(input.data[0], 0);
+      });
+      using((arena) {
+        final params = arena<sd.sd_img_gen_params_t>();
+        params.ref.strength = 0.42;
+        applyStableDiffusionGenerationParams(
+          params,
+          const ImageGenerationSessionRequest(
+            prompt: 'plain',
+            negativePrompt: '',
+            width: 64,
+            height: 64,
+            steps: 1,
+            guidanceScale: 1,
+            seed: 42,
+            count: 1,
+          ),
+          arena,
+        );
+        expect(params.ref.init_image.data, nullptr);
+        expect(params.ref.mask_image.data, nullptr);
+        expect(params.ref.strength, closeTo(0.42, 0.000001));
+      });
+    },
+  );
 
   group('applyStableDiffusionGenerationParams', () {
     const request = ImageGenerationSessionRequest(

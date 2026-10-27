@@ -898,6 +898,33 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-editing',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify SD-Turbo embedded full-VAE macOS CPU RGB inputs, binary masks, strength, direct-C parity, cancellation and reset.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_editing_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_SD_TURBO_MODEL': context.modelPath!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-editing',
+          },
+          description: 'Bounded image-editing CPU qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2280,11 +2307,13 @@ Future<LocalE2eResult> runLocalE2e(
     );
   }
   if ((scenario.name == 'image-generation-smoke' ||
-          scenario.name == 'image-seamless-textures') &&
+          scenario.name == 'image-seamless-textures' ||
+          scenario.name == 'image-editing') &&
       parsed.modelPath == null) {
     return LocalE2eResult(
       64,
-      stderr: '--model-path <sdxs.gguf> is required for ${scenario.name}.\n',
+      stderr:
+          '--model-path <${scenario.name == 'image-editing' ? 'sd-turbo' : 'sdxs'}.gguf> is required for ${scenario.name}.\n',
     );
   }
   if (scenario.name == 'image-container-formats' &&

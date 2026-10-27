@@ -1871,6 +1871,29 @@ dev_dependencies:
       },
     );
 
+    test(
+      'image editing requires a checkpoint and selects the maintained CPU suite',
+      () async {
+        const args = ['--scenario', 'image-editing', '--dry-run'];
+        final missing = await runLocalE2e(
+          args,
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(missing.exitCode, 64);
+        expect(missing.stderr, contains('--model-path <sd-turbo.gguf>'));
+        final ready = await runLocalE2e(
+          [...args, '--model-path', '/model.gguf'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(ready.exitCode, 0);
+        expect(ready.stdout, contains('test/image_editing_e2e_test.dart'));
+        expect(ready.stdout, contains('LLAMADART_SD_TURBO_MODEL=/model.gguf'));
+        expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
+      },
+    );
+
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(
         const ['--scenario', 'image-generation-smoke', '--dry-run'],

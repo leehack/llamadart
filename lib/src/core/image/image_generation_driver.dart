@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'generated_image.dart';
+import 'image_editing_request.dart';
 import 'image_generation_model.dart';
 import 'image_generation_request.dart';
 
@@ -26,6 +27,10 @@ final class ImageGenerationSessionConfig {
   /// Header-role and device evidence for the bounded SD 2.x tiling recipe.
   final bool vaeTilingRecipeVerified;
 
+  /// Header, runtime and host evidence for the macOS CPU full-VAE SD 2.x
+  /// image-editing recipe.
+  final bool imageEditingRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -43,6 +48,7 @@ final class ImageGenerationSessionConfig {
     this.conditioningCacheSize,
     this.seamlessRecipeVerified = false,
     this.vaeTilingRecipeVerified = false,
+    this.imageEditingRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -92,6 +98,15 @@ final class ImageGenerationSessionRequest {
   /// Whether convolution boundaries wrap vertically.
   final bool circularY;
 
+  /// Owned RGB image, or `null` for ordinary text-to-image generation.
+  final ImageEditingPixels? initialImage;
+
+  /// Optional owned binary mask, aligned with [initialImage].
+  final ImageEditingPixels? mask;
+
+  /// Denoising strength for [initialImage], otherwise unused.
+  final double? strength;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -108,6 +123,9 @@ final class ImageGenerationSessionRequest {
     this.vaeTiling,
     this.circularX = false,
     this.circularY = false,
+    this.initialImage,
+    this.mask,
+    this.strength,
   });
 }
 
@@ -143,6 +161,12 @@ enum ImageGenerationComputeDevice {
 abstract interface class ImageVaeTilingSession {
   /// Whether this session can honor tiling for its loaded recipe and runtime.
   bool get supportsVaeTiling;
+}
+
+/// Optional active-session capability for the bounded image-editing recipe.
+abstract interface class ImageEditingSession {
+  /// Whether this loaded session can honor RGB/mask/strength input mapping.
+  bool get supportsImageEditing;
 }
 
 /// A loaded native image-generation context.

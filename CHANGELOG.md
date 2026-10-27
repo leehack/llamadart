@@ -6,6 +6,7 @@
 
 - Document and validate complete image checkpoint container layouts on macOS CPU.
 - Add verified local Safetensors checkpoint sets with owned caching for the bounded SD-Turbo macOS CPU recipe.
+- Add owned RGB image-to-image inputs and binary-mask editing for the bounded macOS CPU SD 2.x full-VAE recipe.
 
 - Reduce startup compilation overhead for `llamadart:doctor`.
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
