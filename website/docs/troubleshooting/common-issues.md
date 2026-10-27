@@ -49,6 +49,15 @@ metadata. The draft GGUF has incompatible metadata; see
 
 ## Native library won't load
 
+For a model-free check of a locally declared artifact, run
+`dart run llamadart:doctor_native --runtime llama_cpp --json` (or select
+`litert_lm` / `stable_diffusion`). The isolated child reports fixed loader,
+symbol and ABI-marker outcomes without exposing native output or local paths.
+It does not validate the production loader, GPU or inference. A failed direct
+file open can differ from an app's dependency resolution; follow the fixed hint
+and check the [scope](../platforms/native-build-hooks#isolated-native-check)
+before treating it as a backend failure.
+
 ### Build fails to fetch native runtimes
 
 The build hook downloads precompiled runtime binaries from GitHub Releases.

@@ -48,6 +48,14 @@ means a report was produced. The collector uses no native initialization or
 network; `dart run` can prepare/download assets through its build hook or fail
 before main. See [setup report scope](https://llamadart.leehack.com/docs/platforms/native-build-hooks#desktop-setup-report).
 
+To opt into a separate native check, run
+`dart run llamadart:doctor_native --runtime llama_cpp --json` (or name
+`litert_lm` / `stable_diffusion`). It opens locally declared files in an isolated
+process and checks selected symbols/static ABI markers, without a model or
+device probe. Exit 0 still means a report was produced. It does not establish
+emitted app assets, loaded release identity, production loader behavior or
+inference readiness; see [native check scope](https://llamadart.leehack.com/docs/platforms/native-build-hooks#isolated-native-check).
+
 - Dart SDK `>=3.10.7`
 - Flutter SDK `>=3.38.0` for Flutter apps
 - iOS deployment target `16.4` or newer for Flutter iOS apps. For LiteRT-LM

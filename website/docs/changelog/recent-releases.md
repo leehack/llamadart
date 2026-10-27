@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add an opt-in isolated desktop native diagnostic command with privacy-safe loader and ABI observations.
+
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 
 ## 0.16.4
