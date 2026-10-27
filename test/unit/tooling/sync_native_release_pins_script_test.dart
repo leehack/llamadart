@@ -1465,11 +1465,11 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       await _writeStableNativeReleaseFixture(
         contractSetup.releaseDir,
         'v0.2.0',
-        hookContractVersion: 2,
+        hookContractVersion: 3,
       );
       final contract = await _runLlamaSync(contractSetup, 'v0.2.0');
       expect(contract.exitCode, 1);
-      expect(contract.stderr, contains('requires native hook contract 2'));
+      expect(contract.stderr, contains('requires native hook contract 3'));
 
       final bundleSetup = await _writeLlamaOnlyRepo('b10514');
       addTearDown(() => bundleSetup.root.delete(recursive: true));
@@ -2889,7 +2889,8 @@ String _llamaBundleDigest(String bundle, String tag) =>
     sha256.convert(utf8.encode('$bundle@$tag')).toString();
 
 /// The `llamaCppBundleSha256` pin block, with each bundle's [tag] fixture
-/// digest or zeros when [tag] is null.
+/// digest or zeros when [tag] is null, followed by the contract 1 hook
+/// contract and backend sidecar pins.
 String _llamaCppBundleDigestPins([String? tag]) => [
   'const llamaCppBundleSha256 = <String, String>{',
   for (final bundle in _stableNativeBundles) ...[
@@ -2897,6 +2898,8 @@ String _llamaCppBundleDigestPins([String? tag]) => [
     "      '${tag == null ? _hex('0') : _llamaBundleDigest(bundle, tag)}',",
   ],
   '};',
+  'const llamaCppHookContractVersion = 1;',
+  'const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[];',
   '',
 ].join('\n');
 

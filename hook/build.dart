@@ -22,6 +22,7 @@ import 'package:yaml/yaml.dart';
 import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/native_release_manifest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/hook/native_runtime_coexistence.dart';
 import 'package:llamadart/src/hook/windows_file_version.dart';
@@ -456,6 +457,16 @@ void main(List<String> args) async {
       if (libraryPaths.isEmpty) {
         throw Exception('No dynamic libraries found in ${bundleDir.path}.');
       }
+      libraryPaths.addAll(
+        await _acquireBackendSidecarLibraryPaths(
+          packageRoot: pkgRoot,
+          nativeConfig: nativeConfig,
+          bundle: spec.bundle,
+          coreLibraryPaths: libraryPaths,
+          rawBackendConfig: input.userDefines[nativeBackendUserDefineKey],
+          log: log,
+        ),
+      );
 
       final libraries = describeNativeLibraries(libraryPaths);
       if (!libraries.any((library) => library.isPrimary)) {
@@ -2353,6 +2364,15 @@ Future<Directory> _acquireBundleDirectory({
       log: log,
     );
   }
+  if (nativeConfig.usesOverride) {
+    // Fails before a download whose layout this hook cannot interpret.
+    await _overrideReleaseManifest(
+      packageRoot: packageRoot,
+      nativeConfig: nativeConfig,
+      bundle: bundle,
+      log: log,
+    );
+  }
   await _downloadReleaseAsset(
     repository: nativeConfig.repository,
     nativeTag: nativeConfig.tag,
@@ -2381,6 +2401,202 @@ Future<Directory> _acquireBundleDirectory({
   return extractedDir;
 }
 
+final _pinnedBackendSidecarSpecs = {
+  for (final spec in llamaCppBackendSidecarSpecs) spec.archive: spec,
+};
+
+final _pinnedReleaseManifest = NativeReleaseManifest(
+  hookContractVersion: llamaCppHookContractVersion,
+  sidecars: [
+    for (final spec in llamaCppBackendSidecarSpecs)
+      NativeBackendSidecar(
+        bundle: spec.bundle,
+        backend: spec.backend,
+        archive: spec.archive,
+      ),
+  ],
+);
+
+/// Library paths from the backend sidecars that add each requested backend
+/// the core bundle at [coreLibraryPaths] lacks, each acquired like a bundle.
+///
+/// A requested backend with no sidecar is left to [selectLibrariesForBundling],
+/// which warns and falls back to the defaults, unless the release publishes it
+/// only as a sidecar: that throws [NativeHookContractException]. A local
+/// `llamadart_native_path` bundle must already hold every module it ships.
+Future<List<String>> _acquireBackendSidecarLibraryPaths({
+  required String packageRoot,
+  required _NativeBundleConfig nativeConfig,
+  required String bundle,
+  required List<String> coreLibraryPaths,
+  required Object? rawBackendConfig,
+  required Logger log,
+}) async {
+  if (nativeConfig.localPath != null) {
+    return const [];
+  }
+  final requested =
+      parseRequestedBackends(bundle: bundle, rawUserConfig: rawBackendConfig) ??
+      const <String>[];
+  final coreBackends = collectAvailableBackends(
+    describeNativeLibraries(coreLibraryPaths),
+  );
+  final missing = requested.where((backend) => !coreBackends.contains(backend));
+  if (missing.isEmpty) {
+    return const [];
+  }
+
+  final manifest = nativeConfig.usesOverride
+      ? await _overrideReleaseManifest(
+          packageRoot: packageRoot,
+          nativeConfig: nativeConfig,
+          bundle: bundle,
+          log: log,
+        )
+      : _pinnedReleaseManifest;
+  final sidecarPaths = <String>[];
+  for (final backend in missing) {
+    final sidecar = manifest?.sidecarFor(bundle: bundle, backend: backend);
+    if (sidecar == null) {
+      if (manifest != null &&
+          manifest.publishesOnlyAsSidecar(bundle: bundle, backend: backend)) {
+        throw NativeHookContractException(
+          'hooks.user_defines.$_packageName.$nativeBackendUserDefineKey '
+          'selects $backend for $bundle, but ${nativeConfig.sourceLabel} '
+          '(hook contract ${manifest.hookContractVersion}) publishes $backend '
+          'for $bundle only as a sidecar archive and lists none. Remove '
+          '$backend for $bundle, or use a release that publishes its sidecar.',
+        );
+      }
+      continue;
+    }
+    final sidecarDir = await _acquireBundleDirectory(
+      packageRoot: packageRoot,
+      nativeConfig: nativeConfig,
+      bundle: sidecar.archive,
+      log: log,
+    );
+    final paths = _collectDynamicLibraryPaths(sidecarDir);
+    if (!collectAvailableBackends(
+      describeNativeLibraries(paths),
+    ).contains(backend)) {
+      throw NativeHookContractException(
+        'The ${sidecar.archive} sidecar archive of '
+        '${nativeConfig.sourceLabel} holds no ggml-$backend module.',
+      );
+    }
+    log.info('Using the $backend backend sidecar: ${sidecarDir.path}');
+    sidecarPaths.addAll(paths);
+  }
+  if (sidecarPaths.isNotEmpty &&
+      !_isBundleLayoutCompatible(
+        bundle: bundle,
+        libraryPaths: [...coreLibraryPaths, ...sidecarPaths],
+        log: log,
+      )) {
+    throw NativeHookContractException(
+      'The backend sidecars of ${nativeConfig.sourceLabel} for $bundle are '
+      'missing runtime dependencies.',
+    );
+  }
+  return sidecarPaths;
+}
+
+/// The `assets.json` of an overridden release, or `null` when the release
+/// publishes none, as releases from before that manifest did (contract 1).
+///
+/// A copy cached beside the release's bundle caches is reused; otherwise the
+/// manifest is downloaded and cached there. Throws
+/// [NativeHookContractException] when it requires an unsupported hook contract
+/// or cannot be read.
+Future<NativeReleaseManifest?> _overrideReleaseManifest({
+  required String packageRoot,
+  required _NativeBundleConfig nativeConfig,
+  required String bundle,
+  required Logger log,
+}) async {
+  final cached = File(
+    path.join(
+      path.dirname(
+        _bundleCacheDirectory(
+          packageRoot: packageRoot,
+          nativeConfig: nativeConfig,
+          bundle: bundle,
+        ),
+      ),
+      'assets.json',
+    ),
+  );
+  final source = '${nativeConfig.sourceLabel} assets.json';
+  if (cached.existsSync()) {
+    try {
+      return parseNativeReleaseManifest(
+        utf8.decode(await cached.readAsBytes()),
+        tag: nativeConfig.tag,
+        source: 'the cached $source at ${cached.path}',
+      );
+    } on Exception catch (error) {
+      log.warning(
+        'Not using the cached $source ($error); fetching it from the release.',
+      );
+    }
+  }
+
+  final url =
+      'https://github.com/${nativeConfig.repository}/releases/download/'
+      '${nativeConfig.tag}/assets.json';
+  final downloaded = File('${cached.path}.download');
+  try {
+    try {
+      await _downloadRuntimeBundle(
+        url: url,
+        destination: downloaded,
+        description: 'native release assets.json',
+        log: log,
+      );
+    } on Exception catch (error) {
+      if (error is _RuntimeBundleDownloadHttpException &&
+          error.statusCode == HttpStatus.notFound) {
+        log.info(
+          '${nativeConfig.sourceLabel} publishes no assets.json; treating it '
+          'as hook contract 1.',
+        );
+        return null;
+      }
+      throw NativeHookContractException(
+        'Could not download $url to check the hook contract of '
+        '${nativeConfig.sourceLabel}: $error. To build without network '
+        'access, put that release\'s assets.json at ${cached.path}, or set '
+        '$nativePathUserDefineKey to a local bundle you trust.',
+      );
+    }
+    final String text;
+    try {
+      text = utf8.decode(await downloaded.readAsBytes());
+    } on FormatException {
+      throw NativeHookContractException('$source is not UTF-8 text.');
+    }
+    final manifest = parseNativeReleaseManifest(
+      text,
+      tag: nativeConfig.tag,
+      source: source,
+    );
+    try {
+      if (cached.existsSync()) {
+        await cached.delete();
+      }
+      await downloaded.rename(cached.path);
+    } on FileSystemException catch (error) {
+      log.warning('Could not keep $source at ${cached.path} ($error).');
+    }
+    return manifest;
+  } finally {
+    if (downloaded.existsSync()) {
+      await downloaded.delete();
+    }
+  }
+}
+
 /// The SHA-256 a llama.cpp archive must have: the pin for the default release,
 /// or the release's own `SHA256SUMS` entry for a tag or repository override.
 ///
@@ -2401,7 +2617,9 @@ _expectedNativeArchiveDigest({
 }) async {
   if (nativeConfig.tag == llamaCppTag &&
       nativeConfig.repository == _nativeRepoSlug) {
-    final pinned = llamaCppBundleSha256[bundle];
+    final pinned =
+        llamaCppBundleSha256[bundle] ??
+        _pinnedBackendSidecarSpecs[bundle]?.sha256;
     if (pinned == null) {
       throw NativeArchiveDigestException(
         'No SHA-256 is pinned for $archiveName in llamaCppBundleSha256, so '

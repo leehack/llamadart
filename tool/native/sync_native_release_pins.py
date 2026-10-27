@@ -47,7 +47,10 @@ DEFAULT_LLAMA_CPP_PROJECT_DOCS = (
     "website/docs/platforms/support-matrix.md",
 )
 DEFAULT_CHANGELOG = "CHANGELOG.md"
-SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION = 1
+SUPPORTED_NATIVE_HOOK_CONTRACT_VERSIONS = (1, 2)
+# Contract 2 adds backend sidecar archives (`module: backend-*`), extracted
+# over a core bundle only when that backend is selected.
+_BACKEND_SIDECAR_ARCHIVE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 _STABLE_NATIVE_TAG_PATTERN = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
 )
@@ -465,6 +468,18 @@ class NativeReleaseVersion(NamedTuple):
     upstream_tag: str
 
 
+class NativeBackendSidecar(NamedTuple):
+    bundle: str
+    backend: str
+    archive: str
+
+
+class NativeReleaseManifest(NamedTuple):
+    checksums: dict[str, str]
+    hook_contract_version: int
+    sidecars: tuple[NativeBackendSidecar, ...]
+
+
 def require_exact_keys(value: Any, expected: set[str], label: str) -> None:
     if not isinstance(value, dict):
         raise ReleaseError(f"LiteRT-LM {label} must be an object")
@@ -804,11 +819,12 @@ def main() -> int:
             current_tag=current_llama_cpp_tag,
             allow_legacy_tag=args.allow_legacy_tag,
         )
-        manifest_checksums = validate_native_release_manifest(
+        native_manifest = validate_native_release_manifest(
             release,
             resolved_llama_cpp_tag,
             repo=args.llamadart_native_repo,
         )
+        manifest_checksums = native_manifest.checksums
         pins_text = replace_one(
             pins_text,
             r"const llamaCppTag = '[^']+';",
@@ -827,6 +843,26 @@ def main() -> int:
                     repo=args.llamadart_native_repo,
                 ),
             )
+        pins_text = replace_llama_cpp_hook_contract(
+            pins_text,
+            native_manifest.hook_contract_version,
+        )
+        pins_text = replace_llama_cpp_backend_sidecars(
+            pins_text,
+            [
+                (
+                    sidecar,
+                    llama_cpp_bundle_checksum(
+                        release,
+                        sidecar.archive,
+                        resolved_llama_cpp_tag,
+                        manifest_checksums,
+                        repo=args.llamadart_native_repo,
+                    ),
+                )
+                for sidecar in native_manifest.sidecars
+            ],
+        )
         if resolved_llama_cpp_tag != current_llama_cpp_tag:
             pins_text, cleared_tags = clear_compatible_apple_companion_tags(
                 pins_text
@@ -1727,8 +1763,12 @@ def validate_native_release_manifest(
     release_tag: str,
     *,
     repo: str = DEFAULT_LLAMADART_NATIVE_REPO,
-) -> dict[str, str]:
-    """Validate the release manifest and return its checksums by file name."""
+) -> NativeReleaseManifest:
+    """Validate the release manifest.
+
+    Returns its checksums by file name, its hook contract, and its backend
+    sidecars. A legacy release without assets.json is contract 1.
+    """
     release_version = parse_native_release_tag(release_tag)
     is_new_wrapper_form = bool(
         _STABLE_WRAPPER_TAG_PATTERN.fullmatch(release_tag)
@@ -1741,7 +1781,7 @@ def validate_native_release_manifest(
                 f"Release {release_tag} is missing required assets.json "
                 "provenance and hook-contract metadata."
             )
-        return {}
+        return NativeReleaseManifest({}, 1, ())
     if release_version.channel == "stable":
         require_github_sha256_digest(
             manifest_asset,
@@ -1794,11 +1834,16 @@ def validate_native_release_manifest(
         )
 
     hook_contract_version = manifest.get("hook_contract_version")
-    if hook_contract_version != SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION:
+    if (
+        not isinstance(hook_contract_version, int)
+        or isinstance(hook_contract_version, bool)
+        or hook_contract_version not in SUPPORTED_NATIVE_HOOK_CONTRACT_VERSIONS
+    ):
         raise ReleaseError(
             f"Release {release_tag} requires native hook contract "
             f"{hook_contract_version!r}; this checkout supports "
-            f"{SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION}."
+            + " and ".join(map(str, SUPPORTED_NATIVE_HOOK_CONTRACT_VERSIONS))
+            + "."
         )
 
     for field in ("llama_cpp_commit", "native_commit"):
@@ -1832,6 +1877,7 @@ def validate_native_release_manifest(
         )
 
     manifest_checksums: dict[str, str] = {}
+    sidecars: list[NativeBackendSidecar] = []
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             raise ReleaseError(
@@ -1853,6 +1899,21 @@ def validate_native_release_manifest(
                 f"Release {release_tag} manifest duplicates artifact {file_name}"
             )
         manifest_checksums[file_name] = checksum
+        sidecar = native_backend_sidecar(
+            artifact,
+            release_tag,
+            hook_contract_version=hook_contract_version,
+        )
+        if sidecar is not None:
+            if any(
+                (other.bundle, other.backend) == (sidecar.bundle, sidecar.backend)
+                for other in sidecars
+            ):
+                raise ReleaseError(
+                    f"Release {release_tag} manifest lists more than one "
+                    f"{sidecar.backend} sidecar for {sidecar.bundle}"
+                )
+            sidecars.append(sidecar)
 
         release_asset = find_release_asset(release, file_name)
         if release_asset is None:
@@ -1916,7 +1977,58 @@ def validate_native_release_manifest(
                     f"{file_name} is {published_checksum!r}, expected "
                     f"{checksum!r} from assets.json"
                 )
-    return manifest_checksums
+    return NativeReleaseManifest(
+        manifest_checksums,
+        hook_contract_version,
+        tuple(sidecars),
+    )
+
+
+def native_backend_sidecar(
+    artifact: dict[str, Any],
+    release_tag: str,
+    *,
+    hook_contract_version: int,
+) -> NativeBackendSidecar | None:
+    """Return the backend sidecar [artifact] describes, or None for others."""
+    module = artifact.get("module")
+    if not isinstance(module, str) or not module.startswith("backend-"):
+        return None
+    file_name = artifact["file"]
+    if hook_contract_version < 2:
+        raise ReleaseError(
+            f"Release {release_tag} manifest lists backend sidecar {file_name} "
+            f"under hook contract {hook_contract_version}, which has none."
+        )
+    fields = {}
+    for field in ("platform", "arch", "backend"):
+        value = artifact.get(field)
+        if not isinstance(value, str) or not value:
+            raise ReleaseError(
+                f"Release {release_tag} manifest sidecar {file_name} has "
+                f"invalid {field}: {value!r}"
+            )
+        fields[field] = value
+    bundle = f"{fields['platform']}-{fields['arch']}"
+    if bundle not in _STABLE_NATIVE_BUNDLES:
+        raise ReleaseError(
+            f"Release {release_tag} manifest sidecar {file_name} extends "
+            f"unknown bundle {bundle}"
+        )
+    prefix = f"llamadart-native-{bundle}-"
+    suffix = f"-{release_tag}.tar.gz"
+    variant = (
+        file_name[len(prefix) : -len(suffix)]
+        if file_name.startswith(prefix) and file_name.endswith(suffix)
+        else ""
+    )
+    archive = f"{bundle}-{variant}"
+    if not variant or not _BACKEND_SIDECAR_ARCHIVE_PATTERN.fullmatch(archive):
+        raise ReleaseError(
+            f"Release {release_tag} manifest sidecar {file_name} is not named "
+            f"{prefix}<variant>{suffix}"
+        )
+    return NativeBackendSidecar(bundle, fields["backend"], archive)
 
 
 def normalize_litert_lm_release_tag(tag: str) -> str:
@@ -3389,6 +3501,54 @@ def replace_llama_cpp_bundle_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace llama.cpp checksum for {bundle}")
     return pins_text[: match.start(1)] + body + pins_text[match.end(1) :]
+
+
+_LLAMA_CPP_BACKEND_SIDECARS_RE = re.compile(
+    r"const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>\[.*?\];",
+    re.DOTALL,
+)
+
+
+def replace_llama_cpp_hook_contract(pins_text: str, version: int) -> str:
+    return replace_one(
+        pins_text,
+        r"const llamaCppHookContractVersion = [0-9]+;",
+        f"const llamaCppHookContractVersion = {version};",
+        "native pins llama.cpp hook contract version",
+    )
+
+
+def replace_llama_cpp_backend_sidecars(
+    pins_text: str,
+    sidecars: list[tuple[NativeBackendSidecar, str]],
+) -> str:
+    """Rewrite llamaCppBackendSidecarSpecs as dart format lays it out."""
+    if not sidecars:
+        body = "const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[];"
+    else:
+        entries = "".join(
+            "  LlamaCppBackendSidecarSpec(\n"
+            f"    bundle: '{sidecar.bundle}',\n"
+            f"    backend: '{sidecar.backend}',\n"
+            f"    archive: '{sidecar.archive}',\n"
+            f"    sha256: '{checksum}',\n"
+            "  ),\n"
+            for sidecar, checksum in sidecars
+        )
+        body = (
+            "const llamaCppBackendSidecarSpecs = <LlamaCppBackendSidecarSpec>[\n"
+            f"{entries}];"
+        )
+    updated, count = _LLAMA_CPP_BACKEND_SIDECARS_RE.subn(
+        lambda _: body,
+        pins_text,
+    )
+    if count != 1:
+        raise ReleaseError(
+            "Could not find llamaCppBackendSidecarSpecs in "
+            f"{DEFAULT_NATIVE_RELEASE_PINS}"
+        )
+    return updated
 
 
 def litert_lm_bundle_names(pins_text: str) -> list[str]:
