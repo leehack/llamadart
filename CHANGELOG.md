@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
+
 ## 0.16.4
 
 - Opt into ordered system/user/assistant text history on LiteRT-LM Web with `LlamaBackend.withTextHistory()`; the chat app adopts it, and unavailable controls fail explicitly ([#1152](https://github.com/leehack/llamadart/issues/1152)).
