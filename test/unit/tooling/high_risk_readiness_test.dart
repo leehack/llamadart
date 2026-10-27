@@ -1198,6 +1198,7 @@ void main() {
         'enum ImageEditingRequest { value }',
         'mixin ImageEditingPixels {}',
         'extension type ImageEditingRequest(int value) {}',
+        'extension type const ImageEditingRequest(int value) {}',
         'typedef void ImageEditingPixels();',
         'class ImageEditingRequest = Object with ExistingMixin;',
         'int get ImageEditingRequest => 0;',
@@ -1471,6 +1472,109 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       }
     });
   });
+
+  test(
+    'readiness AST supports explicitly requested allowed analyzer versions',
+    () async {
+      final requested =
+          Platform.environment['LLAMADART_ANALYZER_COMPATIBILITY_VERSIONS'];
+      if (requested == null || requested.isEmpty) {
+        markTestSkipped(
+          'Set LLAMADART_ANALYZER_COMPATIBILITY_VERSIONS for offline compatibility qualification.',
+        );
+        return;
+      }
+      final versions = requested.split(',');
+      expect(versions, everyElement(matches(r'^\d+\.\d+\.\d+$')));
+      final root = Directory.current;
+      const paths = [
+        'tool/testing/classify_high_risk_changes.dart',
+        'tool/testing/high_risk_readiness.dart',
+        'tool/testing/release_metadata_readiness.dart',
+        'test/unit/tooling/high_risk_readiness_test.dart',
+      ];
+      final source = File('${root.path}/pubspec.yaml').readAsStringSync();
+      for (final version in versions) {
+        final scratch = Directory.systemTemp.createTempSync(
+          'readiness-analyzer-compat-',
+        );
+        addTearDown(() => scratch.deleteSync(recursive: true));
+        File('${scratch.path}/pubspec.yaml').writeAsStringSync(
+          source
+              .replaceFirst(
+                'name: llamadart',
+                'name: readiness_analyzer_compat',
+              )
+              .replaceFirst(
+                RegExp(r'^  analyzer:.*$', multiLine: true),
+                "  analyzer: '$version'",
+              ),
+        );
+        for (final path in paths) {
+          final file = File('${scratch.path}/$path');
+          file.parent.createSync(recursive: true);
+          file.writeAsBytesSync(File('${root.path}/$path').readAsBytesSync());
+        }
+        Future<ProcessResult> run(List<String> args) => Process.run(
+          Platform.resolvedExecutable,
+          args,
+          workingDirectory: scratch.path,
+        );
+        final resolved = await run(['pub', 'get', '--offline']);
+        expect(
+          resolved.exitCode,
+          0,
+          reason:
+              'Full root dependency graph analyzer $version: ${resolved.stdout} ${resolved.stderr}',
+        );
+        final lock = File('${scratch.path}/pubspec.lock').readAsStringSync();
+        expect(
+          RegExp(
+            r'  analyzer:.*?version: "([^"\n]+)"',
+            dotAll: true,
+          ).firstMatch(lock)?.group(1),
+          version,
+        );
+        final help = await run([
+          'run',
+          'tool/testing/high_risk_readiness.dart',
+          '--help',
+        ]);
+        expect(
+          help.exitCode,
+          0,
+          reason: 'CLI analyzer $version: ${help.stdout} ${help.stderr}',
+        );
+        expect(help.stdout, contains('never accepts App credentials'));
+        final probe = await run([
+          'test',
+          '-p',
+          'vm',
+          '-j',
+          '1',
+          paths.last,
+          '--plain-name',
+          'Git-bound additive image export impacts',
+          '--exclude-tags',
+          'local-only',
+          '--reporter',
+          'expanded',
+        ]);
+        expect(
+          probe.exitCode,
+          0,
+          reason:
+              'Namespace proof analyzer $version: ${probe.stdout} ${probe.stderr}',
+        );
+        expect(probe.stdout, contains('All tests passed!'));
+        print(
+          'Qualified analyzer $version: full root offline resolution, CLI help, namespace cases passed.',
+        );
+      }
+    },
+    tags: 'local-only',
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
 
   group('bounded metadata-only release evidence', () {
     test(

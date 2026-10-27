@@ -291,6 +291,21 @@ conservative minima. Every other changed structured production path, including
 rename origins, still contributes its normal impacts. Evidence-only emptiness
 still requires all impacts; proven empty contribution is a distinct case.
 
+Namespace extraction uses stable AST keyword tokens for class, enum and
+extension-type names across the allowed analyzer range. To qualify cached older
+and current dependency graphs without editing the checkout's pubspec or lock:
+
+```bash
+LLAMADART_ANALYZER_COMPATIBILITY_VERSIONS=8.0.0,8.4.1,14.6.0 \
+  dart test -p vm -j 1 --run-skipped -t local-only \
+  test/unit/tooling/high_risk_readiness_test.dart \
+  --plain-name 'readiness AST supports explicitly requested allowed analyzer versions'
+```
+
+This opt-in test resolves the full root dependency graph offline in scratch
+packages and checks CLI compilation plus the namespace regressions. Missing
+requested cached dependencies fail qualification; a skipped test is no proof.
+
 This proof bounds the additive namespace and existing loading dependencies; it
 does not prove an absence of behavioral or transitive effects. The independent
 reviewer still inspects the new classes, their production callsites and every

@@ -1589,19 +1589,31 @@ class HighRiskReadinessEvaluator {
       }
       return false;
     }
+    Token? nameAfter(Token keyword, {bool optionalConst = false}) {
+      var token = keyword.next;
+      if (optionalConst && token != null && token.lexeme == 'const') {
+        token = token.next;
+      }
+      return token?.type == TokenType.IDENTIFIER ? token : null;
+    }
+
     // Existing head image code may reference the new types inside methods.
     // Inspect actual namespace declarations, never a guessed header boundary:
     // record and function return types can contain braces before the name.
     for (final declaration in unit.declarations) {
       final declared = switch (declaration) {
-        ClassDeclaration() => [declaration.namePart.typeName],
+        // Keyword-anchored name tokens span analyzer 8 through 14. The newer
+        // namePart API is absent, nullable or gated in allowed older versions.
+        ClassDeclaration() => [nameAfter(declaration.classKeyword)],
         ClassTypeAlias() => [declaration.name],
-        EnumDeclaration() => [declaration.namePart.typeName],
+        EnumDeclaration() => [nameAfter(declaration.enumKeyword)],
         MixinDeclaration() => [declaration.name],
         ExtensionDeclaration() => [
           if (declaration.name != null) declaration.name!,
         ],
-        ExtensionTypeDeclaration() => [declaration.namePart.typeName],
+        ExtensionTypeDeclaration() => [
+          nameAfter(declaration.typeKeyword, optionalConst: true),
+        ],
         FunctionDeclaration() => [declaration.name],
         FunctionTypeAlias() => [declaration.name],
         GenericTypeAlias() => [declaration.name],
@@ -1611,8 +1623,11 @@ class HighRiskReadinessEvaluator {
         _ => null,
       };
       if (declared == null ||
-          declared.any((token) => token.isSynthetic || token.lexeme.isEmpty) ||
-          declared.any((token) => names.contains(token.lexeme))) {
+          declared.any(
+            (token) =>
+                token == null || token.isSynthetic || token.lexeme.isEmpty,
+          ) ||
+          declared.any((token) => names.contains(token?.lexeme))) {
         return true;
       }
     }
