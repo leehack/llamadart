@@ -95,7 +95,8 @@ core and `llamadart_stable_diffusion_flutter` together.
   (lllyasviel) SD 1.x ControlNet loads, on macOS with `ComputeDevice.cpu`,
   `flashAttention: false` and `vaeDirectConvolution: false`; Diffusers or
   `.pth` ControlNets, other families, extra components and devices throw
-  `LlamaUnsupportedException` at load. Real SD 1.x qualification is pending.
+  `LlamaUnsupportedException` at load. The recipe is qualified on SD 1.5
+  (`doc/image_controlnet.md`).
   Pass `ControlNetImageGenerationRequest(prompt: ..., control:
   ImageControlNetCondition(image: ImageEditingPixels.rgb(...), strength: 1))`;
   the request takes its size from the image. The image is the finished
