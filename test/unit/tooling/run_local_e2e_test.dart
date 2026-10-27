@@ -2028,11 +2028,8 @@ dev_dependencies:
       const variable = 'LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE';
       const template = 'test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja';
       Future<String> dryRun(Map<String, String> environment) async {
-        final result = await Process.run(
-          Platform.resolvedExecutable,
-          [
-            'run',
-            'tool/testing/run_local_e2e.dart',
+        final result = await runLocalE2e(
+          const [
             '--scenario',
             'tool-result-image-smoke',
             '--model-path',
@@ -2041,19 +2038,19 @@ dev_dependencies:
             'models/mmproj.gguf',
             '--dry-run',
           ],
+          projectRoot: '/repo',
           environment: environment,
-          includeParentEnvironment: false,
+          displayShell: LocalE2eDisplayShell.posix,
         );
-        expect(result.exitCode, 0, reason: '${result.stderr}');
-        return result.stdout as String;
+        expect(result.exitCode, 0, reason: result.stderr);
+        return result.stdout;
       }
 
-      final inherited = {...Platform.environment}..remove(variable);
       expect(
-        await dryRun({...inherited, variable: template}),
+        await dryRun({variable: template}),
         contains('$variable=$template'),
       );
-      expect(await dryRun(inherited), isNot(contains(variable)));
+      expect(await dryRun(const {}), isNot(contains(variable)));
     });
 
     test('dry-runs the decision model smoke with model and head', () async {
