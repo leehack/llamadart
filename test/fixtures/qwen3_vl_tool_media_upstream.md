@@ -26,6 +26,14 @@ depend on the weights.
 same conversations with `LlamaToolResultContent.content` and expect these
 exact prompts.
 
+`text_only_cases` also holds string-only Hermes cases rendered with
+`test/fixtures/templates/Qwen3-4B.jinja` on the same server and model:
+`string_only_leading_empty_result` (`result: ''` and a text part `x`) and
+`string_only_null_result_leading_empty_part` (no result, parts `''` and `x`).
+Both emit `x` with no leading newline. `string_only_empty_middle_part` (result
+`abc`, parts `''` and `x`) keeps the newline after the non-empty `abc` for
+the empty part and the one after it.
+
 The same server answered `/v1/chat/completions` at temperature 0 with
 `The main color of the photo is **Red**.` and
 `The main color of the photo is **blue**.` for the photo-color history the

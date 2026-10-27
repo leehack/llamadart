@@ -91,11 +91,26 @@ void main() {
     );
   });
 
-  for (final name in ['typed_text_parts', 'string_only_text_parts']) {
+  for (final (name, messages) in [
+    ('typed_text_parts', Qwen3VlToolMediaFixture.textOnly()),
+    ('string_only_text_parts', Qwen3VlToolMediaFixture.textOnly()),
+    (
+      'string_only_leading_empty_result',
+      Qwen3VlToolMediaFixture.textOnly(result: '', parts: ['x']),
+    ),
+    (
+      'string_only_null_result_leading_empty_part',
+      Qwen3VlToolMediaFixture.textOnly(result: null, parts: ['', 'x']),
+    ),
+    (
+      'string_only_empty_middle_part',
+      Qwen3VlToolMediaFixture.textOnly(parts: ['', 'x']),
+    ),
+  ]) {
     test('text-only content renders $name as llama-server does', () {
       final upstreamCase = upstream.textOnlyCase(name);
       final prompt = _render(
-        Qwen3VlToolMediaFixture.textOnly(),
+        messages,
         template: File(
           'test/fixtures/${upstreamCase['template']}',
         ).readAsStringSync(),

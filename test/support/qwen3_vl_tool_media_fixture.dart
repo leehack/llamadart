@@ -38,13 +38,16 @@ final class Qwen3VlToolMediaFixture {
       (json['text_only_cases'] as Map<String, dynamic>)[caseName]
           as Map<String, dynamic>;
 
-  /// Upstream text-only cases: a result `abc` with a text part `x`.
-  static List<LlamaChatMessage> textOnly() => const [
-    LlamaChatMessage.fromText(
+  /// Upstream text-only cases: a result [result] with text parts [parts].
+  static List<LlamaChatMessage> textOnly({
+    Object? result = 'abc',
+    List<String> parts = const ['x'],
+  }) => [
+    const LlamaChatMessage.fromText(
       role: LlamaChatRole.user,
       text: 'Look up the code.',
     ),
-    LlamaChatMessage.withContent(
+    const LlamaChatMessage.withContent(
       role: LlamaChatRole.assistant,
       content: [
         LlamaToolCallContent(
@@ -61,8 +64,8 @@ final class Qwen3VlToolMediaFixture {
         LlamaToolResultContent(
           id: 'call_0',
           name: 'lookup',
-          result: 'abc',
-          content: [LlamaTextContent('x')],
+          result: result,
+          content: [for (final part in parts) LlamaTextContent(part)],
         ),
       ],
     ),

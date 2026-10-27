@@ -288,9 +288,12 @@ class TemplateRenderContext {
       return value is String ? value : jsonEncode(value);
     }
     final parts = toolResultContentJson(result);
-    return stringContentOnly
-        ? parts.map((part) => part['text'] as String).join('\n')
-        : parts;
+    if (!stringContentOnly) return parts;
+    final text = ContentTextBuffer();
+    for (final part in parts) {
+      text.addText(part['text'] as String);
+    }
+    return text.toString();
   }
 
   static void _decodeObjectArguments(List<Map<String, dynamic>> messages) {
