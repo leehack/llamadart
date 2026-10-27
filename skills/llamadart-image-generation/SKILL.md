@@ -109,6 +109,12 @@ core and `llamadart_stable_diffusion_flutter` together.
   checkpoint sets use the separate bounded factory below; resolve other
   compatible component files individually. The guide's
   **Weight formats and layouts** section gives the limits.
+- FP8 Safetensors (`F8_E4M3`/`F8_E5M2`) and GGUF types 43/44 throw
+  `LlamaUnsupportedException` before native context creation on Metal, including
+  automatic Metal selection. Choose `ComputeDevice.cpu` or compatible non-FP8
+  weights. Uninspectable GGUF/Safetensors headers and ordinary JSON shard indexes
+  are refused on Metal too ([#1446](https://github.com/leehack/llamadart/issues/1446)).
+  CPU forwarding preserves native admission; arbitrary FP8 models remain unqualified.
 - Complete local checkpoint sets opt in with
   `ImageGenerationModel.localSafetensorsSet(path, sha256: trustedPerFileHashes,
   cacheDirectory: appPrivateSetCache)`. The path is a directory with

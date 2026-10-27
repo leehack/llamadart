@@ -23,6 +23,7 @@ import 'image_generation_model.dart';
 import 'image_generation_progress.dart';
 import 'image_generation_request.dart';
 import 'image_model_classifier.dart';
+import 'image_model_metal_preflight.dart';
 import 'image_model_params.dart';
 import 'local_image_set_model.dart';
 import 'local_image_set_stub.dart'
@@ -387,6 +388,11 @@ class ImageGenerationEngine {
   ///   one; and what the download manager throws for a failed download.
   /// - [LlamaStateException] when [download]'s cancel token cancels the
   ///   load, and while another generation or load is running.
+  /// - [LlamaUnsupportedException] for FP8 GGUF/Safetensors weights on
+  ///   Metal, including automatic Metal selection, before native context
+  ///   creation. Use [ComputeDevice.cpu] or compatible non-FP8 weights.
+  ///   Uninspectable GGUF/Safetensors headers and ordinary JSON shard indexes
+  ///   are also refused on Metal because their tensor dtypes cannot be checked.
   /// - [LlamaArgumentException] when [download] sets a bearer token or
   ///   headers for remote files on more than one origin.
   static Future<ImageGenerationEngine> load(
@@ -532,6 +538,16 @@ class ImageGenerationEngine {
               ),
           ]);
     throwIfCancelled();
+    if (_isMetal(backendName)) {
+      for (final (index, path) in paths.indexed) {
+        await validateImageModelMetalDtypes(
+          (offset, length) => driver.readFileRange(path, offset, length),
+          name: describeImageModelFile(index),
+          isJsonIndex: path.endsWith('.json'),
+        );
+      }
+      throwIfCancelled();
+    }
     var weightBytes = snapshot?.totalBytes ?? 0;
     if (snapshot == null) {
       for (final (index, path) in paths.indexed) {
@@ -560,7 +576,10 @@ class ImageGenerationEngine {
         backend: switch (params.device) {
           ComputeDevice.cpu => 'cpu',
           ComputeDevice.gpu => 'gpu',
-          ComputeDevice.auto || ComputeDevice.npu => null,
+          ComputeDevice.auto || ComputeDevice.npu =>
+            // Preserve the already selected CPU fallback at the worker boundary;
+            // FP8 inspection never changes device selection.
+            backendName.toUpperCase() == 'CPU' ? 'cpu' : null,
         },
         threads: params.threads,
         conditioningCacheSize: conditioningCacheSize,

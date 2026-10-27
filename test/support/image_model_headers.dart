@@ -11,6 +11,7 @@ typedef FixtureTensor = (String name, List<int> shape);
 Uint8List ggufHeader({
   Map<String, Object> metadata = const {},
   List<FixtureTensor> tensors = const [],
+  int tensorType = 0,
 }) {
   final out = BytesBuilder();
   void u32(int value) => out.add(
@@ -60,7 +61,7 @@ Uint8List ggufHeader({
     string(name);
     u32(shape.length);
     shape.forEach(u64);
-    u32(0);
+    u32(tensorType);
     u64(0);
   }
   return out.takeBytes();
@@ -97,13 +98,14 @@ Uint8List safetensorsHeader(
   List<FixtureTensor> tensors, {
   Map<String, String>? metadata,
   int dataBytes = 0,
+  String dtype = 'F16',
 }) {
   final header = utf8.encode(
     jsonEncode(<String, Object?>{
       '__metadata__': ?metadata,
       for (final (name, shape) in tensors)
         name: {
-          'dtype': 'F16',
+          'dtype': dtype,
           'shape': shape,
           'data_offsets': [0, 0],
         },

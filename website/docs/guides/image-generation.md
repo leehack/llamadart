@@ -158,6 +158,15 @@ model. Use [Support](#support) and the recipe's platform evidence separately.
 The public model roles do not include LoRA, ControlNet, upscaler or external
 tokenizer inputs.
 
+FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
+GGUF) are refused with `LlamaUnsupportedException` on Metal, including
+`ComputeDevice.auto` when it selects Metal, before native context creation.
+Use `ComputeDevice.cpu` or compatible non-FP8 weights. Uninspectable
+GGUF/Safetensors headers and ordinary JSON shard indexes are also refused on
+Metal. This prevents the native abort tracked in
+[#1446](https://github.com/leehack/llamadart/issues/1446); selecting CPU keeps
+native dtype admission and does not qualify arbitrary FP8 models.
+
 For a trusted PyTorch checkpoint whose native layout is compatible:
 
 ```dart
@@ -1217,7 +1226,8 @@ quoting caller text.
 
 Managed integrity, confinement and aggregate accounting apply only to
 `localSafetensorsSet`. Legacy ordinary explicit-role JSON forwarding remains
-unchanged and unqualified; it does not acquire these guarantees. Unexpected
+unqualified and is refused on Metal because shard dtypes cannot be inspected;
+CPU forwarding does not acquire these guarantees. Unexpected
 process termination may leave uncommitted partial directories; these are never
 reused, and may be removed only after all processes using this private cache
 have stopped.
