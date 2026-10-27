@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
+
 ## 0.16.5
 
 - Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.

@@ -186,9 +186,10 @@ bytes and the adapter's storage buffer binding limit is 134217728 (128 MiB).
 Any adapter with that limit and any model with a larger weight buffer should
 fail the same way. The CPU on the same device answers correctly.
 `ComputeDevice.auto`, the default, selects the GPU for LiteRT-LM on Android,
-so a default load of that model on that GPU is affected. Load it with
-`ModelParams(device: ComputeDevice.cpu)` instead; llamadart does not retry on
-the CPU.
+so a default load of that model on that GPU is affected. From 0.17.0, `auto`
+retries a GPU engine that fails to start on the CPU and logs a warning, which
+handles the pinned `v0.18.0` failure below. Load with
+`ModelParams(device: ComputeDevice.cpu)` to skip the GPU attempt.
 
 What you see depends on the runtime:
 
@@ -200,8 +201,9 @@ What you see depends on the runtime:
   line in the native log. Observed with llamadart on a Galaxy S24:
   `loadModel` returns, because the engine is created at first use, and the
   first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
-  requested and `LlamaModelException` under `auto`. Catch `LlamaException` to
-  handle both. Gemma 4 E2B runs on the same GPU.
+  requested. Before 0.17.0 it threw `LlamaModelException` under `auto`; from
+  0.17.0 `auto` runs on the CPU instead and `getBackendName()` reports
+  `LiteRT-LM cpu`. Gemma 4 E2B runs on the same GPU.
 
 Tracked in [#553](https://github.com/leehack/llamadart/issues/553) and
 upstream

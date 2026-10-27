@@ -157,9 +157,14 @@ the first generation or `tokenize`, so a GPU or NPU delegate that fails to
 start throws `LlamaUnsupportedException` there rather than from the load. The
 runtime does not say why it could not start, so under `gpu` or `npu` a
 corrupt or truncated `.litertlm` file throws the same exception, whose
-message names both causes. Under `auto` or `cpu`, an engine the runtime
-cannot create throws `LlamaModelException` at that first call; llamadart does
-not retry on another device. Windows arm64 has no LiteRT-LM runtime.
+message names both causes. Under `auto`, a GPU engine that fails to start is
+retried on the CPU with a `LlamaLogLevel.warn` record, and
+`getBackendName()` then reports `LiteRT-LM cpu`; if the CPU engine fails too,
+the GPU error is thrown, as `LlamaModelException` when the runtime reports no
+engine. The retry applies only when neither `device` nor the deprecated
+`liteRtLmBackend` or `LiteRtLmBackend(preferredBackend:)` names a device.
+Under `cpu`, an engine the runtime cannot create throws `LlamaModelException`
+at that first call. Windows arm64 has no LiteRT-LM runtime.
 
 `ModelParams.validate()`, which every `LlamaEngine` load calls before any
 download, throws `LlamaArgumentException` when `device` contradicts another

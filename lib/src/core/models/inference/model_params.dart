@@ -149,7 +149,10 @@ class ModelParams {
   ///
   /// Native LiteRT-LM starts its runtime on the first call that needs it, so
   /// a GPU or NPU that fails to start throws `LlamaUnsupportedException`
-  /// there. [validate] rejects a device that contradicts [preferredBackend],
+  /// there. Under [ComputeDevice.auto] with [liteRtLmBackend] also auto, it
+  /// retries a GPU engine that fails to start on the CPU and logs a
+  /// `LlamaLogLevel.warn` record, and throws the GPU error if the CPU fails
+  /// too. [validate] rejects a device that contradicts [preferredBackend],
   /// [gpuLayers], [mainGpu] or [liteRtLmBackend].
   /// Android llama.cpp excludes the known unsafe Adreno 750 driver
   /// `2150604839`: [ComputeDevice.gpu] throws, while automatic selection
