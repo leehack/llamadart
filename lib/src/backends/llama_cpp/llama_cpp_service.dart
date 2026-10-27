@@ -3637,6 +3637,7 @@ class LlamaCppService {
 
   LlamaCppLibraryCandidates get _libraryCandidates => LlamaCppLibraryCandidates(
     os: Platform.operatingSystem,
+    abi: _abi,
     moduleDirectory: _backendModuleDirectory,
     listFiles: _listFileNames,
     fileExists: _fileExists,

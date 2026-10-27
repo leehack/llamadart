@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:path/path.dart' as path;
 
 /// File names, asset URIs and lookup paths the llama.cpp runtime tries when it
@@ -9,17 +11,20 @@ import 'package:path/path.dart' as path;
 /// caller.
 final class LlamaCppLibraryCandidates {
   /// Creates the candidates for a host whose `Platform.operatingSystem` is
-  /// [os] and whose ggml backend modules live in [moduleDirectory], if known.
+  /// [os], whose process runs [abi] and whose ggml backend modules live in
+  /// [moduleDirectory], if known.
   ///
   /// [listFiles] returns the names of the regular files in a directory and
   /// may throw when it cannot be read; [fileExists] reports whether a path is
   /// an existing file.
   LlamaCppLibraryCandidates({
     required String os,
+    required Abi abi,
     required String? moduleDirectory,
     required List<String> Function(String directory) listFiles,
     required bool Function(String filePath) fileExists,
   }) : _os = os,
+       _abi = abi,
        _moduleDirectory = moduleDirectory,
        _listFiles = listFiles,
        _fileExists = fileExists;
@@ -34,7 +39,26 @@ final class LlamaCppLibraryCandidates {
     'android_armv8.0_1': 6,
   };
 
+  // Highest ggml_backend_score first, so the first module that loads is the
+  // one ggml_backend_load_all_from_path picks and ggml registers one CPU
+  // backend when a process uses both. Unlisted variants stay behind the
+  // baseline until their score is known.
+  static const Map<String, int> _linuxArm64CpuVariantPriority = <String, int>{
+    'linux_armv8.6_1': 0,
+    'linux_armv8.2_2': 1,
+  };
+
+  static final Comparator<String> _androidCpuOrder = _cpuNameOrder(
+    _androidCpuVariantPriority,
+    unknownVariantRank: 900,
+  );
+  static final Comparator<String> _linuxArm64CpuOrder = _cpuNameOrder(
+    _linuxArm64CpuVariantPriority,
+    unknownVariantRank: 1500,
+  );
+
   final String _os;
+  final Abi _abi;
   final String? _moduleDirectory;
   final List<String> Function(String directory) _listFiles;
   final bool Function(String filePath) _fileExists;
@@ -42,6 +66,7 @@ final class LlamaCppLibraryCandidates {
   bool get _isWindows => _os == 'windows';
   bool get _isApple => _os == 'macos' || _os == 'ios';
   bool get _isAndroid => _os == 'android';
+  bool get _isLinuxArm64 => _os == 'linux' && _abi == Abi.linuxArm64;
 
   /// The unsuffixed file name of the ggml [backend] module.
   String backendFileName(String backend) {
@@ -81,12 +106,14 @@ final class LlamaCppLibraryCandidates {
       _backendPattern(backend),
     );
     if (rankAndroidCpu) {
-      dynamicNames.sort(_compareAndroidCpuNames);
+      dynamicNames.sort(_androidCpuOrder);
     }
     candidates.addAll(dynamicNames);
     final resolved = candidates.toList(growable: false);
     if (rankAndroidCpu) {
-      resolved.sort(_compareAndroidCpuNames);
+      resolved.sort(_androidCpuOrder);
+    } else if (backend == 'cpu' && _isLinuxArm64) {
+      resolved.sort(_linuxArm64CpuOrder);
     }
     return resolved;
   }
@@ -275,29 +302,30 @@ final class LlamaCppLibraryCandidates {
     }
   }
 
-  static int _compareAndroidCpuNames(String a, String b) {
-    final rankA = _androidCpuNameRank(a);
-    final rankB = _androidCpuNameRank(b);
-    if (rankA != rankB) {
-      return rankA.compareTo(rankB);
-    }
-    return a.compareTo(b);
-  }
+  static Comparator<String> _cpuNameOrder(
+    Map<String, int> variantPriority, {
+    required int unknownVariantRank,
+  }) {
+    int rank(String fileName) {
+      final lowered = fileName.toLowerCase();
+      if (lowered == 'libggml-cpu.so') {
+        return 1000;
+      }
 
-  static int _androidCpuNameRank(String fileName) {
-    final lowered = fileName.toLowerCase();
-    if (lowered == 'libggml-cpu.so') {
-      return 1000;
+      final variantMatch = RegExp(
+        r'^libggml-cpu-([^/\\]+)\.so$',
+      ).firstMatch(lowered);
+      if (variantMatch == null) {
+        return 2000;
+      }
+
+      final variant = variantMatch.group(1)!;
+      return variantPriority[variant] ?? unknownVariantRank;
     }
 
-    final variantMatch = RegExp(
-      r'^libggml-cpu-([^/\\]+)\.so$',
-    ).firstMatch(lowered);
-    if (variantMatch == null) {
-      return 2000;
-    }
-
-    final variant = variantMatch.group(1)!;
-    return _androidCpuVariantPriority[variant] ?? 900;
+    return (a, b) {
+      final byRank = rank(a).compareTo(rank(b));
+      return byRank != 0 ? byRank : a.compareTo(b);
+    };
   }
 }

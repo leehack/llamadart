@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import 'package:llamadart/src/backends/llama_cpp/native_library_candidates.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -6,10 +8,12 @@ const _dir = '/bundle';
 
 LlamaCppLibraryCandidates _candidates(
   String os, {
+  Abi abi = Abi.linuxX64,
   List<String>? files,
   bool unreadable = false,
 }) => LlamaCppLibraryCandidates(
   os: os,
+  abi: abi,
   moduleDirectory: files == null && !unreadable ? null : _dir,
   listFiles: (directory) {
     if (unreadable) {
@@ -149,7 +153,9 @@ void main() {
     test('android ranks known cpu variants, then unknown, then baseline', () {
       final candidates = _candidates(
         'android',
+        abi: Abi.androidArm64,
         files: [
+          'libggml-cpu-linux_armv8.6_1.so',
           'libggml-cpu.so',
           'libggml-cpu-android_armv8.0_1.so',
           'libggml-cpu-android_armv7_9.so',
@@ -163,9 +169,78 @@ void main() {
         'libggml-cpu-android_armv8.6_1.so',
         'libggml-cpu-android_armv8.0_1.so',
         'libggml-cpu-android_armv7_9.so',
+        'libggml-cpu-linux_armv8.6_1.so',
         'libggml-cpu.so',
       ]);
       expect(candidates.backend('vulkan'), ['libggml-vulkan.so']);
+    });
+
+    group('linux arm64 cpu variants', () {
+      const v86 = 'libggml-cpu-linux_armv8.6_1.so';
+      const v82 = 'libggml-cpu-linux_armv8.2_2.so';
+      const baseline = 'libggml-cpu.so';
+
+      final table = <String, (List<String>, List<String>)>{
+        'both variants': ([baseline, v82, v86], [v86, v82, baseline]),
+        'only armv8.2': ([v82, baseline], [v82, baseline]),
+        'only armv8.6': ([baseline, v86], [v86, baseline]),
+        'only baseline': ([baseline], [baseline]),
+        'no baseline': ([v82, v86], [v86, v82]),
+        'unlisted variants after baseline': (
+          [
+            'libggml-cpu-linux_armv9.2_1.so',
+            v82,
+            baseline,
+            'libggml-cpu-android_armv8.6_1.so',
+          ],
+          [
+            v82,
+            baseline,
+            'libggml-cpu-android_armv8.6_1.so',
+            'libggml-cpu-linux_armv9.2_1.so',
+          ],
+        ),
+      };
+      for (final MapEntry(key: name, value: (files, expected))
+          in table.entries) {
+        test('$name: best variant first, baseline as fallback', () {
+          final candidates = _candidates(
+            'linux',
+            abi: Abi.linuxArm64,
+            files: [...files, 'libggml-vulkan.so', 'libggml-vulkan-x.so'],
+          );
+          expect(candidates.backend('cpu'), expected);
+          expect(candidates.backend('vulkan'), [
+            'libggml-vulkan.so',
+            'libggml-vulkan-x.so',
+          ]);
+        });
+      }
+
+      test('other linux ABIs keep the baseline first', () {
+        for (final abi in [Abi.linuxX64, Abi.linuxArm, Abi.linuxRiscv64]) {
+          final candidates = _candidates(
+            'linux',
+            abi: abi,
+            files: [v86, baseline, v82],
+          );
+          expect(candidates.backend('cpu'), [
+            baseline,
+            v82,
+            v86,
+          ], reason: '$abi');
+        }
+      });
+
+      test('without a module directory only the baseline is named', () {
+        final candidates = _candidates('linux', abi: Abi.linuxArm64);
+        expect(candidates.backend('cpu'), [baseline]);
+        expect(candidates.backendAssetUris('cpu'), [
+          'package:llamadart/cpu',
+          'package:llamadart/ggml_cpu',
+          'package:llamadart/ggml-cpu',
+        ]);
+      });
     });
 
     test('apple matches dylibs and keeps framework wrapper names', () {
@@ -302,6 +377,7 @@ void main() {
   test('wrapperPaths joins lookup directories and dedupes in order', () {
     final candidates = LlamaCppLibraryCandidates(
       os: 'linux',
+      abi: Abi.linuxX64,
       moduleDirectory: '/a',
       listFiles: (directory) => switch (directory) {
         '/a' => ['libllamadart_v2.so', 'libllamadart.so'],

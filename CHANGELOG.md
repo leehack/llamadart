@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
+
 ## 0.16.5
 
 - Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.

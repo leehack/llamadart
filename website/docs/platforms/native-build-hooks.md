@@ -439,6 +439,14 @@ The `android-arm64` map form also takes `cpu_profile` and `cpu_variants`:
 Variant names are normalized, so `baseline`, `armv8_6_1`, `v9_0_1`,
 `android-armv9.2_2` and `libggml-cpu-android_armv8.2_2.so` are all accepted.
 
+### Linux arm64 CPU variants
+
+A `linux-arm64` bundle may ship `libggml-cpu-linux_armv8.6_1.so`
+(`DOTPROD`, `FP16_VECTOR_ARITHMETIC`, `MATMUL_INT8`) and
+`libggml-cpu-linux_armv8.2_2.so` (`DOTPROD`, `FP16_VECTOR_ARITHMETIC`) beside
+the baseline `libggml-cpu.so`. The hook bundles all of them, and every backend
+mode loads the highest variant the CPU supports, falling back to the baseline.
+
 ## Override the llama.cpp release
 
 ```yaml
