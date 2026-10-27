@@ -77,7 +77,8 @@ const _imageInput = (_vaeTiling + 39) & ~7;
 const _imageInputBytes = 96;
 const _controlInput = _imageInput + _imageInputBytes * 2;
 const _controlInputBytes = 48;
-const _stateBytes = _controlInput + _controlInputBytes * 2;
+const _loadsFp8AsF16OnMetal = _controlInput + _controlInputBytes * 2;
+const _stateBytes = _loadsFp8AsF16OnMetal + 8;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -205,6 +206,11 @@ final class FakeStableDiffusionRuntime {
   /// `StableDiffusionCalls.optionalNativeRelease`: no log and no device
   /// memory.
   set olderRelease(bool value) => _state[_olderRelease] = value ? 1 : 0;
+
+  /// Makes [resolver] return the calls of a runtime that loads FP8 weights
+  /// as F16 on Metal, as `StableDiffusionCalls.fp8MetalNativeRelease` does.
+  set loadsFp8AsF16OnMetal(bool value) =>
+      _state[_loadsFp8AsF16OnMetal] = value ? 1 : 0;
 
   /// The GPUs the runtime lists: device `i` is `Vulkan<i>`, a `Fake GPU <i>`,
   /// with its total and free bytes, and `sd_dart_gpu_device_memory` answers
@@ -633,6 +639,7 @@ final class _FakeCalls {
         }
         malloc.free(images);
       },
+      loadsFp8AsF16OnMetal: _state[_loadsFp8AsF16OnMetal] != 0,
       log: _state[_olderRelease] != 0
           ? null
           : StableDiffusionLogCalls(

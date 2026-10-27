@@ -99,7 +99,7 @@ class ImageGenerationModel {
   /// contiguous `model-00001-of-000NN.safetensors` set, with N from 1..16. Remote sources, Diffusers component layouts,
   /// symlinks, extra shards/indexes and ambiguous mappings are rejected.
   /// The bounded recipe is the qualified SD-Turbo F16/F32 tensor layout on
-  /// macOS CPU with the pinned SD v0.3.0 runtime, flash attention/direct VAE
+  /// macOS CPU with the pinned SD v0.3.0-1 runtime, flash attention/direct VAE
   /// convolution off. Other layouts/dtypes/devices are unsupported.
   ///
   /// [cacheDirectory] must be app-private and dedicated to owned sets. Files

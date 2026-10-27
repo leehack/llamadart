@@ -46,10 +46,11 @@ tool/testing/run_template_parity_suites.sh
 - Mark platform-specific files with `@TestOn('vm')` or `@TestOn('browser')`.
 - Use `@Tags(['local-only'])` for tests that should not run in default/CI flows.
 
-## FP8 image Metal preflight
+## FP8 image weights on Metal
 
 Use an existing FP8 checkpoint to verify public automatic/explicit Metal
-refusal and the direct worker guard without running an unsafe native load:
+refusal and the direct worker guard for a runtime without the FP8 load fix,
+without running an unsafe native load:
 
 ```bash
 LLAMADART_IMAGE_FP8_MODEL=/path/to/fp8.safetensors TMPDIR="$(mktemp -d)" \
@@ -59,9 +60,17 @@ LLAMADART_IMAGE_FP8_MODEL=/path/to/fp8.safetensors TMPDIR="$(mktemp -d)" \
 
 This macOS check reads the real header and records zero context constructions
 for Metal. Its CPU control forwards the same file through the worker on a
-recording runtime; it does not claim native generation or general FP8 CPU
-qualification. The native abort and CPU qualification are tracked in
-[#1446](https://github.com/leehack/llamadart/issues/1446).
+recording runtime. Generation on the pinned runtime, which loads FP8 as F16
+on Metal, runs from `example/basic_app` (`LLAMADART_IMAGE_F16_MODEL`
+optionally records the F16 source's Metal pixels for comparison):
+
+```bash
+LLAMADART_IMAGE_FP8_MODEL=/path/to/fp8.safetensors TMPDIR="$(mktemp -d)" \
+  dart test --run-skipped -t local-only test/image_fp8_metal_e2e_test.dart \
+  test/image_fp8_cpu_e2e_test.dart
+```
+
+See [#1446](https://github.com/leehack/llamadart/issues/1446).
 
 ## EmbeddingGemma-2 native qualification
 

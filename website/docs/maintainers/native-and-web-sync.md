@@ -351,6 +351,17 @@ is not seed-reproducible on Metal; `applyStableDiffusionContextParams` always
 writes both modes from the legacy flags, and `batched_cfg=false`. Map any new
 field whose initializer selects automatic behavior the same way.
 
+SD `v0.3.0-1` moves upstream to master-1017 and carries the FP8-on-Metal load
+fix as a patch. Upstream `generate_image` now returns owned results;
+`sd_dart_generate_image` keeps its image-array contract, and the removed
+`sd_ctx_supports_ref_image_conditioning` must not be bound. The patch adds no
+export and `sd_commit` names the upstream commit, so
+`StableDiffusionCalls.loadsFp8AsF16OnMetal` requires the hook-pinned tag at or
+after `fp8MetalNativeRelease` and the upstream-1017 `fp8MetalSymbols`. The
+bounded image recipes gate on the upstream commit
+(`ImageGenerationEngine._isQualifiedRuntime`): a repin that moves it reruns
+their `run_local_e2e.dart` scenarios before moving that gate.
+
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version
 does not exist yet. That is expected before merge, but it must be resolved by

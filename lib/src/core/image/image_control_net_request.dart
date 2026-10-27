@@ -35,7 +35,7 @@ final class ImageControlNetCondition {
 ///
 /// Load the ControlNet as an `ImageModelComponent` next to its base
 /// checkpoint; its role is detected as `ImageModelRole.controlNet`. The
-/// bounded recipe requires the pinned stable_diffusion v0.3.0 runtime on
+/// bounded recipe requires the pinned stable_diffusion v0.3.0-1 runtime on
 /// macOS CPU, an SD 1.x checkpoint with its embedded full VAE, and an SD 1.x
 /// ControlNet in the original (lllyasviel) tensor layout whose header shows
 /// a 768-wide text context and a three-channel hint, with no other
@@ -102,7 +102,7 @@ void validateImageControlNetRecipe(
       config.flashAttention ||
       config.vaeDirectConvolution) {
     throw LlamaUnsupportedException(
-      'ControlNet conditioning requires stable_diffusion v0.3.0 on macOS CPU '
+      'ControlNet conditioning requires stable_diffusion v0.3.0-1 on macOS CPU '
       'with an SD 1.x checkpoint and its embedded full VAE plus a '
       'header-verified SD 1.x ControlNet, without other components, image '
       'editing, VAE tiling, circular axes, flash attention or direct VAE '
