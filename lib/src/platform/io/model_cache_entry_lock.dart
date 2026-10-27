@@ -47,10 +47,10 @@ void warnModelCacheLockUnavailableOnce(String cacheRoot) {
   }
   _warnedLockUnavailable = true;
   LlamaLogger.instance.warning(
-    'The file system of the model cache $cacheRoot cannot lock cache entries; '
-    'processes sharing it may download the same model at the same time, each '
-    'into its own temporary file, and cannot resume each other\'s partial '
-    'downloads.',
+    'Cannot lock model cache entries under $cacheRoot: the directory is not '
+    'writable or its file system refuses locks. Downloads there are '
+    'serialized only within this isolate, so other isolates and processes '
+    'may download the same model at the same time.',
   );
 }
 

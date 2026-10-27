@@ -296,6 +296,90 @@ void main() {
       expect(leftovers(), isEmpty);
     });
 
+    test('a locked caller that resumes a part file another writer is still '
+        'appending to discards the result and downloads again', () async {
+      // The other writer cannot lock: an older llamadart, or a process whose
+      // lock failed. The locked caller adopts its in-flight part file.
+      server
+        ..holdFirst = true
+        ..holdHeaders.add(2);
+      final rootPath = root.path;
+      final url = server.uri.toString();
+      final unlocked = _downloadInIsolate(rootPath, url, lockable: false);
+      await server.firstResponseHeld;
+      await _waitForPartFile(entryDirectory(), server.holdAfter);
+      final locked = manager.ensureModel(source());
+      await server.headersHeld(2);
+      expect(server.ranges[1], 'bytes=${server.holdAfter}-');
+      server.releaseRequest(1);
+      final (unlockedBytes, unlockedDigest) = await unlocked.timeout(
+        const Duration(seconds: 30),
+      );
+      server.releaseHeaders(2);
+      final entry = await locked.timeout(const Duration(seconds: 30));
+
+      expect(unlockedBytes, server.payload.length);
+      expect(unlockedDigest, server.sha256Digest);
+      expect(entry.bytes, server.payload.length);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+      final cached = await manager.get(source().cacheKey);
+      expect(cached?.bytes, server.payload.length);
+    });
+
+    test('never touches a metadata temp file another writer owns', () async {
+      final directory = entryDirectory()..createSync(recursive: true);
+      final foreign = File(path.join(directory.path, 'metadata.json.tmp'))
+        ..writeAsStringSync('foreign');
+
+      await manager.ensureModel(source());
+
+      expect(foreign.readAsStringSync(), 'foreign');
+    });
+
+    test('a cacheOnly miss creates no lock directory', () async {
+      final missingRoot = path.join(root.path, 'missing');
+
+      await expectLater(
+        manager.ensureModel(
+          source(),
+          options: ModelLoadOptions(
+            cachePolicy: ModelCachePolicy.cacheOnly,
+            cacheDirectory: missingRoot,
+          ),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(Directory(missingRoot).existsSync(), isFalse);
+    });
+
+    test('without file locks, a failed attempt without a validator drops '
+        'a stale one left at <file>.part.json', () async {
+      final previousLocker = modelCacheEntryLocker;
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async =>
+          null;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      final directory = entryDirectory()..createSync(recursive: true);
+      final staleValidator = File(
+        path.join(directory.path, '$_fileName.part.json'),
+      )..writeAsStringSync(jsonEncode(<String, Object?>{'etag': '"old"'}));
+      server
+        ..etag = null
+        ..holdFirst = true
+        ..failAfterHold = true
+        ..release();
+
+      await expectLater(
+        manager.ensureModel(source(), options: ModelLoadOptions(maxRetries: 0)),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(
+        File(path.join(directory.path, '$_fileName.part')).existsSync(),
+        isTrue,
+      );
+      expect(staleValidator.existsSync(), isFalse);
+    });
+
     test('without file locks it warns once, downloads into its own attempt '
         'file and leaves other attempts alone', () async {
       final previousLocker = modelCacheEntryLocker;
@@ -329,7 +413,7 @@ void main() {
       expect(foreign.readAsStringSync(), 'in-flight');
       expect(records, hasLength(1));
       expect(records.single.level, LlamaLogLevel.warn);
-      expect(records.single.message, contains('cannot lock'));
+      expect(records.single.message, contains('Cannot lock'));
     });
   });
 }
@@ -465,6 +549,22 @@ class _HoldingServer {
   final Map<int, List<int>> payloadOverrides = <int, List<int>>{};
   final Map<int, int> holdAtOverrides = <int, int>{};
   bool failAfterHold = false;
+
+  /// Request numbers whose headers wait for [releaseHeaders].
+  final Set<int> holdHeaders = <int>{};
+  final Map<int, Completer<void>> _headersHeld = <int, Completer<void>>{};
+  final Map<int, Completer<void>> _headersReleased = <int, Completer<void>>{};
+
+  Future<void> headersHeld(int number) =>
+      (_headersHeld[number] ??= Completer<void>()).future;
+
+  void releaseHeaders(int number) {
+    final released = _headersReleased[number] ??= Completer<void>();
+    if (!released.isCompleted) {
+      released.complete();
+    }
+  }
+
   int requestCount = 0;
   int activeRequests = 0;
   int maxActiveRequests = 0;
@@ -488,6 +588,7 @@ class _HoldingServer {
   void release() {
     _releasedAll = true;
     _released.keys.toList().forEach(releaseRequest);
+    _headersReleased.keys.toList().forEach(releaseHeaders);
   }
 
   void releaseRequest(int number) {
@@ -527,6 +628,13 @@ class _HoldingServer {
     try {
       final range = request.headers.value(HttpHeaders.rangeHeader);
       ranges.add(range);
+      if (holdHeaders.contains(number)) {
+        (_headersHeld[number] ??= Completer<void>()).complete();
+        if (_releasedAll) {
+          releaseHeaders(number);
+        }
+        await (_headersReleased[number] ??= Completer<void>()).future;
+      }
       final response = request.response;
       final currentEtag = etag;
       if (currentEtag != null) {

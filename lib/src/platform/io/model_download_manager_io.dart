@@ -256,6 +256,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
 
     final cacheDir = _cacheDirectory(source, options);
+    if (options.cachePolicy == ModelCachePolicy.cacheOnly &&
+        !await File(path.join(cacheDir.path, source.fileName)).exists()) {
+      // Nothing to wait for or validate: a miss needs no lock directory,
+      // which a read-only cache root could not hold anyway.
+      return _withCacheLock(
+        _cacheLockKey(cacheDir),
+        () => _ensureModelUnlocked(source, options, onProgress),
+      );
+    }
     return _withCacheLock(
       _cacheLockKey(cacheDir),
       () => _withEntryLock(
@@ -442,7 +451,6 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     for (final part in parts) {
       if (part != resumePoint) {
         await _deleteIfExists(part);
-        await _deleteIfExists(_partMetadataFile(part));
       }
     }
     if (resumePoint == null) {
@@ -1154,6 +1162,22 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         await sink.close();
       }
       _throwIfCancelled(options);
+
+      // A writer that does not take the entry lock (an older llamadart, or a
+      // process that could not lock) can still be appending to a part file
+      // this attempt resumed, and a body can end early. Either leaves a file
+      // whose length differs from the server's.
+      final downloadedBytes = await downloadFile.length();
+      if (totalBytes != null && downloadedBytes != totalBytes) {
+        await _deleteIfExists(downloadFile);
+        if (partMetadataFile != null) {
+          await _deleteIfExists(partMetadataFile);
+        }
+        throw HttpException(
+          'Downloaded $downloadedBytes bytes but the server reported '
+          '$totalBytes.',
+        );
+      }
 
       String? verifiedSha256;
       if (options.sha256 != null) {

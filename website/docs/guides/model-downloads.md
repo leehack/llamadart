@@ -358,9 +358,10 @@ await manager.clear();
 
 **Atomic writes.** Each download attempt writes its own
 `<file>.<random id>.part` file and renames it onto the model path only after
-the HTTP stream and any SHA-256 check succeed, so the model path never shows a
-partial file. A failed or cancelled attempt leaves its bytes in `<file>.part`
-for the next resume.
+the HTTP stream succeeds, the file's length matches the length the server
+reported (when it reported one) and any SHA-256 check passes. A length
+mismatch discards the file and downloads again. A failed or cancelled attempt
+leaves its bytes in `<file>.part` for the next resume.
 
 **Resume.** A retry or resume sends an HTTP `Range` request only when the
 partial file has a validator (`ETag` or `Last-Modified`); otherwise it
@@ -374,8 +375,8 @@ cache root, such as two apps using `sharedCache()`, apps granted the same
 `appGroup(...)` container. Each entry has an exclusive OS file lock in
 `<cache root>/.locks/`. A same-entry caller waits for the active operation;
 cache-reusing policies then re-check the cache, including the file's length
-and checksum, so a waiter reuses the finished download or downloads again, and
-never returns a partial file. Different entries download in parallel.
+and checksum, so a waiter reuses the finished download or downloads again.
+Different entries download in parallel.
 Concurrent `refresh` calls each refresh in turn. `noCache` downloads are not
 coalesced. In the same isolate, cancelling a waiting caller takes effect after
 the active operation finishes; a caller waiting on another isolate or process
@@ -385,12 +386,19 @@ active download releases the lock so a later caller can retry or resume from
 
 The OS releases the lock when the holding process exits, including after a
 crash or kill, and the next holder resumes from the largest part file left
-behind and deletes the others. A file system that refuses locks makes the
-manager log a warning once and continue with in-process serialization: other
-processes may then download the same entry at the same time, each into its
-own part file, and leave crashed attempts' part files in place. Network file
-systems (NFS, SMB) are not supported for concurrent use from several machines;
-their locking depends on the server and client configuration.
+behind and deletes the others.
+
+Only callers that take the lock are excluded from each other. Processes
+running llamadart 0.16 or older do not take it, and a manager whose cache root
+is not writable or whose file system refuses locks logs a warning once and
+falls back to serializing within its own isolate. Such a writer can download
+the same entry at the same time as a locked one, and a locked caller can
+resume from a part file that writer is still appending to; the length check
+then discards the mixed file and downloads again, so the cost is a repeated
+download, not a corrupt entry. Without the lock, crashed attempts' part files
+also stay in place. Network file systems (NFS, SMB) are not supported for
+concurrent use from several machines; their locking depends on the server and
+client configuration.
 
 **Metadata.** Each entry has a versioned `metadata.json` sidecar next to the
 model file. An entry is reused only when the sidecar matches the cache key,

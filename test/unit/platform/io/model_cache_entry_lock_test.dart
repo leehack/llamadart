@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -113,6 +114,65 @@ void main() {
     await waiting.timeout(const Duration(seconds: 10));
   }, testOn: '!windows');
 
+  test('a child process started while the lock is held does not keep it '
+      'after release', () async {
+    final lock = await acquire();
+    final child = await Process.start('cat', const <String>[]);
+    addTearDown(() async {
+      child.kill();
+      await child.exitCode;
+    });
+    await lock.release();
+
+    await acquire().timeout(const Duration(seconds: 5));
+  }, testOn: '!windows');
+
+  test('a released lock is not closed again when its isolate shuts '
+      'down', () async {
+    final released = ReceivePort();
+    addTearDown(released.close);
+    final exited = ReceivePort();
+    addTearDown(exited.close);
+    final proceed = Completer<SendPort>();
+    released.listen((message) => proceed.complete(message as SendPort));
+    await Isolate.spawn(_acquireAndRelease, (
+      lockPath('first'),
+      released.sendPort,
+    ), onExit: exited.sendPort);
+    final finish = await proceed.future;
+
+    // Likely reuses the descriptor the other isolate just closed; a finalizer
+    // still attached there would close this lock's descriptor on shutdown.
+    await acquire('second');
+    finish.send(null);
+    await exited.first;
+
+    await expectLater(
+      acquireModelCacheEntryLock(
+        lockPath('second'),
+        throwIfCancelled: () => throw const _Cancelled(),
+      ),
+      throwsA(isA<_Cancelled>()),
+    );
+  }, testOn: '!windows');
+
+  test('cancelled waiters close their descriptors', () async {
+    await acquire();
+    final before = _lowestFreeDescriptor();
+
+    for (var attempt = 0; attempt < 20; attempt += 1) {
+      await expectLater(
+        acquireModelCacheEntryLock(
+          lockPath(),
+          throwIfCancelled: () => throw const _Cancelled(),
+        ),
+        throwsA(isA<_Cancelled>()),
+      );
+    }
+
+    expect(_lowestFreeDescriptor(), lessThan(before + 5));
+  }, testOn: '!windows');
+
   test('warns once that the cache cannot be locked, and only when warnings '
       'are enabled', () {
     final records = <LlamaLogRecord>[];
@@ -152,6 +212,32 @@ Future<void> _holdForever((String, SendPort) message) async {
   // isolate is killed; an unreachable lock is closed by its finalizer.
   await ReceivePort().first;
   await lock?.release();
+}
+
+typedef _FdNative = Int Function(Int);
+typedef _Fd = int Function(int);
+
+/// The descriptor number the next `open` would get, as POSIX hands out the
+/// lowest free one: leaked descriptors push it up.
+int _lowestFreeDescriptor() {
+  final libc = DynamicLibrary.process();
+  final dup = libc.lookupFunction<_FdNative, _Fd>('dup');
+  final close = libc.lookupFunction<_FdNative, _Fd>('close');
+  final descriptor = dup(0);
+  close(descriptor);
+  return descriptor;
+}
+
+Future<void> _acquireAndRelease((String, SendPort) message) async {
+  final (lockPath, released) = message;
+  final lock = await acquireModelCacheEntryLock(
+    lockPath,
+    throwIfCancelled: () {},
+  );
+  await lock!.release();
+  final finish = ReceivePort();
+  released.send(finish.sendPort);
+  await finish.first;
 }
 
 class _Cancelled implements Exception {
