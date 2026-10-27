@@ -405,8 +405,8 @@ void main() {
     );
   });
 
-  test('nonpositive state token capacity is rejected before native calls '
-      'without poisoning its context', () {
+  test('nonpositive state token capacity makes no guarded state-load calls '
+      'and does not poison its context', () {
     start();
     final path = '${dir.path}/capacity.bin';
     recorder.calls.clear();

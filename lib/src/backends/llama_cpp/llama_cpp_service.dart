@@ -7931,8 +7931,8 @@ class LlamaCppService {
   ///
   /// Wraps `llama_state_load_file`. Throws on failure (corrupt file,
   /// schema mismatch, etc.).
-  /// A nonpositive capacity throws [LlamaArgumentException] before native calls
-  /// and leaves a usable, idle context unchanged.
+  /// A nonpositive capacity throws [LlamaArgumentException] before native
+  /// state-load work and leaves a usable, idle context unchanged.
   List<int> stateLoadFile(int contextHandle, String path, int tokenCapacity) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
