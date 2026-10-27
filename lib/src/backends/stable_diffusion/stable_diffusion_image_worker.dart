@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
+import '../../core/image/image_control_net_request.dart';
 import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_driver.dart';
 import '../../core/image/image_generation_request.dart';
@@ -52,7 +53,8 @@ final class StableDiffusionImageWorker
     implements
         ImageGenerationSession,
         ImageVaeTilingSession,
-        ImageEditingSession {
+        ImageEditingSession,
+        ImageControlNetSession {
   /// How often a running [generate] reads the recorded progress. A cancel
   /// that arrived before the runtime started generating is applied again at
   /// the same rate.
@@ -102,6 +104,20 @@ final class StableDiffusionImageWorker
       !_config.vaeDirectConvolution &&
       modelVersion == 'SD 2.x';
 
+  /// Whether the load named a ControlNet and the runtime reports it built
+  /// one. Without the runtime's log a ControlNet compute failure would go
+  /// unnoticed, so that is required too.
+  @override
+  bool get supportsControlNet =>
+      _controlNetLoaded &&
+      _calls.log != null &&
+      _config.controlNetRecipeVerified &&
+      !_config.flashAttention &&
+      !_config.vaeDirectConvolution &&
+      modelVersion == 'SD 1.x';
+
+  final bool _controlNetLoaded;
+
   StableDiffusionImageWorker._(
     this._isolate,
     this._replies,
@@ -111,6 +127,7 @@ final class StableDiffusionImageWorker
     this._context,
     this._config,
     this.modelVersion,
+    this._controlNetLoaded,
   );
 
   /// Spawns a worker and loads [config] in it.
@@ -152,6 +169,7 @@ final class StableDiffusionImageWorker
         'clipG',
         't5xxl',
         'llm',
+        'controlNet',
       ]) {
         final path = config.files[role];
         if (path == null) continue;
@@ -201,6 +219,7 @@ final class StableDiffusionImageWorker
         Pointer.fromAddress(loaded.context),
         config,
         loaded.modelVersion,
+        loaded.controlNetLoaded,
       );
     } catch (_) {
       isolate?.kill(priority: Isolate.immediate);
@@ -226,6 +245,15 @@ final class StableDiffusionImageWorker
     validateSeamlessImageGenerationRecipe(request, _config, modelVersion);
     validateImageVaeTilingRecipe(request, _config, modelVersion);
     validateImageEditingRecipe(request, _config, modelVersion);
+    validateImageControlNetRecipe(request, _config, modelVersion);
+    if (request.controlImage != null && !supportsControlNet) {
+      throw LlamaUnsupportedException(
+        'This image-generation worker cannot honor a ControlNet control image: '
+        'the load did not build a ControlNet, or the stable_diffusion runtime '
+        'does not report its errors (stable-diffusion-native '
+        '${StableDiffusionCalls.optionalNativeRelease} or later).',
+      );
+    }
     final reports = calloc<sd.sd_dart_progress_t>(_reportsPerRead);
     final latest = calloc<Uint64>();
     // Reports are process-wide and numbered: everything after the newest one
@@ -275,6 +303,14 @@ final class StableDiffusionImageWorker
       if (reply.backendFailed) {
         _backendFailed = true;
         throw stableDiffusionBackendFailure();
+      }
+      if (reply.controlNetFailed) {
+        throw LlamaInferenceException(
+          'stable-diffusion.cpp could not compute the ControlNet conditioning, '
+          'so the image would have ignored the control image; it was '
+          'discarded. The model stays loaded; causes include running out of '
+          'memory.',
+        );
       }
       return reply.images == null
           ? null
@@ -467,8 +503,14 @@ final class _Loaded {
   final SendPort commands;
   final int context;
   final String modelVersion;
+  final bool controlNetLoaded;
 
-  const _Loaded(this.commands, this.context, this.modelVersion);
+  const _Loaded(
+    this.commands,
+    this.context,
+    this.modelVersion,
+    this.controlNetLoaded,
+  );
 }
 
 final class _LoadFailure {
@@ -552,12 +594,11 @@ final class _WorkerLog {
   final SendPort _replies;
   final String Function(String text) _redact;
 
-  /// Whether the generation this thread just ran left the GPU backend in its
-  /// error state; `false` on a runtime that cannot tell.
-  bool backendFailed() {
+  /// The errors the runtime logged during the generation this thread just
+  /// ran; empty on a runtime that cannot tell.
+  String generationErrors() {
     final log = _log;
-    return log != null &&
-        stableDiffusionBackendInErrorState(readStableDiffusionLastError(log));
+    return log == null ? '' : readStableDiffusionLastError(log);
   }
 
   /// Why the load this thread just made failed, or `null`.
@@ -610,8 +651,13 @@ final class _ImagePayload {
 final class _Generated {
   final List<_ImagePayload>? images;
   final bool backendFailed;
+  final bool controlNetFailed;
 
-  const _Generated(this.images, {this.backendFailed = false});
+  const _Generated(
+    this.images, {
+    this.backendFailed = false,
+    this.controlNetFailed = false,
+  });
 }
 
 void _workerMain(
@@ -664,12 +710,15 @@ void _workerMain(
 
   final commands = ReceivePort('llamadart-image-generation-commands');
   final version = calls.modelVersionName(context);
+  final controlNetLoaded =
+      config.files.containsKey('controlNet') && calls.hasControlNet(context);
   log.forward(logPosition);
   replies.send(
     _Loaded(
       commands.sendPort,
       context.address,
       version == nullptr ? '' : version.cast<Utf8>().toDartString(),
+      controlNetLoaded,
     ),
   );
   commands.listen((command) {
@@ -727,12 +776,21 @@ _Generated _generate(
     // Older wrappers can return images after a failed Metal command buffer.
     // Read the calling thread's error window before any further native call,
     // asynchronous gap or pixel copy, independently of display logging.
-    final backendFailed = log.backendFailed();
+    final errors = log.generationErrors();
+    final backendFailed = stableDiffusionBackendInErrorState(errors);
+    // Upstream logs a failed ControlNet pass and samples on without it.
+    final controlNetFailed =
+        request.controlImage != null &&
+        errors.contains('controlnet compute failed');
     final images = imagesOut.value;
     final count = countOut.value;
     try {
-      if (!ok || images == nullptr || backendFailed) {
-        return _Generated(null, backendFailed: backendFailed);
+      if (!ok || images == nullptr || backendFailed || controlNetFailed) {
+        return _Generated(
+          null,
+          backendFailed: backendFailed,
+          controlNetFailed: controlNetFailed,
+        );
       }
       return _Generated([
         for (var i = 0; i < count; i++)

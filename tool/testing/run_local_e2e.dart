@@ -957,6 +957,36 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-controlnet',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify an SD 1.x checkpoint plus original-layout SD 1.x ControlNet '
+          'on macOS CPU: control image and strength effects, strength-0 and '
+          'reset equivalence, direct-C parity, cancellation and reload; '
+          'LLAMADART_SD15_CONTROLNET names the ControlNet.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_controlnet_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_SD15_MODEL': context.modelPath!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-controlnet',
+          },
+          description: 'Bounded SD 1.x ControlNet CPU qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2355,6 +2385,19 @@ Future<LocalE2eResult> runLocalE2e(
       64,
       stderr:
           '--model-path <${scenario.name == 'image-editing' ? 'sd-turbo' : 'sdxs'}.gguf> is required for ${scenario.name}.\n',
+    );
+  }
+  if (scenario.name == 'image-controlnet' &&
+      (parsed.modelPath == null ||
+          (environment ?? Platform.environment)['LLAMADART_SD15_CONTROLNET']
+                  ?.trim()
+                  .isNotEmpty !=
+              true)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path <sd15-checkpoint> and LLAMADART_SD15_CONTROLNET are '
+          'required for image-controlnet; see doc/image_controlnet.md.\n',
     );
   }
   if (scenario.name == 'image-container-formats' &&

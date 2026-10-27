@@ -1,11 +1,13 @@
 ## Unreleased
 
+- Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
 - Return images from tools with `LlamaToolResultContent.content` or a handler's `LlamaToolOutput` on native llama.cpp with a vision projector and Hermes-style templates (qualified on Qwen3-VL), rendered as llama-server renders them; check `LlamaEngineCapabilities.toolResultMedia`. Other formats, runtimes, audio, video and URL-only images throw `LlamaUnsupportedException` ([#1008](https://github.com/leehack/llamadart/issues/1008)).
 - Requests with an image or audio part and tools honor `ToolChoice.auto` instead of forcing a tool call on templates such as Qwen3-VL and Qwen3.5, and use the same tool-call grammar, triggers, parser and stops as text requests ([#1463](https://github.com/leehack/llamadart/issues/1463)).
 - A boolean `enable_thinking` or `thinking` chat template kwarg now overrides `enableThinking`, as in llama-server, and DeepSeek V3.1 forces its thought open from `enableThinking` alone ([#750](https://github.com/leehack/llamadart/issues/750)).
 - Processes and isolates sharing a model cache root, such as `sharedCache()`, `userSelected(...)` or `appGroup(...)` directories, now download each entry once instead of returning a file another process is still writing, and a download whose length differs from the server's is fetched again ([#1444](https://github.com/leehack/llamadart/issues/1444)).
+- A tool result whose first text is empty no longer renders a leading newline before the next text part on string-only chat templates, as llama-server does ([#1468](https://github.com/leehack/llamadart/issues/1468)).
 
 ## 0.16.5
 

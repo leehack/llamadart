@@ -19,8 +19,9 @@ description: >-
   experimental and may change. It is separate from `LlamaEngine`. It runs
   stable-diffusion.cpp through the opt-in `stable_diffusion` native runtime.
   Bounded image-to-image and binary-mask editing use `ImageEditingRequest`
-  on macOS CPU with an SD 2.x checkpoint and embedded full VAE. LoRA and
-  ControlNet have no public image-generation API.
+  on macOS CPU with an SD 2.x checkpoint and embedded full VAE. A bounded
+  SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on macOS CPU.
+  LoRA has no public image-generation API.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
   included by default. In the app's `pubspec.yaml`:
 
@@ -88,6 +89,20 @@ core and `llamadart_stable_diffusion_flutter` together.
   output pixels can differ after VAE encode/decode. Strength is finite in
   (0,1]; 1 still encodes the input and step rounding can collapse nearby
   strengths. Do not promise exact pixel preservation or arbitrary prompt quality.
+- For ControlNet, load the ControlNet as `ImageModelComponent.auto(...)` next
+  to its checkpoint and check `(await engine.capabilities).supportsControlNet`.
+  Only an SD 1.x checkpoint with embedded full VAE plus one original-layout
+  (lllyasviel) SD 1.x ControlNet loads, on macOS with `ComputeDevice.cpu`,
+  `flashAttention: false` and `vaeDirectConvolution: false`; Diffusers or
+  `.pth` ControlNets, other families, extra components and devices throw
+  `LlamaUnsupportedException` at load. Real SD 1.x qualification is pending.
+  Pass `ControlNetImageGenerationRequest(prompt: ..., control:
+  ImageControlNetCondition(image: ImageEditingPixels.rgb(...), strength: 1))`;
+  the request takes its size from the image. The image is the finished
+  control map (edges, depth, pose): no preprocessor or resize runs. Strength
+  is finite in [0, 2], default 0.9; 0 adds nothing. The ControlNet stays
+  loaded until dispose; ordinary requests ignore it. A failed ControlNet pass
+  fails the task with `LlamaInferenceException`.
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.
@@ -139,13 +154,13 @@ core and `llamadart_stable_diffusion_flutter` together.
   model's files and request settings. `load` downloads remote files, then
   reads each file's header (GGUF metadata and tensor names, safetensors
   header) to give it its `ImageModelRole`: `checkpoint`, `diffusionModel`,
-  `vae`, `taesd`, `clipL`, `clipG`, `t5xxl` or `llm`. Pass components as
+  `vae`, `taesd`, `clipL`, `clipG`, `t5xxl`, `llm` or `controlNet`. Pass
+  components as
   `ImageModelComponent.auto(source)` in any order; use
   `ImageModelComponent(source, role: ImageModelRole.vae)` (or
   `ImageGenerationModel(source, role: ...)`) only for a file the header check
   cannot classify, such as a `.ckpt`, or to pick between same-layout files
-  (TAESD vs TAESDXL, TAESD3 vs TAEF1). `load` refuses LoRA, ControlNet,
-  upscaler and vision-projector files, `taesd_decoder.safetensors`, two
+  (TAESD vs TAESDXL, TAESD3 vs TAEF1). `load` refuses LoRA, upscaler and vision-projector files, `taesd_decoder.safetensors`, two
   files in one role, no or two sources of diffusion weights, and a VAE or
   TAESD for other latent channels (TAESD with FLUX), naming files by
   position, never by path. `engine.roles` reports the assignment. Validated

@@ -28,6 +28,7 @@ void applyStableDiffusionContextParams(
     ..clip_g_path = text(files['clipG'])
     ..t5xxl_path = text(files['t5xxl'])
     ..llm_path = text(files['llm'])
+    ..control_net_path = text(files['controlNet'])
     ..backend = text(config.backend)
     ..diffusion_flash_attn = config.flashAttention
     ..vae_conv_direct = config.vaeDirectConvolution
@@ -122,6 +123,10 @@ void applyStableDiffusionGenerationParams(
     if (request.mask case final mask?) {
       writePixels(params.ref.mask_image, mask);
     }
+  }
+  if (request.controlImage case final control?) {
+    writePixels(params.ref.control_image, control);
+    params.ref.control_strength = request.controlStrength!;
   }
   params.ref.sample_params
     ..sample_steps = request.steps

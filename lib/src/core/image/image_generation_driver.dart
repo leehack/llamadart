@@ -9,7 +9,8 @@ import 'image_generation_request.dart';
 /// Model files and runtime settings for one native image-generation context.
 final class ImageGenerationSessionConfig {
   /// Local weight files keyed by runtime role: `model` (a checkpoint),
-  /// `diffusionModel`, `vae`, `taesd`, `clipL`, `clipG`, `t5xxl` or `llm`.
+  /// `diffusionModel`, `vae`, `taesd`, `clipL`, `clipG`, `t5xxl`, `llm` or
+  /// `controlNet`.
   final Map<String, String> files;
 
   /// stable-diffusion.cpp backend name (`cpu`, `gpu`), or `null` for the
@@ -31,6 +32,10 @@ final class ImageGenerationSessionConfig {
   /// image-editing recipe.
   final bool imageEditingRecipeVerified;
 
+  /// Header, runtime and host evidence for the macOS CPU SD 1.x ControlNet
+  /// recipe.
+  final bool controlNetRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -49,6 +54,7 @@ final class ImageGenerationSessionConfig {
     this.seamlessRecipeVerified = false,
     this.vaeTilingRecipeVerified = false,
     this.imageEditingRecipeVerified = false,
+    this.controlNetRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -107,6 +113,12 @@ final class ImageGenerationSessionRequest {
   /// Denoising strength for [initialImage], otherwise unused.
   final double? strength;
 
+  /// Owned RGB ControlNet control image, or `null` to generate without it.
+  final ImageEditingPixels? controlImage;
+
+  /// ControlNet strength for [controlImage], otherwise unused.
+  final double? controlStrength;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -126,6 +138,8 @@ final class ImageGenerationSessionRequest {
     this.initialImage,
     this.mask,
     this.strength,
+    this.controlImage,
+    this.controlStrength,
   });
 }
 
@@ -167,6 +181,13 @@ abstract interface class ImageVaeTilingSession {
 abstract interface class ImageEditingSession {
   /// Whether this loaded session can honor RGB/mask/strength input mapping.
   bool get supportsImageEditing;
+}
+
+/// Optional active-session capability for the bounded ControlNet recipe.
+abstract interface class ImageControlNetSession {
+  /// Whether this loaded session holds a ControlNet and can honor a control
+  /// image and strength.
+  bool get supportsControlNet;
 }
 
 /// A loaded native image-generation context.

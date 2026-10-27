@@ -31,6 +31,8 @@ const _quietReject = 26;
 const _holdLogDrain = 27;
 const _racingReads = 28;
 const _returnImagesDespiteError = 29;
+const _controlNetLoaded = 30;
+const _hideControlNet = 31;
 const _latest = 32;
 const _modelVersion = 40;
 const _ring = 64;
@@ -57,8 +59,9 @@ const _fileRoles = [
   'clipG',
   't5xxl',
   'llm',
+  'controlNet',
 ];
-const _logSlots = _modelPath + _modelPathBytes * 8;
+const _logSlots = _modelPath + _modelPathBytes * 9;
 const _logSlotCount = 256;
 const _logSlotBytes = 512;
 // One GPU: status and type as Int32, then total and free as Int64.
@@ -72,7 +75,9 @@ const _conditioningCacheSize = _generationError + _generationErrorBytes;
 const _vaeTiling = _conditioningCacheSize + 4;
 const _imageInput = (_vaeTiling + 39) & ~7;
 const _imageInputBytes = 96;
-const _stateBytes = _imageInput + _imageInputBytes * 2;
+const _controlInput = _imageInput + _imageInputBytes * 2;
+const _controlInputBytes = 48;
+const _stateBytes = _controlInput + _controlInputBytes * 2;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -141,6 +146,28 @@ final class FakeStableDiffusionRuntime {
         (_state + offset + i * 8).cast<Int64>().value,
       (_state + offset + 80).cast<Double>().value,
     ];
+  }
+
+  /// ControlNet image dimensions, checksums and strength at entry and after
+  /// the held native start, read in the worker from the native struct.
+  List<num> controlInputSnapshot({bool afterHold = false}) {
+    final offset = _controlInput + (afterHold ? _controlInputBytes : 0);
+    return [
+      for (var i = 0; i < 5; i++) (_state + offset + i * 8).cast<Int64>().value,
+      (_state + offset + 40).cast<Double>().value,
+    ];
+  }
+
+  /// Makes `sd_ctx_has_control_net` answer false although the load named a
+  /// ControlNet, as a runtime that skipped it would.
+  set hideControlNet(bool value) => _state[_hideControlNet] = value ? 1 : 0;
+
+  /// What `sd_get_model_version_name` answers; `SD 2.x` at first.
+  set modelVersion(String value) {
+    final bytes = utf8.encode(value);
+    (_state + _modelVersion).asTypedList(24)
+      ..fillRange(0, 24, 0)
+      ..setAll(0, bytes);
   }
 
   /// Completes when the native stand-in has copied its entry observation.
@@ -508,7 +535,9 @@ final class _FakeCalls {
       params.ref.clip_g_path,
       params.ref.t5xxl_path,
       params.ref.llm_path,
+      params.ref.control_net_path,
     ];
+    _state[_controlNetLoaded] = params.ref.control_net_path == nullptr ? 0 : 1;
     for (final (index, path) in paths.indexed) {
       (_state + _modelPath + index * _modelPathBytes).asTypedList(
           _modelPathBytes,
@@ -586,6 +615,10 @@ final class _FakeCalls {
       supportsImageGeneration: (context) {
         _record('sd_ctx_supports_image_generation$_held');
         return _state[_videoOnly] == 0;
+      },
+      hasControlNet: (context) {
+        _record('sd_ctx_has_control_net$_held');
+        return _state[_controlNetLoaded] != 0 && _state[_hideControlNet] == 0;
       },
       modelVersionName: (context) {
         _record('sd_get_model_version_name$_held');
@@ -727,6 +760,30 @@ final class _FakeCalls {
         }
       }
       (_state + offset + 80).cast<Double>().value = params.ref.strength;
+      final controlOffset =
+          _controlInput + (afterHold ? _controlInputBytes : 0);
+      final control = params.ref.control_image;
+      var sum = 0;
+      var weighted = 0;
+      if (control.data != nullptr) {
+        final length = control.width * control.height * control.channel;
+        final bytes = control.data.asTypedList(length);
+        for (var i = 0; i < length; i++) {
+          sum += bytes[i];
+          weighted += bytes[i] * (i + 1);
+        }
+      }
+      for (final (index, value) in [
+        control.width,
+        control.height,
+        control.channel,
+        sum,
+        weighted,
+      ].indexed) {
+        (_state + controlOffset + index * 8).cast<Int64>().value = value;
+      }
+      (_state + controlOffset + 40).cast<Double>().value =
+          params.ref.control_strength;
     }
 
     recordImageInput(false);

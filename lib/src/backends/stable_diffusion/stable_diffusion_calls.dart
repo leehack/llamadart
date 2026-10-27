@@ -86,6 +86,7 @@ final class StableDiffusionCalls {
     required this.exitFreeAddress,
     required this.contextParamsInit,
     required this.supportsImageGeneration,
+    required this.hasControlNet,
     required this.modelVersionName,
     required this.imageGenerationParamsInit,
     required this.freeImages,
@@ -236,6 +237,7 @@ final class StableDiffusionCalls {
       exitFreeAddress: exitFree.cast(),
       contextParamsInit: sd.sd_ctx_params_init,
       supportsImageGeneration: sd.sd_ctx_supports_image_generation,
+      hasControlNet: sd.sd_ctx_has_control_net,
       modelVersionName: sd.sd_get_model_version_name,
       imageGenerationParamsInit: sd.sd_img_gen_params_init,
       freeImages: sd.free_sd_images,
@@ -322,6 +324,11 @@ final class StableDiffusionCalls {
 
   /// `sd_ctx_supports_image_generation`.
   final bool Function(Pointer<sd.sd_ctx_t> context) supportsImageGeneration;
+
+  /// `sd_ctx_has_control_net`: whether the load built a ControlNet. Only
+  /// called after a load that named one, which only the pinned runtime the
+  /// ControlNet recipe requires receives.
+  final bool Function(Pointer<sd.sd_ctx_t> context) hasControlNet;
 
   /// `sd_get_model_version_name`: a static string, or `nullptr`.
   final Pointer<Char> Function(Pointer<sd.sd_ctx_t> context) modelVersionName;

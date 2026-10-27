@@ -688,6 +688,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'ImageEditingRequest, image-editing capability, worker transport or init/mask/strength native mapping changes.',
   ),
   TestMatrixRow(
+    id: 'image-controlnet',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'SD 1.x checkpoint plus original-layout SD 1.x ControlNet on macOS CPU: control image and strength effects, strength-0 and ordinary reset equivalence, direct-C reference parity, cancellation/reuse and reload; other families, layouts and devices refused',
+    command:
+        'LLAMADART_SD15_CONTROLNET=<controlnet.safetensors> dart run tool/testing/run_local_e2e.dart --scenario image-controlnet --model-path <sd15.safetensors>',
+    useWhen:
+        'ControlNetImageGenerationRequest, ImageModelRole.controlNet admission, supportsControlNet, worker ControlNet probe/failure detection or control_net_path/control_image/control_strength native mapping changes.',
+  ),
+  TestMatrixRow(
     id: 'image-exit-teardown',
     tier: 'targeted',
     mode: 'local-only',

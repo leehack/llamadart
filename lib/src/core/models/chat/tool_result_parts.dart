@@ -115,21 +115,13 @@ LlamaToolResultContent toolResultWithMediaMarkers(
   String mediaMarker,
 ) {
   if (!result.content.any(isMediaPart)) return result;
-  final text = StringBuffer();
-  var lastWasMarker = false;
-  void addText(String value) {
-    if (!lastWasMarker && text.isNotEmpty) text.write('\n');
-    text.write(value);
-    lastWasMarker = false;
-  }
-
-  if (result.result != null) addText(toolResultText(result));
+  final text = ContentTextBuffer();
+  if (result.result != null) text.addText(toolResultText(result));
   for (final part in result.content) {
     if (part is LlamaTextContent) {
-      addText(part.text);
+      text.addText(part.text);
     } else if (isMediaPart(part)) {
-      text.write(mediaMarker);
-      lastWasMarker = true;
+      text.addMarker(mediaMarker);
     }
   }
   return LlamaToolResultContent(
@@ -137,6 +129,30 @@ LlamaToolResultContent toolResultWithMediaMarkers(
     name: result.name,
     result: text.toString(),
   );
+}
+
+/// Prompt text built as llama.cpp's `concat_content_parts` joins content
+/// parts: a newline goes before a text part only when the text so far is not
+/// empty and does not end in a media marker.
+final class ContentTextBuffer {
+  final StringBuffer _text = StringBuffer();
+  bool _lastWasMarker = false;
+
+  /// Appends [value] as a text part.
+  void addText(String value) {
+    if (!_lastWasMarker && _text.isNotEmpty) _text.write('\n');
+    _text.write(value);
+    _lastWasMarker = false;
+  }
+
+  /// Appends [marker] for a media part, with no newline before it.
+  void addMarker(String marker) {
+    _text.write(marker);
+    _lastWasMarker = true;
+  }
+
+  @override
+  String toString() => _text.toString();
 }
 
 Iterable<LlamaToolResultContent> _toolResults(

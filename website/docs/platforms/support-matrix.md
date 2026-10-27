@@ -102,6 +102,14 @@ checkpoints remain unmeasured. Other recipes report
 extend editing support to the other text-to-image platforms in the table.
 See [image editing](../guides/image-generation#image-editing).
 
+ControlNet uses `ControlNetImageGenerationRequest` with a copied, finished RGB
+control map and a strength from 0 to 2. A ControlNet loads only as an SD 1.x
+checkpoint with embedded full VAE plus an original-layout SD 1.x ControlNet on
+macOS CPU with the pinned SD v0.3.0 runtime, flash attention/direct VAE
+convolution off and no other components; other recipes throw at load. Real
+SD 1.x qualification is pending, and no other platform, family or ControlNet
+layout is supported. See [ControlNet](../guides/image-generation#controlnet).
+
 Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
 flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
 512×512, flash attention and direct VAE convolutions disabled; CPU and actual
