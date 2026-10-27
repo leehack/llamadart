@@ -1339,8 +1339,8 @@ embedded full VAE plus an SD 1.x ControlNet in the original (lllyasviel)
 layout, as Safetensors or GGUF. The headers must show a 768-wide text context
 in both and a three-channel hint block. Other families, Diffusers-layout or
 `.pth` ControlNets, extra components, devices and platforms throw
-`LlamaUnsupportedException` when the model loads. Real SD 1.x qualification is
-pending; see [the qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/image_controlnet.md).
+`LlamaUnsupportedException` when the model loads. Qualified on SD 1.5 `v1-5-pruned-emaonly` with `control_v11p_sd15_canny` (fp16
+Safetensors); see [the measured qualification](https://github.com/leehack/llamadart/blob/main/doc/image_controlnet.md).
 
 The control image is the finished map: llamadart runs no edge, depth or pose
 detector and does not resize it. Supply decoded RGB with the output's
