@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:ffi';
 
 import 'package:llamadart/src/backends/llama_cpp/native_library_candidates.dart';
