@@ -11,8 +11,8 @@ a default case no longer compiles; add the case or a default. A file whose
 header shows ControlNet tensor names is now assigned this role instead of
 failing classification: outside the bounded SD 1.x macOS CPU recipe,
 `ImageGenerationEngine.load` throws `LlamaUnsupportedException` instead of
-`LlamaModelException`. A ControlNet loaded without a checkpoint still throws
-`LlamaModelException`, because no file holds diffusion weights.
+`LlamaModelException`. A ControlNet loaded with no file holding diffusion
+weights (for example, alone) still throws `LlamaModelException`.
 
 <a id="015x-to-0160-upgrade-guide"></a>
 
