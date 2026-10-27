@@ -268,8 +268,8 @@ Future<void> main(List<String> args) async {
   }
 }
 
-/// Checks strict-format refusal on an unsupported LiteRT-LM combination.
-/// The refusal must precede session edits and leave the next turn usable.
+/// Checks refusal of an array-property schema outside LiteRT-LM's scalar subset.
+/// Even an admitted provider must refuse before edits and leave the next turn usable.
 Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   LlamaEngine engine,
 ) async {
@@ -278,8 +278,21 @@ Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   String? rejection;
   try {
     await session.createStructuredJson(
-      [const LlamaTextContent('Reply with {"ok": true}.')],
-      output: LlamaStructuredOutput.jsonObject(decoder: (json) => json),
+      [const LlamaTextContent('Reply with {"values": ["ok"]}.')],
+      output: LlamaStructuredOutput.jsonSchema(
+        schema: const {
+          'type': 'object',
+          'properties': {
+            'values': {
+              'type': 'array',
+              'items': {'type': 'string'},
+            },
+          },
+          'required': ['values'],
+          'additionalProperties': false,
+        },
+        decoder: (json) => json,
+      ),
       enableThinking: false,
       onMessageAdded: reported.add,
     );
@@ -297,6 +310,7 @@ Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   }
   final roles = [for (final message in session.history) message.role.name];
   final result = <String, Object?>{
+    'unsupportedRequest': 'object_with_array_property',
     'rejection': rejection,
     'historyAfterRejection': historyAfterRejection,
     'reportedMessages': reported.length,
@@ -310,7 +324,7 @@ Future<Map<String, Object?>> runSessionStructuredOutputScenario(
       roles.join(',') != 'user,assistant' ||
       reply.toString().trim().isEmpty) {
     throw StateError(
-      'LiteRT-LM ChatSession did not reject a strict responseFormat before '
+      'LiteRT-LM ChatSession did not reject the unsupported schema request before '
       'recording the turn, or did not recover on the next turn.',
     );
   }

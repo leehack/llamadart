@@ -28,15 +28,66 @@ void main() {
   }
 
   test(
-    'session smoke accepts typed platform refusal before edits and recovers without a rejected native send',
+    'session smoke refuses an unsupported request on an admitted backend while supported schema chat succeeds',
+    () async {
+      final backend = _SessionSmokeBackend()..admitted = true;
+      final engine = await engineFor(backend);
+      final negative = await smoke.runSessionStructuredOutputScenario(engine);
+      expect(negative['unsupportedRequest'], 'object_with_array_property');
+      expect(negative['historyAfterRejection'], 0);
+      expect(negative['reportedMessages'], 0);
+      expect(backend.schemaSends, 0);
+      expect(backend.admissions, 0);
+      expect(backend.grammarQueries, greaterThan(0));
+      expect(backend.nativeMessages, hasLength(1));
+      final session = ChatSession(engine);
+      final reported = <LlamaChatMessage>[];
+      final reply = await session.createStructuredJson(
+        [const LlamaTextContent('Reply with {"ok": true}.')],
+        output: LlamaStructuredOutput.jsonSchema(
+          schema: const {
+            'type': 'object',
+            'properties': {
+              'ok': {'type': 'boolean', 'const': true},
+            },
+            'required': ['ok'],
+            'additionalProperties': false,
+          },
+          decoder: (json) => json,
+        ),
+        enableThinking: false,
+        onMessageAdded: reported.add,
+      );
+      expect(reply, {'ok': true});
+      expect(backend.schemaSends, 1);
+      expect(session.history.map((message) => message.role), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+      ]);
+      expect(reported.map((message) => message.role), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+      ]);
+    },
+  );
+
+  test(
+    'session smoke refuses an unsupported schema before admission and recovers without a rejected native send',
     () async {
       final backend = _SessionSmokeBackend();
       final engine = await engineFor(backend);
       final result = await smoke.runSessionStructuredOutputScenario(engine);
+      expect(result['unsupportedRequest'], 'object_with_array_property');
       expect(
         result['rejection'],
-        'Native JSON Schema provider is unavailable on this host.',
+        isA<String>().having(
+          (message) => message.isNotEmpty,
+          'typed refusal message',
+          isTrue,
+        ),
       );
+      expect(backend.admissions, 0);
+      expect(backend.grammarQueries, greaterThan(0));
       expect(result['historyAfterRejection'], 0);
       expect(result['reportedMessages'], 0);
       expect(result['rolesAfterNextTurn'], ['user', 'assistant']);
@@ -60,8 +111,9 @@ void main() {
     test(
       'session smoke propagates ${failure.runtimeType} instead of accepting it as unsupported',
       () async {
-        final backend = _SessionSmokeBackend(failure: failure);
+        final backend = _SessionSmokeBackend();
         final engine = await engineFor(backend);
+        backend.probeFailure = failure;
         await expectLater(
           smoke.runSessionStructuredOutputScenario(engine),
           throwsA(same(failure)),
@@ -75,8 +127,10 @@ void main() {
   test(
     'session smoke rejects a late refusal even when history rollback and recovery succeed',
     () async {
-      final backend = _SessionSmokeBackend(rejectOnAdmission: 2);
+      final backend = _SessionSmokeBackend();
       final engine = await engineFor(backend);
+      backend.grammarSupport = true;
+      backend.dropGrammarOnTokenize = true;
       await expectLater(
         smoke.runSessionStructuredOutputScenario(engine),
         throwsA(
@@ -87,7 +141,8 @@ void main() {
           ),
         ),
       );
-      expect(backend.admissions, 2);
+      expect(backend.admissions, 0);
+      expect(backend.grammarSupport, isFalse);
       expect(backend.schemaSends, 0);
       expect(backend.nativeMessages.single, hasLength(1));
     },
@@ -168,17 +223,11 @@ class _SessionSmokeBackend
         BackendGrammarConstraintsSupport,
         BackendJsonSchemaChatGeneration,
         BackendNativeChatGeneration {
-  _SessionSmokeBackend({
-    Object? failure,
-    this.rejectOnAdmission = 1,
-    this.recoveryReply = 'Hello',
-  }) : failure =
-           failure ??
-           LlamaUnsupportedException(
-             'Native JSON Schema provider is unavailable on this host.',
-           );
-  final Object failure;
-  final int rejectOnAdmission;
+  _SessionSmokeBackend({this.recoveryReply = 'Hello'});
+  Object? probeFailure;
+  bool grammarSupport = false;
+  bool dropGrammarOnTokenize = false;
+  int grammarQueries = 0;
   final String recoveryReply;
   bool admitted = false;
   int admissions = 0;
@@ -190,15 +239,24 @@ class _SessionSmokeBackend
   @override
   bool get supportsUrlLoading => false;
   @override
-  bool get supportsGrammarConstraints => false;
+  bool get supportsGrammarConstraints {
+    grammarQueries++;
+    final failure = probeFailure;
+    if (failure != null) {
+      probeFailure = null;
+      throw failure;
+    }
+    return grammarSupport;
+  }
+
   @override
   bool get supportsJsonSchemaChatGeneration => admitted;
   @override
   bool get supportsNativeChatGeneration => true;
   @override
   Future<void> prepareJsonSchemaChat() async {
+    if (admitted) return;
     admissions++;
-    if (admissions == rejectOnAdmission) throw failure;
     admitted = true;
   }
 
@@ -259,7 +317,11 @@ class _SessionSmokeBackend
     int modelHandle,
     String text, {
     bool addSpecial = true,
-  }) async => [1];
+  }) async {
+    if (dropGrammarOnTokenize) grammarSupport = false;
+    return [1];
+  }
+
   @override
   Future<void> setLogLevel(LlamaLogLevel level) async {}
   @override
