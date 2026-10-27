@@ -62,6 +62,33 @@ void main() {
       );
     },
   );
+  test('tool-result image matrix row reaches its local-only scenario and '
+      'names the closest-family template override', () async {
+    final row = testMatrixRows.singleWhere(
+      (r) => r.id == 'tool-result-image-smoke',
+    );
+    expect(row.mode, 'local-only');
+    final args = row.command
+        .split(' ')
+        .skip(3)
+        .map((arg) => arg.startsWith('<') ? '/local/model.gguf' : arg)
+        .toList();
+    final result = await runLocalE2e(
+      [...args, '--dry-run'],
+      projectRoot: '/repo',
+      displayShell: LocalE2eDisplayShell.posix,
+    );
+    expect(result.exitCode, 0, reason: result.stderr);
+    expect(
+      result.stdout,
+      contains('test/e2e/backends/tool_result_media_e2e_test.dart'),
+    );
+    expect(row.useWhen, contains('LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE'));
+    final template = RegExp(
+      r'test/fixtures/templates/\S+\.jinja',
+    ).firstMatch(row.useWhen)!.group(0)!;
+    expect(File(template).existsSync(), isTrue);
+  });
   test('ControlNet matrix identifies its bounded CPU qualification', () {
     final row = testMatrixRows.singleWhere((r) => r.id == 'image-controlnet');
     expect(row.tier, 'targeted');
