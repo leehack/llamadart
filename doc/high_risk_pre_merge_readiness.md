@@ -263,6 +263,35 @@ independent reviewer must add any further affected impacts, and only exclude an
 impact after inspecting its production callsites. A minimum impact cannot be
 excluded. No empty rationale or blanket author-authored N/A is sufficient.
 
+One bounded Git-derived refinement applies to `lib/llamadart.dart`: adding
+exactly the explicit `show ImageEditingPixels, ImageEditingRequest` export from
+`src/core/image/image_editing_request.dart` may contribute no minimum chat
+impacts. It remains high-risk and `structuredOutput`; all three independently
+reviewed impact decisions, exact production references, causal image and public
+export test evidence, matrix rows and exact-head/base audit remain required.
+The evaluator supplies no caller exemption flag or schema waiver.
+
+The addition must be a real parsed directive, and removing its exact bytes must
+recover the base barrel byte for byte. Both barrels and the new target must be
+non-executable regular Git blobs; the target must be newly added with the two
+named final classes and the bounded recipe helper. Its four unconditional,
+unprefixed imports must already load through the old barrel at both revisions.
+The evaluator inspects the old export namespace at base and head, including all
+conditional branches and conservatively ignoring `show`/`hide` filters, to reject
+name collisions. Unknown syntax, graph cycles, parts, missing/nonlocal export
+sources, additional declarations/imports, modified existing exports, different
+names or URIs, conditional additions, renames and mode changes retain ordinary
+conservative minima. Every other changed structured production path, including
+rename origins, still contributes its normal impacts. Evidence-only emptiness
+still requires all impacts; proven empty contribution is a distinct case.
+
+This proof bounds the additive namespace and existing loading dependencies; it
+does not prove an absence of behavioral or transitive effects. The independent
+reviewer still inspects the new classes, their production callsites and every
+other changed production source, adds any affected chat impact and supplies the
+corresponding coverage. An internally consistent result still exits 2 for the
+unconfigured external prerequisites; it never establishes operational readiness.
+
 The `families` list retains unique `tested`/`unavailable` entries, relevant tests
 and a rationale. Missing weights require named unavailable families and primary
 upstream emissions plus fixtures; unrelated model evidence remains pipeline-only.

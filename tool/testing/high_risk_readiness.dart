@@ -3,6 +3,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
+
 import 'classify_high_risk_changes.dart';
 import 'release_metadata_readiness.dart';
 
@@ -1325,9 +1328,22 @@ class HighRiskReadinessEvaluator {
         evidence['structured_output_evidence'] as Map<String, dynamic>?;
     if (structured == null) return null;
     final impacts = structured['impacts'] as Map<String, dynamic>;
-    final minimum = structuredImpactHints(
-      inspectedPaths,
-    ).map((impact) => impact.name).toSet();
+    final minimumImpacts = <StructuredImpact>{};
+    var hasProductionContribution = false;
+    for (final path in inspectedPaths) {
+      final contribution = structuredProductionImpactHints(path);
+      if (contribution == null) continue;
+      hasProductionContribution = true;
+      if (path == 'lib/llamadart.dart' &&
+          await _isAdditiveImageExport(context, changes, workingDirectory)) {
+        continue;
+      }
+      minimumImpacts.addAll(contribution);
+    }
+    if (!hasProductionContribution) {
+      minimumImpacts.addAll(StructuredImpact.values);
+    }
+    final minimum = minimumImpacts.map((impact) => impact.name).toSet();
     final requiredAxes = <String>{};
     for (final entry in impacts.entries) {
       final impact = entry.value as Map<String, dynamic>;
@@ -1353,6 +1369,241 @@ class HighRiskReadinessEvaluator {
       }
     }
     return null;
+  }
+
+  // This recognizes one reviewed export shape, not arbitrary "image paths".
+  // It proves additive namespace/loading properties; the independent review
+  // still owns the behavioral impact decisions and transitive callsite review.
+  Future<bool> _isAdditiveImageExport(
+    PullRequestContext context,
+    Map<String, RepositoryChange> changes,
+    String? workingDirectory,
+  ) async {
+    const barrel = 'lib/llamadart.dart';
+    const target = 'lib/src/core/image/image_editing_request.dart';
+    const addition =
+        "export 'src/core/image/image_editing_request.dart'\n"
+        '    show ImageEditingPixels, ImageEditingRequest;\n';
+    const imports = {
+      'dart:typed_data',
+      'lib/src/core/exceptions.dart',
+      'lib/src/core/image/image_generation_driver.dart',
+      'lib/src/core/image/image_generation_request.dart',
+    };
+    if (changes[barrel]?.kind != RepositoryChangeKind.modified ||
+        changes[barrel]?.previousPath != null ||
+        changes[target]?.kind != RepositoryChangeKind.added ||
+        changes[target]?.previousPath != null) {
+      return false;
+    }
+    Future<ReadinessFile?> read(String sha, String path) =>
+        repositoryState.fileAt(sha, path, workingDirectory: workingDirectory);
+    final base = await read(context.baseSha, barrel);
+    final head = await read(context.headSha, barrel);
+    final image = await read(context.headSha, target);
+    if (base?.mode != '100644' ||
+        head?.mode != '100644' ||
+        image?.mode != '100644' ||
+        await read(context.baseSha, target) != null) {
+      return false;
+    }
+    final offset = head!.contents.indexOf(addition);
+    if (offset < 0 ||
+        (offset != 0 && head.contents[offset - 1] != '\n') ||
+        head.contents.indexOf(addition, offset + addition.length) >= 0 ||
+        head.contents.replaceRange(offset, offset + addition.length, '') !=
+            base!.contents) {
+      return false;
+    }
+    CompilationUnit? parse(String source) {
+      final parsed = parseString(content: source, throwIfDiagnostics: false);
+      return parsed.errors.isEmpty ? parsed.unit : null;
+    }
+
+    final headUnit = parse(head.contents);
+    final additions = headUnit?.directives.whereType<ExportDirective>().where(
+      (directive) =>
+          directive.offset == offset &&
+          directive.end == offset + addition.trimRight().length,
+    );
+    if (additions == null || additions.length != 1) return false;
+    final imageUnit = parse(image!.contents);
+    if (imageUnit == null || imageUnit.directives.length != imports.length) {
+      return false;
+    }
+    final actualImports = <String>{};
+    for (final directive in imageUnit.directives) {
+      if (directive is! ImportDirective ||
+          directive.metadata.isNotEmpty ||
+          directive.configurations.isNotEmpty ||
+          directive.combinators.isNotEmpty ||
+          directive.prefix != null ||
+          directive.deferredKeyword != null) {
+        return false;
+      }
+      final uri = directive.uri.stringValue;
+      final resolved = uri == 'dart:typed_data'
+          ? uri
+          : _localExportPath(target, uri);
+      if (resolved == null || !actualImports.add(resolved)) return false;
+    }
+    if (!_sameSet(actualImports, imports)) return false;
+    final declarations = imageUnit.declarations;
+    if (declarations.length != 3) return false;
+    final classes = declarations.whereType<ClassDeclaration>().toList();
+    final helper = declarations.whereType<FunctionDeclaration>().toList();
+    if (classes.length != 2 ||
+        helper.length != 1 ||
+        helper.single.name.lexeme != 'validateImageEditingRecipe' ||
+        declarations.any((node) => node.metadata.isNotEmpty)) {
+      return false;
+    }
+    final expectedParents = {
+      'ImageEditingPixels': null,
+      'ImageEditingRequest': 'extends ImageGenerationRequest',
+    };
+    for (final declaration in classes) {
+      final name = declaration.classKeyword.next;
+      if (name == null ||
+          !expectedParents.containsKey(name.lexeme) ||
+          declaration.finalKeyword == null ||
+          declaration.extendsClause?.toSource() !=
+              expectedParents.remove(name.lexeme) ||
+          declaration.withClause != null ||
+          declaration.implementsClause != null ||
+          !{'{', 'extends'}.contains(name.next?.lexeme)) {
+        return false;
+      }
+    }
+    if (expectedParents.isNotEmpty) return false;
+
+    // Over-approximate the old namespace at both revisions: inspect every
+    // conditional export branch and ignore show/hide filters. Uncertain graphs
+    // retain the ordinary minima instead of claiming absence of collisions.
+    for (final sha in [context.baseSha, context.headSha]) {
+      final visiting = <String>{};
+      final units = <String, CompilationUnit>{};
+      final loaded = <String>{};
+      final inspected = <(String, bool)>{};
+      Future<bool> inspect(String path, bool guaranteed) async {
+        if (visiting.contains(path)) return false;
+        if (inspected.contains((path, guaranteed))) return true;
+        visiting.add(path);
+        final file = await read(sha, path);
+        final unit =
+            units[path] ??
+            (file?.mode == '100644' ? parse(file!.contents) : null);
+        if (unit == null) return false;
+        units[path] = unit;
+        if (_hasImageExportName(unit)) return false;
+        if (guaranteed) loaded.add(path);
+        for (final directive in unit.directives) {
+          if (directive is LibraryDirective || directive is ImportDirective) {
+            if (guaranteed &&
+                directive is ImportDirective &&
+                directive.configurations.isEmpty &&
+                directive.deferredKeyword == null) {
+              final uri = directive.uri.stringValue;
+              final dependency = uri?.startsWith('dart:') == true
+                  ? uri
+                  : _localExportPath(path, uri);
+              if (dependency != null) loaded.add(dependency);
+            }
+            continue;
+          }
+          if (directive is! ExportDirective) return false;
+          final uris = [
+            directive.uri.stringValue,
+            for (final branch in directive.configurations)
+              branch.uri.stringValue,
+          ];
+          for (final uri in uris) {
+            // Read the old namespace, without the precisely removed addition.
+            if (path == barrel &&
+                uri == 'src/core/image/image_editing_request.dart') {
+              continue;
+            }
+            final child = _localExportPath(path, uri);
+            if (child == null ||
+                !await inspect(
+                  child,
+                  guaranteed && directive.configurations.isEmpty,
+                )) {
+              return false;
+            }
+          }
+        }
+        visiting.remove(path);
+        inspected.add((path, guaranteed));
+        return true;
+      }
+
+      if (!await inspect(barrel, true) || !loaded.containsAll(imports)) {
+        return false;
+      }
+      for (final dependency in imports.where((uri) => uri.startsWith('lib/'))) {
+        if ((await read(sha, dependency))?.mode != '100644') return false;
+      }
+    }
+    return true;
+  }
+
+  static String? _localExportPath(String source, String? value) {
+    if (value == null ||
+        value.isEmpty ||
+        value.contains('%') ||
+        value.contains('\\') ||
+        RegExp(r'[\x00-\x20\x7f]').hasMatch(value)) {
+      return null;
+    }
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        uri.hasScheme ||
+        uri.hasAuthority ||
+        uri.hasQuery ||
+        uri.hasFragment ||
+        uri.path.startsWith('/')) {
+      return null;
+    }
+    final resolved = Uri(path: source).resolveUri(uri).path;
+    return resolved.startsWith('lib/') && resolved.endsWith('.dart')
+        ? resolved
+        : null;
+  }
+
+  static bool _hasImageExportName(CompilationUnit unit) {
+    const names = {'ImageEditingPixels', 'ImageEditingRequest'};
+    for (final declaration in unit.declarations) {
+      if (declaration is TopLevelVariableDeclaration) {
+        if (declaration.variables.variables.any(
+          (variable) => names.contains(variable.name.lexeme),
+        )) {
+          return true;
+        }
+        continue;
+      }
+      if (declaration is! ClassDeclaration &&
+          declaration is! EnumDeclaration &&
+          declaration is! ExtensionDeclaration &&
+          declaration is! ExtensionTypeDeclaration &&
+          declaration is! FunctionDeclaration &&
+          declaration is! FunctionTypeAlias &&
+          declaration is! GenericTypeAlias &&
+          declaration is! MixinDeclaration) {
+        return true;
+      }
+      // Declaration names precede the body. This intentionally also rejects
+      // matching type references in headers rather than resolving ambiguity.
+      for (
+        var token = declaration.firstTokenAfterCommentAndMetadata;
+        ;
+        token = token.next!
+      ) {
+        if (names.contains(token.lexeme)) return true;
+        if (token.lexeme == '{' || token == declaration.endToken) break;
+      }
+    }
+    return false;
   }
 
   Future<(ReadinessFailureClassification, String)?> _validateEvidencePath(

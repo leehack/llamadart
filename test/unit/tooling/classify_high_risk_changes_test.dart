@@ -53,6 +53,25 @@ void main() {
     );
   });
 
+  test('paths alone never establish an empty export contribution', () {
+    expect(
+      structuredProductionImpactHints('lib/llamadart.dart'),
+      StructuredImpact.values.toSet(),
+    );
+    expect(
+      structuredProductionImpactHints('lib/src/core/image/new_image.dart'),
+      isNull,
+    );
+    expect(
+      structuredImpactHints(['lib/src/core/image/new_image.dart']),
+      StructuredImpact.values.toSet(),
+    );
+    expect(
+      structuredImpactHints(['test/unit/core/template/new_test.dart']),
+      StructuredImpact.values.toSet(),
+    );
+  });
+
   group('assessHighRiskFiles', () {
     test(
       'independent Genkit runtime, schema, archive and policy paths retain gates',
