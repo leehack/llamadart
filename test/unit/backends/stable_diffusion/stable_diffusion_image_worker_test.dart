@@ -206,6 +206,45 @@ void main() {
       skip: !(Platform.isMacOS || Platform.isIOS),
     );
 
+    test(
+      'a runtime that loads FP8 as F16 on Metal skips the preflight',
+      () async {
+        runtime.loadsFp8AsF16OnMetal = true;
+        final directory = Directory.systemTemp.createTempSync('image-fp8-');
+        addTearDown(() => directory.deleteSync(recursive: true));
+        final file = File('${directory.path}/private-weights.bin')
+          ..writeAsBytesSync(
+            safetensorsHeader(
+              [
+                ('model.diffusion_model.weight', [1]),
+              ],
+              dtype: 'F8_E4M3',
+              dataBytes: 1,
+            ),
+          );
+        for (final model in [file.path, directory.path]) {
+          for (final backend in [null, 'gpu', 'MTL0']) {
+            final worker = await start(
+              config: ImageGenerationSessionConfig(
+                files: {'model': model},
+                backend: backend,
+                threads: 1,
+              ),
+            );
+            await runtime.flush();
+            expect(
+              runtime.calls('worker'),
+              contains('sd_dart_new_sd_ctx'),
+              reason: '$model $backend',
+            );
+            await worker.dispose();
+            runtime.clearCalls();
+          }
+        }
+      },
+      skip: !(Platform.isMacOS || Platform.isIOS),
+    );
+
     /// A started worker, with the calls of its load forgotten.
     test('concurrent disposal waits for the same worker cleanup', () async {
       runtime.freeDelay = const Duration(milliseconds: 300);

@@ -76,13 +76,16 @@ and Diffusers component layouts are unsupported. See [Image weight formats and l
 Container support does not extend the model/device qualification above.
 
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
-GGUF) are refused with `LlamaUnsupportedException` on Metal, including
-`ComputeDevice.auto` when it selects Metal, before native context creation.
-Use `ComputeDevice.cpu` or compatible non-FP8 weights. Uninspectable
-GGUF/Safetensors headers and ordinary JSON shard indexes are also refused on
-Metal. This prevents the native abort tracked in
-[#1446](https://github.com/leehack/llamadart/issues/1446); selecting CPU keeps
-native dtype admission and does not qualify arbitrary FP8 models.
+GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
+converts them to F16 there: they need twice their file size in memory, which
+`ImageModelParams.checkMemory` counts. A runtime without that fix, told apart
+by its exports, aborts on them instead
+([#1446](https://github.com/leehack/llamadart/issues/1446)): with it, FP8
+weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
+indexes are refused with `LlamaUnsupportedException` on Metal, including
+`ComputeDevice.auto` when it selects Metal, before native context creation;
+use `ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
+macOS arm64 CPU and Metal; arbitrary FP8 models are not qualified.
 
 Image prompt-conditioning reuse can be disabled or limited by entry count
 with `ImageConditioningCacheParams(capacity: ...)`; ordinary settings preserve
@@ -94,7 +97,7 @@ It adds no Web image runtime or approximate sampling cache. See
 
 Image editing uses `ImageEditingRequest` with copied decoded RGB and optional
 binary masks (255 edits, 0 preserves the latent). It is bounded to a single
-SD 2.x checkpoint with embedded full VAE on macOS CPU and the pinned SD v0.3.0
+SD 2.x checkpoint with embedded full VAE on macOS CPU and the pinned SD v0.3.0-1
 runtime, with flash attention/direct VAE convolution off and no components,
 tilings or circular axes. SD-Turbo is measured; matching other SD 2.x
 checkpoints remain unmeasured. Other recipes report
@@ -105,7 +108,7 @@ See [image editing](../guides/image-generation#image-editing).
 ControlNet uses `ControlNetImageGenerationRequest` with a copied, finished RGB
 control map and a strength from 0 to 2. A ControlNet loads only as an SD 1.x
 checkpoint with embedded full VAE plus an original-layout SD 1.x ControlNet on
-macOS CPU with the pinned SD v0.3.0 runtime, flash attention/direct VAE
+macOS CPU with the pinned SD v0.3.0-1 runtime, flash attention/direct VAE
 convolution off and no other components; other recipes throw at load. Qualified
 on SD 1.5 with `control_v11p_sd15_canny` (fp16 Safetensors), and no other platform, family or ControlNet
 layout is supported. See [ControlNet](../guides/image-generation#controlnet).
@@ -354,7 +357,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.7.0-2` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.18.1-4` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.3.0-1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
@@ -374,7 +377,7 @@ Linux system libraries: [Linux prerequisites](./linux-prerequisites).
 
 
 Local checkpoint sets require per-file expected SHA-256 identities including
-the index, an app-private owned cache, pinned SD v0.3.0, and explicit flash
+the index, an app-private owned cache, pinned SD v0.3.0-1, and explicit flash
 attention/direct VAE convolution off. They report
 `supportsLocalSafetensorsSets` after admission. This text-to-image recipe does
 not enable editing, tiling or seamless combinations. See

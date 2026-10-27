@@ -29,6 +29,9 @@ abstract interface class StableDiffusionNativeApi {
 
   /// Whether the runtime exports every function of [StableDiffusionCalls].
   bool exportsWrapperCalls();
+
+  /// [StableDiffusionCalls.loadsFp8AsF16OnMetal] of the runtime.
+  bool loadsFp8AsF16OnMetal();
 }
 
 /// The host operating system, as `Platform.operatingSystem` reports it.
@@ -163,6 +166,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
       version: version,
       commit: commit,
       devices: devices,
+      loadsFp8AsF16OnMetal: api.loadsFp8AsF16OnMetal(),
     );
   } on ArgumentError catch (error) {
     return StableDiffusionRuntimeStatus.unavailable(
@@ -369,6 +373,10 @@ final class _BundledStableDiffusionApi implements StableDiffusionNativeApi {
 
   @override
   bool exportsWrapperCalls() => StableDiffusionCalls.tryResolve() != null;
+
+  @override
+  bool loadsFp8AsF16OnMetal() =>
+      StableDiffusionCalls.tryResolve()?.loadsFp8AsF16OnMetal ?? false;
 
   static String _string(Pointer<Char> value) =>
       value == nullptr ? '' : value.cast<Utf8>().toDartString();

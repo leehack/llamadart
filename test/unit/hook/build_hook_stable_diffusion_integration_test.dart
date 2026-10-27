@@ -819,48 +819,60 @@ dependencies:
   }
 
   // v0.3.0 grew sd_ctx_params_t: the bindings would overrun the
-  // allocation of a v0.2.0-4 runtime.
-  test('rejects a locked companion pinning the published v0.2.0-4 '
-      'XCFramework', () async {
-    final defines = await _flutterAppleApp(
-      companions: const [_stableDiffusionCompanionName],
-      editManifest: (manifest) => manifest
-          .replaceFirst(
-            'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
-            'let stableDiffusionTag = "v0.2.0-4"',
-          )
-          .replaceFirst(
-            stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
-            '24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b',
-          ),
-    );
-    await expectLater(
-      testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.iOS,
-        targetArchitecture: Architecture.arm64,
-        targetIOSSdk: IOSSdk.iPhoneOS,
-        userDefines: defines,
-        check: (_, _) => fail('Must not emit in-process assets'),
-      ),
-      throwsA(
-        predicate(
-          (error) =>
-              error.toString().contains(
-                'Incompatible Apple stable_diffusion companion',
-              ) &&
-              error.toString().contains(
-                'does not uniquely pin the required native runtime '
-                '$stableDiffusionReleaseTag',
-              ),
+  // allocation of a v0.2.0-4 runtime. The v0.3.0 runtime aborts on FP8
+  // weights on Metal, which the image preflight admits on the pinned runtime.
+  for (final (tag, checksum) in [
+    (
+      'v0.2.0-4',
+      '24b5fe8b0203ab7e35eb3e103fe18305aff82cfe57376a49d128135abe89d00b',
+    ),
+    (
+      'v0.3.0',
+      '3b83a0c21a00f6418890b679ea45b00c20d012da0a57fe989635b793e09f096a',
+    ),
+  ]) {
+    test('rejects a locked companion pinning the published $tag '
+        'XCFramework', () async {
+      final defines = await _flutterAppleApp(
+        companions: const [_stableDiffusionCompanionName],
+        editManifest: (manifest) => manifest
+            .replaceFirst(
+              'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+              'let stableDiffusionTag = "$tag"',
+            )
+            .replaceFirst(
+              stableDiffusionAppleCompanionChecksums[stableDiffusionReleaseTag]!,
+              checksum,
+            ),
+      );
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, _) => fail('Must not emit in-process assets'),
         ),
-      ),
-    );
-  });
+        throwsA(
+          predicate(
+            (error) =>
+                error.toString().contains(
+                  'Incompatible Apple stable_diffusion companion',
+                ) &&
+                error.toString().contains(
+                  'does not uniquely pin the required native runtime '
+                  '$stableDiffusionReleaseTag',
+                ),
+          ),
+        ),
+      );
+    });
+  }
 
   for (final (core, constraint) in [
-    ('0.16.0', '^0.16.0'),
-    ('0.16.1', '^0.16.0'),
+    ('0.16.0', '^$stableDiffusionAppleCompanionVersion'),
+    ('0.16.1', '^$stableDiffusionAppleCompanionVersion'),
   ]) {
     final requirement =
         'Depend on `llamadart_stable_diffusion_flutter: $constraint`';
