@@ -9,10 +9,12 @@ This is a bounded qualification for #1234, not general VAE tiling (#1400).
 
 ## Runtime and model identity
 
-Pinned stable-diffusion-native `v0.3.0`, owner
-`992d3f70`, upstream `0518b34374761cb82aeda5ad3c2f0686fdad2cec`.
+Requalified on stable-diffusion-native `v0.3.0-1` (2026-10-27): every result below is byte-identical to the `v0.3.0` measurement ([#922](https://github.com/leehack/llamadart/issues/922)).
+
+Pinned stable-diffusion-native `v0.3.0-1`, owner
+`54e97df3`, upstream `be486498eadc29dc3cd234d944c2180ed42b1415`.
 The pinned macOS arm64 archive SHA-256 is
-`6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`.
+`79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`.
 The hook validates that archive; its installed dylib may be rewritten and
 ad-hoc signed for the consumer path, so its hash need not equal the extracted
 archive library. No native source, binding or pin changes are required.

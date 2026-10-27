@@ -157,4 +157,36 @@ void main() {
       ),
     );
   });
+  group('imageModelFp8AsF16ExtraBytes', () {
+    Future<int> extra(Uint8List bytes) => imageModelFp8AsF16ExtraBytes(
+      (offset, length) async => Uint8List.sublistView(
+        bytes,
+        offset.clamp(0, bytes.length),
+        (offset + length).clamp(0, bytes.length),
+      ),
+    );
+    const tensors = [
+      ('model.diffusion_model.a.weight', <int>[2, 3]),
+      ('model.diffusion_model.b.weight', <int>[4]),
+    ];
+
+    test('is one byte per FP8 element', () async {
+      for (final dtype in ['F8_E4M3', 'F8_E5M2']) {
+        expect(await extra(safetensorsHeader(tensors, dtype: dtype)), 10);
+      }
+      for (final type in [43, 44]) {
+        expect(await extra(ggufHeader(tensors: tensors, tensorType: type)), 10);
+      }
+    });
+
+    test('is 0 for other dtypes and unreadable headers', () async {
+      expect(await extra(safetensorsHeader(tensors)), 0);
+      expect(await extra(ggufHeader(tensors: tensors, tensorType: 1)), 0);
+      expect(await extra(Uint8List.fromList([123, 125])), 0);
+      expect(
+        await imageModelFp8AsF16ExtraBytes((_, _) async => throw Exception()),
+        0,
+      );
+    });
+  });
 }

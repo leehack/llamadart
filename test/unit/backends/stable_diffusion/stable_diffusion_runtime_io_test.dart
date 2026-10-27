@@ -26,6 +26,18 @@ void main() {
       expect(status.version, 'v-test');
       expect(status.commit, 'c0ffee');
       expect(status.devices.map((device) => device.name), ['CPU', 'MTL0']);
+      expect(status.loadsFp8AsF16OnMetal, isFalse);
+    });
+
+    test('reports whether the runtime loads FP8 weights as F16 on Metal', () {
+      for (final fp8Metal in [true, false]) {
+        final status = probeStableDiffusionRuntime(
+          abi: Abi.macosArm64,
+          api: _FakeApi(fp8Metal: fp8Metal),
+        );
+
+        expect(status.loadsFp8AsF16OnMetal, fp8Metal);
+      }
     });
 
     test('records the log at the given level before the device list, which '
@@ -540,11 +552,13 @@ final class _FakeApi implements StableDiffusionNativeApi {
     this.devices = 'CPU\tHost CPU\n',
     this.error,
     this.wrapperCalls = true,
+    this.fp8Metal = false,
   });
 
   final String devices;
   final ArgumentError? error;
   final bool wrapperCalls;
+  final bool fp8Metal;
   int calls = 0;
   final List<String> order = [];
 
@@ -577,4 +591,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
 
   @override
   bool exportsWrapperCalls() => _call(wrapperCalls);
+
+  @override
+  bool loadsFp8AsF16OnMetal() => _call(fp8Metal);
 }

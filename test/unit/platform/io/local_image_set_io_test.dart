@@ -667,7 +667,7 @@ class _RecordingSetDriver implements ImageGenerationDriver {
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
         version: 'unknown',
-        commit: '0518b34',
+        commit: 'be48649',
         devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
       );
   @override

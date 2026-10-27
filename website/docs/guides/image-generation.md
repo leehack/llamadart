@@ -161,13 +161,16 @@ The public model roles do not include LoRA, upscaler or external tokenizer
 inputs; `controlNet` loads only in the [ControlNet recipe](#controlnet).
 
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
-GGUF) are refused with `LlamaUnsupportedException` on Metal, including
-`ComputeDevice.auto` when it selects Metal, before native context creation.
-Use `ComputeDevice.cpu` or compatible non-FP8 weights. Uninspectable
-GGUF/Safetensors headers and ordinary JSON shard indexes are also refused on
-Metal. This prevents the native abort tracked in
-[#1446](https://github.com/leehack/llamadart/issues/1446); selecting CPU keeps
-native dtype admission and does not qualify arbitrary FP8 models.
+GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
+converts them to F16 there: they need twice their file size in memory, which
+`ImageModelParams.checkMemory` counts. A runtime without that fix, told apart
+by its exports, aborts on them instead
+([#1446](https://github.com/leehack/llamadart/issues/1446)): with it, FP8
+weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
+indexes are refused with `LlamaUnsupportedException` on Metal, including
+`ComputeDevice.auto` when it selects Metal, before native context creation;
+use `ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
+macOS arm64 CPU and Metal; arbitrary FP8 models are not qualified.
 
 For a trusted PyTorch checkpoint whose native layout is compatible:
 
@@ -190,7 +193,7 @@ quantization/mmap option. Weights load eagerly; see the
 
 #### Pinned-runtime format checks
 
-With the pinned `stable-diffusion-native v0.3.0` (`0518b34` plus the owner
+With the pinned `stable-diffusion-native v0.3.0-1` (`be48649` plus the owner
 pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
 through `ImageGenerationEngine` on macOS arm64 CPU:
 
@@ -669,7 +672,7 @@ attention where a device has no kernel for it.
 instead of all at once. The decoder's compute buffer then scales with the
 tile instead of the image, so peak memory drops most for large images and
 full VAEs; decoding takes longer, and pixels change slightly where tiles
-blend. It requires the pinned `stable_diffusion` v0.3.0 runtime (upstream `0518b34`)
+blend. It requires the pinned `stable_diffusion` v0.3.0-1 runtime (upstream `be48649`)
 and accepts header-verified SD 2.x checkpoints with their embedded full VAE
 or a valid TAESD override on CPU or Metal. SD-Turbo is the measured artifact;
 other accepted SD 2.x checkpoints and phones remain unmeasured. Unknown
@@ -1097,7 +1100,8 @@ final engine = await ImageGenerationEngine.load(model);
   `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
 The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0`): earlier runtimes have a smaller `sd_ctx_params_t`. Upgrade the
+(`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
+`v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
 ## Errors
@@ -1161,7 +1165,7 @@ identified by all 1,323 tensor names, dtypes and shapes. The fingerprint is a
 versioned recipe boundary, not a generic architecture-completeness detector or
 weight authenticity check. Its measured source is the complete local checkpoint
 derived for the format qualification; other matching weights are unmeasured.
-Only macOS CPU with pinned SD v0.3.0/upstream `0518b34`, explicit
+Only macOS CPU with pinned SD v0.3.0-1/upstream `be48649`, explicit
 `flashAttention: false` and `vaeDirectConvolution: false` is admitted. A loaded
 engine reports `supportsLocalSafetensorsSets`; it is false before load/after
 disposal. Editing, VAE tiling and seamless opt-ins remain refused for this path.
@@ -1252,7 +1256,7 @@ PNG/JPEG, applies orientation, resizes and composites alpha before submission.
 No such transformations happen implicitly.
 
 Check `(await engine.capabilities).supportsImageEditing` after loading. The
-bounded recipe requires stable-diffusion-native `v0.3.0` (upstream `0518b34`),
+bounded recipe requires stable-diffusion-native `v0.3.0-1` (upstream `be48649`),
 a native-detected SD 2.x single checkpoint with a header-detected embedded full
 VAE on macOS CPU, `flashAttention: false` and `vaeDirectConvolution: false`.
 Component overrides, tiny decoders, other families, platforms/devices, VAE
@@ -1332,8 +1336,8 @@ if ((await engine.capabilities).supportsControlNet) {
 }
 ```
 
-The bounded recipe requires stable-diffusion-native `v0.3.0` (upstream
-`0518b34`) on macOS with `ComputeDevice.cpu`, `flashAttention: false` and
+The bounded recipe requires stable-diffusion-native `v0.3.0-1` (upstream
+`be48649`) on macOS with `ComputeDevice.cpu`, `flashAttention: false` and
 `vaeDirectConvolution: false`, and exactly an SD 1.x checkpoint with its
 embedded full VAE plus an SD 1.x ControlNet in the original (lllyasviel)
 layout, as Safetensors or GGUF. The headers must show a 768-wide text context
