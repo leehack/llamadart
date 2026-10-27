@@ -67,8 +67,8 @@ GPU backends unqualified); without a projector it reports text only. Web llama.c
 embeddings with bridge assets v0.1.64+
 and a compatible model/projector. The default pinned assets include the media API.
 EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
-native CPU/Metal. Repeated media batches require memory64; hardware WebGPU is
-unqualified. Image bytes are encoded data; embedding calls ignore width/height.
+native CPU/Metal. Repeated media batches are qualified only on memory64 (assets
+`v0.1.76+` stop the wasm32 abort, unqualified); hardware WebGPU is unqualified. Image bytes are encoded data; embedding calls ignore width/height.
 LiteRT-LM embedding engines probe text/image/audio processors on native CPU.
 Native and Web text-only content follows `embed`, including causal unpooled models;
 media gates do not restrict text. `mediaUnsupportedReason` on the capability

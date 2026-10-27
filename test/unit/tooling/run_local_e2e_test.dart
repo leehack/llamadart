@@ -2023,6 +2023,36 @@ dev_dependencies:
       },
     );
 
+    test('the tool-result image smoke passes the chat template override '
+        'through only when it is set', () async {
+      const variable = 'LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE';
+      const template = 'test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja';
+      Future<String> dryRun(Map<String, String> environment) async {
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'tool-result-image-smoke',
+            '--model-path',
+            'models/qwen3-vl.gguf',
+            '--mmproj-path',
+            'models/mmproj.gguf',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          environment: environment,
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(result.exitCode, 0, reason: result.stderr);
+        return result.stdout;
+      }
+
+      expect(
+        await dryRun({variable: template}),
+        contains('$variable=$template'),
+      );
+      expect(await dryRun(const {}), isNot(contains(variable)));
+    });
+
     test('dry-runs the decision model smoke with model and head', () async {
       final result = await runLocalE2e(
         const [

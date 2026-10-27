@@ -90,7 +90,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   bool Function() windowsHasAvx2 = _windowsHasAvx2,
   List<String> Function(List<String> names) missingWindowsLibraries =
       findMissingWindowsLibraries,
-  StableDiffusionNativeApi api = const _BundledStableDiffusionApi(),
+  StableDiffusionNativeApi api = const BundledStableDiffusionApi(),
   LlamaLogLevel logLevel = LlamaLogLevel.none,
 }) {
   final targetAbi = abi ?? Abi.current();
@@ -339,8 +339,19 @@ bool _windowsHasAvx2() {
   return isProcessorFeaturePresent(_pfAvx2InstructionsAvailable) != 0;
 }
 
-final class _BundledStableDiffusionApi implements StableDiffusionNativeApi {
-  const _BundledStableDiffusionApi();
+/// The runtime the build hook bundled.
+///
+/// [resolveCalls] replaces how the `sd_dart_` calls are resolved; tests use it
+/// to stand in for an older or incomplete runtime.
+final class BundledStableDiffusionApi implements StableDiffusionNativeApi {
+  /// Creates the API of the bundled runtime.
+  const BundledStableDiffusionApi({
+    this.resolveCalls = StableDiffusionCalls.tryResolve,
+  });
+
+  /// Resolves the `sd_dart_` calls, or returns `null` when the runtime lacks
+  /// them.
+  final StableDiffusionCalls? Function() resolveCalls;
 
   @override
   String version() => _string(sd.sd_version());
@@ -372,11 +383,10 @@ final class _BundledStableDiffusionApi implements StableDiffusionNativeApi {
   }
 
   @override
-  bool exportsWrapperCalls() => StableDiffusionCalls.tryResolve() != null;
+  bool exportsWrapperCalls() => resolveCalls() != null;
 
   @override
-  bool loadsFp8AsF16OnMetal() =>
-      StableDiffusionCalls.tryResolve()?.loadsFp8AsF16OnMetal ?? false;
+  bool loadsFp8AsF16OnMetal() => resolveCalls()?.loadsFp8AsF16OnMetal ?? false;
 
   static String _string(Pointer<Char> value) =>
       value == nullptr ? '' : value.cast<Utf8>().toDartString();

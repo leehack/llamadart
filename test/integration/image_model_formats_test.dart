@@ -213,6 +213,42 @@ void main() {
     });
   }
 
+  test('a ControlNet loaded through the real worker reports engine '
+      'ControlNet support only when the runtime proves it', () async {
+    driver
+      ..operatingSystemOverride = 'macos'
+      ..runtimeCommit = 'be48649';
+    runtime.modelVersion = 'SD 1.x';
+    final checkpoint = await file(
+      'sd15.safetensors',
+      ImageModelHeaders.sd15Checkpoint(),
+    );
+    final controlNet = await file(
+      'canny.safetensors',
+      ImageModelHeaders.sd15ControlNet(),
+    );
+    final model = ImageGenerationModel(
+      checkpoint,
+      components: [ImageModelComponent.auto(controlNet)],
+    );
+    const params = ImageModelParams(
+      device: ComputeDevice.cpu,
+      flashAttention: false,
+      vaeDirectConvolution: false,
+    );
+
+    final engine = await ImageGenerationEngine.load(model, params: params);
+    engines.add(engine);
+    expect((await engine.capabilities).supportsControlNet, isTrue);
+    expect(runtime.loadedFiles['controlNet'], controlNet.path);
+
+    runtime.hideControlNet = true;
+    await expectLater(
+      ImageGenerationEngine.load(model, params: params),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+  });
+
   test('a directory cannot bypass the individual-file contract', () async {
     await expectLater(
       load(ImageGenerationModel(ModelSource.path(directory.path))),
@@ -227,15 +263,18 @@ final class _RecordingDriver implements ImageGenerationDriver {
 
   final FakeStableDiffusionRuntime runtime;
   int starts = 0;
+  String? operatingSystemOverride;
+  String runtimeCommit = 'fixture';
 
   @override
-  String get operatingSystem => Platform.operatingSystem;
+  String get operatingSystem =>
+      operatingSystemOverride ?? Platform.operatingSystem;
 
   @override
   Future<StableDiffusionRuntimeStatus> probeInBackground() async =>
       StableDiffusionRuntimeStatus.available(
         version: 'recording-runtime',
-        commit: 'fixture',
+        commit: runtimeCommit,
         devices: parseStableDiffusionDeviceList('CPU\tRecording runtime\n'),
       );
 
