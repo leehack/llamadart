@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 import '../../../tool/testing/classify_high_risk_changes.dart';
 import '../../../tool/testing/high_risk_readiness.dart';
 import '../../../tool/testing/release_metadata_readiness.dart';
+import 'support/bounded_process.dart';
 
 const baseSha = '1111111111111111111111111111111111111111';
 const headSha = '2222222222222222222222222222222222222222';
@@ -766,6 +767,816 @@ void main() {
       }
     });
   });
+
+  group('Git-bound additive image export impacts', () {
+    const barrel = 'lib/llamadart.dart';
+    const target = 'lib/src/core/image/image_editing_request.dart';
+    const imageTest = 'test/unit/core/image/image_editing_request_test.dart';
+    const addition =
+        "export 'src/core/image/image_editing_request.dart'\n"
+        '    show ImageEditingPixels, ImageEditingRequest;\n';
+    const oldBarrel =
+        'library;\n'
+        "export 'src/core/exceptions.dart';\n"
+        "export 'src/core/image/image_generation_request.dart';\n"
+        "export 'src/core/image/generated_image.dart';\n";
+    const imageSource =
+        "import 'dart:typed_data';\n"
+        "import '../exceptions.dart';\n"
+        "import 'image_generation_driver.dart';\n"
+        "import 'image_generation_request.dart';\n"
+        'final class ImageEditingPixels {}\n'
+        'final class ImageEditingRequest extends ImageGenerationRequest {}\n'
+        'void validateImageEditingRecipe() {}\n';
+    Map<String, Map<String, ReadinessFile>> imageFiles() {
+      final old = <String, ReadinessFile>{
+        barrel: (mode: '100644', contents: oldBarrel),
+        'lib/src/core/exceptions.dart': (
+          mode: '100644',
+          contents: 'class LlamaException {}',
+        ),
+        'lib/src/core/image/image_generation_request.dart': (
+          mode: '100644',
+          contents: 'class ImageGenerationRequest {}',
+        ),
+        'lib/src/core/image/generated_image.dart': (
+          mode: '100644',
+          contents:
+              "import 'dart:typed_data';\n"
+              "import 'image_generation_driver.dart';\n"
+              'class GeneratedImage {}',
+        ),
+        'lib/src/core/image/image_generation_driver.dart': (
+          mode: '100644',
+          contents: 'class ImageGenerationSessionRequest {}',
+        ),
+        imageTest: (
+          mode: '100644',
+          contents:
+              "void main() { test('regression case', () { productionCall(); }); }",
+        ),
+      };
+      return {
+        baseSha: old,
+        headSha: {
+          ...old,
+          barrel: (mode: '100644', contents: oldBarrel + addition),
+          target: (mode: '100644', contents: imageSource),
+        },
+      };
+    }
+
+    const imageChanges = [
+      RepositoryChange(path: barrel, kind: RepositoryChangeKind.modified),
+      RepositoryChange(path: target, kind: RepositoryChangeKind.added),
+    ];
+    Map<String, dynamic> imageEvidence() {
+      final evidence = structuredEvidence();
+      evidence['surfaces'] = ['structuredOutput', 'backendRuntime'];
+      evidence['affected_test_paths'] = [imageTest];
+      final refs = <Map<String, dynamic>>[
+        {'path': barrel, 'snippet': addition.trim()},
+        {'path': target, 'snippet': 'final class ImageEditingPixels {}'},
+      ];
+      evidence['test_evidence'] = {
+        imageTest: testProof(barrel)
+          ..['production_refs'] = <Map<String, dynamic>>[
+            for (final ref in refs) {...ref},
+          ],
+      };
+      final structured = evidence['structured_output_evidence'] as Map;
+      for (final axis in (structured['coverage'] as Map).keys) {
+        structured['coverage'][axis] = <String>[];
+      }
+      for (final impact in StructuredImpact.values) {
+        structured['impacts'][impact.name] = {
+          'applicable': false,
+          'rationale':
+              'Independent review excludes this chat effect for the image classes.',
+          'production_refs': <Map<String, dynamic>>[
+            for (final ref in refs) {...ref},
+          ],
+        };
+      }
+      structured['families'] = [
+        {
+          'family': 'sd2',
+          'status': 'tested',
+          'evidence_test_paths': [imageTest],
+          'rationale': 'Image family fixture with public exports was reviewed.',
+        },
+      ];
+      return evidence;
+    }
+
+    Future<HighRiskReadinessResult> evaluateImage({
+      Map<String, dynamic>? evidence,
+      Map<String, Map<String, ReadinessFile>>? files,
+      List<RepositoryChange> changes = imageChanges,
+    }) {
+      final state = files ?? imageFiles();
+      return HighRiskReadinessEvaluator(
+        repositoryState: FakeRepositoryState(
+          changes: changes,
+          existingPaths: state[headSha]!.keys.toSet(),
+          files: state,
+        ),
+      ).evaluate(evidence: evidence ?? imageEvidence(), context: context);
+    }
+
+    test(
+      'proven empty contribution keeps high-risk and external prerequisites',
+      () async {
+        final result = await evaluateImage();
+        expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+        expect(
+          result.failureClassification,
+          ReadinessFailureClassification.externalPrerequisitesUnavailable,
+        );
+        expect(result.changedFiles.map((change) => change.path), [
+          barrel,
+          target,
+        ]);
+      },
+    );
+
+    test('reads only Git blobs despite forged working tree source', () async {
+      final repo = Directory.systemTemp.createTempSync('image-export-git-');
+      addTearDown(() => repo.deleteSync(recursive: true));
+      String git(List<String> args) {
+        final result = Process.runSync(
+          'git',
+          args,
+          workingDirectory: repo.path,
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return (result.stdout as String).trim();
+      }
+
+      void write(Map<String, ReadinessFile> files) {
+        for (final entry in files.entries) {
+          final file = File('${repo.path}/${entry.key}');
+          file.parent.createSync(recursive: true);
+          file.writeAsStringSync(entry.value.contents);
+        }
+      }
+
+      git(['init', '--quiet']);
+      git(['config', 'user.name', 'Image export policy test']);
+      git(['config', 'user.email', 'image-policy@example.invalid']);
+      final files = imageFiles();
+      write(files[baseSha]!);
+      git(['add', '.']);
+      git(['commit', '--quiet', '-m', 'base']);
+      final base = git(['rev-parse', 'HEAD']);
+      write(files[headSha]!);
+      git(['add', '.']);
+      git(['commit', '--quiet', '-m', 'head']);
+      final head = git(['rev-parse', 'HEAD']);
+      final evidence = imageEvidence()
+        ..['expected_pr_head_sha'] = head
+        ..['current_base_sha'] = base;
+      evidence['independent_audit']['audit_head_sha'] = head;
+      evidence['independent_audit']['audit_base_sha'] = base;
+      Future<HighRiskReadinessResult> evaluate() =>
+          const HighRiskReadinessEvaluator().evaluate(
+            evidence: evidence,
+            context: PullRequestContext(
+              repository: context.repository,
+              prNumber: context.prNumber,
+              headSha: head,
+              baseSha: base,
+              author: context.author,
+            ),
+            workingDirectory: repo.path,
+          );
+      File('${repo.path}/$barrel').writeAsStringSync('forged local barrel');
+      expect(
+        (await evaluate()).decision,
+        ReadinessDecision.unverifiedPrerequisites,
+      );
+      evidence['test_evidence'][imageTest]['production_refs'][0]['snippet'] =
+          'forged local barrel';
+      expectFailure(
+        await evaluate(),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+
+    final barrelMutations = <String, String Function(String)>{
+      'removed existing export': (s) =>
+          s.replaceFirst("export 'src/core/exceptions.dart';\n", ''),
+      'replaced existing export': (s) =>
+          s.replaceFirst('exceptions.dart', 'other.dart'),
+      'another shown name': (s) => s.replaceFirst(
+        'ImageEditingRequest;',
+        'ImageEditingRequest, validateImageEditingRecipe;',
+      ),
+      'changed show': (s) => s.replaceFirst(
+        'show ImageEditingPixels, ImageEditingRequest',
+        'hide validateImageEditingRecipe',
+      ),
+      'wildcard export': (s) => s.replaceFirst(
+        '\n    show ImageEditingPixels, ImageEditingRequest',
+        '',
+      ),
+      'changed URI': (s) => s.replaceFirst(
+        'image_editing_request.dart',
+        'another_image_request.dart',
+      ),
+      'conditional addition': (s) => s.replaceFirst(
+        "'src/core/image/image_editing_request.dart'\n",
+        "'src/core/image/image_editing_request.dart' if (dart.library.io) 'other.dart'\n",
+      ),
+      'commented forged addition': (s) =>
+          s.replaceFirst(addition, '/*\n$addition*/\n'),
+    };
+    for (final mutation in barrelMutations.entries) {
+      test(
+        '${mutation.key} retains ordinary conservative requirements',
+        () async {
+          final files = imageFiles();
+          files[headSha]![barrel] = (
+            mode: '100644',
+            contents: mutation.value(oldBarrel + addition),
+          );
+          final evidence = imageEvidence();
+          for (final proof in [
+            evidence['test_evidence'][imageTest],
+            ...(evidence['structured_output_evidence']['impacts'] as Map)
+                .values,
+          ]) {
+            proof['production_refs'][0]['snippet'] = 'library;';
+          }
+          final result = await evaluateImage(files: files, evidence: evidence);
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('cannot be excluded'));
+        },
+      );
+    }
+
+    for (final path in [barrel, target]) {
+      for (final mode in ['100755', '120000']) {
+        test('$path mode $mode cannot narrow impacts', () async {
+          final files = imageFiles();
+          final old = files[headSha]![path]!;
+          files[headSha]![path] = (mode: mode, contents: old.contents);
+          expectFailure(
+            await evaluateImage(files: files),
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+        });
+      }
+    }
+    for (final mutation in <String, String Function(String)>{
+      'extra local import': (s) => "import 'new_dependency.dart';\n$s",
+      'nonlocal import': (s) =>
+          s.replaceFirst("'dart:typed_data'", "'package:other/types.dart'"),
+      'conditional import': (s) => s.replaceFirst(
+        "'dart:typed_data'",
+        "'dart:typed_data' if (dart.library.io) 'other.dart'",
+      ),
+      'new public declaration': (s) => '$s\nclass AnotherClass {}',
+      'missing reviewed declaration': (s) =>
+          s.replaceFirst('ImageEditingRequest extends', 'OtherRequest extends'),
+      'exporting helper library': (s) => "export 'new_dependency.dart';\n$s",
+      'extension with implicit effects': (s) =>
+          '$s\nextension NewExtension on Object {}',
+      'invalid syntax': (s) => '$s\nclass',
+    }.entries) {
+      test('target ${mutation.key} fails closed', () async {
+        final files = imageFiles();
+        files[headSha]![target] = (
+          mode: '100644',
+          contents: mutation.value(imageSource),
+        );
+        final result = await evaluateImage(files: files);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      });
+    }
+
+    test('a deferred old import does not prove existing loading', () async {
+      final files = imageFiles();
+      final path = 'lib/src/core/image/generated_image.dart';
+      files[baseSha]![path] = (
+        mode: '100644',
+        contents: files[baseSha]![path]!.contents.replaceFirst(
+          "import 'image_generation_driver.dart';",
+          "import 'image_generation_driver.dart' deferred as driver;",
+        ),
+      );
+      final result = await evaluateImage(files: files);
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('cannot be excluded'));
+    });
+    test(
+      'an existing or renamed target never uses the additive route',
+      () async {
+        for (final kind in [
+          RepositoryChangeKind.modified,
+          RepositoryChangeKind.renamed,
+        ]) {
+          final files = imageFiles();
+          final evidence = imageEvidence();
+          const oldPath = 'lib/src/core/image/old.dart';
+          if (kind == RepositoryChangeKind.renamed) {
+            files[baseSha]![oldPath] = (
+              mode: '100644',
+              contents: 'productionCall();',
+            );
+            for (final proof in [
+              evidence['test_evidence'][imageTest],
+              ...(evidence['structured_output_evidence']['impacts'] as Map)
+                  .values,
+            ]) {
+              (proof['production_refs'] as List).addAll(
+                productionRefs(oldPath),
+              );
+            }
+          }
+          final result = await evaluateImage(
+            files: files,
+            evidence: evidence,
+            changes: [
+              imageChanges.first,
+              RepositoryChange(
+                path: target,
+                kind: kind,
+                previousPath: kind == RepositoryChangeKind.renamed
+                    ? oldPath
+                    : null,
+              ),
+            ],
+          );
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('cannot be excluded'));
+        }
+      },
+    );
+    for (final conditional in [
+      (
+        'import',
+        "import 'image_generation_driver.dart' if (dart.library.io) 'other_driver.dart';",
+      ),
+      (
+        'import',
+        "import 'other_driver.dart' if (dart.library.io) 'image_generation_driver.dart';",
+      ),
+      (
+        'export',
+        "export 'src/core/image/image_generation_driver.dart' if (dart.library.io) 'src/core/image/other_driver.dart';",
+      ),
+      (
+        'export',
+        "export 'src/core/image/other_driver.dart' if (dart.library.io) 'src/core/image/image_generation_driver.dart';",
+      ),
+    ]) {
+      test(
+        'conditional-only old dependency does not prove loading: ${conditional.$2}',
+        () async {
+          final files = imageFiles();
+          for (final revision in [baseSha, headSha]) {
+            files[revision]!['lib/src/core/image/generated_image.dart'] = (
+              mode: '100644',
+              contents:
+                  "import 'dart:typed_data';\n"
+                  '${conditional.$1 == 'import' ? conditional.$2 : ''}\n'
+                  'class GeneratedImage {}',
+            );
+            files[revision]!['lib/src/core/image/other_driver.dart'] = (
+              mode: '100644',
+              contents: 'class OtherDriver {}',
+            );
+            if (conditional.$1 == 'export') {
+              final original = files[revision]![barrel]!;
+              files[revision]![barrel] = (
+                mode: original.mode,
+                contents: '${original.contents}${conditional.$2}\n',
+              );
+            }
+          }
+          final result = await evaluateImage(files: files);
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('cannot be excluded'));
+        },
+      );
+    }
+    test('target dependencies must already load at base', () async {
+      final files = imageFiles();
+      files[baseSha]!['lib/src/core/image/generated_image.dart'] = (
+        mode: '100644',
+        contents: 'class GeneratedImage {}',
+      );
+      final result = await evaluateImage(files: files);
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('cannot be excluded'));
+    });
+    for (final revision in [baseSha, headSha]) {
+      for (final declaration in [
+        'class ImageEditingRequest {}',
+        'typedef ImageEditingPixels = Object;',
+        'final ImageEditingRequest = 0;',
+        'void ImageEditingPixels() {}',
+        'enum ImageEditingRequest { value }',
+        'mixin ImageEditingPixels {}',
+        'extension type ImageEditingRequest(int value) {}',
+        'extension type const ImageEditingRequest(int value) {}',
+        'typedef void ImageEditingPixels();',
+        'class ImageEditingRequest = Object with ExistingMixin;',
+        'int get ImageEditingRequest => 0;',
+        'set ImageEditingPixels(int value) {}',
+
+        '({int value}) ImageEditingRequest() => (value: 1);',
+        'void Function({int value}) ImageEditingRequest() => ({int value = 0}) {};',
+        'extension ImageEditingRequest on Object {}',
+        "@Annotation({'key': 1}) class ImageEditingRequest {}",
+        r"final text = '${Object()}', ImageEditingRequest = 0;",
+      ]) {
+        test(
+          'existing namespace collision at $revision: $declaration',
+          () async {
+            final files = imageFiles();
+            files[revision]!['lib/src/core/exceptions.dart'] = (
+              mode: '100644',
+              contents: declaration,
+            );
+            final result = await evaluateImage(files: files);
+            expectFailure(
+              result,
+              ReadinessFailureClassification.missingStructuredOutputEvidence,
+            );
+            expect(result.message, contains('cannot be excluded'));
+          },
+        );
+      }
+    }
+    for (final export in [
+      "export 'missing.dart';",
+      "export 'package:external/types.dart';",
+      "part 'other.dart';",
+      "export 'exceptions.dart';",
+      'class',
+    ]) {
+      test('uncertain old namespace $export retains minima', () async {
+        final files = imageFiles();
+        files[headSha]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents: 'class LlamaException {}\n$export',
+        );
+        final result = await evaluateImage(files: files);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      });
+    }
+    test(
+      'base comments and string segments are not identifier tokens',
+      () async {
+        final files = imageFiles();
+        const source = r'''// ImageEditingRequest ImageEditingPixels
+class LlamaException {}
+const text = 'ImageEditingPixels';
+final segment = '${Object()}ImageEditingRequest${Object()}';
+''';
+        for (final revision in [baseSha, headSha]) {
+          files[revision]!['lib/src/core/exceptions.dart'] = (
+            mode: '100644',
+            contents: source,
+          );
+        }
+        expect(
+          (await evaluateImage(files: files)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+    test(
+      'base identifiers in nested scopes retain conservative minima',
+      () async {
+        final files = imageFiles();
+        files[baseSha]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents:
+              'class LlamaException {} void example() { final ImageEditingRequest = 0; }',
+        );
+        final result = await evaluateImage(files: files);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      },
+    );
+    test(
+      'head type references do not introduce namespace declarations',
+      () async {
+        final files = imageFiles();
+        files[headSha]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents:
+              "import 'image/image_editing_request.dart';\n"
+              'ImageEditingRequest? unused;\n'
+              'class LlamaException { Object use(ImageEditingRequest request) => request; }',
+        );
+        expect(
+          (await evaluateImage(files: files)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+    for (final edge in [
+      "export 'src/core/image/image_editing_request.dart' show ImageEditingPixels;\n",
+      "export 'src/core/exceptions.dart' if (dart.library.io) 'src/core/image/image_editing_request.dart';\n",
+    ]) {
+      test(
+        'pre-existing missing target edge cannot be skipped: $edge',
+        () async {
+          final files = imageFiles();
+          files[baseSha]![barrel] = (
+            mode: '100644',
+            contents: oldBarrel + edge,
+          );
+          files[headSha]![barrel] = (
+            mode: '100644',
+            contents: oldBarrel + edge + addition,
+          );
+          final result = await evaluateImage(files: files);
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('cannot be excluded'));
+        },
+      );
+    }
+    for (final revision in [baseSha, headSha]) {
+      test('indirect target edge at $revision cannot be skipped', () async {
+        final files = imageFiles();
+        files[revision]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents:
+              "export 'image/image_editing_request.dart';\nclass LlamaException {}",
+        );
+        final result = await evaluateImage(files: files);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      });
+    }
+    test('conditional export collision in any branch fails closed', () async {
+      final files = imageFiles();
+      files[headSha]!['lib/src/core/exceptions.dart'] = (
+        mode: '100644',
+        contents:
+            "export 'safe.dart' if (dart.library.io) 'collision.dart';\nclass LlamaException {}",
+      );
+      files[headSha]!['lib/src/core/safe.dart'] = (
+        mode: '100644',
+        contents: 'class Safe {}',
+      );
+      files[headSha]!['lib/src/core/collision.dart'] = (
+        mode: '100644',
+        contents: 'class ImageEditingRequest {}',
+      );
+      final result = await evaluateImage(files: files);
+      expectFailure(
+        result,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+      expect(result.message, contains('cannot be excluded'));
+    });
+    for (final source in [
+      'lib/src/core/template/template_render_context.dart',
+      'lib/src/core/template/peg_chat_parser.dart',
+      'lib/src/core/grammar/gbnf_grammar_generator.dart',
+      structuredSource,
+      'lib/src/core/template/new_helper.dart',
+    ]) {
+      test('mixed $source retains every path contribution', () async {
+        final files = imageFiles();
+        files[headSha]![source] = (
+          mode: '100644',
+          contents: 'productionCall();',
+        );
+        final evidence = imageEvidence();
+        for (final proof in [
+          evidence['test_evidence'][imageTest],
+          ...(evidence['structured_output_evidence']['impacts'] as Map).values,
+        ]) {
+          (proof['production_refs'] as List).addAll(productionRefs(source));
+        }
+        final result = await evaluateImage(
+          files: files,
+          evidence: evidence,
+          changes: [
+            ...imageChanges,
+            RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+          ],
+        );
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      });
+    }
+    test(
+      'renaming structured source into image path retains old impacts',
+      () async {
+        final files = imageFiles();
+        const destination = 'lib/src/core/image/renamed_helper.dart';
+        files[baseSha]![structuredSource] = (
+          mode: '100644',
+          contents: 'productionCall();',
+        );
+        files[headSha]![destination] = (
+          mode: '100644',
+          contents: 'productionCall();',
+        );
+        final evidence = imageEvidence();
+        for (final proof in [
+          evidence['test_evidence'][imageTest],
+          ...(evidence['structured_output_evidence']['impacts'] as Map).values,
+        ]) {
+          (proof['production_refs'] as List).addAll(<Map<String, dynamic>>[
+            ...productionRefs(structuredSource),
+            ...productionRefs(destination),
+          ]);
+        }
+        final result = await evaluateImage(
+          files: files,
+          evidence: evidence,
+          changes: [
+            ...imageChanges,
+            const RepositoryChange(
+              path: destination,
+              previousPath: structuredSource,
+              kind: RepositoryChangeKind.renamed,
+            ),
+          ],
+        );
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      },
+    );
+    for (final missing in [barrel, target]) {
+      test('missing causal $missing coverage is rejected', () async {
+        final evidence = imageEvidence();
+        (evidence['test_evidence'][imageTest]['production_refs'] as List)
+            .removeWhere((ref) => ref['path'] == missing);
+        expectFailure(
+          await evaluateImage(evidence: evidence),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+      });
+    }
+    test('self-approval and stale audit pairs remain rejected', () async {
+      for (final field in [
+        'auditor_identity',
+        'audit_head_sha',
+        'audit_base_sha',
+      ]) {
+        final evidence = imageEvidence();
+        evidence['independent_audit'][field] = field == 'auditor_identity'
+            ? context.author
+            : otherSha;
+        expect(
+          (await evaluateImage(evidence: evidence)).decision,
+          ReadinessDecision.rejected,
+        );
+      }
+    });
+  });
+
+  test(
+    'readiness AST supports explicitly requested allowed analyzer versions',
+    () async {
+      final requested =
+          Platform.environment['LLAMADART_ANALYZER_COMPATIBILITY_VERSIONS'];
+      if (requested == null || requested.isEmpty) {
+        markTestSkipped(
+          'Set LLAMADART_ANALYZER_COMPATIBILITY_VERSIONS for offline compatibility qualification.',
+        );
+        return;
+      }
+      final versions = requested.split(',');
+      expect(versions, everyElement(matches(r'^\d+\.\d+\.\d+$')));
+      final root = Directory.current;
+      const paths = [
+        'tool/testing/classify_high_risk_changes.dart',
+        'tool/testing/high_risk_readiness.dart',
+        'tool/testing/release_metadata_readiness.dart',
+        'test/unit/tooling/support/bounded_process.dart',
+        'test/unit/tooling/high_risk_readiness_test.dart',
+      ];
+      final source = File('${root.path}/pubspec.yaml').readAsStringSync();
+      for (final version in versions) {
+        final scratch = Directory.systemTemp.createTempSync(
+          'readiness-analyzer-compat-',
+        );
+        addTearDown(() => scratch.deleteSync(recursive: true));
+        File('${scratch.path}/pubspec.yaml').writeAsStringSync(
+          source
+              .replaceFirst(
+                'name: llamadart',
+                'name: readiness_analyzer_compat',
+              )
+              .replaceFirst(
+                RegExp(r'^  analyzer:.*$', multiLine: true),
+                "  analyzer: '$version'",
+              ),
+        );
+        for (final path in paths) {
+          final file = File('${scratch.path}/$path');
+          file.parent.createSync(recursive: true);
+          file.writeAsBytesSync(File('${root.path}/$path').readAsBytesSync());
+        }
+        Future<ProcessResult> run(List<String> args) => Process.run(
+          Platform.resolvedExecutable,
+          args,
+          workingDirectory: scratch.path,
+        );
+        final resolved = await run(['pub', 'get', '--offline']);
+        expect(
+          resolved.exitCode,
+          0,
+          reason:
+              'Full root dependency graph analyzer $version: ${resolved.stdout} ${resolved.stderr}',
+        );
+        final lock = File('${scratch.path}/pubspec.lock').readAsStringSync();
+        expect(
+          RegExp(
+            r'  analyzer:.*?version: "([^"\n]+)"',
+            dotAll: true,
+          ).firstMatch(lock)?.group(1),
+          version,
+        );
+        final help = await run([
+          'run',
+          'tool/testing/high_risk_readiness.dart',
+          '--help',
+        ]);
+        expect(
+          help.exitCode,
+          0,
+          reason: 'CLI analyzer $version: ${help.stdout} ${help.stderr}',
+        );
+        expect(help.stdout, contains('never accepts App credentials'));
+        final probe = await run([
+          'test',
+          '-p',
+          'vm',
+          '-j',
+          '1',
+          paths.last,
+          '--plain-name',
+          'Git-bound additive image export impacts',
+          '--exclude-tags',
+          'local-only',
+          '--reporter',
+          'expanded',
+        ]);
+        expect(
+          probe.exitCode,
+          0,
+          reason:
+              'Namespace proof analyzer $version: ${probe.stdout} ${probe.stderr}',
+        );
+        expect(probe.stdout, contains('All tests passed!'));
+        print(
+          'Qualified analyzer $version: full root offline resolution, CLI help, namespace cases passed.',
+        );
+      }
+    },
+    tags: 'local-only',
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
 
   group('bounded metadata-only release evidence', () {
     test(
@@ -2343,6 +3154,8 @@ void main() {
     }
 
     test('private harness CLI reads exact Git blobs and exits 2', () async {
+      final fixtureWatch = Stopwatch()..start();
+      print('readiness CLI fixture: Git setup started');
       final repo = Directory.systemTemp.createTempSync(
         'harness-readiness-git-',
       );
@@ -2385,29 +3198,74 @@ void main() {
       final script = File(
         'tool/testing/high_risk_readiness.dart',
       ).absolute.path;
-      Future<ProcessResult> run() {
+      print(
+        'readiness CLI fixture: Git setup ${fixtureWatch.elapsedMilliseconds} ms',
+      );
+      Future<ProcessResult> stage(
+        String name,
+        List<String> arguments,
+        Duration budget, {
+        String? workingDirectory,
+      }) async {
+        final watch = Stopwatch()..start();
+        print(
+          'readiness CLI $name started (child budget ${budget.inSeconds} s)',
+        );
+        try {
+          return await runBoundedProcess(
+            Platform.resolvedExecutable,
+            arguments,
+            timeout: budget,
+            workingDirectory: workingDirectory,
+          );
+        } finally {
+          print('readiness CLI $name elapsed ${watch.elapsedMilliseconds} ms');
+        }
+      }
+
+      // Compile the analyzer dependency once instead of paying for two cold
+      // source launches. Each child has a deadline below this test's total cap.
+      final kernel = '${repo.path}/readiness.dill';
+      final compiled = await stage('compile', [
+        'compile',
+        'kernel',
+        script,
+        '-o',
+        kernel,
+      ], const Duration(seconds: 60));
+      expect(
+        compiled.exitCode,
+        0,
+        reason: '${compiled.stdout}\n${compiled.stderr}',
+      );
+      Future<ProcessResult> run(String name) {
         evidenceFile.writeAsStringSync(jsonEncode(evidence));
-        return Process.run(Platform.resolvedExecutable, [
-          script,
-          '--evidence',
-          evidenceFile.path,
-          '--repository',
-          context.repository,
-          '--pr-number',
-          '${context.prNumber}',
-          '--head-sha',
-          head,
-          '--base-sha',
-          base,
-          '--pr-author',
-          context.author,
-        ], workingDirectory: repo.path);
+        return stage(
+          name,
+          [
+            kernel,
+            '--evidence',
+            evidenceFile.path,
+            '--repository',
+            context.repository,
+            '--pr-number',
+            '${context.prNumber}',
+            '--head-sha',
+            head,
+            '--base-sha',
+            base,
+            '--pr-author',
+            context.author,
+          ],
+          const Duration(seconds: 15),
+          workingDirectory: repo.path,
+        );
       }
 
       // Working-tree edits cannot replace either cited committed blob.
       write(registry, '{"schema_version": 2}');
       write(target, 'invented working-tree case');
-      final accepted = await run();
+      final accepted = await run('committed blobs');
       expect(
         accepted.exitCode,
         2,
@@ -2417,14 +3275,14 @@ void main() {
       expect(output['evaluation']['decision'], 'unverifiedPrerequisites');
       final refs = evidence['test_evidence'][target]['production_refs'] as List;
       refs.last['snippet'] = '"schema_version": 2';
-      final rejected = await run();
+      final rejected = await run('forged snippet');
       expect(
         rejected.exitCode,
         1,
         reason: '${rejected.stdout}\n${rejected.stderr}',
       );
       expect(rejected.stdout, contains('disconnected'));
-    });
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test(
       'private harness registry requires exact candidate JSON snippet',

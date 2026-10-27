@@ -263,6 +263,56 @@ independent reviewer must add any further affected impacts, and only exclude an
 impact after inspecting its production callsites. A minimum impact cannot be
 excluded. No empty rationale or blanket author-authored N/A is sufficient.
 
+One bounded Git-derived refinement applies to `lib/llamadart.dart`: adding
+exactly the explicit `show ImageEditingPixels, ImageEditingRequest` export from
+`src/core/image/image_editing_request.dart` may contribute no minimum chat
+impacts. It remains high-risk and `structuredOutput`; all three independently
+reviewed impact decisions, exact production references, causal image and public
+export test evidence, matrix rows and exact-head/base audit remain required.
+The evaluator supplies no caller exemption flag or schema waiver.
+
+The addition must be a real parsed directive, and removing its exact bytes must
+recover the base barrel byte for byte. Both barrels and the new target must be
+non-executable regular Git blobs; the target must be newly added with the two
+named final classes and the bounded recipe helper. Its four unconditional,
+unprefixed imports must already load through the old barrel at both revisions.
+The evaluator traverses the base barrel at both revisions: its bytes are exactly
+the head barrel with only the proven added directive removed. No other edge is
+skipped, including pre-existing or indirect references to the target. Every
+conditional branch is inspected and `show`/`hide` filters are conservatively
+ignored. At base the two new identifiers must be absent from all parsed source
+tokens. At head, exhaustive AST declaration names reject collisions while
+allowing existing image methods to reference the new types; unknown declaration
+nodes or name shapes retain conservative minima. Comments and string contents
+do not count as identifier tokens. Unknown syntax, graph cycles, parts,
+missing/nonlocal export sources, additional declarations/imports, modified existing exports, different
+names or URIs, conditional additions, renames and mode changes retain ordinary
+conservative minima. Every other changed structured production path, including
+rename origins, still contributes its normal impacts. Evidence-only emptiness
+still requires all impacts; proven empty contribution is a distinct case.
+
+Namespace extraction uses stable AST keyword tokens for class, enum and
+extension-type names across the allowed analyzer range. To qualify cached older
+and current dependency graphs without editing the checkout's pubspec or lock:
+
+```bash
+LLAMADART_ANALYZER_COMPATIBILITY_VERSIONS=8.0.0,8.4.1,14.6.0 \
+  dart test -p vm -j 1 --run-skipped -t local-only \
+  test/unit/tooling/high_risk_readiness_test.dart \
+  --plain-name 'readiness AST supports explicitly requested allowed analyzer versions'
+```
+
+This opt-in test resolves the full root dependency graph offline in scratch
+packages and checks CLI compilation plus the namespace regressions. Missing
+requested cached dependencies fail qualification; a skipped test is no proof.
+
+This proof bounds the additive namespace and existing loading dependencies; it
+does not prove an absence of behavioral or transitive effects. The independent
+reviewer still inspects the new classes, their production callsites and every
+other changed production source, adds any affected chat impact and supplies the
+corresponding coverage. An internally consistent result still exits 2 for the
+unconfigured external prerequisites; it never establishes operational readiness.
+
 The `families` list retains unique `tested`/`unavailable` entries, relevant tests
 and a rationale. Missing weights require named unavailable families and primary
 upstream emissions plus fixtures; unrelated model evidence remains pipeline-only.
