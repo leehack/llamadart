@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
@@ -12,8 +13,10 @@ import '../../core/models/model_source.dart';
 import '../../core/models/model_target_file.dart';
 import '../../core/url_redaction.dart';
 import 'mobile_app_cache_directory.dart';
+import 'model_cache_entry_lock.dart';
 
 const String _metadataFileName = 'metadata.json';
+const String _lockDirectoryName = '.locks';
 const int _metadataSchemaVersion = 1;
 
 /// Native file-backed package-managed model download manager.
@@ -255,15 +258,27 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     final cacheDir = _cacheDirectory(source, options);
     return _withCacheLock(
       _cacheLockKey(cacheDir),
-      () => _ensureModelUnlocked(source, options, onProgress),
+      () => _withEntryLock(
+        cacheDir,
+        options,
+        (locked) => _ensureModelUnlocked(
+          source,
+          options,
+          onProgress,
+          ownsPartFiles: locked,
+        ),
+      ),
     );
   }
 
+  /// [ownsPartFiles] is true while this call holds the entry's cross-process
+  /// lock, so no other process can be writing a part file of the entry.
   Future<ModelCacheEntry> _ensureModelUnlocked(
     ModelSource source,
     ModelLoadOptions options,
-    ModelDownloadProgressCallback? onProgress,
-  ) async {
+    ModelDownloadProgressCallback? onProgress, {
+    bool ownsPartFiles = false,
+  }) async {
     _throwIfCancelled(options);
     if (source.isLocal) {
       return _localEntry(source, options);
@@ -322,15 +337,122 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
 
     await _createCacheDirectory(cacheDir);
-    final entry = await _download(
-      source,
-      options,
-      finalFile,
-      partFile,
-      onProgress,
-    );
+    if (ownsPartFiles) {
+      await _adoptOrphanedAttempts(cacheDir, finalFile, partFile);
+    }
+    // Each attempt writes its own file and renames it onto the final path
+    // only when complete, so even without the entry lock no reader sees a
+    // file another attempt is still writing. The shared part file is only a
+    // resume point between attempts.
+    final attemptFile = File('${finalFile.path}.${_newAttemptId()}.part');
+    await _movePartFile(partFile, attemptFile);
+    final ModelCacheEntry entry;
+    try {
+      entry = await _download(
+        source,
+        options,
+        finalFile,
+        attemptFile,
+        onProgress,
+      );
+    } catch (_) {
+      await _movePartFile(attemptFile, partFile);
+      rethrow;
+    }
     await _writeMetadata(metadataFile, entry);
     return entry;
+  }
+
+  Future<T> _withEntryLock<T>(
+    Directory cacheDir,
+    ModelLoadOptions options,
+    Future<T> Function(bool locked) action,
+  ) async {
+    final root = cacheDir.parent;
+    // Lock files live outside the entry directories, which remove() and
+    // prune() delete: a holder's lock on a deleted file would not exclude a
+    // process that recreates the file.
+    final lockDirectory = Directory(path.join(root.path, _lockDirectoryName));
+    ModelCacheEntryLock? lock;
+    try {
+      await lockDirectory.create(recursive: true);
+      lock = await modelCacheEntryLocker(
+        path.join(lockDirectory.path, '${path.basename(cacheDir.path)}.lock'),
+        throwIfCancelled: () => _throwIfCancelled(options),
+      );
+    } on FileSystemException {
+      lock = null;
+    }
+    if (lock == null) {
+      warnModelCacheLockUnavailableOnce(root.path);
+    }
+    try {
+      return await action(lock != null);
+    } finally {
+      await lock?.release();
+    }
+  }
+
+  /// Keeps the largest part file left by earlier attempts of [finalFile] as
+  /// its resume point and deletes the rest, with orphaned metadata temp files.
+  ///
+  /// Call it only while holding the entry lock: without it another process
+  /// may still be writing one of these files.
+  Future<void> _adoptOrphanedAttempts(
+    Directory cacheDir,
+    File finalFile,
+    File partFile,
+  ) async {
+    final fileName = RegExp.escape(path.basename(finalFile.path));
+    final attemptPart = RegExp('^$fileName\\.[0-9a-f]{16}\\.part\$');
+    final attemptPartMetadata = RegExp(
+      '^$fileName\\.[0-9a-f]{16}\\.part\\.json\$',
+    );
+    final metadataTemp = RegExp(
+      '^${RegExp.escape(_metadataFileName)}\\.[0-9a-f]{16}\\.tmp\$',
+    );
+    final parts = <File>[];
+    final orphanedFiles = <File>[];
+    await for (final entity in cacheDir.list(followLinks: false)) {
+      if (entity is! File) {
+        continue;
+      }
+      final name = path.basename(entity.path);
+      if (name == path.basename(partFile.path) || attemptPart.hasMatch(name)) {
+        parts.add(entity);
+      } else if (attemptPartMetadata.hasMatch(name) ||
+          metadataTemp.hasMatch(name)) {
+        orphanedFiles.add(entity);
+      }
+    }
+
+    File? resumePoint;
+    var resumeBytes = -1;
+    for (final part in parts) {
+      try {
+        final bytes = await part.length();
+        if (bytes > resumeBytes) {
+          resumePoint = part;
+          resumeBytes = bytes;
+        }
+      } on FileSystemException {
+        continue;
+      }
+    }
+    for (final part in parts) {
+      if (part != resumePoint) {
+        await _deleteIfExists(part);
+        await _deleteIfExists(_partMetadataFile(part));
+      }
+    }
+    if (resumePoint == null) {
+      await _deleteIfExists(_partMetadataFile(partFile));
+    } else if (resumePoint.path != partFile.path) {
+      await _movePartFile(resumePoint, partFile);
+    }
+    for (final file in orphanedFiles) {
+      await _deleteIfExists(file);
+    }
   }
 
   Future<T> _withCacheLock<T>(String key, Future<T> Function() action) async {
@@ -1137,7 +1259,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
   Future<void> _writeMetadata(File metadataFile, ModelCacheEntry entry) async {
     await metadataFile.parent.create(recursive: true);
-    final tempFile = File('${metadataFile.path}.tmp');
+    final tempFile = File('${metadataFile.path}.${_newAttemptId()}.tmp');
     final json = <String, Object?>{
       'schema_version': _metadataSchemaVersion,
       ...entry.toJson(),
@@ -1283,6 +1405,40 @@ class _PartMetadata {
 }
 
 File _partMetadataFile(File partFile) => File('${partFile.path}.json');
+
+final Random _attemptIds = Random.secure();
+
+String _newAttemptId() => List<String>.generate(
+  8,
+  (_) => _attemptIds.nextInt(256).toRadixString(16).padLeft(2, '0'),
+).join();
+
+/// Moves the part file [from], with its resume validator, to [to].
+///
+/// Does nothing when [from] does not exist. A part file without a validator
+/// drops any validator left at [to], which would otherwise describe other
+/// bytes.
+Future<void> _movePartFile(File from, File to) async {
+  if (!await from.exists()) {
+    return;
+  }
+  try {
+    await _replaceFile(from, to);
+  } on FileSystemException {
+    return;
+  }
+  final fromMetadata = _partMetadataFile(from);
+  final toMetadata = _partMetadataFile(to);
+  if (await fromMetadata.exists()) {
+    try {
+      await _replaceFile(fromMetadata, toMetadata);
+      return;
+    } on FileSystemException {
+      await _deleteIfExists(fromMetadata);
+    }
+  }
+  await _deleteIfExists(toMetadata);
+}
 
 Future<_PartMetadata?> _readPartMetadata(File file) async {
   try {

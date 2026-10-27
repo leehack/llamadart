@@ -4,6 +4,7 @@
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
 - Requests with an image or audio part and tools honor `ToolChoice.auto` instead of forcing a tool call on templates such as Qwen3-VL and Qwen3.5, and use the same tool-call grammar, triggers, parser and stops as text requests ([#1463](https://github.com/leehack/llamadart/issues/1463)).
 - A boolean `enable_thinking` or `thinking` chat template kwarg now overrides `enableThinking`, as in llama-server, and DeepSeek V3.1 forces its thought open from `enableThinking` alone ([#750](https://github.com/leehack/llamadart/issues/750)).
+- Processes and isolates sharing a model cache root, such as `sharedCache()`, `userSelected(...)` or `appGroup(...)` directories, now download each entry once and never return a partially written file ([#1444](https://github.com/leehack/llamadart/issues/1444)).
 
 ## 0.16.5
 
