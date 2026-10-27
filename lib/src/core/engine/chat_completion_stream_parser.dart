@@ -7,29 +7,11 @@ import '../models/chat/completion_chunk.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
+import '../template/chat_format_registry.dart';
 import '../template/chat_parse_result.dart';
 import '../template/chat_template_engine.dart';
-import '../template/handlers/apertus_handler.dart';
-import '../template/handlers/command_r7b_handler.dart';
-import '../template/handlers/deepseek_r1_handler.dart';
-import '../template/handlers/deepseek_v3_handler.dart';
-import '../template/handlers/exaone_moe_handler.dart';
-import '../template/handlers/firefunction_v2_handler.dart';
-import '../template/handlers/function_gemma_handler.dart';
-import '../template/handlers/functionary_v31_llama31_handler.dart';
-import '../template/handlers/gemma_handler.dart';
-import '../template/handlers/granite_handler.dart';
-import '../template/handlers/gpt_oss_handler.dart';
-import '../template/handlers/hermes_handler.dart';
-import '../template/handlers/hunyuan_v3_handler.dart';
-import '../template/handlers/kimi_k2_handler.dart';
-import '../template/handlers/lfm2_handler.dart';
 import '../template/handlers/llama3_handler.dart';
-import '../template/handlers/magistral_handler.dart';
-import '../template/handlers/mistral_handler.dart';
-import '../template/handlers/nemotron_v2_handler.dart';
 import '../template/peg_chat_parser.dart';
-import '../template/xml_tool_call_format.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -117,7 +99,10 @@ class ChatCompletionStreamParser {
     var didInitialPartialParse = false;
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
-    final gatedOpening = _toolCallOpeningFor(templateResult);
+    final traits = _traitsOf(templateResult);
+    final gatedOpening = _usesPegParser(templateResult)
+        ? null
+        : traits.toolCallOpening;
     final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
     final isFunctionaryV32 =
@@ -125,7 +110,7 @@ class ChatCompletionStreamParser {
     // Functionary v3.2 and MiniMax M1 stream through their partial parse
     // with tools.
     final keepsThoughtTagsAsContent =
-        _keepsThoughtTagsAsContent(templateResult.format) ||
+        traits.keepsThoughtTagsAsContent ||
         ((isFunctionaryV32 ||
                 templateResult.format == ChatFormat.minimaxM1.index) &&
             !parseToolCallsEnabled);
@@ -150,7 +135,7 @@ class ChatCompletionStreamParser {
     final reasoningGate = _ReasoningGate(
       forcedOpen: templateResult.thinkingForcedOpen,
       forcedThoughtOpening: isQwen3CoderXml ? toolCallOpening : null,
-      thoughtCallOpening: _parsesCallsInsideThoughts(templateResult.format)
+      thoughtCallOpening: traits.parsesCallsInsideThoughts
           ? toolCallOpening
           : null,
       unescapes: toolCallOpening != null && !isQwen3CoderXml,
@@ -179,7 +164,7 @@ class ChatCompletionStreamParser {
         : templateResult.thinkingForcedOpen ||
               isFunctionaryV32 ||
               _usesPegParser(templateResult) ||
-              _mayEmbedToolEnvelopeAfterContent(templateResult.format)
+              traits.mayEmbedToolEnvelopeAfterContent
         ? _ToolStreamingMode.parsed
         : _ToolStreamingMode.undecided;
     var undecidedPrefix = '';
@@ -595,45 +580,11 @@ class ChatCompletionStreamParser {
     return false;
   }
 
-  /// The tool-call opening scanner of a format whose parse drops tool-call
-  /// envelopes from trimmed content, or `null` for other formats.
-  static int Function(String text, int from)? _toolCallOpeningFor(
-    LlamaChatTemplateResult templateResult,
-  ) {
-    if (_usesPegParser(templateResult) ||
-        templateResult.format >= ChatFormat.values.length) {
-      return null;
-    }
-    return switch (ChatFormat.values[templateResult.format]) {
-      ChatFormat.hermes => HermesHandler.toolCallOpening,
-      ChatFormat.mistralNemo => MistralHandler.toolCallOpening,
-      ChatFormat.magistral => MagistralHandler.toolCallOpening,
-      ChatFormat.deepseekR1 => DeepseekR1Handler.toolCallOpening,
-      ChatFormat.deepseekV3 => DeepseekV3Handler.toolCallOpening,
-      ChatFormat.commandR7B ||
-      ChatFormat.cohere2Moe => CommandR7BHandler.toolCallOpening,
-      ChatFormat.granite => GraniteHandler.toolCallOpening,
-      ChatFormat.gptOss => GptOssHandler.toolCallOpening,
-      ChatFormat.firefunctionV2 => FirefunctionV2Handler.toolCallOpening,
-      ChatFormat.functionaryV31Llama31 =>
-        FunctionaryV31Llama31Handler.toolCallOpening,
-      ChatFormat.functionGemma => FunctionGemmaHandler.toolCallOpening,
-      ChatFormat.gemma => GemmaHandler.toolCallOpening,
-      ChatFormat.lfm2 => Lfm2Handler.toolCallOpening,
-      ChatFormat.kimiK2 => KimiK2Handler.toolCallOpening,
-      ChatFormat.nemotronV2 => NemotronV2Handler.toolCallOpening,
-      ChatFormat.apertus => ApertusHandler.toolCallOpening,
-      ChatFormat.hunyuanV3 => HunyuanV3Handler.toolCallOpening,
-      ChatFormat.exaoneMoe => ExaoneMoeHandler.toolCallOpening,
-      ChatFormat.qwen3CoderXml => XmlToolCallFormat.qwen3Coder.toolCallOpening,
-      ChatFormat.minicpm5 => XmlToolCallFormat.minicpm5.toolCallOpening,
-      ChatFormat.seedOss => XmlToolCallFormat.seedOss.toolCallOpening,
-      ChatFormat.minimaxM2 => XmlToolCallFormat.minimaxM2.toolCallOpening,
-      ChatFormat.apriel15 => XmlToolCallFormat.apriel15.toolCallOpening,
-      ChatFormat.xiaomiMimo => XmlToolCallFormat.xiaomiMimo.toolCallOpening,
-      _ => null,
-    };
-  }
+  /// The traits of [templateResult]'s format, or none for an unknown format.
+  static ChatFormatTraits _traitsOf(LlamaChatTemplateResult templateResult) =>
+      templateResult.format < ChatFormat.values.length
+      ? chatFormatRegistration(ChatFormat.values[templateResult.format]).traits
+      : ChatFormatTraits.none;
 
   /// Whether the parse uses [PegChatParser], whose partial parse holds back
   /// a possible tool-call opening itself.
@@ -643,31 +594,6 @@ class ChatCompletionStreamParser {
         pegParseFormat(ChatFormat.values[format], templateResult.parser) !=
             null;
   }
-
-  /// Formats whose parse extracts no reasoning, so thought tags stay in
-  /// content. Functionary v3.2 streams through its partial parse instead.
-  static bool _keepsThoughtTagsAsContent(int formatIndex) =>
-      formatIndex == ChatFormat.firefunctionV2.index ||
-      formatIndex == ChatFormat.functionaryV31Llama31.index ||
-      formatIndex == ChatFormat.functionGemma.index ||
-      formatIndex == ChatFormat.gemma.index;
-
-  /// Formats whose parse extracts tool calls before thinking, so a call
-  /// inside a thought leaves the reasoning.
-  static bool _parsesCallsInsideThoughts(int formatIndex) =>
-      formatIndex == ChatFormat.lfm2.index ||
-      formatIndex == ChatFormat.kimiK2.index;
-
-  static bool _mayEmbedToolEnvelopeAfterContent(int formatIndex) =>
-      formatIndex == ChatFormat.kimiK3.index ||
-      formatIndex == ChatFormat.minimaxM1.index ||
-      formatIndex == ChatFormat.minimaxM3.index ||
-      formatIndex == ChatFormat.deepseekV32.index ||
-      formatIndex == ChatFormat.deepseekV4.index ||
-      formatIndex == ChatFormat.museGlimmer.index ||
-      formatIndex == ChatFormat.glm45.index ||
-      formatIndex == ChatFormat.laguna.index ||
-      formatIndex == ChatFormat.gemma4.index;
 
   static int _noOpening(String text, int from) => text.length;
 

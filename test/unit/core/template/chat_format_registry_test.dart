@@ -76,9 +76,74 @@ void main() {
     }
   });
 
+  test('format tables live only in the registry', () {
+    for (final path in const [
+      'lib/src/core/engine/chat_completion_stream_parser.dart',
+      'lib/src/core/template/chat_template_engine.dart',
+    ]) {
+      expect(
+        _formatTables(File(path).readAsStringSync()),
+        isEmpty,
+        reason: path,
+      );
+    }
+  });
+
+  test('the table scan finds each kind of format table', () {
+    expect(_formatTables('const Set<ChatFormat> lazy = {};'), isNotEmpty);
+    expect(_formatTables('const generic = {ChatFormat.gemma};'), isNotEmpty);
+    expect(
+      _formatTables(
+        'const supported = {ChatFormat.generic, ChatFormat.hermes};',
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _formatTables(
+        'switch (format) { ChatFormat.hermes => true, _ => false }',
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _formatTables(
+        'f == ChatFormat.gemma.index || f == ChatFormat.lfm2.index || '
+        'f == ChatFormat.kimiK2.index;',
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _formatTables(
+        'final isLlama3 = f == ChatFormat.llama3.index || '
+        'f == ChatFormat.llama3BuiltinTools.index;',
+      ),
+      isEmpty,
+    );
+  });
+
   test('detection falls back to content-only', () {
     expect(detectChatFormat(null), ChatFormat.contentOnly);
     expect(detectChatFormat(''), ChatFormat.contentOnly);
     expect(detectChatFormat('{{ messages }}'), ChatFormat.contentOnly);
   });
 }
+
+/// Per-format tables in [source]: a `ChatFormat` set or collection literal,
+/// a switch arm on a format, or one statement naming three or more formats.
+List<String> _formatTables(String source) => [
+  if (source.contains('Set<ChatFormat>')) 'Set<ChatFormat>',
+  for (final match in RegExp(
+    r'[\[{]\s*ChatFormat\.\w+\s*[,}\]]',
+  ).allMatches(source))
+    'literal: ${match[0]}',
+  for (final match in RegExp(r'ChatFormat\.\w+\s*=>').allMatches(source))
+    'switch arm: ${match[0]}',
+  for (final statement in source.split(';'))
+    if ({
+          for (final match in RegExp(
+            r'ChatFormat\.(?!values\b)(\w+)',
+          ).allMatches(statement))
+            match[1],
+        }.length >=
+        3)
+      'statement: ${statement.trim()}',
+];
