@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
+import '../../hook/native_release_pins.dart';
 import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
 import 'native_barrier_api.dart';
@@ -509,7 +510,7 @@ final class LlamaCppObjectCalls {
       );
     } on ArgumentError {
       throw LlamaUnsupportedException(
-        'Native reranking requires classifier metadata and named-template symbols from the pinned llama.cpp runtime (v0.7.0-2).',
+        'Native reranking requires classifier metadata and named-template symbols from the pinned llama.cpp runtime ($llamaCppTag).',
       );
     }
   }

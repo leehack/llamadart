@@ -8,21 +8,29 @@ import 'package:http/testing.dart';
 /// never fall through to the network. Every requested URL is appended to
 /// [requests].
 final class RuntimeBundleHttpFixture {
-  /// Creates a fixture serving [responses].
-  RuntimeBundleHttpFixture(this.responses) : offline = false;
+  /// Creates a fixture serving [responses], where each [unreachable] URL
+  /// fails like an offline request.
+  RuntimeBundleHttpFixture(this.responses, {this.unreachable = const {}})
+    : offline = false;
 
   /// Creates a fixture that fails every request without a response, like a
   /// build without network access.
   ///
   /// The failure is not one the hook retries, so a test never waits out the
   /// retry delays or reaches the curl fallback.
-  RuntimeBundleHttpFixture.offline() : responses = const {}, offline = true;
+  RuntimeBundleHttpFixture.offline()
+    : responses = const {},
+      unreachable = const {},
+      offline = true;
 
   /// Response bodies keyed by URL.
   final Map<String, List<int>> responses;
 
   /// Whether every request fails with [OfflineFixtureException].
   final bool offline;
+
+  /// URLs that fail with [OfflineFixtureException].
+  final Set<String> unreachable;
 
   /// URLs the hook requested, in order.
   final List<String> requests = [];
@@ -31,7 +39,7 @@ final class RuntimeBundleHttpFixture {
   http.Client createClient() => MockClient((request) async {
     final url = request.url.toString();
     requests.add(url);
-    if (offline) {
+    if (offline || unreachable.contains(url)) {
       throw OfflineFixtureException(url);
     }
     final body = responses[url];
