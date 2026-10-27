@@ -40,7 +40,7 @@ void main() {
       runtime.throwIfUnavailable();
       expect(
         runtime.commit,
-        anyOf('0518b34', '0518b34374761cb82aeda5ad3c2f0686fdad2cec'),
+        anyOf('be48649', 'be486498eadc29dc3cd234d944c2180ed42b1415'),
       );
       final clock = Stopwatch()..start();
       final engine = await ImageGenerationEngine.load(

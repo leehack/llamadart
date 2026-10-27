@@ -55,7 +55,8 @@ description: >-
   `0.0.2` with core `0.11.1` and `0.11.0`. Adding it opts the app into the
   runtime (about 37 MB per Apple target).
 The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0`): earlier runtimes have a smaller `sd_ctx_params_t`. Upgrade the
+(`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
+`v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
@@ -125,12 +126,14 @@ core and `llamadart_stable_diffusion_flutter` together.
   checkpoint sets use the separate bounded factory below; resolve other
   compatible component files individually. The guide's
   **Weight formats and layouts** section gives the limits.
-- FP8 Safetensors (`F8_E4M3`/`F8_E5M2`) and GGUF types 43/44 throw
-  `LlamaUnsupportedException` before native context creation on Metal, including
-  automatic Metal selection. Choose `ComputeDevice.cpu` or compatible non-FP8
-  weights. Uninspectable GGUF/Safetensors headers and ordinary JSON shard indexes
-  are refused on Metal too ([#1446](https://github.com/leehack/llamadart/issues/1446)).
-  CPU forwarding preserves native admission; arbitrary FP8 models remain unqualified.
+- FP8 Safetensors (`F8_E4M3`/`F8_E5M2`) and GGUF types 43/44 load on Metal
+  with the pinned runtime `v0.3.0-1`, which converts them to F16 there (twice
+  their file size in memory; `checkMemory` counts it). A runtime without that
+  fix makes them, uninspectable GGUF/Safetensors headers and ordinary JSON
+  shard indexes throw `LlamaUnsupportedException` on Metal, including automatic
+  Metal selection, before native context creation; choose `ComputeDevice.cpu`
+  there ([#1446](https://github.com/leehack/llamadart/issues/1446)). Arbitrary
+  FP8 models remain unqualified.
 - Complete local checkpoint sets opt in with
   `ImageGenerationModel.localSafetensorsSet(path, sha256: trustedPerFileHashes,
   cacheDirectory: appPrivateSetCache)`. The path is a directory with
@@ -138,7 +141,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   that index and the complete contiguous canonical `model-00001-of-000NN.safetensors`
   basenames (N in 1..16). Arbitrary filename aliases are rejected. The initial supported
   tensor-layout fingerprint is the documented complete SD-Turbo F16/F32 recipe
-  on macOS CPU, pinned SD v0.3.0, explicit flash/direct VAE off. Other families,
+  on macOS CPU, pinned SD v0.3.0-1, explicit flash/direct VAE off. Other families,
   dtypes/layouts, devices, Diffusers, and editing/tiling/seamless combinations
   refuse. Expected hashes must come from trusted app configuration, not from
   re-hashing arbitrary input at load time. Files are verified while copying

@@ -75,7 +75,7 @@ final class ImageEditingPixels {
 
 /// Image-to-image generation, optionally restricted by a binary [mask].
 ///
-/// The bounded recipe requires the pinned stable_diffusion v0.3.0 runtime,
+/// The bounded recipe requires the pinned stable_diffusion v0.3.0-1 runtime,
 /// an SD 2.x checkpoint with its embedded full VAE on macOS CPU, and no
 /// component overrides, circular axes or VAE tiling. SD-Turbo is the measured
 /// model; other SD 2.x checkpoints in this recipe are unmeasured.
@@ -155,7 +155,7 @@ void validateImageEditingRecipe(
       config.flashAttention ||
       config.vaeDirectConvolution) {
     throw LlamaUnsupportedException(
-      'Image editing requires stable_diffusion v0.3.0 with an SD 2.x '
+      'Image editing requires stable_diffusion v0.3.0-1 with an SD 2.x '
       'checkpoint and its embedded full VAE on macOS CPU, without component '
       'overrides, VAE tiling, circular axes, flash attention or direct VAE '
       'convolution. Other model, decoder, platform and device recipes are '

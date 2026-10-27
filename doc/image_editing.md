@@ -3,7 +3,7 @@
 `ImageEditingRequest` adds copied decoded RGB input, optional binary mask and
 strength while preserving `ImageGenerationRequest`. The supported recipe is
 native-detected SD 2.x, a header-detected embedded full VAE in a single
-checkpoint, macOS CPU, pinned stable-diffusion-native v0.3.0, flash attention
+checkpoint, macOS CPU, pinned stable-diffusion-native v0.3.0-1, flash attention
 and direct VAE convolution off. No components, tiny decoder, circular axes or
 VAE tiling. Other matching SD 2.x checkpoints are source-compatible but
 unmeasured; measured evidence below is SD-Turbo only. The accepted pixel
@@ -12,10 +12,12 @@ here. This is not an arbitrary prompt-quality or all-resolution guarantee.
 
 ## Identity and production path
 
-- Runtime archive: `stable-diffusion-native-runtime-macos-arm64-v0.3.0.tar.gz`,
-  SHA-256 `6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`.
+Requalified on stable-diffusion-native `v0.3.0-1` (2026-10-27): every result below is byte-identical to the `v0.3.0` measurement ([#922](https://github.com/leehack/llamadart/issues/922)).
+
+- Runtime archive: `stable-diffusion-native-runtime-macos-arm64-v0.3.0-1.tar.gz`,
+  SHA-256 `79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`.
   The bundle build-info pins upstream
-  `0518b34374761cb82aeda5ad3c2f0686fdad2cec`; the runtime version string is
+  `be486498eadc29dc3cd234d944c2180ed42b1415`; the runtime version string is
   `unknown`. Archive provenance and the reported version are distinct.
 - Model: `sd_turbo-f16-q8_0.gguf`, SHA-256
   `d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580`.

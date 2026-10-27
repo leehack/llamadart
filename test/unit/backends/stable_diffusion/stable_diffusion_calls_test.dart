@@ -36,6 +36,9 @@ const _deviceMemorySymbols = [
   'sd_dart_gpu_device_memory',
 ];
 
+// Upstream master-1017's, which v0.3.0-1 first ships.
+const _fp8MetalSymbols = ['free_sd_image_generation_result'];
+
 // The root package does not bundle the stable_diffusion runtime, so these
 // tests resolve the functions from stand-ins. That each name resolves to the
 // runtime's own export is checked against the real runtime by
@@ -52,7 +55,12 @@ void main() {
     expect(StableDiffusionCalls.tryResolve(symbol: exported), isNotNull);
     expect(
       requested,
-      unorderedEquals([..._symbols, ..._logSymbols, ..._deviceMemorySymbols]),
+      unorderedEquals([
+        ..._symbols,
+        ..._logSymbols,
+        ..._deviceMemorySymbols,
+        ..._fp8MetalSymbols,
+      ]),
     );
     expect(StableDiffusionCalls.wrapperSymbols, unorderedEquals(_symbols));
 
@@ -108,6 +116,66 @@ void main() {
       expect(calls.gpu, isNull, reason: missing);
       expect(calls.log, isNotNull, reason: missing);
     }
+  });
+
+  group('loadsFp8AsF16OnMetal', () {
+    StableDiffusionCalls resolve({
+      String? releaseTag,
+      Set<String> missing = const {},
+    }) {
+      Pointer<NativeType> symbol(String name) => missing.contains(name)
+          ? throw ArgumentError("Couldn't resolve native function '$name'")
+          : Pointer.fromAddress(0x1000);
+      return releaseTag == null
+          ? StableDiffusionCalls.tryResolve(symbol: symbol)!
+          : StableDiffusionCalls.tryResolve(
+              symbol: symbol,
+              releaseTag: releaseTag,
+            )!;
+    }
+
+    test('holds for the pinned release when it exports the upstream 1017 '
+        'functions', () {
+      expect(StableDiffusionCalls.fp8MetalSymbols, _fp8MetalSymbols);
+      expect(StableDiffusionCalls.fp8MetalNativeRelease, 'v0.3.0-1');
+      expect(resolve().loadsFp8AsF16OnMetal, isTrue);
+      for (final tag in ['v0.3.0-1', 'v0.3.0-2', 'v0.3.0-10', 'v0.3.1']) {
+        expect(
+          resolve(releaseTag: tag).loadsFp8AsF16OnMetal,
+          isTrue,
+          reason: tag,
+        );
+      }
+      expect(resolve(releaseTag: 'v1.0.0').loadsFp8AsF16OnMetal, isTrue);
+    });
+
+    test('fails closed for an older runtime in the process, which still '
+        'generates', () {
+      final calls = resolve(missing: _fp8MetalSymbols.toSet());
+
+      expect(calls.loadsFp8AsF16OnMetal, isFalse);
+      expect(calls.log, isNotNull);
+      expect(calls.gpu, isNotNull);
+    });
+
+    test('fails closed for a pin older than v0.3.0-1 or not a release tag, '
+        'even with the upstream 1017 functions', () {
+      for (final tag in [
+        'v0.3.0',
+        'v0.2.0-4',
+        'v0.2.9-9',
+        'b1234',
+        'latest',
+        'v0.3.0-01',
+        '',
+      ]) {
+        expect(
+          resolve(releaseTag: tag).loadsFp8AsF16OnMetal,
+          isFalse,
+          reason: tag,
+        );
+      }
+    });
   });
 
   test('calls the function exported under the name of each of its '
@@ -317,7 +385,8 @@ final class _RecordingExports {
 
   Pointer<NativeType> symbol(String name) => name == 'sd_dart_progress_read'
       ? _memcpy
-      : _functions[name]!.nativeFunction;
+      : _functions[name]?.nativeFunction ??
+            (throw ArgumentError("Couldn't resolve native function '$name'"));
 
   void close() {
     for (final function in _functions.values) {
