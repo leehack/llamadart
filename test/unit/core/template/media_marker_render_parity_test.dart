@@ -7,8 +7,14 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/media_placeholders.dart';
 import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -99,5 +105,125 @@ void main() {
       ]),
     );
     expect(detected, reported);
+  });
+
+  group('a media request renders with the grammar of its text request', () {
+    final tools = [
+      ToolDefinition(
+        name: 'take_photo',
+        description: 'Take a photo',
+        parameters: [ToolParam.string('subject', required: true)],
+      ),
+    ];
+    // A null [toolChoice] sends no tools.
+    LlamaChatTemplateResult render(
+      String source,
+      LlamaContentPart media, {
+      ToolChoice? toolChoice = ToolChoice.auto,
+      bool enableThinking = true,
+    }) => ChatTemplateEngine.render(
+      templateSource: source,
+      messages: [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [media, const LlamaTextContent('What color is it?')],
+        ),
+      ],
+      metadata: const {},
+      tools: toolChoice == null ? null : tools,
+      toolChoice: toolChoice ?? ToolChoice.auto,
+      enableThinking: enableThinking,
+      // A media request always gives the template `enable_thinking`, as
+      // llama.cpp does; the text request needs it as a kwarg.
+      chatTemplateKwargs: {'enable_thinking': enableThinking},
+    );
+    Map<String, Object?> rendered(LlamaChatTemplateResult result) => {
+      'prompt': result.prompt,
+      'format': ChatFormat.values[result.format],
+      'grammar': result.grammar,
+      'grammarLazy': result.grammarLazy,
+      'grammarTriggers': [
+        for (final trigger in result.grammarTriggers)
+          '${trigger.type}:${trigger.value}:${trigger.token}',
+      ],
+      'preservedTokens': result.preservedTokens,
+      'parser': result.parser,
+      'additionalStops': result.additionalStops,
+      'thinkingForcedOpen': result.thinkingForcedOpen,
+    };
+
+    final templates = [
+      for (final dir in const [
+        'test/fixtures/llama_cpp_templates',
+        'test/fixtures/media_templates',
+        'test/fixtures/templates',
+      ])
+        ...Directory(dir).listSync().whereType<File>().where(
+          (file) => file.path.endsWith('.jinja'),
+        ),
+    ]..sort((a, b) => a.path.compareTo(b.path));
+    final mixedContent = [
+      for (final file in templates)
+        if (TemplateCaps.detect(file.readAsStringSync()) case TemplateCaps(
+          supportsStringContent: true,
+          supportsTypedContent: true,
+        ))
+          file,
+    ];
+
+    test('for the fixtures that read string and typed content', () {
+      expect(mixedContent.map((file) => p.basename(file.path)), [
+        'Apriel-1.6-15b-Thinker-fixed.jinja',
+        'MiniMax-M2.jinja',
+        'google-gemma-4-31B-it-interleaved.jinja',
+        'moonshotai-Kimi-K2.jinja',
+        'unsloth-mistral-Devstral-Small-2507.jinja',
+        'GLM-OCR.jinja',
+        'LFM2-VL-450M.jinja',
+        'Qwen2_5-Omni-3B.jinja',
+        'Qwen3_5-0_8B.jinja',
+        'functiongemma-270m-it.jinja',
+        'gemma-3-4b-it.jinja',
+        'gemma-3n-E4B-it.jinja',
+        'gemma-4-E2B-it.jinja',
+      ]);
+    });
+
+    for (final file in mixedContent) {
+      for (final toolChoice in [null, ...ToolChoice.values]) {
+        for (final enableThinking in [true, false]) {
+          test('${p.basename(file.path)}, tool choice: ${toolChoice?.name}, '
+              'thinking: $enableThinking', () {
+            final source = file.readAsStringSync();
+            Map<String, Object?> renderWith(LlamaContentPart media) => rendered(
+              render(
+                source,
+                media,
+                toolChoice: toolChoice,
+                enableThinking: enableThinking,
+              ),
+            );
+            expect(
+              renderWith(const LlamaImageContent(path: '/tmp/photo.png')),
+              renderWith(const LlamaTextContent(mtmdMediaMarker)),
+            );
+          });
+        }
+      }
+    }
+
+    test('keeps a Qwen3.5 tool grammar lazy behind its trigger', () {
+      final result = render(
+        File('test/fixtures/templates/Qwen3_5-0_8B.jinja').readAsStringSync(),
+        const LlamaImageContent(path: '/tmp/photo.png'),
+      );
+
+      expect(result.grammarLazy, isTrue);
+      expect(
+        result.grammarTriggers.map((trigger) => trigger.value),
+        contains(contains('<tool_call>')),
+      );
+      expect(result.preservedTokens, contains('<tool_call>'));
+    });
   });
 }

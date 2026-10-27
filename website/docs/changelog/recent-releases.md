@@ -11,6 +11,7 @@ For canonical full release notes, use:
 
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
+- Requests with an image or audio part and tools honor `ToolChoice.auto` instead of forcing a tool call on templates such as Qwen3-VL and Qwen3.5, and use the same tool-call grammar, triggers, parser and stops as text requests ([#1463](https://github.com/leehack/llamadart/issues/1463)).
 
 ## 0.16.5
 

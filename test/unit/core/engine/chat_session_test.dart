@@ -919,6 +919,42 @@ void main() {
       expect(backend.lastParams?.grammar, contains('test_tool'));
     });
 
+    test('an image with tools keeps the tool grammar lazy', () async {
+      backend.chatTemplate = '''
+{%- if tools %}<|im_start|>system
+<tools>{% for tool in tools %}{{ tool | tojson }}{% endfor %}</tools>
+Return each call in <tool_call></tool_call> tags.<|im_end|>
+{% endif %}
+{%- for message in messages %}<|im_start|>{{ message.role }}
+{% if message.content is string %}{{ message.content }}{% else %}{% for part in message.content %}{% if part.type == 'text' %}{{ part.text }}{% endif %}{% endfor %}{% endif %}<|im_end|>
+{% endfor %}
+{%- if add_generation_prompt %}<|im_start|>assistant
+{% endif %}''';
+      final tools = [
+        ToolDefinition(
+          name: 'take_photo',
+          description: 'Take a photo',
+          handler: (p) async => 'result',
+          parameters: [],
+        ),
+      ];
+      backend.queueResponse('Blue.');
+
+      await session.create([
+        LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+        const LlamaTextContent('What color is it?'),
+      ], tools: tools).drain();
+
+      expect(backend.lastPrompt, contains('<__media__>What color is it?'));
+      expect(backend.lastParams?.grammar, contains('take_photo'));
+      expect(backend.lastParams?.grammarLazy, isTrue);
+      expect(
+        backend.lastParams?.grammarTriggers.map((trigger) => trigger.value),
+        contains(contains('<tool_call>')),
+      );
+      expect(backend.lastParams?.preservedTokens, contains('<tool_call>'));
+    });
+
     test('send returns the reply and records both turns', () async {
       backend.queueResponse('<think>\nPlan.\n</think>\n\nSure.');
 
