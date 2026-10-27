@@ -15,6 +15,7 @@ import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:test/test.dart';
 
 import 'fixtures/image_conditioning_cache_comparison.dart';
+import 'fixtures/image_container_comparison.dart';
 import 'fixtures/image_warmup_comparison.dart';
 
 // Real image generation through the stable_diffusion runtime this example
@@ -97,6 +98,24 @@ void main() {
     (ImageModelRole.taesd, 'LLAMADART_TAESD_FORMATS'),
   ]) {
     test('${role.name} containers preserve CPU pixels', () async {
+      final manifest = Platform.environment['LLAMADART_IMAGE_CONTAINER_SET'];
+      if (role == ImageModelRole.checkpoint && manifest != null) {
+        final references =
+            Platform.environment['LLAMADART_IMAGE_CONTAINER_REFERENCES'];
+        expect(
+          references,
+          isNotNull,
+          reason:
+              'Complete checkpoint qualification requires independent C references.',
+        );
+        await compareImageCheckpointContainers(
+          modelSet: manifest,
+          references: references!,
+          output: outputDir,
+        );
+        return;
+      }
+
       final paths = Platform.environment[variable]?.split(',');
       if (paths == null || taesdPath == null || sdTurboPath == null) {
         markTestSkipped(

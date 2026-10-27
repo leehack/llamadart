@@ -1709,6 +1709,66 @@ dev_dependencies:
       },
     );
 
+    test(
+      'container qualification requires both manifest and independent references',
+      () async {
+        for (final arguments in [
+          const ['--scenario', 'image-container-formats', '--dry-run'],
+          const [
+            '--scenario',
+            'image-container-formats',
+            '--model-path',
+            'models.json',
+            '--dry-run',
+          ],
+        ]) {
+          final result = await runLocalE2e(
+            arguments,
+            projectRoot: '/repo',
+            environment: const {},
+          );
+          expect(result.exitCode, 64);
+          expect(
+            result.stderr,
+            contains('LLAMADART_IMAGE_CONTAINER_REFERENCES'),
+          );
+        }
+        final result = await runLocalE2e(
+          const [
+            '--scenario',
+            'image-container-formats',
+            '--model-path',
+            'models.json',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+          environment: const {
+            'LLAMADART_IMAGE_CONTAINER_REFERENCES': '/references',
+          },
+        );
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains(
+            'cd /repo/example/basic_app && LLAMADART_IMAGE_CONTAINER_SET=models.json',
+          ),
+        );
+        expect(
+          result.stdout,
+          contains(
+            'LLAMADART_IMAGE_OUTPUT_DIR=/repo/build/image-container-formats',
+          ),
+        );
+        expect(result.stdout, contains('test/image_generation_e2e_test.dart'));
+        expect(
+          result.stdout,
+          contains(r"--name '^checkpoint containers preserve CPU pixels$'"),
+        );
+        expect(result.stdout, isNot(contains('--run-skipped')));
+      },
+    );
+
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(
         const ['--scenario', 'image-generation-smoke', '--dry-run'],

@@ -83,8 +83,10 @@ core and `llamadart_stable_diffusion_flutter` together.
 - Formats: compatible GGUF and Safetensors load directly, including mixed
   components; do not convert Safetensors merely to satisfy the image API.
   Detection uses headers, not filename extensions. Compatible PyTorch
-  `.ckpt`/`.pth`/`.pt` state-dict files need explicit roles; real-checkpoint
-  qualification is incomplete. An explicit role is not conversion or proof
+  `.ckpt`/`.pth`/`.pt` tensor-only state dictionaries need explicit roles.
+  Complete byte-equivalent SD-Turbo F16 GGUF/Safetensors and PyTorch
+  ZIP/nested ZIP/legacy inputs have exact direct-C/public output controls on
+  macOS arm64 CPU; other layouts and platforms remain unqualified. An explicit role is not conversion or proof
   of architecture/dtype support. Leave `ModelSource.format` unset. Local
   directories and managed Safetensors shard sets have no public loading
   contract; resolve compatible component files individually. The guide's

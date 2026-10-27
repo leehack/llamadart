@@ -616,6 +616,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'probe or hook changes.',
   ),
   TestMatrixRow(
+    id: 'image-container-formats',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Complete byte-equivalent SD-Turbo F16 GGUF/Safetensors and restricted '
+        'PyTorch ZIP/nested ZIP/legacy containers, '
+        'automatic and explicit public checkpoint roles, per-input hashes, '
+        'CPU generation/disposal and exact independent direct-C RGB parity; '
+        'not arbitrary checkpoint, architecture, PyTorch object or GPU support',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-container-formats --model-path <manifest.json>',
+    useWhen:
+        'Image checkpoint format classification, explicit role transport '
+        'or restricted native container reader changes.',
+  ),
+  TestMatrixRow(
     id: 'image-seamless-textures',
     tier: 'targeted',
     mode: 'local-only',

@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Document and validate complete image checkpoint container layouts on macOS CPU.
 - Reduce startup compilation overhead for `llamadart:doctor`.
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 

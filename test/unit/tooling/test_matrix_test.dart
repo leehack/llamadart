@@ -159,9 +159,24 @@ void main() {
       expect(ids, contains('decision-model-web-smoke'));
       expect(ids, contains('web-speech-task-cancel'));
       expect(ids, contains('image-generation-smoke'));
+      expect(ids, contains('image-container-formats'));
       expect(ids, contains('image-exit-teardown'));
       expect(ids, contains('chat-app-image-generation-smoke'));
     });
+
+    test(
+      'container row selects maintained direct-C local-only qualification',
+      () {
+        final row = testMatrixRows.singleWhere(
+          (row) => row.id == 'image-container-formats',
+        );
+        expect(row.tier, 'targeted');
+        expect(row.mode, 'local-only');
+        expect(row.command, contains('--scenario image-container-formats'));
+        expect(row.command, contains('--model-path <manifest.json>'));
+        expect(row.covers, contains('independent direct-C RGB parity'));
+      },
+    );
 
     test('Web tool penalty row is a targeted local-only scenario row', () {
       final row = testMatrixRows.singleWhere(
