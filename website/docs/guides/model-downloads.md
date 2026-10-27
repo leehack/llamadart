@@ -358,9 +358,10 @@ await manager.clear();
 
 **Atomic writes.** Each download attempt writes its own
 `<file>.<random id>.part` file and renames it onto the model path only after
-the HTTP stream succeeds, the file's length matches the length the server
-reported (when it reported one) and any SHA-256 check passes. A length
-mismatch discards the file and downloads again. A failed or cancelled attempt
+the HTTP stream succeeds, the file's length matches the total the server
+reported (when it reported one for the decoded body; not for gzip-encoded
+responses) and any SHA-256 check passes. A shorter file is kept and resumed;
+a longer one is discarded and downloaded again. A failed or cancelled attempt
 leaves its bytes in `<file>.part` for the next resume.
 
 **Resume.** A retry or resume sends an HTTP `Range` request only when the
@@ -393,9 +394,11 @@ running llamadart 0.16 or older do not take it, and a manager whose cache root
 is not writable or whose file system refuses locks logs a warning once and
 falls back to serializing within its own isolate. Such a writer can download
 the same entry at the same time as a locked one, and a locked caller can
-resume from a part file that writer is still appending to; the length check
-then discards the mixed file and downloads again, so the cost is a repeated
-download, not a corrupt entry. Without the lock, crashed attempts' part files
+resume from a part file that writer is still extending. A resume writes each
+byte at the offset its `Range` request named and only when the server's
+validator still matches, so both writers put the same bytes at the same
+offsets; any file longer than the server's total is discarded. The cost is a
+repeated download, not a corrupt entry. Without the lock, crashed attempts' part files
 also stay in place. Network file systems (NFS, SMB) are not supported for
 concurrent use from several machines; their locking depends on the server and
 client configuration.

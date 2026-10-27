@@ -258,11 +258,10 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     final cacheDir = _cacheDirectory(source, options);
     if (options.cachePolicy == ModelCachePolicy.cacheOnly &&
         !await File(path.join(cacheDir.path, source.fileName)).exists()) {
-      // Nothing to wait for or validate: a miss needs no lock directory,
-      // which a read-only cache root could not hold anyway.
-      return _withCacheLock(
-        _cacheLockKey(cacheDir),
-        () => _ensureModelUnlocked(source, options, onProgress),
+      // A miss needs no lock directory, which a read-only cache root could not
+      // hold. Reading an entry that appears now would race its writer.
+      throw LlamaStateException(
+        'No cached model is available for ${_redactedSourceName(source)}.',
       );
     }
     return _withCacheLock(
@@ -1128,9 +1127,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         await _writePartMetadata(partMetadataFile, responsePartMetadata);
       }
 
-      final sink = downloadFile.openWrite(
+      final output = await downloadFile.open(
         mode: append ? FileMode.append : FileMode.write,
       );
+      if (append) {
+        // Write at the offset the Range request asked for, not at the file's
+        // current end: a writer without the entry lock may have extended the
+        // file during the round trip, and its bytes there match the entity.
+        await output.setPosition(existingBytes);
+      }
       var receivedBytes = existingBytes;
       final totalBytes = _totalBytes(response, existingBytes);
       // Guard against a server that accepts the connection then stalls: an idle
@@ -1149,7 +1154,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       try {
         await for (final chunk in body) {
           _throwIfCancelled(options);
-          sink.add(chunk);
+          await output.writeFrom(chunk);
           receivedBytes += chunk.length;
           onProgress?.call(
             ModelDownloadProgress(
@@ -1159,19 +1164,21 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           );
         }
       } finally {
-        await sink.close();
+        await output.close();
       }
       _throwIfCancelled(options);
 
-      // A writer that does not take the entry lock (an older llamadart, or a
-      // process that could not lock) can still be appending to a part file
-      // this attempt resumed, and a body can end early. Either leaves a file
-      // whose length differs from the server's.
+      // A body can end early, and a writer that does not take the entry lock
+      // (an older llamadart, or a process that could not lock) can still be
+      // writing a part file this attempt resumed. A short file stays as the
+      // resume point; a longer one holds bytes from elsewhere.
       final downloadedBytes = await downloadFile.length();
       if (totalBytes != null && downloadedBytes != totalBytes) {
-        await _deleteIfExists(downloadFile);
-        if (partMetadataFile != null) {
-          await _deleteIfExists(partMetadataFile);
+        if (downloadedBytes > totalBytes) {
+          await _deleteIfExists(downloadFile);
+          if (partMetadataFile != null) {
+            await _deleteIfExists(partMetadataFile);
+          }
         }
         throw HttpException(
           'Downloaded $downloadedBytes bytes but the server reported '
@@ -1551,6 +1558,12 @@ int? _totalBytes(HttpClientResponse response, int existingBytes) {
     if (total != null) {
       return total;
     }
+  }
+  // A decompressed body is longer than the Content-Length, which counts the
+  // encoded bytes.
+  if (response.compressionState ==
+      HttpClientResponseCompressionState.decompressed) {
+    return null;
   }
   final length = response.contentLength;
   if (length >= 0) {

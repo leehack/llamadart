@@ -331,6 +331,65 @@ void main() {
       expect(cached?.bytes, server.payload.length);
     });
 
+    test('downloads a gzip-encoded response whose Content-Length counts the '
+        'encoded bytes', () async {
+      server.gzipBody = true;
+
+      final entry = await manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(maxRetries: 0),
+      );
+
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+      expect(entry.bytes, server.payload.length);
+    });
+
+    test(
+      'a body shorter than the reported total is kept and resumed',
+      () async {
+        server.shortBodies.add(1);
+
+        final entry = await manager.ensureModel(source());
+
+        expect(server.ranges, <String?>[null, 'bytes=${server.holdAfter}-']);
+        expect(await File(entry.filePath).readAsBytes(), server.payload);
+      },
+    );
+
+    test('a resumed attempt writes at the offset it requested while a writer '
+        'without the lock extends the same file', () async {
+      // An older llamadart writes <file>.part directly, without the lock, and
+      // keeps its handle open. The locked caller adopts the file at [adopted]
+      // bytes; the old writer reaches [extended] during the round trip.
+      const adopted = 128 * 1024;
+      const extended = 192 * 1024;
+      server
+        ..holdHeaders.add(1)
+        ..holdAtOverrides[1] = 16 * 1024
+        ..failAfterHold = true
+        ..releaseRequest(1);
+      final directory = entryDirectory()..createSync(recursive: true);
+      final part = File(path.join(directory.path, '$_fileName.part'));
+      File(
+        '${part.path}.json',
+      ).writeAsStringSync(jsonEncode(<String, Object?>{'etag': server.etag}));
+      final oldWriter = await part.open(mode: FileMode.write);
+      addTearDown(oldWriter.close);
+      await oldWriter.writeFrom(server.payload, 0, adopted);
+      await oldWriter.flush();
+
+      final locked = manager.ensureModel(source());
+      await server.headersHeld(1);
+      expect(server.ranges.first, 'bytes=$adopted-');
+      await oldWriter.writeFrom(server.payload, adopted, extended);
+      await oldWriter.flush();
+      server.releaseHeaders(1);
+      final entry = await locked.timeout(const Duration(seconds: 30));
+
+      expect(entry.bytes, server.payload.length);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    }, testOn: '!windows');
+
     test('never touches a metadata temp file another writer owns', () async {
       final directory = entryDirectory()..createSync(recursive: true);
       final foreign = File(path.join(directory.path, 'metadata.json.tmp'))
@@ -555,6 +614,12 @@ class _HoldingServer {
   final Map<int, int> holdAtOverrides = <int, int>{};
   bool failAfterHold = false;
 
+  /// Sends every body gzip-encoded, with the encoded Content-Length.
+  bool gzipBody = false;
+
+  /// Request numbers whose full response ends at [holdAfter] bytes.
+  final Set<int> shortBodies = <int>{};
+
   /// Request numbers whose headers wait for [releaseHeaders].
   final Set<int> holdHeaders = <int>{};
   final Map<int, Completer<void>> _headersHeld = <int, Completer<void>>{};
@@ -657,17 +722,37 @@ class _HoldingServer {
           'bytes $start-${body.length - 1}/${body.length}',
         );
       }
+      if (gzipBody) {
+        final encoded = gzip.encode(body.sublist(start));
+        response.headers
+          ..set(HttpHeaders.contentEncodingHeader, 'gzip')
+          ..contentLength = encoded.length;
+        response.add(encoded);
+        await response.close();
+        return;
+      }
+      if (shortBodies.contains(number) && start == 0) {
+        // Ends cleanly at half the body: no Content-Length to fall short of,
+        // only the Content-Range total.
+        response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes 0-${holdAfter - 1}/${body.length}',
+        );
+        response.add(body.sublist(0, holdAfter));
+        await response.close();
+        return;
+      }
       response.headers.contentLength = body.length - start;
-      final holdAt = start != 0
-          ? null
-          : holdAtOverrides[number] ??
-                (holdFirst && number == 1 ? holdAfter : null);
+      final holdAt =
+          holdAtOverrides[number] ??
+          (holdFirst && number == 1 && start == 0 ? holdAfter : null);
       if (holdAt == null) {
         response.add(body.sublist(start));
         await response.close();
         return;
       }
-      response.add(body.sublist(0, holdAt));
+      // [holdAt] counts bytes of this response, from [start].
+      response.add(body.sublist(start, start + holdAt));
       await response.flush();
       (_held[number] ??= Completer<void>()).complete();
       if (_releasedAll) {
@@ -679,7 +764,7 @@ class _HoldingServer {
         await response.close();
         return;
       }
-      response.add(body.sublist(holdAt));
+      response.add(body.sublist(start + holdAt));
       await response.close();
     } finally {
       activeRequests -= 1;
