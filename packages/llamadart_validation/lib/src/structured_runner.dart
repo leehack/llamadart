@@ -210,11 +210,29 @@ extension on ValidationRunner {
       'structured_output': capabilities.supportsStructuredOutput,
     };
     if (id == 'S01.capabilities') {
+      final diagnostics = await _checked(engine.diagnostics);
       final evidence = {
         'expected_runtime': _structuredRuntime,
-        'expected': expectedStructuredCapabilities(_structuredRuntime),
+        'expected': expectedStructuredCapabilities(
+          _structuredRuntime,
+          profile: profile,
+          environment: _structuredEnvironment,
+          diagnostics: diagnostics,
+          preparation: _structuredPreparation,
+        ),
+        if (_structuredRuntime == 'litert')
+          'native_schema_admitted': capabilities.supportsStructuredOutput,
+        if (_structuredRuntime == 'litert') 'diagnostics': diagnostics,
         'reported': reported,
       };
+      if ((evidence['expected'] as Map)['structured_output'] == null) {
+        return {
+          ...evidence,
+          'status': 'NOT_RUN',
+          'reason':
+              'Native JSON Schema capability expectation lacks verified host/model/runtime provenance',
+        };
+      }
       return {
         ...evidence,
         'status':
@@ -222,6 +240,10 @@ extension on ValidationRunner {
               id,
               evidence,
               runtime: _structuredRuntime,
+              profile: profile,
+              environment: _structuredEnvironment,
+              diagnostics: diagnostics,
+              preparation: _structuredPreparation,
             )
             ? 'PASS'
             : 'FAIL',

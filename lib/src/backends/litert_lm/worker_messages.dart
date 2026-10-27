@@ -73,6 +73,12 @@ class LiteRtLmContextFreeRequest extends LiteRtLmWorkerRequest {
   LiteRtLmContextFreeRequest(this.contextHandle, super.sendPort);
 }
 
+/// Requests model-specific native JSON Schema provider admission.
+class LiteRtLmJsonSchemaPrepareRequest extends LiteRtLmWorkerRequest {
+  /// Creates an admission request.
+  LiteRtLmJsonSchemaPrepareRequest(super.sendPort);
+}
+
 /// Request to generate text.
 class LiteRtLmGenerateRequest extends LiteRtLmWorkerRequest {
   /// The context handle.
@@ -108,6 +114,9 @@ class LiteRtLmGenerateChatRequest extends LiteRtLmWorkerRequest {
   /// Generation parameters.
   final GenerationParams params;
 
+  /// Optional validated native JSON Schema payload.
+  final String? jsonSchema;
+
   /// Optional native tool definition JSON.
   final List<Map<String, dynamic>>? tools;
 
@@ -133,6 +142,7 @@ class LiteRtLmGenerateChatRequest extends LiteRtLmWorkerRequest {
     this.params,
     super.sendPort, {
     this.tools,
+    this.jsonSchema,
     this.toolChoice = ToolChoice.auto,
     this.parallelToolCalls = false,
     this.enableThinking = true,

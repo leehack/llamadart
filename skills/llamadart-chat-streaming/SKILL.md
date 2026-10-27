@@ -137,10 +137,14 @@ description: >-
   basename contains URL delimiters, preventing encoded query text from becoming
   model metadata.
 - For strict JSON, use `LlamaStructuredOutput` with
-  `engine.createStructuredJson`; it constrains decoding with a grammar and
-  validates the final output; `session.createStructuredJson(parts, output:)`
-  does the same within a `ChatSession`. Runtimes without grammar support
-  (LiteRT-LM) throw `LlamaUnsupportedException` before generating. A raw
+  `engine.createStructuredJson`; it constrains decoding and validates the
+  final output. Native LiteRT-LM supports canonical Qwen3 text on
+  macOS arm64 CPU after provider admission, with `enableThinking: false` and an
+  object schema limited to scalar properties, required, enum/const and boolean
+  additionalProperties. Only the corrected Qwen3-0.6B artifact above has model-backed qualification.
+  It rejects tools/media/custom templates/speculation/caller stops and broader schemas; GBNF remains unsupported. Web LiteRT-LM
+  rejects strict schemas. `session.createStructuredJson(parts, output:)`
+  does the same within a `ChatSession`. Runtimes without either enforcement path throw `LlamaUnsupportedException` before generating. A raw
   `responseFormat` map must be `{'type': 'json_object'}`,
   `{'type': 'json_schema', 'json_schema': {'schema': ...}}`, where
   `json_schema` may also hold `name`, `description` and `strict`, or
@@ -249,7 +253,7 @@ Future<void> explain(LlamaEngine engine) async {
 }
 ```
 
-Structured JSON with typed decoding (llama.cpp runtimes only):
+Structured JSON with typed decoding:
 
 ```dart
 import 'package:llamadart/llamadart.dart';

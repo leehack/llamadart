@@ -131,6 +131,90 @@ class _ScriptedBackend
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class _SchemaBackend extends _ScriptedBackend
+    implements BackendJsonSchemaChatGeneration {
+  _SchemaBackend({this.providerWorks = true}) : super(grammarSupport: false);
+  final bool providerWorks;
+  bool admitted = false;
+  @override
+  bool get supportsJsonSchemaChatGeneration => admitted;
+  @override
+  Future<void> prepareJsonSchemaChat() async {
+    if (!providerWorks) {
+      throw LlamaUnsupportedException('Provider unavailable.');
+    }
+    admitted = true;
+  }
+
+  @override
+  Future<String> getBackendName() async => 'LiteRT-LM cpu';
+  @override
+  Stream<List<int>> generateChatWithJsonSchema(
+    int handle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    yield utf8.encode('{}');
+  }
+}
+
+const _schemaEnvironment = <String, dynamic>{
+  'os': 'macos',
+  'build_os': 'macos',
+  'build_abi': 'macos_arm64',
+  'litert_tag': 'v0.18.1-4',
+  'runtime_payload_verified': true,
+  'runtime_bundle_sha256':
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  'source_commit': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  'source_dirty': false,
+  'hook_sha256':
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+};
+
+Future<({ValidationReport report, List<Map<String, dynamic>> events})>
+_runNativeSchema(
+  bool providerWorks, {
+  Map<String, dynamic> environment = _schemaEnvironment,
+}) async {
+  final directory = Directory.systemTemp.createTempSync('native-schema-pack-');
+  addTearDown(() => directory.deleteSync(recursive: true));
+  final model = File('${directory.path}/Qwen3-0.6B.litertlm')
+    ..writeAsBytesSync([0, 0, 0, 0]);
+  final selected = ValidationProfile.fromJson(
+    (jsonDecode(File('assets/profiles/chat-litert-cpu.json').readAsStringSync())
+          as Map<String, dynamic>)
+      ..['selection'] = 'focused'
+      ..['focus_features'] = ['structured_output'],
+  );
+  final events = <Map<String, dynamic>>[];
+  await ValidationRunner(
+    profile: selected,
+    engine: PublicValidationEngine(
+      engineFactory: () =>
+          LlamaEngine(_SchemaBackend(providerWorks: providerWorks)),
+    ),
+    emit: (event) async => events.add(event),
+    caseTimeout: const Duration(seconds: 10),
+  ).run(
+    model.path,
+    runId: 'native-schema-test',
+    environment: environment,
+    preparation: {
+      'verified': true,
+      'sha256': selected.modelHash,
+      'bytes': selected.model['bytes'],
+    },
+  );
+  return (
+    report: ValidationReport.parse(events.map(jsonEncode).join('\n')),
+    events: events,
+  );
+}
+
 ValidationProfile _profile(String backend) => ValidationProfile.fromJson(
   jsonDecode(
         File(
@@ -190,6 +274,140 @@ Map<String, dynamic> _record(List<Map<String, dynamic>> events, String id) =>
     events.singleWhere((e) => e['type'] == 'case' && e['case_id'] == id);
 
 void main() {
+  test(
+    'known excluded Gemma family is false while unprofiled model bytes remain unknown',
+    () {
+      final data =
+          jsonDecode(
+                File(
+                  'assets/profiles/gemma3-litert-cpu.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(
+        expectedStructuredCapabilities(
+          'litert',
+          profile: ValidationProfile.fromJson(data),
+          environment: _schemaEnvironment,
+          diagnostics: {'backend_name': 'LiteRT-LM cpu'},
+        )['structured_output'],
+        isFalse,
+      );
+      (data['model'] as Map)['sha256'] = List.filled(64, 'c').join();
+      expect(
+        expectedStructuredCapabilities(
+          'litert',
+          profile: ValidationProfile.fromJson(data),
+          environment: _schemaEnvironment,
+          diagnostics: {'backend_name': 'LiteRT-LM cpu'},
+        )['structured_output'],
+        isNull,
+      );
+    },
+  );
+  test(
+    'catalog 10 native capability expectation uses locked identity, not provider outcome',
+    () async {
+      final supported = await _runNativeSchema(true);
+      expect(_record(supported.events, 'S01.capabilities')['status'], 'PASS');
+      expect(supported.report.problems, isEmpty);
+      final missing = await _runNativeSchema(false);
+      expect(_record(missing.events, 'S01.capabilities')['status'], 'FAIL');
+      final manifest = supported.events.singleWhere(
+        (event) => event['type'] == 'manifest',
+      );
+      final profile = ValidationProfile.fromJson(
+        manifest['profile'] as Map<String, dynamic>,
+      );
+      for (var version = 8; version <= 9; version++) {
+        expect(
+          validationCase('S01.capabilities', catalogVersion: version).version,
+          1,
+        );
+        expect(
+          profile.catalogForVersion(version)['fixtures'],
+          isNot(contains('native_json_schema_capability')),
+        );
+        expect(
+          expectedStructuredCapabilities(
+            'litert',
+            catalogVersion: version,
+          )['structured_output'],
+          isFalse,
+        );
+      }
+    },
+  );
+  test(
+    'unverified JIT provenance is incomplete rather than unsupported false',
+    () async {
+      final result = await _runNativeSchema(
+        true,
+        environment: {..._schemaEnvironment, 'runtime_payload_verified': false},
+      );
+      final record = _record(result.events, 'S01.capabilities');
+      expect(record['status'], 'NOT_RUN');
+      expect((record['reported'] as Map)['structured_output'], isTrue);
+      expect((record['expected'] as Map)['structured_output'], isNull);
+      record['status'] = 'PASS';
+      expect(
+        ValidationReport.parse(
+          result.events.map(jsonEncode).join('\n'),
+        ).problems,
+        contains('Invalid structured-output case evidence: S01.capabilities'),
+      );
+    },
+  );
+  test(
+    'importer rejects forced capability/admission and altered native schema identity',
+    () async {
+      final result = await _runNativeSchema(true);
+      for (final mutate in <void Function(List<Map<String, dynamic>>)>[
+        (events) =>
+            (_record(events, 'S01.capabilities')['reported']
+                    as Map)['structured_output'] =
+                false,
+        (events) =>
+            _record(events, 'S01.capabilities')['native_schema_admitted'] =
+                false,
+        (events) =>
+            (events.firstWhere((e) => e['type'] == 'manifest')['environment']
+                    as Map)['build_abi'] =
+                'macos_x64',
+        (events) =>
+            (events.firstWhere((e) => e['type'] == 'manifest')['environment']
+                    as Map)['litert_tag'] =
+                'v0.17.0-6',
+        (events) =>
+            (events.firstWhere((e) => e['type'] == 'manifest')['environment']
+                    as Map)
+                .remove('runtime_bundle_sha256'),
+        (events) =>
+            (events.firstWhere((e) => e['type'] == 'manifest')['preparation']
+                as Map)['sha256'] = List.filled(
+              64,
+              '0',
+            ).join(),
+        (events) =>
+            (_record(events, 'C01.load')['diagnostics']
+                    as Map)['backend_name'] =
+                'LiteRT-LM gpu',
+        (events) =>
+            (_record(events, 'S01.capabilities')['diagnostics']
+                    as Map)['backend_name'] =
+                'LiteRT-LM gpu',
+      ]) {
+        final copy = (jsonDecode(jsonEncode(result.events)) as List)
+            .cast<Map<String, dynamic>>();
+        mutate(copy);
+        expect(
+          ValidationReport.parse(copy.map(jsonEncode).join('\n')).problems,
+          contains('Invalid structured-output case evidence: S01.capabilities'),
+        );
+      }
+    },
+  );
+
   test('structured profiles select every structured case from catalog 8', () {
     for (final backend in ['cpu', 'metal']) {
       final selected = _profile(backend);

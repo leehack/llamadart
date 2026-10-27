@@ -154,7 +154,7 @@ Pick targeted rows based on the touched surface:
 | Text embedding profiles, task/document titles or output dimensions | `text-embedding-retrieval` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | LiteRT-LM embedding engine | `litert-lm-multimodal-embedding`; includes the documented local-only upstream WebGPU parity diagnostic |
-| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
+| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-json-schema`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `web-tool-penalty-smoke` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, `web-speech-task-cancel`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -1051,3 +1051,12 @@ unqualified; a browser adapter alone establishes no model GPU execution.
 The model-free Chrome suite separately checks routing, API skew and typed
 unsupported roles/options. Remaining tool/media/template work stays in
 [#1152](https://github.com/leehack/llamadart/issues/1152).
+
+### Native LiteRT-LM JSON Schema
+
+`litert-lm-json-schema` runs the public native macOS arm64 CPU path against the
+corrected Qwen3-0.6B artifact. It compares adversarial unconstrained/constrained
+output, schema A/B/ordinary reset, invalid-schema recovery, system/history,
+before/after-content cancellation and a true length cutoff. Run `--list` and
+`--scenario litert-lm-json-schema --model-path <existing-model> --backend cpu
+--dry-run` before execution. This does not qualify other delegates/platforms.

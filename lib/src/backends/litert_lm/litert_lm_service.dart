@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
 import '../../core/engine/engine_observer.dart';
+import '../../core/engine/json_schema_chat_request.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/llama_logger.dart';
@@ -98,7 +100,11 @@ class LiteRtLmService {
     LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
     LiteRtLmBundleFirstChannelReader? readBundleFirstChannel,
     String? finishReasonProbeLibraryPath,
-  }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+    bool Function()? jsonSchemaPlatformSupported,
+  }) : _jsonSchemaPlatformSupported =
+           jsonSchemaPlatformSupported ??
+           (() => Platform.isMacOS && Abi.current() == Abi.macosArm64),
+       _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
        _readBundleCapabilities =
            readBundleCapabilities ??
            ((modelPath) =>
@@ -122,6 +128,8 @@ class LiteRtLmService {
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
+  bool _jsonSchemaAdmitted = false;
+  final bool Function() _jsonSchemaPlatformSupported;
   LiteRtLmEmbeddingSession? _embedding;
   LiteRtLmCacheLease? _cacheLease;
   ModelParams? _modelParams;
@@ -477,8 +485,86 @@ class LiteRtLmService {
     }
   }
 
-  /// Generates UTF-8 token byte chunks using native LiteRT-LM conversation
-  /// messages/tools instead of a pre-rendered Dart prompt.
+  /// Admits the actual native provider, rather than relying on setter exports.
+  Future<void> prepareJsonSchemaChat() async {
+    if (_jsonSchemaAdmitted) return;
+    _requireConversationEngine();
+    if (!_jsonSchemaPlatformSupported() ||
+        (_activeBackend ??
+                _backendNameFor(_modelParams ?? const ModelParams())) !=
+            'cpu') {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat is qualified only on macOS arm64 CPU. Select ComputeDevice.cpu; GPU, NPU and other platforms are unsupported.',
+      );
+    }
+    final name = p.basename(_modelPath!).toLowerCase().replaceAll('_', '-');
+    final template = RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(name)
+        ? _resolveBuiltinTemplate(name)
+        : _resolveUnnamedQwen3Template();
+    if (template == null ||
+        (_modelParams?.chatTemplate != null &&
+            _modelParams!.chatTemplate != template.template)) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat currently requires the canonical Qwen3 text template; custom templates and other model families are unqualified.',
+      );
+    }
+    _cancelRequested = false;
+    final client = await _ensureClientForGeneration(const GenerationParams());
+    if (!client.supportsJsonSchemaConstraints) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires all constraint-provider and thinking-config symbols in the packaged LiteRT-LM v0.18.1-4 runtime.',
+      );
+    }
+    try {
+      client.createConversation(
+        promptTemplate: template.template,
+        temperature: 0,
+        topK: 1,
+        topP: 1,
+        jsonSchemaConstraints: true,
+      );
+    } on StateError {
+      throw LlamaUnsupportedException(
+        'The loaded LiteRT-LM model cannot construct its JSON Schema provider; the model tokenizer or EOS may be incompatible.',
+      );
+    }
+    _jsonSchemaAdmitted = true;
+  }
+
+  /// Shares the normal chat lifecycle, with a validated per-request schema.
+  Stream<List<int>> generateJsonSchemaChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required String jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    validateJsonSchemaChatRequest(messages, params);
+    jsonSchemaChatPayload(jsonDecode(jsonSchema) as Map<String, dynamic>);
+    await prepareJsonSchemaChat();
+    try {
+      await for (final chunk in _generateChat(
+        contextHandle,
+        messages,
+        params,
+        toolChoice: ToolChoice.none,
+        enableThinking: false,
+        chatTemplateKwargs: chatTemplateKwargs,
+        templateNow: templateNow,
+        jsonSchema: jsonSchema,
+      )) {
+        yield chunk;
+      }
+    } on StateError {
+      // Native diagnostics can echo the schema or model paths.
+      throw LlamaInferenceException(
+        'Native JSON Schema chat failed during constrained decoding.',
+      );
+    }
+  }
+
+  /// Generates native chat from messages/tools instead of a rendered prompt.
   Stream<List<int>> generateChat(
     int contextHandle,
     List<LlamaChatMessage> messages,
@@ -516,6 +602,7 @@ class LiteRtLmService {
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
+    String? jsonSchema,
   }) async* {
     resetPerformanceMetrics();
     _lastGenerationLimit = null;
@@ -617,6 +704,7 @@ class LiteRtLmService {
           seed: params.seed ?? _defaultSamplerSeed(),
           npuBackend: backend == 'npu',
           loraPath: loraPath,
+          jsonSchemaConstraints: jsonSchema != null,
         );
     if (promptTemplate == null) {
       _createBundleTemplateConversation(
@@ -642,6 +730,7 @@ class LiteRtLmService {
         client
             .generateMessageJson(
               activeMessageJson,
+              jsonSchema: jsonSchema,
               visualTokenBudget: maxNumImages == null
                   ? null
                   : _gemma4DefaultVisualTokenBudget,
@@ -2175,6 +2264,7 @@ class LiteRtLmService {
   }
 
   void _disposeClient() {
+    _jsonSchemaAdmitted = false;
     _embedding?.dispose();
     _embedding = null;
     try {

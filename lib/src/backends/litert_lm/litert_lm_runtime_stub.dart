@@ -89,6 +89,9 @@ class LiteRtLmRuntimeClient {
   /// Thinking budgets are unavailable without `dart:ffi`.
   bool get supportsThinkingBudget => false;
 
+  /// JSON Schema constraints require the native runtime.
+  bool get supportsJsonSchemaConstraints => false;
+
   /// Finish reasons are unavailable without `dart:ffi`.
   bool get supportsFinishReasons => false;
 
@@ -150,6 +153,7 @@ class LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
     String? loraPath,
+    bool jsonSchemaConstraints = false,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
@@ -183,6 +187,7 @@ class LiteRtLmRuntimeClient {
     double? repetitionPenalty,
     double? presencePenalty,
     int? thinkingTokenBudget,
+    String? jsonSchema,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }

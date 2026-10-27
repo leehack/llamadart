@@ -312,7 +312,9 @@ void main() {
       for (final entry in validationFixtures.entries)
         entry.key: {
           for (final field in entry.value.entries)
-            if (field.value is String) field.key: const {'type': 'string'},
+            if (entry.key != 'native_json_schema_capability' &&
+                field.value is String)
+              field.key: const {'type': 'string'},
         },
     };
     final declared = properties['fixtures'] as Map;
@@ -354,6 +356,11 @@ void main() {
       expect(_violations(entry.value, schema), isNotEmpty, reason: entry.key);
     }
     final schemaAndManifest = <String, Map<String, dynamic>>{
+      'immutable native capability identity': patched('chat-litert-cpu.json', {
+        'fixtures': {
+          'native_json_schema_capability': {'model_sha256': 'a' * 64},
+        },
+      }),
       'unknown fixture': patched('chat-litert-cpu.json', {
         'fixtures': {'bogus': <String, Object>{}},
       }),

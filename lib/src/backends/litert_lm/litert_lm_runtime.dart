@@ -16,6 +16,7 @@ import 'litert_lm_embedding.dart';
 import 'litert_lm_embedding_bindings.dart' as emb;
 import 'litert_lm_finish_reason.dart';
 import 'litert_lm_last_error.dart';
+import 'litert_lm_json_schema_bindings.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_sampler_params.dart';
 
@@ -777,6 +778,7 @@ final class _BlockingSendMessageRequest {
     this.visualTokenBudget,
     this.maxOutputTokens,
     this.generationControls,
+    this.jsonSchema,
   });
 
   final String libraryPath;
@@ -788,6 +790,7 @@ final class _BlockingSendMessageRequest {
   final int? visualTokenBudget;
   final int? maxOutputTokens;
   final _GenerationControls? generationControls;
+  final String? jsonSchema;
 }
 
 /// Low-level native LiteRT-LM runtime client.
@@ -923,6 +926,12 @@ class LiteRtLmRuntimeClient {
     } finally {
       calloc.free(modelPathPtr);
     }
+  }
+
+  /// Whether the loaded runtime exports the complete optional schema API.
+  bool get supportsJsonSchemaConstraints {
+    _ensureLibrariesLoaded();
+    return _bindings!.jsonSchemaApi != null;
   }
 
   /// Creates a synchronous dedicated-ASR runtime session.
@@ -1214,9 +1223,15 @@ class LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
     String? loraPath,
+    bool jsonSchemaConstraints = false,
   }) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
+    if (jsonSchemaConstraints && bindings.jsonSchemaApi == null) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires the complete LiteRT-LM constraint-provider and thinking API. Use the packaged v0.18.1-4 runtime.',
+      );
+    }
     _deleteConversation();
 
     if (promptTemplate != null &&
@@ -1286,6 +1301,9 @@ class LiteRtLmRuntimeClient {
         );
       }
       bindings.conversationConfigSetEnableConstrainedDecoding(config, false);
+      if (jsonSchemaConstraints) {
+        bindings.jsonSchemaApi!.configure(config.cast());
+      }
       final lastError = bindings.lastError;
       lastError?.clear();
       final conversation = bindings.conversationCreate(engine, config);
@@ -1441,6 +1459,7 @@ class LiteRtLmRuntimeClient {
     double? repetitionPenalty,
     double? presencePenalty,
     int? thinkingTokenBudget,
+    String? jsonSchema,
   }) {
     final resolvedMaxOutputTokens = maxOutputTokens ?? _defaultMaxOutputTokens;
     if (repetitionPenalty != null &&
@@ -1510,6 +1529,7 @@ class LiteRtLmRuntimeClient {
         visualTokenBudget: visualTokenBudget,
         maxOutputTokens: resolvedMaxOutputTokens,
         generationControls: generationControls,
+        jsonSchema: jsonSchema,
       );
     }
     return _generateStreamingMessageJson(
@@ -1518,6 +1538,7 @@ class LiteRtLmRuntimeClient {
       visualTokenBudget: visualTokenBudget,
       maxOutputTokens: resolvedMaxOutputTokens,
       generationControls: generationControls,
+      jsonSchema: jsonSchema,
     );
   }
 
@@ -1527,6 +1548,7 @@ class LiteRtLmRuntimeClient {
     int? visualTokenBudget,
     int? maxOutputTokens,
     _GenerationControls? generationControls,
+    String? jsonSchema,
   }) {
     final conversation = _requireConversation();
     final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
@@ -1541,6 +1563,7 @@ class LiteRtLmRuntimeClient {
       visualTokenBudget: visualTokenBudget,
       maxOutputTokens: maxOutputTokens,
       generationControls: generationControls,
+      jsonSchema: jsonSchema,
     );
 
     unawaited(() async {
@@ -1576,6 +1599,7 @@ class LiteRtLmRuntimeClient {
     int? visualTokenBudget,
     int? maxOutputTokens,
     _GenerationControls? generationControls,
+    String? jsonSchema,
   }) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
@@ -1713,6 +1737,7 @@ class LiteRtLmRuntimeClient {
         visualTokenBudget: visualTokenBudget,
         maxOutputTokens: maxOutputTokens,
         generationControls: generationControls,
+        jsonSchema: jsonSchema,
       );
 
       final lastError = bindings.lastError;
@@ -2406,7 +2431,17 @@ void _setConversationOptionalArgs(
   int? visualTokenBudget,
   int? maxOutputTokens,
   _GenerationControls? generationControls,
+  String? jsonSchema,
 }) {
+  if (jsonSchema != null) {
+    final api = bindings.jsonSchemaApi;
+    if (api == null) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires the complete LiteRT-LM constraint API.',
+      );
+    }
+    api.constrain(optionalArgs.cast(), jsonSchema);
+  }
   if (visualTokenBudget != null) {
     bindings.conversationOptionalArgsSetVisualTokenBudget(
       optionalArgs,
@@ -2615,6 +2650,7 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
         visualTokenBudget: request.visualTokenBudget,
         maxOutputTokens: request.maxOutputTokens,
         generationControls: request.generationControls,
+        jsonSchema: request.jsonSchema,
       );
 
       final lastError = bindings.lastError;
@@ -3820,6 +3856,8 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
         void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
       >('litert_lm_conversation_config_set_extra_context');
+
+  late final jsonSchemaApi = LiteRtLmJsonSchemaApi.probeLibrary(_library);
 
   late final conversationConfigSetEnableConstrainedDecoding = _library
       .lookupFunction<

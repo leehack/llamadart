@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import '../../core/engine/engine_observer.dart';
+import '../../core/engine/json_schema_chat_request.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/llama_logger.dart';
@@ -40,6 +41,7 @@ class LiteRtLmBackend
         BackendMultimodalEmbeddings,
         BackendStatePersistenceSupport,
         BackendNativeChatGeneration,
+        BackendJsonSchemaChatGeneration,
         BackendDartLogLevel {
   Isolate? _isolate;
   ReceivePort? _workerLifecyclePort;
@@ -67,6 +69,8 @@ class LiteRtLmBackend
   bool _disposed = false;
   bool _nativeSettlementUnverified = false;
   bool _reportsFinishReasons = false;
+  bool _jsonSchemaAdmitted = false;
+  int _jsonSchemaEpoch = 0;
   final _LiteRtLmGenerationLimits _generationLimits =
       _LiteRtLmGenerationLimits();
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -239,6 +243,8 @@ class LiteRtLmBackend
   Future<int> modelLoad(String path, ModelParams params) async {
     await _cancelActiveGeneration();
     _reportsFinishReasons = false;
+    _jsonSchemaAdmitted = false;
+    _jsonSchemaEpoch++;
     final response = await _sendRequest(
       (sendPort) => LiteRtLmModelLoadRequest(
         path,
@@ -276,6 +282,8 @@ class LiteRtLmBackend
     }
     if (_sendPort == null) {
       _isReady = false;
+      _jsonSchemaAdmitted = false;
+      _jsonSchemaEpoch++;
       return;
     }
     try {
@@ -289,12 +297,16 @@ class LiteRtLmBackend
       throw _unsettledWorkerError();
     }
     _isReady = false;
+    _jsonSchemaAdmitted = false;
+    _jsonSchemaEpoch++;
     _embeddingEngine = false;
     _embeddingContext = null;
   }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async {
+    _jsonSchemaAdmitted = false;
+    _jsonSchemaEpoch++;
     final response = await _sendRequest(
       (sendPort) => LiteRtLmContextCreateRequest(modelHandle, params, sendPort),
     );
@@ -308,6 +320,8 @@ class LiteRtLmBackend
 
   @override
   Future<void> contextFree(int contextHandle) async {
+    _jsonSchemaAdmitted = false;
+    _jsonSchemaEpoch++;
     if (_nativeSettlementUnverified) {
       throw _unsettledWorkerError();
     }
@@ -395,6 +409,59 @@ class LiteRtLmBackend
           sourceLangCode: sourceLangCode,
           targetLangCode: targetLangCode,
         ),
+        templateNow: templateNow,
+      ),
+    );
+  }
+
+  @override
+  bool get supportsJsonSchemaChatGeneration => _isReady && _jsonSchemaAdmitted;
+
+  @override
+  Future<void> prepareJsonSchemaChat() async {
+    if (supportsJsonSchemaChatGeneration) return;
+    if (!_isReady || _embeddingEngine) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires a loaded text model.',
+      );
+    }
+    final generation = _jsonSchemaEpoch;
+    await _sendRequest(LiteRtLmJsonSchemaPrepareRequest.new);
+    if (generation != _jsonSchemaEpoch || !_isReady) {
+      throw LlamaStateException(
+        'The model changed during JSON Schema admission.',
+      );
+    }
+    _jsonSchemaAdmitted = true;
+  }
+
+  @override
+  Stream<List<int>> generateChatWithJsonSchema(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required Map<String, dynamic> jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    validateJsonSchemaChatRequest(messages, params);
+    final payload = jsonSchemaChatPayload(jsonSchema);
+    if (!supportsJsonSchemaChatGeneration) {
+      throw LlamaUnsupportedException(
+        'Native JSON Schema chat requires successful model/provider admission.',
+      );
+    }
+    return _generateOnWorker(
+      contextHandle,
+      (port) => LiteRtLmGenerateChatRequest(
+        contextHandle,
+        messages,
+        params,
+        port,
+        jsonSchema: payload,
+        enableThinking: false,
+        toolChoice: ToolChoice.none,
+        chatTemplateKwargs: chatTemplateKwargs,
         templateNow: templateNow,
       ),
     );
@@ -796,6 +863,8 @@ class LiteRtLmBackend
     }
     _killWorker();
     _isReady = false;
+    _jsonSchemaAdmitted = false;
+    _jsonSchemaEpoch++;
     if (_nativeSettlementUnverified) {
       throw _unsettledWorkerError();
     }
@@ -1094,6 +1163,8 @@ class LiteRtLmBackend
     _isolateStart = null;
     _activeGenerationCleanup = null;
     _isReady = false;
+    _jsonSchemaAdmitted = false;
+    _jsonSchemaEpoch++;
   }
 
   LlamaStateException _unsettledWorkerError() => LlamaStateException(

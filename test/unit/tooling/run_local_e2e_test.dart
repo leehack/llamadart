@@ -13,6 +13,83 @@ import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
   test(
+    'native JSON Schema scenario consumes the maintained CPU test and local model',
+    () async {
+      const scenario = 'litert-lm-json-schema';
+      const model = '/local/corrected-Qwen3.litertlm';
+      const target = 'test/e2e/backends/litert_lm_json_schema_e2e_test.dart';
+      final listed = await runLocalE2e(['--list'], projectRoot: '/repo');
+      expect(listed.exitCode, 0);
+      expect(listed.stdout, contains(scenario));
+      final steps = <LocalE2eCommandStep>[];
+      Future<ProcessResult> capture(LocalE2eCommandStep step) async {
+        steps.add(step);
+        return ProcessResult(0, 0, '', '');
+      }
+
+      for (final invalid in [
+        ['--scenario', scenario],
+        for (final backend in ['auto', 'gpu', 'npu'])
+          ['--scenario', scenario, '--model-path', model, '--backend', backend],
+      ]) {
+        final result = await runLocalE2e(
+          invalid,
+          projectRoot: '/repo',
+          foregroundStepRun: capture,
+        );
+        expect(result.exitCode, 64);
+        expect(
+          steps,
+          isEmpty,
+          reason: 'rejected requests must not dispatch a child',
+        );
+      }
+      final args = [
+        '--scenario',
+        scenario,
+        '--model-path',
+        model,
+        '--backend',
+        'cpu',
+      ];
+      final dry = await runLocalE2e(
+        [...args, '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(dry.exitCode, 0);
+      expect(dry.stdout, contains('LITERT_LM_MODEL=$model'));
+      expect(
+        dry.stdout,
+        contains('dart test -p vm -j 1 --run-skipped -t local-only $target'),
+      );
+      final dispatched = await runLocalE2e(
+        args,
+        projectRoot: '/repo',
+        foregroundStepRun: capture,
+      );
+      expect(dispatched.exitCode, 0);
+      final step = steps.single;
+      expect(step.executable, 'dart');
+      expect(step.workingDirectory, '/repo');
+      expect(step.arguments, [
+        'test',
+        '-p',
+        'vm',
+        '-j',
+        '1',
+        '--run-skipped',
+        '-t',
+        'local-only',
+        target,
+      ]);
+      expect(step.environment, {'LITERT_LM_MODEL': model});
+      expect(step.background, isFalse);
+      expect(File(target).existsSync(), isTrue);
+    },
+  );
+
+  test(
     'LiteRT Web history requires an explicit backend and local model',
     () async {
       for (final args in [

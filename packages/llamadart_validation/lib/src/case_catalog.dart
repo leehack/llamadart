@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 9;
+const int validationCatalogVersion = 10;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -93,6 +93,7 @@ const validationFixtures = <String, Map<String, Object>>{
     'samples': 3,
   },
   'structured_output': structuredOutputFixture,
+  'native_json_schema_capability': nativeJsonSchemaCapabilityFixture,
   'tokenization': tokenizationFixture,
 };
 
@@ -283,6 +284,13 @@ ValidationCaseDefinition validationCase(
   }
   if (!catalogDeclaresCase(id, catalogVersion)) {
     throw FormatException('Catalog $catalogVersion does not declare $id');
+  }
+  if (catalogVersion < 10 && id == 'S01.capabilities') {
+    return const ValidationCaseDefinition(
+      'S01.capabilities',
+      ['structured_output'],
+      ['structured_output'],
+    );
   }
   if (catalogVersion < 6 && (id == 'C08.cancel' || id == 'C08.overlap')) {
     return ValidationCaseDefinition(
@@ -609,12 +617,29 @@ const structuredOutputFixture = <String, Object>{
   },
 };
 
+/// Catalog-10 deterministic native capability predicate, independent of admission.
+const nativeJsonSchemaCapabilityFixture = <String, Object>{
+  'model_sha256':
+      'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108',
+  'model_bytes': 613722264,
+  'runtime_tag': 'v0.18.1-4',
+  'os': 'macos',
+  'abi': 'macos_arm64',
+  'requested_backend': 'cpu',
+  'actual_backend': 'litert-lm cpu',
+  'excluded_family_model_sha256': [
+    '1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be',
+    '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+  ],
+};
+
 /// Selected by `structured_output` focus or release selection, from catalog 8.
 const structuredOutputValidationCases = [
   ValidationCaseDefinition(
     'S01.capabilities',
     ['structured_output'],
-    ['structured_output'],
+    ['structured_output', 'native_json_schema_capability'],
+    version: 2,
   ),
   ValidationCaseDefinition(
     'S02.json_object',

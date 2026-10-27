@@ -561,6 +561,8 @@ class ValidationRunner {
   final ValidationEngine engine;
   final ValidationEventSink emit;
   final Duration caseTimeout;
+  Map<String, dynamic> _structuredEnvironment = const {};
+  Map<String, dynamic> _structuredPreparation = const {};
 
   /// Text of the decision fixture's reference file, for decision profiles.
   final String? decisionReference;
@@ -608,6 +610,8 @@ class ValidationRunner {
     required Map<String, dynamic> environment,
     Map<String, dynamic> preparation = const {},
   }) async {
+    _structuredEnvironment = Map<String, dynamic>.from(environment);
+    _structuredPreparation = Map<String, dynamic>.from(preparation);
     try {
       await emit({
         'type': 'manifest',

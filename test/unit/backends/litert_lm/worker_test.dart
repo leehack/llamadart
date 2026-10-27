@@ -99,6 +99,78 @@ void main() {
     },
   );
 
+  test('schema admission and payload use the separate service route', () async {
+    final service = _SchemaService();
+    final worker = await _startWorkerInCurrentIsolate(service);
+    try {
+      expect(
+        await _sendRequest(
+          worker.sendPort,
+          LiteRtLmJsonSchemaPrepareRequest.new,
+        ),
+        isA<LiteRtLmDoneResponse>(),
+      );
+      expect(service.admissions, 1);
+      final responses = await _collectGenerationResponses(
+        worker.sendPort,
+        (port) => LiteRtLmGenerateChatRequest(
+          7,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+          ],
+          const GenerationParams(),
+          port,
+          jsonSchema: '{"type":"object"}',
+          enableThinking: false,
+        ),
+      );
+      expect(service.schema, '{"type":"object"}');
+      expect(service.context, 7);
+      expect(
+        responses.whereType<LiteRtLmTokenResponse>().expand((r) => r.bytes),
+        [123, 125],
+      );
+      expect(responses.last, isA<LiteRtLmDoneResponse>());
+      expect(service.ordinaryCalls, 0);
+      final rejected = await _sendRequest(
+        worker.sendPort,
+        (port) => LiteRtLmGenerateChatRequest(
+          7,
+          const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'p'),
+          ],
+          const GenerationParams(),
+          port,
+          jsonSchema: '{"type":"object"}',
+          enableThinking: true,
+        ),
+      );
+      expect(
+        rejected,
+        isA<LiteRtLmErrorResponse>().having(
+          (e) => e.kind,
+          'kind',
+          'llamaUnsupported',
+        ),
+      );
+      expect(service.schemaCalls, 1);
+      service.rejectAdmission = true;
+      expect(
+        await _sendRequest(
+          worker.sendPort,
+          LiteRtLmJsonSchemaPrepareRequest.new,
+        ),
+        isA<LiteRtLmErrorResponse>().having(
+          (e) => e.kind,
+          'kind',
+          'llamaUnsupported',
+        ),
+      );
+    } finally {
+      await _disposeWorker(worker);
+    }
+  });
+
   group('liteRtLmWorkerEntry isolate routing', () {
     test('handles control and info requests', () async {
       final worker = await _spawnWorker();
@@ -1323,5 +1395,52 @@ class _QueuedEmbeddingService extends _BlockingLiteRtLmService {
     return [
       [3, 4],
     ];
+  }
+}
+
+class _SchemaService extends LiteRtLmService {
+  int admissions = 0;
+  int schemaCalls = 0;
+  int ordinaryCalls = 0;
+  int? context;
+  String? schema;
+  bool rejectAdmission = false;
+
+  @override
+  Future<void> prepareJsonSchemaChat() async {
+    admissions++;
+    if (rejectAdmission) {
+      throw LlamaUnsupportedException('provider unavailable');
+    }
+  }
+
+  @override
+  Stream<List<int>> generateJsonSchemaChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    required String jsonSchema,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    schemaCalls++;
+    context = contextHandle;
+    schema = jsonSchema;
+    yield [123, 125];
+  }
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    ordinaryCalls++;
   }
 }

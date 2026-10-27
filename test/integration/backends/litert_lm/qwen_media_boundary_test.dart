@@ -260,6 +260,7 @@ class _RuntimeClient extends LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
     String? loraPath,
+    bool jsonSchemaConstraints = false,
   }) {
     conversations += 1;
     if (failConversation) throw StateError('conversation create failed');
@@ -275,6 +276,7 @@ class _RuntimeClient extends LiteRtLmRuntimeClient {
     double? repetitionPenalty,
     double? presencePenalty,
     int? thinkingTokenBudget,
+    String? jsonSchema,
   }) {
     this.messageJson = messageJson;
     return Stream.value('A cat.');

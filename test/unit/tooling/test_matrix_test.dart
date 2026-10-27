@@ -10,6 +10,47 @@ import '../../../tool/testing/test_matrix.dart';
 
 void main() {
   test(
+    'native JSON Schema matrix command reaches its maintained local-only scenario',
+    () async {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'litert-lm-json-schema',
+      );
+      expect(row.tier, 'high-risk');
+      expect(row.mode, contains('local-only'));
+      final command = row.command.split(' ');
+      expect(command.take(3), [
+        'dart',
+        'run',
+        'tool/testing/run_local_e2e.dart',
+      ]);
+      final args = command
+          .skip(3)
+          .map(
+            (arg) =>
+                arg.startsWith('<') ? '/local/corrected-Qwen3.litertlm' : arg,
+          )
+          .toList();
+      expect(args, containsAllInOrder(['--backend', 'cpu']));
+      final result = await runLocalE2e(
+        [...args, '--dry-run'],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+      );
+      expect(result.exitCode, 0, reason: result.stderr);
+      expect(
+        result.stdout,
+        contains('LITERT_LM_MODEL=/local/corrected-Qwen3.litertlm'),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test -p vm -j 1 --run-skipped -t local-only test/e2e/backends/litert_lm_json_schema_e2e_test.dart',
+        ),
+      );
+    },
+  );
+
+  test(
     'LiteRT Web history matrix selects the direct-runtime control scenario',
     () {
       final row = testMatrixRows.singleWhere(

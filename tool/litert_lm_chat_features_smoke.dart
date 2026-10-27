@@ -123,7 +123,7 @@ Future<void> main(List<String> args) async {
       maxTokens: 64,
     );
 
-    final sessionStructuredOutput = await _runSessionStructuredOutputScenario(
+    final sessionStructuredOutput = await runSessionStructuredOutputScenario(
       engine,
     );
 
@@ -268,10 +268,9 @@ Future<void> main(List<String> args) async {
   }
 }
 
-/// LiteRT-LM has no grammar-constrained decoding, so a strict format must
-/// throw before [ChatSession] records the turn, leaving the next turn's roles
-/// alternating.
-Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
+/// Checks refusal of an array-property schema outside LiteRT-LM's scalar subset.
+/// Even an admitted provider must refuse before edits and leave the next turn usable.
+Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   LlamaEngine engine,
 ) async {
   final session = ChatSession(engine);
@@ -279,8 +278,21 @@ Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
   String? rejection;
   try {
     await session.createStructuredJson(
-      [const LlamaTextContent('Reply with {"ok": true}.')],
-      output: LlamaStructuredOutput.jsonObject(decoder: (json) => json),
+      [const LlamaTextContent('Reply with {"values": ["ok"]}.')],
+      output: LlamaStructuredOutput.jsonSchema(
+        schema: const {
+          'type': 'object',
+          'properties': {
+            'values': {
+              'type': 'array',
+              'items': {'type': 'string'},
+            },
+          },
+          'required': ['values'],
+          'additionalProperties': false,
+        },
+        decoder: (json) => json,
+      ),
       enableThinking: false,
       onMessageAdded: reported.add,
     );
@@ -298,6 +310,7 @@ Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
   }
   final roles = [for (final message in session.history) message.role.name];
   final result = <String, Object?>{
+    'unsupportedRequest': 'object_with_array_property',
     'rejection': rejection,
     'historyAfterRejection': historyAfterRejection,
     'reportedMessages': reported.length,
@@ -306,13 +319,12 @@ Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
   };
   print('DIAGNOSTIC litert_lm_session_structured_output ${jsonEncode(result)}');
   if (rejection == null ||
-      !rejection.contains('grammar-constrained decoding') ||
       historyAfterRejection != 0 ||
       reported.isNotEmpty ||
       roles.join(',') != 'user,assistant' ||
       reply.toString().trim().isEmpty) {
     throw StateError(
-      'LiteRT-LM ChatSession did not reject a strict responseFormat before '
+      'LiteRT-LM ChatSession did not reject the unsupported schema request before '
       'recording the turn, or did not recover on the next turn.',
     );
   }
