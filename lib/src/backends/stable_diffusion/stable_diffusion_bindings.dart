@@ -20,8 +20,7 @@ import 'dart:ffi' as ffi;
     sd_image_t,
     ffi.Pointer<sd_adetailer_params_t>,
     ffi.Pointer<sd_img_gen_params_t>,
-    ffi.Pointer<ffi.Pointer<sd_image_t>>,
-    ffi.Pointer<ffi.Int>,
+    ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>>,
   )
 >()
 external bool adetail_image(
@@ -30,8 +29,7 @@ external bool adetail_image(
   sd_image_t input_image,
   ffi.Pointer<sd_adetailer_params_t> adetailer_params,
   ffi.Pointer<sd_img_gen_params_t> inpaint_params,
-  ffi.Pointer<ffi.Pointer<sd_image_t>> images_out,
-  ffi.Pointer<ffi.Int> num_images_out,
+  ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>> result_out,
 );
 
 @ffi.Native<
@@ -151,10 +149,20 @@ external void free_sd_audio(ffi.Pointer<sd_audio_t> audio);
 @ffi.Native<ffi.Void Function(ffi.Pointer<sd_ctx_t>)>()
 external void free_sd_ctx(ffi.Pointer<sd_ctx_t> sd_ctx);
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<sd_image_generation_result_t>)>()
+external void free_sd_image_generation_result(
+  ffi.Pointer<sd_image_generation_result_t> result,
+);
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<sd_image_t>, ffi.Int)>()
 external void free_sd_images(
   ffi.Pointer<sd_image_t> result_images,
   int num_images,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<sd_video_generation_result_t>)>()
+external void free_sd_video_generation_result(
+  ffi.Pointer<sd_video_generation_result_t> result,
 );
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<upscaler_ctx_t>)>()
@@ -164,34 +172,26 @@ external void free_upscaler_ctx(ffi.Pointer<upscaler_ctx_t> upscaler_ctx);
   ffi.Bool Function(
     ffi.Pointer<sd_ctx_t>,
     ffi.Pointer<sd_img_gen_params_t>,
-    ffi.Pointer<ffi.Pointer<sd_image_t>>,
-    ffi.Pointer<ffi.Int>,
+    ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>>,
   )
 >()
 external bool generate_image(
   ffi.Pointer<sd_ctx_t> sd_ctx,
   ffi.Pointer<sd_img_gen_params_t> sd_img_gen_params,
-  ffi.Pointer<ffi.Pointer<sd_image_t>> images_out,
-  ffi.Pointer<ffi.Int> num_images_out,
+  ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>> result_out,
 );
 
 @ffi.Native<
   ffi.Bool Function(
     ffi.Pointer<sd_ctx_t>,
     ffi.Pointer<sd_vid_gen_params_t>,
-    ffi.Pointer<ffi.Pointer<sd_image_t>>,
-    ffi.Pointer<ffi.Int>,
-    ffi.Pointer<ffi.Pointer<sd_audio_t>>,
-    ffi.Pointer<ffi.Int>,
+    ffi.Pointer<ffi.Pointer<sd_video_generation_result_t>>,
   )
 >()
 external bool generate_video(
   ffi.Pointer<sd_ctx_t> sd_ctx,
   ffi.Pointer<sd_vid_gen_params_t> sd_vid_gen_params,
-  ffi.Pointer<ffi.Pointer<sd_image_t>> frames_out,
-  ffi.Pointer<ffi.Int> num_frames_out,
-  ffi.Pointer<ffi.Pointer<sd_audio_t>> audio_out,
-  ffi.Pointer<ffi.Int> fps_out,
+  ffi.Pointer<ffi.Pointer<sd_video_generation_result_t>> result_out,
 );
 
 @ffi.Native<ffi.Int Function(ffi.Pointer<upscaler_ctx_t>)>()
@@ -264,6 +264,9 @@ external bool preprocess_canny(
 @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Char>)>()
 external void save_imatrix(ffi.Pointer<ffi.Char> imatrix_path);
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Char>)>()
+external bool sd_add_rpc_servers(ffi.Pointer<ffi.Char> servers);
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<sd_cache_params_t>)>()
 external void sd_cache_params_init(ffi.Pointer<sd_cache_params_t> cache_params);
 
@@ -298,12 +301,6 @@ external ffi.Pointer<ffi.Char> sd_ctx_params_to_str(
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
 external bool sd_ctx_supports_image_generation(ffi.Pointer<sd_ctx_t> sd_ctx);
-
-/// Returns whether the loaded model consumes ref_images as conditioning inputs.
-@ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
-external bool sd_ctx_supports_ref_image_conditioning(
-  ffi.Pointer<sd_ctx_t> sd_ctx,
-);
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
 external bool sd_ctx_supports_video_generation(ffi.Pointer<sd_ctx_t> sd_ctx);
@@ -693,16 +690,14 @@ sd_type_t str_to_sd_type(ffi.Pointer<ffi.Char> str) {
     ffi.Pointer<upscaler_ctx_t>,
     sd_image_t,
     ffi.Uint32,
-    ffi.Pointer<ffi.Pointer<sd_image_t>>,
-    ffi.Pointer<ffi.Int>,
+    ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>>,
   )
 >()
 external bool upscale(
   ffi.Pointer<upscaler_ctx_t> upscaler_ctx,
   sd_image_t input_image,
   int upscale_factor,
-  ffi.Pointer<ffi.Pointer<sd_image_t>> images_out,
-  ffi.Pointer<ffi.Int> num_images_out,
+  ffi.Pointer<ffi.Pointer<sd_image_generation_result_t>> result_out,
 );
 
 const int SD_DART_GPU_DEFAULT_DEVICE = -1;
@@ -740,7 +735,10 @@ enum prediction_t {
   SEFI_FLOW_PRED(5),
   MINIT2I_FLOW_PRED(6),
   SENSENOVA_U1_FLOW_PRED(7),
-  PREDICTION_COUNT(8);
+  FLUX3_FLOW_PRED(8),
+  H3_AV_FLOW_PRED(9),
+  MING_IMAGE_FLOW_PRED(10),
+  PREDICTION_COUNT(11);
 
   final int value;
   const prediction_t(this.value);
@@ -754,7 +752,10 @@ enum prediction_t {
     5 => SEFI_FLOW_PRED,
     6 => MINIT2I_FLOW_PRED,
     7 => SENSENOVA_U1_FLOW_PRED,
-    8 => PREDICTION_COUNT,
+    8 => FLUX3_FLOW_PRED,
+    9 => H3_AV_FLOW_PRED,
+    10 => MING_IMAGE_FLOW_PRED,
+    11 => PREDICTION_COUNT,
     _ => throw ArgumentError('Unknown value for prediction_t: $value'),
   };
 }
@@ -1613,6 +1614,21 @@ enum sd_hires_upscaler_t {
   };
 }
 
+final class sd_image_generation_result_t extends ffi.Struct {
+  external ffi.Pointer<sd_image_result_t> items;
+
+  @ffi.Int()
+  external int count;
+
+  static ffi.Pointer<sd_image_generation_result_t> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<sd_image_result_t> items,
+    required int count,
+  }) => $allocator<sd_image_generation_result_t>()
+    ..ref.items = items
+    ..ref.count = count;
+}
+
 final class sd_image_preprocess_params_t extends ffi.Struct {
   external ffi.Pointer<ffi.Char> rules;
 
@@ -1620,6 +1636,12 @@ final class sd_image_preprocess_params_t extends ffi.Struct {
     ffi.Allocator $allocator, {
     required ffi.Pointer<ffi.Char> rules,
   }) => $allocator<sd_image_preprocess_params_t>()..ref.rules = rules;
+}
+
+final class sd_image_result_t extends ffi.Struct {
+  external sd_image_t image;
+
+  external ffi.Pointer<ffi.Char> generation_info;
 }
 
 final class sd_image_t extends ffi.Struct {
@@ -2169,6 +2191,36 @@ final class sd_vid_gen_params_t extends ffi.Struct {
   external bool circular_y;
 
   external sd_image_preprocess_params_t image_preprocess;
+
+  external ffi.Pointer<ffi.Char> ref_image_args;
+}
+
+final class sd_video_generation_result_t extends ffi.Struct {
+  external ffi.Pointer<sd_image_t> frames;
+
+  @ffi.Int()
+  external int frame_count;
+
+  external ffi.Pointer<sd_audio_t> audio;
+
+  @ffi.Int()
+  external int fps;
+
+  external ffi.Pointer<ffi.Char> generation_info;
+
+  static ffi.Pointer<sd_video_generation_result_t> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<sd_image_t> frames,
+    required int frame_count,
+    required ffi.Pointer<sd_audio_t> audio,
+    required int fps,
+    required ffi.Pointer<ffi.Char> generation_info,
+  }) => $allocator<sd_video_generation_result_t>()
+    ..ref.frames = frames
+    ..ref.frame_count = frame_count
+    ..ref.audio = audio
+    ..ref.fps = fps
+    ..ref.generation_info = generation_info;
 }
 
 final class upscaler_ctx_t extends ffi.Opaque {}

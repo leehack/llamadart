@@ -3045,7 +3045,7 @@ class StableDiffusionAppleCompatibilitySyncTest(unittest.TestCase):
         self.current = pins.current_stable_diffusion_release_tag(self.source)
         self.checksum = re.search(
             r"const stableDiffusionAppleCompanionChecksums = <String, String>\{\s*"
-            r"'" + re.escape(self.current) + r"': '([0-9a-f]{64})'",
+            r"'" + re.escape(self.current) + r"':\s*'([0-9a-f]{64})'",
             self.source,
         ).group(1)
 

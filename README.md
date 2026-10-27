@@ -447,13 +447,16 @@ other layouts and platforms need their own qualification. See the
 before choosing files: a supported container does not imply every model works.
 
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
-GGUF) are refused with `LlamaUnsupportedException` on Metal, including
-`ComputeDevice.auto` when it selects Metal, before native context creation.
-Use `ComputeDevice.cpu` or compatible non-FP8 weights. Uninspectable
-GGUF/Safetensors headers and ordinary JSON shard indexes are also refused on
-Metal. This prevents the native abort tracked in
-[#1446](https://github.com/leehack/llamadart/issues/1446); selecting CPU keeps
-native dtype admission and does not qualify arbitrary FP8 models.
+GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
+converts them to F16 there: they need twice their file size in memory, which
+`ImageModelParams.checkMemory` counts. A runtime without that fix, told apart
+by its exports, aborts on them instead
+([#1446](https://github.com/leehack/llamadart/issues/1446)): with it, FP8
+weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
+indexes are refused with `LlamaUnsupportedException` on Metal, including
+`ComputeDevice.auto` when it selects Metal, before native context creation;
+use `ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
+macOS arm64 CPU and Metal; arbitrary FP8 models are not qualified.
 
 - **Opt in** to the runtime (about 40 to 70 MB per target) in the app's
   `pubspec.yaml`, then run `flutter clean` once:
@@ -559,7 +562,7 @@ for its measured scope and quality criteria.
 For a complete local sharded checkpoint, use
 `ImageGenerationModel.localSafetensorsSet(path, sha256: trustedPerFileHashes,
 cacheDirectory: appPrivateSetCache)`. The initial recipe is the documented
-SD-Turbo F16/F32 tensor layout on macOS CPU with pinned SD v0.3.0 and explicit
+SD-Turbo F16/F32 tensor layout on macOS CPU with pinned SD v0.3.0-1 and explicit
 flash attention/direct VAE convolution off. It accepts the standard local index
 or its directory and verifies every shard into an owned cache before loading.
 Generic Diffusers layouts and editing/tiling/seamless combinations remain

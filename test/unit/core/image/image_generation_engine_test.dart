@@ -219,6 +219,51 @@ void main() {
         expect(driver.started.single.files, {'model': path});
       },
     );
+    group('on a runtime that loads FP8 as F16 on Metal', () {
+      setUp(() {
+        driver.status = _available(
+          'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n',
+          loadsFp8AsF16OnMetal: true,
+        );
+      });
+      for (final MapEntry(key: format, value: header) in formats.entries) {
+        for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+          test('$format ${device.name} forwards to Metal', () async {
+            driver.headers[_model] = header;
+            await load(_sdxs(), params: ImageModelParams(device: device));
+            expect(driver.started.single.files, {'model': _model});
+            expect(
+              driver.started.single.backend,
+              device == ComputeDevice.gpu ? 'gpu' : isNull,
+            );
+          });
+        }
+      }
+      test('an uninspectable JSON index forwards to Metal', () async {
+        const index = '/models/checkpoint.json';
+        driver.sizes[index] = 100;
+        driver.headers[index] = Uint8List.fromList([123, 125]);
+        await load(
+          ImageGenerationModel(_local(index), role: ImageModelRole.checkpoint),
+        );
+        expect(driver.started.single.files, {'model': index});
+        expect(driver.started.single.backend, isNull);
+      });
+    });
+    test('the pinned upstream commit alone does not admit FP8 on Metal, '
+        'since a runtime without the fix shares it', () async {
+      driver.status = StableDiffusionRuntimeStatus.available(
+        version: 'unknown',
+        commit: 'be48649',
+        devices: parseStableDiffusionDeviceList('MTL0\tApple M4\nCPU\tCPU\n'),
+      );
+      driver.headers[_model] = formats.values.first;
+      await expectLater(
+        load(_sdxs()),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(driver.started, isEmpty);
+    });
     test('Vulkan keeps native dtype admission', () async {
       driver.operatingSystem = 'linux';
       driver.status = _available('Vulkan0\tGPU\nCPU\tCPU\n');
@@ -261,17 +306,26 @@ void main() {
         },
         cacheDirectory: 'not-created',
       );
-      for (final kind in ['host', 'runtime', 'device', 'flash', 'direct']) {
+      for (final kind in [
+        'host',
+        'runtime',
+        'v0.3.0 runtime',
+        'device',
+        'flash',
+        'direct',
+      ]) {
         driver = _FakeDriver();
         downloads = _FakeDownloads(driver);
         debugImageGenerationDriverOverride = driver;
         if (kind == 'host') {
           driver.operatingSystem = 'linux';
         }
-        if (kind == 'runtime') {
+        if (kind.endsWith('runtime')) {
           driver.status = StableDiffusionRuntimeStatus.available(
             version: 'unknown',
-            commit: 'unknown',
+            // The upstream commit of stable-diffusion-native v0.3.0, which
+            // no longer has the recipe's qualification.
+            commit: kind == 'runtime' ? 'unknown' : '0518b34',
             devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
           );
         }
@@ -2249,6 +2303,34 @@ void main() {
       await load(_sdxs(_local(_model), _local(_taesd)));
     });
 
+    test('counts FP8 weights at F16 size on Metal when the runtime loads '
+        'them so', () async {
+      const elements = 3 << 20;
+      driver.sizes[_model] = _gib;
+      driver.headers[_model] = safetensorsHeader([
+        ('model.diffusion_model.weight', [3, 1 << 20]),
+      ], dtype: 'F8_E4M3');
+      final required = estimateImageGenerationMemoryBytes(_gib + elements);
+      for (final (loadsFp8, device, budget, refused) in [
+        (true, ComputeDevice.auto, required - 1, true),
+        (true, ComputeDevice.auto, required, false),
+        (true, ComputeDevice.cpu, required - 1, false),
+        (false, ComputeDevice.cpu, required - 1, false),
+      ]) {
+        driver.status = _available(
+          'MTL0\tApple M4\nCPU\tApple M4\n',
+          loadsFp8AsF16OnMetal: loadsFp8,
+        );
+        driver.budget = (bytes: budget, source: 'physical memory');
+        final loading = load(_sdxs(), params: ImageModelParams(device: device));
+        if (refused) {
+          await expectLater(loading, throwsA(isA<LlamaModelException>()));
+        } else {
+          await loading;
+        }
+      }
+    });
+
     test('is skipped without a budget or when checkMemory is false', () async {
       driver.sizes[_model] = 64 * _gib;
 
@@ -3027,12 +3109,15 @@ void main() {
   });
 }
 
-StableDiffusionRuntimeStatus _available(String devices) =>
-    StableDiffusionRuntimeStatus.available(
-      version: 'master-929',
-      commit: '0518b34',
-      devices: parseStableDiffusionDeviceList(devices),
-    );
+StableDiffusionRuntimeStatus _available(
+  String devices, {
+  bool loadsFp8AsF16OnMetal = false,
+}) => StableDiffusionRuntimeStatus.available(
+  version: 'master-929',
+  commit: 'be48649',
+  devices: parseStableDiffusionDeviceList(devices),
+  loadsFp8AsF16OnMetal: loadsFp8AsF16OnMetal,
+);
 
 final class _FakeDriver implements ImageGenerationDriver {
   @override
