@@ -16,13 +16,19 @@ final class LocalImageSetModel extends ImageGenerationModel {
     required Map<String, String> sha256,
     required this.cacheDirectory,
   }) : sha256 = _identities(sha256),
-       super(ModelSource.path(path), role: ImageModelRole.checkpoint) {
-    if (path.isEmpty || path.contains('://') || cacheDirectory.trim().isEmpty) {
-      throw LlamaArgumentException(
-        'Local image sets require a local path and an app-private cache directory.',
-      );
-    }
+       super(
+         _localSource(path, cacheDirectory),
+         role: ImageModelRole.checkpoint,
+       );
+}
+
+ModelSource _localSource(String path, String cacheDirectory) {
+  if (path.isEmpty || path.contains('://') || cacheDirectory.trim().isEmpty) {
+    throw LlamaArgumentException(
+      'Local image sets require a local path and an app-private cache directory.',
+    );
   }
+  return ModelSource.path(path);
 }
 
 Map<String, String> _identities(Map<String, String> values) {

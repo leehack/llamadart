@@ -3,6 +3,51 @@ import 'package:llamadart/src/core/image/local_image_set_model.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('public factory rejects empty paths with a typed argument error', () {
+    final valid = {
+      'model.safetensors.index.json': 'a' * 64,
+      'model-00001-of-00001.safetensors': 'b' * 64,
+    };
+    expect(
+      () => ImageGenerationModel.localSafetensorsSet(
+        '',
+        sha256: valid,
+        cacheDirectory: 'private-cache',
+      ),
+      throwsA(isA<LlamaArgumentException>()),
+    );
+  });
+  test(
+    'public factory preserves typed URL and empty cache refusal without echo',
+    () {
+      final valid = {
+        'model.safetensors.index.json': 'a' * 64,
+        'model-00001-of-00001.safetensors': 'b' * 64,
+      };
+      expect(
+        () => ImageGenerationModel.localSafetensorsSet(
+          'https://PRIVATE_PATH_CANARY.invalid/model',
+          sha256: valid,
+          cacheDirectory: 'private-cache',
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (e) => e.message,
+            'message',
+            isNot(contains('PRIVATE_PATH_CANARY')),
+          ),
+        ),
+      );
+      expect(
+        () => ImageGenerationModel.localSafetensorsSet(
+          'local',
+          sha256: valid,
+          cacheDirectory: '',
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+    },
+  );
   test(
     'public factory owns identity map without changing legacy model interfaces',
     () {
@@ -22,6 +67,7 @@ void main() {
       expect(model.sha256['model.safetensors.index.json'], 'a' * 64);
       expect(() => model.sha256.clear(), throwsUnsupportedError);
       expect(model.role, ImageModelRole.checkpoint);
+      expect(model.source.path, 'local');
     },
   );
   test('secret-bearing arbitrary shard names are rejected without echo', () {
