@@ -2074,3 +2074,52 @@ This case checks capability reporting, not schema enforcement. The maintained
 `litert-lm-json-schema` local scenario separately qualifies the bounded native
 CPU scalar-object path, adversarial control, request reset, system/history,
 cancellation/reuse and length cutoff. See [the matrix](testing_matrix.md).
+
+
+## Catalog 11: state persistence pack
+
+Catalog 11 adds the bounded public `state_persistence` pack for
+[#1196](https://github.com/leehack/llamadart/issues/1196). It depends on the
+catalog-10 schema capability contract and the typed state-capacity error fix;
+older catalogs retain their exact fixture and case contracts.
+
+| Case | Required proof |
+| --- | --- |
+| `P01.capability` | Independently expected capability; known unsupported runtimes reject both operations with `LlamaUnsupportedException` and still generate |
+| `P02.roundtrip` | Prompt-only save returns true and has a nontrivial payload; disposed source and fresh target return the exact IDs |
+| `P03.restore_reuse` | Cold exact/suffix score vectors match full references within 0.01 natural-log probability; full vs suffix-only separation is at least 0.10; generation counters prove KV reuse against full-work controls |
+| `P04.invalid_recovery` | Missing, garbage, seven-byte header, incompatible version, zero/oversized capacity and below-token-count capacity reject with typed errors; fresh score and generation engines restore correctly after each |
+
+The fixed Stories15M profile uses CPU, context 256, four threads and batch and
+micro-batch 8. Source top-K16 IDs define all scored candidates. Save occurs
+after prefix scoring with special-token-aware IDs and before any generation.
+Every target has its own disposed engine lifetime. Exact reuse evaluates one
+token; suffix reuse evaluates the uncached suffix after the token arrays'
+common prefix. A no-load control and a loaded reuse-disabled control evaluate
+the full prompt. Public generation observers supply usage; immediate
+`getPerformanceContext` supplies native prompt work. Scoring disables those
+counters for its lifetime, so scoring engines never supply generation proof.
+
+```sh
+dart run tool/testing/validation.dart local --profile state-gguf-cpu \
+  --model /path/to/stories15M.gguf --out /tmp/state-cpu-run
+```
+
+The locked model SHA256 is
+`61b50d457809a5194818fd22e6724b456cd7bb9a6264c52c8110684c53f3704a`.
+Host preparation verifies model bytes. The importer binds CPU diagnostics,
+model/configuration identity, snapshot hashes, ordered distinct lifetimes,
+raw finite score vectors, public usage and native work. Corrupt loads may
+mutate their context, so recovery uses fresh engines. File format/version
+negatives establish header rejection; they do not prove payload rollback.
+Same-model/build remains a caller constraint. Arbitrary same-architecture
+weights are not guaranteed to be rejected by the native session format.
+
+A missing host workspace or public counter is NOT_RUN/incomplete. The initial
+positive profile does not qualify Web, LiteRT, accelerators, other models or
+physical devices. KV persistence does not restore sampler/RNG/live logits or
+promise exact continuations. Pure journal checks reject inconsistent evidence;
+a self-consistent fabricated transcript cannot be disproved without trusted
+external artifacts or runtime attestation. The original pre-fix pilot remains
+UNQUALIFIED because its typed capacity-error assertion failed; this pack does
+not rewrite that result.

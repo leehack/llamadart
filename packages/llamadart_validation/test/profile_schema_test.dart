@@ -312,7 +312,10 @@ void main() {
       for (final entry in validationFixtures.entries)
         entry.key: {
           for (final field in entry.value.entries)
-            if (entry.key != 'native_json_schema_capability' &&
+            if (!const {
+                  'native_json_schema_capability',
+                  'state_persistence',
+                }.contains(entry.key) &&
                 field.value is String)
               field.key: const {'type': 'string'},
         },

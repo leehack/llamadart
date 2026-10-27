@@ -1,6 +1,8 @@
 ## Unreleased
 
 - Native state restores report `LlamaArgumentException` for token capacities outside 1..context size.
+- Add a CPU state-persistence validation pack with cold KV restore, reduced-work controls, typed rejection and recovery checks.
+
 - Enforce bounded JSON Schema text output with native LiteRT-LM on macOS arm64 CPU and canonical Qwen3 models.
 - Add an opt-in isolated desktop native diagnostic command with privacy-safe loader and ABI observations.
 

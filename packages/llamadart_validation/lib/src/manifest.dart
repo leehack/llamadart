@@ -177,7 +177,10 @@ class ValidationProfile {
               (entry) =>
                   !validationFixtures.containsKey(entry.key) ||
                   entry.value is! Map ||
-                  (entry.key == 'native_json_schema_capability' &&
+                  (const {
+                        'native_json_schema_capability',
+                        'state_persistence',
+                      }.contains(entry.key) &&
                       (entry.value as Map).isNotEmpty) ||
                   (entry.value as Map).entries.any(
                     (field) =>
@@ -391,6 +394,7 @@ class ValidationProfile {
       if (catalogDeclaresCase(definition.id, version) &&
           _structuredOmission(definition.id) == null &&
           !(definition.id.startsWith('T') && nativeReference) &&
+          _stateOmission(definition.id) == null &&
           (selection == 'release' ||
               (selection == 'focused' &&
                   definition.features.any(focusFeatures.contains))))
@@ -410,6 +414,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 11) resolved.remove('state_persistence');
     if (version < 10) resolved.remove('native_json_schema_capability');
     if (version < 9) resolved.remove('tokenization');
     if (version < 8) resolved.remove('structured_output');
@@ -478,6 +483,14 @@ class ValidationProfile {
         'Batching selection requires catalog version 2',
       );
     }
+    if (version < 11 &&
+        (focusFeatures.contains('state_persistence') ||
+            (data['fixtures'] as Map?)?.containsKey('state_persistence') ==
+                true)) {
+      throw const FormatException(
+        'State selection or fixture requires catalog version 11',
+      );
+    }
     if (version < 9 &&
         (focusFeatures.contains('tokenization') ||
             (data['fixtures'] as Map?)?.containsKey('tokenization') == true)) {
@@ -509,7 +522,8 @@ class ValidationProfile {
         for (final entry in validationFeatures.entries)
           if ((version != 1 || entry.key != 'batching') &&
               (version >= 8 || !catalogEightFeatures.contains(entry.key)) &&
-              (version >= 9 || entry.key != 'tokenization'))
+              (version >= 9 || entry.key != 'tokenization') &&
+              (version >= 11 || entry.key != 'state_persistence'))
             entry.key: entry.value,
         if (isDecision) 'decision': 1,
         if (isEmbedding) 'embeddings': 1,
@@ -555,9 +569,21 @@ class ValidationProfile {
     return null;
   }
 
+  String? _stateOmission(String id) {
+    if (!id.startsWith('P')) return null;
+    if (nativeReference) return 'outside_native_reference_scope';
+    if (id == 'P01.capability') return null;
+    if (runtime != 'gguf' || backend != 'cpu') {
+      return 'outside_initial_native_cpu_state_scope';
+    }
+    return null;
+  }
+
   String _omissionReason(String id) {
     if (isDecision) return 'decision_model_has_no_text_generation';
     if (isEmbedding) return 'embedding_model_has_no_text_generation';
+    final state = _stateOmission(id);
+    if (state != null) return state;
     if (id.startsWith('T') && nativeReference) {
       return 'outside_native_reference_scope';
     }
@@ -656,8 +682,16 @@ class ValidationProfile {
       preferredBackend: backend == 'webgpu'
           ? GpuBackend.auto
           : GpuBackend.values.byName(backend),
-      batchSize: isEmbedding ? 2048 : 0,
-      microBatchSize: isEmbedding ? 2048 : 0,
+      batchSize: isEmbedding
+          ? 2048
+          : focusFeatures.contains('state_persistence')
+          ? 8
+          : 0,
+      microBatchSize: isEmbedding
+          ? 2048
+          : focusFeatures.contains('state_persistence')
+          ? 8
+          : 0,
       numberOfThreads: threads,
       numberOfThreadsBatch: threads,
     );
@@ -680,6 +714,10 @@ class ValidationProfile {
   Map<String, Object?> get effectiveConfig => {
     if (isEmbedding)
       'embedding_case_timeout_ms': embeddingCaseTimeout!.inMilliseconds,
+    if (focusFeatures.contains('state_persistence')) ...{
+      'state_batch_size': 8,
+      'state_micro_batch_size': 8,
+    },
     'context_size': contextSize,
     'threads': threads,
     'batch_threads': runtime == 'litert' ? 0 : threads,

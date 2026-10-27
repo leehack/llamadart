@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
@@ -323,4 +324,53 @@ Map<String, String> parseOptions(List<String> args, Set<String> allowed) {
     }
   }
   return values;
+}
+
+/// Unique bounded state workspace, removed after each case even on failure.
+class IoStateValidationWorkspace implements StateValidationWorkspace {
+  IoStateValidationWorkspace._(this._directory);
+  final Directory _directory;
+  static Future<StateValidationWorkspace> create() async =>
+      IoStateValidationWorkspace._(
+        await Directory.systemTemp.createTemp('llamadart-validation-state-'),
+      );
+  @override
+  String path(String role) {
+    if (!const {
+      'valid',
+      'missing',
+      'garbage',
+      'short',
+      'incompatible',
+    }.contains(role)) {
+      throw ArgumentError.value(role, 'role');
+    }
+    return p.join(_directory.path, '$role.state');
+  }
+
+  @override
+  Future<Uint8List> read(String role) async {
+    final file = File(path(role));
+    if (await file.length() >
+        (statePersistenceFixture['max_artifact_bytes'] as int)) {
+      throw StateError('State artifact exceeds the 16 MiB diagnostic bound');
+    }
+    return file.readAsBytes();
+  }
+
+  @override
+  Future<void> write(String role, List<int> bytes) async {
+    if (bytes.length > (statePersistenceFixture['max_artifact_bytes'] as int)) {
+      throw StateError('State artifact exceeds the 16 MiB diagnostic bound');
+    }
+    await File(path(role)).writeAsBytes(bytes, flush: true);
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _directory.delete(recursive: true);
+    if (await _directory.exists()) {
+      throw StateError('State workspace cleanup failed');
+    }
+  }
 }

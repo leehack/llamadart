@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 10;
+const int validationCatalogVersion = 11;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -17,6 +17,7 @@ const validationFeatures = {
   'performance': 1,
   'structured_output': 1,
   'tokenization': 1,
+  'state_persistence': 1,
 };
 
 /// Feature selectors that catalogs before 8 do not declare.
@@ -95,6 +96,7 @@ const validationFixtures = <String, Map<String, Object>>{
   'structured_output': structuredOutputFixture,
   'native_json_schema_capability': nativeJsonSchemaCapabilityFixture,
   'tokenization': tokenizationFixture,
+  'state_persistence': statePersistenceFixture,
 };
 
 /// Case identity and fixture dependencies. False implementation flags always
@@ -243,6 +245,7 @@ const extendedValidationCases = [
   ),
   ...structuredOutputValidationCases,
   ...tokenizationValidationCases,
+  ...stateValidationCases,
 ];
 
 /// Stable order for the complete selected/omitted inventory.
@@ -263,7 +266,9 @@ const catalogFiveCaseIds = {
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    tokenizationValidationCases.any((definition) => definition.id == id)
+    stateValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion >= 11
+    : tokenizationValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 9
     : structuredOutputValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 8
@@ -696,4 +701,43 @@ const tokenizationFixture = <String, Object>{
 const tokenizationValidationCases = [
   ValidationCaseDefinition('T01.roundtrip', ['tokenization'], ['tokenization']),
   ValidationCaseDefinition('T02.count', ['tokenization'], ['tokenization']),
+];
+
+/// Prompt-only KV fixture. This is not a sampler/RNG checkpoint oracle.
+const statePersistenceFixture = <String, Object>{
+  'prefix':
+      'Once upon a time there was a little girl named Lily. Lily lived in a red house beside a forest. Every morning she visited her friend, a small brown rabbit. One day Lily found a shiny key under an old tree. She took the key home and opened',
+  'suffix': ' the wooden box',
+  'top_k': 16,
+  'max_abs_logprob_delta': 0.01,
+  'min_context_separation': 0.10,
+  'batch_size': 8,
+  'garbage': [110, 111, 116, 45, 115, 116, 97, 116, 101],
+  'short_header_bytes': 7,
+  'max_artifact_bytes': 16 * 1024 * 1024,
+  'incompatible_version': 2147483647,
+};
+
+/// Public state obligations introduced together in catalog 11.
+const stateValidationCases = [
+  ValidationCaseDefinition(
+    'P01.capability',
+    ['state_persistence'],
+    ['state_persistence'],
+  ),
+  ValidationCaseDefinition(
+    'P02.roundtrip',
+    ['state_persistence'],
+    ['state_persistence'],
+  ),
+  ValidationCaseDefinition(
+    'P03.restore_reuse',
+    ['state_persistence'],
+    ['state_persistence'],
+  ),
+  ValidationCaseDefinition(
+    'P04.invalid_recovery',
+    ['state_persistence'],
+    ['state_persistence'],
+  ),
 ];

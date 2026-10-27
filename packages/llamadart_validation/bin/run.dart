@@ -163,6 +163,7 @@ Future<void> main(List<String> args) async {
                 decisionConfig: decision?.config,
               ),
         emit: journal.emit,
+        stateWorkspaceFactory: IoStateValidationWorkspace.create,
         embeddingAssets: profile.isEmbedding
             ? {
                 for (final name

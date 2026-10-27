@@ -107,6 +107,11 @@ void main() {
               throwsFormatException,
             );
           }
+        } else if (profile.focusFeatures.contains('state_persistence')) {
+          expect(
+            jsonHash(profile.effectiveConfig),
+            'ac23acfcd1bf0dd301b7332e2aadb75dfe7fda177f7b19959efd98c51dc89409',
+          );
         } else {
           oldCount++;
           expect(
