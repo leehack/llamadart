@@ -46,7 +46,7 @@ class _VisionEngine extends harness.FakeEngine
     final answer = messages == null ? '' : _answer(messages);
     return {
       'prompt': prompt,
-      if (messages != null) 'messages': messages,
+      'messages': ?messages,
       'enable_thinking': enableThinking,
       'tools': tools?.map((t) => t.toJson()).toList(),
       'tool_choice': toolChoice?.name,
