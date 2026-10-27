@@ -405,6 +405,39 @@ void main() {
     );
   });
 
+  test('invalid state token capacity makes no guarded state-load calls '
+      'and does not poison its context', () {
+    start();
+    final path = '${dir.path}/capacity.bin';
+    recorder.calls.clear();
+    final contextCapacity = service.getContextSize(context);
+    for (final capacity in [0, -1, contextCapacity + 1]) {
+      expect(
+        () => service.stateLoadFile(context, path, capacity),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('tokenCapacity'),
+              contains(
+                capacity > contextCapacity ? 'context size' : 'positive',
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(recorder.calls, isEmpty);
+    }
+    expect(
+      () => service.stateLoadFile(-1, path, 0),
+      throwsA(isA<LlamaStateException>()),
+    );
+    expect(recorder.calls, isEmpty);
+    expect(service.stateSaveFile(context, path, const []), isTrue);
+    expect(service.stateLoadFile(context, path, 8), isEmpty);
+  });
+
   test('a state save or load that throws is a typed state error, and the '
       'context is unusable', () {
     start();

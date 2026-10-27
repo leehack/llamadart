@@ -70,6 +70,9 @@ Linux and web. Full docs: https://llamadart.leehack.com
   logits and sampler/RNG state are not restored. If the caller explicitly
   chooses full prompt evaluation, use `reusePromptPrefix: false`; do not promise
   exact resume or silently replace KV reuse with full prompt evaluation.
+  Use a `tokenCapacity` within 1..context size and large enough for the saved
+  tokens. On a ready, idle native llama.cpp context, capacity outside those
+  bounds throws `LlamaArgumentException` without invalidating the context.
 - Name the model with `ModelSource.parse(...)` (`hf://owner/repo/file.gguf`,
   an HTTP(S) URL, or a local path) and pass `params:` (`ModelParams`),
   `download:` (`ModelLoadOptions`) and `onProgress:` to `LlamaEngine.load` or
