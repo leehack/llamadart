@@ -1,6 +1,8 @@
 ## Unreleased
 
 - Native state restores report `LlamaArgumentException` for zero or negative token capacities.
+- Reduce startup compilation overhead for `llamadart:doctor`.
+- Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 
 ## 0.16.4
 
