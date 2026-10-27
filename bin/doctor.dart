@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/core/diagnostics/runtime_setup_report.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 
 const String _usage = '''
 Usage: dart run llamadart:doctor [--json]
