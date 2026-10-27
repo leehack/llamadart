@@ -2023,6 +2023,39 @@ dev_dependencies:
       },
     );
 
+    test('the tool-result image smoke passes the chat template override '
+        'through only when it is set', () async {
+      const variable = 'LLAMADART_TOOL_MEDIA_CHAT_TEMPLATE';
+      const template = 'test/fixtures/templates/Qwen3-VL-2B-Instruct.jinja';
+      Future<String> dryRun(Map<String, String> environment) async {
+        final result = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            'run',
+            'tool/testing/run_local_e2e.dart',
+            '--scenario',
+            'tool-result-image-smoke',
+            '--model-path',
+            'models/qwen3-vl.gguf',
+            '--mmproj-path',
+            'models/mmproj.gguf',
+            '--dry-run',
+          ],
+          environment: environment,
+          includeParentEnvironment: false,
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        return result.stdout as String;
+      }
+
+      final inherited = {...Platform.environment}..remove(variable);
+      expect(
+        await dryRun({...inherited, variable: template}),
+        contains('$variable=$template'),
+      );
+      expect(await dryRun(inherited), isNot(contains(variable)));
+    });
+
     test('dry-runs the decision model smoke with model and head', () async {
       final result = await runLocalE2e(
         const [
