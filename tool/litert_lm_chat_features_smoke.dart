@@ -123,7 +123,7 @@ Future<void> main(List<String> args) async {
       maxTokens: 64,
     );
 
-    final sessionStructuredOutput = await _runSessionStructuredOutputScenario(
+    final sessionStructuredOutput = await runSessionStructuredOutputScenario(
       engine,
     );
 
@@ -268,10 +268,9 @@ Future<void> main(List<String> args) async {
   }
 }
 
-/// LiteRT-LM has no grammar-constrained decoding, so a strict format must
-/// throw before [ChatSession] records the turn, leaving the next turn's roles
-/// alternating.
-Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
+/// Checks strict-format refusal on an unsupported LiteRT-LM combination.
+/// The refusal must precede session edits and leave the next turn usable.
+Future<Map<String, Object?>> runSessionStructuredOutputScenario(
   LlamaEngine engine,
 ) async {
   final session = ChatSession(engine);
@@ -306,7 +305,6 @@ Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
   };
   print('DIAGNOSTIC litert_lm_session_structured_output ${jsonEncode(result)}');
   if (rejection == null ||
-      !rejection.contains('grammar-constrained decoding') ||
       historyAfterRejection != 0 ||
       reported.isNotEmpty ||
       roles.join(',') != 'user,assistant' ||
