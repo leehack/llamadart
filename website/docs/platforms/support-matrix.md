@@ -171,6 +171,12 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
 
+Tool-result media transport is unsupported on every runtime. `create` and
+`chatTemplate` throw `LlamaUnsupportedException` for tool-role image/audio
+parts or media alongside `LlamaToolResultContent` under any role. Return text
+or JSON tool results and send media in a separate user message
+([tool results](../guides/tool-calling)).
+
 `LlamaEngine.supportsVideo` returns `false` on every runtime, and passing
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,

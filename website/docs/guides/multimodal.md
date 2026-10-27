@@ -86,6 +86,12 @@ and vision with CPU audio.
 
 ## Build multimodal message
 
+Send image/audio input in a user message. Tool-role image/audio parts, and
+image/audio siblings of `LlamaToolResultContent` under any role, throw
+`LlamaUnsupportedException` in `create` and `chatTemplate` before rendering
+or dispatch. Return text or JSON tool results and put media in a separate
+user message; see [tool results](./tool-calling).
+
 ```dart
 final message = LlamaChatMessage.withContent(
   role: LlamaChatRole.user,

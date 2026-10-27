@@ -302,7 +302,7 @@
       ],
       "exemption": {
         "id": "multimodal-chat",
-        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract.",
+        "reason": "Chat image/audio and projector lifecycle need a dedicated multimodal-chat pack. Embedding media packs are a separate contract. Public API VM/Chrome regressions cover early typed refusal of tool-role image/audio and valid separate user-media routing (#1445); they do not qualify model media transport or tool-result media support (#1008).",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },

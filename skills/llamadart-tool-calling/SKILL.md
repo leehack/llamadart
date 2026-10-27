@@ -86,6 +86,11 @@ description: >-
 - Return results with a `LlamaChatRole.tool` message containing
   `LlamaToolResultContent(id: call.id, name: ..., result: ...)`. `result` can
   be any JSON-compatible value.
+- Do not attach image/audio parts to tool-role messages or alongside
+  `LlamaToolResultContent`, even under a user/assistant role. `create` and
+  `chatTemplate` throw `LlamaUnsupportedException` before rendering or
+  dispatch, including session history budgeting. Return text or JSON results
+  and send media in a separate user message.
 - With `ChatSession`, the assistant's tool calls are already in history; add
   the tool results with `session.addMessage(...)` and continue with
   `session.create(const [])`. With `engine.create`, append the collected

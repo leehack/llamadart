@@ -224,6 +224,15 @@ if (reply.toolCalls.isNotEmpty) {
 results are JSON-encoded into the prompt; strings pass through unchanged. A
 message with several results is rendered as one tool message per result.
 
+Tool-result media transport is unsupported. `engine.create` and
+`engine.chatTemplate` throw `LlamaUnsupportedException` for image/audio parts
+in a tool-role message or alongside `LlamaToolResultContent` under any role,
+before rendering or backend dispatch. This also applies to session history
+during context budgeting. Return text or JSON tool results and send media in
+a separate user message ([#1445](https://github.com/leehack/llamadart/issues/1445));
+full tool-result media support remains tracked in
+[#1008](https://github.com/leehack/llamadart/issues/1008).
+
 For an OpenAI-compatible reference, see
 [OpenAI-compatible server](../examples/llamadart-server).
 
