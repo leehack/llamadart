@@ -27,6 +27,12 @@ results, and `session.reset()` starts over. See
 [First Chat Session](../getting-started/first-chat-session) for a multi-turn
 example.
 
+`create` and `chatTemplate` reject tool-role image/audio content with
+`LlamaUnsupportedException` before rendering or backend dispatch, including
+media alongside `LlamaToolResultContent` under another role. Session context
+budgeting applies the same check to history. Send text or JSON tool results
+and put media in a separate user message; see [tool calling](./tool-calling).
+
 ## Generation pipeline (visual)
 
 ```mermaid

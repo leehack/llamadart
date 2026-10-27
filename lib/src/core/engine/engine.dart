@@ -21,6 +21,7 @@ import '../models/config/gpu_device_info.dart';
 import '../models/config/log_level.dart';
 import '../models/diagnostics/model_file_type.dart';
 import '../models/chat/chat_message.dart';
+import '../models/chat/chat_role.dart';
 import '../models/chat/completion.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
@@ -1570,6 +1571,11 @@ class LlamaEngine {
   /// - [ToolChoice.auto]: Model can choose (default when tools present)
   /// - [ToolChoice.required]: Model must call at least one tool
   ///
+  /// Image/audio parts in a tool-role message, or alongside
+  /// [LlamaToolResultContent] under any role, throw
+  /// [LlamaUnsupportedException] before template rendering or generation.
+  /// Return text or JSON tool results and send media in a separate user message.
+  ///
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
   ///
@@ -1694,6 +1700,7 @@ class LlamaEngine {
             messages,
           );
         }
+        _rejectUnsupportedToolMedia(messages);
         await _rejectUnsupportedVideoInput(
           messages.expand((message) => message.parts),
         );
@@ -1901,6 +1908,11 @@ class LlamaEngine {
   /// zero-width space (U+200B) after its first character in that prompt, so
   /// it stays text. Messages without such parts render as they are.
   ///
+  /// Image/audio parts in a tool-role message, or alongside
+  /// [LlamaToolResultContent] under any role, throw
+  /// [LlamaUnsupportedException] before metadata loading or tokenization.
+  /// Return text or JSON tool results and send media in a separate user message.
+  ///
   /// [jsonSchema] is a legacy shortcut for
   /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
@@ -1977,6 +1989,7 @@ class LlamaEngine {
     bool keepChatMarker = false,
   }) async {
     _ensureReady(requireContext: false);
+    _rejectUnsupportedToolMedia(messages);
     return ChatTemplateRenderer.render(
       loadMetadata: _getCachedMetadata,
       tokenize: tokenize,
@@ -1995,6 +2008,26 @@ class LlamaEngine {
       templateNow: templateNow,
       keepChatMarker: keepChatMarker,
     );
+  }
+
+  void _rejectUnsupportedToolMedia(List<LlamaChatMessage> messages) {
+    for (final message in messages) {
+      final parts = message.parts;
+      // Typed results serialize as tool messages regardless of the input role.
+      final isToolMessage =
+          message.role == LlamaChatRole.tool ||
+          parts.any((part) => part is LlamaToolResultContent);
+      if (isToolMessage &&
+          parts.any(
+            (part) => part is LlamaImageContent || part is LlamaAudioContent,
+          )) {
+        throw LlamaUnsupportedException(
+          'Tool-role image/audio content is unsupported by the current chat '
+          'template pipeline on all runtimes. Return text or JSON tool results '
+          'and send images/audio in a separate user message.',
+        );
+      }
+    }
   }
 
   /// The marker that stands for each part in the prompt [create] hands a
