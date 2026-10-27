@@ -35,6 +35,9 @@ Linux and web. Full docs: https://llamadart.leehack.com
   loader behavior, GPU and inference unknown/unchecked; no path or expected pin
   proves the loaded release. This source-CLI check does not validate Flutter
   apps, devices or browsers. The default collector remains metadata-only.
+  It requires regular local manifest/IPC files and refuses their symlinks or
+  special files. Its 30-second coordinator budget has a three-second cleanup
+  reserve; arbitrary stalled filesystem operations remain outside the contract.
 
 - In custom backends and fakes, declare URL-load callbacks as
   `void Function(double progress)? onProgress` (0.14+), including

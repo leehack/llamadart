@@ -16,6 +16,20 @@ void main() {
       );
       try {
         final output = File('${directory.path}/result.json');
+        final manifest = File('${directory.path}/native_assets.yaml');
+        await manifest.writeAsString(
+          jsonEncode({
+            'format-version': [1, 0, 0],
+            'native-assets': {
+              'macos_arm64': {
+                'package:llamadart/llamadart': [
+                  'absolute',
+                  File('${directory.path}/missing').absolute.path,
+                ],
+              },
+            },
+          }),
+        );
         final process = await Process.start(Platform.resolvedExecutable, [
           '--disable-dart-dev',
           '--packages=${config.toFilePath()}',
@@ -31,11 +45,8 @@ void main() {
             'nonce': nonce,
             'output': output.path,
             'phase': '${directory.path}/phase',
-            'target': {
-              'primary': File('${directory.path}/missing').absolute.path,
-              'wrapper': File('${directory.path}/missing').absolute.path,
-              'companions': [],
-            },
+            'manifest': manifest.path,
+            'abi': 'macos_arm64',
           }),
         );
         await process.stdin.close();

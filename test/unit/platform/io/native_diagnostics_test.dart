@@ -206,30 +206,21 @@ void main() {
       );
     },
   );
-  test('private target and bounded reads reject arbitrary IPC input', () async {
-    expect(
-      () => NativeDiagnosticTarget.fromJson({'primary': 'secret'}),
-      throwsFormatException,
-    );
-    expect(
-      () => NativeDiagnosticTarget.fromJson({
-        'primary': 'relative',
-        'wrapper': '/b',
-        'companions': [],
-      }),
-      throwsFormatException,
-    );
-    expect(
-      () => decodeNativeDiagnosticJson('{"a":1,"a":1}'),
-      throwsFormatException,
-    );
-    final dir = await Directory.systemTemp.createTemp('diagnostic_read_');
-    addTearDown(() => dir.delete(recursive: true));
-    final file = File('${dir.path}/bounded');
-    await file.writeAsString('abc');
-    expect(await readNativeDiagnosticFile(file, 3), 'abc');
-    expect(() => readNativeDiagnosticFile(file, 2), throwsFormatException);
-  });
+  test(
+    'bounded regular reads reject overflow and arbitrary IPC input',
+    () async {
+      expect(
+        () => decodeNativeDiagnosticJson('{"a":1,"a":1}'),
+        throwsFormatException,
+      );
+      final dir = await Directory.systemTemp.createTemp('diagnostic_read_');
+      addTearDown(() => dir.delete(recursive: true));
+      final file = File('${dir.path}/bounded');
+      await file.writeAsString('abc');
+      expect(readNativeDiagnosticFile(file, 3), 'abc');
+      expect(() => readNativeDiagnosticFile(file, 2), throwsFormatException);
+    },
+  );
   group('isolated child owner', () {
     late Directory dir;
     late Uri config;
@@ -299,7 +290,7 @@ void main() {
       });
     }
     test('reports child failure with only the last fixed phase', () async {
-      expect((await run('fail'))['phase'], 'not_started');
+      expect((await run('fail'))['phase'], 'declaration');
       final result = await run('phase-fail');
       expect(result['code'], 'CHILD_FAILED');
       expect(result['phase'], 'open');
@@ -325,30 +316,39 @@ void main() {
       expect(after.difference(before), isEmpty);
     });
     test(
-      'absent/invalid declarations never start a child or choose another ABI/cache',
+      'absence is metadata-only; regular declarations are parsed in the child',
       () async {
         var starts = 0;
+        final activeConfig = (await Isolate.packageConfig)!;
+        final realChild = File(
+          'lib/src/platform/io/native_diagnostics_child.dart',
+        ).absolute.uri;
         Future<Map<String, Object>> check() => runNativeDiagnostic(
           'llama_cpp',
           packageConfig: config,
-          childScript: childScript,
+          childScript: realChild,
           abi: 'macos_arm64',
-          start: (_, _) {
+          start: (executable, _) {
             starts++;
-            throw StateError('PRIVATE');
+            return Process.start(executable, [
+              '--disable-dart-dev',
+              '--packages=${activeConfig.toFilePath()}',
+              realChild.toFilePath(),
+            ]);
           },
         );
         await File('${dir.path}/native_assets.yaml').delete();
         expect((await check())['code'], 'ASSET_DECLARATION_UNAVAILABLE');
+        expect(starts, 0);
         await File('${dir.path}/native_assets.yaml').writeAsString('{}');
         expect((await check())['code'], 'ASSET_DECLARATION_INVALID');
         await File('${dir.path}/native_assets.yaml').writeAsString(
           manifest({
-            id: ['absolute', '/OTHER'],
+            id: ['absolute', File('OTHER').absolute.path],
           }, abi: 'linux_x64'),
         );
         expect((await check())['code'], 'ASSET_NOT_DECLARED');
-        expect(starts, 0);
+        expect(starts, 2);
       },
     );
     test(
@@ -373,6 +373,44 @@ void main() {
           start: (_, _) => Completer<Process>().future,
         );
         expect(timedOut['code'], 'PROBE_TIMEOUT');
+      },
+    );
+    test(
+      'a process arriving after the startup deadline is killed and reaped',
+      () async {
+        final activeConfig = (await Isolate.packageConfig)!;
+        final available = Completer<Process>();
+        final result = await runNativeDiagnostic(
+          'llama_cpp',
+          packageConfig: config,
+          childScript: childScript,
+          abi: 'macos_arm64',
+          timeout: const Duration(milliseconds: 50),
+          start: (executable, _) async {
+            final process = await Process.start(executable, [
+              '--disable-dart-dev',
+              '--packages=${activeConfig.toFilePath()}',
+              childScript.toFilePath(),
+              'hang',
+            ]);
+            available.complete(process);
+            await Future<void>.delayed(const Duration(milliseconds: 350));
+            return process;
+          },
+        );
+        final process = await available.future.timeout(
+          const Duration(seconds: 2),
+        );
+        try {
+          expect(result['code'], 'PROBE_TIMEOUT');
+          expect(
+            await process.exitCode.timeout(const Duration(seconds: 3)),
+            isNot(0),
+          );
+        } finally {
+          process.kill(ProcessSignal.sigkill);
+          await process.exitCode.timeout(const Duration(seconds: 2));
+        }
       },
     );
   });

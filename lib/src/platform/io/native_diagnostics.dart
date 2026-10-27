@@ -137,56 +137,26 @@ final class NativeDiagnosticTarget {
 
   /// Declared dependency files opened before the primary.
   final List<String> companions;
-
-  /// Private IPC representation, which must never be included in a report.
-  Map<String, Object> toJson() => {
-    'primary': primary,
-    'wrapper': wrapper,
-    'companions': companions,
-  };
-
-  /// Validates the private IPC target without echoing malformed values.
-  static NativeDiagnosticTarget fromJson(Object? value) {
-    if (value is! Map ||
-        value.keys.join(',') != 'primary,wrapper,companions' ||
-        value['primary'] is! String ||
-        value['wrapper'] is! String ||
-        value['companions'] is! List ||
-        (value['companions'] as List).length > 24) {
-      throw const FormatException('Invalid target');
-    }
-    final files = [
-      value['primary'],
-      value['wrapper'],
-      ...value['companions'] as List,
-    ];
-    if (files.any(
-      (item) =>
-          item is! String ||
-          item.isEmpty ||
-          item.length > 4096 ||
-          item.contains('\u0000') ||
-          !path.isAbsolute(item),
-    )) {
-      throw const FormatException('Invalid target file');
-    }
-    return NativeDiagnosticTarget(
-      value['primary'] as String,
-      value['wrapper'] as String,
-      List<String>.from(value['companions'] as List),
-    );
-  }
 }
 
-/// Reads a bounded local file, including when it changes after opening.
-Future<String> readNativeDiagnosticFile(File file, int limit) async {
-  final handle = await file.open();
+/// Reads a small regular file without leaving asynchronous filesystem work.
+///
+/// Manifest reads run in the killable child. Parent IPC reads require a private
+/// directory with no other writer after confirmed child exit. The no-follow
+/// check rejects pipes and links; it is not protection against a hostile
+/// same-user process replacing a path between this check and the open.
+String readNativeDiagnosticFile(File file, int limit) {
+  if (FileSystemEntity.typeSync(file.path, followLinks: false) !=
+      FileSystemEntityType.file) {
+    throw const FormatException('Unsupported diagnostic file type');
+  }
+  final handle = file.openSync();
   try {
-    final bytes = await handle.read(limit + 1);
+    final bytes = handle.readSync(limit + 1);
     if (bytes.length > limit) throw const FormatException('File exceeds limit');
     return utf8.decode(bytes);
   } finally {
-    await handle.close();
+    handle.closeSync();
   }
 }
 
@@ -302,64 +272,87 @@ Future<Map<String, Object>> runNativeDiagnostic(
   NativeDiagnosticProcessStarter? start,
   Duration timeout = const Duration(seconds: 30),
 }) async {
+  final elapsed = Stopwatch()..start();
   if (!nativeDiagnosticRuntimes.contains(runtime)) {
     throw ArgumentError('Unknown runtime');
   }
-  Map<String, Object> result(String code, [String phase = 'not_started']) =>
-      nativeDiagnosticObservation(runtime, code, phase: phase);
-  if (!const {'macos', 'linux', 'windows'}.contains(Platform.operatingSystem)) {
-    return result('PROBE_HOST_UNAVAILABLE');
+  Duration remaining() {
+    final left = timeout - elapsed.elapsed;
+    if (left <= Duration.zero) throw TimeoutException('Diagnostic deadline');
+    return left;
   }
-  final config = packageConfig ?? await Isolate.packageConfig;
-  final script =
-      childScript ??
-      await Isolate.resolvePackageUri(
-        Uri.parse(
-          'package:llamadart/src/platform/io/native_diagnostics_child.dart',
-        ),
-      );
-  if (config == null ||
-      config.scheme != 'file' ||
-      script == null ||
-      script.scheme != 'file' ||
-      (childScript == null &&
-          !isNativeDiagnosticCliInvocation(Platform.script, config, script)) ||
-      !await File.fromUri(script).exists()) {
-    return result('PROBE_HOST_UNAVAILABLE');
-  }
-  NativeDiagnosticTarget? target;
-  try {
-    final manifest = File.fromUri(config.resolve('native_assets.yaml'));
-    if (!await manifest.exists()) {
-      return result('ASSET_DECLARATION_UNAVAILABLE', 'declaration');
-    }
-    target = parseNativeDiagnosticManifest(
-      await readNativeDiagnosticFile(manifest, 256 * 1024),
-      abi ?? Abi.current().toString(),
-      runtime,
-    );
-  } catch (_) {
-    return result('ASSET_DECLARATION_INVALID', 'declaration');
-  }
-  if (target == null) return result('ASSET_NOT_DECLARED', 'declaration');
-  final directory = await Directory.systemTemp.createTemp(
-    'llamadart_native_diagnostic_',
-  );
-  Process? child;
-  var terminated = true;
+
   var phase = 'not_started';
-  final output = File('${directory.path}/result.json');
-  final phaseFile = File('${directory.path}/phase');
-  final random = Random.secure();
-  final nonce = List.generate(
-    24,
-    (_) => random.nextInt(256),
-  ).map((v) => v.toRadixString(16).padLeft(2, '0')).join();
-  Future<void>? stdoutDone;
-  Future<void>? stderrDone;
-  final elapsed = Stopwatch()..start();
-  try {
-    var launchExpired = false;
+  Map<String, Object> result(String code, [String? at]) =>
+      nativeDiagnosticObservation(runtime, code, phase: at ?? phase);
+  Process? child;
+  Directory? directory;
+  var terminated = true;
+  var launchExpired = false;
+  StreamSubscription<List<int>>? stdoutSubscription;
+  StreamSubscription<List<int>>? stderrSubscription;
+
+  Future<Map<String, Object>> work() async {
+    remaining();
+    if (!const {
+      'macos',
+      'linux',
+      'windows',
+    }.contains(Platform.operatingSystem)) {
+      return result('PROBE_HOST_UNAVAILABLE');
+    }
+    // These use the already-loaded isolate package mapping, not an abandoned
+    // asynchronous metadata read when the deadline expires.
+    final config = packageConfig ?? Isolate.packageConfigSync;
+    remaining();
+    final script =
+        childScript ??
+        Isolate.resolvePackageUriSync(
+          Uri.parse(
+            'package:llamadart/src/platform/io/native_diagnostics_child.dart',
+          ),
+        );
+    remaining();
+    if (config == null ||
+        config.scheme != 'file' ||
+        script == null ||
+        script.scheme != 'file' ||
+        (childScript == null &&
+            !isNativeDiagnosticCliInvocation(
+              Platform.script,
+              config,
+              script,
+            )) ||
+        FileSystemEntity.typeSync(script.toFilePath()) !=
+            FileSystemEntityType.file) {
+      return result('PROBE_HOST_UNAVAILABLE');
+    }
+    remaining();
+    phase = 'declaration';
+    final manifest = File.fromUri(config.resolve('native_assets.yaml'));
+    final type = FileSystemEntity.typeSync(manifest.path, followLinks: false);
+    remaining();
+    if (type == FileSystemEntityType.notFound) {
+      return result('ASSET_DECLARATION_UNAVAILABLE');
+    }
+    if (type != FileSystemEntityType.file) {
+      return result('ASSET_DECLARATION_INVALID');
+    }
+
+    // Only the child opens manifest content: replacing a checked regular file
+    // with a pipe can block that child, but cannot strand a parent file open.
+    directory = Directory.systemTemp.createTempSync(
+      'llamadart_native_diagnostic_',
+    );
+    remaining();
+    final output = File('${directory!.path}/result.json');
+    final phaseFile = File('${directory!.path}/phase');
+    final random = Random.secure();
+    final nonce = List.generate(
+      24,
+      (_) => random.nextInt(256),
+    ).map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+    remaining();
     final launch =
         (start ??
         ((executable, arguments) => Process.start(
@@ -377,6 +370,7 @@ Future<Map<String, Object>> runNativeDiagnostic(
           lateChild.kill(ProcessSignal.sigkill);
           unawaited(lateChild.stdout.drain<void>().catchError((Object _) {}));
           unawaited(lateChild.stderr.drain<void>().catchError((Object _) {}));
+          unawaited(lateChild.stdin.close().catchError((Object _) {}));
           try {
             await lateChild.exitCode.timeout(const Duration(seconds: 3));
           } catch (_) {
@@ -385,61 +379,65 @@ Future<Map<String, Object>> runNativeDiagnostic(
         }
       }, onError: (Object _) {}),
     );
-    try {
-      child = await launch.timeout(timeout);
-    } on TimeoutException {
-      launchExpired = true;
-      return result('PROBE_TIMEOUT');
-    }
+    child = await launch.timeout(remaining());
     terminated = false;
-    // Native constructors and VM startup may print secrets. Never retain them.
-    stdoutDone = child.stdout.drain<void>();
-    stderrDone = child.stderr.drain<void>();
+    final stdoutDone = Completer<void>();
+    final stderrDone = Completer<void>();
+    void complete(Completer<void> done) {
+      if (!done.isCompleted) done.complete();
+    }
+
+    // Never retain native constructor output, including on a timeout.
+    stdoutSubscription = child!.stdout.listen(
+      (_) {},
+      onError: (Object _) {},
+      onDone: () => complete(stdoutDone),
+    );
+    stderrSubscription = child!.stderr.listen(
+      (_) {},
+      onError: (Object _) {},
+      onDone: () => complete(stderrDone),
+    );
     final request = jsonEncode({
       'runtime': runtime,
       'nonce': nonce,
       'output': output.path,
       'phase': phaseFile.path,
-      'target': target.toJson(),
+      'manifest': manifest.path,
+      'abi': abi ?? Abi.current().toString(),
     });
-    int code;
-    try {
-      code =
-          await (() async {
-            child!.stdin.writeln(request);
-            try {
-              await child.stdin.close();
-            } catch (_) {
-              /* A failed child may close stdin first. */
-            }
-            return child!.exitCode;
-          })().timeout(
-            elapsed.elapsed >= timeout
-                ? Duration.zero
-                : timeout - elapsed.elapsed,
-          );
-      terminated = true;
-    } on TimeoutException {
-      child.kill(ProcessSignal.sigkill);
+    final code = await (() async {
+      child!.stdin.writeln(request);
       try {
-        await child.exitCode.timeout(const Duration(seconds: 3));
-        terminated = true;
-      } on TimeoutException {
-        return result('TERMINATION_UNCONFIRMED');
+        await child!.stdin.close();
+      } catch (_) {
+        /* A failed child can close first. */
       }
-      return result('PROBE_TIMEOUT');
-    }
-    if (await phaseFile.exists()) {
-      final value = await readNativeDiagnosticFile(phaseFile, 32);
+      return child!.exitCode;
+    })().timeout(remaining());
+    terminated = true;
+    await Future.wait([
+      stdoutDone.future,
+      stderrDone.future,
+    ]).timeout(remaining());
+
+    // No child writer remains. Parent reads only its own small private IPC
+    // files, synchronously, with type checks and deadline checks on both sides.
+    final phaseType = FileSystemEntity.typeSync(
+      phaseFile.path,
+      followLinks: false,
+    );
+    remaining();
+    if (phaseType != FileSystemEntityType.notFound) {
+      final value = readNativeDiagnosticFile(phaseFile, 32);
+      remaining();
       if (_phases.contains(value)) phase = value;
     }
-    if (code != 0) return result('CHILD_FAILED', phase);
-    if (!await output.exists()) {
-      return result('CHILD_PROTOCOL_INVALID', phase);
-    }
+    if (code != 0) return result('CHILD_FAILED');
     final payload = decodeNativeDiagnosticJson(
-      await readNativeDiagnosticFile(output, 8192),
+      readNativeDiagnosticFile(output, 8192),
     );
+    remaining();
     if (payload is! Map ||
         payload.keys.join(',') != 'runtime,nonce,code,phase,marker' ||
         payload['runtime'] != runtime ||
@@ -447,16 +445,18 @@ Future<Map<String, Object>> runNativeDiagnostic(
         !_codes.contains(payload['code']) ||
         !_phases.contains(payload['phase']) ||
         !_markers.contains(payload['marker'])) {
-      return result('CHILD_PROTOCOL_INVALID', phase);
+      return result('CHILD_PROTOCOL_INVALID');
     }
-    final observation = nativeDiagnosticObservation(
-      runtime,
-      payload['code'] as String,
-      phase: payload['phase'] as String,
-      marker: payload['marker'] as String,
-    );
-    // Only the child probe's finite result vocabulary is accepted.
-    if (!const {
+    if (const {
+      'ASSET_DECLARATION_UNAVAILABLE',
+      'ASSET_DECLARATION_INVALID',
+      'ASSET_NOT_DECLARED',
+    }.contains(payload['code'])) {
+      if (payload['phase'] != 'declaration' ||
+          payload['marker'] != 'not_checked') {
+        return result('CHILD_PROTOCOL_INVALID');
+      }
+    } else if (!const {
       'SURFACE_OBSERVED',
       'ARTIFACT_MISSING',
       'DEPENDENCY_UNAVAILABLE',
@@ -465,7 +465,7 @@ Future<Map<String, Object>> runNativeDiagnostic(
       'SYMBOL_MISSING',
       'ABI_UNKNOWN',
     }.contains(payload['code'])) {
-      return result('CHILD_PROTOCOL_INVALID', phase);
+      return result('CHILD_PROTOCOL_INVALID');
     }
     if (payload['code'] == 'SURFACE_OBSERVED' &&
         (payload['phase'] != 'complete' ||
@@ -475,34 +475,56 @@ Future<Map<String, Object>> runNativeDiagnostic(
                   'litert_lm' => 'callback_v2_finish_v1',
                   _ => 'not_available',
                 })) {
-      return result('CHILD_PROTOCOL_INVALID', phase);
+      return result('CHILD_PROTOCOL_INVALID');
     }
-    return observation;
-  } catch (_) {
-    return result(
-      child == null ? 'PROBE_HOST_UNAVAILABLE' : 'CHILD_PROTOCOL_INVALID',
-      phase,
+    return nativeDiagnosticObservation(
+      runtime,
+      payload['code'] as String,
+      phase: payload['phase'] as String,
+      marker: payload['marker'] as String,
     );
-  } finally {
-    if (!terminated && child != null) {
-      child.kill(ProcessSignal.sigkill);
-      try {
-        await child.exitCode.timeout(const Duration(seconds: 3));
-        terminated = true;
-      } catch (_) {
-        /* No raw subprocess failure reaches the report. */
-      }
-    }
-    if (terminated) {
-      try {
-        await Future.wait([
-          ?stdoutDone,
-          ?stderrDone,
-        ]).timeout(const Duration(seconds: 3), onTimeout: () => <void>[]);
-        await directory.delete(recursive: true);
-      } catch (_) {
-        /* Cleanup failures contain no reportable runtime evidence. */
-      }
+  }
+
+  Map<String, Object> observation;
+  try {
+    observation = await work();
+  } on TimeoutException {
+    launchExpired = true;
+    observation = result('PROBE_TIMEOUT');
+  } catch (_) {
+    observation = result(
+      child == null ? 'PROBE_HOST_UNAVAILABLE' : 'CHILD_PROTOCOL_INVALID',
+    );
+  }
+  // A single reserve covers forced termination, reaping and pipe cancellation.
+  // Responsive local filesystem metadata/private regular IPC are assumed;
+  // Dart cannot interrupt an arbitrary stalled kernel/filesystem operation.
+  final cleanup = Stopwatch()..start();
+  Duration reserve() {
+    final left = const Duration(seconds: 3) - cleanup.elapsed;
+    if (left <= Duration.zero) throw TimeoutException('Cleanup deadline');
+    return left;
+  }
+
+  if (!terminated && child != null) {
+    child!.kill(ProcessSignal.sigkill);
+    try {
+      await child!.exitCode.timeout(reserve());
+      terminated = true;
+    } catch (_) {
+      /* Report the unconfirmed termination below. */
     }
   }
+  try {
+    await Future.wait([
+      if (stdoutSubscription != null) stdoutSubscription!.cancel(),
+      if (stderrSubscription != null) stderrSubscription!.cancel(),
+    ]).timeout(reserve());
+    if (terminated && directory != null) directory!.deleteSync(recursive: true);
+  } catch (_) {
+    /* No raw cleanup failure reaches a renderer. */
+  }
+  if (!terminated) return result('TERMINATION_UNCONFIRMED');
+  if (elapsed.elapsed >= timeout) return result('PROBE_TIMEOUT');
+  return observation;
 }

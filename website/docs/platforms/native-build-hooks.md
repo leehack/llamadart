@@ -136,6 +136,17 @@ shell command; the outer `dart run` build hook can still prepare assets before
 main. The source helper ships with the package; compiled executables, Flutter
 SPM/in-process assets and app/device/browser validation are outside this check.
 
+The coordinator starts one 30-second budget at entry, covering metadata,
+manifest processing, child startup/work, pipe drains and IPC results. Forced
+termination, reaping and cleanup have one additional three-second reserve.
+Manifest content is read inside the timed child, so a concurrent replacement
+cannot strand a parent file open. Non-regular files and manifest/IPC symlinks
+are refused before opening. Parent IPC reads happen only after confirmed child
+exit, using its small private files with no other writer. This assumes responsive
+local filesystem operations; it does not promise interruption of arbitrary
+kernel/network-filesystem stalls or protection against hostile same-user path
+replacement. This is not a sandbox for malicious native code.
+
 `SURFACE_OBSERVED` means the declared files opened and the selected symbols/ABI
 markers were observed in that child. It does not prove all bindings, production
 loader resolution, a loaded owner release, usable hardware or model execution.

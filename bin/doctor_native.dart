@@ -14,6 +14,9 @@ No engine, model, GPU/device probe or inference is started. Native constructors
 can run when libraries open. Production app loading and loaded release identity
 remain unchecked. The default doctor and public setup collector do not load runtimes.
 The child runs no hooks/network; dart run can prepare assets before this command.
+Regular local files are required; special files and manifest/IPC links are refused.
+The coordinator has a 30s budget plus a 3s termination/cleanup reserve, assuming
+responsive local filesystem operations; arbitrary kernel/filesystem stalls are outside scope.
 Exit codes: 0 report/help (including failed checks), 1 no report, 64 invalid arguments.''';
 
 Future<void> main(List<String> arguments) async {

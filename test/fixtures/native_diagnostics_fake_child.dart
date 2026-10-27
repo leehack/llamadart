@@ -17,6 +17,19 @@ Future<void> main(List<String> arguments) async {
   const secret =
       'PRIVATE_DIAGNOSTIC_TOKEN /Users/private-user/key https://private.invalid/?token=SECRET \u001b[31m';
   switch (mode) {
+    case 'fifo-result':
+    case 'fifo-phase':
+    case 'link-result':
+    case 'link-phase':
+      final destination = mode.endsWith('result') ? output.path : phase.path;
+      final fifo = mode.startsWith('link') ? '$destination.pipe' : destination;
+      final created = await Process.run('mkfifo', [fifo]);
+      if (created.exitCode != 0) {
+        exitCode = 1;
+        return;
+      }
+      if (mode.startsWith('link')) await Link(destination).create(fifo);
+      return;
     case 'hang':
       await Future<void>.delayed(const Duration(minutes: 5));
     case 'fail':
