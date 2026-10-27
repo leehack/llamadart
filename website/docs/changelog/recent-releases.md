@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Update the default llama.cpp native runtime to `leehack/llamadart-native@v0.7.0-3`, a wrapper rebuild of llama.cpp `v0.7.0`: Windows x64 apps that do not select `cuda` download 15 MiB instead of 703 MiB ([#812](https://github.com/leehack/llamadart/issues/812)), and Linux arm64 bundles ship FP16 CPU variant modules that load automatically on CPUs that support them. Apple apps get it with the next `llamadart_llama_cpp_flutter` release.
 - The build hook reads llamadart-native hook contract 2: it downloads a backend sidecar archive, such as Windows x64 CUDA, only when that backend is selected, and an overridden release that needs an unsupported contract fails the build with `NativeHookContractException` ([#812](https://github.com/leehack/llamadart/issues/812)).
 - Load an SD 1.x ControlNet as `ImageModelRole.controlNet` and steer generation with `ControlNetImageGenerationRequest` on the bounded macOS CPU recipe; other ControlNet recipes are refused at load ([#1224](https://github.com/leehack/llamadart/issues/1224)).
 - Load the best Linux arm64 CPU variant module a native bundle ships in every backend mode, falling back to the baseline, so mixed `auto` and explicit loads share one CPU backend.

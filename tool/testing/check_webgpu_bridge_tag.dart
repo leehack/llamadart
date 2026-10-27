@@ -405,7 +405,7 @@ const String bridgeNativeReleaseTag = 'v0.7.0-2';
 /// The native pin approved beside the pinned bridge assets: either
 /// [bridgeNativeReleaseTag] or a native wrapper rebuild of it from the same
 /// upstream llama.cpp commit.
-const String bridgeApprovedNativePin = 'v0.7.0-2';
+const String bridgeApprovedNativePin = 'v0.7.0-3';
 
 /// The asset repository release that published the pinned bridge assets.
 const String bridgeAssetsReleaseId = '422794693';

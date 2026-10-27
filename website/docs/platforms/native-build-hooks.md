@@ -369,9 +369,11 @@ Selection rules:
   `llamadart-native-windows-x64-cuda12-<tag>.tar.gz`, which the hook downloads
   and verifies only when `cuda` is selected for `windows-x64`. If such a
   release lists no CUDA archive, selecting `cuda` fails the build with
-  `NativeHookContractException` instead of falling back. Contract 1 releases,
-  including the pinned `v0.7.0-2`, ship CUDA inside the `windows-x64` archive,
-  about 700 MiB, which the hook downloads even when `cuda` is not selected.
+  `NativeHookContractException` instead of falling back. The pinned
+  `v0.7.0-3` is a contract 2 release: its `windows-x64` archive is about
+  15 MiB, and the CUDA archive adds about 688 MiB. Contract 1 releases ship
+  CUDA inside a `windows-x64` archive of about 700 MiB, which the hook
+  downloads even when `cuda` is not selected.
   Archives are cached under the llamadart package's
   `.dart_tool/llamadart/native_bundles/`. To skip the download, set
   `llamadart_native_path` to a local archive or bundle.

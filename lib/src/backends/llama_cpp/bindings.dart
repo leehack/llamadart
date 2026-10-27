@@ -6159,6 +6159,9 @@ external ffi.Pointer<llama_batch_ext> llama_dart_batch_ext_init(
   ffi.Pointer<llama_context> ctx,
 );
 
+@ffi.Native<ffi.Pointer<ffi.Char> Function()>()
+external ffi.Pointer<ffi.Char> llama_dart_build_identity();
+
 @ffi.Native<ffi.Void Function()>()
 external void llama_dart_clear_last_error();
 
