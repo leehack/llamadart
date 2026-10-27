@@ -63,7 +63,13 @@ void main() {
   });
 
   group('afterForcedOpenThought', () {
-    for (final endTag in ['</think>', '</seed:think>', '</thinking>']) {
+    for (final endTag in [
+      '</think>',
+      '</seed:think>',
+      '</thinking>',
+      '<|end|><|begin|>assistant<|content|>',
+      'abab',
+    ]) {
       test('requires $endTag once before the calls', () {
         final grammar = ToolCallGrammarUtils.afterForcedOpenThought(
           'root ::= call\ncall ::= "x"\n',
@@ -97,6 +103,15 @@ void main() {
         }
       });
     }
+  });
+
+  test('afterForcedOpenThought leaves a grammar that takes the thought', () {
+    final once = ToolCallGrammarUtils.afterForcedOpenThought(
+      'root ::= call\ncall ::= "x"\n',
+      '</think>',
+    );
+
+    expect(ToolCallGrammarUtils.afterForcedOpenThought(once, '</think>'), once);
   });
 
   test('wrapRootGrammar wraps root rule with literals', () {

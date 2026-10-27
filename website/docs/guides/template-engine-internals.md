@@ -102,6 +102,15 @@ sequenceDiagram
   - optional grammar
   - optional PEG parser payload
   - preserved tokens and lazy grammar triggers
+- Every template receives the resolved thinking flag as `enable_thinking`,
+  as llama.cpp passes it; a handler's own context can still override it. When
+  the prompt ends in a thinking start tag the handler did not track, the
+  thought is forced open whatever the flag, as llama.cpp parses the open
+  thought of a generation prompt as reasoning.
+- A grammar that applies from the first token after a forced-open thought (a
+  `responseFormat` schema, the generic tool grammar, or a required-call
+  grammar) first takes the rest of the thought and its end tag, as
+  llama.cpp's reasoning parser does.
 
 ### 4. Parse stage
 

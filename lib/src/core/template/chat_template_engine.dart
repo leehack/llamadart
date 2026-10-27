@@ -19,6 +19,7 @@ import 'media_placeholders.dart';
 import 'handlers/generic_handler.dart';
 import 'handlers/hermes_handler.dart';
 import 'response_format.dart';
+import 'tool_call_grammar_utils.dart';
 import 'tool_schema_utils.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
@@ -299,7 +300,10 @@ class ChatTemplateEngine {
           mediaMarker: mediaMarker,
         ),
       );
-      rendered = _withUntrackedThought(handler, rendered, enableThinking);
+      rendered = withTemplateOpenedThought(
+        rendered,
+        startTag: handler.thinkingStartTag,
+      );
       if (effectiveFormat == ChatFormat.contentOnly) {
         rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
       }
@@ -315,8 +319,13 @@ class ChatTemplateEngine {
         effectiveTools,
         toolChoice,
         responseSchema,
+        thinkingEndTag: handler.thinkingEndTag,
       );
-      return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
+      return _normalizeGrammarLazyForToolChoice(
+        withGrammar,
+        toolChoice,
+        thinkingEndTag: handler.thinkingEndTag,
+      );
     }
 
     // Other templates cannot consume transport objects. Keep media in the
@@ -355,7 +364,10 @@ class ChatTemplateEngine {
       ),
     );
 
-    baseResult = _withUntrackedThought(handler, baseResult, enableThinking);
+    baseResult = withTemplateOpenedThought(
+      baseResult,
+      startTag: handler.thinkingStartTag,
+    );
     if (effectiveFormat == ChatFormat.contentOnly) {
       baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
     }
@@ -372,8 +384,13 @@ class ChatTemplateEngine {
       effectiveTools,
       toolChoice,
       responseSchema,
+      thinkingEndTag: handler.thinkingEndTag,
     );
-    return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
+    return _normalizeGrammarLazyForToolChoice(
+      withGrammar,
+      toolChoice,
+      thinkingEndTag: handler.thinkingEndTag,
+    );
   }
 
   /// Runs a handler [render], turning an [Exception] that is not already a
@@ -426,12 +443,21 @@ class ChatTemplateEngine {
   }
 
   /// Apply grammar constraints based on tool definitions and response format.
+  ///
+  /// After a forced-open thought, a grammar added here first takes the rest of
+  /// the thought and [thinkingEndTag], as llama.cpp's reasoning parser does:
+  /// it applies from the first token, and unclosed output parses as
+  /// reasoning.
   static LlamaChatTemplateResult _applyGrammar(
     LlamaChatTemplateResult result,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice,
-    Map<String, dynamic>? responseSchema,
-  ) {
+    Map<String, dynamic>? responseSchema, {
+    required String thinkingEndTag,
+  }) {
+    String afterThought(String grammar) => result.thinkingForcedOpen
+        ? ToolCallGrammarUtils.afterForcedOpenThought(grammar, thinkingEndTag)
+        : grammar;
     if (responseSchema != null) {
       if (toolChoice != ToolChoice.none &&
           (tools?.any(toolUsesJsonSchema) ?? false)) {
@@ -442,7 +468,7 @@ class ChatTemplateEngine {
       return LlamaChatTemplateResult(
         prompt: result.prompt,
         format: result.format,
-        grammar: responseFormatGrammar(responseSchema),
+        grammar: afterThought(responseFormatGrammar(responseSchema)),
         grammarLazy: result.grammarLazy,
         additionalStops: result.additionalStops,
         preservedTokens: result.preservedTokens,
@@ -497,7 +523,7 @@ class ChatTemplateEngine {
         return LlamaChatTemplateResult(
           prompt: result.prompt,
           format: result.format,
-          grammar: grammarResult.grammar,
+          grammar: afterThought(grammarResult.grammar),
           grammarLazy: false,
           additionalStops: result.additionalStops,
           preservedTokens: result.preservedTokens,
@@ -512,10 +538,14 @@ class ChatTemplateEngine {
     return result;
   }
 
+  /// Makes a [ToolChoice.required] grammar apply from the first token. A lazy
+  /// grammar that becomes eager after a forced-open thought first takes the
+  /// rest of the thought and [thinkingEndTag].
   static LlamaChatTemplateResult _normalizeGrammarLazyForToolChoice(
     LlamaChatTemplateResult result,
-    ToolChoice toolChoice,
-  ) {
+    ToolChoice toolChoice, {
+    required String thinkingEndTag,
+  }) {
     if (toolChoice != ToolChoice.required) {
       return result;
     }
@@ -534,7 +564,12 @@ class ChatTemplateEngine {
     return LlamaChatTemplateResult(
       prompt: result.prompt,
       format: result.format,
-      grammar: result.grammar,
+      grammar: result.grammarLazy && result.thinkingForcedOpen
+          ? ToolCallGrammarUtils.afterForcedOpenThought(
+              result.grammar!,
+              thinkingEndTag,
+            )
+          : result.grammar,
       grammarLazy: false,
       additionalStops: result.additionalStops,
       preservedTokens: result.preservedTokens,
@@ -750,37 +785,6 @@ class ChatTemplateEngine {
         'their tool turn. Use a template that renders each tool result once.',
       );
     }
-  }
-
-  /// Returns [result], or when its prompt ends with the [handler]'s thinking
-  /// start tag that the handler did not track, with that thought forced open
-  /// or, without [enableThinking], closed.
-  static LlamaChatTemplateResult _withUntrackedThought(
-    ChatTemplateHandler handler,
-    LlamaChatTemplateResult result,
-    bool enableThinking,
-  ) {
-    if (result.thinkingForcedOpen ||
-        !isThinkingForcedOpen(
-          result.prompt,
-          startTag: handler.thinkingStartTag.trimRight(),
-        )) {
-      return result;
-    }
-    return LlamaChatTemplateResult(
-      prompt: enableThinking
-          ? result.prompt
-          : '${result.prompt.trimRight()}${handler.thinkingEndTag}\n',
-      format: result.format,
-      grammar: result.grammar,
-      grammarLazy: result.grammarLazy,
-      additionalStops: result.additionalStops,
-      preservedTokens: result.preservedTokens,
-      grammarTriggers: result.grammarTriggers,
-      thinkingForcedOpen: enableThinking,
-      parser: result.parser,
-      tokenCount: result.tokenCount,
-    );
   }
 
   static LlamaChatTemplateResult _withFormat(
