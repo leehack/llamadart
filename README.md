@@ -584,8 +584,8 @@ its checkpoint (it is detected as `ImageModelRole.controlNet`) and use
 SD 1.x checkpoint with its embedded full VAE plus an original-layout SD 1.x
 ControlNet on macOS CPU, with flash attention and direct VAE convolution off;
 other recipes are refused at load. The caller supplies the finished control
-map (edges, depth, pose); no preprocessor runs. Real SD 1.x qualification is
-pending. See the [ControlNet recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#controlnet)
+map (edges, depth, pose); no preprocessor runs. Qualified on SD 1.5 with
+`control_v11p_sd15_canny` on macOS CPU. See the [ControlNet recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#controlnet)
 and `example/basic_app/bin/image_controlnet.dart`.
 
 ## Choosing a Runtime

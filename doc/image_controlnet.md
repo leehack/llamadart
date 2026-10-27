@@ -8,12 +8,12 @@ stable-diffusion-native v0.3.0 runtime on macOS CPU, `flashAttention: false`,
 header-detected embedded full VAE, and one SD 1.x ControlNet in the original
 (lllyasviel) layout. Everything else is refused when the model loads.
 
-**Status: SD 1.x real-model qualification is pending.** No SD 1.x checkpoint
-or SD 1.x ControlNet is available on the maintainer machine that produced this
-change, and the issue approves no large weight download. The admission rules,
-mapping and refusals are covered by unit tests and by direct-C pipeline
-evidence on the pinned runtime (below); the `image-controlnet` scenario must
-pass on the closest-family artifacts before support is called measured.
+**Status: SD 1.x real-model qualification is measured** on macOS arm64 CPU
+with the recipe below (2026-10-27; results in
+[Reproduce the SD 1.x qualification](#reproduce-the-sd-1x-qualification)).
+The admission rules, mapping and refusals are also covered by unit tests and
+by direct-C pipeline evidence on the pinned runtime (below). Only this recipe
+is qualified.
 
 ## Admission and runtime path
 
@@ -47,7 +47,7 @@ pass on the closest-family artifacts before support is called measured.
   output size; upstream's optional Canny preprocessing and resizing stay at
   their defaults, which are identity for an exact-size image.
 
-## Pipeline evidence on the pinned runtime (not SD 1.x qualification)
+## Pipeline evidence on the pinned runtime (synthetic ControlNet)
 
 Direct C against `stable-diffusion-native-runtime-macos-arm64-v0.3.0.tar.gz`
 (SHA-256 `6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`,
@@ -103,6 +103,14 @@ square, CPU 4 threads, Euler/discrete 8 steps, CFG 7, seed 42. Modes are
 ordinary text, house at 1, house at 0, cross at 1, house at 2, ordinary text
 reset. Record the checkpoint, ControlNet and runtime SHA-256 with the result.
 
+Measured inputs (pinned runtime `stable-diffusion-native-runtime-macos-arm64-v0.3.0.tar.gz`,
+SHA-256 `6bff063ffae8d6a274fad1be3e648e5e6ea66d26f140ade2494a624a5214b2ec`):
+
+| File | Source (Hugging Face revision) | SHA-256 |
+| --- | --- | --- |
+| `v1-5-pruned-emaonly.safetensors` (4.0 GB) | `stable-diffusion-v1-5/stable-diffusion-v1-5` @ `451f4fe16113bff5a5d2269ed5ad43b0592e9a14` | `6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa` |
+| `control_v11p_sd15_canny_fp16.safetensors` (689 MB, fp16, `control_model.` prefix) | `comfyanonymous/ControlNet-v1-1_fp16_safetensors` @ `ab830a51c5c573a5b85bfdbaa3ae0ab7e1baf5f7` | `8932b66e15aae835b3490dbf989f56c253104cee08a88bf21283762f557c9f10` |
+
 Fixed acceptance gates, recorded before any SD 1.x output was observed:
 
 | Check | Required |
@@ -115,6 +123,24 @@ Fixed acceptance gates, recorded before any SD 1.x output was observed:
 | Output edge contrast on house-map pixels | House-controlled > cross-controlled |
 | Mid-sampling cancellation | Cancelled completion; exact ordinary and control reuse after it |
 | Dispose/reload | Capability cleared then restored; exact cross-map RGB |
+
+Measured result (macOS arm64 CPU, `image-controlnet` scenario, all gates
+passed; the direct-C reference also reported `FAMILY=SD 1.x CONTROLNET=1`):
+
+| Check | Measured |
+| --- | --- |
+| Public Dart vs independent C, six modes | Exact RGB |
+| Ordinary request after ControlNet requests | Exact first ordinary RGB |
+| Strength 0 vs ordinary | Exact RGB |
+| Strength 1 vs 0 | MAE 80.10 |
+| House vs cross map at strength 1 | MAE 78.63 |
+| Edge contrast on house-map pixels | House-controlled 34.10 > cross-controlled 1.92 |
+| Mid-sampling cancellation, then ordinary and control reuse | Cancelled; exact reuse |
+| Dispose/reload | Capability cleared then restored; exact cross-map RGB |
+| Strength 2 vs 1 (informational) | MAE 67.82 |
+
+Wall time was about 6 minutes for the Dart scenario and 3.6 minutes for the C
+reference.
 
 GPU, mobile and Web devices, SD 2.x, SDXL and newer families, Diffusers or
 `.pth` ControlNets, preprocessors, multiple ControlNets and hot-swap remain

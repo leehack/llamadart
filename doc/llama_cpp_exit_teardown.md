@@ -392,8 +392,9 @@ stand-in:
   in a short-lived isolate of their own (`readStableDiffusionGpuMemory`), not
   in a worker.
 - Upstream calls that return at once: `sd_ctx_params_init`,
-  `sd_ctx_supports_image_generation` and `sd_get_model_version_name` right
-  after the load, `sd_img_gen_params_init` and `free_sd_images`.
+  `sd_ctx_supports_image_generation`, `sd_ctx_has_control_net` and
+  `sd_get_model_version_name` right after the load, `sd_img_gen_params_init`
+  and `free_sd_images`.
 
 `StableDiffusionCalls.tryResolve` binds the six `sd_dart_` functions through
 the addresses it resolves, all or nothing. There is no fallback to the
