@@ -173,7 +173,7 @@ final List<BridgeTagPin> releaseNotesPins = <BridgeTagPin>[
   BridgeTagPin(
     'CHANGELOG.md',
     RegExp(
-      r'^\* (?:Aligned the default WebGPU bridge assets to|Keep the default '
+      r'^[*-] (?:Aligned the default WebGPU bridge assets to|Keep the default '
       r'WebGPU bridge assets at(?= `v\d+\.\d+\.\d+` '
       r'\(unchanged from \d+\.\d+\.\d+\)\.\r?$)) `(v\d+\.\d+\.\d+)`',
       multiLine: true,
