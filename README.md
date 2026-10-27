@@ -433,7 +433,9 @@ experimental and may change, and the runtime is opt-in.
 
 Image models can be GGUF or Safetensors files, including mixed-format
 components; Safetensors does not need conversion to GGUF. Compatible PyTorch
-checkpoints need an explicit role and remain less qualified. See the
+tensor-only checkpoints need an explicit role. Selected complete SD-Turbo F16
+GGUF, Safetensors and PyTorch ZIP/legacy layouts are verified on macOS CPU;
+other layouts and platforms need their own qualification. See the
 [format and layout limits](https://llamadart.leehack.com/docs/next/guides/image-generation#weight-formats-and-layouts)
 before choosing files: a supported container does not imply every model works.
 
