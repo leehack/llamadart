@@ -22,6 +22,7 @@ import 'tool_schema_utils.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
+import 'thinking_utils.dart';
 
 /// Orchestrates chat template detection, rendering, and output parsing.
 ///
@@ -96,6 +97,10 @@ class ChatTemplateEngine {
     DateTime? now,
     String mediaMarker = mtmdMediaMarker,
   }) {
+    enableThinking = effectiveEnableThinking(
+      enableThinking,
+      chatTemplateKwargs,
+    );
     final responseSchema = responseFormatSchema(responseFormat);
 
     // 1. Select template source (default vs tool_use variant)

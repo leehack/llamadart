@@ -48,6 +48,7 @@ import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
 import '../template/handlers/translate_gemma_handler.dart';
 import '../template/media_placeholders.dart';
+import '../template/thinking_utils.dart';
 import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
@@ -1680,6 +1681,7 @@ class LlamaEngine {
       sourceLangCode: sourceLangCode,
       targetLangCode: targetLangCode,
     );
+    enableThinking = effectiveEnableThinking(enableThinking, templateKwargs);
     final operation = observers.isEmpty
         ? null
         : LlamaChatOperation(

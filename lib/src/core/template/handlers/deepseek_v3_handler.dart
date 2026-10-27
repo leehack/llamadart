@@ -89,6 +89,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
         ),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
+        'enable_thinking': enableThinking,
         'bos_token': bosToken,
         'eos_token': eosToken,
       },

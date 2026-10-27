@@ -5059,6 +5059,71 @@ void main() {
     );
 
     test(
+      'a boolean thinking template kwarg overrides enableThinking',
+      () async {
+        await engine.loadModel('qwen-test.gguf');
+        const prompt = [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ];
+
+        Future<String> streamedThinking({
+          required bool enableThinking,
+          required Map<String, dynamic> chatTemplateKwargs,
+        }) async {
+          backend.generationChunks = const ['<think>reason', '</think> answer'];
+          final chunks = await engine
+              .create(
+                prompt,
+                enableThinking: enableThinking,
+                chatTemplateKwargs: chatTemplateKwargs,
+              )
+              .toList();
+          return chunks
+              .map((chunk) => chunk.choices.first.delta.thinking)
+              .whereType<String>()
+              .join();
+        }
+
+        for (final key in ['enable_thinking', 'thinking']) {
+          expect(
+            await streamedThinking(
+              enableThinking: false,
+              chatTemplateKwargs: {key: true},
+            ),
+            'reason',
+            reason: key,
+          );
+          expect(
+            await streamedThinking(
+              enableThinking: true,
+              chatTemplateKwargs: {key: false},
+            ),
+            isEmpty,
+            reason: key,
+          );
+        }
+        expect(
+          await streamedThinking(
+            enableThinking: false,
+            chatTemplateKwargs: const {'enable_thinking': 'true'},
+          ),
+          isEmpty,
+        );
+
+        final nativeBackend = NativeChatMockBackend();
+        final nativeEngine = LlamaEngine(nativeBackend);
+        addTearDown(nativeEngine.dispose);
+        await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+        await nativeEngine.complete(
+          prompt,
+          enableThinking: false,
+          chatTemplateKwargs: const {'enable_thinking': true},
+        );
+        expect(nativeBackend.lastNativeEnableThinking, isTrue);
+      },
+    );
+
+    test(
       'create suppresses thinking deltas in raw tool-enabled mode when disabled',
       () async {
         backend.generationChunks = const ['<think>reason', '</think> answer'];
