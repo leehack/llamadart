@@ -224,14 +224,61 @@ if (reply.toolCalls.isNotEmpty) {
 results are JSON-encoded into the prompt; strings pass through unchanged. A
 message with several results is rendered as one tool message per result.
 
-Tool-result media transport is unsupported. `engine.create` and
-`engine.chatTemplate` throw `LlamaUnsupportedException` for image/audio parts
-in a tool-role message or alongside `LlamaToolResultContent` under any role,
-before rendering or backend dispatch. This also applies to session history
-during context budgeting. Return text or JSON tool results and send media in
-a separate user message ([#1445](https://github.com/leehack/llamadart/issues/1445));
-full tool-result media support remains tracked in
-[#1008](https://github.com/leehack/llamadart/issues/1008).
+### Tool-result media
+
+A tool can return images with its result. Return a `LlamaToolOutput` from a
+handler or `onToolCall`, or put the parts in `LlamaToolResultContent.content`
+yourself:
+
+```dart
+final camera = ToolDefinition(
+  name: 'take_photo',
+  description: 'Takes a photo and returns it.',
+  parameters: const [],
+  handler: (params) async => LlamaToolOutput(
+    output: {'ok': true},
+    content: [LlamaImageContent(bytes: await takePhoto())],
+  ),
+);
+
+if ((await engine.capabilities).toolResultMedia
+    .contains(LlamaToolResultMedia.image)) {
+  await session.sendWithTools('What is in front of the camera?', tools: [camera]);
+}
+```
+
+The tool turn holds the result as text (JSON for a non-string result, nothing
+for `null`), then each `content` part in order: text parts joined by a
+newline, and a media marker at each image, exactly as llama-server renders a
+`tool` message whose `content` array has `image_url` parts. `toJson` emits that
+array shape. Images reach the model in prompt order.
+
+Support is a chat-format property:
+
+| Requirement | Supported |
+| --- | --- |
+| Runtime | Native llama.cpp with a loaded projector that reports vision |
+| Chat format | Hermes-style `<tool_call>` templates, qualified on Qwen3-VL |
+| Media | Images with a `path` or `bytes` |
+
+`LlamaEngineCapabilities.toolResultMedia` reports `{image}` when the runtime,
+projector and the loaded model's template all qualify. Everything else throws
+`LlamaUnsupportedException` before rendering or dispatch, including session
+history budgeting:
+
+- other formats, such as Qwen3.5's XML tool format or Gemma 4, even for text
+  `content`, and a request that routes to the generic format (a response
+  schema with tools);
+- WebGPU, LiteRT-LM and other runtimes, or no vision projector;
+- audio or video parts, and URL-only images (the URL is not fetched or echoed;
+  resolve it in the app and pass bytes or a path);
+- a template that renders a tool result's marker other than once.
+
+Nested tool calls, tool results or thinking parts throw
+`LlamaArgumentException`. Image/audio parts beside `LlamaToolResultContent`,
+or on a tool-role message, still throw
+([#1445](https://github.com/leehack/llamadart/issues/1445)); put them in
+`content` instead.
 
 For an OpenAI-compatible reference, see
 [OpenAI-compatible server](../examples/llamadart-server).

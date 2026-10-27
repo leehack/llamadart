@@ -25,6 +25,7 @@ import '../models/chat/chat_role.dart';
 import '../models/chat/completion.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
+import '../models/chat/tool_result_parts.dart';
 import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 import '../llama_logging.dart';
@@ -48,6 +49,8 @@ import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
 import '../template/handlers/translate_gemma_handler.dart';
 import '../template/media_placeholders.dart';
+import '../template/chat_format.dart';
+import '../template/chat_format_registry.dart';
 import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
@@ -273,10 +276,12 @@ class LlamaEngine {
 
     final BackendGenerationCapabilities generation;
     final ({bool vision, bool audio}) media;
+    final Set<LlamaToolResultMedia> toolResultMedia;
     String? backendName;
     try {
       generation = await _generationCapabilities();
       media = await _mediaSupport();
+      toolResultMedia = await _modelToolResultMedia(media);
       try {
         backendName = await candidate.getBackendName();
       } catch (error, stackTrace) {
@@ -315,7 +320,41 @@ class LlamaEngine {
       speculativeDecodingStrategies: Set.unmodifiable(
         generation.speculativeDecodingStrategies,
       ),
+      toolResultMedia: Set.unmodifiable(toolResultMedia),
     );
+  }
+
+  /// The tool-result media the backend places at their markers and the
+  /// loaded projector takes, given its [media] support.
+  Set<LlamaToolResultMedia> _toolResultMediaSupport(
+    ({bool vision, bool audio}) media,
+  ) {
+    final candidate = backend;
+    if (candidate is! BackendToolResultMedia) return const {};
+    final placed = (candidate as BackendToolResultMedia).toolResultMedia;
+    return {
+      if (media.vision && placed.contains(LlamaToolResultMedia.image))
+        LlamaToolResultMedia.image,
+      if (media.audio && placed.contains(LlamaToolResultMedia.audio))
+        LlamaToolResultMedia.audio,
+    };
+  }
+
+  /// [_toolResultMediaSupport], or none when the loaded model's chat
+  /// template is in a format not qualified for tool-result content.
+  Future<Set<LlamaToolResultMedia>> _modelToolResultMedia(
+    ({bool vision, bool audio}) media,
+  ) async {
+    final supported = _toolResultMediaSupport(media);
+    if (supported.isEmpty) return supported;
+    final modelTemplate = _modelChatTemplate;
+    final template = modelTemplate != null && modelTemplate.isNotEmpty
+        ? modelTemplate
+        : (await _getCachedMetadata())['tokenizer.chat_template'];
+    final format = detectChatFormat(template);
+    return chatFormatRegistration(format).traits.rendersToolResultContent
+        ? supported
+        : const {};
   }
 
   /// The media inputs the loaded model takes: direct media of the runtime,
@@ -1574,7 +1613,9 @@ class LlamaEngine {
   /// Image/audio parts in a tool-role message, or alongside
   /// [LlamaToolResultContent] under any role, throw
   /// [LlamaUnsupportedException] before template rendering or generation.
-  /// Return text or JSON tool results and send media in a separate user message.
+  /// Put a tool's media in [LlamaToolResultContent.content] instead, for the
+  /// types [LlamaEngineCapabilities.toolResultMedia] reports; other
+  /// tool-result content throws as that field describes.
   ///
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
@@ -1757,6 +1798,14 @@ class LlamaEngine {
           enableThinking: enableThinking,
           responseFormat: responseFormat,
         );
+        if (plan.usesNativeChatGeneration &&
+            carriesToolResultContent(messages)) {
+          throw LlamaUnsupportedException(
+            'LlamaToolResultContent.content is unsupported by backends that '
+            'take chat messages natively, such as LiteRT-LM. Return a text or '
+            'JSON result without content.',
+          );
+        }
 
         // Generate raw tokens with grammar constraint. Backends that can consume
         // structured chat natively may receive the original messages/tools, while
@@ -1910,8 +1959,9 @@ class LlamaEngine {
   ///
   /// Image/audio parts in a tool-role message, or alongside
   /// [LlamaToolResultContent] under any role, throw
-  /// [LlamaUnsupportedException] before metadata loading or tokenization.
-  /// Return text or JSON tool results and send media in a separate user message.
+  /// [LlamaUnsupportedException] before metadata loading or tokenization, as
+  /// does tool-result media the backend or loaded projector does not take.
+  /// [LlamaToolResultContent.content] renders as [create] renders it.
   ///
   /// [jsonSchema] is a legacy shortcut for
   /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
@@ -1990,6 +2040,7 @@ class LlamaEngine {
   }) async {
     _ensureReady(requireContext: false);
     _rejectUnsupportedToolMedia(messages);
+    await _rejectUnsupportedToolResultMedia(messages);
     return ChatTemplateRenderer.render(
       loadMetadata: _getCachedMetadata,
       tokenize: tokenize,
@@ -2022,12 +2073,37 @@ class LlamaEngine {
             (part) => part is LlamaImageContent || part is LlamaAudioContent,
           )) {
         throw LlamaUnsupportedException(
-          'Tool-role image/audio content is unsupported by the current chat '
-          'template pipeline on all runtimes. Return text or JSON tool results '
-          'and send images/audio in a separate user message.',
+          'Tool-role image/audio content beside a tool result is unsupported '
+          'on all runtimes. Put tool-result media in '
+          'LlamaToolResultContent.content where '
+          'LlamaEngineCapabilities.toolResultMedia reports it, or return text '
+          'or JSON tool results and send images/audio in a separate user '
+          'message.',
         );
       }
     }
+  }
+
+  /// Throws unless the backend and loaded projector take every media type
+  /// in the `content` of the tool results in [messages].
+  Future<void> _rejectUnsupportedToolResultMedia(
+    List<LlamaChatMessage> messages,
+  ) async {
+    validateToolResultContent(messages);
+    final requested = toolResultMediaIn(messages);
+    if (requested.isEmpty) return;
+    final media = await _mediaSupport();
+    final missing = requested.difference(_toolResultMediaSupport(media));
+    if (missing.isEmpty) return;
+    final names = missing.map((type) => type.name).join(' and ');
+    throw LlamaUnsupportedException(
+      'Tool-result $names in LlamaToolResultContent.content '
+      '${missing.length == 1 ? 'is' : 'are'} unsupported here: it needs '
+      'native llama.cpp with a loaded multimodal projector that takes '
+      '$names, and only images are qualified. Check '
+      'LlamaEngineCapabilities.toolResultMedia, or return the result '
+      'without media.',
+    );
   }
 
   /// The marker that stands for each part in the prompt [create] hands a

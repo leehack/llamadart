@@ -1,3 +1,4 @@
+import '../../core/engine/engine_capabilities.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/chat/chat_message.dart';
@@ -46,6 +47,7 @@ class NativeAutoBackend
         LlamaBackend,
         BackendAvailability,
         BackendDirectMediaInput,
+        BackendToolResultMedia,
         BackendRuntimeDiagnostics,
         BackendModelFileTypeDiagnostics,
         BackendGpuEnumeration,
@@ -521,6 +523,14 @@ class NativeAutoBackend
   @override
   Future<void> multimodalContextFree(int mmContextHandle) {
     return _requireDelegate().multimodalContextFree(mmContextHandle);
+  }
+
+  @override
+  Set<LlamaToolResultMedia> get toolResultMedia {
+    final delegate = _delegate;
+    return delegate is BackendToolResultMedia
+        ? (delegate as BackendToolResultMedia).toolResultMedia
+        : const <LlamaToolResultMedia>{};
   }
 
   @override

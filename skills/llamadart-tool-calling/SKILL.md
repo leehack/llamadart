@@ -89,8 +89,15 @@ description: >-
 - Do not attach image/audio parts to tool-role messages or alongside
   `LlamaToolResultContent`, even under a user/assistant role. `create` and
   `chatTemplate` throw `LlamaUnsupportedException` before rendering or
-  dispatch, including session history budgeting. Return text or JSON results
-  and send media in a separate user message.
+  dispatch, including session history budgeting.
+- To return an image from a tool, check
+  `(await engine.capabilities).toolResultMedia` for
+  `LlamaToolResultMedia.image`, then return
+  `LlamaToolOutput(output: {...}, content: [LlamaImageContent(bytes: ...)])`
+  from the handler, or set `LlamaToolResultContent(..., content: [...])`.
+  Only native llama.cpp with a vision projector and a Hermes-style template
+  (qualified on Qwen3-VL) takes it; other formats, runtimes, audio, video and
+  URL-only images throw `LlamaUnsupportedException`.
 - With `ChatSession`, the assistant's tool calls are already in history; add
   the tool results with `session.addMessage(...)` and continue with
   `session.create(const [])`. With `engine.create`, append the collected

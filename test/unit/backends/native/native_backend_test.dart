@@ -15,6 +15,7 @@ import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_capabilities.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -1496,6 +1497,28 @@ void main() {
     }
   });
 
+  test('reports the tool-result media of the loaded runtime', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _ToolResultMediaFakeBackend(handle: 11),
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      expect(backend.toolResultMedia, isEmpty);
+
+      await backend.modelLoad('/models/qwen.gguf', const ModelParams());
+      expect(backend.toolResultMedia, {LlamaToolResultMedia.image});
+
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      expect(backend.toolResultMedia, isEmpty);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('forwards text-to-speech handles to the loaded runtime', () async {
     final llama = _TextToSpeechFakeBackend(handle: 11);
     final backend = NativeAutoBackend(
@@ -2555,6 +2578,16 @@ class _DirectMediaFakeBackend extends _FakeBackend
   @override
   Future<({bool vision, bool audio})> directMediaInput() async =>
       (vision: true, audio: true);
+}
+
+class _ToolResultMediaFakeBackend extends _FakeBackend
+    implements BackendToolResultMedia {
+  _ToolResultMediaFakeBackend({required super.handle});
+
+  @override
+  Set<LlamaToolResultMedia> get toolResultMedia => const {
+    LlamaToolResultMedia.image,
+  };
 }
 
 class _TextToSpeechFakeBackend extends _FakeBackend

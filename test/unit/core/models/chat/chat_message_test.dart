@@ -193,6 +193,39 @@ void main() {
       });
     });
 
+    test('tool result with content is llama-server array content', () {
+      // The tool message of the upstream `two_results` request in
+      // test/fixtures/qwen3_vl_tool_media_upstream.json, with a file image.
+      const msg = LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [
+          LlamaToolResultContent(
+            id: 'call_0',
+            name: 'take_photo',
+            result: '{"ok":true}',
+            content: [
+              LlamaTextContent('front camera'),
+              LlamaImageContent(path: '/red.png'),
+            ],
+          ),
+        ],
+      );
+      expect(msg.toJson(), {
+        'role': 'tool',
+        'tool_call_id': 'call_0',
+        'name': 'take_photo',
+        'content': [
+          {'type': 'text', 'text': '{"ok":true}'},
+          {'type': 'text', 'text': 'front camera'},
+          {
+            'type': 'image_url',
+            'image_url': {'url': 'file:///red.png'},
+          },
+        ],
+      });
+      expect(msg.content, '{"ok":true}front camera');
+    });
+
     test('tool message with several results lists every result', () {
       const msg = LlamaChatMessage.withContent(
         role: LlamaChatRole.tool,

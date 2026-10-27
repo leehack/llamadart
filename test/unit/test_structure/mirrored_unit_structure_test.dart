@@ -19,6 +19,7 @@ const Set<String> behaviorlessSources = <String>{
   'core/models/config/flash_attention.dart',
   'core/models/config/kv_cache_type.dart',
   'core/models/download/model_download_manager.dart',
+  'core/models/tools/tool_output.dart',
   'core/speech/litert_lm_speech_to_text_driver.dart',
   'core/speech/speech_platform_stub.dart',
   'core/speech/speech_platform_web.dart',

@@ -1936,6 +1936,48 @@ dev_dependencies:
       );
     });
 
+    test(
+      'dry-runs the tool-result image smoke with model and projector',
+      () async {
+        final missing = await runLocalE2e(
+          const ['--scenario', 'tool-result-image-smoke', '--dry-run'],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(missing.exitCode, 64);
+        expect(
+          missing.stderr,
+          contains('--model-path and --mmproj-path are required'),
+        );
+
+        final ready = await runLocalE2e(
+          const [
+            '--scenario',
+            'tool-result-image-smoke',
+            '--model-path',
+            'models/qwen3-vl.gguf',
+            '--mmproj-path',
+            'models/mmproj.gguf',
+            '--backend',
+            'metal',
+            '--dry-run',
+          ],
+          projectRoot: '/repo',
+          displayShell: LocalE2eDisplayShell.posix,
+        );
+        expect(ready.exitCode, 0);
+        expect(
+          ready.stdout,
+          contains(
+            'LLAMADART_TOOL_MEDIA_MODEL=models/qwen3-vl.gguf '
+            'LLAMADART_TOOL_MEDIA_MMPROJ=models/mmproj.gguf '
+            'LLAMADART_TOOL_MEDIA_BACKEND=metal dart test -p vm --run-skipped '
+            '-t local-only test/e2e/backends/tool_result_media_e2e_test.dart',
+          ),
+        );
+      },
+    );
+
     test('dry-runs the decision model smoke with model and head', () async {
       final result = await runLocalE2e(
         const [

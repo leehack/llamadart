@@ -10,6 +10,7 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Native LiteRT-LM under `ComputeDevice.auto` retries a GPU engine that fails to start on the CPU with a warning, and reports `LiteRT-LM cpu`; explicit `gpu` and `npu` still fail ([#1034](https://github.com/leehack/llamadart/issues/1034)).
+- Return images from tools with `LlamaToolResultContent.content` or a handler's `LlamaToolOutput` on native llama.cpp with a vision projector and Hermes-style templates (qualified on Qwen3-VL), rendered as llama-server renders them; check `LlamaEngineCapabilities.toolResultMedia`. Other formats, runtimes, audio, video and URL-only images throw `LlamaUnsupportedException` ([#1008](https://github.com/leehack/llamadart/issues/1008)).
 
 ## 0.16.5
 

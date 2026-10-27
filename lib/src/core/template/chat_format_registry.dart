@@ -90,6 +90,7 @@ final class ChatFormatTraits {
     this.requiredKeepsLazyGrammar = false,
     this.routesThroughGeneric = false,
     this.toolChoiceNoneRendersContentOnly = false,
+    this.rendersToolResultContent = false,
     this.leavesIncompleteToolCall,
   });
 
@@ -128,6 +129,10 @@ final class ChatFormatTraits {
   /// Whether tools with `ToolChoice.none` render content-only, as llama.cpp's
   /// Jinja dispatcher does unless a response schema forces generic routing.
   final bool toolChoiceNoneRendersContentOnly;
+
+  /// Whether the format is qualified to render `LlamaToolResultContent`
+  /// `content` in the tool turn, with a media marker at each media part.
+  final bool rendersToolResultContent;
 
   /// Detects a tool call that a final parse left malformed or incomplete.
   /// Non-null exactly for formats qualified for canonical JSON Schema tools.
@@ -337,6 +342,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     traits: ChatFormatTraits(
       toolCallOpening: HermesHandler.toolCallOpening,
       disabledByResponseSchema: true,
+      // Qualified on Qwen3-VL against llama-server's rendering (#1008).
+      rendersToolResultContent: true,
       leavesIncompleteToolCall: _hermesLeavesIncompleteToolCall,
     ),
   ),

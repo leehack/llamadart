@@ -504,6 +504,36 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'tool-result-image-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify image tool results on a real vision GGUF: tool-turn photos '
+          'reach the next model turn through native llama.cpp.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/tool_result_media_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_TOOL_MEDIA_MODEL': context.modelPath!,
+            'LLAMADART_TOOL_MEDIA_MMPROJ': context.mmprojPath!,
+            if (context.backendProvided)
+              'LLAMADART_TOOL_MEDIA_BACKEND': context.backend,
+          },
+          description: 'Tool-result image E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'native-prompt-cancel',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2220,6 +2250,15 @@ Future<LocalE2eResult> runLocalE2e(
     return LocalE2eResult(
       64,
       stderr: '--head-path is not supported by ${scenario.name}.\n',
+    );
+  }
+  if (scenario.name == 'tool-result-image-smoke' &&
+      (parsed.modelPath == null || parsed.mmprojPath == null)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path and --mmproj-path are required for '
+          'tool-result-image-smoke.\n',
     );
   }
   if (scenario.name == 'decision-model-smoke' &&

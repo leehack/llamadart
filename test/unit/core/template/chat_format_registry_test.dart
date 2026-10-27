@@ -120,6 +120,16 @@ void main() {
     );
   });
 
+  test('only Hermes renders tool-result content', () {
+    expect(
+      [
+        for (final registration in chatFormatRegistrations)
+          if (registration.traits.rendersToolResultContent) registration.format,
+      ],
+      [ChatFormat.hermes],
+    );
+  });
+
   test('detection falls back to content-only', () {
     expect(detectChatFormat(null), ChatFormat.contentOnly);
     expect(detectChatFormat(''), ChatFormat.contentOnly);

@@ -28,6 +28,32 @@ void main() {
     );
   });
 
+  test('LlamaToolResultContent serializes content as an array', () {
+    const plain = LlamaToolResultContent(id: 'c', name: 't', result: 7);
+    expect(plain.toJson(), {
+      'type': 'tool_result',
+      'tool_call_id': 'c',
+      'content': '7',
+    });
+    const withContent = LlamaToolResultContent(
+      id: 'c',
+      name: 't',
+      result: {'ok': true},
+      content: [LlamaImageContent(path: '/p.png')],
+    );
+    expect(withContent.toJson(), {
+      'type': 'tool_result',
+      'tool_call_id': 'c',
+      'content': [
+        {'type': 'text', 'text': '{"ok":true}'},
+        {
+          'type': 'image_url',
+          'image_url': {'url': 'file:///p.png'},
+        },
+      ],
+    });
+  });
+
   test('LlamaVideoContent requires a path or bytes', () {
     expect(() => LlamaVideoContent(), throwsArgumentError);
   });

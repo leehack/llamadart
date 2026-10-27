@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'tool_result_parts.dart';
+
 /// Base class for all content types in a message.
 ///
 /// Multi-modality allows a single message to contain different types of data,
@@ -200,11 +202,28 @@ class LlamaToolResultContent extends LlamaContentPart {
   /// The result of the function execution (e.g., String, Map, List).
   final Object? result;
 
+  /// Text and media the tool returned after [result], in order.
+  ///
+  /// Each part is a [LlamaTextContent], a [LlamaImageContent] with a `path`
+  /// or `bytes`, or a [LlamaAudioContent]. The tool turn holds [result] as
+  /// text (a non-String result as JSON, a `null` result left out), then
+  /// these parts, as llama.cpp's server renders a `tool` message whose
+  /// `content` is an array: text parts joined by a newline, and a media
+  /// marker at each media part. Media reach the model in that order.
+  ///
+  /// Only formats qualified for tool-result content take a non-empty list;
+  /// others throw [LlamaUnsupportedException]. Media also need the engine
+  /// to report the modality in `LlamaEngineCapabilities.toolResultMedia`.
+  /// A video part, a URL-only image, or a nested tool call, tool result or
+  /// thinking part is rejected before rendering.
+  final List<LlamaContentPart> content;
+
   /// Creates a tool result content part.
   const LlamaToolResultContent({
     required this.name,
     required this.result,
     this.id,
+    this.content = const <LlamaContentPart>[],
   });
 
   @override
@@ -212,7 +231,9 @@ class LlamaToolResultContent extends LlamaContentPart {
     return {
       'type': 'tool_result', // Internal use?
       'tool_call_id': id,
-      'content': result.toString(),
+      'content': content.isEmpty
+          ? result.toString()
+          : toolResultContentJson(this),
     };
   }
 }

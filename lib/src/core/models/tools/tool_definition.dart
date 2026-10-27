@@ -8,7 +8,8 @@ import 'tool_params.dart';
 /// Signature for a tool handler function.
 ///
 /// The handler receives parsed [ToolParams] and returns the tool's result
-/// (e.g. String, Map, List) or throws an exception on error.
+/// (e.g. String, Map, List), or a `LlamaToolOutput` for text or media after
+/// it, or throws an exception on error.
 typedef ToolHandler = Future<Object?> Function(ToolParams params);
 
 /// Defines a tool that the LLM can invoke.

@@ -59,9 +59,11 @@ whose template selects a supported JSON tool format (generic JSON fallback,
 Hermes or Mistral Nemo JSON). Unsupported formats and runtimes fail explicitly;
 see the [schema subset](../../website/docs/guides/tool-calling.md#import-a-json-schema).
 
-Keep tool results text or JSON. `create` and `chatTemplate` reject image/audio
-parts in tool-role messages or alongside `LlamaToolResultContent` under any
-role with `LlamaUnsupportedException`. Send media in a separate user message.
+Tool results are text or JSON here. A tool's images go in
+`LlamaToolResultContent.content` (or a handler's `LlamaToolOutput`) only where
+`LlamaEngineCapabilities.toolResultMedia` reports them; image/audio parts in
+tool-role messages or alongside `LlamaToolResultContent` throw
+`LlamaUnsupportedException`.
 
 Await engine disposal before ending a session. A native host calling C
 `exit()` must also join other native workers and shut down its Dart isolates

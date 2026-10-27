@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
+import '../models/chat/tool_result_parts.dart';
 import 'media_placeholders.dart';
 import 'tool_call_parsing_utils.dart';
 
@@ -233,15 +234,34 @@ class TemplateRenderContext {
     LlamaChatMessage message,
     String mediaMarker,
   ) {
-    bool isMedia(LlamaContentPart part) =>
-        part is LlamaImageContent ||
-        part is LlamaAudioContent ||
-        part is LlamaVideoContent;
-    if (!message.parts.any(isMedia)) return message;
+    message = withToolResultMediaMarkers(message, mediaMarker);
+    if (!message.parts.any(isMediaPart)) return message;
     return message.copyWith(
       parts: [
         for (final part in message.parts)
-          isMedia(part) ? LlamaTextContent(mediaMarker) : part,
+          isMediaPart(part) ? LlamaTextContent(mediaMarker) : part,
+      ],
+    );
+  }
+
+  /// [message] with each tool result that has `content` turned into one
+  /// whose result is the tool turn's text, with [mediaMarker] at each media
+  /// part, as llama.cpp's server renders an array `tool` message.
+  static LlamaChatMessage withToolResultMediaMarkers(
+    LlamaChatMessage message,
+    String mediaMarker,
+  ) {
+    if (!message.parts.any(
+      (part) => part is LlamaToolResultContent && part.content.isNotEmpty,
+    )) {
+      return message;
+    }
+    return message.copyWith(
+      parts: [
+        for (final part in message.parts)
+          part is LlamaToolResultContent
+              ? toolResultWithMediaMarkers(part, mediaMarker)
+              : part,
       ],
     );
   }
