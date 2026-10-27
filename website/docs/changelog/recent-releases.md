@@ -9,6 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Reduce startup compilation overhead for `llamadart:doctor`.
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 
 ## 0.16.4
