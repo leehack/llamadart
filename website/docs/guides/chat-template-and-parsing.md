@@ -48,7 +48,10 @@ print(result.format);
   `chat_template_kwargs`. TranslateGemma reads its language codes from
   `{'source_lang_code': 'en', 'target_lang_code': 'ko'}`, defaulting to
   `en-GB`; the `sourceLangCode` and `targetLangCode` parameters are
-  deprecated.
+  deprecated. As in llama-server, a boolean `enable_thinking` kwarg (or,
+  without one, a boolean `thinking`) overrides `enableThinking` for the
+  rendered prompt, forced-open thought, stops and streamed reasoning. Other
+  values do not.
 - `templateNow`: deterministic time injection, including `strftime_now` and
   date globals. For multi-turn chat, construct
   `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.

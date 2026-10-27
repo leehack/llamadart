@@ -6,8 +6,7 @@ prompt that opens a thought, for issue #742.
 The templates are the vendored `MiniMax-M2.jinja` and
 `deepseek-ai-DeepSeek-V3.1.jinja` (identical at `b10549` and `620d2225c`).
 Both end their generation prompt with `<think>`. The DeepSeek V3.1 entry passes
-`{"thinking": true}` because llamadart does not yet map `enableThinking` to that
-template's `thinking` variable (#750).
+`{"thinking": true}`; `enableThinking` alone renders the same prompt.
 
 `upstream` comes from a probe built from unchanged llama.cpp
 `620d2225cc436ab0b001e3200e590e3b286ef9ab`, the source of the pinned native

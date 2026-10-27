@@ -23,6 +23,7 @@ import 'tool_schema_utils.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
+import 'thinking_utils.dart';
 
 /// Orchestrates chat template detection, rendering, and output parsing.
 ///
@@ -79,6 +80,9 @@ class ChatTemplateEngine {
   /// On dart2wasm, stack overflow cannot be caught and may trap or hang
   /// instead of throwing this exception.
   ///
+  /// A boolean `enable_thinking` in [chatTemplateKwargs], or failing that a
+  /// boolean `thinking`, overrides [enableThinking], as in llama-server.
+  ///
   /// [mediaMarker] is written where each image, audio or video part was.
   /// Pass one that message text cannot hold to tell the parts from a
   /// placeholder string a message quotes.
@@ -97,6 +101,10 @@ class ChatTemplateEngine {
     DateTime? now,
     String mediaMarker = mtmdMediaMarker,
   }) {
+    enableThinking = effectiveEnableThinking(
+      enableThinking,
+      chatTemplateKwargs,
+    );
     final responseSchema = responseFormatSchema(responseFormat);
 
     // 1. Select template source (default vs tool_use variant)

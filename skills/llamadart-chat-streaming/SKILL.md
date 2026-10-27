@@ -104,7 +104,9 @@ description: >-
   The legacy bundle can emit `ĠðŁĺĬ` in place of emoji; replace the bundle,
   preserve literal user text, and validate GPU/device/Web paths separately.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
-  `engine.create` when reasoning output is not wanted. Native LiteRT-LM
+  `engine.create` when reasoning output is not wanted. A boolean
+  `enable_thinking` or `thinking` in `chatTemplateKwargs` overrides it, as in
+  llama-server. Native LiteRT-LM
   recognizes renamed Qwen 3 bundles only from a Qwen 3 model-type declaration
   (field 6), or the complete canonical Qwen 3 template in field 7 or
   `ModelParams.chatTemplate`. Legacy litert-community Qwen3-0.6B bundles have
