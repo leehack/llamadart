@@ -299,21 +299,29 @@ void main() {
   });
 
   test('a local native path bundle needs no manifest or sidecar', () async {
-    final local = Directory.systemTemp.createTempSync('sidecar-local-');
-    addTearDown(() => local.delete(recursive: true));
-    for (final library in [..._coreLibraries, ..._cudaLibraries]) {
-      File(path.join(local.path, library)).writeAsStringSync('local-$library');
+    Future<Map<String, String>> build(List<String> libraries) async {
+      final local = Directory.systemTemp.createTempSync('sidecar-local-');
+      addTearDown(() => local.delete(recursive: true));
+      for (final library in libraries) {
+        File(
+          path.join(local.path, library),
+        ).writeAsStringSync('local-$library');
+      }
+      final fixture = RuntimeBundleHttpFixture.offline();
+      final emitted = await _runHook(
+        fixture,
+        backends: ['cuda'],
+        nativePath: local.path,
+      );
+      expect(fixture.requests, isEmpty);
+      return emitted;
     }
-    final fixture = RuntimeBundleHttpFixture.offline();
 
-    final libraries = await _runHook(
-      fixture,
-      backends: ['cuda'],
-      nativePath: local.path,
+    expect(
+      await build([..._coreLibraries, ..._cudaLibraries]),
+      containsPair('ggml-cuda.dll', 'local-ggml-cuda.dll'),
     );
-
-    expect(fixture.requests, isEmpty);
-    expect(libraries, containsPair('ggml-cuda.dll', 'local-ggml-cuda.dll'));
+    expect(await build(_coreLibraries), isNot(contains('ggml-cuda.dll')));
   });
 }
 
