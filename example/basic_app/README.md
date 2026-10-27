@@ -417,6 +417,24 @@ dart test --configuration test/image_generation_smoke.yaml -t local-only \
 ```
 
 The checks compare exact 128x128 one-step CPU output and dispose between loads.
+
+For complete-checkpoint qualification with fixed per-file SHA-256 identities,
+automatic/explicit GGUF/Safetensors roles, explicit tensor-only PyTorch roles,
+and mandatory independent C references, use the maintained root scenario:
+
+```bash
+LLAMADART_IMAGE_CONTAINER_REFERENCES=/local/native-reference-outputs \
+  dart run tool/testing/run_local_e2e.dart --scenario image-container-formats \
+  --model-path /local/complete-checkpoints.json --dry-run
+```
+
+Run that command from the repository root, then remove `--dry-run`. The manifest
+is a JSON array of `{ "id": "short-id", "path": "/local/file", "sha256": "..." }`;
+add `"auto": false` for PyTorch inputs that require explicit roles. Each
+reference is `<id>.ppm`. The [maintainer recipe](../../doc/image_weight_formats.md)
+provides pinned inputs, tensor-only fixture producers and direct-C commands.
+No model bytes are included or fetched. The current complete-checkpoint result
+covers SD-Turbo F16/macOS arm64 CPU; other models and hardware need qualification.
 Use trusted files; these tests never execute Python checkpoint code. Component
 success does not qualify a full checkpoint or other architectures/platforms.
 

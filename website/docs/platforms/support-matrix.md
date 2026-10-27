@@ -66,9 +66,11 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 [Decision models](../guides/decision-models).
 
 Image generation accepts compatible GGUF and Safetensors files directly,
-including mixed-format components. PyTorch checkpoints need explicit roles
-and remain less qualified; directories and managed shard sets have no public
-loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
+including mixed-format components. Selected complete SD-Turbo F16 GGUF,
+Safetensors and tensor-only PyTorch ZIP/nested ZIP/legacy checkpoints have
+exact native/public CPU output controls on macOS arm64. PyTorch needs explicit
+roles; other producer layouts/platforms remain unqualified. Directories and
+managed shard sets have no public loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
 Container support does not extend the model/device qualification above.
 
 Image prompt-conditioning reuse can be disabled or limited by entry count

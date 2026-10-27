@@ -139,8 +139,8 @@ model formats; leave `ModelSource.format` unset for image files.
 | Input | Public image API | Qualification / limits |
 | --- | --- | --- |
 | GGUF file (`.gguf`) | Direct loading; automatic role detection from metadata and tensor names | Use a compatible image checkpoint or component, not an arbitrary LLM GGUF |
-| Safetensors file (`.safetensors`) | Direct loading; automatic role detection from tensor names and shapes | Existing recipes include an SDXL-Lightning checkpoint and VAE/TAESD components |
-| PyTorch checkpoint (`.ckpt`, `.pth`, `.pt`) | Explicit role required; forwarded to the native loader | Only compatible ZIP/legacy state-dict layouts; real-checkpoint qualification remains incomplete ([#1218](https://github.com/leehack/llamadart/issues/1218)) |
+| Safetensors file (`.safetensors`) | Direct loading; automatic role detection from tensor names and shapes | Complete SD-Turbo F16 and existing SDXL-Lightning/VAE/TAESD recipes; see the bounded checks below |
+| PyTorch checkpoint (`.ckpt`, `.pth`, `.pt`) | Explicit role required; forwarded to the native loader | Selected complete SD-Turbo tensor-only ZIP/nested ZIP/legacy checkpoints pass on macOS CPU; arbitrary layouts remain unqualified ([#1218](https://github.com/leehack/llamadart/issues/1218)) |
 | Separate component files | Each file resolves independently and gets a role; GGUF and Safetensors can be mixed | Supply the matching diffusion weights, encoders and decoder from the [recipes](#recipes) |
 | Diffusers directory or repository | No public directory/repository ingestion; local sources must be regular files | Pass compatible component files individually; selected directory layouts are tracked in [#1219](https://github.com/leehack/llamadart/issues/1219) |
 | Safetensors JSON index and shards | No managed shard-set loading | An explicit local index with its referenced file present passed the CPU check below; automatic shard downloads, integrity checks and whole-set memory accounting are not provided ([#1219](https://github.com/leehack/llamadart/issues/1219)) |
@@ -178,28 +178,38 @@ quantization/mmap option. Weights load eagerly; see the
 
 #### Pinned-runtime format checks
 
-The following checks used `stable-diffusion-native v0.2.0-4` on macOS arm64,
-CPU, with SD Turbo and a full TAESD decoder. Container variants held identical
-tensor values; PyTorch files were written locally with `torch.save` 2.11.0,
-protocol 2. Each successful load generated a 128x128 image with one step and
-seed 42. The public Dart API and a direct native control agreed in every case:
+With the pinned `stable-diffusion-native v0.3.0` (`0518b34` plus the owner
+pickle-reader repair), complete byte-equivalent SD-Turbo F16 checkpoints pass
+through `ImageGenerationEngine` on macOS arm64 CPU:
 
-| Tested input | Result |
-| --- | --- |
-| Full F16 GGUF and Safetensors checkpoints | Passed; identical output pixels across containers |
-| TAESD ZIP `.pt`, nested `state_dict` ZIP `.ckpt`, and legacy `.pth` | Passed with an explicit `taesd` role; identical pixels to the Safetensors decoder |
-| Full 2.6 GB ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Neither completed within 45 seconds in Dart or the native control; cause remains unresolved |
-| Full 2.6 GB legacy `.pth` | Rejected by both; the pinned native pickle scanner truncates a remaining span above 2 GiB to a signed integer |
-| Local Safetensors index referencing one complete sibling weight file | Passed with an explicit `checkpoint` role; identical pixels to direct loading |
+| Complete checkpoint | Role selection | Result |
+| --- | --- | --- |
+| F16 GGUF | Automatic and explicit checkpoint | Exact native-reference RGB |
+| Safetensors, same 1,323 tensors | Automatic and explicit checkpoint | Exact native-reference RGB |
+| Tensor-only PyTorch legacy `.pth` | Explicit checkpoint | Exact native-reference RGB, including the >2-GiB input |
+| PyTorch ZIP `.pt` and nested `state_dict` ZIP `.ckpt` | Explicit checkpoint | Exact native-reference RGB |
 
-`v0.3.0` carries the pickle reader fix for the legacy `.pth` row
-([stable-diffusion-native#23](https://github.com/leehack/stable-diffusion-native/issues/23));
-the 2.6 GB load has not been repeated through llamadart. These are container
-checks, not qualification of every model, dtype, device or multi-shard layout.
-The slow full-size ZIP loads were also slow in the native control, and small
-component success does not remove those limits. The
-[basic example's local format checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
-can repeat same-weight comparisons without downloading models.
+These checks use the [pinned SD-Turbo F16 source](https://huggingface.co/Green-Sky/SD-Turbo-GGUF/blob/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16.gguf)
+and its embedded full VAE. Local Safetensors and PyTorch 2.11/protocol-2
+variants preserve every tensor byte. All seven public loads generate the same
+128-square, one-step Euler/discrete image at seed 42, CFG 1 and four CPU
+threads, matching separate guarded direct-C controls. This is container and
+transport evidence, not an image-quality or speed benchmark.
+
+Earlier `v0.2.0-4` checks rejected the 2.6-GB legacy file and timed out on
+full ZIP inputs. The current legacy result verifies the published reader
+repair; ZIP's earlier timeout cause remains unresolved
+([owner #24](https://github.com/leehack/stable-diffusion-native/issues/24)).
+Passing these selected ZIP inputs is a later non-reproduction, not proof of a
+causal ZIP fix. Earlier small TAESD ZIP/nested/legacy and explicit local
+single-shard-index controls remain narrower component/layout evidence.
+
+Other architectures, dtypes, producer layouts, arbitrary serialized objects,
+accelerators, Windows/Linux and mobile full-checkpoint paths are unqualified
+by this check. No model weights ship with the tests. The
+[basic example's container checks](https://github.com/leehack/llamadart/tree/main/example/basic_app#8-image-generation-example-experimental)
+and maintained `image-container-formats` scenario repeat the selected controls
+from local files and independent native references.
 
 ### Sources
 

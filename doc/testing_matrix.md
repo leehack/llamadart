@@ -168,6 +168,7 @@ Pick targeted rows based on the touched surface:
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke`, plus `decision-model-web-smoke` for the Web decision head or bridge pin |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
+| Complete image checkpoint formats or explicit role transport | `image-container-formats` (local hashed inputs and independent CPU references) |
 | `stable_diffusion` runtime pin, image worker native calls, progress polling, exit or isolate shutdown | `image-exit-teardown`, `image-generation-smoke` |
 | Chat-app image screen or image model downloads | `chat-app-image-generation-smoke` |
 | Physical-device image evidence on Firebase, or image evidence grading | `firebase-image-generation-e2e`, `validation-harness` |
@@ -1060,3 +1061,14 @@ output, schema A/B/ordinary reset, invalid-schema recovery, system/history,
 before/after-content cancellation and a true length cutoff. Run `--list` and
 `--scenario litert-lm-json-schema --model-path <existing-model> --backend cpu
 --dry-run` before execution. This does not qualify other delegates/platforms.
+
+
+### Complete image checkpoint containers
+
+`image-container-formats` strengthens the existing checkpoint-container case
+with hashed complete local inputs, automatic/explicit roles and mandatory
+independent direct-C CPU references. It generates no downloads and executes no
+Python checkpoint objects. The selected SD-Turbo F16 GGUF/Safetensors and
+restricted PyTorch layouts are macOS arm64 CPU evidence; the historical ZIP
+timeout cause stays unresolved. See [Image weight formats](image_weight_formats.md)
+for the exact recipe, fixture producers, identities and reproduction steps.

@@ -797,6 +797,38 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-container-formats',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Compare complete byte-equivalent SD-Turbo checkpoint containers '
+          'through automatic/explicit public roles against direct-C CPU RGB; '
+          '--model-path names the hashed local model-set manifest and '
+          'LLAMADART_IMAGE_CONTAINER_REFERENCES names independent PPM files.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_generation_e2e_test.dart',
+            '--name',
+            r'^checkpoint containers preserve CPU pixels$',
+          ],
+          environment: {
+            'LLAMADART_IMAGE_CONTAINER_SET': context.modelPath!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-container-formats',
+          },
+          description: 'Complete image checkpoint container parity on CPU',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-seamless-textures',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2213,6 +2245,22 @@ Future<LocalE2eResult> runLocalE2e(
     return LocalE2eResult(
       64,
       stderr: '--model-path <sdxs.gguf> is required for ${scenario.name}.\n',
+    );
+  }
+  if (scenario.name == 'image-container-formats' &&
+      (parsed.modelPath == null ||
+          (environment ??
+                      Platform
+                          .environment)['LLAMADART_IMAGE_CONTAINER_REFERENCES']
+                  ?.trim()
+                  .isNotEmpty !=
+              true)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path <manifest.json> and '
+          'LLAMADART_IMAGE_CONTAINER_REFERENCES are required for '
+          'image-container-formats; see doc/image_weight_formats.md.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&
