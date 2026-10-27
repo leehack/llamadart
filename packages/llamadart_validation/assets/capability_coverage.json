@@ -513,6 +513,16 @@
         "issue": "https://github.com/leehack/llamadart/issues/1219",
         "reason": "The bounded local complete SD-Turbo F16/F32 Safetensors set recipe has maintained path/identity/header/cache/cancellation/refusal tests and a native-reference directory/index CPU qualification scenario. A dedicated versioned validation-pack profile remains open in #1219. This inventory binding does not qualify generic Diffusers layouts, other tensor profiles, platforms or image-editing/tiling/seamless combinations."
       }
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.supportsImageEditing"
+      ],
+      "exemption": {
+        "id": "bounded-image-editing",
+        "issue": "https://github.com/leehack/llamadart/issues/1221",
+        "reason": "Owned RGB/binary-mask requests have maintained API validation, engine/worker/ABI refusal and lifetime tests plus the image-editing macOS CPU SD-Turbo full-VAE direct-C qualification scenario. Versioned image-editing pack/profile cases remain open in #1221; inventory presence is not platform/model qualification."
+      }
     }
   ]
 }

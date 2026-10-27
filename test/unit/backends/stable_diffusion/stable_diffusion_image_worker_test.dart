@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
@@ -11,6 +12,7 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_w
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/image/generated_image.dart';
+import 'package:llamadart/src/core/image/image_editing_request.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_events.dart';
 import 'package:llamadart/src/core/image/image_generation_progress.dart';
@@ -158,6 +160,130 @@ void main() {
       runtime.clearCalls();
       return worker;
     }
+
+    test(
+      'owned image inputs survive worker transport, held cancellation and reset',
+      () async {
+        final worker = await start(
+          config: const ImageGenerationSessionConfig(
+            files: {'model': '/models/renamed.gguf'},
+            backend: 'cpu',
+            threads: 1,
+            imageEditingRecipeVerified: true,
+          ),
+        );
+        expect(worker.supportsImageEditing, isTrue);
+        final rgb = Uint8List.fromList(
+          List.generate(64 * 64 * 3, (i) => i % 251),
+        );
+        final mask = Uint8List.fromList(
+          List.generate(64 * 64, (i) => i % 2 == 0 ? 0 : 255),
+        );
+        final image = ImageEditingPixels.rgb(
+          width: 64,
+          height: 64,
+          pixels: rgb,
+        );
+        final ownedMask = ImageEditingPixels.mask(
+          width: 64,
+          height: 64,
+          pixels: mask,
+        );
+        List<num> expected() => [
+          64,
+          64,
+          3,
+          rgb.fold<int>(0, (a, b) => a + b),
+          [
+            for (var i = 0; i < rgb.length; i++) rgb[i] * (i + 1),
+          ].fold<int>(0, (a, b) => a + b),
+          64,
+          64,
+          1,
+          mask.fold<int>(0, (a, b) => a + b),
+          [
+            for (var i = 0; i < mask.length; i++) mask[i] * (i + 1),
+          ].fold<int>(0, (a, b) => a + b),
+          0.5,
+        ];
+        final original = expected();
+        runtime
+          ..holdStart = true
+          ..pauseAfter = 0;
+        final generation = worker.generate(
+          ImageGenerationSessionRequest(
+            prompt: 'edit',
+            negativePrompt: '',
+            width: 64,
+            height: 64,
+            steps: 4,
+            guidanceScale: 1,
+            seed: 42,
+            count: 1,
+            initialImage: image,
+            mask: ownedMask,
+            strength: 0.5,
+          ),
+          (_, _) {},
+        );
+        await runtime.imageInputHeld();
+        expect(runtime.imageInputSnapshot(), original);
+        rgb.fillRange(0, rgb.length, 0);
+        mask.fillRange(0, mask.length, 0);
+        image.pixels.fillRange(0, rgb.length, 255);
+        ownedMask.pixels.fillRange(0, mask.length, 255);
+        worker.cancel();
+        runtime.holdStart = false;
+        await runtime.pausedIn(generation);
+        expect(runtime.imageInputSnapshot(afterHold: true), original);
+        timers.poll();
+        runtime.resume();
+        expect(await generation, isNull);
+        runtime.pauseAfter = -1;
+        await worker.generate(_request(), (_, _) {});
+        expect(runtime.imageInputSnapshot().take(10), everyElement(0));
+        await runtime.flush();
+        expect(
+          runtime
+              .calls('worker')
+              .where((c) => c.startsWith('sd_dart_generate_image')),
+          everyElement('sd_dart_generate_image+held'),
+        );
+      },
+    );
+
+    test(
+      'direct worker refuses image editing without recipe proof before generation',
+      () async {
+        final worker = await loaded();
+        expect(worker.supportsImageEditing, isFalse);
+        await expectLater(
+          worker.generate(
+            ImageGenerationSessionRequest(
+              prompt: 'edit',
+              negativePrompt: '',
+              width: 64,
+              height: 64,
+              steps: 1,
+              guidanceScale: 1,
+              seed: 42,
+              count: 1,
+              initialImage: ImageEditingPixels.rgb(
+                width: 64,
+                height: 64,
+                pixels: Uint8List(64 * 64 * 3),
+              ),
+              strength: 0.5,
+            ),
+            (_, _) {},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await runtime.flush();
+        expect(runtime.calls('worker'), isEmpty);
+        expect(runtime.calls('caller'), isEmpty);
+      },
+    );
 
     test(
       'tiling survives worker transport and resets on the next request',

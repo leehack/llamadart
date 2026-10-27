@@ -18,7 +18,9 @@ description: >-
 - Image generation is a Preview: the `ImageGenerationEngine` API is
   experimental and may change. It is separate from `LlamaEngine`. It runs
   stable-diffusion.cpp through the opt-in `stable_diffusion` native runtime.
-  Text-to-image only: no image-to-image, inpainting, LoRA or ControlNet.
+  Bounded image-to-image and binary-mask editing use `ImageEditingRequest`
+  on macOS CPU with an SD 2.x checkpoint and embedded full VAE. LoRA and
+  ControlNet have no public image-generation API.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
   included by default. In the app's `pubspec.yaml`:
 
@@ -71,6 +73,21 @@ core and `llamadart_stable_diffusion_flutter` together.
   a 2×2 repeat because arbitrary prompts/seeds are not quality guarantees.
   Measured qualification is macOS arm64 CPU and Metal. See the image guide's
   seamless-textures recipe and `doc/image_seamless_textures.md` for evidence.
+- For image editing, check `(await engine.capabilities).supportsImageEditing`.
+  Load a single SD 2.x checkpoint with its embedded full VAE on macOS CPU,
+  `flashAttention: false`, `vaeDirectConvolution: false`; no component
+  overrides, tiling or circular axes. SD-Turbo is measured; other compatible
+  SD 2.x checkpoints are unmeasured. Unsupported recipes throw
+  `LlamaUnsupportedException` before generation.
+  Construct `ImageEditingPixels.rgb` from decoded row-major RGB bytes (no
+  alpha) and pass it to `ImageEditingRequest(initialImage: ..., strength: 0.75,
+  prompt: ...)`. Dimensions are aligned multiples of 64 in 64..2048. Optional
+  `ImageEditingPixels.mask` uses one channel: 255 edits, 0 preserves the latent.
+  Only those binary values are accepted. Inputs are copied; there is no
+  decoding, resizing, orientation correction or alpha compositing. Black
+  output pixels can differ after VAE encode/decode. Strength is finite in
+  (0,1]; 1 still encodes the input and step rounding can collapse nearby
+  strengths. Do not promise exact pixel preservation or arbitrary prompt quality.
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.

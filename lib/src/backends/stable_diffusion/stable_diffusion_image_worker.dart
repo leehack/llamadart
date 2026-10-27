@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
+import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_driver.dart';
 import '../../core/image/image_generation_request.dart';
 import '../../core/llama_logger.dart';
@@ -45,7 +46,10 @@ typedef StableDiffusionProgressTimer =
 /// ends with a model loaded exits; the worker then frees the model as it shuts
 /// down.
 final class StableDiffusionImageWorker
-    implements ImageGenerationSession, ImageVaeTilingSession {
+    implements
+        ImageGenerationSession,
+        ImageVaeTilingSession,
+        ImageEditingSession {
   /// How often a running [generate] reads the recorded progress. A cancel
   /// that arrived before the runtime started generating is applied again at
   /// the same rate.
@@ -87,6 +91,13 @@ final class StableDiffusionImageWorker
   @override
   bool get supportsVaeTiling =>
       _config.vaeTilingRecipeVerified && modelVersion == 'SD 2.x';
+
+  @override
+  bool get supportsImageEditing =>
+      _config.imageEditingRecipeVerified &&
+      !_config.flashAttention &&
+      !_config.vaeDirectConvolution &&
+      modelVersion == 'SD 2.x';
 
   StableDiffusionImageWorker._(
     this._isolate,
@@ -177,6 +188,7 @@ final class StableDiffusionImageWorker
     }
     validateSeamlessImageGenerationRecipe(request, _config, modelVersion);
     validateImageVaeTilingRecipe(request, _config, modelVersion);
+    validateImageEditingRecipe(request, _config, modelVersion);
     final reports = calloc<sd.sd_dart_progress_t>(_reportsPerRead);
     final latest = calloc<Uint64>();
     // Reports are process-wide and numbered: everything after the newest one

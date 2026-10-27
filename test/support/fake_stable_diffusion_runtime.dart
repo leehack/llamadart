@@ -70,7 +70,9 @@ const _generationError = _generationErrorLength + 8;
 const _generationErrorBytes = 1024;
 const _conditioningCacheSize = _generationError + _generationErrorBytes;
 const _vaeTiling = _conditioningCacheSize + 4;
-const _stateBytes = _vaeTiling + 32;
+const _imageInput = (_vaeTiling + 39) & ~7;
+const _imageInputBytes = 96;
+const _stateBytes = _imageInput + _imageInputBytes * 2;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -129,6 +131,21 @@ final class FakeStableDiffusionRuntime {
   final Pointer<Uint8> _state;
   late final RawReceivePort _port;
   final List<(String, String)> _calls = [];
+
+  /// Input dimensions and checksums at entry and after the held native start.
+  /// Values are read in the worker from native pointers, not the Dart request.
+  List<num> imageInputSnapshot({bool afterHold = false}) {
+    final offset = _imageInput + (afterHold ? _imageInputBytes : 0);
+    return [
+      for (var i = 0; i < 10; i++)
+        (_state + offset + i * 8).cast<Int64>().value,
+      (_state + offset + 80).cast<Double>().value,
+    ];
+  }
+
+  /// Completes when the native stand-in has copied its entry observation.
+  Future<void> imageInputHeld() => _next('image-input-held');
+
   final List<(String, Completer<void>)> _waiting = [];
   final List<String> _arrived = [];
   int _flushes = 0;
@@ -685,7 +702,37 @@ final class _FakeCalls {
     imagesOut.value = nullptr;
     countOut.value = 0;
     _ints[_lastErrorLength ~/ 4] = 0;
+    void recordImageInput(bool afterHold) {
+      final offset = _imageInput + (afterHold ? _imageInputBytes : 0);
+      var field = 0;
+      for (final image in [params.ref.init_image, params.ref.mask_image]) {
+        var sum = 0;
+        var weighted = 0;
+        if (image.data != nullptr) {
+          final length = image.width * image.height * image.channel;
+          final bytes = image.data.asTypedList(length);
+          for (var i = 0; i < length; i++) {
+            sum += bytes[i];
+            weighted += bytes[i] * (i + 1);
+          }
+        }
+        for (final value in [
+          image.width,
+          image.height,
+          image.channel,
+          sum,
+          weighted,
+        ]) {
+          (_state + offset + field++ * 8).cast<Int64>().value = value;
+        }
+      }
+      (_state + offset + 80).cast<Double>().value = params.ref.strength;
+    }
+
+    recordImageInput(false);
+    if (_state[_holdStart] != 0) _log.send(('signal', 'image-input-held'));
     _waitWhile(() => _state[_holdStart] != 0);
+    recordImageInput(true);
     _state[_cancelled] = 0;
     if (_state[_throwInGenerate] != 0) {
       throw _GenerationFailure(this);

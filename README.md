@@ -550,6 +550,17 @@ Generic Diffusers layouts and editing/tiling/seamless combinations remain
 unsupported. See [local checkpoint sets](https://llamadart.leehack.com/docs/next/guides/image-generation#local-checkpoint-sets)
 and `example/basic_app/bin/local_image_set.dart`.
 
+For image-to-image and binary-mask editing, use `ImageEditingRequest` with
+owned `ImageEditingPixels.rgb` and optional `ImageEditingPixels.mask` inputs.
+Check `(await engine.capabilities).supportsImageEditing`: the bounded recipe
+is an SD 2.x checkpoint with its embedded full VAE on macOS CPU, without
+component overrides, flash attention or direct VAE convolution. SD-Turbo is
+the measured model. White (255) edits; black (0) preserves the latent, with
+possible pixel changes from VAE encode/decode. The caller supplies decoded RGB
+and aligned binary masks; there is no implicit decode, resize or alpha handling.
+See the [editing recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#image-editing)
+and runnable `example/basic_app/bin/image_editing.dart`.
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |
