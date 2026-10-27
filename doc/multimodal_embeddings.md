@@ -102,7 +102,7 @@ contract. Image/audio support requires a positive modality probe on the loaded
 model/projector; text retains the legacy string route even when the bridge's
 pooled-text flag is false. Chrome CPU wasm memory64 vectors were qualified
 against native CPU/Metal; see [Web embedding qualification](multimodal_embeddings_web.md).
-Repeated media batches are qualified only on memory64; assets `v0.1.76+` stop
+Repeated media batches are qualified only on memory64; assets `v0.1.76+` remove the projector copy behind
 the wasm32 abort on the second batch, unqualified here. Hardware WebGPU remains unqualified.
 
 ## Bridge JS contract (D/E, assets v0.1.64+)

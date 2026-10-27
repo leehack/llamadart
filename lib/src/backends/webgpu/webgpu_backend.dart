@@ -1887,8 +1887,9 @@ class WebGpuLlamaBackend
     }
     if (params.grammarLazy) {
       throw LlamaUnsupportedException(
-        'WebGPU does not support GenerationParams.grammarLazy: the bridge '
-        'applies a grammar from the first token and has no trigger support.',
+        'WebGPU does not support GenerationParams.grammarLazy: llamadart '
+        'does not forward lazy grammars to the Web bridge yet '
+        '(https://github.com/leehack/llamadart/issues/1480).',
       );
     }
     if (params.grammarRoot != const GenerationParams().grammarRoot) {

@@ -43,10 +43,11 @@ mmproj and pinned assets `v0.1.76` on Chrome CPU wasm memory64
 (`gpuLayers: 0`). The latest rerun, exact-artifact provenance and lifecycle
 results, on `v0.1.66`, are tracked in
 [PR 1205](https://github.com/leehack/llamadart/pull/1205); the table below
-retains its original artifact identity. The current pin adds only URL
+retains its original artifact identity. The current pin adds URL
 resolution, teardown, state-file, truncated-snapshot, UTF-8 decoding,
 string-embedding rejection, download-progress, draft-allocation and
-projector-memory fixes on the same llama.cpp, passed the
+projector-memory fixes, and (since `v0.1.73`) lazy-grammar options that
+llamadart does not use yet ([llama-web-bridge#199](https://github.com/leehack/llama-web-bridge/pull/199)), on the same llama.cpp, passed the
 bridge's hosted multimodal gate, and has not been rerun against these reference
 vectors.
 

@@ -193,8 +193,10 @@ physical playback, intelligibility or speaker-reference fidelity.
   ([#199](https://github.com/leehack/llama-web-bridge/pull/199)); llamadart
   does not send them yet, so `supportsLazyGrammar` stays false
   ([#1480](https://github.com/leehack/llamadart/issues/1480)).
-- `v0.1.76+`: the projector GGUF is freed once loaded, so repeated wasm32
-  media batches no longer abort on a compute buffer allocation
+- `v0.1.76+`: the projector GGUF is freed once loaded, removing the retained
+  copy behind the repeated wasm32 media batch abort; wasm32 stays unqualified
+  ([#1189](https://github.com/leehack/llamadart/issues/1189)) and larger
+  contexts can still exhaust its heap
   ([llama-web-bridge#200](https://github.com/leehack/llama-web-bridge/pull/200)).
 
 ### Media embeddings
@@ -221,7 +223,7 @@ Await cancelled embedding futures before reuse.
 
 Chrome CPU wasm memory64 media vectors were qualified against native CPU/Metal;
 hardware WebGPU was not exercised. Repeated media batches are qualified only on
-memory64; `v0.1.76+` stops the wasm32 abort on the second batch. See
+memory64; `v0.1.76+` removes the projector copy behind the wasm32 abort (unqualified). See
 [multimodal embedding qualification](multimodal_embeddings_web.md).
 
 ### Per-request cancellation
