@@ -181,6 +181,7 @@ void main() {
         'GLM-OCR.jinja',
         'LFM2-VL-450M.jinja',
         'Qwen2_5-Omni-3B.jinja',
+        'Qwen3-VL-2B-Instruct.jinja',
         'Qwen3_5-0_8B.jinja',
         'functiongemma-270m-it.jinja',
         'gemma-3-4b-it.jinja',
