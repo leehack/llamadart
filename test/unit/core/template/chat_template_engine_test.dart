@@ -243,6 +243,62 @@ void main() {
       },
     );
 
+    test('every template gets the resolved enable_thinking', () {
+      const template =
+          '{{ enable_thinking | tojson }}{{ thinking | default("-") }}';
+      String render(bool enableThinking, [Map<String, dynamic>? kwargs]) =>
+          ChatTemplateEngine.render(
+            templateSource: template,
+            messages: messages,
+            metadata: const {},
+            enableThinking: enableThinking,
+            chatTemplateKwargs: kwargs,
+          ).prompt;
+
+      expect(render(true), 'true-');
+      expect(render(false), 'false-');
+      expect(render(true, {'enable_thinking': false}), 'false-');
+      expect(render(true, {'thinking': false}), 'falseFalse');
+      expect(render(false, {'enable_thinking': 'yes'}), 'false-');
+    });
+
+    test('a thought the template opens is forced open, or closed without '
+        'thinking, in text and media requests alike', () {
+      const template =
+          '{%- for message in messages -%}'
+          '{%- for part in message.content -%}{{ part.text }}{%- endfor -%}'
+          '{%- endfor -%}'
+          '<think>';
+      for (final media in [false, true]) {
+        final request = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              if (media) const LlamaImageContent(path: '/tmp/photo.png'),
+              const LlamaTextContent('look'),
+            ],
+          ),
+        ];
+        final marker = media ? '<__media__>' : '';
+        final on = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: request,
+          metadata: const {},
+        );
+        expect(on.prompt, '${marker}look<think>');
+        expect(on.thinkingForcedOpen, isTrue);
+
+        final off = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: request,
+          metadata: const {},
+          enableThinking: false,
+        );
+        expect(off.prompt, '${marker}look<think></think>\n');
+        expect(off.thinkingForcedOpen, isFalse);
+      }
+    });
+
     test('multimodal thinking uses handler-specific reasoning tags', () {
       const template = '''
 {%- macro render_content(content) -%}

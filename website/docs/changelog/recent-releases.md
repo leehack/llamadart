@@ -16,6 +16,7 @@ For canonical full release notes, use:
 - Requests with an image or audio part and tools honor `ToolChoice.auto` instead of forcing a tool call on templates such as Qwen3-VL and Qwen3.5, and use the same tool-call grammar, triggers, parser and stops as text requests ([#1463](https://github.com/leehack/llamadart/issues/1463)).
 - A boolean `enable_thinking` or `thinking` chat template kwarg now overrides `enableThinking`, as in llama-server, and DeepSeek V3.1 forces its thought open from `enableThinking` alone ([#750](https://github.com/leehack/llamadart/issues/750)).
 - A tool result whose first text is empty no longer renders a leading newline before the next text part on string-only chat templates, as llama-server does ([#1468](https://github.com/leehack/llamadart/issues/1468)).
+- Chat templates now receive `enableThinking` as `enable_thinking` on every request, as in llama.cpp, so text requests to GLM-4.6, GLM-4.7-Flash, GLM-OCR, SmolLM3, Apertus and DeepSeek-R1 distills render thinking on or off as llama-server does ([#1465](https://github.com/leehack/llamadart/issues/1465)).
 
 ## 0.16.5
 

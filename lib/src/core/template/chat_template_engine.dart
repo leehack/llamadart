@@ -211,7 +211,11 @@ class ChatTemplateEngine {
       metadata,
       toolChoice: toolChoice,
       parallelToolCalls: effectiveParallelToolCalls,
-      chatTemplateKwargs: chatTemplateKwargs,
+      // llama.cpp gives every template `enable_thinking`, as resolved above.
+      chatTemplateKwargs: {
+        ...?chatTemplateKwargs,
+        'enable_thinking': enableThinking,
+      },
       now: now,
     );
     // A tool result's content becomes text in the result, with the marker at
@@ -295,6 +299,7 @@ class ChatTemplateEngine {
           mediaMarker: mediaMarker,
         ),
       );
+      rendered = _withUntrackedThought(handler, rendered, enableThinking);
       if (effectiveFormat == ChatFormat.contentOnly) {
         rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
       }
@@ -350,6 +355,7 @@ class ChatTemplateEngine {
       ),
     );
 
+    baseResult = _withUntrackedThought(handler, baseResult, enableThinking);
     if (effectiveFormat == ChatFormat.contentOnly) {
       baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
     }
@@ -744,6 +750,37 @@ class ChatTemplateEngine {
         'their tool turn. Use a template that renders each tool result once.',
       );
     }
+  }
+
+  /// Returns [result], or when its prompt ends with the [handler]'s thinking
+  /// start tag that the handler did not track, with that thought forced open
+  /// or, without [enableThinking], closed.
+  static LlamaChatTemplateResult _withUntrackedThought(
+    ChatTemplateHandler handler,
+    LlamaChatTemplateResult result,
+    bool enableThinking,
+  ) {
+    if (result.thinkingForcedOpen ||
+        !isThinkingForcedOpen(
+          result.prompt,
+          startTag: handler.thinkingStartTag.trimRight(),
+        )) {
+      return result;
+    }
+    return LlamaChatTemplateResult(
+      prompt: enableThinking
+          ? result.prompt
+          : '${result.prompt.trimRight()}${handler.thinkingEndTag}\n',
+      format: result.format,
+      grammar: result.grammar,
+      grammarLazy: result.grammarLazy,
+      additionalStops: result.additionalStops,
+      preservedTokens: result.preservedTokens,
+      grammarTriggers: result.grammarTriggers,
+      thinkingForcedOpen: enableThinking,
+      parser: result.parser,
+      tokenCount: result.tokenCount,
+    );
   }
 
   static LlamaChatTemplateResult _withFormat(
