@@ -82,8 +82,11 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
   GPU. One of its weight buffers is 155582464 bytes and the adapter's storage
   buffer binding limit is 134217728 (128 MiB). CPU on the same device is
   correct. `ComputeDevice.auto` selects the GPU for LiteRT-LM on Android, so
-  the default load of this model on this GPU is affected and
-  `ComputeDevice.cpu` is the override; llamadart does not retry on the CPU
+  the default load of this model on this GPU is affected. From 0.17.0,
+  `auto` retries a GPU engine that fails to start on the CPU and logs a
+  warning ([#1034](https://github.com/leehack/llamadart/issues/1034)), which
+  covers the `v0.18.0` failure below but not the earlier wrong-text runtimes;
+  `ComputeDevice.cpu` skips the GPU attempt
   ([#553](https://github.com/leehack/llamadart/issues/553),
   [litert-lm-native#51](https://github.com/leehack/litert-lm-native/issues/51),
   upstream
@@ -99,10 +102,13 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
     ([2026-10-08 runs](#litert-lm-v0180-device-and-gpu-host-runs-2026-10-08)).
     The model load returns, because llamadart creates the engine at first use,
     and every later case throws: `LlamaUnsupportedException` when
-    `ComputeDevice.gpu` was requested, and `LlamaModelException` under `auto`.
-    The run ends normally, with no crash or process death in logcat.
+    `ComputeDevice.gpu` was requested, and, before 0.17.0,
+    `LlamaModelException` under `auto`. The run ends normally, with no crash
+    or process death in logcat.
     `test/integration/backends/litert_lm/engine_create_failure_test.dart`
-    pins both with a runtime client that returns no engine. Qwen3 0.6B on the
+    pins the `gpu` failure and the 0.17.0 `auto` CPU retry with a runtime
+    client that returns no engine; the retry is not yet re-run on the
+    device. Qwen3 0.6B on the
     CPU and Gemma 4 E2B on this GPU pass on the same device.
   - The runtime keeps its own Android Dawn build: upstream's `v0.17`
     `libwebgpu_dawn.so` is reported to crash in the Qualcomm shader compiler

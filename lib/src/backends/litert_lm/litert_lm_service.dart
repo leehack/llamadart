@@ -63,6 +63,13 @@ typedef _LiteRtLmGenerationControls = ({
   int? thinkingTokenBudget,
 });
 
+typedef _LiteRtLmEngineOptions = ({
+  String? vision,
+  String? audio,
+  bool usesGpu,
+  String? runtimeCacheDir,
+});
+
 const _liteRtLmThinkingChannelNames = {
   'thought',
   'thinking',
@@ -136,6 +143,7 @@ class LiteRtLmService {
   String? _modelPath;
   LiteRtLmModelLink? _modelLink;
   String? _activeBackend;
+  bool _automaticBackend = false;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
   bool? _activeVisionEnabled;
@@ -206,6 +214,10 @@ class LiteRtLmService {
     _modelLink = modelLink;
     _modelParams = params;
     _activeBackend = resolvedBackend;
+    _automaticBackend =
+        params.device == ComputeDevice.auto &&
+        params.liteRtLmBackend.nativeName == null &&
+        normalizeLiteRtLmNativeBackendOverride(backendOverride) == null;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
     _bundleCapabilities = null;
@@ -1248,35 +1260,44 @@ class LiteRtLmService {
     _activeVisionEnabled = null;
     _activeAudioEnabled = null;
     final responseThinkingTags = _responseThinkingTagsForModel(modelPath);
-    final visionBackend = resolvedVisionEnabled
-        ? _visionBackendName(backend)
-        : null;
-    final requestedAudioBackend = resolvedAudioEnabled
-        ? (_workingAudioBackend ?? _visionBackendName(backend))
-        : null;
-
     final cacheDir = _effectiveCacheDir(modelParams);
-    final usesGpu = [
-      backend,
-      visionBackend,
-      requestedAudioBackend,
-    ].contains(liteRtLmGpuBackend);
-    final runtimeCacheDir =
-        cacheDir ??
-        _modelLink?.runtimeCacheDirectory() ??
-        liteRtLmUnlinkedCacheDirectory(
-          modelPath,
-          gpu: usesGpu,
-          textOnly:
-              !resolvedVisionEnabled &&
-              !resolvedAudioEnabled &&
-              !resolvedSpeculativeDecoding,
-        );
-
     final runtimeModelPath = _modelLink?.path ?? modelPath;
     final cacheLease = _leaseCacheDirectory(cacheDir, runtimeModelPath);
 
+    _LiteRtLmEngineOptions engineOptions(String engineBackend) {
+      final vision = resolvedVisionEnabled
+          ? _visionBackendName(engineBackend)
+          : null;
+      final audio = resolvedAudioEnabled
+          ? (engineBackend == backend ? _workingAudioBackend : null) ??
+                _visionBackendName(engineBackend)
+          : null;
+      final usesGpu = [
+        engineBackend,
+        vision,
+        audio,
+      ].contains(liteRtLmGpuBackend);
+      return (
+        vision: vision,
+        audio: audio,
+        usesGpu: usesGpu,
+        runtimeCacheDir:
+            cacheDir ??
+            _modelLink?.runtimeCacheDirectory() ??
+            liteRtLmUnlinkedCacheDirectory(
+              modelPath,
+              gpu: usesGpu,
+              textOnly:
+                  !resolvedVisionEnabled &&
+                  !resolvedAudioEnabled &&
+                  !resolvedSpeculativeDecoding,
+            ),
+      );
+    }
+
     Future<LiteRtLmRuntimeClient> initializeClient(
+      String engineBackend,
+      String? visionBackend,
       String? audioBackend,
       String? cacheDirectory,
     ) async {
@@ -1293,7 +1314,7 @@ class LiteRtLmService {
       try {
         await client.initialize(
           modelPath: runtimeModelPath,
-          backend: backend,
+          backend: engineBackend,
           visionBackend: visionBackend,
           audioBackend: audioBackend,
           maxTokens: modelParams.contextSize,
@@ -1321,12 +1342,21 @@ class LiteRtLmService {
       }
     }
 
-    late LiteRtLmRuntimeClient client;
-    var resolvedAudioBackend = requestedAudioBackend;
-    var created = false;
-    try {
+    Future<({LiteRtLmRuntimeClient client, String? audioBackend})> createEngine(
+      String engineBackend,
+      _LiteRtLmEngineOptions options,
+    ) async {
+      final runtimeCacheDir = options.runtimeCacheDir;
       try {
-        client = await initializeClient(requestedAudioBackend, runtimeCacheDir);
+        return (
+          client: await initializeClient(
+            engineBackend,
+            options.vision,
+            options.audio,
+            runtimeCacheDir,
+          ),
+          audioBackend: options.audio,
+        );
       } catch (initialError, initialStackTrace) {
         // The GPU backend fails engine creation on a cache it rejects, such
         // as a truncated weight cache, when it cannot write a new one.
@@ -1334,31 +1364,69 @@ class LiteRtLmService {
             initialError is LiteRtLmEngineCreateError && runtimeCacheDir == null
             ? liteRtLmUnlinkedCacheDirectory(
                 modelPath,
-                gpu: usesGpu,
+                gpu: options.usesGpu,
                 textOnly: false,
               )
             : null;
         final canRetryWithCpuAudio =
-            resolvedAudioEnabled &&
-            requestedAudioBackend != null &&
-            requestedAudioBackend != liteRtLmCpuBackend;
+            options.audio != null && options.audio != liteRtLmCpuBackend;
         if (uncachedDir == null && !canRetryWithCpuAudio) {
           rethrow;
         }
 
         try {
           if (uncachedDir != null) {
-            client = await initializeClient(requestedAudioBackend, uncachedDir);
-          } else {
-            resolvedAudioBackend = liteRtLmCpuBackend;
-            client = await initializeClient(
-              resolvedAudioBackend,
-              runtimeCacheDir,
+            return (
+              client: await initializeClient(
+                engineBackend,
+                options.vision,
+                options.audio,
+                uncachedDir,
+              ),
+              audioBackend: options.audio,
             );
           }
+          return (
+            client: await initializeClient(
+              engineBackend,
+              options.vision,
+              liteRtLmCpuBackend,
+              runtimeCacheDir,
+            ),
+            audioBackend: liteRtLmCpuBackend,
+          );
         } catch (_) {
           Error.throwWithStackTrace(initialError, initialStackTrace);
         }
+      }
+    }
+
+    final options = engineOptions(backend);
+    late ({LiteRtLmRuntimeClient client, String? audioBackend}) engine;
+    var engineBackend = backend;
+    var created = false;
+    try {
+      try {
+        engine = await createEngine(backend, options);
+      } catch (gpuError, gpuStackTrace) {
+        if (!_mayRetryAutoGpuOnCpu(modelParams, backend)) {
+          rethrow;
+        }
+        _warn(
+          'LiteRT-LM could not create a GPU engine under ComputeDevice.auto; '
+          'retrying on the CPU. Load with ComputeDevice.cpu to skip the GPU, '
+          'or ComputeDevice.gpu to fail instead.',
+          gpuError,
+        );
+        try {
+          engine = await createEngine(
+            liteRtLmCpuBackend,
+            engineOptions(liteRtLmCpuBackend),
+          );
+        } catch (_) {
+          Error.throwWithStackTrace(gpuError, gpuStackTrace);
+        }
+        engineBackend = liteRtLmCpuBackend;
       }
       created = true;
     } on LiteRtLmEngineCreateError catch (error, stackTrace) {
@@ -1370,8 +1438,8 @@ class LiteRtLmService {
             ' Engine creation also fails when the runtime cannot write '
             '${modelParamsTypeName(modelParams)}.'
             '${liteRtLmOptionName(modelParams, 'liteRtLmCacheDir')}.';
-      } else if (runtimeCacheDir != null &&
-          runtimeCacheDir != liteRtLmNoCacheDirectory) {
+      } else if (options.runtimeCacheDir != null &&
+          options.runtimeCacheDir != liteRtLmNoCacheDirectory) {
         cacheHint =
             ' Engine creation also fails when the runtime cannot write its '
             'cache directory; set LiteRtLmModelParams.cacheDir '
@@ -1402,17 +1470,17 @@ class LiteRtLmService {
         cacheLease?.release();
       }
     }
-    _client = client;
+    _client = engine.client;
     _cacheLease = cacheLease;
     if (resolvedAudioEnabled) {
-      _workingAudioBackend = resolvedAudioBackend;
+      _workingAudioBackend = engine.audioBackend;
     }
     _activeSpeculativeDecoding = resolvedSpeculativeDecoding;
     _activeMaxNumImages = resolvedMaxNumImages;
     _activeVisionEnabled = resolvedVisionEnabled;
     _activeAudioEnabled = resolvedAudioEnabled;
-    _activeBackend = backend;
-    return client;
+    _activeBackend = engineBackend;
+    return engine.client;
   }
 
   ({String startTag, String endTag}) _responseThinkingTagsForModel(
@@ -1506,6 +1574,14 @@ class LiteRtLmService {
         .whereType<LlamaAudioContent>()
         .isNotEmpty;
   }
+
+  /// Whether a GPU engine that failed to start may retry on the CPU: only
+  /// when neither the load nor the context selected a device.
+  bool _mayRetryAutoGpuOnCpu(ModelParams params, String backend) =>
+      backend == liteRtLmGpuBackend &&
+      _automaticBackend &&
+      params.device == ComputeDevice.auto &&
+      params.liteRtLmBackend.nativeName == null;
 
   String _visionBackendName(String backend) {
     if (backend == liteRtLmNpuBackend) {

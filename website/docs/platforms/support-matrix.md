@@ -120,7 +120,7 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 | --- | --- | --- | --- |
 | Native llama.cpp | Best GPU backend that loads, all layers; CPU without a GPU module or device, on Android and on an iOS simulator | Needs a GPU module and device; Vulkan on Android (experimental); Metal on an iOS simulator, where its output is incorrect | Throws |
 | WebGPU (llama.cpp) | WebGPU when available, else the WebAssembly CPU runtime | Needs a WebGPU adapter and GPU layers after load; no CPU retry | Throws |
-| Native LiteRT-LM | GPU on Android, iOS and macOS; CPU on Linux and Windows | GPU backend on Android, iOS, macOS arm64, Linux x64 (Vulkan) and Windows x64 (Direct3D 12); a delegate that fails to start throws on first use | Android only |
+| Native LiteRT-LM | GPU on Android, iOS and macOS; CPU on Linux and Windows; a GPU engine that fails to start retries on the CPU with a warning | GPU backend on Android, iOS, macOS arm64, Linux x64 (Vulkan) and Windows x64 (Direct3D 12); a delegate that fails to start throws on first use | Android only |
 | LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
 | Image generation | First GPU reported, else CPU | Needs a GPU; Android and the CPU builds have none | Throws |
 | LiteRT-LM ASR | CPU | Not selectable | Not selectable |
@@ -259,9 +259,11 @@ output and grammars, sampling controls and speculative decoding. Guides:
   that mismatch. `v0.17.0-8` and earlier generated wrong text there. With the
   native `v0.18.0` GPU engine creation fails instead: on a Galaxy S24 the
   first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
-  requested and `LlamaModelException` under `auto`. Gemma 4 E2B runs on that
-  GPU. Load Qwen3 0.6B with `ModelParams(device: ComputeDevice.cpu)`, which
-  answers correctly on the same device
+  requested; from 0.17.0 `auto` retries on the CPU with a warning instead of
+  throwing `LlamaModelException`
+  ([#1034](https://github.com/leehack/llamadart/issues/1034)). Gemma 4 E2B
+  runs on that GPU. `ModelParams(device: ComputeDevice.cpu)` skips the GPU
+  attempt and answers correctly on the same device
   ([#553](https://github.com/leehack/llamadart/issues/553), upstream
   [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
 - Windows x64 LiteRT-LM GPU needs `litert-lm-native` `v0.17.0-6` or later,

@@ -252,7 +252,7 @@
       ],
       "exemption": {
         "id": "configuration-and-diagnostics",
-        "reason": "Administrative/configuration, compatibility or diagnostic surface has existing unit/integration coverage but no dedicated feature-pack contract. Inventory is not a claim of model/device qualification.",
+        "reason": "Administrative/configuration, compatibility or diagnostic surface has existing unit/integration coverage but no dedicated feature-pack contract. Native LiteRT-LM backendName after the ComputeDevice.auto CPU retry of a failed GPU engine (#1034) is covered by service and worker integration tests, not device runs. Inventory is not a claim of model/device qualification.",
         "issue": "https://github.com/leehack/llamadart/issues/1196"
       }
     },
