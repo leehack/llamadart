@@ -1051,3 +1051,12 @@ unqualified; a browser adapter alone establishes no model GPU execution.
 The model-free Chrome suite separately checks routing, API skew and typed
 unsupported roles/options. Remaining tool/media/template work stays in
 [#1152](https://github.com/leehack/llamadart/issues/1152).
+
+
+### Bounded image editing
+
+`image-editing` runs the maintained local-only SD-Turbo full-VAE macOS CPU
+recipe: owned RGB inputs, binary-mask polarity, strength, ordinary defaults
+reset, cancellation/reuse and reload, with optional exact direct-C references.
+See [the fixture, gates and provenance](image_editing.md). No GPU/device or
+other SD 2.x model qualification is inferred.

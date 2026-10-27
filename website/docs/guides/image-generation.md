@@ -37,8 +37,9 @@ validated on phones and desktops: SDXS-512 and SD-Turbo.
 [Desktop models](#desktop-models) cover SDXL-Lightning, FLUX.1-schnell,
 SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (validated
 on macOS Metal only), and [other families](#other-families) load the same
-way; the [recipes](#recipes) give each one's files and settings. It is text-to-image only: no image-to-image, inpainting,
-LoRA or ControlNet yet.
+way; the [recipes](#recipes) give each one's files and settings. Bounded image-to-image and binary-mask editing are available through
+`ImageEditingRequest` on the [CPU recipe below](#image-editing). LoRA and
+ControlNet have no public image-generation API yet.
 
 ## Support
 
@@ -1121,3 +1122,55 @@ the [chat app](../examples/chat-app) has an image screen that downloads SDXS
 or SD-Turbo with TAESD from the same pinned files and generates on device.
 The command-line example also runs the desktop models from pinned
 downloads; both keep their pinned sources and settings in the app.
+
+
+## Image editing
+
+`ImageEditingRequest` accepts an owned copy of decoded row-major RGB bytes
+and an optional one-channel binary mask. It leaves `ImageGenerationRequest`
+and text-to-image defaults unchanged. The output matches input dimensions:
+both axes must be multiples of 64 from 64 through 2048. The caller decodes
+PNG/JPEG, applies orientation, resizes and composites alpha before submission.
+No such transformations happen implicitly.
+
+Check `(await engine.capabilities).supportsImageEditing` after loading. The
+bounded recipe requires stable-diffusion-native `v0.3.0` (upstream `0518b34`),
+a native-detected SD 2.x single checkpoint with a header-detected embedded full
+VAE on macOS CPU, `flashAttention: false` and `vaeDirectConvolution: false`.
+Component overrides, tiny decoders, other families, platforms/devices, VAE
+tiling and circular axes throw `LlamaUnsupportedException` before generation.
+SD-Turbo is the measured artifact; other SD 2.x checkpoints matching the recipe
+are source-compatible but unmeasured. This capability does not certify every
+prompt, resolution or checkpoint's output quality.
+
+```dart
+final input = ImageEditingPixels.rgb(width: width, height: height, pixels: rgb);
+final request = ImageEditingRequest(
+  prompt: 'a colorful painting of a house',
+  initialImage: input,
+  strength: 0.75,
+  mask: ImageEditingPixels.mask(width: width, height: height, pixels: binaryMask),
+  steps: 4,
+  guidanceScale: 1,
+  seed: 42,
+);
+final result = await engine.generateImage(request);
+```
+
+A mask value of **255 edits** and **0 preserves the encoded latent**. Other
+values are rejected; no implicit threshold is applied. Black output regions
+need not equal the input bytes because full-VAE encode/decode is lossy and
+convolutions cross mask boundaries. An omitted mask edits the whole image.
+`strength` must be finite and in `(0, 1]`; higher values allow larger changes,
+but step rounding can map nearby strengths to the same schedule. At 1 the
+runtime still encodes the input. This API does not load an inpainting-specific
+model or guarantee exact pixel compositing.
+
+Inputs copy their supplied bytes and return copies from `pixels`. They remain
+owned through cancellation until the native call ends. Cancellation, concurrent
+generation and disposal use the same rules as text-to-image. Reusing a session
+for ordinary generation resets input/mask fields to native defaults.
+Run `example/basic_app/bin/image_editing.dart` with a local full checkpoint;
+it creates a decoded RGB fixture without a codec dependency. Maintainers can
+reproduce the independent C comparison, mask/strength measurements and
+cancellation checks in [the qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/image_editing.md).

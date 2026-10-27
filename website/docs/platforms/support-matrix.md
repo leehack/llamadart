@@ -71,6 +71,16 @@ other image platforms and families have not been measured for this control.
 It adds no Web image runtime or approximate sampling cache. See
 [Conditioning cache](../guides/image-generation#conditioning-cache).
 
+Image editing uses `ImageEditingRequest` with copied decoded RGB and optional
+binary masks (255 edits, 0 preserves the latent). It is bounded to a single
+SD 2.x checkpoint with embedded full VAE on macOS CPU and the pinned SD v0.3.0
+runtime, with flash attention/direct VAE convolution off and no components,
+tilings or circular axes. SD-Turbo is measured; matching other SD 2.x
+checkpoints remain unmeasured. Other recipes report
+`supportsImageEditing: false` and throw on an editing request. This does not
+extend editing support to the other text-to-image platforms in the table.
+See [image editing](../guides/image-generation#image-editing).
+
 Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
 flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
 512×512, flash attention and direct VAE convolutions disabled; CPU and actual

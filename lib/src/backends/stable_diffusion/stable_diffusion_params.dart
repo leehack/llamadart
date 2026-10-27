@@ -3,6 +3,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 
 import '../../core/image/image_generation_driver.dart';
+import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_model.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 
@@ -104,6 +105,24 @@ void applyStableDiffusionGenerationParams(
     ..batch_count = request.count
     ..circular_x = request.circularX
     ..circular_y = request.circularY;
+  void writePixels(sd.sd_image_t target, ImageEditingPixels source) {
+    final pixels = source.pixels;
+    final data = allocator<Uint8>(pixels.length);
+    data.asTypedList(pixels.length).setAll(0, pixels);
+    target
+      ..width = source.width
+      ..height = source.height
+      ..channel = source.channels
+      ..data = data;
+  }
+
+  if (request.initialImage case final image?) {
+    writePixels(params.ref.init_image, image);
+    params.ref.strength = request.strength!;
+    if (request.mask case final mask?) {
+      writePixels(params.ref.mask_image, mask);
+    }
+  }
   params.ref.sample_params
     ..sample_steps = request.steps
     ..guidance.txt_cfg = request.guidanceScale

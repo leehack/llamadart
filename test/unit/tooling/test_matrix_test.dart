@@ -9,6 +9,19 @@ import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  test('image editing matrix identifies its bounded CPU qualification', () {
+    final row = testMatrixRows.singleWhere((r) => r.id == 'image-editing');
+    expect(row.tier, 'targeted');
+    expect(row.mode, 'local-only');
+    expect(row.covers, contains('macOS CPU'));
+    expect(row.covers, contains('direct-C'));
+    final scenario = buildLocalE2eScenarios().singleWhere(
+      (s) => s.name == row.id,
+    );
+    expect(scenario.requiresDevice, isFalse);
+    expect(row.command, contains('--scenario image-editing'));
+  });
+
   test(
     'LiteRT Web history matrix selects the direct-runtime control scenario',
     () {

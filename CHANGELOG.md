@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Add owned RGB image-to-image inputs and binary-mask editing for the bounded macOS CPU SD 2.x full-VAE recipe.
+
 - Split specialized chat handlers by format family while preserving rendering and tool-call behavior.
 
 ## 0.16.4

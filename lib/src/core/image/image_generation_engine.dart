@@ -14,6 +14,7 @@ import '../models/model_source.dart';
 import '../models/model_file_store.dart';
 import '../models/model_target_file.dart';
 import 'generated_image.dart';
+import 'image_editing_request.dart';
 import 'image_generation_driver.dart';
 import 'image_generation_driver_stub.dart'
     if (dart.library.io) 'image_generation_driver_io.dart';
@@ -55,6 +56,11 @@ class ImageGenerationCapabilities implements EngineCapabilities {
   /// Whether a running generation can be cancelled.
   final bool supportsCancellation;
 
+  /// Whether the loaded model and runtime support [ImageEditingRequest].
+  /// False before load and for unqualified model, decoder, host or device
+  /// recipes; ordinary text-to-image support is independent.
+  final bool supportsImageEditing;
+
   /// Maximum concurrent generations: one per process.
   final int maxConcurrentTasks;
 
@@ -67,6 +73,7 @@ class ImageGenerationCapabilities implements EngineCapabilities {
     this.runtimeVersion,
     this.modelVersion,
     this.supportsCancellation = false,
+    this.supportsImageEditing = false,
     this.maxConcurrentTasks = 0,
   });
 }
@@ -501,6 +508,15 @@ class ImageGenerationEngine {
         },
         threads: params.threads,
         conditioningCacheSize: conditioningCacheSize,
+        imageEditingRecipeVerified:
+            driver.operatingSystem == 'macos' &&
+            backendName == 'CPU' &&
+            (runtime.commit == '0518b34' ||
+                runtime.commit == '0518b34374761cb82aeda5ad3c2f0686fdad2cec') &&
+            assignment.vaeTilingDecoderVerified &&
+            !assignment.decodesWithTinyAutoencoder &&
+            assignment.roles.length == 1 &&
+            assignment.roles.containsKey(ImageModelRole.checkpoint),
         vaeTilingRecipeVerified:
             // v0.3.0 is the runtime whose tiling layout and decode are qualified.
             (runtime.commit == '0518b34' ||
@@ -571,6 +587,15 @@ class ImageGenerationEngine {
       runtimeVersion: _runtime.version,
       modelVersion: _session.modelVersion,
       supportsCancellation: true,
+      supportsImageEditing:
+          _config.imageEditingRecipeVerified &&
+          !_config.flashAttention &&
+          !_config.vaeDirectConvolution &&
+          _session.modelVersion == 'SD 2.x' &&
+          switch (_session) {
+            ImageEditingSession editing => editing.supportsImageEditing,
+            _ => false,
+          },
       maxConcurrentTasks: 1,
     );
   }
@@ -624,6 +649,11 @@ class ImageGenerationEngine {
       vaeTiling: imageRequestVaeTiling(request),
       circularX: request is SeamlessImageGenerationRequest && request.circularX,
       circularY: request is SeamlessImageGenerationRequest && request.circularY,
+      initialImage: request is ImageEditingRequest
+          ? request.initialImage
+          : null,
+      mask: request is ImageEditingRequest ? request.mask : null,
+      strength: request is ImageEditingRequest ? request.strength : null,
     );
     validateSeamlessImageGenerationRecipe(
       resolved,
@@ -631,6 +661,18 @@ class ImageGenerationEngine {
       _session.modelVersion,
     );
     validateImageVaeTilingRecipe(resolved, _config, _session.modelVersion);
+    validateImageEditingRecipe(resolved, _config, _session.modelVersion);
+    if (resolved.initialImage != null &&
+        !switch (_session) {
+          ImageEditingSession editing => editing.supportsImageEditing,
+          _ => false,
+        }) {
+      throw LlamaUnsupportedException(
+        'This image-generation backend does not report support for '
+        'owned RGB/mask image editing. Use the pinned stable_diffusion '
+        'v0.3.0 runtime with the supported macOS CPU SD 2.x full-VAE recipe.',
+      );
+    }
     if (resolved.vaeTiling != null &&
         !switch (_session) {
           ImageVaeTilingSession tiling => tiling.supportsVaeTiling,

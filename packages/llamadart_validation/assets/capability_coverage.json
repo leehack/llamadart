@@ -502,6 +502,16 @@
         "matrix:Tool calling"
       ],
       "pack": "tools"
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.supportsImageEditing"
+      ],
+      "exemption": {
+        "id": "bounded-image-editing",
+        "issue": "https://github.com/leehack/llamadart/issues/1221",
+        "reason": "Owned RGB/binary-mask requests have maintained API validation, engine/worker/ABI refusal and lifetime tests plus the image-editing macOS CPU SD-Turbo full-VAE direct-C qualification scenario. Versioned image-editing pack/profile cases remain open in #1221; inventory presence is not platform/model qualification."
+      }
     }
   ]
 }
