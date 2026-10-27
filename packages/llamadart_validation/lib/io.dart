@@ -88,6 +88,26 @@ prepareEmbeddingProjector(
   onProgress: onProgress,
 );
 
+/// Verifies a tool-result media profile's vision projector.
+Future<({String path, Map<String, dynamic> evidence})>
+prepareToolResultProjector(
+  ValidationProfile profile,
+  Directory cache, {
+  String? suppliedPath,
+  Duration timeout = const Duration(minutes: 5),
+  http.Client? client,
+  Future<void> Function(Map<String, dynamic>)? onProgress,
+}) => _prepareArtifact(
+  profile,
+  profile.toolResultProjector!,
+  cache,
+  artifact: 'projector',
+  suppliedPath: suppliedPath,
+  timeout: timeout,
+  client: client,
+  onProgress: onProgress,
+);
+
 Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
   ValidationProfile profile,
   Map<String, dynamic> lock,

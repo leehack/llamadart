@@ -2129,3 +2129,39 @@ a self-consistent fabricated transcript cannot be disproved without trusted
 external artifacts or runtime attestation. The original pre-fix pilot remains
 UNQUALIFIED because its typed capacity-error assertion failed; this pack does
 not rewrite that result.
+
+## Catalog 12: tool-result media
+
+Catalog 12 adds `M01.tool_result_image` (feature `tool_result_media`) to the
+tools coverage for [#1008](https://github.com/leehack/llamadart/issues/1008).
+A profile selects it by locking a vision projector next to its chat model and
+focusing `tool_result_media`; a profile without a projector omits it as
+`no_vision_projector_locked`. Catalogs 1-11 keep their inventories and hashes.
+
+| Step | Required proof |
+| --- | --- |
+| Capability | `LlamaEngineCapabilities.toolResultMedia` contains `image` |
+| Call | With `ToolChoice.required` the model emits one `take_photo` call (`tool_calls` finish) |
+| Red, then blue | A history of that call and a `LlamaToolResultContent` carrying a solid-color PNG makes the next turn name that color and not the other |
+
+The two 128x128 PNGs are embedded in the catalog fixture and checked against
+their SHA-256. The importer rechecks that the recorded request holds the
+fixture image as the only image part of the tool message, so a text-only
+answer or a constant guess cannot pass.
+
+```sh
+dart run tool/testing/validation.dart local --profile qwen3vl-gguf-cpu \
+  --model /path/to/Qwen3-VL-2B-Instruct-Q8_0.gguf \
+  --projector /path/to/mmproj-Qwen3-VL-2B-Instruct-Q8_0.gguf \
+  --out /tmp/qwen3vl-cpu-run
+```
+
+`qwen3vl-gguf-cpu` and `qwen3vl-gguf-metal` lock `ggml-org/Qwen3-VL-2B-Instruct-GGUF`
+at `ea6a11058182570be6436b9a2e4ee7f7b49f908d`: `Q8_0` model SHA-256
+`b7802e29f71a9e5b5e3f83f613df898a2204342dcea71a231ea501d481813c39` and `Q8_0`
+projector `69066c8f279ec85ff48ab4059f6ebba0d2932ca57667f2bbdac7d9805bca9e7b`,
+context 4096, with the model's own chat template. Host preparation verifies both
+files and the importer requires the projector's hash and size. Only the native
+desktop runner prepares the projector; the Web builder and the Flutter app
+host leave the case NOT_RUN. Audio, video, URL media, other chat formats,
+backends and devices are not qualified by this pack.

@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 11;
+const int validationCatalogVersion = 12;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -18,6 +18,7 @@ const validationFeatures = {
   'structured_output': 1,
   'tokenization': 1,
   'state_persistence': 1,
+  'tool_result_media': 1,
 };
 
 /// Feature selectors that catalogs before 8 do not declare.
@@ -97,6 +98,7 @@ const validationFixtures = <String, Map<String, Object>>{
   'native_json_schema_capability': nativeJsonSchemaCapabilityFixture,
   'tokenization': tokenizationFixture,
   'state_persistence': statePersistenceFixture,
+  'tool_result_media': toolResultMediaFixture,
 };
 
 /// Case identity and fixture dependencies. False implementation flags always
@@ -246,6 +248,7 @@ const extendedValidationCases = [
   ...structuredOutputValidationCases,
   ...tokenizationValidationCases,
   ...stateValidationCases,
+  ...toolResultMediaValidationCases,
 ];
 
 /// Stable order for the complete selected/omitted inventory.
@@ -266,7 +269,9 @@ const catalogFiveCaseIds = {
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    stateValidationCases.any((definition) => definition.id == id)
+    toolResultMediaValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion >= 12
+    : stateValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 11
     : tokenizationValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 9
@@ -739,5 +744,41 @@ const stateValidationCases = [
     'P04.invalid_recovery',
     ['state_persistence'],
     ['state_persistence'],
+  ),
+];
+
+/// Solid-color 128x128 RGB PNGs (red 220,20,20; blue 20,40,220) returned by a
+/// tool, with the expected one-word color answers. Embedded as bytes so Web and
+/// native runners send identical images without an encoder.
+const toolResultMediaFixture = <String, Object>{
+  'tool': 'take_photo',
+  'tool_description': 'Takes a photo with the camera and returns it.',
+  'call_id': 'call_0',
+  'question':
+      'Take a photo, then tell me the main color of the photo in one word.',
+  'max_tokens': 48,
+  'images': {
+    'red': {
+      'png_base64':
+          'iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAAyElEQVR42u3RQREAAAjDsImYf2WIQQY8clcFTabVYbEAAAABACAAAAQAgAAAEAAAAgBAAAAIAAABACAAAAQAgAAAEAAAAgBAAAAIAAABACAAAAQAgAAAEAAAAgBAAAAIAAABACAAAAQAgAAAEAAAAgBAAAAAcAEAAAEAIAAABACAAAAQAAACAEAAAAgAAAEAIAAABACAAAAQAAACAEAAAAgAAAEAIAAABACAAAAQAAACAEAAAAgAAAEAIAAABACAAAAQAAAC8KEFbK8D0NOAIb0AAAAASUVORK5CYII=',
+      'sha256':
+          '67a3791b2963b67d0d449feabd9bd556ab8fa7cbe4f5640246df264f89d8de0d',
+    },
+    'blue': {
+      'png_base64':
+          'iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAAyUlEQVR42u3RQQ0AAAjEsBOBCPzrQQwy4NFkCtZUjw6LBQAACAAAAQAgAAAEAIAAABAAAAIAQAAACAAAAQAgAAAEAIAAABAAAAIAQAAACAAAAQAgAAAEAIAAABAAAAIAQAAACAAAAQAgAAAEAIAAABAAAAIAAIALAAAIAAABACAAAAQAgAAAEAAAAgBAAAAIAAABACAAAAQAgAAAEAAAAgBAAAAIAAABACAAAAQAgAAAEAAAAgBAAAAIAAABACAAAAQAgAAAEIAPLZs3BBsTnE8NAAAAAElFTkSuQmCC',
+      'sha256':
+          '1599912d72d73c6e4d3cc0e70b265bfb045513ac8e2bde155e22553d3f4d3b32',
+    },
+  },
+};
+
+/// Selected by `tool_result_media` focus (or `tools` focus or release
+/// selection) from catalog 12, only for a profile that locks a vision projector.
+const toolResultMediaValidationCases = [
+  ValidationCaseDefinition(
+    'M01.tool_result_image',
+    ['tools', 'tool_result_media'],
+    ['tool_result_media'],
   ),
 ];

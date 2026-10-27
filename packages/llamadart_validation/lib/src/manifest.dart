@@ -170,6 +170,21 @@ class ValidationProfile {
         'of catalog feature IDs',
       );
     }
+    if (data.containsKey('projector') !=
+            focusFeatures.contains('tool_result_media') ||
+        (data.containsKey('projector') &&
+            (runtime != 'gguf' ||
+                !['cpu', 'metal'].contains(backend) ||
+                !isChat ||
+                nativeReference ||
+                !_isArtifact(data['projector'], '.gguf') ||
+                data['projector']['revision'] != model['revision']))) {
+      throw const FormatException(
+        'Tool-result media requires a native CPU/Metal GGUF chat profile with '
+        'a matching immutable GGUF projector lock, and a projector lock '
+        'requires the tool_result_media focus',
+      );
+    }
     final overrides = data['fixtures'];
     if (overrides != null &&
         (overrides is! Map ||
@@ -180,6 +195,7 @@ class ValidationProfile {
                   (const {
                         'native_json_schema_capability',
                         'state_persistence',
+                        'tool_result_media',
                       }.contains(entry.key) &&
                       (entry.value as Map).isNotEmpty) ||
                   (entry.value as Map).entries.any(
@@ -255,6 +271,10 @@ class ValidationProfile {
   /// Immutable matching projector definition.
   Map<String, dynamic> get embeddingProjector =>
       (data['embedding'] as Map)['projector'] as Map<String, dynamic>;
+
+  /// Locked vision projector of a tool-result media profile, if any.
+  Map<String, dynamic>? get toolResultProjector =>
+      data['projector'] as Map<String, dynamic>?;
 
   /// Locked decision head and optional config, keyed `head` and `config`.
   Map<String, dynamic> get decisionArtifacts =>
@@ -395,6 +415,7 @@ class ValidationProfile {
           _structuredOmission(definition.id) == null &&
           !(definition.id.startsWith('T') && nativeReference) &&
           _stateOmission(definition.id) == null &&
+          _mediaOmission(definition.id) == null &&
           (selection == 'release' ||
               (selection == 'focused' &&
                   definition.features.any(focusFeatures.contains))))
@@ -414,6 +435,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 12) resolved.remove('tool_result_media');
     if (version < 11) resolved.remove('state_persistence');
     if (version < 10) resolved.remove('native_json_schema_capability');
     if (version < 9) resolved.remove('tokenization');
@@ -483,6 +505,14 @@ class ValidationProfile {
         'Batching selection requires catalog version 2',
       );
     }
+    if (version < 12 &&
+        (focusFeatures.contains('tool_result_media') ||
+            (data['fixtures'] as Map?)?.containsKey('tool_result_media') ==
+                true)) {
+      throw const FormatException(
+        'Tool-result media selection or fixture requires catalog version 12',
+      );
+    }
     if (version < 11 &&
         (focusFeatures.contains('state_persistence') ||
             (data['fixtures'] as Map?)?.containsKey('state_persistence') ==
@@ -523,7 +553,8 @@ class ValidationProfile {
           if ((version != 1 || entry.key != 'batching') &&
               (version >= 8 || !catalogEightFeatures.contains(entry.key)) &&
               (version >= 9 || entry.key != 'tokenization') &&
-              (version >= 11 || entry.key != 'state_persistence'))
+              (version >= 11 || entry.key != 'state_persistence') &&
+              (version >= 12 || entry.key != 'tool_result_media'))
             entry.key: entry.value,
         if (isDecision) 'decision': 1,
         if (isEmbedding) 'embeddings': 1,
@@ -579,9 +610,19 @@ class ValidationProfile {
     return null;
   }
 
+  /// Why this profile cannot run tool-result media case [id], or null.
+  String? _mediaOmission(String id) {
+    if (!id.startsWith('M')) return null;
+    if (nativeReference) return 'outside_native_reference_scope';
+    if (!data.containsKey('projector')) return 'no_vision_projector_locked';
+    return null;
+  }
+
   String _omissionReason(String id) {
     if (isDecision) return 'decision_model_has_no_text_generation';
     if (isEmbedding) return 'embedding_model_has_no_text_generation';
+    final media = _mediaOmission(id);
+    if (media != null) return media;
     final state = _stateOmission(id);
     if (state != null) return state;
     if (id.startsWith('T') && nativeReference) {
@@ -635,6 +676,12 @@ class ValidationProfile {
         'NPU validation needs installed-app vendor packaging, SoC checks and '
         'per-generation execution proof. Use validation.dart npu-preflight '
         'to inspect the locked inputs without downloading or loading a model.',
+      );
+    }
+    if (toolResultProjector != null && web) {
+      throw LlamaUnsupportedException(
+        'Tool-result media pack runs only on native desktop: the Web host '
+        'does not prepare the locked vision projector.',
       );
     }
     if (isEmbedding && web) {

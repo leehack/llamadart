@@ -2,8 +2,8 @@
 
 `qwen3_vl_tool_media_upstream.json` holds the prompts that an unmodified
 Homebrew `llama-server` 0.7.0 (llama.cpp `620d2225c`, `/props` `build_info`
-`b11669-620d2225c`) returned from `POST /apply-template` for two requests
-whose `role: tool` messages carry `image_url` parts in array `content`:
+`b11669-620d2225c`) returned from `POST /apply-template` for the `cases` below, whose
+`role: tool` messages carry `image_url` parts in array `content`:
 
 - `two_results`: two calls; the first result is JSON text, a caption and an
   image, the second only an image.

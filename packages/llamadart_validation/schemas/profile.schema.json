@@ -210,7 +210,8 @@
           "performance",
           "structured_output",
           "tokenization",
-          "state_persistence"
+          "state_persistence",
+          "tool_result_media"
         ]
       }
     },
@@ -391,6 +392,44 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {}
+        },
+        "tool_result_media": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    },
+    "projector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "revision",
+        "sha256",
+        "bytes",
+        "url"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.-]+\\.gguf$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
         }
       }
     },
