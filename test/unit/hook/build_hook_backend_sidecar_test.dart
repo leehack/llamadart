@@ -12,6 +12,7 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_release_manifest.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/runtime_bundle_http_fixture.dart';
@@ -298,6 +299,100 @@ void main() {
     });
   });
 
+  group('the pinned release', () {
+    final bundlesDir = path.join('.dart_tool', 'llamadart', 'native_bundles');
+    final coreDir = Directory(
+      path.join(bundlesDir, llamaCppTag, 'windows-x64'),
+    );
+    final sidecarSpec = llamaCppBackendSidecarSpecs.singleWhere(
+      (spec) => spec.bundle == 'windows-x64' && spec.backend == 'cuda',
+    );
+    final sidecarDir = Directory(
+      path.join(bundlesDir, llamaCppTag, sidecarSpec.archive),
+    );
+    final sidecarArchive =
+        'llamadart-native-${sidecarSpec.archive}-$llamaCppTag.tar.gz';
+    final sidecarUrl =
+        'https://github.com/leehack/llamadart-native/releases/download/'
+        '$llamaCppTag/$sidecarArchive';
+    Directory backupOf(Directory dir) =>
+        Directory('${dir.path}.__sidecar_test_backup');
+
+    setUpAll(() async {
+      for (final dir in [coreDir, sidecarDir]) {
+        if (dir.existsSync()) await dir.rename(backupOf(dir).path);
+      }
+    });
+
+    setUp(() async {
+      for (final dir in [coreDir, sidecarDir]) {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+      }
+      // The pinned core archive cannot be faked, so seed its extraction.
+      final extracted = Directory(path.join(coreDir.path, 'extracted'))
+        ..createSync(recursive: true);
+      for (final library in _coreLibraries) {
+        File(
+          path.join(extracted.path, library),
+        ).writeAsStringSync('pinned-$library');
+      }
+    });
+
+    tearDownAll(() async {
+      for (final dir in [coreDir, sidecarDir]) {
+        if (dir.existsSync()) await dir.delete(recursive: true);
+        if (backupOf(dir).existsSync()) await backupOf(dir).rename(dir.path);
+      }
+    });
+
+    test('downloads the CUDA sidecar only when cuda is selected', () async {
+      final fixture = RuntimeBundleHttpFixture({
+        sidecarUrl: _archive('tampered', _cudaLibraries),
+      });
+
+      final libraries = await _runHook(fixture, tag: null);
+      expect(fixture.requests, isEmpty);
+      expect(libraries, containsPair('ggml-cpu.dll', 'pinned-ggml-cpu.dll'));
+
+      await expectLater(
+        _runHook(fixture, tag: null, backends: ['cuda']),
+        throwsA(
+          isA<NativeArchiveDigestException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains(sidecarArchive),
+              contains(sidecarSpec.sha256),
+              contains('was deleted and not used'),
+            ),
+          ),
+        ),
+      );
+      expect(fixture.requests, [sidecarUrl]);
+    });
+
+    test('reuses an extracted CUDA sidecar offline', () async {
+      final extracted = Directory(path.join(sidecarDir.path, 'extracted'))
+        ..createSync(recursive: true);
+      for (final library in _cudaLibraries) {
+        File(
+          path.join(extracted.path, library),
+        ).writeAsStringSync('pinned-$library');
+      }
+      final fixture = RuntimeBundleHttpFixture.offline();
+
+      final libraries = await _runHook(
+        fixture,
+        tag: null,
+        backends: ['cpu', 'cuda'],
+      );
+
+      expect(fixture.requests, isEmpty);
+      expect(libraries, containsPair('ggml-cuda.dll', 'pinned-ggml-cuda.dll'));
+      expect(libraries, contains('cudart64_12.dll'));
+    });
+  });
+
   test('a local native path bundle needs no manifest or sidecar', () async {
     Future<Map<String, String>> build(List<String> libraries) async {
       final local = Directory.systemTemp.createTempSync('sidecar-local-');
@@ -348,11 +443,13 @@ Map<String, Object?> _manifest({int contract = 2, bool sidecars = true}) => {
   ],
 };
 
-/// Runs the hook for Windows x64 against release [_tag] with every download
+/// Runs the hook for Windows x64 against release [tag], or the pinned release
+/// when it is `null`, with every download
 /// served by [fixture], and returns the emitted libraries' contents by file
 /// name.
 Future<Map<String, String>> _runHook(
   RuntimeBundleHttpFixture fixture, {
+  String? tag = _tag,
   List<String>? backends,
   String? nativePath,
 }) async {
@@ -367,7 +464,7 @@ Future<Map<String, String>> _runHook(
         workspacePubspec: PackageUserDefinesSource(
           defines: {
             'llamadart_native_runtimes': ['llama_cpp'],
-            'llamadart_native_tag': _tag,
+            'llamadart_native_tag': ?tag,
             if (backends != null)
               'llamadart_native_backends': {
                 'platforms': {'windows-x64': backends},
