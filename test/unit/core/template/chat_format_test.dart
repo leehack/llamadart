@@ -48,6 +48,17 @@ void main() {
       expect(format, equals(ChatFormat.lfm2));
     });
 
+    test('requires the space before the Firefunction v2 functools marker', () {
+      expect(
+        detectChatFormat('functools[{"name": "search"}]'),
+        ChatFormat.contentOnly,
+      );
+    });
+
+    test('requires the Kimi K3 end-of-message marker', () {
+      expect(detectChatFormat('<|open|><|close|>'), ChatFormat.contentOnly);
+    });
+
     test('falls back to content-only for standard ChatML', () {
       const source = '<|im_start|>user\nhi<|im_end|>';
       final format = detectChatFormat(source);
