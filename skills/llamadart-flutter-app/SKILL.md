@@ -176,8 +176,9 @@ or shipping runtimes the app does not use.
   `llamadart_native_backends` picks llama.cpp modules per platform (Android
   arm64 also takes `cpu_profile: compact`). A backend list that names a
   module the bundle lacks is discarded whole with a warning and the defaults
-  (`cpu`, `vulkan`) are bundled. Apple llama.cpp is one consolidated CPU and
-  Metal runtime and is not configurable.
+  (`cpu`, `vulkan`) are bundled. Windows x64 downloads the CUDA runtime, a
+  separate archive of about 688 MiB, only when `cuda` is selected. Apple
+  llama.cpp is one consolidated CPU and Metal runtime and is not configurable.
 - Selecting `litert_lm` by name fails the build on targets without a
   LiteRT-LM runtime, such as the iOS x86_64 simulator. Apps that include
   LiteRT-LM must exclude that simulator architecture.
