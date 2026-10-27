@@ -46,6 +46,23 @@ tool/testing/run_template_parity_suites.sh
 - Mark platform-specific files with `@TestOn('vm')` or `@TestOn('browser')`.
 - Use `@Tags(['local-only'])` for tests that should not run in default/CI flows.
 
+## FP8 image Metal preflight
+
+Use an existing FP8 checkpoint to verify public automatic/explicit Metal
+refusal and the direct worker guard without running an unsafe native load:
+
+```bash
+LLAMADART_IMAGE_FP8_MODEL=/path/to/fp8.safetensors TMPDIR="$(mktemp -d)" \
+  dart test -p vm -j 1 --run-skipped -t local-only \
+  test/e2e/backends/stable_diffusion_fp8_preflight_e2e_test.dart
+```
+
+This macOS check reads the real header and records zero context constructions
+for Metal. Its CPU control forwards the same file through the worker on a
+recording runtime; it does not claim native generation or general FP8 CPU
+qualification. The native abort and CPU qualification are tracked in
+[#1446](https://github.com/leehack/llamadart/issues/1446).
+
 ## EmbeddingGemma-2 native qualification
 
 Set `LLAMADART_EMBEDDINGGEMMA2_MODEL_PATH` to the official

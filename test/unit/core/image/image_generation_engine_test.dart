@@ -85,6 +85,156 @@ void main() {
     debugImageGenerationDriverOverride = null;
   });
 
+  group('FP8 Metal safety', () {
+    const tensor = ('model.diffusion_model.weight', <int>[1]);
+    final formats = <String, Uint8List>{
+      for (final dtype in ['F8_E4M3', 'F8_E5M2'])
+        dtype: safetensorsHeader([tensor], dtype: dtype, dataBytes: 1),
+      for (final type in [43, 44])
+        'GGUF $type': ggufHeader(tensors: [tensor], tensorType: type),
+    };
+    for (final MapEntry(key: format, value: header) in formats.entries) {
+      for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+        test(
+          '$format ${device.name} refuses before memory or native load',
+          () async {
+            driver.headers[_model] = header;
+            driver.budget = (bytes: 1, source: 'too small');
+            await expectLater(
+              load(_sdxs(), params: ImageModelParams(device: device)),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (e) => e.message,
+                  'message',
+                  allOf(
+                    contains('FP8'),
+                    contains('Metal'),
+                    contains('ComputeDevice.cpu'),
+                    isNot(contains(_model)),
+                  ),
+                ),
+              ),
+            );
+            expect(driver.started, isEmpty);
+            expect(driver.budgetDevices, isEmpty);
+          },
+        );
+      }
+      test('$format explicit CPU forwards the original checkpoint', () async {
+        driver.headers[_model] = header;
+        await load(
+          _sdxs(),
+          params: const ImageModelParams(device: ComputeDevice.cpu),
+        );
+        expect(driver.started.single.files, {'model': _model});
+        expect(driver.started.single.backend, 'cpu');
+      });
+    }
+    test(
+      'inspects every explicit-role component including LLM GGUF tensors',
+      () async {
+        for (final role in ImageModelRole.values.where(
+          (r) =>
+              r != ImageModelRole.checkpoint &&
+              r != ImageModelRole.diffusionModel,
+        )) {
+          const component = '/models/private-component.bin';
+          driver.sizes[component] = 1024;
+          driver.headers[component] = ggufHeader(
+            metadata: {'general.architecture': 'qwen3'},
+            tensors: [
+              ('token_embd.weight', [1]),
+            ],
+            tensorType: 43,
+          );
+          await expectLater(
+            load(
+              ImageGenerationModel(
+                _local(_model),
+                components: [
+                  ImageModelComponent(_local(component), role: role),
+                ],
+              ),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (e) => e.message,
+                'FP8 component',
+                contains('FP8 image weights in component 1'),
+              ),
+            ),
+          );
+          expect(driver.started, isEmpty);
+        }
+      },
+    );
+    test('standalone diffusion FP8 is checked before native loading', () async {
+      driver.headers[_model] = formats.values.first;
+      await expectLater(
+        load(
+          ImageGenerationModel(
+            _local(_model),
+            role: ImageModelRole.diffusionModel,
+          ),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(driver.started, isEmpty);
+    });
+    test('automatic CPU selection preserves FP8 loading', () async {
+      driver.status = _available('CPU\tCPU\n');
+      driver.headers[_model] = formats.values.first;
+      await load(_sdxs());
+      expect(driver.started.single.backend, 'cpu');
+    });
+    test('ordinary F16 auto retains the resolved CPU fallback', () async {
+      driver.status = _available('CPU\tCPU\n');
+      await load(_sdxs());
+      expect(driver.started.single.backend, 'cpu');
+      expect(driver.started.single.files, {'model': _model});
+    });
+    test(
+      'a GGUF renamed with a JSON suffix retains native format precedence',
+      () async {
+        const path = '/models/checkpoint.json';
+        driver.sizes[path] = 1024;
+        driver.headers[path] = ImageModelHeaders.sdTurboCheckpoint;
+        await load(ImageGenerationModel(_local(path)));
+        expect(driver.started.single.backend, isNull);
+        expect(driver.started.single.files, {'model': path});
+      },
+    );
+    test('Vulkan keeps native dtype admission', () async {
+      driver.operatingSystem = 'linux';
+      driver.status = _available('Vulkan0\tGPU\nCPU\tCPU\n');
+      driver.headers[_model] = formats.values.first;
+      await load(_sdxs());
+      expect(driver.started.single.files, {'model': _model});
+    });
+    test(
+      'explicit-role JSON indexes remain CPU-only when dtypes cannot be inspected',
+      () async {
+        const index = '/models/checkpoint.json';
+        driver.sizes[index] = 100;
+        driver.headers[index] = Uint8List.fromList([123, 125]);
+        final model = ImageGenerationModel(
+          _local(index),
+          role: ImageModelRole.checkpoint,
+        );
+        await expectLater(
+          load(model),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(driver.started, isEmpty);
+        await load(
+          model,
+          params: const ImageModelParams(device: ComputeDevice.cpu),
+        );
+        expect(driver.started.single.files, {'model': index});
+      },
+    );
+  });
+
   test(
     'local set recipe gates precede filesystem, resolver and native load',
     () async {

@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.
+- Refuse FP8 image weights on Metal before native loading can abort the process; explicit CPU loading remains available.
 
 - Native state restores report `LlamaArgumentException` for token capacities outside 1..context size.
 - Add a CPU state-persistence validation pack with cold KV restore, reduced-work controls, typed rejection and recovery checks.
