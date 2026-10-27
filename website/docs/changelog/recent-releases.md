@@ -7,6 +7,8 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
 ## 0.16.5
 
 - Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.

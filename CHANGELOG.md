@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.16.5
 
 - Reject unsupported tool-role image/audio content before chat rendering or generation instead of silently losing or relocating it.
