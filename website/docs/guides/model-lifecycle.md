@@ -341,7 +341,9 @@ Important caveats:
   restore a sampler's random state. Setting batch sizes to one matched one
   tested CPU/model configuration, but is not a general fidelity guarantee.
 - Pass a `tokenCapacity` large enough for the saved prompt token sequence. The
-  current context size is usually a safe default.
+  current context size is usually a safe default. On a ready, idle native
+  llama.cpp context, zero or negative capacity throws `LlamaArgumentException`
+  without invalidating the context; retry with a positive capacity.
 
 ## LiteRT-LM interrupted cleanup
 

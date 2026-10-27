@@ -405,6 +405,33 @@ void main() {
     );
   });
 
+  test('nonpositive state token capacity is rejected before native calls '
+      'without poisoning its context', () {
+    start();
+    final path = '${dir.path}/capacity.bin';
+    recorder.calls.clear();
+    for (final capacity in [0, -1]) {
+      expect(
+        () => service.stateLoadFile(context, path, capacity),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('tokenCapacity'), contains('positive')),
+          ),
+        ),
+      );
+      expect(recorder.calls, isEmpty);
+    }
+    expect(
+      () => service.stateLoadFile(-1, path, 0),
+      throwsA(isA<LlamaStateException>()),
+    );
+    expect(recorder.calls, isEmpty);
+    expect(service.stateSaveFile(context, path, const []), isTrue);
+    expect(service.stateLoadFile(context, path, 8), isEmpty);
+  });
+
   test('a state save or load that throws is a typed state error, and the '
       'context is unusable', () {
     start();

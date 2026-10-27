@@ -2725,6 +2725,8 @@ class LlamaEngine {
   /// Restores a previously saved state from [path]. [tokenCapacity]
   /// caps how many tokens to read back; passing the loaded model's
   /// `n_ctx` is a safe default.
+  /// For a ready, idle native llama.cpp context, a nonpositive capacity throws
+  /// [LlamaArgumentException] without invalidating the context.
   ///
   /// Returns the token sequence the saved state was originally produced
   /// from. This API restores the native KV cache only — callers that use

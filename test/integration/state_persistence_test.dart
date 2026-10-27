@@ -124,6 +124,67 @@ void main() async {
     );
   });
 
+  for (final capacity in [0, -1]) {
+    test('nonpositive token capacity $capacity stays typed through the worker '
+        'and permits a valid restore', () async {
+      final guarded = await LlamaEngine.load(
+        LlamaModel(ModelSource.path(modelFile.path)),
+        params: const LlamaCppModelParams(
+          contextSize: 256,
+          batchSize: 8,
+          microBatchSize: 8,
+          gpuLayers: 0,
+          preferredBackend: GpuBackend.cpu,
+        ),
+      );
+      try {
+        const prompt = 'Once upon a time in a quiet land';
+        const continued = '$prompt and they';
+        final tokens = await guarded.tokenize(prompt);
+        await guarded.scoreNextToken(prompt, topK: 1, reusePromptPrefix: false);
+        final statePath = '${tmpDir.path}/capacity-$capacity.bin';
+        expect(await guarded.stateSaveFile(statePath, tokens: tokens), isTrue);
+
+        await expectLater(
+          guarded.stateLoadFile(statePath, tokenCapacity: capacity),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('tokenCapacity'), contains('positive')),
+            ),
+          ),
+        );
+
+        final restored = await guarded.stateLoadFile(
+          statePath,
+          tokenCapacity: 256,
+        );
+        expect(restored.tokens, tokens);
+        final continuedTokens = await guarded.tokenize(continued);
+        await guarded
+            .generate(
+              continued,
+              params: const GenerationParams(
+                maxTokens: 1,
+                temp: 0,
+                reusePromptPrefix: true,
+              ),
+            )
+            .drain<void>();
+        final performance = await guarded.getPerformanceContext();
+        expect(performance, isNotNull);
+        expect(
+          performance!.promptEvalTokens,
+          inInclusiveRange(1, continuedTokens.length - 1),
+          reason: 'the rejected capacity must not poison restored KV reuse',
+        );
+      } finally {
+        await guarded.dispose();
+      }
+    });
+  }
+
   test('round-trips an empty token sequence', () async {
     final savePath = '${tmpDir.path}/empty.bin';
     final saved = await engine.stateSaveFile(savePath, tokens: const []);

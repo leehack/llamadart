@@ -7931,6 +7931,8 @@ class LlamaCppService {
   ///
   /// Wraps `llama_state_load_file`. Throws on failure (corrupt file,
   /// schema mismatch, etc.).
+  /// A nonpositive capacity throws [LlamaArgumentException] before native calls
+  /// and leaves a usable, idle context unchanged.
   List<int> stateLoadFile(int contextHandle, String path, int tokenCapacity) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
@@ -7946,10 +7948,10 @@ class LlamaCppService {
       );
     }
     if (tokenCapacity <= 0) {
-      throw ArgumentError.value(
-        tokenCapacity,
-        'tokenCapacity',
-        'must be positive',
+      throw LlamaArgumentException(
+        'tokenCapacity must be positive; received $tokenCapacity.',
+        name: 'tokenCapacity',
+        invalidValue: tokenCapacity,
       );
     }
     final contextCapacity = llama_n_ctx(ctx.pointer);
