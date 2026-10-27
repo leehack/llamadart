@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dinja/dinja.dart';
 
 import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_template_result.dart';
+import '../models/chat/content_part.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
@@ -202,7 +204,10 @@ abstract class ChatTemplateHandler {
   /// Each image, audio or video part becomes [mediaMarker] in the message
   /// text, where the part was, as llama.cpp renders it. The template's own
   /// placeholder for a typed media part is not written, and a placeholder
-  /// string in message text stays text.
+  /// string in message text stays text. The request then goes through
+  /// [render], so it gets the grammar, triggers, preserved tokens, parser and
+  /// stops of the same text request: llama-server applies one chat format to
+  /// both.
   LlamaChatTemplateResult renderWithMultimodalContent({
     required String templateSource,
     required List<LlamaChatMessage> messages,
@@ -212,46 +217,58 @@ abstract class ChatTemplateHandler {
     bool enableThinking = true,
     String mediaMarker = mtmdMediaMarker,
   }) {
-    final template = Template(templateSource);
-    var prompt = renderTemplate(
-      template,
-      metadata: metadata,
-      context: {
-        'messages': templateMessages(
-          messages,
-          multimodal: true,
-          mediaMarker: mediaMarker,
-          templateSource: templateSource,
-        ),
-        'add_generation_prompt': addAssistant,
-        'tools': tools?.map((t) => t.toJson()).toList(),
-        'enable_thinking': enableThinking,
-        'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '',
-        'eos_token': metadata['tokenizer.ggml.eos_token'] ?? '',
+    bool isMedia(LlamaContentPart part) =>
+        part is LlamaImageContent ||
+        part is LlamaAudioContent ||
+        part is LlamaVideoContent;
+    final result = render(
+      templateSource: templateSource,
+      messages: [
+        for (final message in messages)
+          message.parts.any(isMedia)
+              ? message.copyWith(
+                  parts: [
+                    for (final part in message.parts)
+                      isMedia(part) ? LlamaTextContent(mediaMarker) : part,
+                  ],
+                )
+              : message,
+      ],
+      // llama.cpp gives every template `enable_thinking`; most handlers' own
+      // contexts leave it out.
+      metadata: {
+        ...metadata,
+        internalChatTemplateKwargsMetadataKey: jsonEncode({
+          ...chatTemplateKwargsFromMetadata(metadata),
+          'enable_thinking': enableThinking,
+        }),
       },
+      addAssistant: addAssistant,
+      tools: tools,
+      enableThinking: enableThinking,
     );
-
-    var thinkingForcedOpen = false;
-    if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag.trimRight())) {
-      if (!enableThinking) {
-        prompt = '${prompt.trimRight()}$thinkingEndTag\n';
-      } else {
-        thinkingForcedOpen = true;
-      }
+    // Handlers that do not track a thought the template opened, such as the
+    // generic one, still get it handled for media requests.
+    if (result.thinkingForcedOpen ||
+        !isThinkingForcedOpen(
+          result.prompt,
+          startTag: thinkingStartTag.trimRight(),
+        )) {
+      return result;
     }
-
-    final hasTools = tools != null && tools.isNotEmpty;
-
     return LlamaChatTemplateResult(
-      prompt: prompt,
-      format: format.index,
-      grammar: buildGrammar(tools),
-      grammarLazy: hasTools,
-      additionalStops: getStops(
-        hasTools: hasTools,
-        enableThinking: enableThinking,
-      ),
-      thinkingForcedOpen: thinkingForcedOpen,
+      prompt: enableThinking
+          ? result.prompt
+          : '${result.prompt.trimRight()}$thinkingEndTag\n',
+      format: result.format,
+      grammar: result.grammar,
+      grammarLazy: result.grammarLazy,
+      additionalStops: result.additionalStops,
+      preservedTokens: result.preservedTokens,
+      grammarTriggers: result.grammarTriggers,
+      thinkingForcedOpen: enableThinking,
+      parser: result.parser,
+      tokenCount: result.tokenCount,
     );
   }
 
