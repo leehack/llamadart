@@ -13,11 +13,13 @@ Future<ProcessResult> runBoundedProcess(
   String executable,
   List<String> arguments, {
   required Duration timeout,
+  String? workingDirectory,
   Map<String, String>? environment,
 }) async {
   final process = await Process.start(
     executable,
     arguments,
+    workingDirectory: workingDirectory,
     environment: environment,
   );
   await process.stdin.close();
@@ -30,26 +32,45 @@ Future<ProcessResult> runBoundedProcess(
   final outputDone = Future.wait([
     for (final subscription in subscriptions) subscription.asFuture<void>(),
   ]);
-  final exitCode = await process.exitCode.timeout(
-    timeout,
-    onTimeout: () async {
-      process.kill();
-      // A grandchild that inherited the pipes can hold them open.
-      await outputDone.timeout(
-        const Duration(seconds: 5),
-        onTimeout: () async {
-          for (final subscription in subscriptions) {
-            await subscription.cancel();
+  try {
+    final exitCode = await process.exitCode.timeout(
+      timeout,
+      onTimeout: () async {
+        process.kill();
+        var cleanup = '';
+        try {
+          await process.exitCode.timeout(const Duration(seconds: 5));
+        } on TimeoutException {
+          // Windows terminates directly; POSIX children can ignore SIGTERM.
+          process.kill(ProcessSignal.sigkill);
+          try {
+            await process.exitCode.timeout(const Duration(seconds: 5));
+          } on TimeoutException {
+            cleanup =
+                '\nChild ${process.pid} did not exit after forced termination.';
           }
-          return const [];
-        },
-      );
-      fail(
-        '`$executable ${arguments.join(' ')}` did not exit within '
-        '${timeout.inSeconds} s.\nstdout:\n$stdout\nstderr:\n$stderr',
-      );
-    },
-  );
-  await outputDone;
-  return ProcessResult(process.pid, exitCode, '$stdout', '$stderr');
+        }
+        // A grandchild that inherited the pipes can hold them open.
+        await outputDone.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () async {
+            for (final subscription in subscriptions) {
+              await subscription.cancel();
+            }
+            return const [];
+          },
+        );
+        fail(
+          '`$executable ${arguments.join(' ')}` did not exit within '
+          '${timeout.inSeconds} s.$cleanup\nstdout:\n$stdout\nstderr:\n$stderr',
+        );
+      },
+    );
+    await outputDone;
+    return ProcessResult(process.pid, exitCode, '$stdout', '$stderr');
+  } finally {
+    for (final subscription in subscriptions) {
+      await subscription.cancel();
+    }
+  }
 }

@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 import '../../../tool/testing/classify_high_risk_changes.dart';
 import '../../../tool/testing/high_risk_readiness.dart';
 import '../../../tool/testing/release_metadata_readiness.dart';
+import 'support/bounded_process.dart';
 
 const baseSha = '1111111111111111111111111111111111111111';
 const headSha = '2222222222222222222222222222222222222222';
@@ -1491,6 +1492,7 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
         'tool/testing/classify_high_risk_changes.dart',
         'tool/testing/high_risk_readiness.dart',
         'tool/testing/release_metadata_readiness.dart',
+        'test/unit/tooling/support/bounded_process.dart',
         'test/unit/tooling/high_risk_readiness_test.dart',
       ];
       final source = File('${root.path}/pubspec.yaml').readAsStringSync();
@@ -3152,6 +3154,8 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
     }
 
     test('private harness CLI reads exact Git blobs and exits 2', () async {
+      final fixtureWatch = Stopwatch()..start();
+      print('readiness CLI fixture: Git setup started');
       final repo = Directory.systemTemp.createTempSync(
         'harness-readiness-git-',
       );
@@ -3194,29 +3198,74 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       final script = File(
         'tool/testing/high_risk_readiness.dart',
       ).absolute.path;
-      Future<ProcessResult> run() {
+      print(
+        'readiness CLI fixture: Git setup ${fixtureWatch.elapsedMilliseconds} ms',
+      );
+      Future<ProcessResult> stage(
+        String name,
+        List<String> arguments,
+        Duration budget, {
+        String? workingDirectory,
+      }) async {
+        final watch = Stopwatch()..start();
+        print(
+          'readiness CLI $name started (child budget ${budget.inSeconds} s)',
+        );
+        try {
+          return await runBoundedProcess(
+            Platform.resolvedExecutable,
+            arguments,
+            timeout: budget,
+            workingDirectory: workingDirectory,
+          );
+        } finally {
+          print('readiness CLI $name elapsed ${watch.elapsedMilliseconds} ms');
+        }
+      }
+
+      // Compile the analyzer dependency once instead of paying for two cold
+      // source launches. Each child has a deadline below this test's total cap.
+      final kernel = '${repo.path}/readiness.dill';
+      final compiled = await stage('compile', [
+        'compile',
+        'kernel',
+        script,
+        '-o',
+        kernel,
+      ], const Duration(seconds: 60));
+      expect(
+        compiled.exitCode,
+        0,
+        reason: '${compiled.stdout}\n${compiled.stderr}',
+      );
+      Future<ProcessResult> run(String name) {
         evidenceFile.writeAsStringSync(jsonEncode(evidence));
-        return Process.run(Platform.resolvedExecutable, [
-          script,
-          '--evidence',
-          evidenceFile.path,
-          '--repository',
-          context.repository,
-          '--pr-number',
-          '${context.prNumber}',
-          '--head-sha',
-          head,
-          '--base-sha',
-          base,
-          '--pr-author',
-          context.author,
-        ], workingDirectory: repo.path);
+        return stage(
+          name,
+          [
+            kernel,
+            '--evidence',
+            evidenceFile.path,
+            '--repository',
+            context.repository,
+            '--pr-number',
+            '${context.prNumber}',
+            '--head-sha',
+            head,
+            '--base-sha',
+            base,
+            '--pr-author',
+            context.author,
+          ],
+          const Duration(seconds: 15),
+          workingDirectory: repo.path,
+        );
       }
 
       // Working-tree edits cannot replace either cited committed blob.
       write(registry, '{"schema_version": 2}');
       write(target, 'invented working-tree case');
-      final accepted = await run();
+      final accepted = await run('committed blobs');
       expect(
         accepted.exitCode,
         2,
@@ -3226,14 +3275,14 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       expect(output['evaluation']['decision'], 'unverifiedPrerequisites');
       final refs = evidence['test_evidence'][target]['production_refs'] as List;
       refs.last['snippet'] = '"schema_version": 2';
-      final rejected = await run();
+      final rejected = await run('forged snippet');
       expect(
         rejected.exitCode,
         1,
         reason: '${rejected.stdout}\n${rejected.stderr}',
       );
       expect(rejected.stdout, contains('disconnected'));
-    });
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test(
       'private harness registry requires exact candidate JSON snippet',
