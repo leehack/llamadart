@@ -90,6 +90,15 @@ void main() {
       });
     }
 
+    test('omits audio the backend does not place, whatever the projector '
+        'takes', () async {
+      final engine = await _loaded(_ImageOnlyAudioProjectorBackend());
+      expect((await engine.capabilities).supportsAudio, isTrue);
+      expect((await engine.capabilities).toolResultMedia, {
+        LlamaToolResultMedia.image,
+      });
+    });
+
     test('is empty before a model loads', () async {
       final engine = LlamaEngine(_ToolMediaBackend());
       addTearDown(engine.dispose);
@@ -437,6 +446,11 @@ class _AudioToolMediaBackend extends _CaptureBackend
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) async => audio;
+}
+
+class _ImageOnlyAudioProjectorBackend extends _ToolMediaBackend {
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async => true;
 }
 
 /// Replies with [replies] in order, recording each prompt and its media.
