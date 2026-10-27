@@ -23,6 +23,9 @@ import 'image_generation_progress.dart';
 import 'image_generation_request.dart';
 import 'image_model_classifier.dart';
 import 'image_model_params.dart';
+import 'local_image_set_model.dart';
+import 'local_image_set_stub.dart'
+    if (dart.library.io) '../../platform/io/local_image_set_io.dart';
 
 /// Image-generation support of the runtime, from
 /// `ImageGenerationEngine.checkRuntime`, and of a loaded engine, from
@@ -55,6 +58,11 @@ class ImageGenerationCapabilities implements EngineCapabilities {
   /// Whether a running generation can be cancelled.
   final bool supportsCancellation;
 
+  /// Whether this engine was admitted using the bounded, verified local
+  /// complete-checkpoint set recipe. False before load and after disposal.
+  /// This does not imply Diffusers or image-editing support.
+  final bool supportsLocalSafetensorsSets;
+
   /// Maximum concurrent generations: one per process.
   final int maxConcurrentTasks;
 
@@ -67,6 +75,7 @@ class ImageGenerationCapabilities implements EngineCapabilities {
     this.runtimeVersion,
     this.modelVersion,
     this.supportsCancellation = false,
+    this.supportsLocalSafetensorsSets = false,
     this.maxConcurrentTasks = 0,
   });
 }
@@ -210,6 +219,7 @@ class ImageGenerationEngine {
   final ImageGenerationSessionConfig _config;
   ImageGenerationTask? _activeTask;
   Future<void>? _disposal;
+  final bool _managedLocalSet;
 
   ImageGenerationEngine._(
     this.model,
@@ -219,6 +229,7 @@ class ImageGenerationEngine {
     this._runtime,
     this._backendName,
     this._config,
+    this._managedLocalSet,
   );
 
   /// Probes the bundled runtime without loading a model.
@@ -412,8 +423,42 @@ class ImageGenerationEngine {
         params.threads,
       );
     }
+    final localSet = model is LocalImageSetModel ? model : null;
+    ({String indexPath, int totalBytes, String layoutSha256})? snapshot;
+    final effectiveStore = store ?? ModelFileStore();
+    if (localSet != null) {
+      if (driver.operatingSystem != 'macos' ||
+          backendName != 'CPU' ||
+          params.device != ComputeDevice.cpu ||
+          params.flashAttention != false ||
+          params.vaeDirectConvolution != false ||
+          !{
+            '0518b34',
+            '0518b34374761cb82aeda5ad3c2f0686fdad2cec',
+          }.contains(runtime.commit)) {
+        throw LlamaUnsupportedException(
+          'Local checkpoint sets require the pinned SD v0.3.0 runtime on macOS CPU with explicit flash attention and direct VAE convolution off.',
+        );
+      }
+      snapshot = await resolveLocalImageSet(
+        localSet,
+        store: effectiveStore,
+        options: download,
+        onProgress: onProgress,
+      );
+      if (download.cancelToken?.isCancelled ?? false) {
+        throw LlamaStateException('Image model loading was cancelled.');
+      }
+      // A tensor-layout recipe, not a general architecture/completeness detector.
+      if (snapshot.layoutSha256 !=
+          'e5ae320534104044d4816a818df7129b9fd2d33d1262d18081adac95dee012fd') {
+        throw LlamaUnsupportedException(
+          'Local checkpoint sets currently require the qualified complete SD-Turbo F16/F32 tensor-layout recipe. Other families, layouts, tensor inventories and dtypes are unqualified.',
+        );
+      }
+    }
     final sources = [
-      model.source,
+      snapshot == null ? model.source : ModelSource.path(snapshot.indexPath),
       for (final component in model.components) component.source,
     ];
     if (sources.any((source) => source.format == ModelFormat.liteRtLm)) {
@@ -428,21 +473,23 @@ class ImageGenerationEngine {
     ];
     final knownSizes = <int, int>{
       for (final (index, source) in sources.indexed)
-        if (source.isLocal) index: _fileSize(driver, index, source.path!),
+        if (source.isLocal)
+          index: snapshot?.totalBytes ?? _fileSize(driver, index, source.path!),
     };
 
-    final effectiveStore = store ?? ModelFileStore();
     final List<String> paths;
     try {
-      paths = await resolveModelSourceFiles(
-        sources,
-        store: effectiveStore,
-        download: download,
-        onProgress: onProgress,
-        operation: 'Image model loading',
-        knownSizes: knownSizes,
-        assetType: 'image model',
-      );
+      paths = snapshot != null
+          ? [snapshot.indexPath]
+          : await resolveModelSourceFiles(
+              sources,
+              store: effectiveStore,
+              download: download,
+              onProgress: onProgress,
+              operation: 'Image model loading',
+              knownSizes: knownSizes,
+              assetType: 'image model',
+            );
     } on LlamaModelException catch (error) {
       // The download manager names a local file by its path; image errors
       // name files by position. ModelLoadOptions.sha256 applies only to a
@@ -463,17 +510,26 @@ class ImageGenerationEngine {
     }
 
     throwIfCancelled();
-    final assignment = await assignImageModelRoles([
-      for (final (index, path) in paths.indexed)
-        ImageModelFileInput(
-          role: explicitRoles[index],
-          read: (offset, length) => driver.readFileRange(path, offset, length),
-        ),
-    ]);
+    // Container qualification covers text-to-image; decoder opt-ins need
+    // independent evidence even though the snapshot has a full VAE.
+    final assignment = snapshot != null
+        ? const ImageModelAssignment({
+            ImageModelRole.checkpoint: 0,
+          }, decodesWithTinyAutoencoder: false)
+        : await assignImageModelRoles([
+            for (final (index, path) in paths.indexed)
+              ImageModelFileInput(
+                role: explicitRoles[index],
+                read: (offset, length) =>
+                    driver.readFileRange(path, offset, length),
+              ),
+          ]);
     throwIfCancelled();
-    var weightBytes = 0;
-    for (final (index, path) in paths.indexed) {
-      weightBytes += _fileSize(driver, index, path);
+    var weightBytes = snapshot?.totalBytes ?? 0;
+    if (snapshot == null) {
+      for (final (index, path) in paths.indexed) {
+        weightBytes += _fileSize(driver, index, path);
+      }
     }
     if (params.checkMemory) {
       _checkMemory(
@@ -528,6 +584,12 @@ class ImageGenerationEngine {
             ),
       );
       final session = await driver.start(config);
+      if (snapshot != null && session.modelVersion != 'SD 2.x') {
+        await session.dispose();
+        throw LlamaUnsupportedException(
+          'The verified local checkpoint set did not load as the qualified native SD 2.x recipe.',
+        );
+      }
       if (download.cancelToken?.isCancelled ?? false) {
         // The native load cannot be interrupted; free what it allocated so
         // a cancelled load leaves nothing loaded.
@@ -540,12 +602,13 @@ class ImageGenerationEngine {
         Map<ImageModelRole, ModelSource>.unmodifiable({
           for (final MapEntry(key: role, value: index)
               in assignment.roles.entries)
-            role: sources[index],
+            role: snapshot == null ? sources[index] : model.source,
         }),
         session,
         runtime,
         backendName,
         config,
+        snapshot != null,
       );
     } finally {
       _releaseOperation(operation);
@@ -571,6 +634,7 @@ class ImageGenerationEngine {
       runtimeVersion: _runtime.version,
       modelVersion: _session.modelVersion,
       supportsCancellation: true,
+      supportsLocalSafetensorsSets: _managedLocalSet,
       maxConcurrentTasks: 1,
     );
   }

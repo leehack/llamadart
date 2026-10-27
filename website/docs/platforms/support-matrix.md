@@ -69,8 +69,10 @@ Image generation accepts compatible GGUF and Safetensors files directly,
 including mixed-format components. Selected complete SD-Turbo F16 GGUF,
 Safetensors and tensor-only PyTorch ZIP/nested ZIP/legacy checkpoints have
 exact native/public CPU output controls on macOS arm64. PyTorch needs explicit
-roles; other producer layouts/platforms remain unqualified. Directories and
-managed shard sets have no public loading contract. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
+roles; other producer layouts/platforms remain unqualified. The opt-in
+`ImageGenerationModel.localSafetensorsSet` accepts only the bounded complete
+SD-Turbo F16/F32 checkpoint-index recipe on macOS CPU; arbitrary directories
+and Diffusers component layouts are unsupported. See [Image weight formats and layouts](../guides/image-generation#weight-formats-and-layouts).
 Container support does not extend the model/device qualification above.
 
 Image prompt-conditioning reuse can be disabled or limited by entry count
@@ -333,3 +335,11 @@ backend modules and local bundles:
 Apps load the bridge assets themselves; see
 [Add the bridge to your app](./webgpu-bridge#add-the-bridge-to-your-app).
 Linux system libraries: [Linux prerequisites](./linux-prerequisites).
+
+
+Local checkpoint sets require per-file expected SHA-256 identities including
+the index, an app-private owned cache, pinned SD v0.3.0, and explicit flash
+attention/direct VAE convolution off. They report
+`supportsLocalSafetensorsSets` after admission. This text-to-image recipe does
+not enable editing, tiling or seamless combinations. See
+[the set contract](../guides/image-generation#local-checkpoint-sets).

@@ -1072,3 +1072,13 @@ Python checkpoint objects. The selected SD-Turbo F16 GGUF/Safetensors and
 restricted PyTorch layouts are macOS arm64 CPU evidence; the historical ZIP
 timeout cause stays unresolved. See [Image weight formats](image_weight_formats.md)
 for the exact recipe, fixture producers, identities and reproduction steps.
+
+
+### Local complete image checkpoint sets
+
+`image-local-checkpoint-sets` exercises the bounded complete SD-Turbo F16/F32
+local index/directory recipe on macOS CPU. It builds owned two-shard fixtures,
+checks public/native-reference pixels, aggregate accounting, source-removal
+lifetime, cache reuse and cancellation cleanup/recovery. See
+[the fixed recipe and cache contract](local_image_sets.md). No generic Diffusers,
+new-family, editing/tiling/seamless, GPU or device qualification is inferred.

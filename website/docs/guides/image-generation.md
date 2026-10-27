@@ -142,8 +142,8 @@ model formats; leave `ModelSource.format` unset for image files.
 | Safetensors file (`.safetensors`) | Direct loading; automatic role detection from tensor names and shapes | Complete SD-Turbo F16 and existing SDXL-Lightning/VAE/TAESD recipes; see the bounded checks below |
 | PyTorch checkpoint (`.ckpt`, `.pth`, `.pt`) | Explicit role required; forwarded to the native loader | Selected complete SD-Turbo tensor-only ZIP/nested ZIP/legacy checkpoints pass on macOS CPU; arbitrary layouts remain unqualified ([#1218](https://github.com/leehack/llamadart/issues/1218)) |
 | Separate component files | Each file resolves independently and gets a role; GGUF and Safetensors can be mixed | Supply the matching diffusion weights, encoders and decoder from the [recipes](#recipes) |
-| Diffusers directory or repository | No public directory/repository ingestion; local sources must be regular files | Pass compatible component files individually; selected directory layouts are tracked in [#1219](https://github.com/leehack/llamadart/issues/1219) |
-| Safetensors JSON index and shards | No managed shard-set loading | An explicit local index with its referenced file present passed the CPU check below; automatic shard downloads, integrity checks and whole-set memory accounting are not provided ([#1219](https://github.com/leehack/llamadart/issues/1219)) |
+| Diffusers component directory or repository | No public Diffusers pipeline/repository ingestion | Pass compatible component files individually; this does not describe the separate complete-checkpoint index recipe |
+| Complete Safetensors checkpoint index and shards | Opt in with `ImageGenerationModel.localSafetensorsSet` | Bounded SD-Turbo F16/F32 tensor recipe, macOS CPU, owned verified cache and whole-set accounting; no automatic remote shard fetch. See [local checkpoint sets](#local-checkpoint-sets) |
 
 GGUF magic bytes and Safetensors headers drive role detection, not their
 filename extensions. The header check assigns roles; it does not validate all
@@ -1131,3 +1131,99 @@ the [chat app](../examples/chat-app) has an image screen that downloads SDXS
 or SD-Turbo with TAESD from the same pinned files and generates on device.
 The command-line example also runs the desktop models from pinned
 downloads; both keep their pinned sources and settings in the app.
+
+
+## Local checkpoint sets
+
+`ImageGenerationModel.localSafetensorsSet` accepts a local directory containing
+`model.safetensors.index.json`, or that standard index itself, with 1..16
+adjacent Safetensors shard files. This is a complete-checkpoint container
+recipe, not Diffusers Python pipeline/config discovery. Component overrides,
+Diffusers markers, extra model files, symlinks, unsafe shard paths, duplicate
+JSON keys/tensors, missing/misassigned tensors, malformed shapes/offsets and
+non-F16/F32 dtypes are rejected before native load.
+
+The first recipe is the documented complete SD-Turbo F16/F32 tensor layout,
+identified by all 1,323 tensor names, dtypes and shapes. The fingerprint is a
+versioned recipe boundary, not a generic architecture-completeness detector or
+weight authenticity check. Its measured source is the complete local checkpoint
+derived for the format qualification; other matching weights are unmeasured.
+Only macOS CPU with pinned SD v0.3.0/upstream `0518b34`, explicit
+`flashAttention: false` and `vaeDirectConvolution: false` is admitted. A loaded
+engine reports `supportsLocalSafetensorsSets`; it is false before load/after
+disposal. Editing, VAE tiling and seamless opt-ins remain refused for this path.
+
+```dart
+final model = ImageGenerationModel.localSafetensorsSet(
+  localDirectoryOrStandardIndex,
+  sha256: trustedPerFileHashes,
+  cacheDirectory: appPrivateSetCache,
+);
+final engine = await ImageGenerationEngine.load(
+  model,
+  params: const ImageModelParams(
+    device: ComputeDevice.cpu,
+    flashAttention: false,
+    vaeDirectConvolution: false,
+  ),
+);
+```
+
+The expected map includes the index and every shard's safe basename and SHA-256.
+Pin it from a trusted source independently of mutable input files. Every local
+file resolves through `ModelFileStore`; remote or outside-root redirects fail
+before a downloader acts. There is no remote index/repository/shard fetch and
+no credential forwarding. This route takes only the cancel token from
+`ModelLoadOptions`; its factory owns the checksum map and cache directory.
+Individual-file sources and custom legacy resolver/manager interfaces retain
+their existing behavior.
+
+Reserve an app-private cache directory for owned sets. The loader copies and
+hashes into a unique partial stage, validates every header/index relationship,
+then atomically publishes by content identity. It re-verifies every cached file
+on reuse, including when the original files are no longer available. Never
+modify or remove published cache files while any engine uses them; clear this
+cache manually only after all engines are disposed. Source directory topology
+must remain stable during resolution/copy; concurrent malicious rename/symlink
+replacement is outside this app-owned-source contract. Original file contents
+may change after the verified copy. A precheck alone is not treated as a file
+lease or immutable snapshot.
+
+Progress and memory accounting include the index, every shard header and all
+tensor bytes in deterministic basename order. Cancellation checks each stream
+chunk; failed/cancelled staging is removed. A complete published set remains
+cached if cancellation arrives afterward, and a corrupt cache is rejected
+instead of repaired under an active engine. Cleanup failures surface as errors.
+The recipe caps source files at 3 GiB including metadata; headers/index and
+nesting also have explicit bounds.
+
+`example/basic_app/bin/local_image_set.dart` is a runnable local-only consumer.
+The maintained `image-local-checkpoint-sets` scenario builds two unchanged
+shards from the fixed complete checkpoint, compares public directory/index
+output to the pinned C settings, and checks source-removal lifetime, cache
+reuse, cancellation cleanup and recovery. See
+[the provenance and procedure](https://github.com/leehack/llamadart/blob/main/doc/local_image_sets.md).
+
+
+The first slice requires complete contiguous numbered shard basenames,
+`model-00001-of-000NN.safetensors` through `model-000NN-of-000NN.safetensors`,
+for N in 1..16. Arbitrary names, gaps and count aliases fail before manager or
+native work. This keeps caller-chosen basenames out of the existing native
+log path; no shared worker/redactor expansion is needed. The strict index
+mapping and tensor-layout fingerprint bind all native-visible tensor names;
+unsupported metadata/extra aliases use fixed error categories without
+quoting caller text.
+
+Managed integrity, confinement and aggregate accounting apply only to
+`localSafetensorsSet`. Legacy ordinary explicit-role JSON forwarding remains
+unchanged and unqualified; it does not acquire these guarantees. Unexpected
+process termination may leave uncommitted partial directories; these are never
+reused, and may be removed only after all processes using this private cache
+have stopped.
+
+
+The fixed 128-square, one-step diagnostic output is an abstract green/white
+pattern rather than a recognizable fox. Native single-file, index, directory
+and public paths are byte-identical, so this qualifies container/cache-path
+equivalence only. It is not evidence of prompt fidelity or a recommended
+image-generation preset; no cause for that baseline output is asserted here.
