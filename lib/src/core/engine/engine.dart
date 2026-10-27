@@ -48,6 +48,7 @@ import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
 import '../template/handlers/translate_gemma_handler.dart';
 import '../template/media_placeholders.dart';
+import '../template/thinking_utils.dart';
 import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
@@ -1585,6 +1586,9 @@ class LlamaEngine {
   /// `chatTemplateKwargs: {'source_lang_code': 'en', 'target_lang_code': 'ko'}`.
   /// The deprecated [sourceLangCode] and [targetLangCode] set those keys,
   /// replacing any in [chatTemplateKwargs].
+  /// A boolean `enable_thinking` in [chatTemplateKwargs], or failing that a
+  /// boolean `thinking`, overrides [enableThinking] for rendering, parsing and
+  /// streaming, as in llama-server; other values leave [enableThinking].
   /// Use [templateNow] to set deterministic template time context.
   ///
   /// Pass [responseFormat] to request strict structured output through
@@ -1680,6 +1684,7 @@ class LlamaEngine {
       sourceLangCode: sourceLangCode,
       targetLangCode: targetLangCode,
     );
+    enableThinking = effectiveEnableThinking(enableThinking, templateKwargs);
     final operation = observers.isEmpty
         ? null
         : LlamaChatOperation(
@@ -1928,7 +1933,8 @@ class LlamaEngine {
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
   /// to llama.cpp `chat_template_kwargs`), including TranslateGemma's
   /// `source_lang_code` and `target_lang_code`; the deprecated
-  /// [sourceLangCode] and [targetLangCode] behave as in [create].
+  /// [sourceLangCode] and [targetLangCode] behave as in [create], and so do
+  /// boolean `enable_thinking` and `thinking` kwargs.
   /// Use [templateNow] to set deterministic template time context.
   ///
   Future<LlamaChatTemplateResult> chatTemplate(
