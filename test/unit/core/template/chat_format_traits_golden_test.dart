@@ -3,10 +3,9 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:mirrors';
 
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
+import 'package:llamadart/src/core/template/chat_format_registry.dart';
 import 'package:llamadart/src/core/template/handlers/apertus_handler.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/deepseek_r1_handler.dart';
@@ -117,46 +116,16 @@ String? _openingName(Function? opening) {
 }
 
 Map<String, Object?> _traitsOf(ChatFormat format) {
-  final parser = reflectClass(ChatCompletionStreamParser);
-  final engine = reflectClass(ChatTemplateEngine);
-  Object? call(String name, Object? argument) => parser.invoke(
-    MirrorSystem.getSymbol(name, parser.owner as LibraryMirror),
-    [argument],
-  ).reflectee;
-  bool member(String name) =>
-      (engine
-                  .getField(
-                    MirrorSystem.getSymbol(name, engine.owner as LibraryMirror),
-                  )
-                  .reflectee
-              as Set<ChatFormat>)
-          .contains(format);
+  final traits = chatFormatRegistration(format).traits;
   return {
-    'toolCallOpening': _openingName(
-      call(
-            '_toolCallOpeningFor',
-            LlamaChatTemplateResult(prompt: '', format: format.index),
-          )
-          as Function?,
-    ),
-    'keepsThoughtTagsAsContent': call(
-      '_keepsThoughtTagsAsContent',
-      format.index,
-    ),
-    'parsesCallsInsideThoughts': call(
-      '_parsesCallsInsideThoughts',
-      format.index,
-    ),
-    'mayEmbedToolEnvelopeAfterContent': call(
-      '_mayEmbedToolEnvelopeAfterContent',
-      format.index,
-    ),
-    'disabledByResponseSchema': member('_schemaDisabledFormats'),
-    'requiredKeepsLazyGrammar': member('_requiredKeepsLazyFormats'),
-    'routesThroughGeneric': member('_toolCallGenericFormats'),
-    'toolChoiceNoneRendersContentOnly': member(
-      '_toolChoiceNoneContentOnlyFormats',
-    ),
+    'toolCallOpening': _openingName(traits.toolCallOpening),
+    'keepsThoughtTagsAsContent': traits.keepsThoughtTagsAsContent,
+    'parsesCallsInsideThoughts': traits.parsesCallsInsideThoughts,
+    'mayEmbedToolEnvelopeAfterContent': traits.mayEmbedToolEnvelopeAfterContent,
+    'disabledByResponseSchema': traits.disabledByResponseSchema,
+    'requiredKeepsLazyGrammar': traits.requiredKeepsLazyGrammar,
+    'routesThroughGeneric': traits.routesThroughGeneric,
+    'toolChoiceNoneRendersContentOnly': traits.toolChoiceNoneRendersContentOnly,
   };
 }
 
