@@ -19,7 +19,6 @@ import 'handlers/generic_handler.dart';
 import 'handlers/hermes_handler.dart';
 import 'response_format.dart';
 import 'tool_schema_utils.dart';
-import 'thinking_utils.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
@@ -52,32 +51,6 @@ class ChatTemplateEngine {
 
   /// Singleton handler instances, lazily initialized.
   static final Map<ChatFormat, ChatTemplateHandler> _handlers = {};
-
-  static const Set<ChatFormat> _schemaDisabledFormats = {
-    ChatFormat.deepseekV3,
-    ChatFormat.deepseekR1,
-    ChatFormat.commandR7B,
-    ChatFormat.cohere2Moe,
-    ChatFormat.glm45,
-    ChatFormat.hermes,
-  };
-
-  static const Set<ChatFormat> _requiredKeepsLazyFormats = {
-    ChatFormat.apertus,
-    ChatFormat.nemotronV2,
-    ChatFormat.lfm2,
-  };
-
-  static const Set<ChatFormat> _toolCallGenericFormats = {ChatFormat.gemma};
-
-  // Match llama.cpp routing when tools are provided with `tool_choice=none`.
-  // These formats fall through to the content-only path in llama.cpp's
-  // jinja dispatcher, unless a response schema forces generic routing.
-  static const Set<ChatFormat> _toolChoiceNoneContentOnlyFormats = {
-    ChatFormat.contentOnly,
-    ChatFormat.generic,
-    ChatFormat.mistralNemo,
-  };
 
   /// Returns the handler for the given [format].
   static ChatTemplateHandler handlerFor(ChatFormat format) {
@@ -159,6 +132,7 @@ class ChatTemplateEngine {
       'ChatTemplateEngine: Detected format=$format from template',
     );
 
+    final traits = chatFormatRegistration(format).traits;
     ChatFormat effectiveFormat;
     // Match llama.cpp schema-aware routing: tools + schema falls back to
     // generic routing, and some format handlers are disabled with schema.
@@ -166,20 +140,13 @@ class ChatTemplateEngine {
       effectiveFormat = ChatFormat.generic;
     } else if (hasTools &&
         toolChoice == ToolChoice.none &&
-        _toolChoiceNoneContentOnlyFormats.contains(format)) {
+        traits.toolChoiceNoneRendersContentOnly) {
       effectiveFormat = ChatFormat.contentOnly;
-    } else if (allowToolCalls && _toolCallGenericFormats.contains(format)) {
-      // Match llama.cpp server behavior: Gemma tool-call requests route
-      // through generic JSON tool-calling semantics.
-      effectiveFormat = ChatFormat.generic;
-    } else if (format == ChatFormat.gemma) {
-      // llama.cpp does not have a dedicated Gemma Jinja handler.
-      // Gemma routes to content-only (no tools) or generic (tools).
+    } else if (traits.routesThroughGeneric) {
       effectiveFormat = allowToolCalls
           ? ChatFormat.generic
           : ChatFormat.contentOnly;
-    } else if (hasSchemaResponseFormat &&
-        _schemaDisabledFormats.contains(format)) {
+    } else if (hasSchemaResponseFormat && traits.disabledByResponseSchema) {
       effectiveFormat = allowToolCalls
           ? ChatFormat.generic
           : ChatFormat.contentOnly;
@@ -195,15 +162,9 @@ class ChatTemplateEngine {
     }
 
     if (effectiveTools?.any(toolUsesJsonSchema) ?? false) {
-      const supported = {
-        ChatFormat.generic,
-        ChatFormat.mistralNemo,
-        ChatFormat.hermes,
-        ChatFormat.glm45,
-        ChatFormat.laguna,
-        ChatFormat.hunyuanV3,
-      };
-      if (!supported.contains(effectiveFormat)) {
+      if (!chatFormatRegistration(
+        effectiveFormat,
+      ).traits.qualifiesJsonSchemaTools) {
         throw LlamaUnsupportedException(
           'Canonical JSON Schema tools are not qualified for $effectiveFormat. Use a supported JSON-envelope format or the legacy ToolParam API.',
         );
@@ -510,7 +471,7 @@ class ChatTemplateEngine {
     final resultFormat = result.format < ChatFormat.values.length
         ? ChatFormat.values[result.format]
         : ChatFormat.generic;
-    if (_requiredKeepsLazyFormats.contains(resultFormat) &&
+    if (chatFormatRegistration(resultFormat).traits.requiredKeepsLazyGrammar &&
         result.grammarLazy) {
       return result;
     }
@@ -665,33 +626,19 @@ class ChatTemplateEngine {
       );
     }
     if (!isPartial && tools != null && tools.any(toolUsesJsonSchema)) {
-      if (parseToolCalls) {
-        final residual = result.content;
-        final malformed = switch (format) {
-          ChatFormat.generic =>
-            result.toolCalls.isEmpty &&
-                RegExp(r'^\{\s*"tool_calls?"\s*:').hasMatch(
-                  extractThinking(
-                    output,
-                    thinkingForcedOpen: thinkingForcedOpen,
-                  ).content.trimLeft(),
-                ),
-          ChatFormat.hermes => HermesHandler.hasCompleteToolCallOpening(
-            residual,
-          ),
-          ChatFormat.mistralNemo => residual.contains('[TOOL_CALLS]'),
-          ChatFormat.glm45 ||
-          ChatFormat.laguna => residual.contains('<tool_call>'),
-          ChatFormat.hunyuanV3 =>
-            residual.contains('<tool_call:opensource>') ||
-                residual.contains('<tool_calls:opensource>'),
-          _ => false,
-        };
-        if (malformed) {
-          throw LlamaInferenceException(
-            'The model returned a malformed or incomplete tool call.',
-          );
-        }
+      final leavesIncompleteToolCall = chatFormatRegistration(
+        format,
+      ).traits.leavesIncompleteToolCall;
+      if (parseToolCalls &&
+          leavesIncompleteToolCall != null &&
+          leavesIncompleteToolCall(
+            result,
+            output,
+            thinkingForcedOpen: thinkingForcedOpen,
+          )) {
+        throw LlamaInferenceException(
+          'The model returned a malformed or incomplete tool call.',
+        );
       }
       final declared = {for (final tool in tools) tool.name: tool};
       for (final call in result.toolCalls) {

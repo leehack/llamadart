@@ -1,4 +1,5 @@
 import 'chat_format.dart';
+import 'chat_parse_result.dart';
 import 'chat_template_handler.dart';
 import 'handlers/apertus_handler.dart';
 import 'handlers/apriel15_handler.dart';
@@ -38,12 +39,20 @@ import 'handlers/seed_oss_handler.dart';
 import 'handlers/solar_open_handler.dart';
 import 'handlers/translate_gemma_handler.dart';
 import 'handlers/xiaomi_mimo_handler.dart';
+import 'thinking_utils.dart';
+import 'xml_tool_call_format.dart';
 
 /// How one [ChatFormat] is detected from a template and which handler
 /// renders and parses it.
 final class ChatFormatRegistration {
-  /// Registers [format], created by [createHandler] and matched by [detect].
-  const ChatFormatRegistration(this.format, this.createHandler, {this.detect});
+  /// Registers [format], created by [createHandler], matched by [detect] and
+  /// routed and streamed by [traits].
+  const ChatFormatRegistration(
+    this.format,
+    this.createHandler, {
+    this.detect,
+    required this.traits,
+  });
 
   /// The format this registration describes.
   final ChatFormat format;
@@ -54,6 +63,78 @@ final class ChatFormatRegistration {
   /// Whether a template source is in [format], or null for a format the
   /// engine selects itself and no template detects.
   final bool Function(String templateSource)? detect;
+
+  /// How the engine routes and the stream parser streams [format].
+  final ChatFormatTraits traits;
+}
+
+/// Whether a final parse of `output` into `result` left a malformed or
+/// incomplete tool call behind.
+typedef IncompleteToolCallCheck =
+    bool Function(
+      ChatParseResult result,
+      String output, {
+      required bool thinkingForcedOpen,
+    });
+
+/// Per-format routing and streaming behavior, kept with the format's
+/// registration rather than in tables in the engine or stream parser.
+final class ChatFormatTraits {
+  /// Traits that all default to off.
+  const ChatFormatTraits({
+    this.toolCallOpening,
+    this.keepsThoughtTagsAsContent = false,
+    this.parsesCallsInsideThoughts = false,
+    this.mayEmbedToolEnvelopeAfterContent = false,
+    this.disabledByResponseSchema = false,
+    this.requiredKeepsLazyGrammar = false,
+    this.routesThroughGeneric = false,
+    this.toolChoiceNoneRendersContentOnly = false,
+    this.leavesIncompleteToolCall,
+  });
+
+  /// A format with every trait off.
+  static const ChatFormatTraits none = ChatFormatTraits();
+
+  /// For a format whose parse drops tool-call envelopes from trimmed content,
+  /// the index of the first possible tool-call opening in `text` at or after
+  /// `from`, or `text.length`; the stream holds content back from there.
+  final int Function(String text, int from)? toolCallOpening;
+
+  /// Whether the parse extracts no reasoning, so thought tags stream as
+  /// content.
+  final bool keepsThoughtTagsAsContent;
+
+  /// Whether the parse extracts tool calls before thinking, so a call inside
+  /// a thought leaves the reasoning.
+  final bool parsesCallsInsideThoughts;
+
+  /// Whether a tool envelope may follow content, so a stream with tools
+  /// parses from its first token instead of deciding from how output starts.
+  final bool mayEmbedToolEnvelopeAfterContent;
+
+  /// Whether a response schema disables the format's handler, as in
+  /// llama.cpp: rendering falls back to generic with tool calls and to
+  /// content-only without.
+  final bool disabledByResponseSchema;
+
+  /// Whether a lazy tool grammar stays lazy for `ToolChoice.required`.
+  final bool requiredKeepsLazyGrammar;
+
+  /// Whether llama.cpp has no Jinja handler for the format, so it renders
+  /// as generic with tool calls and as content-only without.
+  final bool routesThroughGeneric;
+
+  /// Whether tools with `ToolChoice.none` render content-only, as llama.cpp's
+  /// Jinja dispatcher does unless a response schema forces generic routing.
+  final bool toolChoiceNoneRendersContentOnly;
+
+  /// Detects a tool call that a final parse left malformed or incomplete.
+  /// Non-null exactly for formats qualified for canonical JSON Schema tools.
+  final IncompleteToolCallCheck? leavesIncompleteToolCall;
+
+  /// Whether canonical JSON Schema tools are qualified for the format.
+  bool get qualifiesJsonSchemaTools => leavesIncompleteToolCall != null;
 }
 
 /// Every [ChatFormat], each exactly once, in detection priority order: the
@@ -69,12 +150,14 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     KimiK3Handler.new,
     detect: (s) =>
         _hasAll(s, const ['<|open|>', '<|close|>', '<|end_of_msg|>']),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
   // Recipient channels and ATEM calls.
   ChatFormatRegistration(
     ChatFormat.museGlimmer,
     MuseGlimmerHandler.new,
     detect: (s) => _hasAll(s, const ['<atem:function_calls>', '<|eom|>']),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
   // Before Hermes: the namespaced envelope contains a literal <tool_call>.
   ChatFormatRegistration(
@@ -82,6 +165,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     MinimaxM3Handler.new,
     detect: (s) =>
         _hasAll(s, const [']<]minimax[>[', '<tool_call>', '<invoke name=']),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
   // DeepSeek V3.2/V4 DSML family. The marker is assembled from a Jinja
   // variable, so detecting only literal rendered tags misses every variant.
@@ -89,11 +173,13 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.deepseekV32,
     DeepseekV32Handler.new,
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'function_calls']),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
   ChatFormatRegistration(
     ChatFormat.deepseekV4,
     DeepseekV4Handler.new,
     detect: (s) => _hasAll(s, const ['dsml_token', 'DSML', 'tool_calls']),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
   // Newline-delimited JSON tool-call envelope.
   ChatFormatRegistration(
@@ -104,6 +190,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<beginning_of_sentence>',
       '<tool_calls>',
     ]),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
   // Shares GLM-style argument tags but uses explicit assistant and
   // tool-response turns and </assistant> as a stop.
@@ -117,6 +204,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<arg_key>',
       '<arg_value>',
     ]),
+    traits: ChatFormatTraits(
+      mayEmbedToolEnvelopeAfterContent: true,
+      leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.deepseekV3,
@@ -124,11 +215,19 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains(
       "message['prefix'] is defined and message['prefix'] and thinking",
     ),
+    traits: ChatFormatTraits(
+      toolCallOpening: DeepseekV3Handler.toolCallOpening,
+      disabledByResponseSchema: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.deepseekR1,
     DeepseekR1Handler.new,
     detect: (s) => s.contains('<｜tool▁calls▁begin｜>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: DeepseekR1Handler.toolCallOpening,
+      disabledByResponseSchema: true,
+    ),
   ),
   // Cohere2 MoE / North Code, before Command R7B: both use
   // <|START_ACTION|>, but START_TEXT is unique to the newer template.
@@ -136,6 +235,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.cohere2Moe,
     Cohere2MoeHandler.new,
     detect: (s) => _hasAll(s, const ['<|START_TEXT|>', '<|START_ACTION|>']),
+    traits: ChatFormatTraits(
+      toolCallOpening: CommandR7BHandler.toolCallOpening,
+      disabledByResponseSchema: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.minicpm5,
@@ -145,28 +248,48 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<function name="',
       '<param name="',
     ]),
+    traits: ChatFormatTraits(
+      toolCallOpening: XmlToolCallFormat.minicpm5.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.commandR7B,
     CommandR7BHandler.new,
     detect: (s) => s.contains('<|END_THINKING|><|START_ACTION|>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: CommandR7BHandler.toolCallOpening,
+      disabledByResponseSchema: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.granite,
     GraniteHandler.new,
     detect: (s) => _hasAll(s, const ['elif thinking', '<|tool_call|>']),
+    traits: ChatFormatTraits(toolCallOpening: GraniteHandler.toolCallOpening),
   ),
   ChatFormatRegistration(
     ChatFormat.glm45,
     Glm45Handler.new,
     detect: (s) =>
         _hasAll(s, const ['[gMASK]<sop>', '<arg_key>', '<arg_value>']),
+    traits: ChatFormatTraits(
+      mayEmbedToolEnvelopeAfterContent: true,
+      disabledByResponseSchema: true,
+      leavesIncompleteToolCall: _contentContainsAny(const ['<tool_call>']),
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.hunyuanV3,
     HunyuanV3Handler.new,
     detect: (s) =>
         _hasAll(s, const ['<｜hy_User{}｜>', '<tool_sep{}>', '<arg_key{}>']),
+    traits: ChatFormatTraits(
+      toolCallOpening: HunyuanV3Handler.toolCallOpening,
+      leavesIncompleteToolCall: _contentContainsAny(const [
+        '<tool_call:opensource>',
+        '<tool_calls:opensource>',
+      ]),
+    ),
   ),
   // Qwen3.6 uses the same generated `<function=...><parameter=...>`
   // envelope, but its template describes the shape through its XML
@@ -179,6 +302,9 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         _hasAll(s, const ['<tool_call>', '<function=', '<parameter=']) &&
         (_hasAll(s, const ['<function>', '<parameters>']) ||
             s.contains('Function calls MUST follow the specified format')),
+    traits: ChatFormatTraits(
+      toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.xiaomiMimo,
@@ -191,12 +317,16 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '</tool_calls>',
       '<tool_response>',
     ]),
+    traits: ChatFormatTraits(
+      toolCallOpening: XmlToolCallFormat.xiaomiMimo.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.exaoneMoe,
     ExaoneMoeHandler.new,
     detect: (s) =>
         _hasAll(s, const ['<tool_call>', '<tool_result>', '<|tool_declare|>']),
+    traits: ChatFormatTraits(toolCallOpening: ExaoneMoeHandler.toolCallOpening),
   ),
   // Hermes 2 Pro / Qwen 2.5/3. Every <tool_call> family above must stay
   // above it.
@@ -204,26 +334,43 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ChatFormat.hermes,
     HermesHandler.new,
     detect: (s) => s.contains('<tool_call>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: HermesHandler.toolCallOpening,
+      disabledByResponseSchema: true,
+      leavesIncompleteToolCall: _hermesLeavesIncompleteToolCall,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.gptOss,
     GptOssHandler.new,
     detect: (s) => s.contains('<|channel|>'),
+    traits: ChatFormatTraits(toolCallOpening: GptOssHandler.toolCallOpening),
   ),
   ChatFormatRegistration(
     ChatFormat.seedOss,
     SeedOssHandler.new,
     detect: (s) => s.contains('<seed:think>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: XmlToolCallFormat.seedOss.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.nemotronV2,
     NemotronV2Handler.new,
     detect: (s) => s.contains('<SPECIAL_10>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: NemotronV2Handler.toolCallOpening,
+      requiredKeepsLazyGrammar: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.apertus,
     ApertusHandler.new,
     detect: (s) => _hasAll(s, const ['<|system_start|>', '<|tools_prefix|>']),
+    traits: ChatFormatTraits(
+      toolCallOpening: ApertusHandler.toolCallOpening,
+      requiredKeepsLazyGrammar: true,
+    ),
   ),
   // LFM2 wraps its tool list in <|tool_list_start|>/<|tool_list_end|>;
   // LFM2.5 writes a plain "List of tools: [...]". llama.cpp routes both.
@@ -233,11 +380,19 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) =>
         _hasAll(s, const ['<|tool_list_start|>', '<|tool_list_end|>']) ||
         (s.contains('List of tools: [') && !s.contains('<|tool_list_start|>')),
+    traits: ChatFormatTraits(
+      toolCallOpening: Lfm2Handler.toolCallOpening,
+      parsesCallsInsideThoughts: true,
+      requiredKeepsLazyGrammar: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.minimaxM2,
     MinimaxM2Handler.new,
     detect: (s) => _hasAll(s, const [']~!b[', ']~b]']),
+    traits: ChatFormatTraits(
+      toolCallOpening: XmlToolCallFormat.minimaxM2.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.kimiK2,
@@ -247,6 +402,10 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<|tool_calls_section_begin|>',
       '## Return of',
     ]),
+    traits: ChatFormatTraits(
+      toolCallOpening: KimiK2Handler.toolCallOpening,
+      parsesCallsInsideThoughts: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.apriel15,
@@ -260,6 +419,9 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<tool_calls>[',
       ']</tool_calls>',
     ]),
+    traits: ChatFormatTraits(
+      toolCallOpening: XmlToolCallFormat.apriel15.toolCallOpening,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.solarOpen,
@@ -269,6 +431,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       '<|tool_response:name|>',
       '<|tool_response:result|>',
     ]),
+    traits: ChatFormatTraits.none,
   ),
   // Before Gemma 3, whose turn markers FunctionGemma templates also use.
   ChatFormatRegistration(
@@ -278,32 +441,47 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
         s.contains('<start_function_declaration>') ||
         s.contains('<start_function_call>') ||
         s.contains('<start_function_response>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: FunctionGemmaHandler.toolCallOpening,
+      keepsThoughtTagsAsContent: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.translateGemma,
     TranslateGemmaHandler.new,
     detect: (s) =>
         _hasAll(s, const ['[source_lang_code]', '[target_lang_code]']),
+    traits: ChatFormatTraits.none,
   ),
   ChatFormatRegistration(
     ChatFormat.functionaryV32,
     FunctionaryV32Handler.new,
     detect: (s) => s.contains('>>>all'),
+    traits: ChatFormatTraits.none,
   ),
   ChatFormatRegistration(
     ChatFormat.firefunctionV2,
     FirefunctionV2Handler.new,
     detect: (s) => s.contains(' functools['),
+    traits: ChatFormatTraits(
+      toolCallOpening: FirefunctionV2Handler.toolCallOpening,
+      keepsThoughtTagsAsContent: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.functionaryV31Llama31,
     FunctionaryV31Llama31Handler.new,
     detect: (s) => _hasAll(s, const ['<|start_header_id|>', '<function=']),
+    traits: ChatFormatTraits(
+      toolCallOpening: FunctionaryV31Llama31Handler.toolCallOpening,
+      keepsThoughtTagsAsContent: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.llama3,
     Llama3Handler.new,
     detect: (s) => s.contains('<|start_header_id|>ipython<|end_header_id|>'),
+    traits: ChatFormatTraits.none,
   ),
   // Ministral templates also carry [THINK] and [TOOL_CALLS], so Ministral
   // precedes Magistral and Mistral Nemo.
@@ -312,47 +490,72 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     MinistralHandler.new,
     detect: (s) =>
         _hasAll(s, const ['[SYSTEM_PROMPT]', '[TOOL_CALLS]', '[ARGS]']),
+    traits: ChatFormatTraits.none,
   ),
   ChatFormatRegistration(
     ChatFormat.magistral,
     MagistralHandler.new,
     detect: (s) => _hasAll(s, const ['[THINK]', '[/THINK]']),
+    traits: ChatFormatTraits(toolCallOpening: MagistralHandler.toolCallOpening),
   ),
   ChatFormatRegistration(
     ChatFormat.mistralNemo,
     MistralHandler.new,
     detect: (s) => s.contains('[TOOL_CALLS]'),
+    traits: ChatFormatTraits(
+      toolCallOpening: MistralHandler.toolCallOpening,
+      toolChoiceNoneRendersContentOnly: true,
+      leavesIncompleteToolCall: _contentContainsAny(const ['[TOOL_CALLS]']),
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.gemma,
     GemmaHandler.new,
     detect: (s) => s.contains('<start_of_turn>') && !s.contains('<|im_start|>'),
+    traits: ChatFormatTraits(
+      toolCallOpening: GemmaHandler.toolCallOpening,
+      keepsThoughtTagsAsContent: true,
+      routesThroughGeneric: true,
+    ),
   ),
   ChatFormatRegistration(
     ChatFormat.gemma4,
     Gemma4Handler.new,
     detect: (s) => _hasAll(s, const ['<|turn>', '<turn|>']),
+    traits: ChatFormatTraits(mayEmbedToolEnvelopeAfterContent: true),
   ),
-  const ChatFormatRegistration(
+  ChatFormatRegistration(
     ChatFormat.llama3BuiltinTools,
     Llama3Handler.new,
+    traits: ChatFormatTraits.none,
   ),
   ChatFormatRegistration(
     ChatFormat.pegSimple,
     () => _withoutTemplateToolCalls(ChatFormat.pegSimple),
+    traits: ChatFormatTraits.none,
   ),
   ChatFormatRegistration(
     ChatFormat.pegNative,
     () => _withoutTemplateToolCalls(ChatFormat.pegNative),
+    traits: ChatFormatTraits.none,
   ),
   ChatFormatRegistration(
     ChatFormat.pegConstructed,
     () => _withoutTemplateToolCalls(ChatFormat.pegConstructed),
+    traits: ChatFormatTraits.none,
   ),
-  const ChatFormatRegistration(ChatFormat.generic, GenericHandler.new),
+  ChatFormatRegistration(
+    ChatFormat.generic,
+    GenericHandler.new,
+    traits: ChatFormatTraits(
+      toolChoiceNoneRendersContentOnly: true,
+      leavesIncompleteToolCall: _genericLeavesIncompleteToolCall,
+    ),
+  ),
   ChatFormatRegistration(
     ChatFormat.contentOnly,
     () => _withoutTemplateToolCalls(ChatFormat.contentOnly),
+    traits: ChatFormatTraits(toolChoiceNoneRendersContentOnly: true),
   ),
 ]);
 
@@ -374,3 +577,28 @@ GenericHandler _withoutTemplateToolCalls(ChatFormat format) => GenericHandler(
   format: format,
   toolCallSerialization: TemplateToolCallSerialization.none,
 );
+
+final RegExp _genericToolCallJson = RegExp(r'^\{\s*"tool_calls?"\s*:');
+
+bool _genericLeavesIncompleteToolCall(
+  ChatParseResult result,
+  String output, {
+  required bool thinkingForcedOpen,
+}) =>
+    result.toolCalls.isEmpty &&
+    _genericToolCallJson.hasMatch(
+      extractThinking(
+        output,
+        thinkingForcedOpen: thinkingForcedOpen,
+      ).content.trimLeft(),
+    );
+
+bool _hermesLeavesIncompleteToolCall(
+  ChatParseResult result,
+  String output, {
+  required bool thinkingForcedOpen,
+}) => HermesHandler.hasCompleteToolCallOpening(result.content);
+
+IncompleteToolCallCheck _contentContainsAny(List<String> markers) =>
+    (result, output, {required thinkingForcedOpen}) =>
+        markers.any(result.content.contains);
