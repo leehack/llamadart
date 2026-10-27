@@ -1125,6 +1125,57 @@ void main() {
         }
       },
     );
+    for (final conditional in [
+      (
+        'import',
+        "import 'image_generation_driver.dart' if (dart.library.io) 'other_driver.dart';",
+      ),
+      (
+        'import',
+        "import 'other_driver.dart' if (dart.library.io) 'image_generation_driver.dart';",
+      ),
+      (
+        'export',
+        "export 'src/core/image/image_generation_driver.dart' if (dart.library.io) 'src/core/image/other_driver.dart';",
+      ),
+      (
+        'export',
+        "export 'src/core/image/other_driver.dart' if (dart.library.io) 'src/core/image/image_generation_driver.dart';",
+      ),
+    ]) {
+      test(
+        'conditional-only old dependency does not prove loading: ${conditional.$2}',
+        () async {
+          final files = imageFiles();
+          for (final revision in [baseSha, headSha]) {
+            files[revision]!['lib/src/core/image/generated_image.dart'] = (
+              mode: '100644',
+              contents:
+                  "import 'dart:typed_data';\n"
+                  '${conditional.$1 == 'import' ? conditional.$2 : ''}\n'
+                  'class GeneratedImage {}',
+            );
+            files[revision]!['lib/src/core/image/other_driver.dart'] = (
+              mode: '100644',
+              contents: 'class OtherDriver {}',
+            );
+            if (conditional.$1 == 'export') {
+              final original = files[revision]![barrel]!;
+              files[revision]![barrel] = (
+                mode: original.mode,
+                contents: '${original.contents}${conditional.$2}\n',
+              );
+            }
+          }
+          final result = await evaluateImage(files: files);
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('cannot be excluded'));
+        },
+      );
+    }
     test('target dependencies must already load at base', () async {
       final files = imageFiles();
       files[baseSha]!['lib/src/core/image/generated_image.dart'] = (
@@ -1144,6 +1195,16 @@ void main() {
         'typedef ImageEditingPixels = Object;',
         'final ImageEditingRequest = 0;',
         'void ImageEditingPixels() {}',
+        'enum ImageEditingRequest { value }',
+        'mixin ImageEditingPixels {}',
+        'extension type ImageEditingRequest(int value) {}',
+        'typedef void ImageEditingPixels();',
+        'class ImageEditingRequest = Object with ExistingMixin;',
+        'int get ImageEditingRequest => 0;',
+        'set ImageEditingPixels(int value) {}',
+
+        '({int value}) ImageEditingRequest() => (value: 1);',
+        'void Function({int value}) ImageEditingRequest() => ({int value = 0}) {};',
         'extension ImageEditingRequest on Object {}',
         "@Annotation({'key': 1}) class ImageEditingRequest {}",
         r"final text = '${Object()}', ImageEditingRequest = 0;",
@@ -1178,6 +1239,102 @@ void main() {
         files[headSha]!['lib/src/core/exceptions.dart'] = (
           mode: '100644',
           contents: 'class LlamaException {}\n$export',
+        );
+        final result = await evaluateImage(files: files);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      });
+    }
+    test(
+      'base comments and string segments are not identifier tokens',
+      () async {
+        final files = imageFiles();
+        const source = r'''// ImageEditingRequest ImageEditingPixels
+class LlamaException {}
+const text = 'ImageEditingPixels';
+final segment = '${Object()}ImageEditingRequest${Object()}';
+''';
+        for (final revision in [baseSha, headSha]) {
+          files[revision]!['lib/src/core/exceptions.dart'] = (
+            mode: '100644',
+            contents: source,
+          );
+        }
+        expect(
+          (await evaluateImage(files: files)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+    test(
+      'base identifiers in nested scopes retain conservative minima',
+      () async {
+        final files = imageFiles();
+        files[baseSha]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents:
+              'class LlamaException {} void example() { final ImageEditingRequest = 0; }',
+        );
+        final result = await evaluateImage(files: files);
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      },
+    );
+    test(
+      'head type references do not introduce namespace declarations',
+      () async {
+        final files = imageFiles();
+        files[headSha]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents:
+              "import 'image/image_editing_request.dart';\n"
+              'ImageEditingRequest? unused;\n'
+              'class LlamaException { Object use(ImageEditingRequest request) => request; }',
+        );
+        expect(
+          (await evaluateImage(files: files)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+    for (final edge in [
+      "export 'src/core/image/image_editing_request.dart' show ImageEditingPixels;\n",
+      "export 'src/core/exceptions.dart' if (dart.library.io) 'src/core/image/image_editing_request.dart';\n",
+    ]) {
+      test(
+        'pre-existing missing target edge cannot be skipped: $edge',
+        () async {
+          final files = imageFiles();
+          files[baseSha]![barrel] = (
+            mode: '100644',
+            contents: oldBarrel + edge,
+          );
+          files[headSha]![barrel] = (
+            mode: '100644',
+            contents: oldBarrel + edge + addition,
+          );
+          final result = await evaluateImage(files: files);
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('cannot be excluded'));
+        },
+      );
+    }
+    for (final revision in [baseSha, headSha]) {
+      test('indirect target edge at $revision cannot be skipped', () async {
+        final files = imageFiles();
+        files[revision]!['lib/src/core/exceptions.dart'] = (
+          mode: '100644',
+          contents:
+              "export 'image/image_editing_request.dart';\nclass LlamaException {}",
         );
         final result = await evaluateImage(files: files);
         expectFailure(

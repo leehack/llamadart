@@ -276,10 +276,16 @@ recover the base barrel byte for byte. Both barrels and the new target must be
 non-executable regular Git blobs; the target must be newly added with the two
 named final classes and the bounded recipe helper. Its four unconditional,
 unprefixed imports must already load through the old barrel at both revisions.
-The evaluator inspects the old export namespace at base and head, including all
-conditional branches and conservatively ignoring `show`/`hide` filters, to reject
-name collisions. Unknown syntax, graph cycles, parts, missing/nonlocal export
-sources, additional declarations/imports, modified existing exports, different
+The evaluator traverses the base barrel at both revisions: its bytes are exactly
+the head barrel with only the proven added directive removed. No other edge is
+skipped, including pre-existing or indirect references to the target. Every
+conditional branch is inspected and `show`/`hide` filters are conservatively
+ignored. At base the two new identifiers must be absent from all parsed source
+tokens. At head, exhaustive AST declaration names reject collisions while
+allowing existing image methods to reference the new types; unknown declaration
+nodes or name shapes retain conservative minima. Comments and string contents
+do not count as identifier tokens. Unknown syntax, graph cycles, parts,
+missing/nonlocal export sources, additional declarations/imports, modified existing exports, different
 names or URIs, conditional additions, renames and mode changes retain ordinary
 conservative minima. Every other changed structured production path, including
 rename origins, still contributes its normal impacts. Evidence-only emptiness

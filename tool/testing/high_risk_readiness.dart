@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/token.dart';
 
 import 'classify_high_risk_changes.dart';
 import 'release_metadata_readiness.dart';
@@ -1480,6 +1481,8 @@ class HighRiskReadinessEvaluator {
     // Over-approximate the old namespace at both revisions: inspect every
     // conditional export branch and ignore show/hide filters. Uncertain graphs
     // retain the ordinary minima instead of claiming absence of collisions.
+    // The byte proof above makes base.contents exactly the head barrel with
+    // the one proven addition removed. All other export edges remain visible.
     for (final sha in [context.baseSha, context.headSha]) {
       final visiting = <String>{};
       final units = <String, CompilationUnit>{};
@@ -1492,10 +1495,14 @@ class HighRiskReadinessEvaluator {
         final file = await read(sha, path);
         final unit =
             units[path] ??
-            (file?.mode == '100644' ? parse(file!.contents) : null);
+            (file?.mode == '100644'
+                ? parse(path == barrel ? base.contents : file!.contents)
+                : null);
         if (unit == null) return false;
         units[path] = unit;
-        if (_hasImageExportName(unit)) return false;
+        if (_hasImageExportName(unit, tokensOnly: sha == context.baseSha)) {
+          return false;
+        }
         if (guaranteed) loaded.add(path);
         for (final directive in unit.directives) {
           if (directive is LibraryDirective || directive is ImportDirective) {
@@ -1518,11 +1525,6 @@ class HighRiskReadinessEvaluator {
               branch.uri.stringValue,
           ];
           for (final uri in uris) {
-            // Read the old namespace, without the precisely removed addition.
-            if (path == barrel &&
-                uri == 'src/core/image/image_editing_request.dart') {
-              continue;
-            }
             final child = _localExportPath(path, uri);
             if (child == null ||
                 !await inspect(
@@ -1571,36 +1573,47 @@ class HighRiskReadinessEvaluator {
         : null;
   }
 
-  static bool _hasImageExportName(CompilationUnit unit) {
+  static bool _hasImageExportName(
+    CompilationUnit unit, {
+    required bool tokensOnly,
+  }) {
     const names = {'ImageEditingPixels', 'ImageEditingRequest'};
-    for (final declaration in unit.declarations) {
-      if (declaration is TopLevelVariableDeclaration) {
-        if (declaration.variables.variables.any(
-          (variable) => names.contains(variable.name.lexeme),
-        )) {
+    if (tokensOnly) {
+      // These new identifiers must be absent before the addition. Tokens avoid
+      // mistaking comments or string contents for declarations or references.
+      for (var token = unit.beginToken; !token.isEof; token = token.next!) {
+        if (token.type == TokenType.IDENTIFIER &&
+            names.contains(token.lexeme)) {
           return true;
         }
-        continue;
       }
-      if (declaration is! ClassDeclaration &&
-          declaration is! EnumDeclaration &&
-          declaration is! ExtensionDeclaration &&
-          declaration is! ExtensionTypeDeclaration &&
-          declaration is! FunctionDeclaration &&
-          declaration is! FunctionTypeAlias &&
-          declaration is! GenericTypeAlias &&
-          declaration is! MixinDeclaration) {
+      return false;
+    }
+    // Existing head image code may reference the new types inside methods.
+    // Inspect actual namespace declarations, never a guessed header boundary:
+    // record and function return types can contain braces before the name.
+    for (final declaration in unit.declarations) {
+      final declared = switch (declaration) {
+        ClassDeclaration() => [declaration.namePart.typeName],
+        ClassTypeAlias() => [declaration.name],
+        EnumDeclaration() => [declaration.namePart.typeName],
+        MixinDeclaration() => [declaration.name],
+        ExtensionDeclaration() => [
+          if (declaration.name != null) declaration.name!,
+        ],
+        ExtensionTypeDeclaration() => [declaration.namePart.typeName],
+        FunctionDeclaration() => [declaration.name],
+        FunctionTypeAlias() => [declaration.name],
+        GenericTypeAlias() => [declaration.name],
+        TopLevelVariableDeclaration() => [
+          for (final variable in declaration.variables.variables) variable.name,
+        ],
+        _ => null,
+      };
+      if (declared == null ||
+          declared.any((token) => token.isSynthetic || token.lexeme.isEmpty) ||
+          declared.any((token) => names.contains(token.lexeme))) {
         return true;
-      }
-      // Declaration names precede the body. This intentionally also rejects
-      // matching type references in headers rather than resolving ambiguity.
-      for (
-        var token = declaration.firstTokenAfterCommentAndMetadata;
-        ;
-        token = token.next!
-      ) {
-        if (names.contains(token.lexeme)) return true;
-        if (token.lexeme == '{' || token == declaration.endToken) break;
       }
     }
     return false;
