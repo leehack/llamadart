@@ -8,7 +8,27 @@ import 'dart:isolate';
 
 import 'package:test/test.dart';
 
+import '../../../support/dart_script_snapshot.dart';
+
 void main() {
+  // `dart <source>` compiles the program before main runs, which took over
+  // the probe's 2 s deadline on loaded macOS CI runners; kernels keep the
+  // probe and outer deadlines measuring only the diagnostic itself.
+  late final String probe;
+  late final String child;
+  late final String fakeChild;
+  setUpAll(() async {
+    probe = await compileDartScript(
+      'test/fixtures/native_diagnostics_deadline_probe.dart',
+    );
+    child = await compileDartScript(
+      'lib/src/platform/io/native_diagnostics_child.dart',
+    );
+    fakeChild = await compileDartScript(
+      'test/fixtures/native_diagnostics_fake_child.dart',
+    );
+  });
+
   for (final (mode, expected, starts) in [
     ('regular', 'ARTIFACT_MISSING', 1),
     ('fifo-manifest', 'ASSET_DECLARATION_INVALID', 0),
@@ -30,10 +50,11 @@ void main() {
         final process = await Process.start(Platform.resolvedExecutable, [
           '--disable-dart-dev',
           '--packages=${config.toFilePath()}',
-          'test/fixtures/native_diagnostics_deadline_probe.dart',
+          probe,
           mode,
           directory.path,
           pidFile.path,
+          mode == 'regular' || mode.endsWith('manifest') ? child : fakeChild,
         ]);
         final output = <int>[];
         final errors = <int>[];
