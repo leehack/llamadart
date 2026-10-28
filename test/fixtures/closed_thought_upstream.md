@@ -20,3 +20,10 @@ No case has reasoning: thinking tags are content.
 With the Bielik 11B v3 or Spark 2.5 templates, whose prompts end without an
 empty thought when thinking is off, the same probe still parses a leading
 `<think>` thought, so llamadart keeps parsing thoughts there.
+
+`open_thought_templates` holds the vendored StepFun3.5-Flash template, whose
+generation prompt ends with `<think>\n` whatever the thinking flag. The same
+probe parses its reply's leading thought as reasoning. Each case also records
+`upstream_without_tools`, the probe run without the tool. llamadart closes
+this thought in the prompt when thinking is off, but still parses the reply
+as llama.cpp does.

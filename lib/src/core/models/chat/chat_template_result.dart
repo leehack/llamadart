@@ -16,6 +16,15 @@ class LlamaChatTemplateResult {
   /// Whether thinking mode is forced open.
   final bool thinkingForcedOpen;
 
+  /// Whether the template ended the prompt with an empty thought, as
+  /// templates render with thinking off.
+  ///
+  /// A thought the template left open does not count, even when llamadart
+  /// closes it in [prompt] because thinking is off. The DeepSeek V3, Hermes
+  /// and Qwen3-Coder XML formats set it, and then parse thinking tags in the
+  /// reply as content, as llama.cpp does.
+  final bool thinkingForcedClosed;
+
   /// Additional stop sequences from the template.
   final List<String> additionalStops;
 
@@ -38,6 +47,7 @@ class LlamaChatTemplateResult {
     this.grammar,
     this.grammarLazy = false,
     this.thinkingForcedOpen = false,
+    this.thinkingForcedClosed = false,
     this.additionalStops = const [],
     this.preservedTokens = const [],
     this.grammarTriggers = const [],

@@ -367,5 +367,99 @@
         }
       ]
     }
+  ],
+  "open_thought_templates": [
+    {
+      "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
+      "format": "qwen3CoderXml",
+      "generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "Plan\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "Plan\n</think>\n\n<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan\n",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-text-call",
+          "output": "Plan\n</think>\n\nSunny.\n\n<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Sunny.\n\n",
+            "reasoning_content": "Plan\n",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.\n\n<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call",
+          "output": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    }
   ]
 }

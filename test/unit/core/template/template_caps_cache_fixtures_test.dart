@@ -53,9 +53,10 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/HuggingFaceTB-SmolLM3-3B.jinja':
       '10001010',
   'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja': '10101000',
-  // MiniMax-M2 and Command R7B are pinned from `common_chat_templates_get_caps`
-  // at 620d2225c.
+  // MiniMax-M2, Command R7B and StepFun3.5-Flash are pinned from
+  // `common_chat_templates_get_caps` at 620d2225c.
   'test/fixtures/llama_cpp_templates/MiniMax-M2.jinja': '11111111',
+  'test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja': '11111111',
   'test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja':
       '11111001',
   'test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja':

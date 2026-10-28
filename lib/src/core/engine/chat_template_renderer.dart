@@ -153,6 +153,7 @@ class ChatTemplateRenderer {
       additionalStops: result.additionalStops,
       grammarTriggers: result.grammarTriggers,
       thinkingForcedOpen: result.thinkingForcedOpen,
+      thinkingForcedClosed: result.thinkingForcedClosed,
       preservedTokens: result.preservedTokens,
       parser: result.parser,
       tokenCount: tokenCount,

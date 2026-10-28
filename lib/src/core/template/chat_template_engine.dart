@@ -468,6 +468,7 @@ class ChatTemplateEngine {
         preservedTokens: result.preservedTokens,
         grammarTriggers: result.grammarTriggers,
         thinkingForcedOpen: result.thinkingForcedOpen,
+        thinkingForcedClosed: result.thinkingForcedClosed,
         parser: result.parser,
         tokenCount: result.tokenCount,
       );
@@ -489,6 +490,7 @@ class ChatTemplateEngine {
         preservedTokens: result.preservedTokens,
         grammarTriggers: const [],
         thinkingForcedOpen: result.thinkingForcedOpen,
+        thinkingForcedClosed: result.thinkingForcedClosed,
         parser: result.parser,
         tokenCount: result.tokenCount,
       );
@@ -523,6 +525,7 @@ class ChatTemplateEngine {
           preservedTokens: result.preservedTokens,
           grammarTriggers: const [],
           thinkingForcedOpen: result.thinkingForcedOpen,
+          thinkingForcedClosed: result.thinkingForcedClosed,
           parser: result.parser,
           tokenCount: result.tokenCount,
         );
@@ -560,6 +563,7 @@ class ChatTemplateEngine {
       preservedTokens: result.preservedTokens,
       grammarTriggers: const [],
       thinkingForcedOpen: result.thinkingForcedOpen,
+      thinkingForcedClosed: result.thinkingForcedClosed,
       parser: result.parser,
       tokenCount: result.tokenCount,
     );
@@ -813,6 +817,7 @@ class ChatTemplateEngine {
       grammar: result.grammar,
       grammarLazy: result.grammarLazy,
       thinkingForcedOpen: result.thinkingForcedOpen,
+      thinkingForcedClosed: result.thinkingForcedClosed,
       additionalStops: result.additionalStops,
       preservedTokens: result.preservedTokens,
       grammarTriggers: result.grammarTriggers,

@@ -5,9 +5,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
+import 'package:llamadart/src/core/engine/chat_template_renderer.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -64,7 +66,56 @@ void main() {
         );
         expect(rendered.prompt, endsWith(entry['generation_prompt'] as String));
         expect(rendered.thinkingForcedOpen, isFalse);
+        expect(rendered.thinkingForcedClosed, isTrue);
       });
+
+      test(
+        'keeps the closed thought through grammar and token counts',
+        () async {
+          final source = File(templatePath).readAsStringSync();
+          final messages = [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: _fixture['user_prompt'] as String,
+            ),
+          ];
+          final results = [
+            ChatTemplateEngine.render(
+              templateSource: source,
+              messages: messages,
+              metadata: const {},
+              tools: [_weatherTool],
+              toolChoice: ToolChoice.required,
+              enableThinking: false,
+            ),
+            ChatTemplateEngine.render(
+              templateSource: source,
+              messages: messages,
+              metadata: const {},
+              responseFormat: const {
+                'type': 'json_schema',
+                'json_schema': {
+                  'schema': {'type': 'object'},
+                },
+              },
+              enableThinking: false,
+            ),
+            await ChatTemplateRenderer.render(
+              loadMetadata: () async => {'tokenizer.chat_template': source},
+              tokenize: (text, {bool addSpecial = true}) async => const [1],
+              messages: messages,
+              enableThinking: false,
+            ),
+          ];
+          for (final (index, result) in results.indexed) {
+            // A response schema renders DeepSeek V3 and Hermes templates as
+            // content-only, where the closed thought does not apply.
+            if (result.format == ChatFormat.contentOnly.index) continue;
+            expect(result.format, rendered.format, reason: '$index');
+            expect(result.thinkingForcedClosed, isTrue, reason: '$index');
+          }
+        },
+      );
 
       for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
         final output = c['output'] as String;
@@ -161,6 +212,145 @@ void main() {
     });
   }
 
+  // With thinking off, these templates still leave the thought open, so
+  // llama.cpp parses the reply's leading thought as reasoning. llamadart
+  // closes that thought in the prompt, which must not make the reply content.
+  for (final entry
+      in (_fixture['open_thought_templates'] as List)
+          .cast<Map<String, dynamic>>()) {
+    final templatePath = entry['template'] as String;
+    group(templatePath.split('/').last, () {
+      late LlamaChatTemplateResult rendered;
+
+      setUpAll(
+        () => rendered = ChatTemplateEngine.render(
+          templateSource: File(templatePath).readAsStringSync(),
+          messages: [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: _fixture['user_prompt'] as String,
+            ),
+          ],
+          metadata: const {},
+          tools: [_weatherTool],
+          enableThinking: false,
+        ),
+      );
+
+      test('leaves the thought open in the template render', () {
+        expect(
+          rendered.format,
+          ChatFormat.values.byName(entry['format'] as String).index,
+        );
+        final generationPrompt = (entry['generation_prompt'] as String)
+            .trimRight();
+        expect(rendered.prompt, endsWith('$generationPrompt</think>\n'));
+        expect(rendered.thinkingForcedOpen, isFalse);
+        expect(rendered.thinkingForcedClosed, isFalse);
+      });
+
+      for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
+        final output = c['output'] as String;
+        test('${c['name']} parses and streams as llama.cpp parses', () async {
+          for (final withTools in const [true, false]) {
+            final upstream =
+                c[withTools ? 'upstream' : 'upstream_without_tools']
+                    as Map<String, dynamic>;
+            final upstreamCalls = _calls([
+              for (final call
+                  in (upstream['tool_calls'] as List)
+                      .cast<Map<String, dynamic>>())
+                (
+                  name: call['name'] as String,
+                  arguments: call['arguments'] as String,
+                ),
+            ]);
+            final parsed = ChatTemplateEngine.parse(
+              rendered.format,
+              output,
+              parseToolCalls: withTools,
+              thinkingForcedClosed: rendered.thinkingForcedClosed,
+              tools: withTools ? [_weatherTool] : null,
+            );
+            final reason = 'tools: $withTools';
+            expect(
+              parsed.content.trim(),
+              (upstream['content'] as String).trim(),
+              reason: reason,
+            );
+            expect(
+              parsed.reasoningContent?.trim() ?? '',
+              (upstream['reasoning_content'] as String).trim(),
+              reason: reason,
+            );
+            expect(
+              _calls([
+                for (final call in parsed.toolCalls)
+                  (
+                    name: call.function?.name,
+                    arguments: call.function?.arguments,
+                  ),
+              ]),
+              upstreamCalls,
+              reason: reason,
+            );
+
+            for (final tokens in [
+              [output],
+              output.split(''),
+              [
+                for (var i = 0; i < output.length; i += 3)
+                  output.substring(
+                    i,
+                    i + 3 > output.length ? output.length : i + 3,
+                  ),
+              ],
+            ]) {
+              final chunks = await ChatCompletionStreamParser.parse(
+                tokenStream: Stream.fromIterable(tokens),
+                templateResult: rendered,
+                parseToolCallsEnabled: withTools,
+                enableThinking: false,
+                modelName: 'test-model',
+                completionId: 'open-thought-upstream',
+                tools: withTools ? [_weatherTool] : null,
+              ).toList();
+              final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+              final streamReason = '${tokens.length} tokens, $reason';
+              // A chunked stream already emits a thought that has no start
+              // tag as content before its end tag arrives, as on main.
+              if (tokens.length == 1) {
+                expect(
+                  deltas.map((delta) => delta.content ?? '').join().trim(),
+                  (upstream['content'] as String).trim(),
+                  reason: streamReason,
+                );
+              }
+              // With thinking off, the stream drops the reasoning.
+              expect(
+                deltas.map((delta) => delta.thinking ?? '').join(),
+                isEmpty,
+                reason: streamReason,
+              );
+              expect(
+                _calls([
+                  for (final delta in deltas)
+                    for (final call in delta.toolCalls ?? const [])
+                      (
+                        name: call.function?.name,
+                        arguments: call.function?.arguments,
+                      ),
+                ]),
+                upstreamCalls,
+                reason: streamReason,
+              );
+            }
+          }
+        });
+      }
+    });
+  }
+
   // The stream keeps thinking tags as content for exactly these formats.
   test('only formats with the trait parse no thought after a closed one', () {
     for (final registration in chatFormatRegistrations) {
@@ -191,7 +381,7 @@ void main() {
     }
   });
 
-  test('a forced-open thought keeps the reasoning', () {
+  test('a forced-open thought keeps the reasoning', () async {
     expect(
       ChatTemplateEngine.parse(
         ChatFormat.hermes.index,
@@ -201,17 +391,35 @@ void main() {
       ).reasoningContent,
       'Plan',
     );
+    final chunks = await ChatCompletionStreamParser.parse(
+      tokenStream: Stream.fromIterable('Plan</think>Sunny.'.split('')),
+      templateResult: LlamaChatTemplateResult(
+        prompt: '<|im_start|>assistant\n<think>\n',
+        format: ChatFormat.hermes.index,
+        thinkingForcedOpen: true,
+        thinkingForcedClosed: true,
+      ),
+      parseToolCallsEnabled: false,
+      enableThinking: true,
+      modelName: 'test-model',
+      completionId: 'forced-open',
+    ).toList();
+    final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+    expect(deltas.map((delta) => delta.thinking ?? '').join(), 'Plan');
+    expect(deltas.map((delta) => delta.content ?? '').join(), 'Sunny.');
   });
 
   // llama.cpp still parses a leading thought after a prompt that does not
-  // close one, such as Bielik's with thinking off.
-  test('a prompt without an empty thought keeps the reasoning', () async {
-    for (final prompt in ['<|im_start|>assistant\n', 'x</think>']) {
+  // close one, such as Bielik's with thinking off. Only the template's own
+  // render decides: llamadart closing an open thought does not count.
+  test('a result without a closed thought keeps the reasoning', () async {
+    for (final closed in const [false, true]) {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.value('<think>Plan</think>Sunny.'),
         templateResult: LlamaChatTemplateResult(
-          prompt: prompt,
+          prompt: '<|im_start|>assistant\n<think></think>\n',
           format: ChatFormat.hermes.index,
+          thinkingForcedClosed: closed,
         ),
         parseToolCallsEnabled: false,
         enableThinking: false,
@@ -220,8 +428,8 @@ void main() {
       ).toList();
       expect(
         chunks.map((chunk) => chunk.choices.single.delta.content ?? '').join(),
-        'Sunny.',
-        reason: prompt,
+        closed ? '<think>Plan</think>Sunny.' : 'Sunny.',
+        reason: 'thinkingForcedClosed: $closed',
       );
     }
   });

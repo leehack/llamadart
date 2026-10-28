@@ -79,6 +79,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
         metadata[internalParallelToolCallsMetadataKey] == 'true';
     final toolChoiceNone = toolChoice == ToolChoice.none.name;
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
+    final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
     if (isThinkingForcedOpen(prompt, startTag: '<think>')) {
       if (!enableThinking) {
@@ -125,6 +126,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           ? (nemotronAllowToolCalls && !toolChoiceRequired)
           : hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
+      thinkingForcedClosed: thinkingForcedClosed,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,

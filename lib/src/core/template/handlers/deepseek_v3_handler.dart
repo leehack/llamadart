@@ -96,6 +96,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     );
 
     // Handle enableThinking post-render logic
+    final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
@@ -119,6 +120,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
       ),
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
+      thinkingForcedClosed: thinkingForcedClosed,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
