@@ -186,6 +186,11 @@ as in the parse, and when the output has no start tag, an end tag after the
 first one is content. A later start tag makes the parse end a thought at each
 earlier end tag; the stream does so only when the start tag arrives in the
 same token as the end tag.
+Without tools, Command R7B and Cohere2 MoE content streams without the
+`<|START_RESPONSE|>`, `<|START_TEXT|>` and matching end markers that wrap it,
+as their parse drops them. These markers are control tokens in converted
+GGUFs, which the chat template result preserves as llama.cpp does, so they
+reach the parser instead of decoding as empty text.
 
 Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so

@@ -9,6 +9,7 @@ that `test/unit/core/template/handlers/firefunction_v2_handler_test.dart`,
 `test/unit/core/template/command_r_render_failure_test.dart`,
 `test/unit/core/template/enable_thinking_render_parity_test.dart`,
 `test/unit/core/template/forced_open_grammar_test.dart`,
+`test/unit/core/template/cohere_control_markers_test.dart`,
 `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart` and
 `test/integration/core/engine/forced_open_thought_upstream_test.dart` read live
 here, so those tests run on a clean checkout with no network.
