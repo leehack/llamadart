@@ -101,6 +101,25 @@ class SelectionTest(unittest.TestCase):
             self.assertTrue(plan['jobs']['genkit'])
             self.assertTrue(plan['jobs']['genkit-lower-bounds'])
 
+    def test_model_store_is_independent_but_core_changes_test_it(self):
+        for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
+                     'test/model_store_test.dart'):
+            plan = ci.select(['packages/llamadart_model_store/' + path])
+            expected = {'model-store'}
+            if path.endswith('.md'):
+                expected.add('test-linux-coverage')
+            self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
+            self.assertEqual(plan['companions'], [])
+            self.assertEqual(plan['apps'], [])
+            self.assertEqual(plan['desktops'], [])
+        plan = ci.select(['website/docs/guides/model-store.md'])
+        self.assertEqual({j for j, v in plan['jobs'].items() if v},
+                         {'docs-check', 'docs-versions', 'test-linux-coverage',
+                          'model-store'})
+        for paths in (['lib/llamadart.dart'], ['pubspec.yaml'],
+                      ['.github/workflows/ci.yml'], []):
+            self.assertTrue(ci.select(paths)['jobs']['model-store'], paths)
+
     def test_shared_runtime_and_unknown_select_full(self):
         for path in ('lib/src/core/engine.dart', 'hook/build.dart', 'pubspec.yaml',
                      'pubspec.lock', '.flutter-version', 'dart_test.yaml',
