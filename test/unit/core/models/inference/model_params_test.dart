@@ -372,6 +372,49 @@ void main() {
     });
   });
 
+  group('validate(): MoE expert cache', () {
+    test('a negative moeCacheBytes throws LlamaArgumentException', () {
+      const p = LlamaCppModelParams(cpuMoeLayers: -1, moeCacheBytes: -1);
+      expect(
+        p.validate,
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', 'moeCacheBytes')
+              .having((e) => e.invalidValue, 'invalidValue', -1)
+              .having(
+                (e) => e.message,
+                'message',
+                'LlamaCppModelParams.moeCacheBytes must be non-negative '
+                    '(got -1).',
+              ),
+        ),
+      );
+    });
+
+    test('a budget without host experts throws LlamaArgumentException', () {
+      const p = ModelParams(moeCacheBytes: 1 << 20);
+      expect(
+        p.validate,
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', 'moeCacheBytes')
+              .having(
+                (e) => e.message,
+                'message',
+                contains('needs a nonzero cpuMoeLayers'),
+              ),
+        ),
+      );
+    });
+
+    test('a budget with host experts, and host experts alone, pass', () {
+      const ModelParams(cpuMoeLayers: -1, moeCacheBytes: 1 << 20).validate();
+      const ModelParams(cpuMoeLayers: 3, moeCacheBytes: 1).validate();
+      const ModelParams(cpuMoeLayers: 3).validate();
+      const ModelParams().validate();
+    });
+  });
+
   group('validate(): device', () {
     Matcher rejects(String name, Object? value, String text) => throwsA(
       isA<LlamaArgumentException>()
@@ -1001,6 +1044,8 @@ void main() {
       'kvUnified': p.kvUnified,
       'ropeFrequencyBase': p.ropeFrequencyBase,
       'ropeFrequencyScale': p.ropeFrequencyScale,
+      'cpuMoeLayers': p.cpuMoeLayers,
+      'moeCacheBytes': p.moeCacheBytes,
       'preferMemory64': p.preferMemory64,
       'modelBytesHint': p.modelBytesHint,
     };
@@ -1031,6 +1076,8 @@ void main() {
       kvUnified: true,
       ropeFrequencyBase: 10000,
       ropeFrequencyScale: 0.5,
+      cpuMoeLayers: -1,
+      moeCacheBytes: 1 << 30,
       preferMemory64: true,
       modelBytesHint: 123,
     );
@@ -1094,6 +1141,8 @@ void main() {
         kvUnified: false,
         ropeFrequencyBase: 20000,
         ropeFrequencyScale: 0.25,
+        cpuMoeLayers: 4,
+        moeCacheBytes: 1 << 20,
         preferMemory64: false,
         modelBytesHint: 456,
       );
@@ -1117,6 +1166,8 @@ void main() {
         'kvUnified': false,
         'ropeFrequencyBase': 20000.0,
         'ropeFrequencyScale': 0.25,
+        'cpuMoeLayers': 4,
+        'moeCacheBytes': 1 << 20,
         'preferMemory64': false,
         'modelBytesHint': 456,
       });
@@ -1181,6 +1232,8 @@ void main() {
         #clearRopeFrequencyBase: true,
         #ropeFrequencyScale: 1.0,
         #clearRopeFrequencyScale: true,
+        #cpuMoeLayers: -1,
+        #moeCacheBytes: 1,
         #preferMemory64: true,
         #clearPreferMemory64: true,
         #modelBytesHint: 1,

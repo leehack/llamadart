@@ -1202,6 +1202,14 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
     );
   }
 
+  ggml_backend_buffer_type_t _ggmlBackendDevBufferType(ggml_backend_dev_t dev) {
+    return _ggmlRegistryFallbackOr<ggml_backend_buffer_type_t>(
+      nullptr,
+      () => ggml_backend_dev_buffer_type(dev),
+      () => _ggmlBackendDevBufferTypeFallback?.call(dev),
+    );
+  }
+
   /// Raw `ggml_backend_dev_type` value (the C enum int) for a device.
   /// Callers compare against `ggml_backend_dev_type.GGML_*.value` so a
   /// newer llama.cpp adding a new enum variant doesn't crash here via
