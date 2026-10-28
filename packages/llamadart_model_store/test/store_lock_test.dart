@@ -31,6 +31,32 @@ void main() {
     expect(secondRan, isTrue);
   });
 
+  test('spellings of one directory share one queue', () async {
+    final directory = await Directory.systemTemp.createTemp('store_lock_');
+    addTearDown(() => directory.delete(recursive: true));
+    final link = Link(p.join(directory.path, 'link'));
+    final real = Directory(p.join(directory.path, 'real'))..createSync();
+    await link.create(real.path);
+    final firstHeld = Completer<void>();
+    final releaseFirst = Completer<void>();
+    var secondRan = false;
+
+    final first = StoreLock(p.join(real.path, 'store.lock')).run(() async {
+      firstHeld.complete();
+      await releaseFirst.future;
+    });
+    await firstHeld.future;
+    final second = StoreLock(
+      p.join(link.path, '.', 'store.lock'),
+    ).run(() async => secondRan = true);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(secondRan, isFalse);
+    releaseFirst.complete();
+    await Future.wait([first, second]);
+    expect(secondRan, isTrue);
+  });
+
   test('a failing holder releases the lock', () async {
     final directory = await Directory.systemTemp.createTemp('store_lock_');
     addTearDown(() => directory.delete(recursive: true));

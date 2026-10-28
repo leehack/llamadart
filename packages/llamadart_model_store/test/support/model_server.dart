@@ -20,6 +20,9 @@ final class ModelServer {
   /// Requests received per path.
   final Map<String, int> requests = <String, int>{};
 
+  /// Requests for a path wait for its gate before the server answers.
+  final Map<String, Future<void>> gates = <String, Future<void>>{};
+
   /// Headers of every request received.
   final List<HttpHeaders> requestHeaders = <HttpHeaders>[];
 
@@ -36,6 +39,7 @@ final class ModelServer {
     final path = request.uri.path;
     requests[path] = (requests[path] ?? 0) + 1;
     requestHeaders.add(request.headers);
+    await gates[path];
     final body = _files[path];
     if (body == null) {
       request.response.statusCode = HttpStatus.notFound;

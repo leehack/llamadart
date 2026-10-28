@@ -14,6 +14,7 @@ import 'store_lock.dart';
 const int _schemaVersion = 1;
 const String _entryFileName = 'entry.json';
 const String _referencesDirectoryName = 'refs';
+final RegExp _entryIdPattern = RegExp(r'^[0-9a-f]{64}$');
 
 /// A model library that every app able to open the same directory shares.
 ///
@@ -28,8 +29,11 @@ const String _referencesDirectoryName = 'refs';
 /// URLs, tokens and headers are never written to it; the file metadata
 /// [DefaultModelDownloadManager] writes redacts URL secrets.
 ///
-/// Use a store from one isolate per process: its lock excludes other
-/// processes, and on POSIX not other isolates of the same process.
+/// Use a store from one isolate per process. Its lock excludes other
+/// processes but, on Linux, macOS, Android and iOS, not another isolate of the
+/// same process, and the store does not detect one: calls from two isolates
+/// are not serialized, so a release in one can delete files a concurrent
+/// call in the other is about to return.
 ///
 /// Downloads run in the foreground, as with [DefaultModelDownloadManager].
 final class ModelStore implements ModelDownloadManager {
@@ -64,21 +68,25 @@ final class ModelStore implements ModelDownloadManager {
         name: 'appId',
       );
     }
-    final store = ModelStore._(p.normalize(p.absolute(directory)), appId);
+    final requested = p.normalize(p.absolute(directory));
     try {
-      await Directory(store._entriesDirectory).create(recursive: true);
+      // Every spelling of the directory, such as one through a symbolic
+      // link, must reach the same lock queue.
+      final root = await Directory(requested).create(recursive: true);
+      final store = ModelStore._(await root.resolveSymbolicLinks(), appId);
+      await Directory(store._entriesDirectory).create();
       await Directory(store._files.defaultCacheDirectory).create();
       await store._lock.run(() async {});
+      return store;
     } on FileSystemException catch (error) {
       throw LlamaUnsupportedException(
         'ModelStore needs a writable directory that supports file locks; '
-        '${store.directory} is not one (${error.osError?.message ?? error.message}).',
+        '$requested is not one (${error.osError?.message ?? error.message}).',
       );
     }
-    return store;
   }
 
-  /// The store's root directory.
+  /// The store's root directory, with symbolic links resolved.
   final String directory;
 
   /// The app this store handle records references for.
@@ -99,8 +107,9 @@ final class ModelStore implements ModelDownloadManager {
   ///
   /// The reference is recorded before downloading, so no other app deletes
   /// the files while they download or after they are returned. When the call
-  /// fails, the reference it recorded is dropped again; files and partial
-  /// downloads stay for a later call to resume, or for [prune].
+  /// fails, this app's reference is put back as it was before the call:
+  /// dropped if the call created it, kept if the app already held it. Files
+  /// and partial downloads stay for a later call to resume, or for [prune].
   ///
   /// [options] apply to every file, as in `LlamaEngine.load`: credentials are
   /// never sent to more than one origin, and [ModelLoadOptions.sha256] needs
@@ -118,7 +127,7 @@ final class ModelStore implements ModelDownloadManager {
     final sources = <ModelSource>[model.source, ?model.projector];
     _checkEnsureArguments(sources, options);
     final id = entryIdFor(model);
-    final token = await _lock.run(
+    final claim = await _lock.run(
       () => _addReference(id, [for (final source in sources) source.cacheKey]),
     );
     try {
@@ -137,7 +146,7 @@ final class ModelStore implements ModelDownloadManager {
         references: await _readReferences(id),
       );
     } catch (_) {
-      await _lock.run(() => _dropReference(id, token: token));
+      await _lock.run(() => _undoReference(id, claim));
       rethrow;
     }
   }
@@ -178,10 +187,19 @@ final class ModelStore implements ModelDownloadManager {
   /// references it any more, deletes the entry and every file of it that no
   /// other referenced entry holds.
   ///
-  /// Throws [ModelCacheEntryInUseException] when a file could not be deleted
+  /// Throws [LlamaArgumentException] when [entryId] is not an id from
+  /// [entryIdFor] or [ModelStoreEntry.id], and
+  /// [ModelCacheEntryInUseException] when a file could not be deleted
   /// because it is downloading elsewhere; the reference is dropped anyway and
   /// a later [prune] deletes the file.
-  Future<void> release(String entryId) {
+  Future<void> release(String entryId) async {
+    if (!_entryIdPattern.hasMatch(entryId)) {
+      throw LlamaArgumentException(
+        'ModelStore entry ids are 64 lowercase hex characters.',
+        name: 'entryId',
+        invalidValue: entryId,
+      );
+    }
     return _lock.run(() async {
       await _dropReference(entryId);
       await _collect(<String>{entryId});
@@ -221,7 +239,7 @@ final class ModelStore implements ModelDownloadManager {
   /// Lists the store's files. Throws [LlamaUnsupportedException] for a
   /// [cacheDirectory].
   @override
-  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) {
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async {
     _rejectCacheDirectory(cacheDirectory);
     return _files.list();
   }
@@ -229,7 +247,10 @@ final class ModelStore implements ModelDownloadManager {
   /// Gets the store's file for [cacheKey]. Throws
   /// [LlamaUnsupportedException] for a [cacheDirectory].
   @override
-  Future<ModelCacheEntry?> get(String cacheKey, {String? cacheDirectory}) {
+  Future<ModelCacheEntry?> get(
+    String cacheKey, {
+    String? cacheDirectory,
+  }) async {
     _rejectCacheDirectory(cacheDirectory);
     return _files.get(cacheKey);
   }
@@ -243,7 +264,7 @@ final class ModelStore implements ModelDownloadManager {
   /// downloading elsewhere. Throws [LlamaUnsupportedException] for a
   /// [cacheDirectory].
   @override
-  Future<void> remove(String cacheKey, {String? cacheDirectory}) {
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {
     _rejectCacheDirectory(cacheDirectory);
     return _lock.run(() async {
       final holders = <String>{
@@ -265,7 +286,7 @@ final class ModelStore implements ModelDownloadManager {
   /// downloading elsewhere. Throws [LlamaUnsupportedException] for a
   /// [cacheDirectory].
   @override
-  Future<void> clear({String? cacheDirectory}) {
+  Future<void> clear({String? cacheDirectory}) async {
     _rejectCacheDirectory(cacheDirectory);
     return _lock.run(() async {
       final records = await _readEntries();
@@ -287,14 +308,15 @@ final class ModelStore implements ModelDownloadManager {
   ///
   /// Never deletes a file an app references, so the store can stay above
   /// [maxBytes]; [release] references first. Also deletes leftover entries
-  /// without references, and skips files downloading elsewhere. Throws
+  /// without references and file metadata whose file is gone, and skips
+  /// files downloading elsewhere. Partial downloads stay. Throws
   /// [LlamaUnsupportedException] for a [cacheDirectory].
   @override
   Future<List<ModelCacheEntry>> prune({
     Duration? maxAge,
     int? maxBytes,
     String? cacheDirectory,
-  }) {
+  }) async {
     _rejectCacheDirectory(cacheDirectory);
     return _lock.run(() async {
       final records = await _readEntries();
@@ -337,6 +359,8 @@ final class ModelStore implements ModelDownloadManager {
         removed.add(file);
         total -= length;
       }
+      // Entries whose model file was deleted behind the store's back.
+      removed.addAll(await _files.prune());
       return removed;
     });
   }
@@ -392,44 +416,67 @@ final class ModelStore implements ModelDownloadManager {
     }
   }
 
-  /// Records this app's reference to [id] and returns the token that lets
-  /// the same call drop it again.
-  Future<String> _addReference(String id, List<String> cacheKeys) async {
+  /// Records this app's reference to [id], rewriting an entry file this
+  /// version cannot read, and returns what [_undoReference] needs to put the
+  /// previous reference back.
+  Future<_ReferenceClaim> _addReference(
+    String id,
+    List<String> cacheKeys,
+  ) async {
     final entryDirectory = p.join(_entriesDirectory, id);
     final entryFile = File(p.join(entryDirectory, _entryFileName));
-    if (!await entryFile.exists()) {
+    if (_cacheKeysOf(await _readJson(entryFile), id) == null) {
       await Directory(entryDirectory).create(recursive: true);
-      await _writeJsonAtomically(entryFile, <String, Object?>{
-        'schema_version': _schemaVersion,
-        'id': id,
-        'cache_keys': cacheKeys,
-      });
+      await _writeAtomically(
+        entryFile,
+        jsonEncode(<String, Object?>{
+          'schema_version': _schemaVersion,
+          'id': id,
+          'cache_keys': cacheKeys,
+        }),
+      );
+    }
+    final file = _referenceFile(id);
+    String? previous;
+    try {
+      previous = await file.readAsString();
+    } on FileSystemException {
+      previous = null;
     }
     final token = _randomToken();
-    await Directory(
-      p.join(entryDirectory, _referencesDirectoryName),
-    ).create(recursive: true);
-    await _writeJsonAtomically(_referenceFile(id), <String, Object?>{
-      'schema_version': _schemaVersion,
-      'app_id': appId,
-      'last_used_at': DateTime.now().toUtc().toIso8601String(),
-      'token': token,
-    });
-    return token;
+    await Directory(p.dirname(file.path)).create(recursive: true);
+    await _writeAtomically(
+      file,
+      jsonEncode(<String, Object?>{
+        'schema_version': _schemaVersion,
+        'app_id': appId,
+        'last_used_at': DateTime.now().toUtc().toIso8601String(),
+        'token': token,
+      }),
+    );
+    return _ReferenceClaim(token: token, previous: previous);
   }
 
-  /// Drops this app's reference to [id]; with [token], only when no later
-  /// call of this app has rewritten it since.
-  Future<void> _dropReference(String id, {String? token}) async {
+  /// Puts back the reference [claim] replaced, unless a later call of this
+  /// app has rewritten it since.
+  Future<void> _undoReference(String id, _ReferenceClaim claim) async {
     final file = _referenceFile(id);
-    if (token != null) {
-      final json = await _readJson(file);
-      if (json == null || json['token'] != token) {
-        return;
-      }
+    final json = await _readJson(file);
+    if (json == null || json['token'] != claim.token) {
+      return;
     }
+    final previous = claim.previous;
+    if (previous == null) {
+      await _dropReference(id);
+    } else {
+      await _writeAtomically(file, previous);
+    }
+  }
+
+  /// Drops this app's reference to [id].
+  Future<void> _dropReference(String id) async {
     try {
-      await file.delete();
+      await _referenceFile(id).delete();
     } on PathNotFoundException {
       // Already released.
     }
@@ -503,18 +550,10 @@ final class ModelStore implements ModelDownloadManager {
       }
       final id = p.basename(entity.path);
       final json = await _readJson(File(p.join(entity.path, _entryFileName)));
-      final cacheKeys = json?['cache_keys'];
-      // Later schema versions keep `cache_keys`, so an older store version
-      // still sees which files a newer app's entry protects.
-      final readable =
-          json?['id'] == id &&
-          cacheKeys is List &&
-          cacheKeys.isNotEmpty &&
-          cacheKeys.every((key) => key is String);
       records.add(
         _EntryRecord(
           id: id,
-          cacheKeys: readable ? cacheKeys.cast<String>() : null,
+          cacheKeys: _cacheKeysOf(json, id),
           references: await _readReferences(id),
         ),
       );
@@ -577,6 +616,21 @@ final class ModelStore implements ModelDownloadManager {
     }
   }
 
+  /// The file cache keys an entry file names, or null when it cannot be read.
+  ///
+  /// Later schema versions keep `cache_keys`, so an older store version still
+  /// sees which files a newer app's entry protects.
+  static List<String>? _cacheKeysOf(Map<String, Object?>? json, String id) {
+    final cacheKeys = json?['cache_keys'];
+    if (json?['id'] != id ||
+        cacheKeys is! List ||
+        cacheKeys.isEmpty ||
+        cacheKeys.any((key) => key is! String)) {
+      return null;
+    }
+    return cacheKeys.cast<String>();
+  }
+
   static Future<Map<String, Object?>?> _readJson(File file) async {
     try {
       final decoded = jsonDecode(await file.readAsString());
@@ -588,12 +642,9 @@ final class ModelStore implements ModelDownloadManager {
     }
   }
 
-  static Future<void> _writeJsonAtomically(
-    File file,
-    Map<String, Object?> json,
-  ) async {
+  static Future<void> _writeAtomically(File file, String contents) async {
     final temporary = File('${file.path}.${_randomToken()}.tmp');
-    await temporary.writeAsString(jsonEncode(json), flush: true);
+    await temporary.writeAsString(contents, flush: true);
     await temporary.rename(file.path);
   }
 
@@ -605,6 +656,16 @@ final class ModelStore implements ModelDownloadManager {
       (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
     ).join();
   }
+}
+
+final class _ReferenceClaim {
+  const _ReferenceClaim({required this.token, required this.previous});
+
+  /// The token this call wrote into the reference.
+  final String token;
+
+  /// The reference file this call replaced, or null when there was none.
+  final String? previous;
 }
 
 final class _EntryRecord {

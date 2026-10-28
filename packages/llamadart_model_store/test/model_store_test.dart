@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -126,6 +127,49 @@ void main() {
       expect(refs.listSync(), isEmpty);
     });
 
+    test('a cancelled call keeps the reference the app already held', () async {
+      final a = await open('app.a');
+      final model = single('/model.gguf');
+      final entry = await a.ensure(model);
+      final cancelled = ModelDownloadCancelToken()..cancel();
+
+      await expectLater(
+        a.ensure(model, options: ModelLoadOptions(cancelToken: cancelled)),
+        throwsA(isA<LlamaStateException>()),
+      );
+
+      expect((await a.entries()).single.references.map((r) => r.appId), [
+        'app.a',
+      ]);
+      await (await open('app.b')).prune(maxBytes: 0);
+      expect(File(entry.model.filePath).existsSync(), isTrue);
+    });
+
+    test('a failed refresh keeps the reference the app already held', () async {
+      final a = await open('app.a');
+      final model = single('/model.gguf');
+      final entry = await a.ensure(model);
+      final firstUse = (await a.entries()).single.references.single.lastUsedAt;
+      await server.close();
+
+      await expectLater(
+        a.ensure(
+          model,
+          options: ModelLoadOptions(
+            cachePolicy: ModelCachePolicy.refresh,
+            maxRetries: 0,
+          ),
+        ),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      final kept = (await a.entries()).single.references.single;
+      expect(kept.appId, 'app.a');
+      expect(kept.lastUsedAt, firstUse);
+      await (await open('app.b')).prune(maxBytes: 0);
+      expect(File(entry.model.filePath).existsSync(), isTrue);
+    });
+
     test(
       'keeps a reference a concurrent call of the same app rewrote',
       () async {
@@ -201,6 +245,70 @@ void main() {
       expect(server.requests, isEmpty);
     });
 
+    test('treats another port on the same host as another host', () async {
+      final store = await open('app.a');
+      final otherPort = LlamaModel(
+        ModelSource.url(server.url('/model.gguf')),
+        projector: ModelSource.url(
+          server.url('/mmproj.gguf').replace(port: server.url('/').port + 1),
+        ),
+      );
+
+      await expectLater(
+        store.ensure(
+          otherPort,
+          options: ModelLoadOptions(bearerToken: 'secret-token'),
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      expect(server.requests, isEmpty);
+    });
+
+    test('records the reference before the download starts', () async {
+      final a = await open('app.a');
+      final gate = Completer<void>();
+      server.gates['/model.gguf'] = gate.future;
+      final model = single('/model.gguf');
+
+      final download = a.ensure(model);
+      while (server.requests['/model.gguf'] == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      final refs = Directory(
+        p.join(root.path, 'entries', ModelStore.entryIdFor(model), 'refs'),
+      );
+      expect(refs.listSync().whereType<File>(), hasLength(1));
+      final b = await open('app.b');
+      await b.prune(maxBytes: 0);
+      gate.complete();
+      final entry = await download;
+
+      await b.prune(maxBytes: 0);
+      await expectLater(
+        b.clear(),
+        throwsA(isA<ModelCacheEntryInUseException>()),
+      );
+      expect(File(entry.model.filePath).existsSync(), isTrue);
+    });
+
+    test('repairs an entry file it cannot read', () async {
+      final a = await open('app.a');
+      final model = single('/model.gguf');
+      final entry = await a.ensure(model);
+      final entryFile = File(
+        p.join(root.path, 'entries', entry.id, 'entry.json'),
+      )..writeAsStringSync('{"id": "trunc');
+
+      await expectLater(a.prune(maxBytes: 0), completion(isEmpty));
+      expect(await a.entries(), isEmpty);
+      await (await open('app.b')).ensure(model);
+
+      expect(jsonDecode(entryFile.readAsStringSync())['cache_keys'], [
+        model.source.cacheKey,
+      ]);
+      expect((await a.entries()).single.references, hasLength(2));
+    });
+
     test('writes no source secrets to store metadata', () async {
       final signed = LlamaModel(
         ModelSource.url(
@@ -269,6 +377,38 @@ void main() {
       expect((await b.entries()).map((e) => e.id), [second.id]);
     });
 
+    test('rejects an id that is not an entry id', () async {
+      final a = await open('app.a');
+      await a.ensure(single('/model.gguf'));
+      final outside = File(p.join(root.path, 'outside', 'refs', 'x.json'))
+        ..createSync(recursive: true);
+
+      for (final id in ['../outside', '', 'A' * 64, 'a' * 63]) {
+        await expectLater(
+          a.release(id),
+          throwsA(isA<LlamaArgumentException>()),
+          reason: id,
+        );
+      }
+      expect(outside.existsSync(), isTrue);
+      expect(await storeFileNames(), ['model.gguf']);
+    });
+
+    test('a symbolic link to the store shares its lock', () async {
+      final link = Link(p.join(root.path, 'link'));
+      final real = Directory(p.join(root.path, 'real'))..createSync();
+      await link.create(real.path);
+      final viaReal = await ModelStore.open(directory: real.path, appId: 'a');
+      final viaLink = await ModelStore.open(directory: link.path, appId: 'b');
+
+      expect(viaLink.directory, viaReal.directory);
+      final model = single('/model.gguf');
+      final entry = await viaReal.ensure(model);
+      await viaLink.ensure(model);
+      await viaReal.release(entry.id);
+      expect(File(entry.model.filePath).existsSync(), isTrue);
+    });
+
     test('waits for a store lock another process holds', () async {
       final a = await open('app.a');
       final entry = await a.ensure(pair);
@@ -327,14 +467,33 @@ void main() {
     test('rejects another cache directory', () async {
       final store = await open('app.a');
 
-      expect(
-        () => store.list(cacheDirectory: root.path),
-        throwsA(isA<LlamaUnsupportedException>()),
-      );
-      expect(
-        () => store.prune(cacheDirectory: root.path),
-        throwsA(isA<LlamaUnsupportedException>()),
-      );
+      final other = root.path;
+      final calls = <String, Future<Object?> Function()>{
+        'ensureModel': () => store.ensureModel(
+          single('/model.gguf').source,
+          options: ModelLoadOptions(cacheDirectory: other),
+        ),
+        'noCache ensureModel': () => store.ensureModel(
+          single('/model.gguf').source,
+          options: ModelLoadOptions(
+            cachePolicy: ModelCachePolicy.noCache,
+            cacheDirectory: other,
+          ),
+        ),
+        'list': () => store.list(cacheDirectory: other),
+        'get': () => store.get('key', cacheDirectory: other),
+        'remove': () => store.remove('key', cacheDirectory: other),
+        'clear': () => store.clear(cacheDirectory: other),
+        'prune': () => store.prune(cacheDirectory: other),
+      };
+      for (final call in calls.entries) {
+        await expectLater(
+          call.value(),
+          throwsA(isA<LlamaUnsupportedException>()),
+          reason: call.key,
+        );
+      }
+      expect(server.requests, isEmpty);
     });
 
     test('remove keeps a file another app references', () async {
@@ -389,7 +548,7 @@ void main() {
       final a = await open('app.a');
       final referenced = await a.ensure(single('/model.gguf'));
       final unreferenced = DefaultModelDownloadManager(
-        defaultCacheDirectory: p.join(root.path, 'files'),
+        defaultCacheDirectory: p.join(a.directory, 'files'),
       );
       await unreferenced.ensureModel(single('/other.gguf').source);
       await unreferenced.ensureModel(single('/mmproj.gguf').source);
@@ -405,6 +564,22 @@ void main() {
 
       expect(bySize.map((e) => e.fileName), ['mmproj.gguf']);
       expect(await storeFileNames(), ['model.gguf']);
+    });
+
+    test('prune drops file metadata whose file is gone', () async {
+      final a = await open('app.a');
+      final entry = await a.ensure(single('/model.gguf'));
+      await a.release(entry.id);
+      final stale = DefaultModelDownloadManager(
+        defaultCacheDirectory: p.join(a.directory, 'files'),
+      );
+      final file = await stale.ensureModel(single('/other.gguf').source);
+      File(file.filePath).deleteSync();
+
+      final removed = await a.prune();
+
+      expect(removed.map((e) => e.fileName), ['other.gguf']);
+      expect(Directory(p.dirname(file.filePath)).existsSync(), isFalse);
     });
 
     test('prune deletes leftover entries without references', () async {
@@ -435,8 +610,9 @@ void main() {
         ..writeAsStringSync('{}');
       File(p.join(foreign.path, 'entry.json')).writeAsStringSync('{"v":9}');
 
-      expect(await a.prune(maxBytes: 0), isEmpty);
       await a.release(entry.id);
+      expect(await storeFileNames(), ['model.gguf', 'other.gguf']);
+      expect(await a.prune(maxBytes: 0), isEmpty);
       expect(await storeFileNames(), ['model.gguf', 'other.gguf']);
       await expectLater(
         a.clear(),
@@ -465,6 +641,15 @@ void main() {
       await expectLater(
         ModelStore.open(directory: root.path, appId: ' '),
         throwsA(isA<LlamaArgumentException>()),
+      );
+    });
+
+    test('rejects a directory whose lock cannot be taken', () async {
+      Directory(p.join(root.path, 'store.lock')).createSync();
+
+      await expectLater(
+        open('app.a'),
+        throwsA(isA<LlamaUnsupportedException>()),
       );
     });
 

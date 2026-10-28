@@ -72,14 +72,16 @@ when it cannot be created, written or locked.
 ## Behavior
 
 - `ensure` records the app's reference before downloading, so no other app
-  deletes the files while they download. A failed call drops the reference it
-  recorded; downloaded and partial files stay for a retry to resume.
+  deletes the files while they download. A failed or cancelled call leaves
+  the app's references as they were before it; downloaded and partial files
+  stay for a retry to resume.
 - `release`, `remove` and `clear` drop this app's references, then delete
   files no app references. Files another app references, or that are
   downloading elsewhere, stay, and the call throws
   `ModelCacheEntryInUseException` naming them (`release` keeps another
   entry's files silently).
-- `prune` deletes only unreferenced files, by age then by size.
+- `prune` deletes only unreferenced files, by age then by size, and file
+  metadata whose file is gone. Partial downloads stay.
 - `ensureModel` records a single-file entry, so an engine using the store as
   its download manager is protected the same way. Local files and `noCache`
   downloads pass through without a reference.
@@ -90,7 +92,12 @@ when it cannot be created, written or locked.
 - Downloads run in the foreground. Background transfers need platform
   executors that are not part of this version.
 - Use a store from one isolate per process. Its lock excludes other
-  processes; on POSIX it does not exclude another isolate of the same process.
+  processes but, on Linux, macOS, Android and iOS, not another isolate of the
+  same process, and the store does not detect one: calls from two isolates
+  are not serialized, so a release in one can delete files a concurrent call
+  in the other is about to return.
+- `directory` resolves symbolic links, so every spelling of one directory
+  opens the same store.
 - On iOS, the store holds a file lock in the App Group container only for
   the metadata update around a call, and a download holds core's entry lock:
   finish or cancel downloads before the app is suspended.

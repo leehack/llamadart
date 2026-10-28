@@ -62,13 +62,14 @@ be created, written or locked, so an app can fall back to its own cache.
   before downloading, under a store-wide lock that `release`, `remove`,
   `clear` and `prune` also take. Another app therefore never deletes a file
   that is downloading for, or was just returned to, an app that references
-  it. A failed `ensure` drops the reference it recorded; partial files stay
-  for a retry to resume.
+  it. A failed or cancelled `ensure` leaves the app's references as they
+  were before the call; partial files stay for a retry to resume.
 - **Deletes only unreferenced files.** `release` drops this app's reference
   and deletes files no app references. `remove` and `clear` do the same and
   throw `ModelCacheEntryInUseException` naming files they kept because
   another app references them or they are downloading elsewhere. `prune`
-  never deletes a referenced file.
+  never deletes a referenced file; it also drops file metadata whose file is
+  gone, but leaves partial downloads.
 - **No secrets in shared metadata.** Store metadata holds file cache keys
   (SHA-256 hashes), app ids and timestamps. Tokens, headers and URLs are never
   written; core's file metadata redacts URL query strings, fragments and
@@ -89,7 +90,11 @@ be created, written or locked, so an app can fall back to its own cache.
   part of this version ([#1499](https://github.com/leehack/llamadart/issues/1499)). Android's system `DownloadManager` is not an option
   for authenticated sources because it persists request headers.
 - Use a store from one isolate per process. Its lock excludes other
-  processes, and on POSIX not another isolate of the same process.
+  processes but, on Linux, macOS, Android and iOS, not another isolate of
+  the same process, and the store does not detect one: calls from two
+  isolates are not serialized, so a release in one can delete files a
+  concurrent call in the other is about to return. Spellings of the store
+  directory through symbolic links resolve to one store.
 - The store lock is held only around metadata updates, and core holds its
   entry lock during a download. On iOS, finish or cancel downloads in an App
   Group container before the app is suspended, or iOS terminates it
@@ -115,3 +120,6 @@ These need a maintainer decision before the platform executors land.
 5. **Multi-file sets.** Whether shard sets, such as the Safetensors sets of
    [#1219](https://github.com/leehack/llamadart/issues/1219), become
    multi-file entries the same way.
+6. **Abandoned partial downloads.** Whether `prune` deletes partial downloads
+   no app references. Deleting one safely needs core's entry lock, which core
+   does not export, or a core `prune` option for partial files.

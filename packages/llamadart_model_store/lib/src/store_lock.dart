@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 /// An exclusive lock on a store directory, held across processes.
 ///
 /// `RandomAccessFile.lock` takes `fcntl(2)` locks on POSIX, which belong to
@@ -11,12 +13,27 @@ import 'dart:io';
 /// isolate per process.
 final class StoreLock {
   /// Creates a lock backed by the file at [path].
-  StoreLock(this.path);
+  ///
+  /// When [path]'s directory exists, symbolic links in it are resolved, so
+  /// every spelling of one directory shares one queue.
+  StoreLock(String path) : path = _canonical(path);
 
   /// The lock file.
   final String path;
 
   static final Map<String, Future<void>> _tails = <String, Future<void>>{};
+
+  static String _canonical(String path) {
+    final absolute = p.normalize(p.absolute(path));
+    try {
+      return p.join(
+        Directory(p.dirname(absolute)).resolveSymbolicLinksSync(),
+        p.basename(absolute),
+      );
+    } on FileSystemException {
+      return absolute;
+    }
+  }
 
   /// Runs [action] while holding the lock, waiting for any other holder.
   Future<T> run<T>(Future<T> Function() action) async {
