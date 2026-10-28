@@ -81,6 +81,17 @@ void main() {
       [for (final file in await (await open('inspector')).list()) file.fileName]
         ..sort();
 
+  /// Releases the entry [id] for [appId] from another process.
+  Future<void> releaseInAnotherProcess(String appId, String id) async {
+    final result = await Process.run(_dartExecutable(), [
+      'test/support/release_entry.dart',
+      root.path,
+      appId,
+      id,
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+  }
+
   group('ensure', () {
     test('keeps a model and its projector as one referenced entry', () async {
       final store = await open('app.a');
@@ -248,6 +259,195 @@ void main() {
       expect(await Future.wait([first, second]), ['fail', 'fail']);
       expect(referenceFiles(model), isEmpty);
     });
+
+    test('a release in another process is not undone', () async {
+      final a = await open('app.a');
+      final model = single('/model.gguf');
+      final entry = await a.ensure(model);
+      final gate = Completer<void>();
+      server
+        ..gates['/model.gguf'] = gate.future
+        ..failing.add('/model.gguf');
+      final refresh = ModelLoadOptions(
+        cachePolicy: ModelCachePolicy.refresh,
+        maxRetries: 0,
+      );
+
+      final first = a
+          .ensure(model, options: refresh)
+          .then((_) => 'ok', onError: (_) => 'fail');
+      while (server.requests['/model.gguf'] != 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await releaseInAnotherProcess('app.a', entry.id);
+      expect(referenceFiles(model), isEmpty);
+      final second = a
+          .ensure(model, options: refresh)
+          .then((_) => 'ok', onError: (_) => 'fail');
+      while (referenceFiles(model).isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      gate.complete();
+
+      expect(await Future.wait([first, second]), ['fail', 'fail']);
+      expect(referenceFiles(model), isEmpty);
+    });
+
+    test('a failed call that cannot lock the store keeps its error', () async {
+      final a = await open('app.a');
+      final missing = single('/missing.gguf');
+      final options = ModelLoadOptions(maxRetries: 0);
+      final gate = Completer<void>();
+      server.gates['/missing.gguf'] = gate.future;
+      final lock = File(p.join(root.path, 'store.lock'));
+
+      final failing = a.ensure(missing, options: options);
+      while (server.requests['/missing.gguf'] == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await Process.run('chmod', ['444', lock.path]);
+      addTearDown(() => Process.run('chmod', ['644', lock.path]));
+      gate.complete();
+
+      await expectLater(failing, throwsA(isA<LlamaModelException>()));
+      // Unable to put the reference back, the call leaves it to a release.
+      expect(referenceFiles(missing), hasLength(1));
+      await Process.run('chmod', ['644', lock.path]);
+      await a.release(ModelStore.entryIdFor(missing));
+      await expectLater(
+        a.ensure(missing, options: options),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(referenceFiles(missing), isEmpty);
+    }, skip: Platform.isWindows ? 'POSIX permissions' : false);
+
+    test(
+      'a failed call that cannot put back the reference keeps its error',
+      () async {
+        final a = await open('app.a');
+        final model = single('/model.gguf');
+        final entry = await a.ensure(model);
+        final gate = Completer<void>();
+        server
+          ..gates['/model.gguf'] = gate.future
+          ..failing.add('/model.gguf');
+        final refs = p.join(root.path, 'entries', entry.id, 'refs');
+        final initial = referenceContents(model);
+
+        final failing = a.ensure(
+          model,
+          options: ModelLoadOptions(
+            cachePolicy: ModelCachePolicy.refresh,
+            maxRetries: 0,
+          ),
+        );
+        while (referenceContents(model) == initial) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        await Process.run('chmod', ['555', refs]);
+        addTearDown(() => Process.run('chmod', ['755', refs]));
+        gate.complete();
+
+        await expectLater(failing, throwsA(isA<LlamaModelException>()));
+        expect(referenceFiles(model), hasLength(1));
+      },
+      skip: Platform.isWindows ? 'POSIX permissions' : false,
+    );
+
+    test('a reference it cannot write does not outlive the call', () async {
+      final a = await open('app.a');
+      final model = single('/model.gguf');
+      final entry = await a.ensure(model);
+      final refs = p.join(root.path, 'entries', entry.id, 'refs');
+      await Process.run('chmod', ['555', refs]);
+      addTearDown(() => Process.run('chmod', ['755', refs]));
+
+      await expectLater(a.ensure(model), throwsA(isA<FileSystemException>()));
+      await Process.run('chmod', ['755', refs]);
+      await releaseInAnotherProcess('app.a', entry.id);
+      server.failing.add('/model.gguf');
+      await expectLater(
+        a.ensure(model, options: ModelLoadOptions(maxRetries: 0)),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(referenceFiles(model), isEmpty);
+    }, skip: Platform.isWindows ? 'POSIX permissions' : false);
+
+    test('overlapping failed calls of two apps settle separately', () async {
+      final a = await open('app.a');
+      final b = await open('app.b');
+      final model = single('/model.gguf');
+      await a.ensure(model);
+      final gate = Completer<void>();
+      server
+        ..gates['/model.gguf'] = gate.future
+        ..failing.add('/model.gguf');
+      final refresh = ModelLoadOptions(
+        cachePolicy: ModelCachePolicy.refresh,
+        maxRetries: 0,
+      );
+
+      final calls = [
+        for (final store in [a, b])
+          store
+              .ensure(model, options: refresh)
+              .then<Object>((_) => 'ok', onError: (Object error) => error),
+      ];
+      // References are recorded in call order, so b's is the last.
+      while (referenceFiles(model).length < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      gate.complete();
+
+      expect(await Future.wait(calls), [
+        isA<LlamaModelException>(),
+        isA<LlamaModelException>(),
+      ]);
+      expect((await a.entries()).single.references.map((r) => r.appId), [
+        'app.a',
+      ]);
+    });
+
+    test(
+      'a success keeps the reference when an overlapping call fails later',
+      () async {
+        final a = await open('app.a');
+        final model = single('/model.gguf');
+        final firstGate = Completer<void>();
+        final secondGate = Completer<void>();
+        server.gates['/model.gguf'] = firstGate.future;
+
+        final download = a.ensure(model);
+        while (server.requests['/model.gguf'] == null) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        server
+          ..failing.add('/model.gguf')
+          ..gates['/model.gguf'] = secondGate.future;
+        final initial = referenceContents(model);
+        final refresh = a
+            .ensure(
+              model,
+              options: ModelLoadOptions(
+                cachePolicy: ModelCachePolicy.refresh,
+                maxRetries: 0,
+              ),
+            )
+            .then((_) => 'ok', onError: (_) => 'fail');
+        while (referenceContents(model) == initial) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        firstGate.complete();
+        await download;
+        secondGate.complete();
+
+        expect(await refresh, 'fail');
+        expect((await a.entries()).single.references.map((r) => r.appId), [
+          'app.a',
+        ]);
+      },
+    );
 
     test('a success before a release does not keep a later failure', () async {
       final a = await open('app.a');
@@ -818,6 +1018,31 @@ void main() {
       expect(removed.map((e) => e.fileName), ['other.gguf']);
       expect(Directory(p.dirname(file.filePath)).existsSync(), isFalse);
     });
+
+    test('prune leaves core cleanup it cannot do for a later prune', () async {
+      final a = await open('app.a');
+      final files = p.join(a.directory, 'files');
+      final stale = await DefaultModelDownloadManager(
+        defaultCacheDirectory: files,
+      ).ensureModel(single('/other.gguf').source);
+      File(stale.filePath).deleteSync();
+      // Reading this FIFO holds the store's listing of its files until the
+      // test writes to it, so the files become unreadable in between.
+      final gate = File(p.join(files, 'gate', 'metadata.json'))
+        ..parent.createSync();
+      expect((await Process.run('mkfifo', [gate.path])).exitCode, 0);
+      addTearDown(() => Process.run('chmod', ['755', files]));
+
+      final pruning = a.prune();
+      final writer = await gate.open(mode: FileMode.writeOnly);
+      await Process.run('chmod', ['333', files]);
+      await writer.close();
+
+      expect(await pruning, isEmpty);
+      await Process.run('chmod', ['755', files]);
+      gate.parent.deleteSync(recursive: true);
+      expect((await a.prune()).map((e) => e.fileName), ['other.gguf']);
+    }, skip: Platform.isWindows ? 'POSIX permissions and FIFOs' : false);
 
     test('prune deletes leftover entries without references', () async {
       final a = await open('app.a');
