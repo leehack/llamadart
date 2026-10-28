@@ -127,6 +127,8 @@ class ChatCompletionStreamParser {
         : null;
     final isQwen3CoderXml =
         templateResult.format == ChatFormat.qwen3CoderXml.index;
+    final verbatimForcedThought =
+        templateResult.thinkingForcedOpen && traits.keepsForcedThoughtVerbatim;
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
@@ -139,7 +141,8 @@ class ChatCompletionStreamParser {
       thoughtCallOpening: traits.parsesCallsInsideThoughts
           ? toolCallOpening
           : null,
-      unescapes: toolCallOpening != null && !isQwen3CoderXml,
+      unescapes:
+          toolCallOpening != null && !isQwen3CoderXml && !verbatimForcedThought,
       trimsLeading: !pegParsedWithoutTools,
     );
     final gptOssFrames = _GptOssFrameStream(
@@ -155,7 +158,10 @@ class ChatCompletionStreamParser {
         ? _MarkerFilter(CommandR7BHandler.responseMarkers)
         : null;
     var atForcedThoughtStart =
-        thoughtTags != null && templateResult.thinkingForcedOpen;
+        thoughtTags != null &&
+        templateResult.thinkingForcedOpen &&
+        !verbatimForcedThought;
+    var verbatimThoughtEnded = false;
     // Kimi K3 frames its response in protocol channels that only its parse
     // strips, with or without tools.
     final rawWithoutTools =
@@ -275,13 +281,29 @@ class ChatCompletionStreamParser {
           }
         }
 
-        final split = _splitThinkingBuffer(
-          pendingBuffer: pendingBuffer,
-          isThinking: isThinking,
-          startTag: startTag,
-          endTag: endTag,
-          tagState: thoughtTags,
-        );
+        final split = verbatimThoughtEnded
+            ? _ThinkingSplitResult(
+                pendingBuffer: '',
+                isThinking: false,
+                emissions: [
+                  _ThinkingSplitEmission(
+                    text: pendingBuffer,
+                    isThinking: false,
+                  ),
+                ],
+              )
+            : _splitThinkingBuffer(
+                pendingBuffer: pendingBuffer,
+                isThinking: isThinking,
+                startTag: startTag,
+                endTag: endTag,
+                tagState: thoughtTags,
+                endsAtFirstEndTag: verbatimForcedThought,
+              );
+        if (verbatimForcedThought &&
+            split.emissions.any((emission) => emission.endsThinking)) {
+          verbatimThoughtEnded = true;
+        }
         pendingBuffer = split.pendingBuffer;
         isThinking = split.isThinking;
         for (final emission in split.emissions) {
@@ -972,6 +994,7 @@ class ChatCompletionStreamParser {
     required String startTag,
     required String endTag,
     _ThoughtTagState? tagState,
+    bool endsAtFirstEndTag = false,
   }) {
     final emissions = <_ThinkingSplitEmission>[];
     var localPendingBuffer = pendingBuffer;
@@ -1056,6 +1079,18 @@ class ChatCompletionStreamParser {
         localPendingBuffer = localPendingBuffer.substring(
           endIdx + endTag.length,
         );
+        if (endsAtFirstEndTag) {
+          if (localPendingBuffer.isNotEmpty) {
+            emissions.add(
+              _ThinkingSplitEmission(
+                text: localPendingBuffer,
+                isThinking: false,
+              ),
+            );
+          }
+          localPendingBuffer = '';
+          break;
+        }
         continue;
       }
 

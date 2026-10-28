@@ -184,18 +184,27 @@ thinking tag, as its parse does. For these formats, with or without tools, a
 start tag the model repeats at the start of a forced-open thought is dropped,
 as in the parse, and when the output has no start tag, an end tag after the
 first one is content. A later start tag makes the parse end a thought at each
-earlier end tag; the stream does so only when the start tag arrives in the
-same token as the end tag.
+earlier end tag; the stream does so only when that start tag arrives in the
+same token as the end tag and as all the text since the previous end tag,
+because text it has already streamed as content stays content. With
+`Plan.</think>A` and then `</think>B<think>X</think>C`, the stream gives
+content `ABC` where the parse gives `BC`.
 Without tools, Command R7B and Cohere2 MoE content streams without the
 `<|START_RESPONSE|>`, `<|START_TEXT|>` and matching end markers that wrap it,
 as their parse drops them. These markers are control tokens in converted
 GGUFs, which the chat template result preserves as llama.cpp does, so they
 reach the parser instead of decoding as empty text.
 
+DeepSeek V3 parses a forced-open thought as llama.cpp (`620d2225`) does: the
+thought is the text before the first `</think>`, kept as generated, including
+a repeated `<think>` and any escaped `\n`, and the rest is content, in which
+thinking tags are text. Its stream does the same.
+
 Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
 with the Qwen3 template it returns `"Plan it.\n"` for
-`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML, the parse also
+`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML and a DeepSeek V3
+forced-open thought, the parse also
 replaces an escaped `\n` or `\r` in reasoning with a newline or a carriage
 return; the Qwen3-Coder XML parse keeps them, as llama.cpp (`7fe450e1`) does
 with the Qwen3.5 template. When tool calls are parsed, the stream of the

@@ -198,7 +198,7 @@ void main() {
 
     for (final path in consumers) {
       test('$path normalizes through the shared helper', () {
-        final source = File(path).readAsStringSync();
+        final source = _libraryWithParts(path);
         expect(
           source,
           contains('normalizeMediaPlaceholders('),
@@ -221,4 +221,17 @@ void main() {
       });
     }
   });
+}
+
+String _libraryWithParts(String libraryPath) {
+  final library = File(libraryPath).readAsStringSync();
+  final parts = RegExp(
+    r"^part '([^']+)';",
+    multiLine: true,
+  ).allMatches(library).map((match) => match.group(1)!);
+  return [
+    library,
+    for (final part in parts)
+      File('${File(libraryPath).parent.path}/$part').readAsStringSync(),
+  ].join('\n');
 }

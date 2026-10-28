@@ -2306,18 +2306,24 @@ class LlamaCppService {
 
   bool _tryRegisterBackendModuleViaAsset(
     String backend,
-    BackendProbeFailures failures,
-  ) {
-    final assetCandidates = _libraryCandidates.backendAssetUris(backend);
+    BackendProbeFailures failures, {
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+    int? Function(DynamicLibrary)? lookupScore,
+    _GgmlBackendInitDart Function(DynamicLibrary)? lookupInit,
+    bool Function(ggml_backend_reg_t)? register,
+  }) {
+    final assetCandidates =
+        candidates ?? _libraryCandidates.backendAssetUris(backend);
     final recordAssetDiagnostics = backend == 'cpu' && Platform.isAndroid;
 
     final registered = probeLibraryCandidates(
       assetCandidates,
       failures: failures,
-      open: DynamicLibrary.open,
+      open: open ?? DynamicLibrary.open,
       accept: (assetUri, library) {
         try {
-          final score = _lookupBackendAssetScore(library);
+          final score = (lookupScore ?? _lookupBackendAssetScore)(library);
           if (!isBackendCandidateScoreSupported(score)) {
             if (recordAssetDiagnostics && score != null) {
               _recordStartupDiagnostic(
@@ -2330,10 +2336,12 @@ class LlamaCppService {
 
           final _GgmlBackendInitDart init;
           try {
-            init = library
-                .lookupFunction<_GgmlBackendInitNative, _GgmlBackendInitDart>(
-                  'ggml_backend_init',
-                );
+            init =
+                lookupInit?.call(library) ??
+                library.lookupFunction<
+                  _GgmlBackendInitNative,
+                  _GgmlBackendInitDart
+                >('ggml_backend_init');
           } catch (_) {
             failures.add(assetUri, 'no `ggml_backend_init` export');
             return null;
@@ -2354,7 +2362,7 @@ class LlamaCppService {
           // optional backend score gates before initialization, then
           // explicitly registering the backend because asset loading
           // bypasses the native dynamic-loader helper.
-          if (!_registerBackendRegBestEffort(reg)) {
+          if (!(register ?? _registerBackendRegBestEffort)(reg)) {
             if (recordAssetDiagnostics) {
               _recordStartupDiagnostic(
                 'Backend asset `$assetUri` failed explicit backend '
@@ -2381,7 +2389,7 @@ class LlamaCppService {
     return registered ?? false;
   }
 
-  void _resolveGgmlFallbackFunctions() {
+  List<String> _ggmlFallbackCandidates() {
     final fileNameCandidates = _libraryCandidates.ggml();
     final candidates = <String>[..._libraryCandidates.ggmlAssetUris()];
     final filesystemCandidates = <String>{};
@@ -2394,6 +2402,14 @@ class LlamaCppService {
     // Keep bare-name fallback last so module-dir resolution wins when present.
     filesystemCandidates.addAll(fileNameCandidates);
     candidates.addAll(filesystemCandidates);
+    return candidates;
+  }
+
+  void _resolveGgmlFallbackFunctions({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
+    candidates ??= _ggmlFallbackCandidates();
 
     final searchKey = candidates.map(path.normalize).join('|');
     if (_ggmlFallbackLookupAttempted &&
@@ -2408,7 +2424,7 @@ class LlamaCppService {
     probeLibraryCandidates(
       candidates,
       failures: failures,
-      open: DynamicLibrary.open,
+      open: open ?? DynamicLibrary.open,
       accept: (candidate, library) {
         opened.add(probeCandidateIdentity(candidate));
 
@@ -2561,7 +2577,10 @@ class LlamaCppService {
     }
   }
 
-  void _resolveLogLevelFallbackFunction() {
+  void _resolveLogLevelFallbackFunction({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
     final directories = _llamadartFallbackLookupDirectories();
     final searchKey = directories.map(path.normalize).join('|');
 
@@ -2579,13 +2598,11 @@ class LlamaCppService {
     _logLevelFallbackLookupAttempted = true;
     _logLevelFallbackLookupSearchKey = searchKey;
 
-    final candidates = _libraryCandidates.wrapperPaths(directories);
-
     final failures = BackendProbeFailures();
     final setLogLevel = probeLibraryCandidates(
-      candidates,
+      candidates ?? _libraryCandidates.wrapperPaths(directories),
       failures: failures,
-      open: _openWrapperLibrary,
+      open: open ?? _openWrapperLibrary,
       accept: (candidate, library) {
         try {
           return library.lookupFunction<

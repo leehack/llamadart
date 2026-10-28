@@ -157,6 +157,40 @@ void main() {
               reason: reason,
             );
           }
+
+          // Without tools the stream takes another path; it still matches the
+          // parse.
+          final textParse = ChatTemplateEngine.parse(
+            rendered.format,
+            output,
+            parseToolCalls: false,
+            thinkingForcedOpen: rendered.thinkingForcedOpen,
+          );
+          for (final tokens in [
+            [output],
+            output.split(''),
+          ]) {
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable(tokens),
+              templateResult: rendered,
+              parseToolCallsEnabled: false,
+              enableThinking: true,
+              modelName: 'test-model',
+              completionId: 'forced-open-upstream-text',
+            ).toList();
+            final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+            final reason = '${tokens.length} tokens without tools';
+            expect(
+              deltas.map((delta) => delta.content ?? '').join(),
+              textParse.content,
+              reason: reason,
+            );
+            expect(
+              deltas.map((delta) => delta.thinking ?? '').join(),
+              textParse.reasoningContent ?? '',
+              reason: reason,
+            );
+          }
         });
       }
     });

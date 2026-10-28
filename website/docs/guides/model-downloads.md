@@ -393,9 +393,17 @@ Different entries download in parallel.
 
 `remove`, `prune` and `clear` take the same lock without waiting for it, so
 they never delete an entry another isolate or process is downloading or
-verifying, including from that download's `onProgress` callback. On Windows an
-entry whose model file a process has open or mapped, such as a loaded model,
-is also in use; on other platforms deleting it leaves the open file readable.
+verifying, including from that download's `onProgress` callback. They do wait
+for each other: removals from one cache root take turns through
+`<cache root>/.locks/.removal.lock`, so two overlapping `clear` calls both
+succeed instead of reporting each other's entries in use. On Windows an entry
+whose model file a process has open or mapped, such as a loaded model, is also
+in use; on other platforms deleting it leaves the open file readable. A model
+file Windows denies deleting for good, such as a read-only file or one an ACL
+protects, throws that `FileSystemException` instead. Windows reports a mapped
+file and a denied delete with the same error, so llamadart tells them apart by
+opening the file for writing: a file that can be written but not deleted still
+counts as in use.
 `noCache` downloads take no lock, so `clear` removes one in progress and that
 download fails. `clear` keeps `<cache root>/.locks/`: deleting a lock file
 while another process waits on it would let two processes hold the same

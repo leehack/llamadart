@@ -77,6 +77,45 @@ void main() {
     expect(isThinkingForcedOpen('hello'), isFalse);
   });
 
+  group('extractForcedOpenThoughtVerbatim', () {
+    test('splits at the first end tag and keeps both parts as generated', () {
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          r' <think>Plan \n x. </think> A</think>B<think>X</think>C ',
+        ),
+        (
+          reasoning: r'<think>Plan \n x.',
+          content: 'A</think>B<think>X</think>C',
+        ),
+      );
+    });
+
+    test('keeps a thought that never ends as reasoning', () {
+      expect(extractForcedOpenThoughtVerbatim(r'Plan \n more'), (
+        reasoning: r'Plan \n more',
+        content: '',
+      ));
+    });
+
+    test('reports an empty thought as no reasoning', () {
+      expect(extractForcedOpenThoughtVerbatim(' </think>Sure'), (
+        reasoning: null,
+        content: 'Sure',
+      ));
+      expect(extractForcedOpenThoughtVerbatim(''), (
+        reasoning: null,
+        content: '',
+      ));
+    });
+
+    test('uses the given end tag', () {
+      expect(extractForcedOpenThoughtVerbatim('Plan[/T]Sure', endTag: '[/T]'), (
+        reasoning: 'Plan',
+        content: 'Sure',
+      ));
+    });
+  });
+
   group('withTemplateOpenedThought', () {
     LlamaChatTemplateResult result(String prompt, {bool forcedOpen = false}) =>
         LlamaChatTemplateResult(
