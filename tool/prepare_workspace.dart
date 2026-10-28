@@ -64,6 +64,11 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
     prepareForRootQualityGates: false,
   ),
   WorkspacePackage(
+    'packages/llamadart_model_store',
+    WorkspacePackageManager.flutter,
+    prepareForRootQualityGates: false,
+  ),
+  WorkspacePackage(
     'packages/llamadart_llama_cpp_flutter',
     WorkspacePackageManager.flutter,
     prepareForRootQualityGates: false,

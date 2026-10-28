@@ -617,6 +617,18 @@ throws `LlamaUnsupportedException` for a field set that the model's runtime
 does not apply, before any download when the format is known. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
+`await engine.checkLoad(model, params: params)` returns the same verdict, and
+the runtime and device the load would use, as a `LlamaLoadCheckReport` without
+downloading or starting a runtime; see
+[Check a load before it runs](https://llamadart.leehack.com/docs/guides/backend-selection#check-a-load-before-it-runs).
+
+On native llama.cpp, `gpuDevices` loads a model on chosen GPUs of one backend,
+by their `LlamaEngine.listGpuDevices` index, and `tensorSplit` sets each
+GPU's share. Indices the host lacks, a split of another length and the Web or
+LiteRT-LM throw `LlamaUnsupportedException`. Validated on one Metal GPU only:
+multi-GPU loads have no hardware evidence yet, and CUDA is not
+hardware-qualified. See
+[Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
 
 Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
 and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.
@@ -628,8 +640,9 @@ still requires a WebGPU adapter and active GPU layers after load.
 
 For Mixture-of-Experts GGUF models, native llama.cpp can keep expert weights in
 host memory with `cpuMoeLayers` and cache recently used experts on a Metal or
-CUDA GPU with an experimental `moeCacheBytes` budget; other backends throw
-`LlamaUnsupportedException`. See
+CUDA GPU with an experimental `moeCacheBytes` budget; a budget on other
+backends throws `LlamaUnsupportedException`. Validated on Metal only; CUDA and
+multi-GPU hosts have no hardware evidence yet. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
 
 Current default runtime pins:

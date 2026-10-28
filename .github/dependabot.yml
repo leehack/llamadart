@@ -29,6 +29,13 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
+  # Independently versioned shared model store.
+  - package-ecosystem: "pub"
+    directory: "/packages/llamadart_model_store"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
   # Action pins in the workflows CODEOWNERS already protects.
   - package-ecosystem: "github-actions"
     directory: "/"

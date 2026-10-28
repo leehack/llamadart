@@ -44,7 +44,7 @@ class NativeAutoBackend
         BackendRuntimeIdentity,
         BackendModelFormatRouting,
         BackendModelFormatDetection,
-        BackendModelParamsCheck,
+        BackendLoadCheck,
         LlamaBackend,
         BackendAvailability,
         BackendDirectMediaInput,
@@ -195,16 +195,22 @@ class NativeAutoBackend
   }
 
   @override
-  void checkModelParams(ModelParams params, ModelFormat? format) {
-    if (format == null) return;
+  String? checkLoad(ModelParams params, ModelFormat? format) {
+    if (format == null) return null;
     checkModelParamsSupportedBy(params, format.runtime, web: false);
-    if (format.runtime != LlamaRuntime.liteRtLm) return;
-    // A custom LiteRT-LM factory may bring its own runtime library.
+    if (format.runtime != LlamaRuntime.liteRtLm) return null;
     if (_defaultLiteRtLm) {
       final unsupported = liteRtLmUnsupportedAbiException(liteRtLmGateAbi());
       if (unsupported != null) throw unsupported;
     }
     liteRtLmEnsureDeviceAvailable(params.device);
+    if (params.liteRtLmEmbeddingEngine) {
+      liteRtLmEnsureNativeEmbeddingsQualified();
+    }
+    return _defaultLiteRtLm
+        ? null
+        : 'A custom LiteRT-LM factory brings its own runtime, so whether it '
+              'runs on this platform is known only when it loads the model.';
   }
 
   @override

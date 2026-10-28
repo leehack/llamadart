@@ -33,7 +33,7 @@ class WebAutoBackend
     implements
         BackendRuntimeIdentity,
         BackendModelFormatRouting,
-        BackendModelParamsCheck,
+        BackendLoadCheck,
         LlamaBackend,
         BackendAvailability,
         BackendChatScope,
@@ -102,9 +102,11 @@ class WebAutoBackend
   bool get isReady => _delegate?.isReady ?? false;
 
   @override
-  void checkModelParams(ModelParams params, ModelFormat? format) {
-    if (format == null) return;
+  String? checkLoad(ModelParams params, ModelFormat? format) {
+    if (format == null) return null;
     checkModelParamsSupportedBy(params, format.runtime, web: true);
+    if (format.runtime == LlamaRuntime.liteRtLm) liteRtLmWebCheckLoad(params);
+    return null;
   }
 
   @override

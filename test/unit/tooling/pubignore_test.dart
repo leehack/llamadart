@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -71,6 +72,8 @@ void main() {
         'packages/genkit_llamadart/lib/genkit_llamadart.dart',
         'packages/genkit_llamadart/skills/genkit-llamadart-getting-started/SKILL.md',
         'packages/genkit_llamadart/pubspec_overrides.yaml',
+        'packages/llamadart_model_store/pubspec.yaml',
+        'packages/llamadart_model_store/lib/llamadart_model_store.dart',
       ]) {
         expect(
           await _isIgnored(repository, candidate),
@@ -80,6 +83,39 @@ void main() {
       }
     },
   );
+
+  test('the core archive check rejects independent packages', () async {
+    const shipped = <String>[
+      'pubspec.yaml',
+      'lib/llamadart.dart',
+      'hook/build.dart',
+      'example/basic_app/pubspec.yaml',
+      'example/basic_app/bin/llamadart_litert_embedding_example.dart',
+    ];
+    Future<List<Object?>> errors(List<String> files) async {
+      final result = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          '-c',
+          'import json,runpy,sys; '
+              'm=runpy.run_path("tool/release/check_core_archive.py"); '
+              'print(json.dumps(m["archive_errors"](json.loads(sys.argv[1]))))',
+          jsonEncode(files),
+        ],
+      );
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      return jsonDecode(result.stdout as String) as List<Object?>;
+    }
+
+    expect(await errors(shipped), isEmpty);
+    for (final package in [
+      'packages/genkit_llamadart/pubspec.yaml',
+      'packages/llamadart_model_store/pubspec.yaml',
+      'packages/llamadart_validation/pubspec.yaml',
+    ]) {
+      expect(await errors([...shipped, package]), isNotEmpty, reason: package);
+    }
+  });
 
   test('leaves companion checkout overrides out of the core archive', () async {
     expect(

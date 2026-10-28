@@ -23,7 +23,7 @@ CORE_JOBS = (
     'validation-integration', 'companion-packages', 'test-linux-coverage',
     'test-web', 'web-chat-contract', 'test-other-os',
     'native-prompt-reuse-parity', 'artifact-contract',
-    'genkit', 'genkit-lower-bounds', 'example-packages',
+    'genkit', 'genkit-lower-bounds', 'example-packages', 'model-store',
 )
 # Jobs outside the plan that run exactly when the planned job they feed runs:
 # the Linux VM test shards whose raw coverage test-linux-coverage merges.
@@ -88,6 +88,10 @@ def select(paths, force_full=False):
             jobs.update(('docs-check', 'docs-versions', 'genkit', 'genkit-lower-bounds'))
         elif path.startswith('packages/genkit_llamadart/'):
             jobs.update(('genkit', 'genkit-lower-bounds'))
+        elif path == 'website/docs/guides/model-store.md':
+            jobs.update(('docs-check', 'docs-versions', 'model-store'))
+        elif path.startswith('packages/llamadart_model_store/'):
+            jobs.add('model-store')
         elif (path in ('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'AGENTS.md', 'LICENSE')
               or path.startswith(('doc/', 'website/', 'tool/docs/'))
               or (path.startswith(('packages/', 'example/')) and path.endswith('.md'))):

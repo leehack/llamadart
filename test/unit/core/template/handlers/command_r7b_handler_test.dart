@@ -296,6 +296,20 @@ void main() {
     }
   });
 
+  // llama.cpp (`620d2225`) rejects text before the marker; the parse keeps it
+  // rather than lose it.
+  test('keeps text before START_RESPONSE in the content', () {
+    const input = 'Hello <|START_RESPONSE|>Answer<|END_RESPONSE|>';
+    for (final parseToolCalls in [true, false]) {
+      final parsed = CommandR7BHandler().parse(
+        input,
+        parseToolCalls: parseToolCalls,
+      );
+
+      expect(parsed.content, 'Hello Answer', reason: '$parseToolCalls');
+    }
+  });
+
   test('keeps START_RESPONSE output with trailing text as content', () {
     const input = '<|START_RESPONSE|>Hello<|END_RESPONSE|>more';
     final parsed = CommandR7BHandler().parse(input, parseToolCalls: false);
