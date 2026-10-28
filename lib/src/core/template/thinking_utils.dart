@@ -1,3 +1,5 @@
+import '../models/chat/chat_template_result.dart';
+
 /// Result of extracting thinking/reasoning from model output.
 typedef ThinkingExtraction = ({String content, String? reasoning});
 
@@ -147,4 +149,31 @@ bool effectiveEnableThinking(
     if (value is bool) return value;
   }
   return enableThinking;
+}
+
+/// Returns [result] with [LlamaChatTemplateResult.thinkingForcedOpen] set when
+/// its prompt ends with [startTag] that the handler did not track.
+///
+/// The prompt is unchanged: as in llama.cpp, a thought the template opens is
+/// parsed as reasoning whether or not thinking was requested.
+LlamaChatTemplateResult withTemplateOpenedThought(
+  LlamaChatTemplateResult result, {
+  required String startTag,
+}) {
+  if (result.thinkingForcedOpen ||
+      !isThinkingForcedOpen(result.prompt, startTag: startTag.trimRight())) {
+    return result;
+  }
+  return LlamaChatTemplateResult(
+    prompt: result.prompt,
+    format: result.format,
+    grammar: result.grammar,
+    grammarLazy: result.grammarLazy,
+    additionalStops: result.additionalStops,
+    preservedTokens: result.preservedTokens,
+    grammarTriggers: result.grammarTriggers,
+    thinkingForcedOpen: true,
+    parser: result.parser,
+    tokenCount: result.tokenCount,
+  );
 }

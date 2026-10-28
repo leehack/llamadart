@@ -133,9 +133,6 @@ void main() {
       tools: toolChoice == null ? null : tools,
       toolChoice: toolChoice ?? ToolChoice.auto,
       enableThinking: enableThinking,
-      // A media request always gives the template `enable_thinking`, as
-      // llama.cpp does; the text request needs it as a kwarg.
-      chatTemplateKwargs: {'enable_thinking': enableThinking},
     );
     Map<String, Object?> rendered(LlamaChatTemplateResult result) => {
       'prompt': result.prompt,
@@ -174,6 +171,8 @@ void main() {
     test('for the fixtures that read string and typed content', () {
       expect(mixedContent.map((file) => p.basename(file.path)), [
         'Apriel-1.6-15b-Thinker-fixed.jinja',
+        'GLM-4.6.jinja',
+        'GLM-4.7-Flash.jinja',
         'MiniMax-M2.jinja',
         'google-gemma-4-31B-it-interleaved.jinja',
         'moonshotai-Kimi-K2.jinja',

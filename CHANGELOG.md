@@ -14,6 +14,8 @@
 - A tool result whose first text is empty no longer renders a leading newline before the next text part on string-only chat templates, as llama-server does ([#1468](https://github.com/leehack/llamadart/issues/1468)).
 - `DefaultModelDownloadManager.remove`, `prune` and `clear` no longer delete a cache entry another isolate or process is downloading: `remove` and `clear` remove the rest and throw `ModelCacheEntryInUseException`, and `prune` skips it ([#1467](https://github.com/leehack/llamadart/issues/1467)).
 - A cache hit on a read-only model cache root returns the cached entry instead of reporting that no cached model is available.
+- Chat templates now receive `enableThinking` as `enable_thinking` on every request, including `responseFormat` and generic tool-call routes, as in llama.cpp, so templates such as GLM-4.6, GLM-4.7-Flash, GLM-OCR, SmolLM3, Apertus and DeepSeek-R1 distills render thinking as llama-server does for the same flag. `enableThinking` still defaults to `true`, so Apertus now deliberates and DeepSeek-R1 distills open a thought unless you pass `false` ([#1465](https://github.com/leehack/llamadart/issues/1465)).
+- A `responseFormat` or tool-call grammar after a thought the prompt leaves open now lets the model finish the thought first, as llama-server does, instead of returning the JSON as reasoning; a thought the template opens stays open with `enableThinking: false`, as in llama-server ([#1465](https://github.com/leehack/llamadart/issues/1465)).
 
 ## 0.16.5
 
