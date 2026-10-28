@@ -487,7 +487,9 @@ hooks:
   the directory the error names (`SHA256SUMS` as UTF-8 or ASCII text), or use
   `llamadart_native_path`. A `cuda` build of a contract 2 release also needs
   the release's `assets.json` and its CUDA archive, which the hook caches the
-  same way.
+  same way; it also remembers a release that publishes no `assets.json`. When
+  neither is cached and `assets.json` is unreachable, a build over a cached
+  core warns and leaves out the backends that core lacks.
 - `llamadart_native_repository` takes an `owner/repo` slug or a
   `https://github.com/owner/repo` URL.
 - `llamadart_native_path` wins over downloads. It can point at an archive, an

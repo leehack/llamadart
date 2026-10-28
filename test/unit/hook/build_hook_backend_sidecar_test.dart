@@ -15,11 +15,13 @@ import 'package:llamadart/src/hook/native_release_manifest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_core_version.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 
 const _tag = 'v9.9.8';
 const _coreArchive = 'llamadart-native-windows-x64-$_tag.tar.gz';
-const _sidecarArchive = 'llamadart-native-windows-x64-cuda12-$_tag.tar.gz';
+const _sidecarBundle = 'windows-x64-cuda12';
+const _sidecarArchive = 'llamadart-native-$_sidecarBundle-$_tag.tar.gz';
 
 const _coreLibraries = [
   'llamadart.dll',
@@ -49,31 +51,31 @@ final _coreUrl = _url(_coreArchive);
 final _sidecarUrl = _url(_sidecarArchive);
 
 void main() {
-  final releaseCacheDir = Directory(
-    path.join('.dart_tool', 'llamadart', 'native_bundles', _tag),
+  // Each test builds in its own package root, so the hook's
+  // `.dart_tool/llamadart/native_bundles` cache never touches this checkout's.
+  late Directory packageRoot;
+  late Directory releaseCacheDir;
+
+  setUp(() {
+    packageRoot = Directory.systemTemp.createTempSync('sidecar-root-');
+    File(path.join(packageRoot.path, 'pubspec.yaml')).writeAsStringSync(
+      'name: llamadart\nversion: ${readCheckoutCoreVersion()}\n',
+    );
+    releaseCacheDir = Directory(_bundlesDir(packageRoot, _tag));
+  });
+
+  tearDown(() => packageRoot.deleteSync(recursive: true));
+
+  Future<Map<String, String>> runHook(
+    RuntimeBundleHttpFixture fixture, {
+    String? tag = _tag,
+    List<String>? backends,
+    String? nativePath,
+  }) => IOOverrides.runZoned(
+    () =>
+        _runHook(fixture, tag: tag, backends: backends, nativePath: nativePath),
+    getCurrentDirectory: () => packageRoot,
   );
-  final backup = Directory('${releaseCacheDir.path}.__sidecar_test_backup');
-
-  setUpAll(() async {
-    if (releaseCacheDir.existsSync()) {
-      await releaseCacheDir.rename(backup.path);
-    }
-  });
-
-  setUp(() async {
-    if (releaseCacheDir.existsSync()) {
-      await releaseCacheDir.delete(recursive: true);
-    }
-  });
-
-  tearDownAll(() async {
-    if (releaseCacheDir.existsSync()) {
-      await releaseCacheDir.delete(recursive: true);
-    }
-    if (backup.existsSync()) {
-      await backup.rename(releaseCacheDir.path);
-    }
-  });
 
   final core = _archive('core', _coreLibraries);
   final sidecar = _archive('sidecar', _cudaLibraries);
@@ -96,7 +98,7 @@ void main() {
     test('adds the CUDA sidecar when cuda is selected', () async {
       final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
 
-      final libraries = await _runHook(fixture, backends: ['cpu', 'cuda']);
+      final libraries = await runHook(fixture, backends: ['cpu', 'cuda']);
 
       expect(fixture.requests, [
         _sumsUrl,
@@ -115,22 +117,61 @@ void main() {
     });
 
     test('reuses the cached sidecar and manifest offline', () async {
-      await _runHook(
+      await runHook(
         RuntimeBundleHttpFixture(release(manifest: _manifest())),
         backends: ['cpu', 'cuda'],
       );
       final offline = RuntimeBundleHttpFixture.offline();
 
-      final libraries = await _runHook(offline, backends: ['cpu', 'cuda']);
+      final libraries = await runHook(offline, backends: ['cpu', 'cuda']);
 
       expect(offline.requests, isEmpty);
       expect(libraries, contains('ggml-cuda.dll'));
     });
 
+    for (final damaged in ['ggml-cuda.dll', 'cudart64_12.dll']) {
+      test('re-extracts a cached sidecar missing $damaged offline', () async {
+        await runHook(
+          RuntimeBundleHttpFixture(release(manifest: _manifest())),
+          backends: ['cuda'],
+        );
+        File(
+          path.join(releaseCacheDir.path, _sidecarBundle, 'extracted', damaged),
+        ).deleteSync();
+        final offline = RuntimeBundleHttpFixture.offline();
+
+        final libraries = await runHook(offline, backends: ['cuda']);
+
+        expect(offline.requests, isEmpty);
+        expect(libraries, containsPair(damaged, 'sidecar-$damaged'));
+      });
+    }
+
+    test('redownloads a cached sidecar missing its CUDA runtime', () async {
+      await runHook(
+        RuntimeBundleHttpFixture(release(manifest: _manifest())),
+        backends: ['cuda'],
+      );
+      final sidecarCache = path.join(releaseCacheDir.path, _sidecarBundle);
+      File(
+        path.join(sidecarCache, 'extracted', 'cudart64_12.dll'),
+      ).deleteSync();
+      File(path.join(sidecarCache, _sidecarArchive)).deleteSync();
+      final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
+
+      final libraries = await runHook(fixture, backends: ['cuda']);
+
+      expect(fixture.requests, [_sumsUrl, _sidecarUrl]);
+      expect(
+        libraries,
+        containsPair('cudart64_12.dll', 'sidecar-cudart64_12.dll'),
+      );
+    });
+
     test('skips the sidecar unless cuda is selected', () async {
       final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
 
-      final libraries = await _runHook(fixture);
+      final libraries = await runHook(fixture);
 
       expect(fixture.requests, [_sumsUrl, _manifestUrl, _coreUrl]);
       expect(libraries.keys, containsAll(['ggml-cpu.dll', 'ggml-vulkan.dll']));
@@ -145,7 +186,7 @@ void main() {
         );
 
         await expectLater(
-          _runHook(fixture, backends: ['cuda']),
+          runHook(fixture, backends: ['cuda']),
           throwsA(
             isA<NativeHookContractException>().having(
               (error) => error.message,
@@ -171,7 +212,7 @@ void main() {
       );
 
       await expectLater(
-        _runHook(fixture, backends: ['cuda']),
+        runHook(fixture, backends: ['cuda']),
         throwsA(
           isA<NativeArchiveDigestException>().having(
             (error) => error.message,
@@ -194,7 +235,7 @@ void main() {
       });
 
       await expectLater(
-        _runHook(fixture, backends: ['cuda']),
+        runHook(fixture, backends: ['cuda']),
         throwsA(
           isA<NativeHookContractException>().having(
             (error) => error.message,
@@ -217,7 +258,7 @@ void main() {
       });
 
       await expectLater(
-        _runHook(fixture, backends: ['cuda']),
+        runHook(fixture, backends: ['cuda']),
         throwsA(
           isA<NativeHookContractException>().having(
             (error) => error.message,
@@ -229,6 +270,31 @@ void main() {
     });
   });
 
+  test('a sidecar may rely on CUDA runtime libraries the core ships', () async {
+    final coreWithCudart = _archive('core', [
+      ..._coreLibraries,
+      'cudart64_12.dll',
+    ]);
+    final sidecarWithoutCudart = _archive('sidecar', [
+      'ggml-cuda.dll',
+      'cublas64_12.dll',
+    ]);
+    final fixture = RuntimeBundleHttpFixture({
+      ...release(manifest: _manifest()),
+      _sumsUrl: sha256SumsFor({
+        _coreArchive: coreWithCudart,
+        _sidecarArchive: sidecarWithoutCudart,
+      }).codeUnits,
+      _coreUrl: coreWithCudart,
+      _sidecarUrl: sidecarWithoutCudart,
+    });
+
+    final libraries = await runHook(fixture, backends: ['cuda']);
+
+    expect(libraries, containsPair('ggml-cuda.dll', 'sidecar-ggml-cuda.dll'));
+    expect(libraries, containsPair('cudart64_12.dll', 'core-cudart64_12.dll'));
+  });
+
   group('an unsupported hook contract', () {
     test('fails before the core archive is downloaded', () async {
       final fixture = RuntimeBundleHttpFixture(
@@ -236,7 +302,7 @@ void main() {
       );
 
       await expectLater(
-        _runHook(fixture),
+        runHook(fixture),
         throwsA(
           isA<NativeHookContractException>().having(
             (error) => error.message,
@@ -248,15 +314,35 @@ void main() {
       expect(fixture.requests, [_sumsUrl, _manifestUrl]);
     });
 
+    test('an unreachable assets.json fails before the core archive is '
+        'downloaded', () async {
+      final fixture = RuntimeBundleHttpFixture(
+        release(manifest: _manifest()),
+        unreachable: {_manifestUrl},
+      );
+
+      await expectLater(
+        runHook(fixture, backends: ['cuda']),
+        throwsA(
+          isA<NativeHookContractException>().having(
+            (error) => error.message,
+            'message',
+            contains('Could not download $_manifestUrl'),
+          ),
+        ),
+      );
+      expect(fixture.requests, [_sumsUrl, _manifestUrl]);
+    });
+
     test('fails a CUDA build over a cached core bundle', () async {
-      await _runHook(RuntimeBundleHttpFixture(release(manifest: _manifest())));
+      await runHook(RuntimeBundleHttpFixture(release(manifest: _manifest())));
       await File(path.join(releaseCacheDir.path, 'assets.json')).delete();
       final fixture = RuntimeBundleHttpFixture(
         release(manifest: _manifest(contract: 3)),
       );
 
       await expectLater(
-        _runHook(fixture, backends: ['cuda']),
+        runHook(fixture, backends: ['cuda']),
         throwsA(isA<NativeHookContractException>()),
       );
       expect(fixture.requests, [_manifestUrl]);
@@ -274,7 +360,7 @@ void main() {
         _coreUrl: legacyCore,
       });
 
-      final libraries = await _runHook(fixture, backends: ['cuda']);
+      final libraries = await runHook(fixture, backends: ['cuda']);
 
       expect(fixture.requests, [_sumsUrl, _manifestUrl, _coreUrl]);
       expect(libraries, containsPair('ggml-cuda.dll', 'legacy-ggml-cuda.dll'));
@@ -286,63 +372,54 @@ void main() {
         _coreUrl: core,
       });
 
-      final libraries = await _runHook(fixture, backends: ['cuda']);
+      final libraries = await runHook(fixture, backends: ['cuda']);
 
-      expect(fixture.requests, [
-        _sumsUrl,
-        _manifestUrl,
-        _coreUrl,
-        _manifestUrl,
-      ]);
+      expect(fixture.requests, [_sumsUrl, _manifestUrl, _coreUrl]);
       expect(libraries, isNot(contains('ggml-cuda.dll')));
       expect(libraries, contains('ggml-vulkan.dll'));
+
+      final offline = RuntimeBundleHttpFixture.offline();
+      expect(await runHook(offline, backends: ['cuda']), libraries);
+      expect(offline.requests, isEmpty);
     });
   });
 
-  group('the pinned release', () {
-    final bundlesDir = path.join('.dart_tool', 'llamadart', 'native_bundles');
-    final coreDir = Directory(
-      path.join(bundlesDir, llamaCppTag, 'windows-x64'),
+  test('a CUDA build over a cached core falls back when assets.json is '
+      'unreachable', () async {
+    await runHook(
+      RuntimeBundleHttpFixture({
+        ...release(manifest: _manifest(contract: 1, sidecars: false)),
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+      }),
     );
+    await File(path.join(releaseCacheDir.path, 'assets.json')).delete();
+    final offline = RuntimeBundleHttpFixture.offline();
+
+    final libraries = await runHook(offline, backends: ['cpu', 'cuda']);
+
+    expect(offline.requests, [_manifestUrl]);
+    expect(libraries, isNot(contains('ggml-cuda.dll')));
+    expect(libraries, containsPair('ggml-cpu.dll', 'core-ggml-cpu.dll'));
+  });
+
+  group('the pinned release', () {
+    late Directory coreDir;
+    late Directory sidecarDir;
     final sidecarSpec = llamaCppBackendSidecarSpecs.singleWhere(
       (spec) => spec.bundle == 'windows-x64' && spec.backend == 'cuda',
-    );
-    final sidecarDir = Directory(
-      path.join(bundlesDir, llamaCppTag, sidecarSpec.archive),
     );
     final sidecarArchive =
         'llamadart-native-${sidecarSpec.archive}-$llamaCppTag.tar.gz';
     final sidecarUrl =
         'https://github.com/leehack/llamadart-native/releases/download/'
         '$llamaCppTag/$sidecarArchive';
-    Directory backupOf(Directory dir) =>
-        Directory('${dir.path}.__sidecar_test_backup');
 
-    setUpAll(() async {
-      for (final dir in [coreDir, sidecarDir]) {
-        if (dir.existsSync()) await dir.rename(backupOf(dir).path);
-      }
-    });
-
-    setUp(() async {
-      for (final dir in [coreDir, sidecarDir]) {
-        if (dir.existsSync()) await dir.delete(recursive: true);
-      }
+    setUp(() {
+      final bundlesDir = _bundlesDir(packageRoot, llamaCppTag);
+      coreDir = Directory(path.join(bundlesDir, 'windows-x64'));
+      sidecarDir = Directory(path.join(bundlesDir, sidecarSpec.archive));
       // The pinned core archive cannot be faked, so seed its extraction.
-      final extracted = Directory(path.join(coreDir.path, 'extracted'))
-        ..createSync(recursive: true);
-      for (final library in _coreLibraries) {
-        File(
-          path.join(extracted.path, library),
-        ).writeAsStringSync('pinned-$library');
-      }
-    });
-
-    tearDownAll(() async {
-      for (final dir in [coreDir, sidecarDir]) {
-        if (dir.existsSync()) await dir.delete(recursive: true);
-        if (backupOf(dir).existsSync()) await backupOf(dir).rename(dir.path);
-      }
+      _seedExtracted(coreDir, 'pinned', _coreLibraries);
     });
 
     test('downloads the CUDA sidecar only when cuda is selected', () async {
@@ -350,12 +427,12 @@ void main() {
         sidecarUrl: _archive('tampered', _cudaLibraries),
       });
 
-      final libraries = await _runHook(fixture, tag: null);
+      final libraries = await runHook(fixture, tag: null);
       expect(fixture.requests, isEmpty);
       expect(libraries, containsPair('ggml-cpu.dll', 'pinned-ggml-cpu.dll'));
 
       await expectLater(
-        _runHook(fixture, tag: null, backends: ['cuda']),
+        runHook(fixture, tag: null, backends: ['cuda']),
         throwsA(
           isA<NativeArchiveDigestException>().having(
             (error) => error.message,
@@ -372,16 +449,10 @@ void main() {
     });
 
     test('reuses an extracted CUDA sidecar offline', () async {
-      final extracted = Directory(path.join(sidecarDir.path, 'extracted'))
-        ..createSync(recursive: true);
-      for (final library in _cudaLibraries) {
-        File(
-          path.join(extracted.path, library),
-        ).writeAsStringSync('pinned-$library');
-      }
+      _seedExtracted(sidecarDir, 'pinned', _cudaLibraries);
       final fixture = RuntimeBundleHttpFixture.offline();
 
-      final libraries = await _runHook(
+      final libraries = await runHook(
         fixture,
         tag: null,
         backends: ['cpu', 'cuda'],
@@ -390,6 +461,19 @@ void main() {
       expect(fixture.requests, isEmpty);
       expect(libraries, containsPair('ggml-cuda.dll', 'pinned-ggml-cuda.dll'));
       expect(libraries, contains('cudart64_12.dll'));
+    });
+
+    test('redownloads an extracted CUDA sidecar missing its runtime', () async {
+      _seedExtracted(sidecarDir, 'pinned', _cudaLibraries.sublist(0, 2));
+      final fixture = RuntimeBundleHttpFixture({
+        sidecarUrl: _archive('tampered', _cudaLibraries),
+      });
+
+      await expectLater(
+        runHook(fixture, tag: null, backends: ['cuda']),
+        throwsA(isA<NativeArchiveDigestException>()),
+      );
+      expect(fixture.requests, [sidecarUrl]);
     });
   });
 
@@ -403,7 +487,7 @@ void main() {
         ).writeAsStringSync('local-$library');
       }
       final fixture = RuntimeBundleHttpFixture.offline();
-      final emitted = await _runHook(
+      final emitted = await runHook(
         fixture,
         backends: ['cuda'],
         nativePath: local.path,
@@ -486,6 +570,26 @@ Future<Map<String, String>> _runHook(
     ),
   );
   return libraries;
+}
+
+String _bundlesDir(Directory packageRoot, String tag) => path.join(
+  packageRoot.path,
+  '.dart_tool',
+  'llamadart',
+  'native_bundles',
+  tag,
+);
+
+/// Seeds the `extracted/` cache of [bundleDir] with libraries holding
+/// `<label>-<library>`.
+void _seedExtracted(Directory bundleDir, String label, List<String> libraries) {
+  final extracted = Directory(path.join(bundleDir.path, 'extracted'))
+    ..createSync(recursive: true);
+  for (final library in libraries) {
+    File(
+      path.join(extracted.path, library),
+    ).writeAsStringSync('$label-$library');
+  }
 }
 
 /// A `.tar.gz` bundle whose libraries hold `<label>-<library>`.

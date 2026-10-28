@@ -27,8 +27,8 @@ const llamaCppAppleCompanionVersion = '0.16.1';
 /// native release manifest binds to one upstream commit, with the same header
 /// declarations and the same exported symbols on every framework slice, so
 /// its frameworks are ABI- and symbol-identical to the ones the Dart bindings
-/// expect. `test/fixtures/native/llama_cpp_apple_compatibility.json` records
-/// that comparison for the exact XCFramework checksums. The build accepts
+/// expect, compared for the exact XCFramework checksums in
+/// [llamaCppCompatibleAppleCompanionChecksums]. The build accepts
 /// such a companion with a warning. The native pin sync clears this map
 /// whenever it moves [llamaCppTag], because each entry is verified against
 /// one pin.

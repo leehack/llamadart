@@ -2238,12 +2238,40 @@ Uri? _resolveNativePath(HookInputUserDefines userDefines) {
   return resolvedPath;
 }
 
+/// The cached, extracted or downloaded directory of release archive [bundle].
+///
+/// A [sidecar] archive is complete only when it holds the module of the
+/// backend it adds and, with the core bundle's libraries, every runtime
+/// dependency that backend needs; an incomplete cached copy is re-extracted or
+/// redownloaded like a core bundle.
 Future<Directory> _acquireBundleDirectory({
   required String packageRoot,
   required _NativeBundleConfig nativeConfig,
   required String bundle,
   required Logger log,
+  ({String bundle, String backend, List<String> coreLibraryPaths})? sidecar,
 }) async {
+  bool holdsSidecarBackend(List<String> libraryPaths) =>
+      collectAvailableBackends(
+        describeNativeLibraries(libraryPaths),
+      ).contains(sidecar!.backend);
+  bool isComplete(List<String> libraryPaths) {
+    if (sidecar == null) {
+      return _isBundleLayoutCompatible(
+        bundle: bundle,
+        libraryPaths: libraryPaths,
+        log: log,
+      );
+    }
+    return libraryPaths.isNotEmpty &&
+        holdsSidecarBackend(libraryPaths) &&
+        _isBundleLayoutCompatible(
+          bundle: sidecar.bundle,
+          libraryPaths: [...sidecar.coreLibraryPaths, ...libraryPaths],
+          log: log,
+        );
+  }
+
   final allowLegacyLocalBundles = _isLegacyLocalBundleEnabled();
   final archiveName = 'llamadart-native-$bundle-${nativeConfig.tag}.tar.gz';
   final cacheDir = _bundleCacheDirectory(
@@ -2269,12 +2297,7 @@ Future<Directory> _acquireBundleDirectory({
   }
 
   final cachedLibraryPaths = _collectDynamicLibraryPaths(extractedDir);
-  if (cachedLibraryPaths.isNotEmpty &&
-      _isBundleLayoutCompatible(
-        bundle: bundle,
-        libraryPaths: cachedLibraryPaths,
-        log: log,
-      )) {
+  if (cachedLibraryPaths.isNotEmpty && isComplete(cachedLibraryPaths)) {
     log.info('Using cached native bundle: ${extractedDir.path}');
     return extractedDir;
   }
@@ -2294,12 +2317,7 @@ Future<Directory> _acquireBundleDirectory({
     for (final candidatePath in localCandidates) {
       final candidate = Directory(candidatePath);
       final candidatePaths = _collectDynamicLibraryPaths(candidate);
-      if (candidatePaths.isNotEmpty &&
-          _isBundleLayoutCompatible(
-            bundle: bundle,
-            libraryPaths: candidatePaths,
-            log: log,
-          )) {
+      if (candidatePaths.isNotEmpty && isComplete(candidatePaths)) {
         log.info(
           'Using legacy local native bundle directory: ${candidate.path}',
         );
@@ -2330,11 +2348,7 @@ Future<Directory> _acquireBundleDirectory({
         cacheDir: cacheDir,
         log: log,
       );
-      if (_isBundleLayoutCompatible(
-        bundle: bundle,
-        libraryPaths: extractedLibraryPaths,
-        log: log,
-      )) {
+      if (isComplete(extractedLibraryPaths)) {
         log.info('Using cached native bundle archive: $archivePath');
         return extractedDir;
       }
@@ -2391,11 +2405,17 @@ Future<Directory> _acquireBundleDirectory({
     cacheDir: cacheDir,
     log: log,
   );
-  if (!_isBundleLayoutCompatible(
-    bundle: bundle,
-    libraryPaths: extractedLibraryPaths,
-    log: log,
-  )) {
+  if (!isComplete(extractedLibraryPaths)) {
+    if (sidecar != null) {
+      throw NativeHookContractException(
+        holdsSidecarBackend(extractedLibraryPaths)
+            ? 'The $bundle sidecar archive of ${nativeConfig.sourceLabel} is '
+                  'missing runtime dependencies of its ${sidecar.backend} '
+                  'backend for ${sidecar.bundle}.'
+            : 'The $bundle sidecar archive of ${nativeConfig.sourceLabel} '
+                  'holds no ggml-${sidecar.backend} module.',
+      );
+    }
     throw Exception('Downloaded bundle $archiveName is missing runtime deps.');
   }
   return extractedDir;
@@ -2422,7 +2442,10 @@ final _pinnedReleaseManifest = NativeReleaseManifest(
 ///
 /// A requested backend with no sidecar is left to [selectLibrariesForBundling],
 /// which warns and falls back to the defaults, unless the release publishes it
-/// only as a sidecar: that throws [NativeHookContractException]. A local
+/// only as a sidecar: that throws [NativeHookContractException]. An
+/// overridden release whose `assets.json` is neither cached nor reachable is
+/// treated as having no sidecars, as before that manifest existed, so an
+/// offline build over a cached core still succeeds. A local
 /// `llamadart_native_path` bundle must already hold every module it ships.
 Future<List<String>> _acquireBackendSidecarLibraryPaths({
   required String packageRoot,
@@ -2452,6 +2475,7 @@ Future<List<String>> _acquireBackendSidecarLibraryPaths({
           nativeConfig: nativeConfig,
           bundle: bundle,
           log: log,
+          unreachableSkips: missing.join(', '),
         )
       : _pinnedReleaseManifest;
   final sidecarPaths = <String>[];
@@ -2475,29 +2499,14 @@ Future<List<String>> _acquireBackendSidecarLibraryPaths({
       nativeConfig: nativeConfig,
       bundle: sidecar.archive,
       log: log,
-    );
-    final paths = _collectDynamicLibraryPaths(sidecarDir);
-    if (!collectAvailableBackends(
-      describeNativeLibraries(paths),
-    ).contains(backend)) {
-      throw NativeHookContractException(
-        'The ${sidecar.archive} sidecar archive of '
-        '${nativeConfig.sourceLabel} holds no ggml-$backend module.',
-      );
-    }
-    log.info('Using the $backend backend sidecar: ${sidecarDir.path}');
-    sidecarPaths.addAll(paths);
-  }
-  if (sidecarPaths.isNotEmpty &&
-      !_isBundleLayoutCompatible(
+      sidecar: (
         bundle: bundle,
-        libraryPaths: [...coreLibraryPaths, ...sidecarPaths],
-        log: log,
-      )) {
-    throw NativeHookContractException(
-      'The backend sidecars of ${nativeConfig.sourceLabel} for $bundle are '
-      'missing runtime dependencies.',
+        backend: backend,
+        coreLibraryPaths: coreLibraryPaths,
+      ),
     );
+    log.info('Using the $backend backend sidecar: ${sidecarDir.path}');
+    sidecarPaths.addAll(_collectDynamicLibraryPaths(sidecarDir));
   }
   return sidecarPaths;
 }
@@ -2506,14 +2515,18 @@ Future<List<String>> _acquireBackendSidecarLibraryPaths({
 /// publishes none, as releases from before that manifest did (contract 1).
 ///
 /// A copy cached beside the release's bundle caches is reused; otherwise the
-/// manifest is downloaded and cached there. Throws
+/// manifest is downloaded and cached there, and a release that publishes none
+/// is remembered there too, so later builds need no network. Throws
 /// [NativeHookContractException] when it requires an unsupported hook contract
-/// or cannot be read.
+/// or cannot be read. When [unreachableSkips] names the backends a caller can
+/// do without, a manifest that cannot be downloaded instead warns and returns
+/// `null`.
 Future<NativeReleaseManifest?> _overrideReleaseManifest({
   required String packageRoot,
   required _NativeBundleConfig nativeConfig,
   required String bundle,
   required Logger log,
+  String? unreachableSkips,
 }) async {
   final cached = File(
     path.join(
@@ -2528,6 +2541,14 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
     ),
   );
   final source = '${nativeConfig.sourceLabel} assets.json';
+  final absent = File('${cached.path}.absent');
+  if (!cached.existsSync() && absent.existsSync()) {
+    log.info(
+      '${nativeConfig.sourceLabel} publishes no assets.json (cached at '
+      '${absent.path}); treating it as hook contract 1.',
+    );
+    return null;
+  }
   if (cached.existsSync()) {
     try {
       return parseNativeReleaseManifest(
@@ -2561,13 +2582,28 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
           '${nativeConfig.sourceLabel} publishes no assets.json; treating it '
           'as hook contract 1.',
         );
+        try {
+          await absent.writeAsString('');
+        } on FileSystemException catch (error) {
+          log.warning('Could not record ${absent.path} ($error).');
+        }
+        return null;
+      }
+      final remedy =
+          'To build without network access, put that release\'s assets.json '
+          'at ${cached.path}, or set $nativePathUserDefineKey to a local '
+          'bundle you trust.';
+      if (unreachableSkips != null) {
+        log.warning(
+          'Could not download $url to find the $unreachableSkips sidecar of '
+          '${nativeConfig.sourceLabel} ($error); building $bundle without '
+          'it. $remedy',
+        );
         return null;
       }
       throw NativeHookContractException(
         'Could not download $url to check the hook contract of '
-        '${nativeConfig.sourceLabel}: $error. To build without network '
-        'access, put that release\'s assets.json at ${cached.path}, or set '
-        '$nativePathUserDefineKey to a local bundle you trust.',
+        '${nativeConfig.sourceLabel}: $error. $remedy',
       );
     }
     final String text;

@@ -103,6 +103,9 @@ void main() {
     overrideCacheDir,
     windowsOverrideCacheDir,
     forkCacheDir,
+    // Where the hook records that a release publishes no assets.json.
+    for (final releaseDir in [overrideCacheDir, forkCacheDir])
+      File(path.join(releaseDir.parent.path, 'assets.json.absent')),
     stableDiffusionArchive,
     stableDiffusionBundleDir,
     liteRtLmArchive,
