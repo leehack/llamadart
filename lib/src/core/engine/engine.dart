@@ -36,6 +36,7 @@ import '../models/inference/reranking.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/generation_usage.dart';
 import '../models/inference/next_token_scores.dart';
+import '../models/inference/state_identity.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/model_file_store.dart';
@@ -2922,6 +2923,44 @@ class LlamaEngine {
       throw _unsupportedBackendOperation('State persistence', error);
     }
   }
+
+  /// The identity of the state [stateSaveFile] writes and [stateLoadFile]
+  /// reads on the loaded model's context.
+  ///
+  /// [stateLoadFile] checks only the file's llama.cpp magic and session
+  /// version, which stay the same when the runtime or context settings
+  /// change. Store this identity with a state file, and before loading a
+  /// file that another process saved, check that the stored identity
+  /// [LlamaStateIdentity.matches] the loading engine's. Store a digest of the
+  /// model file with it too: the identity does not name the model.
+  ///
+  /// Supported on native llama.cpp from `llamadart-native` `v0.7.0-3`, which
+  /// reports its build identity. Throws [LlamaUnsupportedException] when the
+  /// active backend has no state persistence (LiteRT-LM, or WebGPU bridges
+  /// older than `v0.1.15`), cannot report a build identity (WebGPU, custom
+  /// backends without [BackendStateIdentity]), or when the loaded native
+  /// runtime is older than `v0.7.0-3` or reports an empty build identity.
+  Future<LlamaStateIdentity> stateIdentity() async {
+    _ensureReady();
+    await _resolveStatePersistence();
+    final candidate = backend;
+    if (candidate is! BackendStateIdentity) {
+      throw LlamaUnsupportedException(_stateIdentityUnsupportedMessage);
+    }
+    try {
+      return await (candidate as BackendStateIdentity).stateIdentity(
+        _contextHandle!,
+      );
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('State identity', error);
+    }
+  }
+
+  static const String _stateIdentityUnsupportedMessage =
+      'State identity is not supported by the active backend: it needs a '
+      'runtime that reports its own build, which only native llama.cpp with '
+      'llamadart-native v0.7.0-3 or newer does. WebGPU bridges and custom '
+      'backends without BackendStateIdentity do not.';
 
   Future<BackendStatePersistence> _resolveStatePersistence() async {
     final candidate = backend;

@@ -14,6 +14,7 @@ import '../../core/models/inference/model_params_runtime_support.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
+import '../../core/models/inference/state_identity.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
 import '../../core/models/tools/tool_definition.dart';
@@ -61,6 +62,7 @@ class NativeAutoBackend
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
         BackendStatePersistenceSupport,
+        BackendStateIdentity,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
         BackendJsonSchemaChatGeneration,
@@ -944,6 +946,17 @@ class NativeAutoBackend
     }
     throw UnsupportedError(
       'The selected native backend does not support state persistence.',
+    );
+  }
+
+  @override
+  Future<LlamaStateIdentity> stateIdentity(int contextHandle) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendStateIdentity) {
+      return (delegate as BackendStateIdentity).stateIdentity(contextHandle);
+    }
+    throw UnsupportedError(
+      'The selected native backend does not report a state identity.',
     );
   }
 

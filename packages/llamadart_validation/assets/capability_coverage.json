@@ -401,6 +401,17 @@
     },
     {
       "surfaces": [
+        "api:LlamaEngine.stateIdentity",
+        "matrix:State identity (stateIdentity)"
+      ],
+      "exemption": {
+        "id": "state-identity",
+        "reason": "Catalog 11 state cases do not report the identity yet; a versioned state-pack case follows catalog 12. Default CI covers the native report, digest fields, unsupported and pre-v0.7.0-3 runtimes, and a cross-process save, identity match, load and resume against fresh evaluation on the CPU test model. It does not qualify other models, devices or a matching identity as exact resumed output (#1003).",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
         "api:LlamaEngine.detokenize",
         "api:LlamaEngine.getTokenCount",
         "api:LlamaEngine.tokenize"

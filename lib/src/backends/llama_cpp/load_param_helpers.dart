@@ -2,8 +2,10 @@
 // inlined in the service) so they can be unit-tested without going through
 // `LlamaEngine.loadModel`, which is integration-level and needs a real model.
 
+import 'dart:convert';
 import 'dart:ffi';
 
+import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
 
 import '../../core/models/config/flash_attention.dart';
@@ -128,6 +130,25 @@ FlashAttention applyContextParams(
     ctxParams.rope_freq_scale = params.ropeFrequencyScale!;
   }
   return resolvedFlashAttn;
+}
+
+/// The SHA-256 hex digest of the [ctxParams] fields that change the layout
+/// of a saved llama.cpp state: K and V cache types, flash-attention mode,
+/// sequence count, unified KV and full-size SWA cache.
+///
+/// The flash-attention mode is the requested one: llama.cpp resolves `auto`
+/// per device, and rejects a state whose V cache transposition differs.
+String stateContextConfigDigest(llama_context_params ctxParams) {
+  final fields = [
+    'llamadart-state-context/1',
+    'type_k=${ctxParams.type_k.name}',
+    'type_v=${ctxParams.type_v.name}',
+    'flash_attn=${ctxParams.flash_attn_type.name}',
+    'n_seq_max=${ctxParams.n_seq_max}',
+    'kv_unified=${ctxParams.kv_unified}',
+    'swa_full=${ctxParams.swa_full}',
+  ];
+  return sha256.convert(utf8.encode(fields.join(';'))).toString();
 }
 
 /// The context parameters a speculative session creates its draft context

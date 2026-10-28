@@ -10,6 +10,7 @@ import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/generation_usage.dart';
 import '../core/models/inference/next_token_scores.dart';
+import '../core/models/inference/state_identity.dart';
 import '../core/models/inference/tool_choice.dart';
 import '../core/models/chat/chat_message.dart';
 import '../core/models/chat/content_part.dart';
@@ -1248,6 +1249,17 @@ abstract class BackendStatePersistence {
 abstract class BackendStatePersistenceSupport {
   /// Whether state save/load calls are expected to be supported by this backend.
   bool get supportsStatePersistence;
+}
+
+/// Optional backend capability for reporting the [LlamaStateIdentity] of the
+/// state [BackendStatePersistence.stateSaveFile] writes.
+///
+/// Implement it only when the runtime can name its own build: an identity
+/// without one cannot tell two runtimes apart. Throw [UnsupportedError] (or
+/// [LlamaUnsupportedException]) when the active runtime cannot report one.
+abstract class BackendStateIdentity {
+  /// The identity of the state [contextHandle] saves and loads.
+  Future<LlamaStateIdentity> stateIdentity(int contextHandle);
 }
 
 /// Optional native cross-encoder capability. Existing backends need not implement it.

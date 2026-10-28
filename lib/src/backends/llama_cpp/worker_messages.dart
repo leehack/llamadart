@@ -8,6 +8,7 @@ import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/next_token_scores.dart';
+import '../../core/models/inference/state_identity.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
@@ -606,6 +607,15 @@ class StateLoadFileRequest extends WorkerRequest {
   );
 }
 
+/// Request for the identity of the state [contextHandle] saves and loads.
+class StateIdentityRequest extends WorkerRequest {
+  /// Context whose state identity to report.
+  final int contextHandle;
+
+  /// Creates a new [StateIdentityRequest].
+  StateIdentityRequest(this.contextHandle, super.sendPort);
+}
+
 /// Request to apply a chat template.
 class ChatTemplateRequest extends WorkerRequest {
   /// The handle of the model.
@@ -818,6 +828,15 @@ class StateLoadFileResponse {
 
   /// Creates a new [StateLoadFileResponse].
   StateLoadFileResponse(this.tokens);
+}
+
+/// Response from a [StateIdentityRequest].
+class StateIdentityResponse {
+  /// The identity of the context's state.
+  final LlamaStateIdentity identity;
+
+  /// Creates a new [StateIdentityResponse].
+  StateIdentityResponse(this.identity);
 }
 
 /// Category used to preserve llama.cpp worker failures across isolates.

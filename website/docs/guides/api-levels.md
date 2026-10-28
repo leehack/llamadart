@@ -55,7 +55,8 @@ chat history management.
 - **Next-token scores**: `scoreNextToken(...)` returns next-token
   log-probabilities; see
   [Next-token scores](./generation-and-streaming#next-token-scores).
-- **State persistence**: `stateSaveFile(...)` / `stateLoadFile(...)`; see
+- **State persistence**: `stateSaveFile(...)` / `stateLoadFile(...)`, and
+  `stateIdentity()` to check a file another process saved; see
   [State persistence](./model-lifecycle#save-and-restore-prompt-state).
 
 ```dart

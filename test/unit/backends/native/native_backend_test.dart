@@ -33,6 +33,7 @@ import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
+import 'package:llamadart/src/core/models/inference/state_identity.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
@@ -1160,6 +1161,7 @@ void main() {
         () => backend.stateLoadFile(1, '/tmp/state.bin', 16),
         throwsUnsupportedError,
       );
+      expect(() => backend.stateIdentity(1), throwsUnsupportedError);
     } finally {
       await backend.dispose();
     }
@@ -1194,6 +1196,8 @@ void main() {
       expect((await backend.stateLoadFile(1, '/tmp/state.bin', 16)).tokens, [
         3,
       ]);
+      expect(await backend.stateIdentity(5), _capabilityStateIdentity);
+      expect(llama.stateIdentityContexts, [5]);
       expect(backend.supportsNextTokenScoring, isTrue);
       final scores = await backend.scoreNextToken(
         4,
@@ -2447,6 +2451,13 @@ class _DeferredEngineFakeBackend extends _FakeBackend
   bool get defersEngineCreation => true;
 }
 
+final _capabilityStateIdentity = LlamaStateIdentity(
+  runtimeBuild: 'llamadart-native-build/1;owner=abc',
+  sessionFormatVersion: 11,
+  contextSize: 256,
+  contextConfigDigest: 'digest',
+);
+
 class _CapabilityFakeBackend extends _FakeBackend
     implements
         BackendAvailability,
@@ -2457,11 +2468,19 @@ class _CapabilityFakeBackend extends _FakeBackend
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendStatePersistenceSupport,
+        BackendStateIdentity,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport {
   _CapabilityFakeBackend({required super.handle});
 
   final List<(int, String, int, bool)> scoreCalls = [];
+  final List<int> stateIdentityContexts = [];
+
+  @override
+  Future<LlamaStateIdentity> stateIdentity(int contextHandle) async {
+    stateIdentityContexts.add(contextHandle);
+    return _capabilityStateIdentity;
+  }
 
   @override
   bool get supportsNextTokenScoring => true;

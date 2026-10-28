@@ -87,6 +87,12 @@ Linux and web. Full docs: https://llamadart.leehack.com
   Use a `tokenCapacity` within 1..context size and large enough for the saved
   tokens. On a ready, idle native llama.cpp context, capacity outside those
   bounds throws `LlamaArgumentException` without invalidating the context.
+- `stateLoadFile` checks only the llama.cpp session magic and version. Before
+  loading a state file another process saved, compare the
+  `LlamaStateIdentity` stored with it to `await engine.stateIdentity()` with
+  `matches`, and compare a model digest you store yourself; on a mismatch,
+  evaluate the prompt again. Native llama.cpp needs `llamadart-native`
+  `v0.7.0-3`+; other runtimes throw `LlamaUnsupportedException`.
 - Name the model with `ModelSource.parse(...)` (`hf://owner/repo/file.gguf`,
   an HTTP(S) URL, or a local path) and pass `params:` (`ModelParams`),
   `download:` (`ModelLoadOptions`) and `onProgress:` to `LlamaEngine.load` or
