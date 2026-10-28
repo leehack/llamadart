@@ -595,6 +595,353 @@ void main() {
       expect(records.single.message, contains('Cannot lock'));
     });
   });
+
+  group('cache management', () {
+    late DefaultModelDownloadManager manager;
+
+    setUp(() {
+      manager = DefaultModelDownloadManager(defaultCacheDirectory: root.path);
+      server.holdFirst = false;
+    });
+
+    ModelSource named(String fileName) =>
+        ModelSource.url(server.uri, fileName: fileName);
+    String directoryOf(ModelSource source) =>
+        path.join(root.path, source.cacheDirectoryName);
+    String lockPathOf(ModelSource source) =>
+        path.join(root.path, '.locks', '${source.cacheDirectoryName}.lock');
+
+    /// Holds [source]'s entry lock as another process would.
+    Future<ModelCacheEntryLock> holdLock(ModelSource source) async {
+      Directory(path.dirname(lockPathOf(source))).createSync(recursive: true);
+      final lock = await acquireModelCacheEntryLock(
+        lockPathOf(source),
+        throwIfCancelled: () {},
+      );
+      addTearDown(() => lock?.release());
+      return lock!;
+    }
+
+    Matcher inUse(List<String> directories) =>
+        isA<ModelCacheEntryInUseException>().having(
+          (error) => error.entryDirectories,
+          'entryDirectories',
+          directories,
+        );
+
+    test('remove leaves an entry whose lock another caller holds and reports '
+        'it in use', () async {
+      final entry = await manager.ensureModel(source());
+      final lock = await holdLock(source());
+
+      await expectLater(
+        manager.remove(source().cacheKey),
+        throwsA(inUse(<String>[entryDirectory().path])),
+      );
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+      expect(File(lockPath()).existsSync(), isTrue);
+
+      await lock.release();
+      await manager.remove(source().cacheKey);
+      expect(entryDirectory().existsSync(), isFalse);
+    });
+
+    test('prune skips entries in use and removes the rest', () async {
+      final busy = named('busy.gguf');
+      final idle = named('idle.gguf');
+      final stale = named('stale.gguf');
+      await manager.ensureModel(busy);
+      await manager.ensureModel(idle);
+      final staleEntry = await manager.ensureModel(stale);
+      File(staleEntry.filePath).deleteSync();
+      await holdLock(busy);
+      await holdLock(stale);
+
+      final pruned = await manager.prune(maxBytes: 0);
+
+      expect(pruned.map((entry) => entry.cacheKey), <String>[idle.cacheKey]);
+      expect(Directory(directoryOf(busy)).existsSync(), isTrue);
+      expect(Directory(directoryOf(stale)).existsSync(), isTrue);
+      expect(Directory(directoryOf(idle)).existsSync(), isFalse);
+      expect((await manager.list()).single.cacheKey, busy.cacheKey);
+    });
+
+    test('prune keeps an entry used after it listed it', () async {
+      final entry = await manager.ensureModel(source());
+      final previousLocker = modelCacheEntryLocker;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      // A cache hit in another isolate completes between prune listing the
+      // entry and taking its lock.
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+        modelCacheEntryLocker = previousLocker;
+        await _downloadInIsolate(root.path, server.uri.toString());
+        return previousLocker(lockPath, throwIfCancelled: throwIfCancelled);
+      };
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      final pruned = await manager.prune(maxAge: Duration.zero);
+
+      expect(pruned, isEmpty);
+      expect(server.requestCount, 1);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    });
+
+    test('prune keeps a stale entry downloaded again after it listed '
+        'it', () async {
+      final entry = await manager.ensureModel(source());
+      File(entry.filePath).deleteSync();
+      final previousLocker = modelCacheEntryLocker;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+        modelCacheEntryLocker = previousLocker;
+        await _downloadInIsolate(root.path, server.uri.toString());
+        return previousLocker(lockPath, throwIfCancelled: throwIfCancelled);
+      };
+
+      final pruned = await manager.prune();
+
+      expect(pruned, isEmpty);
+      expect(server.requestCount, 2);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    });
+
+    test('clear removes every entry not in use, reports the rest and keeps '
+        'their lock files', () async {
+      final busy = named('busy.gguf');
+      final idle = named('idle.gguf');
+      await manager.ensureModel(busy);
+      await manager.ensureModel(idle);
+      final lock = await holdLock(busy);
+
+      await expectLater(
+        manager.clear(),
+        throwsA(inUse(<String>[directoryOf(busy)])),
+      );
+      expect((await manager.list()).single.cacheKey, busy.cacheKey);
+      expect(File(lockPathOf(busy)).existsSync(), isTrue);
+
+      await lock.release();
+      await manager.clear();
+      expect(await manager.list(), isEmpty);
+      expect(
+        root.listSync().map((entity) => path.basename(entity.path)),
+        <String>['.locks'],
+      );
+    });
+
+    test('clear takes no lock for noCache entries', () async {
+      await manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.noCache),
+      );
+
+      await manager.clear();
+
+      expect(await manager.list(), isEmpty);
+      final locks = Directory(path.join(root.path, '.locks'));
+      expect(locks.existsSync() ? locks.listSync() : const [], isEmpty);
+    });
+
+    test('clear leaves another process to finish its download', () async {
+      server.holdFirst = true;
+      final child = await spawnChild();
+      await server.firstResponseHeld;
+      await _waitForPartFile(entryDirectory(), server.holdAfter);
+
+      await expectLater(
+        manager.clear(),
+        throwsA(inUse(<String>[entryDirectory().path])),
+      );
+      server.release();
+      final result = await child.done;
+
+      expect(result['sha256'], server.sha256Digest);
+      expect(server.requestCount, 1);
+      expect((await manager.list()).single.cacheKey, source().cacheKey);
+    });
+
+    test('prune and remove called from a download in this isolate skip its '
+        'entry without waiting for it', () async {
+      await manager.ensureModel(source());
+      server.holdAtOverrides[2] = server.holdAfter;
+      Future<List<ModelCacheEntry>>? pruned;
+      Future<Object?>? removeError;
+
+      final refreshing = manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.refresh),
+        onProgress: (_) {
+          pruned ??= manager.prune(maxBytes: 0);
+          removeError ??= manager
+              .remove(source().cacheKey)
+              .then((_) => null, onError: (Object error) => error);
+        },
+      );
+      await server.held(2);
+      while (pruned == null || removeError == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      // Both finish while the download they were called from is still held.
+      expect(await pruned!.timeout(const Duration(seconds: 10)), isEmpty);
+      expect(
+        await removeError!.timeout(const Duration(seconds: 10)),
+        inUse(<String>[entryDirectory().path]),
+      );
+      server.release();
+      final refreshed = await refreshing;
+      expect(server.requestCount, 2);
+      expect(await File(refreshed.filePath).readAsBytes(), server.payload);
+    });
+
+    test('without file locks, remove still skips an entry this isolate is '
+        'downloading', () async {
+      final previousLocker = modelCacheEntryLocker;
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async =>
+          null;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      await manager.ensureModel(source());
+      server.holdAtOverrides[2] = server.holdAfter;
+      final refreshing = manager.ensureModel(
+        source(),
+        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.refresh),
+      );
+      await server.held(2);
+
+      await expectLater(
+        manager.remove(source().cacheKey),
+        throwsA(inUse(<String>[entryDirectory().path])),
+      );
+      server.release();
+      final entry = await refreshing;
+
+      expect(server.requestCount, 2);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    });
+
+    test('an entry whose model file is open elsewhere is in use only on '
+        'Windows, where the open handle blocks deleting it', () async {
+      final entry = await manager.ensureModel(source());
+      var open = true;
+      final handle = await File(entry.filePath).open();
+      Future<void> close() async {
+        if (open) {
+          open = false;
+          await handle.close();
+        }
+      }
+
+      addTearDown(close);
+
+      if (!Platform.isWindows) {
+        await manager.remove(source().cacheKey);
+        expect(entryDirectory().existsSync(), isFalse);
+        return;
+      }
+      for (final operation in <Future<void> Function()>[
+        () => manager.remove(source().cacheKey),
+        manager.clear,
+      ]) {
+        await expectLater(
+          operation(),
+          throwsA(inUse(<String>[entryDirectory().path])),
+        );
+        expect((await manager.list()).single.cacheKey, source().cacheKey);
+      }
+      expect(await manager.prune(maxBytes: 0), isEmpty);
+      await close();
+      await manager.remove(source().cacheKey);
+      expect(entryDirectory().existsSync(), isFalse);
+    });
+
+    test('a cache hit on a read-only cache root returns the entry', () async {
+      final entry = await manager.ensureModel(source());
+      final unrecorded = named('unrecorded.gguf');
+      final unrecordedEntry = await manager.ensureModel(unrecorded);
+      File(path.join(directoryOf(unrecorded), 'metadata.json')).deleteSync();
+      Directory(path.join(root.path, '.locks')).deleteSync(recursive: true);
+      expect(Process.runSync('chmod', ['-R', 'a-w', root.path]).exitCode, 0);
+      addTearDown(() => Process.runSync('chmod', ['-R', 'u+w', root.path]));
+      final metadata = File(
+        path.join(entryDirectory().path, 'metadata.json'),
+      ).readAsStringSync();
+
+      for (final policy in <ModelCachePolicy>[
+        ModelCachePolicy.cacheOnly,
+        ModelCachePolicy.preferCached,
+      ]) {
+        final hit = await manager.ensureModel(
+          source(),
+          options: ModelLoadOptions(cachePolicy: policy),
+        );
+        expect(hit.filePath, entry.filePath);
+        expect(hit.bytes, server.payload.length);
+        final recovered = await manager.ensureModel(
+          unrecorded,
+          options: ModelLoadOptions(cachePolicy: policy),
+        );
+        expect(recovered.filePath, unrecordedEntry.filePath);
+      }
+      expect(server.requestCount, 2);
+      expect(
+        File(
+          path.join(entryDirectory().path, 'metadata.json'),
+        ).readAsStringSync(),
+        metadata,
+      );
+    }, testOn: '!windows');
+
+    test('a cacheOnly miss stays a miss when the file appears before the '
+        'entry is read', () async {
+      await manager.ensureModel(source());
+      final modelPath = path.join(entryDirectory().path, _fileName);
+
+      await IOOverrides.runWithIOOverrides(
+        () => expectLater(
+          manager.ensureModel(
+            source(),
+            options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+          ),
+          throwsA(isA<LlamaStateException>()),
+        ),
+        _FirstExistsCheckMisses(modelPath),
+      );
+    });
+  });
+}
+
+/// Answers the first `exists()` check of [_path] with false, as if another
+/// process wrote the file just after it.
+final class _FirstExistsCheckMisses extends IOOverrides {
+  _FirstExistsCheckMisses(this._path);
+
+  final String _path;
+  bool _missed = false;
+
+  @override
+  File createFile(String path) {
+    if (_missed || path != _path) {
+      return super.createFile(path);
+    }
+    _missed = true;
+    return _MissingFile(super.createFile(path));
+  }
+}
+
+final class _MissingFile implements File {
+  _MissingFile(this._file);
+
+  final File _file;
+
+  @override
+  String get path => _file.path;
+
+  @override
+  Future<bool> exists() async => false;
+
+  @override
+  Object? noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName} on $path');
 }
 
 // A top-level function, so the closure sent to the isolate captures only

@@ -184,6 +184,7 @@ const _appNames = <String>{
   'LocalModelFile',
   'LoraAdapterConfig',
   'ModelCacheEntry',
+  'ModelCacheEntryInUseException',
   'ModelCachePlatform',
   'ModelCachePolicy',
   'ModelDownloadCancelToken',

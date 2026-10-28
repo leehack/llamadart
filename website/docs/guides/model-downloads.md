@@ -312,8 +312,20 @@ await manager.prune(
   maxAge: const Duration(days: 30),
   maxBytes: 20 * 1024 * 1024 * 1024,
 );
-await manager.clear();
+try {
+  await manager.clear();
+} on ModelCacheEntryInUseException catch (error) {
+  // Every other entry is gone; these are in use elsewhere.
+  print('Kept ${error.entryDirectories.length} entries in use.');
+}
 ```
+
+`remove` and `clear` never wait for an entry in use: they remove the rest and
+then throw `ModelCacheEntryInUseException` naming the entries they kept.
+`prune` skips entries in use, and entries used after it listed them, and
+leaves them out of its result. See
+[Locking](#reference-resume-locking-and-cache-metadata) for what counts as in
+use.
 
 ## Large downloads on mobile
 
@@ -378,6 +390,17 @@ cache root, such as two apps using `sharedCache()`, apps granted the same
 cache-reusing policies then re-check the cache, including the file's length
 and checksum, so a waiter reuses the finished download or downloads again.
 Different entries download in parallel.
+
+`remove`, `prune` and `clear` take the same lock without waiting for it, so
+they never delete an entry another isolate or process is downloading or
+verifying, including from that download's `onProgress` callback. On Windows an
+entry whose model file a process has open or mapped, such as a loaded model,
+is also in use; on other platforms deleting it leaves the open file readable.
+`noCache` downloads take no lock, so `clear` removes one in progress and that
+download fails. `clear` keeps `<cache root>/.locks/`: deleting a lock file
+while another process waits on it would let two processes hold the same
+entry's lock. Its empty files are safe to delete only when no process uses the
+cache root.
 Concurrent `refresh` calls each refresh in turn. `noCache` downloads are not
 coalesced. In the same isolate, cancelling a waiting caller takes effect after
 the active operation finishes; a caller waiting on another isolate or process

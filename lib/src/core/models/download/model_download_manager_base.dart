@@ -283,17 +283,26 @@ abstract interface class ModelDownloadManager {
 
   /// Removes cached model entries by [cacheKey] under [cacheDirectory].
   ///
+  /// An implementation should not delete an entry another caller is
+  /// downloading; it may remove the others and then throw
+  /// [ModelCacheEntryInUseException].
+  ///
   /// When [cacheDirectory] is omitted, the manager's default cache root is used.
   Future<void> remove(String cacheKey, {String? cacheDirectory});
 
   /// Clears all package-managed cached model entries under [cacheDirectory],
   /// including transient `noCache` entries.
   ///
+  /// Entries in use are handled as in [remove].
+  ///
   /// When [cacheDirectory] is omitted, the manager's default cache root is used.
   Future<void> clear({String? cacheDirectory});
 
   /// Prunes cached model entries, including transient `noCache` entries, and
   /// returns removed entries.
+  ///
+  /// An implementation should skip, and not return, an entry another caller
+  /// is downloading.
   ///
   /// When [cacheDirectory] is omitted, the manager's default cache root is used.
   Future<List<ModelCacheEntry>> prune({
