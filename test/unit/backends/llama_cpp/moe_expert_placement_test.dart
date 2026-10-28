@@ -11,6 +11,8 @@ import 'package:llamadart/src/backends/llama_cpp/load_param_helpers.dart';
 import 'package:llamadart/src/backends/llama_cpp/moe_expert_placement.dart';
 import 'package:test/test.dart';
 
+import '../../../support/recording_allocator.dart';
+
 final int _gpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value;
 final int _igpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
 final int _cpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value;
@@ -160,19 +162,29 @@ void main() {
 
   test('tensor buffer overrides are null-terminated and freed', () {
     final buft = Pointer<ggml_backend_buffer_type>.fromAddress(0x40);
-    final overrides = allocateTensorBufferOverrides(['a', 'b'], buft);
-    try {
-      expect(overrides[0].pattern.cast<Utf8>().toDartString(), 'a');
-      expect(overrides[1].pattern.cast<Utf8>().toDartString(), 'b');
-      expect(overrides[0].buft, buft);
-      expect(overrides[1].buft, buft);
-      expect(overrides[2].pattern, nullptr);
-    } finally {
-      freeTensorBufferOverrides(overrides);
-    }
-    final empty = allocateTensorBufferOverrides(const [], buft);
+    final allocator = RecordingAllocator(poison: true);
+    final overrides = allocateTensorBufferOverrides(
+      ['a', 'b'],
+      buft,
+      allocator: allocator,
+    );
+    // Freeing walks to the terminator, so check it before freeing.
+    expect(overrides[2].pattern, nullptr);
+    expect(overrides[2].buft, nullptr);
+    expect(overrides[0].pattern.cast<Utf8>().toDartString(), 'a');
+    expect(overrides[1].pattern.cast<Utf8>().toDartString(), 'b');
+    expect(overrides[0].buft, buft);
+    expect(overrides[1].buft, buft);
+    freeTensorBufferOverrides(overrides, allocator: allocator);
+    expect(allocator.allocations, 3);
+    final empty = allocateTensorBufferOverrides(
+      const [],
+      buft,
+      allocator: allocator,
+    );
     expect(empty[0].pattern, nullptr);
-    freeTensorBufferOverrides(empty);
+    freeTensorBufferOverrides(empty, allocator: allocator);
+    allocator.expectAllFreed();
   });
 
   group('MoE cache parameters', () {
