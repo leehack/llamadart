@@ -189,6 +189,11 @@ same token as the end tag and as all the text since the previous end tag,
 because text it has already streamed as content stays content. With
 `Plan.</think>A` and then `</think>B<think>X</think>C`, the stream gives
 content `ABC` where the parse gives `BC`.
+Without tools, Command R7B and Cohere2 MoE content streams without the
+`<|START_RESPONSE|>`, `<|START_TEXT|>` and matching end markers that wrap it,
+as their parse drops them. These markers are control tokens in converted
+GGUFs, which the chat template result preserves as llama.cpp does, so they
+reach the parser instead of decoding as empty text.
 
 DeepSeek V3 parses a forced-open thought as llama.cpp (`620d2225`) does: the
 thought is the text before the first `</think>`, kept as generated, including

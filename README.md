@@ -626,6 +626,10 @@ throws `LlamaUnsupportedException` for a field set that the model's runtime
 does not apply, before any download when the format is known. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
+`await engine.checkLoad(model, params: params)` returns the same verdict, and
+the runtime and device the load would use, as a `LlamaLoadCheckReport` without
+downloading or starting a runtime; see
+[Check a load before it runs](https://llamadart.leehack.com/docs/guides/backend-selection#check-a-load-before-it-runs).
 
 Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
 and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.

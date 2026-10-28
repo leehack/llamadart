@@ -12,11 +12,13 @@ import 'package:llamadart/src/core/engine/chat_session.dart';
 import 'package:llamadart/src/core/engine/chat_session_tool_loop.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
+import 'package:llamadart/src/core/engine/load_check_report.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -32,14 +34,15 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+import '../../../support/load_check_agreement.dart';
 import '../../core/engine/engine_test.dart';
 import '../../core/engine/multimodal_embeddings_test.dart';
 
 void main() {
-  test('checkModelParams rejects fields the named runtime ignores', () {
+  test('checkLoad rejects fields the named runtime ignores', () {
     final backend = WebAutoBackend();
     expect(
-      () => backend.checkModelParams(
+      () => backend.checkLoad(
         const ModelParams(useMlock: true),
         ModelFormat.gguf,
       ),
@@ -55,7 +58,7 @@ void main() {
       ),
     );
     expect(
-      () => backend.checkModelParams(
+      () => backend.checkLoad(
         const ModelParams(liteRtLmCacheDir: '/cache'),
         ModelFormat.liteRtLm,
       ),
@@ -67,20 +70,17 @@ void main() {
         ),
       ),
     );
-    backend.checkModelParams(
+    backend.checkLoad(
       const ModelParams(modelBytesHint: 1 << 30),
       ModelFormat.gguf,
     );
-    backend.checkModelParams(const ModelParams(useMlock: true), null);
+    backend.checkLoad(const ModelParams(useMlock: true), null);
   });
 
-  test('checkModelParams rejects a subtype for the other runtime', () {
+  test('checkLoad rejects a subtype for the other runtime', () {
     final backend = WebAutoBackend();
     expect(
-      () => backend.checkModelParams(
-        const LiteRtLmModelParams(),
-        ModelFormat.gguf,
-      ),
+      () => backend.checkLoad(const LiteRtLmModelParams(), ModelFormat.gguf),
       throwsA(
         isA<LlamaUnsupportedException>().having(
           (error) => error.message,
@@ -89,10 +89,84 @@ void main() {
         ),
       ),
     );
-    backend.checkModelParams(
+    backend.checkLoad(
       const LiteRtLmModelParams(contextSize: 2048),
       ModelFormat.liteRtLm,
     );
+  });
+
+  test('LlamaEngine.checkLoad reports and agrees with what setModel rejects '
+      'on the Web before any fetch', () async {
+    final resolver = SentinelResolver();
+    final engine = LlamaEngine(WebAutoBackend(), modelResolver: resolver);
+    addTearDown(engine.dispose);
+    final gguf = LlamaModel(ModelSource.parse('https://example.com/m.gguf'));
+    final liteRtLm = LlamaModel(
+      ModelSource.parse('https://example.com/m.litertlm'),
+    );
+    final cases = <(LlamaModel, ModelParams, LlamaLoadCheckStatus, String?)>[
+      (gguf, const ModelParams(), LlamaLoadCheckStatus.supported, null),
+      (
+        gguf,
+        const ModelParams(useMlock: true),
+        LlamaLoadCheckStatus.unsupported,
+        'llama.cpp on the Web does not apply these ModelParams: useMlock.',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(
+          loras: [LoraAdapterConfig(path: 'https://example.com/a.gguf')],
+        ),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRtLmBackend web does not support',
+      ),
+      (
+        LlamaModel(ModelSource.parse('https://example.com/download?id=7')),
+        const ModelParams(useMlock: true),
+        LlamaLoadCheckStatus.deferred,
+        'Set ModelSource.format',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(device: ComputeDevice.npu),
+        LlamaLoadCheckStatus.unsupported,
+        'ComputeDevice.npu is not available for LiteRT-LM on the Web',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(liteRtLmEmbeddingEngine: true),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRT-LM WebGPU embeddings are unavailable',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(
+          liteRtLmEmbeddingEngine: true,
+          device: ComputeDevice.cpu,
+        ),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRT-LM Web CPU embeddings are unavailable',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(
+          liteRtLmEmbeddingEngine: true,
+          // ignore: deprecated_member_use_from_same_package
+          liteRtLmBackend: LiteRtLmBackendPreference.npu,
+        ),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRtLmBackendPreference.npu is not available for LiteRT-LM on the '
+            'Web',
+      ),
+      (liteRtLm, const ModelParams(), LlamaLoadCheckStatus.supported, null),
+    ];
+    for (final (model, params, status, reason) in cases) {
+      final report = await engine.checkLoad(model, params: params);
+      expect(report.status, status, reason: '$report');
+      if (reason != null) expect(report.reason, contains(reason));
+      expect(resolver.calls, 0);
+      await expectSetModelAgrees(engine, resolver, model, params, report);
+    }
   });
 
   test('router cancels content during its own capability probe', () async {

@@ -84,6 +84,32 @@ final class _LegacyWebNative extends WebAutoBackend with _NativeChatOverride {
 }
 
 void main() {
+  test('embedding engine names the CPU a deprecated preferred backend selects '
+      'before I/O', () async {
+    var creates = 0;
+    _installFakeEngine(chunks: [], onCreate: (_) => creates++);
+    final backend = LiteRtLmBackend(
+      readyTimeout: Duration.zero,
+      // ignore: deprecated_member_use_from_same_package
+      preferredBackend: 'cpu',
+    );
+    addTearDown(backend.dispose);
+    await expectLater(
+      backend.modelLoad(
+        'private.litertlm',
+        const ModelParams(liteRtLmEmbeddingEngine: true),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'condition',
+          contains('Failed to get external weight'),
+        ),
+      ),
+    );
+    expect(creates, 0);
+  });
+
   for (final device in [ComputeDevice.cpu, ComputeDevice.gpu]) {
     test(
       'embedding engine rejects unqualified Web ${device.name} before I/O',
