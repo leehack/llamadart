@@ -32,6 +32,7 @@ For canonical full release notes, use:
 - A `responseFormat` or tool-call grammar after a thought the prompt leaves open now lets the model finish the thought first, as llama-server does, instead of returning the JSON as reasoning; a thought the template opens stays open with `enableThinking: false`, as in llama-server ([#1465](https://github.com/leehack/llamadart/issues/1465)).
 - A required tool call after a thought the prompt leaves open now lets Cohere2 MoE, Nemotron 3 Nano, MiniCPM5 and Hy3 models finish the thought first, as llama-server does; MiniCPM5 previously wrote the call inside the thought and returned no tool call.
 - `clear` removes a stray `.removal` directory in a model cache root instead of reporting it in use forever ([#1507](https://github.com/leehack/llamadart/issues/1507)).
+- DeepSeek V3.1 keeps a forced-open thought as llama-server does: an escaped `\n` and a repeated `<think>` stay in the reasoning as generated, and thinking tags after the first `</think>` stay in the content instead of being parsed as more reasoning ([#750](https://github.com/leehack/llamadart/issues/750)).
 
 ## 0.16.5
 
