@@ -51,6 +51,44 @@ Important fields:
   [When a requested backend is not bundled](../platforms/native-build-hooks#when-a-requested-backend-is-not-bundled).
 - `splitMode`: model tensor distribution mode passed through to llama.cpp
   `split_mode`. Defaults to upstream `layer` behavior.
+- `gpuDevices`: the GPUs to load on, as the `GpuDeviceInfo.mainGpu` indices
+  `LlamaEngine.listGpuDevices` reports for `preferredBackend`
+  (llama.cpp `--device`). The list order is the split order. Under
+  `GpuBackend.auto` it needs a host with one GPU backend; otherwise set
+  `preferredBackend`. `ModelSplitMode.none` uses `mainGpu` instead.
+- `tensorSplit`: one proportion per device, in `gpuDevices` order or the
+  backend's listing order (llama.cpp `--tensor-split`); llama.cpp
+  normalizes them and stores them as float32. `validate()` rejects empty
+  lists, negative, NaN or infinite values, values above float32 range or
+  nonzero values float32 rounds to 0, a zero sum or one above float32 range,
+  and a length other than that of `gpuDevices`.
+  Native llama.cpp throws `LlamaUnsupportedException` before the model loads
+  for a device index the host lacks, a split for another number of devices,
+  several GPU backends under `auto`, and a load that would fall back to the
+  CPU; the Web and LiteRT-LM reject both fields. After a load with either
+  field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA2)`.
+  A speculative draft model loads on the same devices and split. Validated
+  on one Metal GPU only: multi-GPU loads have no hardware evidence yet, and
+  CUDA is not hardware-qualified.
+
+```dart
+final engine = LlamaEngine(LlamaBackend());
+// mainGpu counts the devices of one backend, so keep only CUDA devices.
+final gpus = [
+  for (final gpu in await engine.listGpuDevices(
+    probeBackends: [GpuBackend.cuda],
+  ))
+    if (gpu.backend == GpuBackend.cuda) gpu,
+];
+await engine.loadModel(
+  '/path/to/model.gguf',
+  modelParams: LlamaCppModelParams(
+    preferredBackend: GpuBackend.cuda,
+    gpuDevices: [gpus[0].mainGpu, gpus[2].mainGpu],
+    tensorSplit: const [3, 1], // three quarters of the layers on the first
+  ),
+);
+```
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
   To select one GPU for the full model, use
   `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
@@ -71,14 +109,16 @@ Important fields:
   experimental GPU cache of those host experts (`--moe-cache-mib`, which
   takes MiB). `0` disables it; it needs a nonzero `cpuMoeLayers`, and the
   load then disables CPU weight repacking so the experts stay cacheable. It
-  runs on Metal and CUDA; a load that offloads nothing, `ModelSplitMode.tensor`,
-  Vulkan (llama.cpp aborts:
+  runs on Metal and CUDA; with a budget, a load that offloads nothing,
+  `ModelSplitMode.tensor`, Vulkan (llama.cpp aborts:
   [ggml-org/llama.cpp#30697](https://github.com/ggml-org/llama.cpp/issues/30697))
   and other backends throw `LlamaUnsupportedException` before the model
-  loads. A budget the GPU cannot allocate, or too small for one token's
-  experts, fails the load with `LlamaModelException` naming `moeCacheBytes`.
-  It helps discrete GPUs that cannot hold every expert; on Apple silicon,
-  whose GPU shares system memory, it only adds copies.
+  loads; `cpuMoeLayers` alone runs on any backend. A budget the GPU cannot
+  allocate, or too small for one token's experts, fails the load with
+  `LlamaModelException` naming `moeCacheBytes`. Validated on Metal only,
+  where the GPU shares system memory and the cache only adds copies; CUDA
+  and multi-GPU hosts have no hardware evidence yet, and no speed-up is
+  claimed.
 
 ```dart
 const params = LlamaCppModelParams(
@@ -197,7 +237,8 @@ deprecated until 1.0.
 `gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative
 value, which means all layers like `maxGpuLayers`. Native
 LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
-`numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
+`numberOfThreadsBatch`, `splitMode`, `mainGpu`, `gpuDevices`, `tensorSplit`
+or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
 `speculativeRollbackTokenMax`, `cpuMoeLayers`, `moeCacheBytes`,

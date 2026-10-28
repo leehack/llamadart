@@ -36,6 +36,7 @@ jobs:
       genkit: ${{ steps.select.outputs.genkit }}
       genkit-lower-bounds: ${{ steps.select.outputs.genkit-lower-bounds }}
       example-packages: ${{ steps.select.outputs.example-packages }}
+      model-store: ${{ steps.select.outputs.model-store }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -137,6 +138,55 @@ jobs:
         run: |
           dart analyze --fatal-infos
           TMPDIR="$(mktemp -d)" dart test -x real-model
+
+  model-store:
+    needs: changes
+    if: needs.changes.outputs.model-store == 'true'
+    name: Model Store (checkout core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - name: Analyze and test
+        working-directory: packages/llamadart_model_store
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed .
+          flutter analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" flutter test
+          flutter test --platform chrome test/model_store_web_test.dart
+      - name: Check the lane leaves the package unchanged
+        working-directory: packages/llamadart_model_store
+        run: |
+          changes="$(git status --porcelain --untracked-files=all -- .)"
+          if [ -n "$changes" ]; then
+            printf '%s\n' "$changes"
+            echo "::error::The model store lane modified tracked or untracked files."
+            exit 1
+          fi
+      # llamadart 0.17 is not on pub.dev yet, so resolve it from this checkout.
+      - name: Publish dry-run
+        working-directory: packages/llamadart_model_store
+        run: |
+          staged="$RUNNER_TEMP/llamadart_model_store-publish"
+          rm -rf "$staged"
+          mkdir -p "$staged"
+          rsync -a --delete \
+            --exclude='.dart_tool' \
+            --exclude='build' \
+            --exclude='pubspec.lock' \
+            --exclude='pubspec_overrides.yaml' \
+            ./ "$staged/"
+          printf 'dependency_overrides:\n  llamadart:\n    path: %s\n' \
+            "$GITHUB_WORKSPACE" > "$staged/pubspec_overrides.yaml"
+          (cd "$staged" && flutter pub publish --dry-run)
 
   analyze:
     needs: changes
@@ -808,6 +858,7 @@ jobs:
       - genkit
       - genkit-lower-bounds
       - example-packages
+      - model-store
     steps:
       - uses: actions/checkout@v7
         with:

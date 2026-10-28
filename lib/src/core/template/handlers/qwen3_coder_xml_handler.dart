@@ -320,8 +320,10 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
       extractsThought: !thoughtTagsAreText,
-      // llama.cpp (`7fe450e1`) keeps escapes in Qwen3.5 reasoning.
+      // llama.cpp (`7fe450e1`) keeps escapes in Qwen3.5 reasoning, and
+      // (`620d2225`) a forced-open thought as generated.
       unescapeReasoning: false,
+      verbatimForcedThought: true,
     );
     return ChatParseResult(
       content: result.content.trim(),

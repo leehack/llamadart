@@ -134,6 +134,9 @@ class ChatCompletionStreamParser {
         templateResult.format == ChatFormat.qwen3CoderXml.index;
     final verbatimForcedThought =
         templateResult.thinkingForcedOpen && traits.keepsForcedThoughtVerbatim;
+    final verbatimThoughtOpenings = verbatimForcedThought
+        ? traits.forcedThoughtContentOpenings
+        : const <String>[];
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
@@ -304,6 +307,7 @@ class ChatCompletionStreamParser {
                 endTag: endTag,
                 tagState: thoughtTags,
                 endsAtFirstEndTag: verbatimForcedThought,
+                thoughtContentOpenings: verbatimThoughtOpenings,
               );
         if (verbatimForcedThought &&
             split.emissions.any((emission) => emission.endsThinking)) {
@@ -382,7 +386,7 @@ class ChatCompletionStreamParser {
 
         // A partial parse keeps a thought tag that is still arriving as
         // reasoning text; the final parse drops the whole tag.
-        final partialReasoning = _withoutTrailingTagPrefix(
+        final partialReasoning = withoutTrailingTagPrefix(
           partialParsed.reasoningContent ?? '',
           [startTag, endTag],
         ).trimRight();
@@ -448,6 +452,12 @@ class ChatCompletionStreamParser {
         !buffer.toString().contains('[TOOL_CALLS]') &&
         isThinking &&
         endTag.startsWith(pendingBuffer)) {
+      pendingBuffer = '';
+    }
+
+    // A verbatim thought that has not ended holds only the start of a tag that
+    // would end it, which its parse drops.
+    if (verbatimForcedThought && isThinking) {
       pendingBuffer = '';
     }
 
@@ -635,21 +645,6 @@ class ChatCompletionStreamParser {
   static int _noOpening(String text, int from) => text.length;
 
   /// [text] without a trailing proper prefix of any of [tags].
-  static String _withoutTrailingTagPrefix(String text, List<String> tags) {
-    var end = text.length;
-    for (final tag in tags) {
-      for (var length = tag.length - 1; length > 0; length--) {
-        if (length <= text.length &&
-            text.endsWith(tag.substring(0, length)) &&
-            text.length - length < end) {
-          end = text.length - length;
-          break;
-        }
-      }
-    }
-    return text.substring(0, end);
-  }
-
   static int? _firstNonWhitespaceIndex(String value) {
     for (var i = 0; i < value.length; i++) {
       if (!_isWhitespaceCodeUnit(value.codeUnitAt(i))) {
@@ -1001,6 +996,7 @@ class ChatCompletionStreamParser {
     required String endTag,
     _ThoughtTagState? tagState,
     bool endsAtFirstEndTag = false,
+    List<String> thoughtContentOpenings = const [],
   }) {
     final emissions = <_ThinkingSplitEmission>[];
     var localPendingBuffer = pendingBuffer;
@@ -1071,7 +1067,15 @@ class ChatCompletionStreamParser {
         break;
       }
 
-      final endIdx = localPendingBuffer.indexOf(endTag);
+      var endIdx = localPendingBuffer.indexOf(endTag);
+      var contentIdx = endIdx == -1 ? -1 : endIdx + endTag.length;
+      for (final opening in thoughtContentOpenings) {
+        final at = localPendingBuffer.indexOf(opening);
+        if (at != -1 && (endIdx == -1 || at < endIdx)) {
+          endIdx = at;
+          contentIdx = at;
+        }
+      }
       if (endIdx != -1) {
         emissions.add(
           _ThinkingSplitEmission(
@@ -1082,9 +1086,7 @@ class ChatCompletionStreamParser {
         );
         localIsThinking = false;
         tagState?.sawEndTag = true;
-        localPendingBuffer = localPendingBuffer.substring(
-          endIdx + endTag.length,
-        );
+        localPendingBuffer = localPendingBuffer.substring(contentIdx);
         if (endsAtFirstEndTag) {
           if (localPendingBuffer.isNotEmpty) {
             emissions.add(
@@ -1100,21 +1102,23 @@ class ChatCompletionStreamParser {
         continue;
       }
 
-      var potentialMatch = false;
-      for (var i = endTag.length - 1; i >= 1; i--) {
-        if (localPendingBuffer.endsWith(endTag.substring(0, i))) {
-          final emitIdx = localPendingBuffer.length - i;
-          if (emitIdx > 0) {
-            emissions.add(
-              _ThinkingSplitEmission(
-                text: localPendingBuffer.substring(0, emitIdx),
-                isThinking: true,
-              ),
-            );
-            localPendingBuffer = localPendingBuffer.substring(emitIdx);
-          }
-          potentialMatch = true;
-          break;
+      final held =
+          localPendingBuffer.length -
+          withoutTrailingTagPrefix(localPendingBuffer, [
+            endTag,
+            ...thoughtContentOpenings,
+          ]).length;
+      final potentialMatch = held > 0;
+      if (potentialMatch) {
+        final emitIdx = localPendingBuffer.length - held;
+        if (emitIdx > 0) {
+          emissions.add(
+            _ThinkingSplitEmission(
+              text: localPendingBuffer.substring(0, emitIdx),
+              isThinking: true,
+            ),
+          );
+          localPendingBuffer = localPendingBuffer.substring(emitIdx);
         }
       }
       if (!potentialMatch) {

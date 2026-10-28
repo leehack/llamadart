@@ -87,6 +87,7 @@ final class ChatFormatTraits {
     this.parsesCallsInsideThoughts = false,
     this.keepsForcedThoughtVerbatim = false,
     this.closedThoughtKeepsTagsAsContent = false,
+    this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.disabledByResponseSchema = false,
     this.requiredKeepsLazyGrammar = false,
@@ -120,6 +121,10 @@ final class ChatFormatTraits {
   /// Whether, after a prompt that ends with a closed thought, the parse
   /// extracts no reasoning, so thinking tags are content.
   final bool closedThoughtKeepsTagsAsContent;
+
+  /// Markers that, with [keepsForcedThoughtVerbatim], also end a forced-open
+  /// thought when they come before its end tag, and start the content.
+  final List<String> forcedThoughtContentOpenings;
 
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
@@ -255,6 +260,9 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => _hasAll(s, const ['<|START_TEXT|>', '<|START_ACTION|>']),
     traits: ChatFormatTraits(
       toolCallOpening: CommandR7BHandler.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
+      forcedThoughtContentOpenings:
+          Cohere2MoeHandler.forcedThoughtContentOpenings,
       disabledByResponseSchema: true,
     ),
   ),
@@ -323,6 +331,8 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     traits: ChatFormatTraits(
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
       closedThoughtKeepsTagsAsContent: true,
+      keepsForcedThoughtVerbatim: true,
+      forcedThoughtContentOpenings: [XmlToolCallFormat.qwen3CoderScopeStart],
     ),
   ),
   ChatFormatRegistration(
@@ -355,6 +365,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains('<tool_call>'),
     traits: ChatFormatTraits(
       toolCallOpening: HermesHandler.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
       closedThoughtKeepsTagsAsContent: true,
       // Qualified on Qwen3-VL against llama-server's rendering (#1008).

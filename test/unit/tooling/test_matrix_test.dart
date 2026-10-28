@@ -164,6 +164,26 @@ void main() {
     expect(scenario.description, contains('official float32 CPU reference'));
   });
 
+  test('model-store row names the package CI job and its commands', () {
+    final row = testMatrixRows.singleWhere(
+      (r) => r.id == 'model-store-contracts',
+    );
+    final workflow = File('.github/workflows/ci.yml').readAsStringSync();
+    expect(row.tier, 'targeted');
+    expect(row.command, contains('CI job model-store'));
+    for (final command in [
+      'flutter test',
+      'flutter test --platform chrome test/model_store_web_test.dart',
+    ]) {
+      expect(row.command, contains(command));
+      expect(workflow, contains(command));
+    }
+    expect(
+      File('doc/testing_matrix.md').readAsStringSync(),
+      contains('`model-store-contracts`'),
+    );
+  });
+
   test('examples-tests row names the example package CI job', () {
     final row = testMatrixRows.singleWhere((r) => r.id == 'examples-tests');
     expect(row.tier, 'targeted');

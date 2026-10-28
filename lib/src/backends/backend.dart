@@ -504,14 +504,25 @@ abstract class BackendModelFormatDetection {
   Future<ModelFormat?> detectModelFormat(String path);
 }
 
-/// Internal backend probe that rejects a load before any model file resolves
-/// or downloads.
-abstract class BackendModelParamsCheck {
+/// Optional backend capability that checks a model load before any model
+/// file resolves or downloads.
+///
+/// `LlamaEngine.setModel` throws what [checkLoad] throws before it resolves
+/// a file, and `LlamaEngine.checkLoad` reports the same outcome without
+/// loading. For a backend without this interface, `LlamaEngine.checkLoad`
+/// reports `LlamaLoadCheckStatus.unknown` once it knows the format.
+abstract class BackendLoadCheck {
   /// Throws [LlamaUnsupportedException] when loading a model in [format] with
   /// [params] would ignore an explicitly set field, or needs a runtime or
-  /// device this platform lacks. [format] is null when only the model file
-  /// can tell it; the backend then checks again when it loads the file.
-  void checkModelParams(ModelParams params, ModelFormat? format);
+  /// device this platform lacks; the message names the missing capability
+  /// and the platform or runtime condition.
+  ///
+  /// [format] is null when only the model file can tell it; the backend then
+  /// checks again when it loads the file, and the engine ignores the result.
+  /// Otherwise returns null when the backend checked the load, or why it
+  /// cannot tell before loading, such as a runtime it did not build. Must not
+  /// start a runtime or read a file.
+  String? checkLoad(ModelParams params, ModelFormat? format);
 }
 
 /// Internal backend probe for the usage of a finished generation stream.

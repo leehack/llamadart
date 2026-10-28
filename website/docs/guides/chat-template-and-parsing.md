@@ -54,6 +54,13 @@ print(result.format);
   values do not. Every template receives the resulting flag as
   `enable_thinking`, as llama.cpp passes it, so `enableThinking` alone
   reaches templates such as GLM-OCR (`/nothink`) and SmolLM3 (`/no_think`).
+  Templates that ignore `enable_thinking` get their own switch from
+  `enableThinking` instead: `reasoning` and `skip_thinking` for Cohere2 MoE,
+  `reasoning_effort` for Hy3 and `thinking_mode` for MiniMax M3. A kwarg that
+  sets that switch wins over the value `enableThinking` sets, as in
+  llama-server. Hy3 accepts only `no_think`, `low` and `high`; any other
+  `reasoning_effort`, such as `none` or `medium`, makes the template throw
+  `LlamaInferenceException`, as llama.cpp's render fails.
 - `templateNow`: deterministic time injection, including `strftime_now` and
   date globals. For multi-turn chat, construct
   `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.
@@ -105,6 +112,15 @@ message content.
 
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.
+
+When a DeepSeek V3.1, Qwen3.5, QwQ or other Hermes-style template opens a
+thought in the prompt, the reasoning is the text before the first `</think>`
+as the model wrote it, escapes and repeated `<think>` included, and the rest is
+content, as in llama-server. A Qwen3.5 `<tool_call>` also ends the thought.
+A Cohere2 MoE thought ends at `<|END_THINKING|>`, or at a `<|START_TEXT|>` or
+`<|START_ACTION|>` that comes first.
+See [Template engine internals](./template-engine-internals) for the parse and
+stream rules of each format.
 
 ### LiteRT-LM template registry
 

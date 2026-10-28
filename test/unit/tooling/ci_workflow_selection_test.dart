@@ -218,6 +218,64 @@ void main() {
     },
   );
 
+  test('model-store lane checks the package on its own selection', () async {
+    final plan = await selected([
+      'packages/llamadart_model_store/lib/src/model_store_io.dart',
+    ]);
+    expect(
+      (plan['jobs'] as Map).entries
+          .where((e) => e.value == true)
+          .map((e) => e.key),
+      ['model-store'],
+    );
+
+    final job = readWorkflow('ci')['jobs']['model-store'] as Map;
+    final steps = (job['steps'] as List).cast<Map>();
+    Map step(String name) => steps.singleWhere((s) => s['name'] == name);
+    final checks = step('Analyze and test');
+    expect(checks['working-directory'], 'packages/llamadart_model_store');
+    for (final command in [
+      'dart format --output=none --set-exit-if-changed .',
+      'flutter analyze --fatal-infos',
+      'TMPDIR="\$(mktemp -d)" flutter test',
+      'flutter test --platform chrome test/model_store_web_test.dart',
+    ]) {
+      expect(
+        (checks['run'] as String).split('\n'),
+        contains(command),
+        reason: command,
+      );
+    }
+    final unchanged = step('Check the lane leaves the package unchanged');
+    expect(unchanged.containsKey('if'), isFalse);
+    expect(unchanged['working-directory'], 'packages/llamadart_model_store');
+    expect(
+      unchanged['run'],
+      allOf(
+        contains('git status --porcelain --untracked-files=all -- .'),
+        contains('exit 1'),
+      ),
+    );
+    expect(steps.where((s) => s.containsKey('if')), isEmpty);
+  });
+
+  test('dependabot updates every independently resolved package', () {
+    final config =
+        loadYaml(File('.github/dependabot.yml').readAsStringSync()) as Map;
+    final pubDirectories = [
+      for (final update in config['updates'] as List)
+        if (update['package-ecosystem'] == 'pub') update['directory'] as String,
+    ];
+    for (final directory in pubDirectories) {
+      expect(
+        File('.$directory/pubspec.yaml'.replaceAll('//', '/')).existsSync(),
+        isTrue,
+        reason: directory,
+      );
+    }
+    expect(pubDirectories, contains('/packages/llamadart_model_store'));
+  });
+
   test(
     'core workflow wires every planned job into truthful always aggregate',
     () async {

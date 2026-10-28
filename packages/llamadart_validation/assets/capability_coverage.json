@@ -166,12 +166,33 @@
   "mappings": [
     {
       "surfaces": [
+        "matrix:GPU device list and split (gpuDevices, tensorSplit)"
+      ],
+      "exemption": {
+        "id": "gpu-device-placement",
+        "reason": "ModelParams.gpuDevices and tensorSplit have maintained validation, runtime-rejection, listGpuDevices index mapping, refusal (missing index, split length, several backends, CPU fallback, unusable Vulkan device) and native devices/tensor_split/draft-load tests, plus the local-only LLAMADART_GPU_MODEL scenario that loads on every GPU of a backend with an even split and keeps greedy output. It ran on one Metal GPU; no multi-GPU host has qualified it, and no validation-pack profile covers device placement.",
+        "issue": "https://github.com/leehack/llamadart/issues/916"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Model-free setup report"
       ],
       "exemption": {
         "id": "desktop-setup-report",
         "reason": "This pre-load desktop report has no model/backend probe and cannot qualify native loading or inference. VM production-path tests cover host publication selectors, bounded package version origin, privacy and actual CLI JSON/argument behavior; common model and unsupported Web paths run in Chrome. A versioned diagnostics pack remains separate from model capability validation (#861) and cross-platform qualification (#1196).",
         "issue": "https://github.com/leehack/llamadart/issues/124"
+      }
+    },
+    {
+      "surfaces": [
+        "api:LlamaEngine.checkLoad",
+        "matrix:Pre-load check"
+      ],
+      "exemption": {
+        "id": "pre-load-check",
+        "reason": "LlamaEngine.checkLoad reports the pre-I/O policy that setModel enforces and starts no runtime, so no model pack can qualify it. VM tests cover every native router gap (LiteRT-LM ABIs, Linux arm64 GPU, explicit NPU, unqualified embedding ABIs, deferred formats) and a single-runtime backend such as LlamaEngine(LiteRtLmBackend()) reporting unknown; Chrome tests the Web option, NPU and embedding-engine checks; each has a property test that setModel throws the reported error before resolving a file exactly when the report is unsupported. ModelLoadOptions rejections are out of scope: checkLoad takes none.",
+        "issue": "https://github.com/leehack/llamadart/issues/861"
       }
     },
     {

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../exceptions.dart';
 import '../config/compute_device.dart';
 import '../config/flash_attention.dart';
@@ -264,6 +266,39 @@ class ModelParams {
   /// llama.cpp's default behavior.
   final int mainGpu;
 
+  /// The GPUs to load the model on, as the `GpuDeviceInfo.mainGpu` indices
+  /// `LlamaEngine.listGpuDevices` reports for [preferredBackend]
+  /// (`llama_model_params.devices`).
+  ///
+  /// `null`, the default, keeps llama.cpp's own device choice. The list sets
+  /// both the devices and their order, which [tensorSplit] follows. Under
+  /// [GpuBackend.auto] the indices count the devices of the only GPU backend
+  /// with any; with several, set [preferredBackend]. [validate] rejects an
+  /// empty list, a negative or repeated index, and a list with
+  /// [ModelSplitMode.none], which runs on the [mainGpu] device alone, with
+  /// [gpuLayers] `0`, or with a CPU [device] or [preferredBackend]. Native
+  /// llama.cpp throws `LlamaUnsupportedException` before the model loads
+  /// for an index this host does not have and when the backend's module or
+  /// devices are unavailable, instead of loading on other devices; the Web
+  /// and LiteRT-LM reject any list.
+  final List<int>? gpuDevices;
+
+  /// The share of the model each GPU holds (`llama_model_params.tensor_split`),
+  /// one proportion per device, in [gpuDevices] order, or in the order of
+  /// [preferredBackend]'s `listGpuDevices` devices without [gpuDevices].
+  ///
+  /// `null`, the default, lets llama.cpp split by free memory. llama.cpp
+  /// normalizes the proportions, so `[3, 1]` puts three quarters of the
+  /// layers on the first device. llama.cpp stores and sums the proportions
+  /// as float32. [validate] rejects an empty list, a value that is negative,
+  /// infinite, NaN, above float32 range or a nonzero value float32 rounds to
+  /// 0, a zero sum or one above float32 range, a length other than that of
+  /// [gpuDevices], and a list with [ModelSplitMode.none] or a load that
+  /// offloads nothing. Native llama.cpp throws `LlamaUnsupportedException`
+  /// before the model loads when the length differs from the number of
+  /// devices the load uses; the Web and LiteRT-LM reject any list.
+  final List<double>? tensorSplit;
+
   /// Initial LoRA adapters to load along with the model.
   ///
   /// llama.cpp backends apply every adapter at its [LoraAdapterConfig.scale],
@@ -485,7 +520,8 @@ class ModelParams {
   /// context creation, and the `LlamaModelException` of the load names
   /// `moeCacheBytes` in its details. The Web and LiteRT-LM
   /// reject a nonzero value. GPUs that share system memory, such as Apple
-  /// silicon, gain nothing from it.
+  /// silicon, gain nothing from it. Validated on Metal only; CUDA and
+  /// multi-GPU hosts have no hardware evidence yet.
   final int moeCacheBytes;
 
   /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.
@@ -577,6 +613,8 @@ class ModelParams {
     this.liteRtLmMaxProgramCacheBytes,
     this.splitMode = ModelSplitMode.layer,
     this.mainGpu = 0,
+    this.gpuDevices,
+    this.tensorSplit,
     this.loras = const [],
     this.chatTemplate,
     this.numberOfThreads = 0,
@@ -616,6 +654,8 @@ class ModelParams {
       liteRtLmMaxProgramCacheBytes = other.liteRtLmMaxProgramCacheBytes,
       splitMode = other.splitMode,
       mainGpu = other.mainGpu,
+      gpuDevices = other.gpuDevices,
+      tensorSplit = other.tensorSplit,
       loras = other.loras,
       chatTemplate = other.chatTemplate,
       numberOfThreads = other.numberOfThreads,
@@ -650,11 +690,15 @@ class ModelParams {
   ///   [preferredBackend], with [gpuLayers] set to 0, or, on native platforms,
   ///   with [splitMode] [ModelSplitMode.none] and a negative [mainGpu].
   ///
+  /// It also checks [gpuDevices] and [tensorSplit] as their documentation
+  /// describes.
+  ///
   /// `LlamaEngine` model loads call it before any download or native call,
   /// so callers don't have to remember it; call it directly to validate a
   /// `ModelParams` up front.
   void validate() {
     _validateDevice();
+    _validateGpuDevices();
     if (liteRtLmPrefillChunkSize != null && liteRtLmPrefillChunkSize! <= 0) {
       throw _invalid(
         'liteRtLmPrefillChunkSize',
@@ -775,6 +819,90 @@ class ModelParams {
     }
   }
 
+  void _validateGpuDevices() {
+    final devices = gpuDevices;
+    final split = tensorSplit;
+    if (devices == null && split == null) return;
+    final field = devices != null ? 'gpuDevices' : 'tensorSplit';
+    if (devices != null) {
+      if (devices.isEmpty) {
+        throw _invalid('gpuDevices', devices, 'must list at least one device');
+      }
+      if (devices.any((index) => index < 0)) {
+        throw _invalid('gpuDevices', devices, 'must hold non-negative indices');
+      }
+      if (devices.toSet().length != devices.length) {
+        throw _invalid('gpuDevices', devices, 'must not repeat a device');
+      }
+    }
+    if (split != null) {
+      if (split.isEmpty) {
+        throw _invalid('tensorSplit', split, 'must hold at least one value');
+      }
+      if (split.any((value) => !value.isFinite || value < 0)) {
+        throw _invalid(
+          'tensorSplit',
+          split,
+          'must hold finite, non-negative proportions',
+        );
+      }
+      if (split.fold<double>(0, (sum, value) => sum + value) <= 0) {
+        throw _invalid('tensorSplit', split, 'must have a positive sum');
+      }
+      // llama.cpp stores the split as float32 and sums it in float32.
+      final float32 = Float32List(2);
+      for (final value in split) {
+        float32[0] = value;
+        if (value > 0 && float32[0] == 0) {
+          throw _invalid(
+            'tensorSplit',
+            split,
+            'must not hold a nonzero proportion that float32 rounds to 0 '
+                '(below $_float32MinPositive)',
+          );
+        }
+        float32[1] = float32[1] + float32[0];
+      }
+      if (float32[1].isInfinite) {
+        throw _invalid(
+          'tensorSplit',
+          split,
+          'must hold proportions whose float32 sum is at most $_float32Max',
+        );
+      }
+      if (devices != null && split.length != devices.length) {
+        throw _invalid(
+          'tensorSplit',
+          split,
+          'must hold one proportion per gpuDevices entry (${devices.length})',
+        );
+      }
+    }
+    if (splitMode == ModelSplitMode.none) {
+      throw _invalid(
+        field,
+        devices ?? split,
+        'needs a multi-GPU splitMode: ModelSplitMode.none runs on the mainGpu '
+        'device alone, so set mainGpu instead',
+      );
+    }
+    final cpuBackend =
+        preferredBackend == GpuBackend.cpu ||
+        preferredBackend == GpuBackend.blas;
+    if (gpuLayers == 0 || device == ComputeDevice.cpu || cpuBackend) {
+      throw _invalid(
+        field,
+        devices ?? split,
+        'places offloaded layers, and this load offloads none (gpuLayers '
+        '$gpuLayers, device ${device.name}, preferredBackend '
+        '${preferredBackend.name})',
+      );
+    }
+  }
+
+  static const double _float32Max = 3.4028234663852886e38;
+  static const double _float32MinPositive = 1.401298464324817e-45;
+
   LlamaArgumentException _invalid(
     String name,
     Object? value,
@@ -792,8 +920,9 @@ class ModelParams {
 
   /// Creates a copy of this [ModelParams] with updated fields.
   ///
-  /// Nullable fields ([chatTemplate], [kvUnified], [ropeFrequencyBase],
-  /// [ropeFrequencyScale]) use a sentinel pattern so callers can
+  /// Nullable fields ([gpuDevices], [tensorSplit], [chatTemplate],
+  /// [kvUnified], [ropeFrequencyBase], [ropeFrequencyScale]) use a sentinel
+  /// pattern so callers can
   /// **explicitly clear them back to null** by passing the corresponding
   /// `clear*: true` flag. Without the sentinel, `null` would be
   /// indistinguishable from "argument omitted, keep current value".
@@ -874,6 +1003,10 @@ class ModelParams {
     bool clearLiteRtLmMaxProgramCacheBytes = false,
     ModelSplitMode? splitMode,
     int? mainGpu,
+    List<int>? gpuDevices,
+    bool clearGpuDevices = false,
+    List<double>? tensorSplit,
+    bool clearTensorSplit = false,
     List<LoraAdapterConfig>? loras,
     String? chatTemplate,
     bool clearChatTemplate = false,
@@ -932,6 +1065,8 @@ class ModelParams {
           : (liteRtLmMaxProgramCacheBytes ?? this.liteRtLmMaxProgramCacheBytes),
       splitMode: splitMode ?? this.splitMode,
       mainGpu: mainGpu ?? this.mainGpu,
+      gpuDevices: clearGpuDevices ? null : (gpuDevices ?? this.gpuDevices),
+      tensorSplit: clearTensorSplit ? null : (tensorSplit ?? this.tensorSplit),
       loras: loras ?? this.loras,
       chatTemplate: clearChatTemplate
           ? null
@@ -993,6 +1128,8 @@ class LlamaCppModelParams extends ModelParams {
     super.preferredBackend,
     super.splitMode,
     super.mainGpu,
+    super.gpuDevices,
+    super.tensorSplit,
     super.loras,
     super.chatTemplate,
     super.numberOfThreads,
@@ -1102,6 +1239,10 @@ class LlamaCppModelParams extends ModelParams {
     bool clearLiteRtLmMaxProgramCacheBytes = false,
     ModelSplitMode? splitMode,
     int? mainGpu,
+    List<int>? gpuDevices,
+    bool clearGpuDevices = false,
+    List<double>? tensorSplit,
+    bool clearTensorSplit = false,
     List<LoraAdapterConfig>? loras,
     String? chatTemplate,
     bool clearChatTemplate = false,
@@ -1157,6 +1298,10 @@ class LlamaCppModelParams extends ModelParams {
         preferredBackend: preferredBackend,
         splitMode: splitMode,
         mainGpu: mainGpu,
+        gpuDevices: gpuDevices,
+        clearGpuDevices: clearGpuDevices,
+        tensorSplit: tensorSplit,
+        clearTensorSplit: clearTensorSplit,
         loras: loras,
         chatTemplate: chatTemplate,
         clearChatTemplate: clearChatTemplate,
@@ -1366,6 +1511,10 @@ class LiteRtLmModelParams extends ModelParams {
     bool clearLiteRtLmMaxProgramCacheBytes = false,
     ModelSplitMode? splitMode,
     int? mainGpu,
+    List<int>? gpuDevices,
+    bool clearGpuDevices = false,
+    List<double>? tensorSplit,
+    bool clearTensorSplit = false,
     List<LoraAdapterConfig>? loras,
     String? chatTemplate,
     bool clearChatTemplate = false,
@@ -1397,6 +1546,8 @@ class LiteRtLmModelParams extends ModelParams {
     _rejectCopyArguments('LiteRtLmModelParams', 'LlamaCppModelParams', {
       'splitMode': splitMode,
       'mainGpu': mainGpu,
+      'gpuDevices': gpuDevices,
+      'tensorSplit': tensorSplit,
       'numberOfThreadsBatch': numberOfThreadsBatch,
       'batchSize': batchSize,
       'microBatchSize': microBatchSize,
@@ -1415,6 +1566,8 @@ class LiteRtLmModelParams extends ModelParams {
       'moeCacheBytes': moeCacheBytes,
       'preferMemory64': preferMemory64,
       'modelBytesHint': modelBytesHint,
+      if (clearGpuDevices) 'clearGpuDevices': true,
+      if (clearTensorSplit) 'clearTensorSplit': true,
       if (clearKvUnified) 'clearKvUnified': true,
       if (clearRopeFrequencyBase) 'clearRopeFrequencyBase': true,
       if (clearRopeFrequencyScale) 'clearRopeFrequencyScale': true,
