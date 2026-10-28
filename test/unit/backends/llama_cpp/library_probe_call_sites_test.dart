@@ -386,6 +386,57 @@ void main() {
       expect(outcome, contains(path.basename(expected.last)));
     });
 
+    test('the default candidates search the module directory', () {
+      final moduleDirectory = Directory.systemTemp.createTempSync('log-level-');
+      addTearDown(() => moduleDirectory.deleteSync(recursive: true));
+      final service = LlamaCppService();
+      _write(service, '_backendModuleDirectory', moduleDirectory.path);
+      final opened = <String>[];
+
+      _invoke<void>(service, '_resolveLogLevelFallbackFunction', const [], {
+        #open: (String candidate) {
+          opened.add(candidate);
+          return _openSystemLibrary();
+        },
+      });
+
+      expect(
+        opened,
+        service.debugLlamadartWrapperLibraryCandidatesForTesting(),
+      );
+      expect(
+        opened.where(
+          (candidate) => path.dirname(candidate) == moduleDirectory.path,
+        ),
+        isNotEmpty,
+      );
+    });
+
+    test(
+      'the default open loads the wrapper with its sibling dependencies',
+      () {
+        final fixture = _compileWindowsWrapperWithDependency();
+        if (fixture == null) {
+          markTestSkipped('no gcc available to build a dependent wrapper');
+          return;
+        }
+        final service = LlamaCppService();
+
+        _invoke<void>(service, '_resolveLogLevelFallbackFunction', const [], {
+          #candidates: <String>[fixture.path],
+        });
+
+        expect(_read<String?>(service, '_logLevelProbeOutcome'), isNull);
+        expect(
+          _read<Object?>(service, '_llamaDartSetLogLevelFallback'),
+          isNotNull,
+        );
+      },
+      skip: Platform.isWindows
+          ? null
+          : 'sibling DLL lookup follows the altered search path on Windows only',
+    );
+
     test('a wrapper that exports it is bound without an outcome', () {
       final library = _locateWrapperLibrary(symbol: 'llama_dart_set_log_level');
       if (library == null) {
@@ -555,6 +606,51 @@ void main() {
       source.path,
     ]);
     return result.exitCode == 0 ? (path: output) : null;
+  } on ProcessException {
+    return null;
+  }
+}
+
+/// A wrapper DLL that exports `llama_dart_set_log_level` and imports a DLL
+/// beside it, which Windows finds only on the altered search path.
+({String path})? _compileWindowsWrapperWithDependency() {
+  final directory = Directory.systemTemp.createTempSync('wrapper-fixture-');
+  addTearDown(() {
+    try {
+      directory.deleteSync(recursive: true);
+    } on FileSystemException {
+      // The loaded DLLs stay locked until the process exits.
+    }
+  });
+  File(path.join(directory.path, 'dep.c')).writeAsStringSync(
+    '__declspec(dllexport) int probe_dependency(void) { return 7; }\n',
+  );
+  File(path.join(directory.path, 'wrapper.c')).writeAsStringSync(
+    '__declspec(dllimport) int probe_dependency(void);\n'
+    '__declspec(dllexport) void llama_dart_set_log_level(int level) {\n'
+    '  (void)level;\n'
+    '  (void)probe_dependency();\n'
+    '}\n',
+  );
+  final dependency = path.join(directory.path, 'probe_dependency.dll');
+  final wrapper = path.join(directory.path, 'wrapper.dll');
+  try {
+    final steps = <List<String>>[
+      ['-shared', '-o', dependency, path.join(directory.path, 'dep.c')],
+      [
+        '-shared',
+        '-o',
+        wrapper,
+        path.join(directory.path, 'wrapper.c'),
+        dependency,
+      ],
+    ];
+    for (final step in steps) {
+      if (Process.runSync('gcc', step).exitCode != 0) {
+        return null;
+      }
+    }
+    return (path: wrapper);
   } on ProcessException {
     return null;
   }

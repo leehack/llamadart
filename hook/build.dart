@@ -2667,7 +2667,7 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
   // the record is re-checked once it is older than a day. A record dated in
   // the future would otherwise stay fresh until the clock passes it.
   final recordAge = recordedAbsent
-      ? DateTime.now().difference(absent.statSync().modified)
+      ? _now().difference(absent.statSync().modified)
       : null;
   if (recordAge != null &&
       !recordAge.isNegative &&
@@ -2705,7 +2705,7 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
       if (!absent.existsSync()) {
         absent.createSync();
       }
-      absent.setLastModifiedSync(DateTime.now());
+      absent.setLastModifiedSync(_now());
     } on FileSystemException catch (error) {
       log.warning('Could not record ${absent.path} ($error).');
     }
@@ -3540,6 +3540,23 @@ Future<T> withRuntimeBundleHttpClientForTesting<T>(
     body,
     zoneValues: {_runtimeBundleHttpClientZoneKey: createClient},
   );
+}
+
+final _clockZoneKey = Object();
+
+DateTime _now() =>
+    (Zone.current[_clockZoneKey] as DateTime Function()?)?.call() ??
+    DateTime.now();
+
+/// Runs [body] with the hook's clock reading [now], so tests can tell this
+/// machine's clock from the file system's.
+///
+/// This is intended for hook tests; production code never sets it.
+Future<T> withClockForTesting<T>(
+  DateTime Function() now,
+  Future<T> Function() body,
+) {
+  return runZoned(body, zoneValues: {_clockZoneKey: now});
 }
 
 /// Downloads a runtime bundle through the hardened build-hook download path.

@@ -596,8 +596,9 @@ void main() {
       expect(nextOffline.requests, isEmpty);
     });
 
-    test('is re-stamped with the local clock when a future-dated record '
-        'is re-checked and the release still has no assets.json', () async {
+    test('is stamped with the hook clock, not the file system clock, when a '
+        'future-dated record is re-checked and the release still has no '
+        'assets.json', () async {
       final legacyRelease = {
         _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
         _coreUrl: core,
@@ -606,15 +607,19 @@ void main() {
       absentRecord().setLastModifiedSync(
         DateTime.now().add(const Duration(days: 30)),
       );
+      final hookNow = DateTime.now().subtract(const Duration(hours: 3));
 
-      await runHook(
-        RuntimeBundleHttpFixture(legacyRelease),
-        backends: ['cuda'],
+      await build_hook.withClockForTesting(
+        () => hookNow,
+        () => runHook(
+          RuntimeBundleHttpFixture(legacyRelease),
+          backends: ['cuda'],
+        ),
       );
 
       expect(
-        DateTime.now().difference(absentRecord().lastModifiedSync()).abs(),
-        lessThan(const Duration(minutes: 5)),
+        absentRecord().lastModifiedSync().difference(hookNow).abs(),
+        lessThan(const Duration(seconds: 5)),
       );
     });
 
@@ -665,6 +670,8 @@ void main() {
       'an empty body': const <int>[],
       'bytes that are not UTF-8': const <int>[0xff, 0xfe, 0x7b],
       'JSON that is not a manifest': utf8.encode('{"error":"blocked"}'),
+      'a truncated JSON array': utf8.encode('[{"hook_contract_version": 2'),
+      'a JSON array that is not a manifest': utf8.encode('[]'),
     };
     undecidableBodies.forEach((name, body) {
       test('fails instead of keeping the record when the re-check returns '
