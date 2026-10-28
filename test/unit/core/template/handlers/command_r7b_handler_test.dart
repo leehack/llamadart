@@ -279,6 +279,44 @@ void main() {
     expect(parsed.toolCalls, isEmpty);
   });
 
+  test('parses START_RESPONSE content with or without tool parsing and with '
+      'its end tag cut by a stop', () {
+    final handler = CommandR7BHandler();
+    for (final output in const [
+      '<|START_THINKING|>plan<|END_THINKING|>'
+          '<|START_RESPONSE|>Hello<|END_RESPONSE|>',
+      '<|START_THINKING|>plan<|END_THINKING|><|START_RESPONSE|>Hello',
+    ]) {
+      for (final parseToolCalls in [true, false]) {
+        final parsed = handler.parse(output, parseToolCalls: parseToolCalls);
+
+        expect(parsed.reasoningContent, 'plan');
+        expect(parsed.content, 'Hello');
+      }
+    }
+  });
+
+  // llama.cpp (`620d2225`) rejects text before the marker; the parse keeps it
+  // rather than lose it.
+  test('keeps text before START_RESPONSE in the content', () {
+    const input = 'Hello <|START_RESPONSE|>Answer<|END_RESPONSE|>';
+    for (final parseToolCalls in [true, false]) {
+      final parsed = CommandR7BHandler().parse(
+        input,
+        parseToolCalls: parseToolCalls,
+      );
+
+      expect(parsed.content, 'Hello Answer', reason: '$parseToolCalls');
+    }
+  });
+
+  test('keeps START_RESPONSE output with trailing text as content', () {
+    const input = '<|START_RESPONSE|>Hello<|END_RESPONSE|>more';
+    final parsed = CommandR7BHandler().parse(input, parseToolCalls: false);
+
+    expect(parsed.content, input);
+  });
+
   test('grammar emits North/Cohere array-shaped action blocks', () {
     final handler = CommandR7BHandler();
     final tools = [

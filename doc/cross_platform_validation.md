@@ -2167,3 +2167,31 @@ host reject these profiles before loading with `LlamaUnsupportedException`.
 On Metal the placement check counts one llama and one CLIP compute buffer for
 each load. Audio, video, URL media, other chat formats,
 backends and devices are not qualified by this pack.
+
+## Catalog 13: next-token scoring
+
+Catalog 13 adds the bounded public `next_token_scoring` pack for
+[#1196](https://github.com/leehack/llamadart/issues/1196). Catalogs 1-12 keep
+their inventories and hashes.
+
+| Case | Required proof |
+| --- | --- |
+| `N01.capability` | Independently expected capability; LiteRT-LM rejects `scoreNextToken` with `LlamaUnsupportedException` and still generates |
+| `N02.top_k` | Two fixed prompts return exactly eight distinct finite log-probabilities, most probable first, with total probability at most 1.001, a `promptTokens` equal to the special-token-aware tokenization and the same result on repeat |
+| `N03.candidates` | Candidates (top ranks 0, 2, 5 and the smallest ID outside the top eight) return in request order; each matches its top entry within 0.01, the outsider is no likelier than the least likely top token, and candidates alone return an empty top list |
+| `N04.reuse` | After scoring a prefix with prefix reuse on, the extended prompt scores within 0.01 of a no-reuse run, with at least 8 shared and 2 new tokens |
+| `N05.guards` | An empty prompt, a negative candidate, a negative `topK` and neither candidates nor `topK` throw `ArgumentError`, and the next score equals the baseline |
+
+```sh
+dart run tool/testing/validation.dart local --profile scoring-gguf-cpu \
+  --model /path/to/stories15M.gguf --out /tmp/scoring-cpu-run
+```
+
+The profile locks Stories15M (SHA256
+`61b50d457809a5194818fd22e6724b456cd7bb9a6264c52c8110684c53f3704a`) on CPU,
+context 256 and four threads; other runtimes are `NOT_RUN` until they have an
+independent oracle, and non-CPU or non-GGUF profiles omit `N02`-`N05` as
+`outside_initial_native_cpu_scoring_scope`. N04 shows reuse does not change
+scores; it does not prove the cache was used (see P03 for counters). Scores
+are raw logits, so no sampler setting is covered. The pack does not qualify
+Web, accelerators, other models or physical devices.

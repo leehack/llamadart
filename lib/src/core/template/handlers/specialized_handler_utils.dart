@@ -52,13 +52,13 @@ abstract class DirectJinjaHandler extends ChatTemplateHandler {
         'tools': tools?.map((tool) => tool.toJson()).toList(),
         'enable_thinking': enableThinking,
         'thinking': enableThinking,
-        'thinking_mode': enableThinking ? 'enabled' : 'disabled',
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? defaultBosToken,
         'eos_token': metadata['tokenizer.ggml.eos_token'] ?? defaultEosToken,
         'current_date': resolveTemplateNow(
           metadata,
         ).toIso8601String().substring(0, 10),
       },
+      defaults: {'thinking_mode': enableThinking ? 'enabled' : 'disabled'},
     );
 
     var thinkingForcedOpen = false;

@@ -104,10 +104,10 @@ class HunyuanV3Handler extends ChatTemplateHandler
         'messages': templateMessages(messages, templateSource: templateSource),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((tool) => tool.toJson()).toList(),
-        'reasoning_effort': enableThinking ? 'high' : 'no_think',
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '',
         'eos_token': metadata['tokenizer.ggml.eos_token'] ?? _eos,
       },
+      defaults: {'reasoning_effort': enableThinking ? 'high' : 'no_think'},
     );
 
     var thinkingForcedOpen = isThinkingForcedOpen(

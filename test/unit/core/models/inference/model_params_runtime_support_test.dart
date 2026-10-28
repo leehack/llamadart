@@ -40,6 +40,8 @@ void main() {
     kvUnified: true,
     ropeFrequencyBase: 10000,
     ropeFrequencyScale: 1,
+    cpuMoeLayers: -1,
+    moeCacheBytes: 1 << 30,
     splitMode: ModelSplitMode.none,
     mainGpu: 1,
     gpuLayers: 12,
@@ -84,7 +86,8 @@ void main() {
   });
 
   group('llama.cpp on the Web', () {
-    test('rejects liteRtLm* fields and memory mapping options', () {
+    test('rejects liteRtLm* fields, memory mapping and MoE expert '
+        'options', () {
       expect(
         unsupported(liteRtLmFields, LlamaRuntime.llamaCpp, web: true),
         liteRtLmFieldNames,
@@ -92,7 +95,17 @@ void main() {
       expect(unsupported(llamaCppFields, LlamaRuntime.llamaCpp, web: true), [
         'useMmap=false',
         'useMlock',
+        'cpuMoeLayers',
+        'moeCacheBytes',
       ]);
+      expect(
+        unsupported(
+          const ModelParams(cpuMoeLayers: 2),
+          LlamaRuntime.llamaCpp,
+          web: true,
+        ),
+        ['cpuMoeLayers'],
+      );
     });
 
     test('applies the WebGPU memory hints', () {
@@ -127,6 +140,8 @@ void main() {
         'kvUnified',
         'ropeFrequencyBase',
         'ropeFrequencyScale',
+        'cpuMoeLayers',
+        'moeCacheBytes',
       ]);
       expect(unsupported(webGpuHints, LlamaRuntime.liteRtLm, web: false), [
         'preferMemory64',
