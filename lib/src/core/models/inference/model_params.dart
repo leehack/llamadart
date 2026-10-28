@@ -453,6 +453,41 @@ class ModelParams {
   /// trained value.
   final double? ropeFrequencyScale;
 
+  /// Number of leading layers whose Mixture-of-Experts (MoE) expert weights
+  /// llama.cpp keeps in host memory instead of offloading them, as
+  /// llama.cpp's `--n-cpu-moe` does.
+  ///
+  /// `0`, the default, places expert weights like every other weight. A
+  /// negative value keeps the experts of every layer in host memory, as
+  /// `--cpu-moe` does. Only expert tensors move; the other weights of a layer
+  /// still follow [gpuLayers]. Native llama.cpp only: a model without experts
+  /// throws `LlamaUnsupportedException` after it loads, and the Web and
+  /// LiteRT-LM reject a nonzero value.
+  final int cpuMoeLayers;
+
+  /// Device memory budget in bytes for llama.cpp's experimental GPU cache of
+  /// the MoE experts [cpuMoeLayers] keeps in host memory
+  /// (`llama_context_params.moe_cache_size`, `--moe-cache-mib`).
+  ///
+  /// `0`, the default, disables the cache. It keeps the most recently used
+  /// host experts of the offloaded layers on the GPU and is split among
+  /// several GPUs like the layers. [validate] rejects a negative budget and a
+  /// budget with [cpuMoeLayers] `0`, which leaves no host expert to cache. A
+  /// load with a budget disables llama.cpp's CPU weight repacking, whose
+  /// layout the cache cannot copy.
+  ///
+  /// Native llama.cpp throws `LlamaUnsupportedException` before the model
+  /// loads when nothing is offloaded, for [ModelSplitMode.tensor], and on GPU
+  /// backends other than Metal and CUDA (llama.cpp's Vulkan backend aborts
+  /// with the cache: ggml-org/llama.cpp#30697), and after it loads when no
+  /// offloaded layer keeps its experts in host memory. A budget the GPU
+  /// cannot allocate, or too small for the experts of one token, fails
+  /// context creation, and the `LlamaModelException` of the load names
+  /// `moeCacheBytes` in its details. The Web and LiteRT-LM
+  /// reject a nonzero value. GPUs that share system memory, such as Apple
+  /// silicon, gain nothing from it.
+  final int moeCacheBytes;
+
   /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.
   ///
   /// The default 32-bit core has a 4 GiB linear-memory limit, but large models
@@ -559,6 +594,8 @@ class ModelParams {
     this.kvUnified,
     this.ropeFrequencyBase,
     this.ropeFrequencyScale,
+    this.cpuMoeLayers = 0,
+    this.moeCacheBytes = 0,
     this.preferMemory64,
     this.modelBytesHint,
   });
@@ -596,13 +633,16 @@ class ModelParams {
       kvUnified = other.kvUnified,
       ropeFrequencyBase = other.ropeFrequencyBase,
       ropeFrequencyScale = other.ropeFrequencyScale,
+      cpuMoeLayers = other.cpuMoeLayers,
+      moeCacheBytes = other.moeCacheBytes,
       preferMemory64 = other.preferMemory64,
       modelBytesHint = other.modelBytesHint;
 
   /// Validates the parameter combination. Throws [LlamaArgumentException]
   /// when a value is out of range or the combination is incompatible with
-  /// llama.cpp (a non-F16 KV cache requires flashAttention != disabled), or
-  /// when [device] contradicts another field:
+  /// llama.cpp (a non-F16 KV cache requires flashAttention != disabled, and a
+  /// [moeCacheBytes] budget a nonzero [cpuMoeLayers]), or when [device]
+  /// contradicts another field:
   /// - an explicit [device] with a [liteRtLmBackend] other than auto;
   /// - [ComputeDevice.cpu] with a GPU [preferredBackend] (Vulkan, Metal,
   ///   CUDA, OpenCL or HIP);
@@ -652,6 +692,17 @@ class ModelParams {
         'speculativeRollbackTokenMax',
         speculativeRollbackTokenMax,
         'must be non-negative',
+      );
+    }
+    if (moeCacheBytes < 0) {
+      throw _invalid('moeCacheBytes', moeCacheBytes, 'must be non-negative');
+    }
+    if (moeCacheBytes > 0 && cpuMoeLayers == 0) {
+      throw _invalid(
+        'moeCacheBytes',
+        moeCacheBytes,
+        'caches the MoE experts kept in host memory, so it needs a nonzero '
+            'cpuMoeLayers (negative for every layer)',
       );
     }
     if ((cacheTypeK != KvCacheType.f16 || cacheTypeV != KvCacheType.f16) &&
@@ -844,6 +895,8 @@ class ModelParams {
     bool clearRopeFrequencyBase = false,
     double? ropeFrequencyScale,
     bool clearRopeFrequencyScale = false,
+    int? cpuMoeLayers,
+    int? moeCacheBytes,
     bool? preferMemory64,
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
@@ -903,6 +956,8 @@ class ModelParams {
       ropeFrequencyScale: clearRopeFrequencyScale
           ? null
           : (ropeFrequencyScale ?? this.ropeFrequencyScale),
+      cpuMoeLayers: cpuMoeLayers ?? this.cpuMoeLayers,
+      moeCacheBytes: moeCacheBytes ?? this.moeCacheBytes,
       preferMemory64: clearPreferMemory64
           ? null
           : (preferMemory64 ?? this.preferMemory64),
@@ -955,6 +1010,8 @@ class LlamaCppModelParams extends ModelParams {
     super.kvUnified,
     super.ropeFrequencyBase,
     super.ropeFrequencyScale,
+    super.cpuMoeLayers,
+    super.moeCacheBytes,
     super.preferMemory64,
     super.modelBytesHint,
   });
@@ -1066,6 +1123,8 @@ class LlamaCppModelParams extends ModelParams {
     bool clearRopeFrequencyBase = false,
     double? ropeFrequencyScale,
     bool clearRopeFrequencyScale = false,
+    int? cpuMoeLayers,
+    int? moeCacheBytes,
     bool? preferMemory64,
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
@@ -1119,6 +1178,8 @@ class LlamaCppModelParams extends ModelParams {
         clearRopeFrequencyBase: clearRopeFrequencyBase,
         ropeFrequencyScale: ropeFrequencyScale,
         clearRopeFrequencyScale: clearRopeFrequencyScale,
+        cpuMoeLayers: cpuMoeLayers,
+        moeCacheBytes: moeCacheBytes,
         preferMemory64: preferMemory64,
         clearPreferMemory64: clearPreferMemory64,
         modelBytesHint: modelBytesHint,
@@ -1326,6 +1387,8 @@ class LiteRtLmModelParams extends ModelParams {
     bool clearRopeFrequencyBase = false,
     double? ropeFrequencyScale,
     bool clearRopeFrequencyScale = false,
+    int? cpuMoeLayers,
+    int? moeCacheBytes,
     bool? preferMemory64,
     bool clearPreferMemory64 = false,
     int? modelBytesHint,
@@ -1348,6 +1411,8 @@ class LiteRtLmModelParams extends ModelParams {
       'kvUnified': kvUnified,
       'ropeFrequencyBase': ropeFrequencyBase,
       'ropeFrequencyScale': ropeFrequencyScale,
+      'cpuMoeLayers': cpuMoeLayers,
+      'moeCacheBytes': moeCacheBytes,
       'preferMemory64': preferMemory64,
       'modelBytesHint': modelBytesHint,
       if (clearKvUnified) 'clearKvUnified': true,
