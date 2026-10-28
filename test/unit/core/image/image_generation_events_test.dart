@@ -40,6 +40,18 @@ void main() {
     expect(completion.result, isNull);
   });
 
+  test('a progress event without passes describes a one-pass generation', () {
+    const event = ImageGenerationProgressEvent(
+      phase: ImageGenerationPhase.sampling,
+      step: 1,
+      steps: 4,
+      imageIndex: 0,
+      imageCount: 1,
+    );
+
+    expect((event.pass, event.passCount), (0, 1));
+  });
+
   test('the final event carries the result', () {
     expect(ImageGenerationFinalEvent(result).result, same(result));
   });
