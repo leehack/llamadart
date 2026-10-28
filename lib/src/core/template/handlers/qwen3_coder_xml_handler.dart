@@ -79,6 +79,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
         metadata[internalParallelToolCallsMetadataKey] == 'true';
     final toolChoiceNone = toolChoice == ToolChoice.none.name;
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
+    final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
     if (isThinkingForcedOpen(prompt, startTag: '<think>')) {
       if (!enableThinking) {
@@ -109,7 +110,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       parallelToolCalls: !isNemotronV3 || parallelToolCalls,
     );
 
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: resultFormat,
       grammar: isNemotronV3
@@ -142,6 +143,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           : const [],
       parser: parser,
     );
+    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
   }
 
   bool _isNemotronV3Template(String templateSource) {
@@ -300,6 +302,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
 
   /// Parses Qwen XML using declared tool schemas when [tools] is supplied.
   /// Invalid calls remain content and cannot become executable tool deltas.
+  /// With [thoughtTagsAreText], all of [output] is content and tool calls.
   @override
   ChatParseResult parseWithTools(
     String output, {
@@ -307,6 +310,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+    bool thoughtTagsAreText = false,
   }) {
     final result = parseXmlToolCalls(
       output,
@@ -315,8 +319,11 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       isPartial: isPartial,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
-      // llama.cpp (`7fe450e1`) keeps escapes in Qwen3.5 reasoning.
+      extractsThought: !thoughtTagsAreText,
+      // llama.cpp (`7fe450e1`) keeps escapes in Qwen3.5 reasoning, and
+      // (`620d2225`) a forced-open thought as generated.
       unescapeReasoning: false,
+      verbatimForcedThought: true,
     );
     return ChatParseResult(
       content: result.content.trim(),

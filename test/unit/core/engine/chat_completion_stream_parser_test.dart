@@ -2355,10 +2355,12 @@ void main() {
         });
 
         test('the issue chunks stream the parsed reasoning', () async {
-          for (final format in const [
-            ChatFormat.deepseekR1,
-            ChatFormat.qwen3CoderXml,
-            ChatFormat.hermes,
+          // Qwen3-Coder XML and Hermes keep a repeated start tag, as
+          // llama.cpp (`620d2225`) does.
+          for (final (format, reasoning) in const [
+            (ChatFormat.deepseekR1, 'Plan.'),
+            (ChatFormat.qwen3CoderXml, '<think>\nPlan.'),
+            (ChatFormat.hermes, '<think>\nPlan.'),
           ]) {
             final chunks = await ChatCompletionStreamParser.parse(
               tokenStream: Stream.fromIterable(const [
@@ -2386,7 +2388,7 @@ void main() {
             final deltas = chunks.map((chunk) => chunk.choices.single.delta);
             expect(
               deltas.map((delta) => delta.thinking ?? '').join(),
-              'Plan.',
+              reasoning,
               reason: format.name,
             );
             expect(
@@ -2509,7 +2511,7 @@ void main() {
           await _expectStreamedAfterEachToken(
             ChatFormat.hermes,
             forcedOpen: true,
-            const [('<th', '', ''), ('ink>\nPlan', 'Plan', '')],
+            const [('<th', '<th', ''), ('ink>\nPlan', '<think>\nPlan', '')],
           );
           await _expectStreamedAfterEachToken(
             ChatFormat.qwen3CoderXml,
@@ -2521,14 +2523,18 @@ void main() {
               (r' \', r'Plan <tools> x \', ''),
               ('n y', r'Plan <tools> x \n y', ''),
               ('</think>', r'Plan <tools> x \n y', ''),
-              ('<think>Next', 'Plan <tools> x \\n y\nNext', ''),
-              (' <tool', 'Plan <tools> x \\n y\nNext <tool', ''),
+              // After the first end tag, thinking tags are content.
+              ('<think>Next', r'Plan <tools> x \n y', '<think>Next'),
+              (' <tool', r'Plan <tools> x \n y', '<think>Next'),
             ],
           );
           await _expectStreamedAfterEachToken(
             ChatFormat.qwen3CoderXml,
             forcedOpen: true,
-            const [('<think>Plan', 'Plan', ''), (' <tool', 'Plan <tool', '')],
+            const [
+              ('<think>Plan', '<think>Plan', ''),
+              (' <tool', '<think>Plan', ''),
+            ],
           );
           await _expectStreamedAfterEachToken(
             ChatFormat.deepseekV3,

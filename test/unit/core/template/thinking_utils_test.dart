@@ -114,6 +114,117 @@ void main() {
         content: 'Sure',
       ));
     });
+
+    test('drops the start of an end tag that ends an unended thought', () {
+      expect(extractForcedOpenThoughtVerbatim('Plan it </thi'), (
+        reasoning: 'Plan it',
+        content: '',
+      ));
+      expect(extractForcedOpenThoughtVerbatim('Plan.</think>Ans </thi'), (
+        reasoning: 'Plan.',
+        content: 'Ans </thi',
+      ));
+    });
+
+    test('ends the thought at a content opening that comes first', () {
+      const openings = ['<tool_call>'];
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan <tool_call>x</tool_call></think>A',
+          contentOpenings: openings,
+        ),
+        (reasoning: 'Plan', content: '<tool_call>x</tool_call></think>A'),
+      );
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan</think><tool_call>x</tool_call>',
+          contentOpenings: openings,
+        ),
+        (reasoning: 'Plan', content: '<tool_call>x</tool_call>'),
+      );
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan <tool',
+          contentOpenings: openings,
+        ),
+        (reasoning: 'Plan', content: ''),
+      );
+    });
+  });
+
+  group('withoutTrailingTagPrefix', () {
+    test('drops the longest ending that starts one of the tags', () {
+      expect(withoutTrailingTagPrefix('a </thi', ['</think>']), 'a ');
+      expect(
+        withoutTrailingTagPrefix('a <', ['<tool_call>', '</think>']),
+        'a ',
+      );
+      expect(
+        withoutTrailingTagPrefix('a <tool', ['</think>', '<tool_call>']),
+        'a ',
+      );
+      // Both `a` and `aba` start the tag.
+      expect(withoutTrailingTagPrefix('x aba', ['abab']), 'x ');
+    });
+
+    test('keeps a whole tag and text that ends no tag', () {
+      expect(
+        withoutTrailingTagPrefix('a </think>', ['</think>']),
+        'a </think>',
+      );
+      expect(withoutTrailingTagPrefix('x < y', ['</think>']), 'x < y');
+      expect(withoutTrailingTagPrefix('', ['</think>']), '');
+    });
+  });
+
+  group('isThinkingForcedClosed', () {
+    test('is true for a prompt that ends with an empty thought', () {
+      for (final prompt in [
+        'assistant\n<think>\n\n</think>\n\n',
+        '<｜Assistant｜><think></think>',
+        'ai<|START_THINKING|> <|END_THINKING|>',
+      ]) {
+        expect(
+          isThinkingForcedClosed(
+            prompt,
+            startTag: prompt.contains('START')
+                ? '<|START_THINKING|>'
+                : '<think>',
+            endTag: prompt.contains('START') ? '<|END_THINKING|>' : '</think>',
+          ),
+          isTrue,
+          reason: prompt,
+        );
+      }
+    });
+
+    test('is false without an empty thought at the end', () {
+      for (final prompt in [
+        'assistant\n',
+        'assistant\n<think>\n',
+        '<|Bot|></think>',
+        '<think>Plan</think>',
+        '<think></think>Answer',
+      ]) {
+        expect(isThinkingForcedClosed(prompt), isFalse, reason: prompt);
+      }
+    });
+  });
+
+  group('withThinkingForcedClosed', () {
+    test('marks only the result it is given, and only when closed', () {
+      LlamaChatTemplateResult result() =>
+          LlamaChatTemplateResult(prompt: 'assistant\n<think></think>\n');
+      final marked = withThinkingForcedClosed(result(), closed: true);
+      expect(thinkingForcedClosedOf(marked), isTrue);
+      expect(
+        thinkingForcedClosedOf(
+          withThinkingForcedClosed(result(), closed: false),
+        ),
+        isFalse,
+      );
+      expect(thinkingForcedClosedOf(result()), isFalse);
+    });
   });
 
   group('withTemplateOpenedThought', () {

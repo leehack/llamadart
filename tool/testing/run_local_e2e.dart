@@ -299,6 +299,13 @@ LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
           : 'Build and validate Flutter web chat app',
     );
 
+/// The FLUX.1 Kontext component paths `image-reference-editing` reads.
+const List<String> _referenceEditComponentVariables = [
+  'LLAMADART_REFERENCE_EDIT_VAE',
+  'LLAMADART_REFERENCE_EDIT_CLIP_L',
+  'LLAMADART_REFERENCE_EDIT_T5XXL',
+];
+
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
@@ -1023,6 +1030,39 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
                 '${context.projectRoot}/build/image-hires-fix',
           },
           description: 'Bounded hires-fix qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'image-reference-editing',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify FLUX.1 Kontext [dev] reference image editing on macOS '
+          'Metal: visible edit, preserved content, reference effect, direct-C '
+          'parity, cancellation and reload; --model-path is the transformer '
+          'and LLAMADART_REFERENCE_EDIT_VAE, _CLIP_L and _T5XXL its '
+          'components.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_reference_editing_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_REFERENCE_EDIT_DIFFUSION': context.modelPath!,
+            for (final name in _referenceEditComponentVariables)
+              name: context.environment[name]!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-reference-editing',
+          },
+          description: 'FLUX.1 Kontext reference-editing qualification',
         ),
       ],
     ),
@@ -2439,6 +2479,21 @@ Future<LocalE2eResult> runLocalE2e(
           '--model-path <sd15-checkpoint> and LLAMADART_SD15_CONTROLNET are '
           'required for image-controlnet; see doc/image_controlnet.md.\n',
     );
+  }
+  if (scenario.name == 'image-reference-editing') {
+    final env = environment ?? Platform.environment;
+    if (parsed.modelPath == null ||
+        _referenceEditComponentVariables.any(
+          (name) => (env[name] ?? '').isEmpty,
+        )) {
+      return LocalE2eResult(
+        64,
+        stderr:
+            '--model-path <flux1-kontext-dev transformer> and '
+            '${_referenceEditComponentVariables.join(', ')} are required for '
+            'image-reference-editing. See doc/image_reference_editing.md.\n',
+      );
+    }
   }
   if (scenario.name == 'image-hires-fix') {
     final env = environment ?? Platform.environment;

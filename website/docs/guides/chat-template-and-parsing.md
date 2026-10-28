@@ -105,8 +105,22 @@ Gemma 4 thought-channel output is parsed incrementally during streaming, so
 `chunk.thinking` carries reasoning text while `chunk.text` remains reserved
 for final answer content.
 
+With thinking off, DeepSeek V3.1, Qwen3, QwQ and Qwen3.5 templates close the
+thought in the prompt, and the reply is parsed as content, as in llama-server:
+a `<think>` block the model still writes stays in `chunk.text` and the
+message content.
+
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.
+
+When a DeepSeek V3.1, Qwen3.5, QwQ or other Hermes-style template opens a
+thought in the prompt, the reasoning is the text before the first `</think>`
+as the model wrote it, escapes and repeated `<think>` included, and the rest is
+content, as in llama-server. A Qwen3.5 `<tool_call>` also ends the thought.
+A Cohere2 MoE thought ends at `<|END_THINKING|>`, or at a `<|START_TEXT|>` or
+`<|START_ACTION|>` that comes first.
+See [Template engine internals](./template-engine-internals) for the parse and
+stream rules of each format.
 
 ### LiteRT-LM template registry
 

@@ -1,0 +1,465 @@
+{
+  "upstream_commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
+  "user_prompt": "Weather in Paris?",
+  "tool": {
+    "name": "weather",
+    "parameters": {
+      "city": {
+        "type": "string",
+        "required": true
+      }
+    }
+  },
+  "templates": [
+    {
+      "template": "test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja",
+      "format": "deepseekV3",
+      "generation_prompt": "<｜Assistant｜><think></think>",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "<think>Plan</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Plan \\n x.</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "later-thought",
+          "output": "Plan.</think>A<think>B</think>C",
+          "upstream": {
+            "content": "Plan.</think>A<think>B</think>C",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-inside-text",
+          "output": "Hello <think>think</think> world",
+          "upstream": {
+            "content": "Hello <think>think</think> world",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unended-thought",
+          "output": "<think>Plan it </thin",
+          "upstream": {
+            "content": "<think>Plan it </thin",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-thought",
+          "output": "<think>Plan.</think><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>{\"city\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+          "upstream": {
+            "content": "<think>Plan.</think>",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "call",
+          "output": "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>{\"city\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/templates/Qwen3-4B.jinja",
+      "format": "hermes",
+      "generation_prompt": "<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "<think>Plan</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Plan \\n x.</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "later-thought",
+          "output": "Plan.</think>A<think>B</think>C",
+          "upstream": {
+            "content": "Plan.</think>A<think>B</think>C",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-inside-text",
+          "output": "Hello <think>think</think> world",
+          "upstream": {
+            "content": "Hello <think>think</think> world",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unended-thought",
+          "output": "<think>Plan it </thin",
+          "upstream": {
+            "content": "<think>Plan it </thin",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-thought",
+          "output": "<think>Plan.</think><tool_call>\n{\"name\": \"weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>",
+          "upstream": {
+            "content": "<think>Plan.</think>",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "call",
+          "output": "<tool_call>\n{\"name\": \"weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja",
+      "format": "hermes",
+      "generation_prompt": "<|im_start|>assistant\n<think>\n</think>",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "<think>Plan</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Plan \\n x.</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "later-thought",
+          "output": "Plan.</think>A<think>B</think>C",
+          "upstream": {
+            "content": "Plan.</think>A<think>B</think>C",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-inside-text",
+          "output": "Hello <think>think</think> world",
+          "upstream": {
+            "content": "Hello <think>think</think> world",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unended-thought",
+          "output": "<think>Plan it </thin",
+          "upstream": {
+            "content": "<think>Plan it </thin",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-thought",
+          "output": "<think>Plan.</think><tool_call>\n{\"name\": \"weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>",
+          "upstream": {
+            "content": "<think>Plan.</think>",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "call",
+          "output": "<tool_call>\n{\"name\": \"weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+      "format": "qwen3CoderXml",
+      "generation_prompt": "<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "<think>Plan</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Plan \\n x.</think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "later-thought",
+          "output": "Plan.</think>A<think>B</think>C",
+          "upstream": {
+            "content": "Plan.</think>A<think>B</think>C",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-inside-text",
+          "output": "Hello <think>think</think> world",
+          "upstream": {
+            "content": "Hello <think>think</think> world",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unended-thought",
+          "output": "<think>Plan it </thin",
+          "upstream": {
+            "content": "<think>Plan it </thin",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-thought",
+          "output": "<think>Plan.</think><tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "<think>Plan.</think>",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "call",
+          "output": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escaped-newline",
+          "output": "Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    }
+  ],
+  "open_thought_templates": [
+    {
+      "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
+      "format": "qwen3CoderXml",
+      "generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "Plan\n</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "</think>\n\nSunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "Plan\n</think>\n\n<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan\n",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-text-call",
+          "output": "Plan\n</think>\n\nSunny.\n\n<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "Sunny.\n\n",
+            "reasoning_content": "Plan\n",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.\n\n<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+            "reasoning_content": "Plan\n",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call",
+          "output": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    }
+  ]
+}

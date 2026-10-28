@@ -135,6 +135,15 @@ sequenceDiagram
   fails a cut-short `required` reply with a parse error. llamadart withholds
   the calls and finishes with `length` or `stop` instead
   ([#890](https://github.com/leehack/llamadart/issues/890)).
+- When the template ends the prompt with an empty thought, as DeepSeek
+  V3.1, Qwen3, QwQ and Qwen3.5 templates render with thinking off, the
+  DeepSeek V3, Hermes and Qwen3-Coder XML parse and stream take the reply as
+  content and tool calls, thinking tags included, as llama.cpp (`620d2225`)
+  does. Other formats, and templates that leave the thought open, still
+  parse thoughts; with thinking off, the stream drops that reasoning.
+  StepFun3.5-Flash leaves it open even with thinking off: llamadart closes
+  it in the prompt, but still parses a leading thought, as llama.cpp does
+  with the open one.
 
 ## Tool-call parsing
 
@@ -178,9 +187,9 @@ Hunyuan V3, EXAONE MoE, Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo
 output. Text from where the format's parse may find a tool-call opening,
 and trailing whitespace, is held until later output rules the opening out or
 generation ends, as llama.cpp (`7fe450e1`) PEG `until` stops content before a
-whole delimiter or a partial one at the end of the input. With Qwen3-Coder
-XML, a `<tool_call>` also ends a forced-open thought when the output has no
-thinking tag, as its parse does. For these formats, with or without tools, a
+whole delimiter or a partial one at the end of the input. For these formats
+other than Hermes, Qwen3-Coder XML, DeepSeek V3 and Cohere2 MoE, with or
+without tools, a
 start tag the model repeats at the start of a forced-open thought is dropped,
 as in the parse, and when the output has no start tag, an end tag after the
 first one is content. A later start tag makes the parse end a thought at each
@@ -195,31 +204,38 @@ as their parse drops them. These markers are control tokens in converted
 GGUFs, which the chat template result preserves as llama.cpp does, so they
 reach the parser instead of decoding as empty text.
 
-DeepSeek V3 parses a forced-open thought as llama.cpp (`620d2225`) does: the
-thought is the text before the first `</think>`, kept as generated, including
-a repeated `<think>` and any escaped `\n`, and the rest is content, in which
-thinking tags are text. Its stream does the same.
+Hermes, Qwen3-Coder XML, DeepSeek V3 and Cohere2 MoE parse a forced-open
+thought as llama.cpp (`620d2225`) does: the thought is the text before the
+first end tag, kept as generated, including a repeated start tag and any
+escaped `\n`, and the rest is content, in which thinking tags are text. With
+Qwen3-Coder XML, a `<tool_call>` before the first `</think>` ends the thought
+too, with or without tools, and starts the content; with Cohere2 MoE, a
+`<|START_TEXT|>` or `<|START_ACTION|>` before `<|END_THINKING|>` does. A
+thought that has not ended at the end of the output drops a trailing partial
+end tag or marker, such as the `</thi` of `Plan it </thi`. Their stream does
+the same.
 
 Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
 with the Qwen3 template it returns `"Plan it.\n"` for
-`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML and a DeepSeek V3
-forced-open thought, the parse also
+`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML and a Hermes or
+DeepSeek V3 forced-open thought, the parse also
 replaces an escaped `\n` or `\r` in reasoning with a newline or a carriage
 return; the Qwen3-Coder XML parse keeps them, as llama.cpp (`7fe450e1`) does
 with the Qwen3.5 template. When tool calls are parsed, the stream of the
 formats above replaces them too, holding back a trailing `\` until the next
-token; otherwise it keeps them as generated. One exception is a forced-open
-thought that never closes and starts with whitespace, with or without tools.
-The parse keeps it untrimmed,
+token; otherwise it keeps them as generated. One exception, outside the
+four formats above that keep a forced-open thought as generated, is a
+forced-open thought that never closes and starts with whitespace, with or
+without tools. The parse keeps it untrimmed,
 but the stream drops the leading whitespace before it can know the thought
 will not close. The streamed text is then no prefix of the parse, so the final
 reconciliation adds nothing and the trailing whitespace is lost too:
-`"  \n Hello there.  \n\n"` streams as `"Hello there."`. The DeepSeek V3,
-EXAONE MoE, Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo parses return a
-forced-open thought that never closes as reasoning, including any tool-call
-envelope inside it, as llama.cpp (`620d2225c`) does with the MiniMax-M2 and
-DeepSeek V3.1 templates.
+`"  \n Hello there.  \n\n"` streams as `"Hello there."`. The Hermes,
+DeepSeek V3, EXAONE MoE, Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo
+parses return a forced-open thought that never closes as reasoning, including
+any tool-call envelope inside it, as llama.cpp (`620d2225c`) does with the
+QwQ, MiniMax-M2 and DeepSeek V3.1 templates.
 
 Output parsed with a PEG parser (Ministral, Solar Open, Nemotron V3, or
 Qwen3-Coder XML given a parser) streams the content and reasoning of partial

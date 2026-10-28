@@ -104,7 +104,9 @@ description: >-
   The legacy bundle can emit `ĠðŁĺĬ` in place of emoji; replace the bundle,
   preserve literal user text, and validate GPU/device/Web paths separately.
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
-  `engine.create` when reasoning output is not wanted. A boolean
+  `engine.create` when reasoning output is not wanted; a `<think>` block a
+  DeepSeek V3.1, Qwen3, QwQ or Qwen3.5 model still writes then stays in
+  `chunk.text`, as in llama-server. A boolean
   `enable_thinking` or `thinking` in `chatTemplateKwargs` overrides it, as in
   llama-server, and every chat template receives the result as
   `enable_thinking`. A template's own setting in `chatTemplateKwargs`, such as
