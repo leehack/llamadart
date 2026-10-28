@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
+import 'package:llamadart_validation/src/scoring_evidence.dart';
 import 'package:test/test.dart';
 
 import 'validation_test.dart' as harness;
@@ -447,4 +448,342 @@ void main() {
       }
     },
   );
+
+  group('oracle gates', () {
+    Map<String, dynamic> capability(bool supported, {bool web = false}) => {
+      'web': web,
+      'supported': supported,
+      'diagnostics': {...cpuDiagnostics},
+    };
+    bool accepts(
+      ValidationProfile target,
+      Map<String, dynamic> data, {
+      bool web = false,
+      Map? diagnostics,
+    }) => validScoringCaseEvidence(
+      'N01.capability',
+      data,
+      target,
+      web: web,
+      diagnostics: diagnostics ?? data['diagnostics'] as Map,
+    );
+
+    test('only the sealed native CPU configuration expects support', () {
+      expect(accepts(profile(), capability(true)), true);
+      expect(accepts(profile(), capability(false)), false);
+    });
+
+    test('web never expects support', () {
+      expect(accepts(profile(), capability(true, web: true), web: true), false);
+    });
+
+    test('each diagnostic and profile field gates the expectation', () {
+      for (final key in [
+        'backend_name',
+        'context_size',
+        'reported_gpu_layers',
+      ]) {
+        final data = capability(true);
+        (data['diagnostics'] as Map)[key] = key == 'backend_name'
+            ? 'Metal'
+            : key == 'context_size'
+            ? 512
+            : 1;
+        expect(accepts(profile(), data), false, reason: key);
+      }
+      final unfocused = ValidationProfile.fromJson(
+        profile().toJson()
+          ..['selection'] = 'quick'
+          ..remove('focus_features'),
+      );
+      expect(accepts(unfocused, capability(true)), false);
+    });
+
+    test('LiteRT is expected unsupported only under its own backend name', () {
+      final litert = ValidationProfile.fromJson(
+        profile('scoring-litert-cpu').toJson(),
+      );
+      final data = {
+        'web': false,
+        'supported': false,
+        'diagnostics': {'backend_name': 'LiteRT-LM CPU'},
+        'rejection': 'LlamaUnsupportedException',
+        'recovery': {'stream_completed': true, 'content': 'hello'},
+      };
+      expect(accepts(litert, data), true);
+      final other = {
+        ...data,
+        'diagnostics': {'backend_name': 'CPU'},
+      };
+      expect(accepts(litert, other), false);
+    });
+
+    test('LiteRT rejection must be typed and followed by a recovery', () {
+      final litert = ValidationProfile.fromJson(
+        profile('scoring-litert-cpu').toJson(),
+      );
+      final data = <String, dynamic>{
+        'web': false,
+        'supported': false,
+        'diagnostics': {'backend_name': 'LiteRT-LM CPU'},
+        'rejection': 'LlamaUnsupportedException',
+        'recovery': {'stream_completed': true, 'content': 'hello'},
+      };
+      final broken = <String, void Function(Map<String, dynamic>)>{
+        'rejection': (e) => e['rejection'] = 'StateError',
+        'no recovery': (e) => e['recovery'] = null,
+        'stream': (e) => (e['recovery'] as Map)['stream_completed'] = false,
+        'empty content': (e) => (e['recovery'] as Map)['content'] = '',
+        'missing content': (e) => (e['recovery'] as Map).remove('content'),
+      };
+      for (final entry in broken.entries) {
+        final copy = jsonDecode(jsonEncode(data)) as Map<String, dynamic>;
+        entry.value(copy);
+        expect(accepts(litert, copy), false, reason: entry.key);
+      }
+    });
+
+    test(
+      'record must match the manifest web flag and load diagnostics',
+      () async {
+        final events = copy(await runScoring());
+        final data = record(events, 'N02.top_k');
+        bool check({required bool web, required Map diagnostics}) =>
+            validScoringCaseEvidence(
+              'N02.top_k',
+              data,
+              profile(),
+              web: web,
+              diagnostics: diagnostics,
+            );
+        expect(check(web: false, diagnostics: cpuDiagnostics), true);
+        expect(check(web: true, diagnostics: cpuDiagnostics), false);
+        expect(
+          check(
+            web: false,
+            diagnostics: {...cpuDiagnostics, 'context_size': 512},
+          ),
+          false,
+        );
+      },
+    );
+  });
+
+  group('validator predicates', () {
+    final forgeries = <String, (String, void Function(Map<String, dynamic>))>{
+      'candidates-only prompt tokens': (
+        'N03.candidates',
+        (e) => e['candidates_only']['prompt_tokens'] += 1,
+      ),
+      'combined top shape': (
+        'N03.candidates',
+        (e) => (e['combined']['top'] as List).removeLast(),
+      ),
+      'combined top ids differ from baseline': (
+        'N03.candidates',
+        (e) => e['combined']['top'][0]['token'] = 99,
+      ),
+      'combined top scores differ from baseline': (
+        'N03.candidates',
+        (e) => e['combined']['top'][0]['logprob'] -= 0.5,
+      ),
+      'prime prompt tokens': (
+        'N04.reuse',
+        (e) => e['prime']['prompt_tokens'] += 1,
+      ),
+      'reused prompt tokens': (
+        'N04.reuse',
+        (e) => e['reused']['prompt_tokens'] += 1,
+      ),
+      'first carries candidates': (
+        'N02.top_k',
+        (e) => e['trials'][0]['first']['candidates'] = [
+          e['trials'][0]['first']['top'][0],
+        ],
+      ),
+      'repeat carries candidates': (
+        'N02.top_k',
+        (e) => e['trials'][0]['repeat']['candidates'] = [
+          e['trials'][0]['repeat']['top'][0],
+        ],
+      ),
+      'too few N02 tokens': (
+        'N02.top_k',
+        (e) {
+          final trial = e['trials'][0];
+          trial['tokens'] = (trial['tokens'] as List).take(7).toList();
+          trial['first']['prompt_tokens'] = 7;
+          trial['repeat']['prompt_tokens'] = 7;
+        },
+      ),
+      'too few N03 tokens': (
+        'N03.candidates',
+        (e) {
+          e['tokens'] = (e['tokens'] as List).take(7).toList();
+          for (final key in ['baseline', 'candidates_only', 'combined']) {
+            e[key]['prompt_tokens'] = 7;
+          }
+        },
+      ),
+      'too few N05 tokens': (
+        'N05.guards',
+        (e) {
+          e['tokens'] = (e['tokens'] as List).take(7).toList();
+          for (final key in ['baseline', 'recovery']) {
+            e[key]['prompt_tokens'] = 7;
+          }
+        },
+      ),
+    };
+
+    for (final entry in forgeries.entries) {
+      test('importer rejects: ${entry.key}', () async {
+        final forged = copy(await runScoring());
+        entry.value.$2(record(forged, entry.value.$1));
+        expect(
+          report(forged).problems,
+          contains('Invalid scoring case evidence: ${entry.value.$1}'),
+        );
+      });
+    }
+
+    test('N04 rejects fewer than eight shared tokens', () async {
+      final forged = copy(await runScoring());
+      final e = record(forged, 'N04.reuse');
+      for (var i = 7; i < (e['prefix_tokens'] as List).length; i++) {
+        e['full_tokens'][i] = 1000 + i;
+      }
+      expect(
+        report(forged).problems,
+        contains('Invalid scoring case evidence: N04.reuse'),
+      );
+    });
+
+    test('the fixture probability-mass bound is the one enforced', () async {
+      final events = await runScoring();
+      final strict = _FixtureProfile(profile(), {'max_probability_mass': 0.5});
+      expect(
+        validScoringCaseEvidence(
+          'N02.top_k',
+          record(events, 'N02.top_k'),
+          strict,
+          web: false,
+          diagnostics: cpuDiagnostics,
+        ),
+        false,
+      );
+    });
+
+    test('catalog 12 does not declare the scoring cases', () {
+      for (final id in caseIds) {
+        expect(catalogDeclaresCase(id, 12), false, reason: id);
+        expect(catalogDeclaresCase(id, 13), true, reason: id);
+      }
+    });
+  });
+
+  group('cross-case agreement on the fresh first prompt', () {
+    const message = 'Scoring cases disagree on the same fresh prompt';
+    final mutations = <String, void Function(List<Map<String, dynamic>>)>{
+      'consistently permuted N02 token IDs': (events) {
+        for (final key in ['first', 'repeat']) {
+          for (final row
+              in record(events, 'N02.top_k')['trials'][0][key]['top'] as List) {
+            row['token'] += 100;
+          }
+        }
+      },
+      'consistently permuted N05 token IDs': (events) {
+        final e = record(events, 'N05.guards');
+        for (final key in ['baseline', 'recovery']) {
+          for (final row in e[key]['top'] as List) {
+            row['token'] += 100;
+          }
+        }
+      },
+      'N03 tokenizes the same prompt differently': (events) {
+        record(events, 'N03.candidates')['tokens'][0] = 500;
+      },
+      'N05 scores drift from N02': (events) {
+        final e = record(events, 'N05.guards');
+        for (final key in ['baseline', 'recovery']) {
+          e[key]['top'][0]['logprob'] -= 0.5;
+        }
+      },
+    };
+
+    test('a coherent run raises no cross-case problem', () async {
+      expect(report(await runScoring()).problems, isNot(contains(message)));
+    });
+
+    for (final entry in mutations.entries) {
+      test('reports ${entry.key}', () async {
+        final forged = copy(await runScoring());
+        entry.value(forged);
+        expect(report(forged).problems, contains(message));
+      });
+    }
+  });
+
+  group('LiteRT scoring profile', () {
+    test('runs only the expected-unsupported capability case', () {
+      final litert = profile('scoring-litert-cpu');
+      expect(litert.runtime, 'litert');
+      expect(litert.caseIds.where((id) => id.startsWith('N')), [
+        'N01.capability',
+      ]);
+    });
+
+    test('is the registry profile for the LiteRT scoring claim', () {
+      final registry =
+          jsonDecode(File('assets/capability_coverage.json').readAsStringSync())
+              as Map;
+      final row = (registry['packs'] as List).cast<Map>().singleWhere(
+        (c) => c['id'] == 'next_token_scoring',
+      );
+      expect(
+        row['profiles'],
+        contains('assets/profiles/scoring-litert-cpu.json'),
+      );
+      expect(row['notes'], contains('1158'));
+    });
+
+    test('a passing run needs the typed rejection', () async {
+      final litert = profile('scoring-litert-cpu');
+      final events = await runScoring(selected: litert, supported: false);
+      expect(record(events, 'N01.capability')['status'], 'PASS');
+      expect(report(events).problems, isEmpty);
+    });
+  });
+}
+
+class _FixtureProfile implements ValidationProfile {
+  _FixtureProfile(this.inner, this.overrides);
+  final ValidationProfile inner;
+  final Map<String, Object> overrides;
+
+  @override
+  Map<String, dynamic> get fixtures => {
+    ...inner.fixtures,
+    'next_token_scoring': {
+      ...inner.fixtures['next_token_scoring'] as Map,
+      ...overrides,
+    },
+  };
+  @override
+  String get runtime => inner.runtime;
+  @override
+  String get backend => inner.backend;
+  @override
+  Map<String, dynamic> get model => inner.model;
+  @override
+  int get contextSize => inner.contextSize;
+  @override
+  int get threads => inner.threads;
+  @override
+  List<String> get focusFeatures => inner.focusFeatures;
+  @override
+  Map<String, dynamic> get effectiveConfig => inner.effectiveConfig;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

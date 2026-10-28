@@ -46,7 +46,7 @@ void main() {
       enableThinking: false,
     );
 
-    expect(rendered.prompt, endsWith('<|END_THINKING|>\n'));
+    expect(rendered.prompt, endsWith('<|START_THINKING|><|END_THINKING|>'));
     expect(rendered.grammar, isNotNull);
     expect(rendered.grammarLazy, isTrue);
     expect(rendered.additionalStops, contains('<|END_ACTION|>'));

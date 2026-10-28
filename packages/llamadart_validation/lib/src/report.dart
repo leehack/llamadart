@@ -320,6 +320,19 @@ class ValidationReport {
         };
       }
     }
+    if (profile != null &&
+        !scoringFreshPromptsAgree([
+          for (final record in records.values)
+            if (record['status'] == 'PASS' &&
+                const [
+                  'N02.top_k',
+                  'N03.candidates',
+                  'N05.guards',
+                ].contains(record['case_id']))
+              record,
+        ], profile)) {
+      problems.add('Scoring cases disagree on the same fresh prompt');
+    }
     final endings = events.where((e) => e['type'] == 'run_end').toList();
     final finished =
         endings.length == 1 && endings.single['cancelled'] == false;

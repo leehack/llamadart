@@ -89,34 +89,40 @@ String? moeCacheUnsupportedReason({
   return null;
 }
 
-/// Allocates the null-terminated `llama_model_tensor_buft_override` list
-/// that places the tensors matching each of [patterns] in [buft].
+/// Allocates with [allocator] the null-terminated
+/// `llama_model_tensor_buft_override` list that places the tensors matching
+/// each of [patterns] in [buft].
 ///
 /// llama.cpp reads it only while the model loads; free it with
-/// [freeTensorBufferOverrides] afterwards.
+/// [freeTensorBufferOverrides] and the same [allocator] afterwards.
 Pointer<llama_model_tensor_buft_override> allocateTensorBufferOverrides(
   List<String> patterns,
-  ggml_backend_buffer_type_t buft,
-) {
-  final overrides = calloc<llama_model_tensor_buft_override>(
+  ggml_backend_buffer_type_t buft, {
+  required Allocator allocator,
+}) {
+  final overrides = allocator<llama_model_tensor_buft_override>(
     patterns.length + 1,
   );
   for (final (index, pattern) in patterns.indexed) {
     overrides[index]
-      ..pattern = pattern.toNativeUtf8(allocator: calloc).cast()
+      ..pattern = pattern.toNativeUtf8(allocator: allocator).cast()
       ..buft = buft;
   }
+  overrides[patterns.length]
+    ..pattern = nullptr
+    ..buft = nullptr;
   return overrides;
 }
 
-/// Frees a list [allocateTensorBufferOverrides] returned.
+/// Frees with [allocator] a list [allocateTensorBufferOverrides] returned.
 void freeTensorBufferOverrides(
-  Pointer<llama_model_tensor_buft_override> overrides,
-) {
+  Pointer<llama_model_tensor_buft_override> overrides, {
+  required Allocator allocator,
+}) {
   for (var index = 0; overrides[index].pattern != nullptr; index++) {
-    calloc.free(overrides[index].pattern);
+    allocator.free(overrides[index].pattern);
   }
-  calloc.free(overrides);
+  allocator.free(overrides);
 }
 
 /// Applies the model fields of [params] that the MoE expert cache needs.

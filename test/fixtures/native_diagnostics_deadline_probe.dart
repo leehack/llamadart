@@ -39,11 +39,7 @@ Future<void> main(List<String> arguments) async {
     if (mode == 'link-manifest') await Link(manifest.path).create(fifo);
   }
   final packageConfig = (await Isolate.packageConfig)!;
-  final script = File(
-    mode == 'regular' || mode.endsWith('manifest')
-        ? 'lib/src/platform/io/native_diagnostics_child.dart'
-        : 'test/fixtures/native_diagnostics_fake_child.dart',
-  ).absolute;
+  final script = File(arguments[3]).absolute;
   Process? launched;
   var starts = 0;
   final elapsed = Stopwatch()..start();

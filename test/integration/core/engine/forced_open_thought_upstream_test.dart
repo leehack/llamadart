@@ -44,6 +44,7 @@ void main() {
 
       LlamaChatTemplateResult render({
         ToolChoice toolChoice = ToolChoice.auto,
+        bool parallelToolCalls = false,
       }) => ChatTemplateEngine.render(
         templateSource: File(templatePath).readAsStringSync(),
         messages: [
@@ -55,6 +56,7 @@ void main() {
         metadata: const {},
         tools: [_weatherTool],
         toolChoice: toolChoice,
+        parallelToolCalls: parallelToolCalls,
         chatTemplateKwargs:
             entry['chat_template_kwargs'] as Map<String, dynamic>?,
       );
@@ -90,10 +92,13 @@ void main() {
         final output = c['output'] as String;
         final upstream = c['upstream'] as Map<String, dynamic>;
         test('${c['name']} parses and streams as llama.cpp parses', () async {
+          final caseRendered = c['parallel_tool_calls'] == true
+              ? render(parallelToolCalls: true)
+              : rendered;
           final ChatParseResult parsed = ChatTemplateEngine.parse(
-            rendered.format,
+            caseRendered.format,
             output,
-            thinkingForcedOpen: rendered.thinkingForcedOpen,
+            thinkingForcedOpen: caseRendered.thinkingForcedOpen,
             tools: [_weatherTool],
           );
           // llamadart trims some whitespace around reasoning and content that
@@ -129,7 +134,7 @@ void main() {
           ]) {
             final chunks = await ChatCompletionStreamParser.parse(
               tokenStream: Stream.fromIterable(tokens),
-              templateResult: rendered,
+              templateResult: caseRendered,
               parseToolCallsEnabled: true,
               enableThinking: true,
               modelName: 'test-model',
@@ -165,10 +170,10 @@ void main() {
           // Without tools the stream takes another path; it still matches the
           // parse.
           final textParse = ChatTemplateEngine.parse(
-            rendered.format,
+            caseRendered.format,
             output,
             parseToolCalls: false,
-            thinkingForcedOpen: rendered.thinkingForcedOpen,
+            thinkingForcedOpen: caseRendered.thinkingForcedOpen,
           );
           for (final tokens in [
             [output],
@@ -176,7 +181,7 @@ void main() {
           ]) {
             final chunks = await ChatCompletionStreamParser.parse(
               tokenStream: Stream.fromIterable(tokens),
-              templateResult: rendered,
+              templateResult: caseRendered,
               parseToolCallsEnabled: false,
               enableThinking: true,
               modelName: 'test-model',

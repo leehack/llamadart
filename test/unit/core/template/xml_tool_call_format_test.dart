@@ -402,10 +402,13 @@ void main() {
           'required': ['city'],
         },
       };
+      // Qwen3-Coder trims raw values; Seed-OSS keeps their line breaks.
       List<Object?> cities(List<LlamaCompletionChunkToolCall> calls) => [
         for (final call in calls)
-          ((jsonDecode(call.function!.arguments!) as Map)['city'] as String)
-              .trim(),
+          ((jsonDecode(call.function!.arguments!) as Map)['city'] as String),
+      ];
+      List<String> values(List<String> names) => [
+        for (final name in names) format.trimRawArgval ? name : '\n$name\n',
       ];
 
       for (final separator in ['', '\n', '\n\n', ' ', '\t', '\n  ']) {
@@ -423,7 +426,7 @@ void main() {
                 schemas: withSchemas ? schemas : null,
               );
 
-              expect(cities(parsed.toolCalls), names, reason: output);
+              expect(cities(parsed.toolCalls), values(names), reason: output);
               expect(
                 parsed.toolCalls.map((call) => call.index),
                 List.generate(names.length, (index) => index),
@@ -449,7 +452,7 @@ void main() {
           );
 
           expect(parsed.reasoningContent, 'Plan', reason: '$forcedOpen');
-          expect(cities(parsed.toolCalls), ['Paris', 'Rome']);
+          expect(cities(parsed.toolCalls), values(['Paris', 'Rome']));
           expect(parsed.content, 'Let me check.\n\nDone.');
         }
       });
@@ -462,7 +465,7 @@ void main() {
           schemas: schemas,
         );
 
-        expect(cities(parsed.toolCalls), ['Paris']);
+        expect(cities(parsed.toolCalls), values(['Paris']));
         expect(parsed.content, rest);
       });
 
@@ -492,7 +495,7 @@ void main() {
               schemas: withSchemas ? schemas : null,
             );
 
-            expect(cities(parsed.toolCalls), kept, reason: later);
+            expect(cities(parsed.toolCalls), values(kept), reason: later);
             expect(
               parsed.content,
               later.startsWith(call('Rome')) ? unclosed : later,
@@ -514,4 +517,22 @@ void main() {
       });
     });
   }
+
+  // llama.cpp 620d2225 returns no call for either Qwen3-Coder output. Seed-OSS
+  // differs there: a scope without a line break is text to llama.cpp.
+  test('an empty first Qwen3-Coder scope starts no later calls', () {
+    const call =
+        '<tool_call>\n<function=weather>\n<parameter=city>\nParis\n'
+        '</parameter>\n</function>\n</tool_call>';
+    for (final empty in [
+      '<tool_call></tool_call>',
+      '<tool_call>\n</tool_call>',
+    ]) {
+      final output = '$empty\n$call';
+      final parsed = parseXmlToolCalls(output, XmlToolCallFormat.qwen3Coder);
+
+      expect(parsed.toolCalls, isEmpty, reason: output);
+      expect(parsed.content, output);
+    }
+  });
 }
