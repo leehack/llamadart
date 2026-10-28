@@ -22,6 +22,8 @@ import '../../../support/raw_tool_schema_fixture.dart';
 class MockLlamaBackend
     implements
         LlamaBackend,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
         BackendAvailability,
         BackendRuntimeDiagnostics,
         BackendVideoRuntimeSupport {

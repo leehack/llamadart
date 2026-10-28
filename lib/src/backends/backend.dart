@@ -92,15 +92,6 @@ abstract class LlamaBackend {
   /// Retrieves all available metadata from the loaded model.
   Future<Map<String, String>> modelMetadata(int modelHandle);
 
-  /// Dynamically loads or updates a LoRA adapter's scale.
-  Future<void> setLoraAdapter(int contextHandle, String path, double scale);
-
-  /// Removes a specific LoRA adapter from the active session.
-  Future<void> removeLoraAdapter(int contextHandle, String path);
-
-  /// Removes all active LoRA adapters from the current context.
-  Future<void> clearLoraAdapters(int contextHandle);
-
   /// Returns the name of the active runtime backend.
   Future<String> getBackendName();
 
@@ -118,24 +109,6 @@ abstract class LlamaBackend {
 
   /// Releases all allocated backend resources.
   Future<void> dispose();
-
-  /// Loads a multimodal projector for vision/audio support.
-  Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath);
-
-  /// Frees the multimodal context.
-  Future<void> multimodalContextFree(int mmContextHandle);
-
-  /// Checks if the model supports vision input.
-  ///
-  /// Throws `LlamaUnsupportedException` when the runtime cannot run the probe,
-  /// as for a native llama.cpp runtime without the mtmd functions.
-  Future<bool> supportsVision(int mmContextHandle);
-
-  /// Checks if the model supports audio input.
-  ///
-  /// Throws `LlamaUnsupportedException` when the runtime cannot run the probe,
-  /// as for a native llama.cpp runtime without the mtmd functions.
-  Future<bool> supportsAudio(int mmContextHandle);
 
   /// Returns the total and free VRAM in bytes.
   Future<({int total, int free})> getVramInfo();
@@ -163,6 +136,53 @@ abstract class LlamaBackend {
     String? customTemplate,
     bool addAssistant = true,
   });
+}
+
+/// Optional backend capability for runtime LoRA adapters.
+///
+/// `LlamaEngine` LoRA calls throw [LlamaUnsupportedException] on a backend
+/// without it. A backend whose support depends on its runtime, such as the
+/// loaded bridge assets or a routed delegate, implements it and throws
+/// [LlamaUnsupportedException] or [UnsupportedError] from a call that runtime
+/// cannot run.
+abstract class BackendLoraSupport {
+  /// Applies the LoRA adapter at [path] with [scale], or changes the scale of
+  /// one already applied from [path].
+  Future<void> setLoraAdapter(int contextHandle, String path, double scale);
+
+  /// Stops applying the LoRA adapter at [path].
+  Future<void> removeLoraAdapter(int contextHandle, String path);
+
+  /// Stops applying every LoRA adapter of [contextHandle].
+  Future<void> clearLoraAdapters(int contextHandle);
+}
+
+/// Optional backend capability for multimodal projectors.
+///
+/// `LlamaEngine` projector loads throw [LlamaUnsupportedException] on a
+/// backend without it, and the engine reports vision and audio input from
+/// [BackendDirectMediaInput] alone. A backend whose support depends on its
+/// runtime implements it and throws [LlamaUnsupportedException] or
+/// [UnsupportedError] from a call that runtime cannot run.
+abstract class BackendMultimodalSupport {
+  /// Loads the multimodal projector at [mmProjPath] for [modelHandle] and
+  /// returns its handle.
+  Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath);
+
+  /// Frees the projector [mmContextHandle].
+  Future<void> multimodalContextFree(int mmContextHandle);
+
+  /// Whether the projector [mmContextHandle] takes image input.
+  ///
+  /// Throws [LlamaUnsupportedException] when the runtime cannot run the probe,
+  /// as for a native llama.cpp runtime without the mtmd functions.
+  Future<bool> supportsVision(int mmContextHandle);
+
+  /// Whether the projector [mmContextHandle] takes audio input.
+  ///
+  /// Throws [LlamaUnsupportedException] when the runtime cannot run the probe,
+  /// as for a native llama.cpp runtime without the mtmd functions.
+  Future<bool> supportsAudio(int mmContextHandle);
 }
 
 /// Optional backend capability for exposing selectable backend options.

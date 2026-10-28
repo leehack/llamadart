@@ -1311,6 +1311,72 @@ void main() {
     }
   });
 
+  test('forwards LoRA calls to a delegate with BackendLoraSupport', () async {
+    final llama = _LoraFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+    try {
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+      await backend.setLoraAdapter(111, 'a.gguf', 0.5);
+      await backend.removeLoraAdapter(111, 'a.gguf');
+      await backend.clearLoraAdapters(111);
+      expect(llama.loraCalls, [
+        'set 111 a.gguf 0.5',
+        'remove 111 a.gguf',
+        'clear 111',
+      ]);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('rejects LoRA and projector calls for a delegate without the '
+      'capabilities', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _FakeBackend(handle: 11),
+      liteRtLmFactory: _TextOnlyFakeBackend.new,
+    );
+    try {
+      await backend.modelLoad('/models/model.litertlm', const ModelParams());
+      Matcher unsupported(String operation) => throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          '$operation are not supported by the active native runtime.',
+        ),
+      );
+      expect(
+        () => backend.setLoraAdapter(1, 'a.gguf', 1),
+        unsupported('LoRA adapters'),
+      );
+      expect(
+        () => backend.removeLoraAdapter(1, 'a.gguf'),
+        unsupported('LoRA adapters'),
+      );
+      expect(() => backend.clearLoraAdapters(1), unsupported('LoRA adapters'));
+      expect(
+        () => backend.multimodalContextCreate(1, 'mmproj.gguf'),
+        unsupported('Multimodal projectors'),
+      );
+      expect(
+        () => backend.multimodalContextFree(1),
+        unsupported('Multimodal projectors'),
+      );
+      expect(
+        () => backend.supportsVision(1),
+        unsupported('Multimodal projectors'),
+      );
+      expect(
+        () => backend.supportsAudio(1),
+        unsupported('Multimodal projectors'),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test(
     'routes multimodal, template, and VRAM calls to selected delegate',
     () async {
@@ -2205,6 +2271,7 @@ NativeAutoBackend _routerWithLinkDirectory(String links) {
 class _FakeBackend
     implements
         LlamaBackend,
+        BackendMultimodalSupport,
         BackendGrammarConstraintsSupport,
         BackendGpuEnumeration,
         BackendVideoRuntimeSupport {
@@ -2367,6 +2434,45 @@ class _FakeBackend
   Future<void> dispose() async {
     disposeCount += 1;
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _LoraFakeBackend extends _FakeBackend implements BackendLoraSupport {
+  _LoraFakeBackend({required super.handle});
+
+  final List<String> loraCalls = <String>[];
+
+  @override
+  Future<void> setLoraAdapter(
+    int contextHandle,
+    String path,
+    double scale,
+  ) async => loraCalls.add('set $contextHandle $path $scale');
+
+  @override
+  Future<void> removeLoraAdapter(int contextHandle, String path) async =>
+      loraCalls.add('remove $contextHandle $path');
+
+  @override
+  Future<void> clearLoraAdapters(int contextHandle) async =>
+      loraCalls.add('clear $contextHandle');
+}
+
+/// A delegate with neither LoRA nor projector support.
+class _TextOnlyFakeBackend implements LlamaBackend {
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async => 1;
+
+  @override
+  Future<void> modelFree(int modelHandle) async {}
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {}
+
+  @override
+  Future<void> dispose() async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

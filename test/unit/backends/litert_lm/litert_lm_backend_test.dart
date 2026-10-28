@@ -1031,34 +1031,6 @@ void main() {
         const ModelParams(),
       );
 
-      expect(
-        () => backend.setLoraAdapter(contextHandle, 'adapter.bin', 1.0),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => backend.removeLoraAdapter(contextHandle, 'adapter.bin'),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => backend.clearLoraAdapters(contextHandle),
-        throwsUnsupportedError,
-      );
-      await expectLater(
-        backend.multimodalContextCreate(handle, 'mmproj.bin'),
-        throwsUnsupportedError,
-      );
-      await expectLater(
-        backend.multimodalContextFree(contextHandle),
-        throwsUnsupportedError,
-      );
-      await expectLater(
-        backend.supportsVision(contextHandle),
-        throwsUnsupportedError,
-      );
-      await expectLater(
-        backend.supportsAudio(contextHandle),
-        throwsUnsupportedError,
-      );
       await expectLater(
         backend.generate(
           contextHandle,
@@ -2178,45 +2150,6 @@ void main() {
     });
   }
 
-  test('routes multimodal capability methods through the worker', () async {
-    final worker = _FakeLiteRtLmWorker(
-      tokenizeResponse: const <int>[],
-      detokenizeResponse: '',
-      multimodalHandleResponse: 77,
-      supportsVisionResponse: true,
-      supportsAudioResponse: false,
-    );
-    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
-
-    try {
-      expect(await backend.multimodalContextCreate(42, 'mmproj.bin'), 77);
-      await backend.multimodalContextFree(77);
-      expect(await backend.supportsVision(77), isTrue);
-      expect(await backend.supportsAudio(77), isFalse);
-
-      final createRequest = worker.requests
-          .whereType<LiteRtLmMultimodalContextCreateRequest>()
-          .single;
-      expect(createRequest.modelHandle, 42);
-      expect(createRequest.mmProjPath, 'mmproj.bin');
-      expect(
-        worker.requests.whereType<LiteRtLmMultimodalContextFreeRequest>(),
-        hasLength(1),
-      );
-      expect(
-        worker.requests.whereType<LiteRtLmSupportsVisionRequest>(),
-        hasLength(1),
-      );
-      expect(
-        worker.requests.whereType<LiteRtLmSupportsAudioRequest>(),
-        hasLength(1),
-      );
-    } finally {
-      await backend.dispose();
-      worker.close();
-    }
-  });
-
   for (final nativeChat in [false, true]) {
     test(
       'worker queued cancellation clears previous metrics (chat: $nativeChat)',
@@ -3251,9 +3184,6 @@ class _FakeLiteRtLmWorker {
     this.gpuSupportResponse = false,
     this.performanceContextResponse,
     this.vramInfoResponse = (total: 0, free: 0),
-    this.multimodalHandleResponse,
-    this.supportsVisionResponse,
-    this.supportsAudioResponse,
     this.bundleCapabilitiesResponse,
     this.generationControlsResponse = (penalties: false, thinkingBudget: false),
     this.reportsFinishReasons = false,
@@ -3275,9 +3205,6 @@ class _FakeLiteRtLmWorker {
   final bool gpuSupportResponse;
   final LiteRtLmPerformanceContextResponse? performanceContextResponse;
   final ({int total, int free}) vramInfoResponse;
-  final int? multimodalHandleResponse;
-  final bool? supportsVisionResponse;
-  final bool? supportsAudioResponse;
   final ({bool vision, bool audio, bool speculativeDecoding})?
   bundleCapabilitiesResponse;
   final ({bool penalties, bool thinkingBudget}) generationControlsResponse;
@@ -3429,24 +3356,6 @@ class _FakeLiteRtLmWorker {
             thinkingBudget: generationControlsResponse.thinkingBudget,
           ),
         );
-      case LiteRtLmMultimodalContextCreateRequest():
-        final handle = multimodalHandleResponse;
-        if (handle == null) {
-          message.sendPort.send(
-            LiteRtLmErrorResponse(
-              'LiteRT-LM multimodal context unavailable.',
-              kind: 'unsupported',
-            ),
-          );
-        } else {
-          message.sendPort.send(LiteRtLmHandleResponse(handle));
-        }
-      case LiteRtLmMultimodalContextFreeRequest():
-        message.sendPort.send(LiteRtLmDoneResponse());
-      case LiteRtLmSupportsVisionRequest():
-        message.sendPort.send(supportsVisionResponse ?? false);
-      case LiteRtLmSupportsAudioRequest():
-        message.sendPort.send(supportsAudioResponse ?? false);
       case LiteRtLmCancelGenerationRequest():
         message.sendPort.send(LiteRtLmDoneResponse());
       case LiteRtLmDisposeRequest():

@@ -1071,12 +1071,6 @@ class LiteRtLmService {
     return null;
   }
 
-  /// Handles LiteRT-LM LoRA operations.
-  void handleLora(int contextHandle, String? path, double? scale, String op) {
-    _checkContextHandle(contextHandle);
-    throw UnsupportedError('LiteRtLmBackend does not support LoRA adapters.');
-  }
-
   /// Returns the active backend name.
   String getActiveBackendName() {
     final backend =
@@ -1131,35 +1125,6 @@ class LiteRtLmService {
   /// Returns whether this runtime can use a GPU LiteRT-LM backend.
   bool getGpuSupport() {
     return liteRtLmNativeGpuSupportedOnCurrentPlatform();
-  }
-
-  /// Creates a multimodal context.
-  int createMultimodalContext(int modelHandle, String mmProjPath) {
-    _checkModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend does not support multimodal input.',
-    );
-  }
-
-  /// Frees a multimodal context.
-  void freeMultimodalContext(int mmContextHandle) {
-    throw UnsupportedError(
-      'LiteRtLmBackend does not support multimodal input.',
-    );
-  }
-
-  /// Returns whether vision is supported for a multimodal context.
-  bool supportsVision(int mmContextHandle) {
-    throw UnsupportedError(
-      'LiteRtLmBackend does not support multimodal input.',
-    );
-  }
-
-  /// Returns whether audio is supported for a multimodal context.
-  bool supportsAudio(int mmContextHandle) {
-    throw UnsupportedError(
-      'LiteRtLmBackend does not support multimodal input.',
-    );
   }
 
   /// Returns VRAM information when the backend can expose it.

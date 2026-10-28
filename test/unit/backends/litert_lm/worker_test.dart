@@ -344,20 +344,6 @@ void main() {
               ),
         );
 
-        final clearLora = await _sendRequest(
-          worker.sendPort,
-          (sendPort) =>
-              LiteRtLmLoraRequest(contextHandle, 'clear', sendPort: sendPort),
-        );
-        expect(
-          clearLora,
-          isA<LiteRtLmErrorResponse>().having(
-            (response) => response.kind,
-            'kind',
-            'unsupported',
-          ),
-        );
-
         final specialDetokenize = await _sendRequest(
           worker.sendPort,
           (sendPort) =>
@@ -371,23 +357,6 @@ void main() {
             'unsupported',
           ),
         );
-
-        for (final request in <LiteRtLmWorkerRequest Function(SendPort)>[
-          (sendPort) =>
-              LiteRtLmMultimodalContextFreeRequest(contextHandle, sendPort),
-          (sendPort) => LiteRtLmSupportsVisionRequest(contextHandle, sendPort),
-          (sendPort) => LiteRtLmSupportsAudioRequest(contextHandle, sendPort),
-        ]) {
-          final response = await _sendRequest(worker.sendPort, request);
-          expect(
-            response,
-            isA<LiteRtLmErrorResponse>().having(
-              (response) => response.kind,
-              'kind',
-              'unsupported',
-            ),
-          );
-        }
 
         final generate = await _sendRequest(
           worker.sendPort,
@@ -455,7 +424,7 @@ void main() {
     test('LiteRtLmDartLogLevelRequest leaves the logger alone without a log '
         'port', () async {
       final worker = await _startWorkerInCurrentIsolate(
-        _TokenAndLoraLiteRtLmService(),
+        _DetokenizeLiteRtLmService(),
       );
       try {
         final response = await _sendRequest(
@@ -503,8 +472,8 @@ void main() {
       }
     });
 
-    test('routes successful detokenize and LoRA service responses', () async {
-      final service = _TokenAndLoraLiteRtLmService();
+    test('routes successful detokenize service responses', () async {
+      final service = _DetokenizeLiteRtLmService();
       final worker = await _startWorkerInCurrentIsolate(service);
 
       try {
@@ -525,22 +494,6 @@ void main() {
             'decoded text',
           ),
         );
-
-        final lora = await _sendRequest(
-          worker.sendPort,
-          (sendPort) => LiteRtLmLoraRequest(
-            2,
-            'set',
-            path: 'adapter.bin',
-            scale: 0.5,
-            sendPort: sendPort,
-          ),
-        );
-        expect(lora, isA<LiteRtLmDoneResponse>());
-        expect(service.lastLoraContextHandle, 2);
-        expect(service.lastLoraPath, 'adapter.bin');
-        expect(service.lastLoraScale, 0.5);
-        expect(service.lastLoraOp, 'set');
       } finally {
         await _disposeWorker(worker);
       }
@@ -1007,38 +960,6 @@ void main() {
               .having((response) => response.reusedGraphs, 'reusedGraphs', 8),
         );
 
-        final multimodalCreate = await _sendRequest(
-          worker.sendPort,
-          (sendPort) =>
-              LiteRtLmMultimodalContextCreateRequest(1, 'mmproj.bin', sendPort),
-        );
-        expect(
-          multimodalCreate,
-          isA<LiteRtLmHandleResponse>().having(
-            (response) => response.handle,
-            'handle',
-            42,
-          ),
-        );
-
-        final vision = await _sendRequest(
-          worker.sendPort,
-          (sendPort) => LiteRtLmSupportsVisionRequest(42, sendPort),
-        );
-        final audio = await _sendRequest(
-          worker.sendPort,
-          (sendPort) => LiteRtLmSupportsAudioRequest(42, sendPort),
-        );
-        expect(vision, isTrue);
-        expect(audio, isFalse);
-
-        final multimodalFree = await _sendRequest(
-          worker.sendPort,
-          (sendPort) => LiteRtLmMultimodalContextFreeRequest(42, sendPort),
-        );
-        expect(multimodalFree, isA<LiteRtLmDoneResponse>());
-        expect(service.freeMultimodalCount, 1);
-
         final systemInfo = await _sendRequest(
           worker.sendPort,
           LiteRtLmSystemInfoRequest.new,
@@ -1174,12 +1095,7 @@ class _BlockingLiteRtLmService extends LiteRtLmService {
   }
 }
 
-class _TokenAndLoraLiteRtLmService extends LiteRtLmService {
-  int? lastLoraContextHandle;
-  String? lastLoraPath;
-  double? lastLoraScale;
-  String? lastLoraOp;
-
+class _DetokenizeLiteRtLmService extends LiteRtLmService {
   @override
   Future<String> detokenize(
     int modelHandle,
@@ -1187,14 +1103,6 @@ class _TokenAndLoraLiteRtLmService extends LiteRtLmService {
     bool special,
   ) async {
     return 'decoded text';
-  }
-
-  @override
-  void handleLora(int contextHandle, String? path, double? scale, String op) {
-    lastLoraContextHandle = contextHandle;
-    lastLoraPath = path;
-    lastLoraScale = scale;
-    lastLoraOp = op;
   }
 }
 
@@ -1341,8 +1249,6 @@ class _DisposeTrackingStreamingService extends LiteRtLmService {
 }
 
 class _FeatureLiteRtLmService extends LiteRtLmService {
-  int freeMultimodalCount = 0;
-
   @override
   BackendPerfContextData? getPerformanceContext(int contextHandle) {
     return const BackendPerfContextData(
@@ -1356,22 +1262,6 @@ class _FeatureLiteRtLmService extends LiteRtLmService {
       reusedGraphs: 8,
     );
   }
-
-  @override
-  int createMultimodalContext(int modelHandle, String mmProjPath) {
-    return 42;
-  }
-
-  @override
-  void freeMultimodalContext(int mmContextHandle) {
-    freeMultimodalCount += 1;
-  }
-
-  @override
-  bool supportsVision(int mmContextHandle) => true;
-
-  @override
-  bool supportsAudio(int mmContextHandle) => false;
 
   @override
   ({int total, int free}) getVramInfo() => (total: 2048, free: 512);

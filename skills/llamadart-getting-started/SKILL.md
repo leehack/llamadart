@@ -147,8 +147,11 @@ Linux and web. Full docs: https://llamadart.leehack.com
   BackendTextToSpeech`, ...) and direct LiteRT-LM runtime access also import
   `package:llamadart/backend.dart`; its `LlamaEngineBackendHooks` are
   extension members, so call them on a `LlamaEngine`-typed value, never
-  through `dynamic`. Avoid `package:llamadart/llama_cpp_bindings.dart`: the
-  raw FFI is native-only and can change in any release.
+  through `dynamic`. Runtime LoRA and multimodal projectors are the optional
+  `BackendLoraSupport` and `BackendMultimodalSupport`; `LlamaEngine` throws
+  `LlamaUnsupportedException` for a backend without them. Avoid
+  `package:llamadart/llama_cpp_bindings.dart`: the raw FFI is native-only
+  and can change in any release.
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,
   `LlamaStateException`, `LlamaUnsupportedException`, ...) rather than
   `Exception`.

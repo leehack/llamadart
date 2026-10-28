@@ -82,7 +82,8 @@ class _NullableModelFileTypeBackend extends _BasicBackend
   }
 }
 
-class _BasicBackend implements LlamaBackend {
+class _BasicBackend
+    implements LlamaBackend, BackendLoraSupport, BackendMultimodalSupport {
   bool _isReady = false;
 
   @override

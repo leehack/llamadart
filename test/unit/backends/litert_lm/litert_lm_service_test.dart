@@ -3753,19 +3753,6 @@ void main() {
           const ModelParams(),
         );
 
-        expect(
-          () => service.handleLora(contextHandle, 'adapter.bin', 1.0, 'set'),
-          throwsUnsupportedError,
-        );
-        expect(
-          () =>
-              service.handleLora(contextHandle, 'adapter.bin', null, 'remove'),
-          throwsUnsupportedError,
-        );
-        expect(
-          () => service.handleLora(contextHandle, null, null, 'clear'),
-          throwsUnsupportedError,
-        );
         await expectLater(
           service.generate(
             contextHandle,
@@ -7324,9 +7311,6 @@ void main() {
             liteRtLmGateAbi() == Abi.windowsX64,
       );
       expect(service.getVramInfo(), (total: 0, free: 0));
-      expect(() => service.freeMultimodalContext(1), throwsUnsupportedError);
-      expect(() => service.supportsVision(1), throwsUnsupportedError);
-      expect(() => service.supportsAudio(1), throwsUnsupportedError);
     } finally {
       service.dispose();
     }

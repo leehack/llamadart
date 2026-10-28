@@ -126,7 +126,8 @@ void main() {
   });
 }
 
-class _WebBackend implements LlamaBackend, BackendTextToSpeech {
+class _WebBackend
+    implements LlamaBackend, BackendMultimodalSupport, BackendTextToSpeech {
   bool _ready = false;
   BackendTextToSpeechRequest? lastRequest;
   Object? synthesisError;

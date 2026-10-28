@@ -504,6 +504,67 @@ void main() {
     expect(supported.promptSpeechToTextUnsupportedReason, isNull);
   });
 
+  test('WebAutoBackend forwards LoRA and projector calls to a capable '
+      'delegate', () async {
+    final delegate = _LoraMultimodalBackend();
+    final backend = WebAutoBackend(webBackend: delegate);
+
+    await backend.setLoraAdapter(1, 'a.gguf', 0.5);
+    await backend.removeLoraAdapter(1, 'a.gguf');
+    await backend.clearLoraAdapters(1);
+    expect(await backend.multimodalContextCreate(1, 'mmproj.gguf'), 9);
+    expect(await backend.supportsVision(9), isTrue);
+    expect(await backend.supportsAudio(9), isTrue);
+    await backend.multimodalContextFree(9);
+    expect(delegate.calls, [
+      'set a.gguf 0.5',
+      'remove a.gguf',
+      'clear',
+      'create mmproj.gguf',
+      'vision 9',
+      'audio 9',
+      'free 9',
+    ]);
+  });
+
+  test('WebAutoBackend rejects LoRA and projector calls for a delegate '
+      'without the capabilities', () {
+    final backend = WebAutoBackend(webBackend: _NoStateBackend());
+    Matcher unsupported(String operation) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        '$operation are not supported by the active Web runtime.',
+      ),
+    );
+
+    expect(
+      () => backend.setLoraAdapter(1, 'a.gguf', 1),
+      unsupported('LoRA adapters'),
+    );
+    expect(
+      () => backend.removeLoraAdapter(1, 'a.gguf'),
+      unsupported('LoRA adapters'),
+    );
+    expect(() => backend.clearLoraAdapters(1), unsupported('LoRA adapters'));
+    expect(
+      () => backend.multimodalContextCreate(1, 'mmproj.gguf'),
+      unsupported('Multimodal projectors'),
+    );
+    expect(
+      () => backend.multimodalContextFree(1),
+      unsupported('Multimodal projectors'),
+    );
+    expect(
+      () => backend.supportsVision(1),
+      unsupported('Multimodal projectors'),
+    );
+    expect(
+      () => backend.supportsAudio(1),
+      unsupported('Multimodal projectors'),
+    );
+  });
+
   test(
     'WebAutoBackend forwards typed text-to-speech to its delegate',
     () async {
@@ -1074,6 +1135,50 @@ class _NoStateBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _LoraMultimodalBackend extends _NoStateBackend
+    implements BackendLoraSupport, BackendMultimodalSupport {
+  final List<String> calls = <String>[];
+
+  @override
+  Future<void> setLoraAdapter(
+    int contextHandle,
+    String path,
+    double scale,
+  ) async => calls.add('set $path $scale');
+
+  @override
+  Future<void> removeLoraAdapter(int contextHandle, String path) async =>
+      calls.add('remove $path');
+
+  @override
+  Future<void> clearLoraAdapters(int contextHandle) async => calls.add('clear');
+
+  @override
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async {
+    calls.add('create $mmProjPath');
+    return 9;
+  }
+
+  @override
+  Future<void> multimodalContextFree(int mmContextHandle) async =>
+      calls.add('free $mmContextHandle');
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async {
+    calls.add('vision $mmContextHandle');
+    return true;
+  }
+
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async {
+    calls.add('audio $mmContextHandle');
+    return true;
+  }
 }
 
 class _PromptBackend extends _RecordingBackend {

@@ -11,7 +11,12 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 class _QueuedBackend
-    implements LlamaBackend, BackendAvailability, BackendNativeChatGeneration {
+    implements
+        LlamaBackend,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
+        BackendAvailability,
+        BackendNativeChatGeneration {
   final List<List<String>> _responses = <List<String>>[];
   final List<String> renderedPrompts = <String>[];
   var _responseIndex = 0;

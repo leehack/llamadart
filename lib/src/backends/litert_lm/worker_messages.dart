@@ -206,30 +206,6 @@ class LiteRtLmMetadataRequest extends LiteRtLmWorkerRequest {
   LiteRtLmMetadataRequest(this.modelHandle, super.sendPort);
 }
 
-/// Request for LoRA operations.
-class LiteRtLmLoraRequest extends LiteRtLmWorkerRequest {
-  /// The context handle.
-  final int contextHandle;
-
-  /// Operation name: set, remove, clear.
-  final String op;
-
-  /// LoRA path.
-  final String? path;
-
-  /// LoRA scale.
-  final double? scale;
-
-  /// Creates a LoRA request.
-  LiteRtLmLoraRequest(
-    this.contextHandle,
-    this.op, {
-    this.path,
-    this.scale,
-    required SendPort sendPort,
-  }) : super(sendPort);
-}
-
 /// Request for active backend information.
 class LiteRtLmBackendInfoRequest extends LiteRtLmWorkerRequest {
   /// Creates a backend info request.
@@ -297,49 +273,6 @@ class LiteRtLmGetContextSizeRequest extends LiteRtLmWorkerRequest {
 
   /// Creates a get context size request.
   LiteRtLmGetContextSizeRequest(this.contextHandle, super.sendPort);
-}
-
-/// Request to create a multimodal context.
-class LiteRtLmMultimodalContextCreateRequest extends LiteRtLmWorkerRequest {
-  /// The text model handle.
-  final int modelHandle;
-
-  /// Multimodal projector path.
-  final String mmProjPath;
-
-  /// Creates a multimodal context create request.
-  LiteRtLmMultimodalContextCreateRequest(
-    this.modelHandle,
-    this.mmProjPath,
-    super.sendPort,
-  );
-}
-
-/// Request to free a multimodal context.
-class LiteRtLmMultimodalContextFreeRequest extends LiteRtLmWorkerRequest {
-  /// The multimodal context handle.
-  final int mmContextHandle;
-
-  /// Creates a multimodal context free request.
-  LiteRtLmMultimodalContextFreeRequest(this.mmContextHandle, super.sendPort);
-}
-
-/// Request to check vision support.
-class LiteRtLmSupportsVisionRequest extends LiteRtLmWorkerRequest {
-  /// The multimodal context handle.
-  final int mmContextHandle;
-
-  /// Creates a vision support request.
-  LiteRtLmSupportsVisionRequest(this.mmContextHandle, super.sendPort);
-}
-
-/// Request to check audio support.
-class LiteRtLmSupportsAudioRequest extends LiteRtLmWorkerRequest {
-  /// The multimodal context handle.
-  final int mmContextHandle;
-
-  /// Creates an audio support request.
-  LiteRtLmSupportsAudioRequest(this.mmContextHandle, super.sendPort);
 }
 
 /// Request for what the loaded bundle declares in its section metadata.

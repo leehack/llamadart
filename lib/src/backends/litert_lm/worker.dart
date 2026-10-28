@@ -329,15 +329,6 @@ void runLiteRtLmWorkerForTesting(
             final metadata = service.getMetadata(message.modelHandle);
             message.sendPort.send(LiteRtLmMetadataResponse(metadata));
 
-          case LiteRtLmLoraRequest():
-            service.handleLora(
-              message.contextHandle,
-              message.path,
-              message.scale,
-              message.op,
-            );
-            message.sendPort.send(LiteRtLmDoneResponse());
-
           case LiteRtLmBackendInfoRequest():
             final info = service.getActiveBackendName();
             message.sendPort.send(LiteRtLmBackendInfoResponse(info));
@@ -386,25 +377,6 @@ void runLiteRtLmWorkerForTesting(
           case LiteRtLmGetContextSizeRequest():
             final size = service.getContextSize(message.contextHandle);
             message.sendPort.send(LiteRtLmGetContextSizeResponse(size));
-
-          case LiteRtLmMultimodalContextCreateRequest():
-            final handle = service.createMultimodalContext(
-              message.modelHandle,
-              message.mmProjPath,
-            );
-            message.sendPort.send(LiteRtLmHandleResponse(handle));
-
-          case LiteRtLmMultimodalContextFreeRequest():
-            service.freeMultimodalContext(message.mmContextHandle);
-            message.sendPort.send(LiteRtLmDoneResponse());
-
-          case LiteRtLmSupportsVisionRequest():
-            final supported = service.supportsVision(message.mmContextHandle);
-            message.sendPort.send(supported);
-
-          case LiteRtLmSupportsAudioRequest():
-            final supported = service.supportsAudio(message.mmContextHandle);
-            message.sendPort.send(supported);
 
           case LiteRtLmBundleCapabilitiesRequest():
             message.sendPort.send(
