@@ -756,6 +756,7 @@ const toolResultMediaFixture = <String, Object>{
   'call_id': 'call_0',
   'question':
       'Take a photo, then tell me the main color of the photo in one word.',
+  'call_max_tokens': 128,
   'max_tokens': 48,
   'images': {
     'red': {

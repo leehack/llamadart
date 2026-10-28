@@ -54,7 +54,7 @@ extension _ToolResultMediaValidation on ValidationRunner {
         tools: [tool],
         toolChoice: ToolChoice.required,
         enableThinking: false,
-        maxTokens: 128,
+        maxTokens: fixture['call_max_tokens'] as int,
       ),
     );
     final name = StringBuffer();

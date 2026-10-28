@@ -37,6 +37,7 @@ Map<String, dynamic> inspectPlacement(
   final List<String> selected;
   var headContexts = const <String, int>{};
   var embeddingMetal = false;
+  var mediaProjector = false;
   try {
     final parsed = ValidationProfile.fromJson(
       Map<String, dynamic>.from(profile),
@@ -48,6 +49,7 @@ Map<String, dynamic> inspectPlacement(
     }
     if (parsed.isDecision) headContexts = decisionHeadContexts;
     embeddingMetal = parsed.isEmbedding && backend == 'metal';
+    mediaProjector = parsed.toolResultProjector != null;
     final catalog = manifest['catalog'] as Map?;
     final version = catalog?['version'] ?? 1;
     selected =
@@ -196,6 +198,8 @@ Map<String, dynamic> inspectPlacement(
       ) &&
       (embeddingMetal
           ? _embeddingMetalBuffers(log, expectedLoads)
+          : mediaProjector
+          ? _projectorBuffers(log, prefix, buffers.length, expectedLoads)
           : buffers.length ==
                 expectedLoads + headContexts.values.fold(0, (a, b) => a + b)) &&
       buffers.every((m) => (double.tryParse(m[1]!) ?? 0) > 0);
@@ -212,6 +216,28 @@ Map<String, dynamic> inspectPlacement(
     'compute_records': buffers.map((m) => m[0]).toList(),
   };
 }
+
+// Each load of a tool-result media profile also builds one CLIP context whose
+// `reserve_compute_meta` logs a second compute buffer on the same backend.
+bool _projectorBuffers(
+  String log,
+  String prefix,
+  int compute,
+  int expectedLoads,
+) =>
+    compute == expectedLoads * 2 &&
+    RegExp('clip_ctx: CLIP using (?:$prefix) backend').allMatches(log).length ==
+        expectedLoads &&
+    RegExp(
+          r'load_hparams: projector:\s*qwen3vl_merger',
+        ).allMatches(log).length ==
+        expectedLoads &&
+    RegExp('(?:$prefix) compute buffer size').allMatches(log).length ==
+        compute &&
+    RegExp(
+          'reserve_compute_meta:\\s*(?:$prefix) compute buffer size',
+        ).allMatches(log).length ==
+        expectedLoads;
 
 // Pooled embedding requests toggle the graph shape, so sched_reserve can emit
 // repeatedly for one llama_context. Count contexts, then account for every

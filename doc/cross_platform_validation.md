@@ -2163,5 +2163,7 @@ projector `69066c8f279ec85ff48ab4059f6ebba0d2932ca57667f2bbdac7d9805bca9e7b`,
 context 4096, with the model's own chat template. Host preparation verifies both
 files and the importer requires the projector's hash and size. Only the native
 desktop runner prepares the projector; the Web builder and the Flutter app
-host leave the case NOT_RUN. Audio, video, URL media, other chat formats,
+host reject these profiles before loading with `LlamaUnsupportedException`.
+On Metal the placement check counts one llama and one CLIP compute buffer for
+each load. Audio, video, URL media, other chat formats,
 backends and devices are not qualified by this pack.

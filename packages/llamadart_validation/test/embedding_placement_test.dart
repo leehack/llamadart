@@ -131,6 +131,7 @@ void main() {
         );
         if (parsed.isEmbedding ||
             parsed.isDecision ||
+            parsed.toolResultProjector != null ||
             parsed.runtime != 'gguf' ||
             !['metal', 'cuda', 'vulkan'].contains(parsed.backend)) {
           continue;
@@ -192,7 +193,7 @@ void main() {
         );
         checked++;
       }
-      expect(checked, 11);
+      expect(checked, 10);
     },
   );
 }

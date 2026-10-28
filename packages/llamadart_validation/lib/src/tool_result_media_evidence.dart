@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/llamadart.dart';
 
 import 'case_catalog.dart';
 import 'manifest.dart';
@@ -25,8 +26,9 @@ List<String> get toolResultMediaColors =>
     ((toolResultMediaFixture['images'] as Map).keys).cast<String>().toList();
 
 /// Rechecks the recorded requests and answers instead of trusting `passed`
-/// flags: the image reached the request as a tool-result part, the model had
-/// called the tool itself, and each answer names its photo's color only.
+/// flags: the model called the tool itself, the whole request is exactly the
+/// fixture conversation with the photo as the tool result's only image, and
+/// each answer names its photo's color only.
 bool validToolResultMediaCaseEvidence(
   String id,
   Map<String, dynamic> record,
@@ -43,8 +45,10 @@ bool validToolResultMediaCaseEvidence(
       call['tool_choice'] != 'required' ||
       call['stream_completed'] != true ||
       call['completion_order_valid'] != true ||
-      call['reconstructed_name'] != fixture['tool'] ||
-      canonicalJson(call['finish_reasons']) != canonicalJson(['tool_calls'])) {
+      call['max_tokens'] != fixture['call_max_tokens'] ||
+      canonicalJson(call['tools']) != canonicalJson([_tool().toJson()]) ||
+      canonicalJson(call['finish_reasons']) != canonicalJson(['tool_calls']) ||
+      _calledTool(call['tool_call_deltas']) != fixture['tool']) {
     return false;
   }
   final colors = toolResultMediaColors;
@@ -58,40 +62,82 @@ bool validToolResultMediaCaseEvidence(
         trial['stream_completed'] != true ||
         trial['completion_order_valid'] != true ||
         trial['tool_choice'] != null ||
+        trial['max_tokens'] != fixture['max_tokens'] ||
+        trial['image_sha256'] != toolResultMediaImage(color)['sha256'] ||
         trial['tool_call_deltas'] is! List ||
         (trial['tool_call_deltas'] as List).isNotEmpty ||
         !_textFinish(trial['finish_reasons'])) {
       return false;
     }
     final answer = '${trial['content']}'.toLowerCase();
-    if (!answer.contains(color) ||
-        colors.any((other) => other != color && answer.contains(other))) {
+    bool names(String name) => RegExp('\\b$name\\b').hasMatch(answer);
+    if (!names(color) ||
+        colors.any((other) => other != color && names(other))) {
       return false;
     }
-    if (!_toolTurnCarriesImage(trial['messages'], color)) return false;
+    if (!_requestIsFixture(trial['messages'], color)) return false;
   }
   return true;
+}
+
+ToolDefinition _tool() => ToolDefinition(
+  name: toolResultMediaFixture['tool'] as String,
+  description: toolResultMediaFixture['tool_description'] as String,
+  parameters: const [],
+);
+
+String _calledTool(Object? deltas) {
+  if (deltas is! List || deltas.isEmpty) return '';
+  final name = StringBuffer();
+  for (final delta in deltas) {
+    final function = delta is Map ? delta['function'] : null;
+    name.write(function is Map ? function['name'] ?? '' : '');
+  }
+  return name.toString();
 }
 
 bool _textFinish(Object? reasons) =>
     canonicalJson(reasons) == canonicalJson(['stop']) ||
     canonicalJson(reasons) == canonicalJson(['length']);
 
-bool _toolTurnCarriesImage(Object? messages, String color) {
+bool _requestIsFixture(Object? messages, String color) {
+  const fixture = toolResultMediaFixture;
   if (messages is! List || messages.length != 3) return false;
   final tool = messages[2];
-  if (tool is! Map ||
+  if (canonicalJson(messages[0]) !=
+          canonicalJson({'role': 'user', 'content': fixture['question']}) ||
+      canonicalJson(messages[1]) !=
+          canonicalJson({
+            'role': 'assistant',
+            'tool_calls': [
+              {
+                'type': 'function',
+                'function': {'name': fixture['tool'], 'arguments': '{}'},
+                'id': fixture['call_id'],
+              },
+            ],
+            'content': null,
+          }) ||
+      tool is! Map ||
       tool['role'] != 'tool' ||
-      tool['tool_call_id'] != toolResultMediaFixture['call_id'] ||
+      tool['tool_call_id'] != fixture['call_id'] ||
+      tool['name'] != fixture['tool'] ||
       tool['content'] is! List) {
     return false;
   }
-  final images = (tool['content'] as List)
-      .whereType<Map>()
-      .where((part) => part['type'] == 'image_url')
-      .toList();
-  if (images.length != 1) return false;
-  final url = (images.single['image_url'] as Map?)?['url'];
+  final parts = tool['content'] as List;
+  if (parts.length != 2 ||
+      canonicalJson(parts[0]) !=
+          canonicalJson({'type': 'text', 'text': '{"ok":true}'})) {
+    return false;
+  }
+  final image = parts[1];
+  final Object? url = image is Map && image['type'] == 'image_url'
+      ? (image['image_url'] is Map ? (image['image_url'] as Map)['url'] : null)
+      : null;
   return url is String &&
-      url.endsWith(';base64,${toolResultMediaImage(color)['png_base64']}');
+      RegExp(
+        '^data:image/[a-z]+;base64,'
+        '${RegExp.escape(toolResultMediaImage(color)['png_base64'] as String)}\$',
+      ).hasMatch(url);
 }

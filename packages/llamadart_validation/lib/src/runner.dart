@@ -120,6 +120,12 @@ class PublicValidationEngine
     requireValidationRuntimeEnvironment();
     _recordStateUsage = profile.focusFeatures.contains('state_persistence');
     profile.requireRunnable(verifiedAndroidNpuHost: npu != null, web: isWeb);
+    if (profile.toolResultProjector != null && projector == null) {
+      throw LlamaUnsupportedException(
+        'Profile ${profile.id} locks a vision projector that this host did '
+        'not prepare; run it with validation.dart local.',
+      );
+    }
     if (_disposed) {
       _engine = _createEngine();
       _disposed = false;

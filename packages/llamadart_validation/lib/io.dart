@@ -118,6 +118,7 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
   http.Client? client,
   Future<void> Function(Map<String, dynamic>)? onProgress,
 }) async {
+  final label = artifact.replaceAll('_', ' ');
   final hash = lock['sha256'] as String;
   final size = lock['bytes'] as int;
   final started = Stopwatch()..start();
@@ -168,7 +169,7 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
   final checksum = Stopwatch()..start();
   if (hit && !await valid(target)) {
     if (suppliedPath != null) {
-      throw const FormatException('Supplied model hash/size mismatch');
+      throw FormatException('Supplied $label hash/size mismatch');
     }
     await target.delete();
     hit = false;
@@ -177,7 +178,7 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
   var downloadMs = 0;
   if (!hit) {
     if (suppliedPath != null) {
-      throw const FileSystemException('Supplied model is missing');
+      throw FileSystemException('Supplied $label is missing');
     }
     await target.parent.create(recursive: true);
     final temporary = File(
@@ -226,7 +227,7 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
       await progress('download', receivedBytes, 'finished');
       checksum.start();
       if (!await valid(temporary)) {
-        throw const FormatException('Downloaded model hash/size mismatch');
+        throw FormatException('Downloaded $label hash/size mismatch');
       }
       checksum.stop();
       await temporary.rename(target.path);

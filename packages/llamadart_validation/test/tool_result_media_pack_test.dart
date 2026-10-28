@@ -47,6 +47,7 @@ class _VisionEngine extends harness.FakeEngine
     return {
       'prompt': prompt,
       'messages': ?messages,
+      'max_tokens': maxTokens,
       'enable_thinking': enableThinking,
       'tools': tools?.map((t) => t.toJson()).toList(),
       'tool_choice': toolChoice?.name,
@@ -255,7 +256,39 @@ void main() {
     final result = await _run(_VisionEngine());
     final mutations = <String, void Function(Map<String, dynamic>)>{
       'no capability': (e) => e['tool_result_media'] = <String>[],
-      'wrong tool': (e) => e['call']['reconstructed_name'] = 'other',
+      'wrong tool': (e) =>
+          e['call']['tool_call_deltas'][0]['function']['name'] = 'other',
+      'forged reconstructed name': (e) {
+        e['call']['tool_call_deltas'] = [];
+        e['call']['reconstructed_name'] = 'take_photo';
+      },
+      'changed call tools': (e) => e['call']['tools'] = [],
+      'changed call budget': (e) => e['call']['max_tokens'] = 1,
+      'changed answer budget': (e) => e['trials'][0]['max_tokens'] = 1,
+      'word containing a color': (e) =>
+          e['trials'][0]['content'] = 'Bored of the reddish photo',
+      'extra other-color image in the user turn': (e) =>
+          e['trials'][0]['messages'][0]['content'] = [
+            {'type': 'text', 'text': 'x'},
+            e['trials'][1]['messages'][2]['content'][1],
+          ],
+      'text hint in the tool content': (e) =>
+          (e['trials'][0]['messages'][2]['content'] as List).insert(1, {
+            'type': 'text',
+            'text': 'red',
+          }),
+      'second image in the tool content': (e) =>
+          (e['trials'][0]['messages'][2]['content'] as List).add(
+            e['trials'][1]['messages'][2]['content'][1],
+          ),
+      'replaced assistant turn': (e) => e['trials'][0]['messages'][1] = {
+        'role': 'assistant',
+        'content': 'ok',
+      },
+      'wrong tool call id': (e) =>
+          e['trials'][0]['messages'][2]['tool_call_id'] = 'call_9',
+      'wrong tool name': (e) => e['trials'][0]['messages'][2]['name'] = 'other',
+      'wrong image hash': (e) => e['trials'][0]['image_sha256'] = 'a' * 64,
       'text finish call': (e) => e['call']['finish_reasons'] = ['stop'],
       'missing trial': (e) => (e['trials'] as List).removeLast(),
       'swapped colors': (e) =>
@@ -300,6 +333,48 @@ void main() {
       contains(
         'Verified vision projector hash and byte size do not match the profile lock',
       ),
+    );
+  });
+
+  test('a projector bytes or hash mismatch is a provenance problem', () async {
+    final result = await _run(_VisionEngine());
+    for (final field in ['bytes', 'sha256']) {
+      final events = (jsonDecode(jsonEncode(result.events)) as List)
+          .cast<Map<String, dynamic>>();
+      final manifest = events.firstWhere((e) => e['type'] == 'manifest');
+      (manifest['preparation']['projector'] as Map)[field] = field == 'bytes'
+          ? 1
+          : 'b' * 64;
+      final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+      expect(
+        report.provenanceProblems,
+        contains(
+          'Verified vision projector hash and byte size do not match the profile lock',
+        ),
+        reason: field,
+      );
+    }
+  });
+
+  test('a projector from another revision than the model is rejected', () {
+    final data =
+        jsonDecode(
+              File('assets/profiles/qwen3vl-gguf-cpu.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final projector = data['projector'] as Map<String, dynamic>;
+    projector['revision'] = 'b' * 40;
+    projector['url'] = (projector['url'] as String).replaceFirst(
+      'ea6a11058182570be6436b9a2e4ee7f7b49f908d',
+      'b' * 40,
+    );
+    expect(() => ValidationProfile.fromJson(data), throwsFormatException);
+  });
+
+  test('the public adapter rejects a locked projector it was not given', () {
+    expect(
+      PublicValidationEngine().load('model.gguf', _profile()),
+      throwsA(isA<LlamaUnsupportedException>()),
     );
   });
 }
