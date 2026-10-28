@@ -642,7 +642,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   /// under its entry lock, or on Windows a process has its model file open or
   /// mapped. Removals from the same cache root take turns, so overlapping
   /// [remove], [prune] and [clear] calls do not report each other's entries,
-  /// except across processes on a file system without file locks.
+  /// except across isolates or processes on a file system without file locks.
   ///
   /// A file the platform refuses to delete for good throws its
   /// [FileSystemException] and stops the call. On Windows that includes a
@@ -729,18 +729,18 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     if (maxBytes != null) {
       final remaining = (await list(cacheDirectory: cacheDirectory)).toList()
         ..sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
-      var total = 0;
-      for (final entry in remaining) {
-        total += await _entrySize(entry);
-      }
-      for (final entry in remaining) {
-        if (total <= maxBytes) {
-          break;
-        }
-        final size = await _entrySize(entry);
+      final sizes = <int>[
+        for (final entry in remaining) await _entrySize(entry),
+      ];
+      var total = sizes.fold(0, (sum, size) => sum + size);
+      for (var i = 0; i < remaining.length && total > maxBytes; i += 1) {
+        final entry = remaining[i];
         if (await _removeEntry(entry, cacheDirectory: cacheDirectory)) {
           removed.add(entry);
-          total -= size;
+          total -= sizes[i];
+        } else if (!await Directory(path.dirname(entry.filePath)).exists()) {
+          // Another prune removed it, so its bytes no longer count.
+          total -= sizes[i];
         }
       }
     }
@@ -1592,15 +1592,17 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
     // noCache downloads take no entry lock, and a lock file per transient
     // directory would never be deleted. A stray `.removal` directory is no
-    // entry, and its entry lock would be the removal lock.
+    // entry, and its entry lock would be the removal lock; file systems that
+    // ignore case also read `.REMOVAL` as it. Both still wait for the removal
+    // lock, so overlapping removers do not delete one directory twice.
     final name = path.basename(directoryPath);
-    if (_transientDirectoryName.hasMatch(name) ||
-        name == _strayRemovalDirectoryName) {
-      await remove();
-      return result;
-    }
+    final takesEntryLocks =
+        !_transientDirectoryName.hasMatch(name) &&
+        name.toLowerCase() != _strayRemovalDirectoryName;
     return _withRemovalLock(Directory(rootPath), () async {
-      if (!await _tryWithEntryLocks(cacheDirectoryToRemove, remove)) {
+      if (!takesEntryLocks) {
+        await remove();
+      } else if (!await _tryWithEntryLocks(cacheDirectoryToRemove, remove)) {
         return _Removal.inUse;
       }
       return result;

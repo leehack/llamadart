@@ -39,6 +39,7 @@
 - A Cohere2 MoE thought that the prompt opens ends at a `<|START_TEXT|>` or `<|START_ACTION|>` the model writes without `<|END_THINKING|>`, as in llama-server, so its text and tool calls no longer land in the reasoning ([#1523](https://github.com/leehack/llamadart/issues/1523)).
 - Qwen3-Coder XML replies with parallel tool calls, as from Qwen3-Coder, Qwen3.5 and StepFun3.5, return one call per `<tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1530](https://github.com/leehack/llamadart/issues/1530)).
 - Seed-OSS replies with parallel tool calls return one call per `<seed:tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1540](https://github.com/leehack/llamadart/issues/1540)).
+- Model cache `clear()`, `remove()` and `prune()` no longer fail or over-remove when calls overlap in one process or when a stray `.REMOVAL` directory sits in a case-insensitive cache root, and an overridden native release whose `assets.json` is truncated, empty, non-UTF-8 or not a manifest fails the build instead of being treated as unpublished ([#1522](https://github.com/leehack/llamadart/issues/1522)).
 
 ## 0.16.5
 

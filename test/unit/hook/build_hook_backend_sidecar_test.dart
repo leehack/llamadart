@@ -638,6 +638,39 @@ void main() {
       expect(absentRecord().lastModifiedSync().isAfter(old), isTrue);
     });
 
+    final undecidableBodies = <String, List<int>>{
+      'truncated JSON': utf8.encode('{"hook_contract_version": 2, "artif'),
+      'an empty body': const <int>[],
+      'bytes that are not UTF-8': const <int>[0xff, 0xfe, 0x7b],
+      'JSON that is not a manifest': utf8.encode('{"error":"blocked"}'),
+    };
+    undecidableBodies.forEach((name, body) {
+      test('fails instead of keeping the record when the re-check returns '
+          '$name', () async {
+        final legacyRelease = {
+          _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+          _coreUrl: core,
+        };
+        await runHook(RuntimeBundleHttpFixture(legacyRelease));
+        final old = DateTime.now().subtract(const Duration(days: 2));
+        absentRecord().setLastModifiedSync(old);
+        final fixture = RuntimeBundleHttpFixture({
+          ...legacyRelease,
+          _manifestUrl: body,
+        });
+
+        await expectLater(
+          runHook(fixture, backends: ['cuda']),
+          throwsA(isA<NativeHookContractException>()),
+        );
+        expect(
+          File(path.join(releaseCacheDir.path, 'assets.json')).existsSync(),
+          isFalse,
+        );
+        expect(absentRecord().lastModifiedSync().isAtSameMomentAs(old), isTrue);
+      });
+    });
+
     test('does not hide a body that is not JSON without a record', () async {
       final fixture = RuntimeBundleHttpFixture({
         _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,

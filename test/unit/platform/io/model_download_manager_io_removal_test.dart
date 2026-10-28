@@ -100,6 +100,9 @@ void main() {
       for (final child in children) {
         await child.exitCode;
       }
+      for (final childLines in lines) {
+        await childLines.cancel();
+      }
       expect(await manager.list(), isEmpty);
     }
   });
@@ -115,5 +118,61 @@ void main() {
       root.listSync().map((entity) => path.basename(entity.path)),
       <String>['.locks'],
     );
+  });
+
+  for (final name in <String>['.REMOVAL', '.Removal']) {
+    test('clear removes a stray $name directory instead of reporting it in '
+        'use', () async {
+      await populate(1);
+      Directory(path.join(root.path, name)).createSync();
+
+      await manager.clear().timeout(const Duration(seconds: 10));
+
+      expect(
+        root.listSync().map((entity) => path.basename(entity.path)),
+        <String>['.locks'],
+      );
+    });
+  }
+
+  test('overlapping clears take turns removing stray and transient '
+      'directories', () async {
+    for (var round = 0; round < 30; round += 1) {
+      for (var i = 0; i < 20; i += 1) {
+        final directory = Directory(
+          path.join(root.path, 'model$i-0123456789ab-nocache-$i'),
+        )..createSync();
+        File(path.join(directory.path, 'model.part')).writeAsStringSync('x');
+      }
+      Directory(path.join(root.path, '.removal')).createSync();
+
+      await Future.wait(<Future<void>>[
+        manager.clear(),
+        manager.clear(),
+        manager.clear(),
+      ]);
+
+      expect(
+        root.listSync().whereType<Directory>().map(
+          (directory) => path.basename(directory.path),
+        ),
+        everyElement('.locks'),
+      );
+    }
+  });
+
+  test('overlapping prunes by size remove only what the limit needs', () async {
+    await populate(3);
+
+    final results = await Future.wait(<Future<Object?>>[
+      manager.prune(maxBytes: 2048),
+      manager.prune(maxBytes: 2048),
+    ]);
+
+    final removed = [
+      for (final result in results) ...(result as List<Object?>),
+    ];
+    expect(removed, hasLength(1));
+    expect(await manager.list(), hasLength(2));
   });
 }

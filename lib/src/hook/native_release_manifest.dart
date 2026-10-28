@@ -97,8 +97,8 @@ final class NativeReleaseManifest {
 /// Parses release [tag]'s `assets.json` [text], read from [source].
 ///
 /// A manifest without `hook_contract_version` predates the field and is
-/// contract 1. Throws [NativeHookContractException] when the JSON is
-/// malformed, the contract is not in [supportedNativeHookContractVersions], or
+/// contract 1, but it still lists `artifacts`. Throws
+/// [NativeHookContractException] when the JSON is malformed, the contract is not in [supportedNativeHookContractVersions], or
 /// a `backend-*` artifact is malformed, duplicated, or not named
 /// `llamadart-native-<archive>-<tag>.tar.gz`.
 NativeReleaseManifest parseNativeReleaseManifest(
@@ -116,6 +116,14 @@ NativeReleaseManifest parseNativeReleaseManifest(
   }
   if (decoded is! Map<String, Object?>) {
     throw NativeHookContractException('$source is not a JSON object.');
+  }
+
+  if (!decoded.containsKey('hook_contract_version') &&
+      !decoded.containsKey('artifacts')) {
+    throw NativeHookContractException(
+      '$source has neither hook_contract_version nor artifacts, so it is not '
+      'a release manifest.',
+    );
   }
 
   final rawVersion = decoded['hook_contract_version'] ?? 1;

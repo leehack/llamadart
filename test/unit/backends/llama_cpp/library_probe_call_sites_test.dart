@@ -90,6 +90,32 @@ void main() {
       expect(failures.isEmpty, isTrue);
     });
 
+    test('the default score lookup reads the opened library export', () {
+      final fixture = _compileScoreFixture();
+      if (fixture == null) {
+        markTestSkipped('no C compiler available to build a score export');
+        return;
+      }
+      final service = LlamaCppService();
+      final failures = BackendProbeFailures();
+
+      final loaded = _invoke<bool>(
+        service,
+        '_tryRegisterBackendModuleViaAsset',
+        <Object?>['vulkan', failures],
+        {
+          #candidates: <String>[fixture.path],
+          #open: (String _) => DynamicLibrary.open(fixture.path),
+        },
+      );
+
+      expect(loaded, isFalse);
+      expect(
+        failures.describe(),
+        '`ggml_backend_score` returned 0 (${path.basename(fixture.path)})',
+      );
+    });
+
     final rejections =
         <
           String,
@@ -286,6 +312,39 @@ void main() {
     });
   });
 
+  group('ggml fallback candidates', () {
+    test('try asset URIs, then the module directory, then bare names', () {
+      final moduleDirectory = Directory.systemTemp.createTempSync('ggml-');
+      addTearDown(() => moduleDirectory.deleteSync(recursive: true));
+      final service = LlamaCppService();
+      _write(service, '_backendModuleDirectory', moduleDirectory.path);
+
+      final candidates = _invoke<List<String>>(
+        service,
+        '_ggmlFallbackCandidates',
+        const [],
+      );
+
+      final bareNames = candidates.where(
+        (candidate) =>
+            !candidate.startsWith('package:') &&
+            path.basename(candidate) == candidate,
+      );
+      final inModule = candidates.where(
+        (candidate) => path.dirname(candidate) == moduleDirectory.path,
+      );
+      expect(candidates.first, startsWith('package:'));
+      expect(bareNames, isNotEmpty);
+      expect(inModule, hasLength(bareNames.length));
+      expect(candidates.toList(), <String>[
+        ...candidates.where((candidate) => candidate.startsWith('package:')),
+        ...inModule,
+        ...bareNames,
+      ]);
+      expect(inModule.map(path.basename), bareNames);
+    });
+  });
+
   group('log-level wrapper probe', () {
     void resolve(
       LlamaCppService service,
@@ -308,6 +367,23 @@ void main() {
         'no `llama_dart_set_log_level` export (libfake-wrapper.so)',
       );
       expect(_read<Object?>(service, '_llamaDartSetLogLevelFallback'), isNull);
+    });
+
+    test('the default candidates are the wrapper lookup candidates', () {
+      final service = LlamaCppService();
+      final expected = service
+          .debugLlamadartWrapperLibraryCandidatesForTesting();
+
+      _invoke<void>(service, '_resolveLogLevelFallbackFunction', const []);
+
+      expect(expected, isNotEmpty);
+      if (_read<Object?>(service, '_llamaDartSetLogLevelFallback') != null) {
+        expect(_read<String?>(service, '_logLevelProbeOutcome'), isNull);
+        return;
+      }
+      final outcome = _read<String?>(service, '_logLevelProbeOutcome');
+      expect(outcome, isNot('no candidates'));
+      expect(outcome, contains(path.basename(expected.last)));
     });
 
     test('a wrapper that exports it is bound without an outcome', () {
@@ -445,6 +521,32 @@ void main() {
       }
     });
   });
+}
+
+({String path})? _compileScoreFixture() {
+  if (Platform.isWindows) {
+    return null;
+  }
+  final directory = Directory.systemTemp.createTempSync('score-fixture-');
+  addTearDown(() => directory.deleteSync(recursive: true));
+  final source = File(path.join(directory.path, 'score.c'))
+    ..writeAsStringSync('int ggml_backend_score(void) { return 0; }\n');
+  final output = path.join(
+    directory.path,
+    Platform.isMacOS ? 'libscore.dylib' : 'libscore.so',
+  );
+  try {
+    final result = Process.runSync('cc', <String>[
+      '-shared',
+      '-fPIC',
+      '-o',
+      output,
+      source.path,
+    ]);
+    return result.exitCode == 0 ? (path: output) : null;
+  } on ProcessException {
+    return null;
+  }
 }
 
 DynamicLibrary _openSystemLibrary() => DynamicLibrary.open(
