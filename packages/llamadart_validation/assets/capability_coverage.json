@@ -72,7 +72,7 @@
     },
     {
       "id": "next_token_scoring",
-      "notes": "Catalog 13 binds raw top-K and candidate scores, prompt-prefix reuse equivalence and argument guards on CPU Stories15M, plus typed unsupported rejection for LiteRT-LM. A mapping is not qualification of other models, platforms or WebGPU, and reuse equivalence does not prove the cache was used.",
+      "notes": "Catalog 13 binds raw top-K and candidate scores, prompt-prefix reuse equivalence and argument guards on CPU Stories15M, plus typed unsupported rejection for LiteRT-LM (scoring-litert-cpu runs only N01 as an expected-unsupported profile; LiteRT-LM scoring itself is blocked on LiteRT-LM v0.19, issue 1158). A mapping is not qualification of other models, platforms or WebGPU, and reuse equivalence does not prove the cache was used.",
       "cases": [
         "N01.capability",
         "N02.top_k",
@@ -82,7 +82,7 @@
       ],
       "profiles": [
         "assets/profiles/scoring-gguf-cpu.json",
-        "assets/profiles/chat-litert-cpu.json"
+        "assets/profiles/scoring-litert-cpu.json"
       ]
     },
     {

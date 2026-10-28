@@ -2191,7 +2191,15 @@ The profile locks Stories15M (SHA256
 `61b50d457809a5194818fd22e6724b456cd7bb9a6264c52c8110684c53f3704a`) on CPU,
 context 256 and four threads; other runtimes are `NOT_RUN` until they have an
 independent oracle, and non-CPU or non-GGUF profiles omit `N02`-`N05` as
-`outside_initial_native_cpu_scoring_scope`. N04 shows reuse does not change
+`outside_initial_native_cpu_scoring_scope`.
+`scoring-litert-cpu` (Qwen3-0.6B on LiteRT-LM CPU) runs only `N01`, as an
+expected-unsupported profile: the importer requires the typed
+`LlamaUnsupportedException` plus a working generation afterwards. LiteRT-LM
+next-token scoring itself is blocked on LiteRT-LM v0.19
+([#1158](https://github.com/leehack/llamadart/issues/1158)); until then no
+LiteRT profile may claim `N02`-`N05`. The importer also requires N02 trial 0,
+the N03 baseline and the N05 baseline, which score the same fresh prompt, to
+agree on tokens, top IDs and scores within 0.01. N04 shows reuse does not change
 scores; it does not prove the cache was used (see P03 for counters). Scores
 are raw logits, so no sampler setting is covered. The pack does not qualify
 Web, accelerators, other models or physical devices.
