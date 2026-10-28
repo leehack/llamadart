@@ -11,6 +11,9 @@ import 'stable_diffusion_bindings.dart' as sd;
 import 'stable_diffusion_calls.dart';
 import 'stable_diffusion_log.dart';
 
+export '../../core/image/image_generation_driver.dart'
+    show StableDiffusionGpuMemory;
+
 /// Up to [length] bytes of the file at [path] from [offset]; fewer at its end.
 Future<Uint8List> readStableDiffusionFileRange(
   String path,
@@ -107,16 +110,6 @@ int? stableDiffusionFileSize(String path) {
   }
   return (bytes: bytes, source: reading.$2);
 }
-
-/// The memory of a GPU as the stable_diffusion runtime reports it, in bytes.
-/// [name] is the device name with its description, such as
-/// `Vulkan0 (NVIDIA L4)`.
-typedef StableDiffusionGpuMemory = ({
-  String name,
-  int totalBytes,
-  int freeBytes,
-  bool integrated,
-});
 
 /// The memory of every GPU the runtime lists, discrete and integrated, in
 /// the runtime's device order, from `sd_dart_gpu_device_count` and

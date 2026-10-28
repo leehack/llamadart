@@ -1523,8 +1523,9 @@ if ((await engine.capabilities).supportsReferenceImageEditing) {
   is resized, cropped or padded during generation.
 - The references are copied when the request is created and stay owned until
   the native call ends, including after a cancel.
-- `guidanceScale` 1 is the recommended setting; the transformer's own
-  guidance embedding keeps the runtime default.
+- Always pass `guidanceScale: 1`, the recommended setting: omitted, the
+  generic default of 7 applies. The transformer's own guidance embedding keeps
+  the runtime default.
 
 Size violations throw `LlamaImageGenerationException` before the task starts.
 The bounded recipe requires stable-diffusion-native `v0.3.0-1` (upstream

@@ -1188,25 +1188,63 @@ void main() {
       ]) {
         await startedWith(placement, devices: vulkan);
       }
-      expect(driver.discreteGpuQueries, 0);
+      // One read per load, for the memory check.
+      expect(driver.gpuMemoryReads, 2);
       final config = await startedWith(
         const ImageModelPlacement(maxGpuMemoryGiB: 4),
       );
       expect(config.maxGpuMemoryGiB, 4);
-      expect(driver.discreteGpuQueries, 0);
+      expect(driver.gpuMemoryReads, 2);
     });
 
     test(
-      'a discrete Vulkan GPU takes a budget after one GPU type query',
+      'a discrete Vulkan GPU takes a budget after one GPU memory read',
       () async {
         final config = await startedWith(
           const ImageModelPlacement(maxGpuMemoryGiB: 4),
           devices: vulkan,
         );
         expect(config.maxGpuMemoryGiB, 4);
-        expect(driver.discreteGpuQueries, 1);
+        expect(driver.gpuMemoryReads, 1);
       },
     );
+
+    test('a GPU budget with the memory check reads the GPU memory once and '
+        'checks the memory against what it read', () async {
+      driver
+        ..status = _available(vulkan)
+        ..started.clear();
+
+      await load(
+        _sdxs(),
+        params: const ImageModelParams(device: ComputeDevice.gpu),
+        placement: const ImageModelPlacement(maxGpuMemoryGiB: 4),
+      );
+
+      expect(driver.gpuMemoryReads, 1);
+      expect(driver.budgetDevices, [ImageGenerationComputeDevice.otherGpu]);
+      expect(driver.memoryGpus.single, hasLength(1));
+    });
+
+    test('the memory check alone reads the GPU memory once, and without '
+        'one it reads none', () async {
+      driver.status = _available(vulkan);
+      await load(
+        _sdxs(),
+        params: const ImageModelParams(device: ComputeDevice.gpu),
+      );
+      expect(driver.gpuMemoryReads, 1);
+
+      driver.gpuMemoryReads = 0;
+      await load(
+        _sdxs(),
+        params: const ImageModelParams(
+          device: ComputeDevice.gpu,
+          checkMemory: false,
+        ),
+      );
+      expect(driver.gpuMemoryReads, 0);
+    });
 
     test('refuses a GPU budget with the fit off, which aborts the runtime, '
         'before file resolution', () async {
@@ -3950,21 +3988,35 @@ final class _FakeDriver implements ImageGenerationDriver {
   final List<ImageGenerationComputeDevice> budgetDevices = [];
   final List<bool> runtimePicks = [];
 
-  /// What [reportsDiscreteGpu] answers.
+  /// What [readGpuMemory] lists: a discrete GPU, an integrated one, or
+  /// nothing.
   bool? discreteGpu = true;
-  int discreteGpuQueries = 0;
+  int gpuMemoryReads = 0;
+  final List<List<StableDiffusionGpuMemory>?> memoryGpus = [];
 
   @override
-  Future<bool?> reportsDiscreteGpu() async {
-    discreteGpuQueries++;
-    return discreteGpu;
+  Future<List<StableDiffusionGpuMemory>?> readGpuMemory() async {
+    gpuMemoryReads++;
+    return switch (discreteGpu) {
+      null => null,
+      final discrete => [
+        (
+          name: 'Vulkan0',
+          totalBytes: 8 << 30,
+          freeBytes: 8 << 30,
+          integrated: !discrete,
+        ),
+      ],
+    };
   }
 
   @override
   Future<ImageGenerationMemoryLimits> memoryLimits(
     ImageGenerationComputeDevice device, {
     required bool runtimePicksGpu,
+    List<StableDiffusionGpuMemory>? gpus,
   }) async {
+    memoryGpus.add(gpus);
     budgetDevices.add(device);
     runtimePicks.add(runtimePicksGpu);
     return (refuse: budget, slower: slowerBudget);

@@ -289,10 +289,11 @@ final class _RecordingDriver implements ImageGenerationDriver {
   Future<ImageGenerationMemoryLimits> memoryLimits(
     ImageGenerationComputeDevice device, {
     required bool runtimePicksGpu,
+    List<StableDiffusionGpuMemory>? gpus,
   }) async => (refuse: null, slower: null);
 
   @override
-  Future<bool?> reportsDiscreteGpu() async => null;
+  Future<List<StableDiffusionGpuMemory>?> readGpuMemory() async => null;
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) {

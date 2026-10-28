@@ -26,7 +26,7 @@ void main() {
         slower: null,
       ));
     }
-    expect(await driver.reportsDiscreteGpu(), isNull);
+    expect(await driver.readGpuMemory(), isNull);
     await expectLater(
       driver.start(
         const ImageGenerationSessionConfig(

@@ -485,9 +485,13 @@ class ImageGenerationEngine {
       );
     }
     _checkPlacement(placement, params.device, backendName, runtime.devices);
-    if (placement.maxGpuMemoryGiB != null &&
-        !_isMetal(backendName) &&
-        await driver.reportsDiscreteGpu() != true) {
+    List<StableDiffusionGpuMemory>? gpus;
+    var readGpus = false;
+    if (placement.maxGpuMemoryGiB != null && !_isMetal(backendName)) {
+      gpus = await driver.readGpuMemory();
+      readGpus = true;
+    }
+    if (readGpus && gpus?.any((gpu) => !gpu.integrated) != true) {
       // ggml-vulkan reports an integrated GPU as IGPU. With no backend named,
       // the runtime's fit plans only for discrete GPUs, then computes on the
       // integrated one under max_vram without a plan, which aborts like the
@@ -655,16 +659,21 @@ class ImageGenerationEngine {
       }
     }
     if (params.checkMemory) {
+      final memoryDevice = switch (backendName) {
+        _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
+        _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
+        _ => ImageGenerationComputeDevice.cpu,
+      };
+      if (memoryDevice == ImageGenerationComputeDevice.otherGpu && !readGpus) {
+        gpus = await driver.readGpuMemory();
+      }
       _checkMemory(
         weightBytes,
         await driver.memoryLimits(
-          switch (backendName) {
-            _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
-            _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
-            _ => ImageGenerationComputeDevice.cpu,
-          },
+          memoryDevice,
           runtimePicksGpu:
               params.device == ComputeDevice.auto && placement.autoFit,
+          gpus: gpus,
         ),
       );
     }

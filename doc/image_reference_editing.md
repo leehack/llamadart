@@ -31,7 +31,7 @@ and the other upstream presets keep their own acceptance (#1222).
 | Ownership | Copied on creation; the worker copies them into the generation's native arena, freed after `sd_dart_generate_image` returns, including after a cancel |
 | Preset | `ref_image_args = "preset=flux_kontext"`, never the runtime's family guess |
 | Combinations | Image editing, ControlNet, hires fix, VAE tiling and circular axes are refused (`LlamaUnsupportedException`) |
-| Guidance | `guidanceScale` maps to `txt_cfg`; 1 is upstream's recommendation. The distilled guidance keeps the runtime default (3.5) |
+| Guidance | `guidanceScale` maps to `txt_cfg`; 1 is upstream's recommendation, so always pass it: omitted, the generic default (7) applies, and the library has no model-specific defaults. The distilled guidance keeps the runtime default (3.5) |
 
 Size errors (`LlamaImageGenerationException`) and recipe refusals
 (`LlamaUnsupportedException`) are thrown before the task starts.
@@ -46,7 +46,10 @@ Size errors (`LlamaImageGenerationException`) and recipe refusals
   refused. FLUX.1 [dev] has the same layout as Kontext: the headers cannot
   tell them apart, and the runtime detects both as `Flux`
   (`VERSION_FLUX`, whose default reference preset is also `flux_kontext`).
-  With FLUX.1 [dev], references do not steer the output as an edit.
+  The pinned runtime keys `Flux` on the double/single block tensor names and
+  the patch width alone, so the tensor set has no discriminator either, and
+  a model-name check would be a guess. With FLUX.1 [dev], references do not
+  steer the output as an edit.
 - Load: `referenceEditingRecipeVerified` also needs macOS, a Metal backend
   and the pinned runtime commit (`be48649`).
   `ImageGenerationCapabilities.supportsReferenceImageEditing` also needs the
@@ -120,7 +123,7 @@ Acceptance gates, fixed before the first real-model run except the bar row (see 
 | Public Dart vs independent C, `edit` and `plain` | Exact RGB |
 | Disk core (radius ≤ 90): mean blue − mean red | > 40 (the fixture's is −170) |
 | Background (radius ≥ 150, outside rows 416–479 and the top 16 rows) vs the fixture | MAE < 25 |
-| Darkest 16-row band over columns 96–415 in rows 307–511 | Mean < 90, top row within 48 of row 440 |
+| Darkest 16-row band over columns 96–415 in rows 307–511 | Mean < 90, top row within 48 of row 440; grown over adjacent rows with a mean below 132 it is 24–40 rows tall, and its longest run below 132 across its middle row is 320–448 columns (the fixture's is 32 by 384, the qualified run's 33 by 388) |
 | `edit` vs `plain` | MAE > 10 (the reference is used) |
 | Cancel during sampling | Cancelled completion, no images, then exact `edit` reuse |
 | Ordinary request after an edit | Exact `plain` RGB |
