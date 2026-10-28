@@ -31,17 +31,26 @@ List<File> _fixtureTemplates() {
 /// probe clears it: `tool/litert_lm_templates/qwen3.jinja` reads strings and
 /// part lists but rejects image and audio parts.
 const Map<String, String> _pinnedCaps = <String, String>{
+  // Apertus, GLM-4.6, GLM-4.7-Flash, SmolLM3, DeepSeek-R1-Distill-Qwen-32B and
+  // RWKV World are pinned from llama-server 620d2225c `/props`.
+  'test/fixtures/llama_cpp_templates/Apertus-8B-Instruct.jinja': '11111001',
   'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
       '11111101',
   // Command R+ and Hermes are pinned from Dart detection, without a server probe.
   'test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja':
       '11111001',
+  'test/fixtures/llama_cpp_templates/GLM-4.6.jinja': '11111111',
+  'test/fixtures/llama_cpp_templates/GLM-4.7-Flash.jinja': '11111111',
+  'test/fixtures/llama_cpp_templates/HuggingFaceTB-SmolLM3-3B.jinja':
+      '10001010',
   'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja': '10101000',
   // MiniMax-M2 is pinned from `common_chat_templates_get_caps` at 620d2225c.
   'test/fixtures/llama_cpp_templates/MiniMax-M2.jinja': '11111111',
   'test/fixtures/llama_cpp_templates/NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja':
       '11111001',
   'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja': '11111011',
+  'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja':
+      '11011011',
   'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja':
       '11011011',
   'test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja':
@@ -49,6 +58,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/google-gemma-2-2b-it.jinja': '00001000',
   'test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja':
       '11111111',
+  'test/fixtures/llama_cpp_templates/llama-cpp-rwkv-world.jinja': '10001010',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja':
       '11111001',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja':
