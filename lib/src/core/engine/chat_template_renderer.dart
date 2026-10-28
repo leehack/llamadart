@@ -158,9 +158,6 @@ class ChatTemplateRenderer {
       parser: result.parser,
       tokenCount: tokenCount,
     );
-    return withThinkingForcedClosed(
-      copy,
-      closed: thinkingForcedClosedOf(result),
-    );
+    return withThoughtMarksOf(copy, result);
   }
 }

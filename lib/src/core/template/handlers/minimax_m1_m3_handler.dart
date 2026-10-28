@@ -20,6 +20,9 @@ class MinimaxM1Handler extends DirectJinjaHandler
   ChatFormat get format => ChatFormat.minimaxM1;
 
   @override
+  bool get parsesThoughtBeforeEndTag => false;
+
+  @override
   List<String> get additionalStops => const ['<end_of_sentence>'];
 
   @override

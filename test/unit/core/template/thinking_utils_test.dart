@@ -227,6 +227,46 @@ void main() {
     });
   });
 
+  group('withThoughtClosedForThinkingOff', () {
+    test('marks only the result it is given, and only when closed', () {
+      LlamaChatTemplateResult result() =>
+          LlamaChatTemplateResult(prompt: 'assistant\n<think></think>\n');
+      final marked = withThoughtClosedForThinkingOff(result(), closed: true);
+      expect(thoughtClosedForThinkingOffOf(marked), isTrue);
+      expect(thinkingForcedClosedOf(marked), isFalse);
+      expect(
+        thoughtClosedForThinkingOffOf(
+          withThoughtClosedForThinkingOff(result(), closed: false),
+        ),
+        isFalse,
+      );
+      expect(thoughtClosedForThinkingOffOf(result()), isFalse);
+    });
+  });
+
+  group('withThoughtMarksOf', () {
+    test('copies each thought mark of the source', () {
+      LlamaChatTemplateResult result() =>
+          LlamaChatTemplateResult(prompt: 'assistant\n<think></think>\n');
+      for (final templateClosed in const [false, true]) {
+        for (final handlerClosed in const [false, true]) {
+          final source = withThoughtClosedForThinkingOff(
+            withThinkingForcedClosed(result(), closed: templateClosed),
+            closed: handlerClosed,
+          );
+          final copy = withThoughtMarksOf(result(), source);
+          final reason = '$templateClosed $handlerClosed';
+          expect(thinkingForcedClosedOf(copy), templateClosed, reason: reason);
+          expect(
+            thoughtClosedForThinkingOffOf(copy),
+            handlerClosed,
+            reason: reason,
+          );
+        }
+      }
+    });
+  });
+
   group('withTemplateOpenedThought', () {
     LlamaChatTemplateResult result(String prompt, {bool forcedOpen = false}) =>
         LlamaChatTemplateResult(

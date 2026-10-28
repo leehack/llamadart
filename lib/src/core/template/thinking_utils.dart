@@ -224,6 +224,38 @@ LlamaChatTemplateResult withThinkingForcedClosed(
 bool thinkingForcedClosedOf(LlamaChatTemplateResult result) =>
     _thinkingForcedClosed[result] ?? false;
 
+final Expando<bool> _thoughtClosedForThinkingOff = Expando<bool>(
+  'llamadart.thoughtClosedForThinkingOff',
+);
+
+/// Returns [result], marked when [closed] as rendered by a handler that
+/// closed a thought its template left open, because thinking is off.
+///
+/// The parse still takes reply text before a first end tag as that thought,
+/// as llama.cpp parses the thought it keeps open, so the stream holds such
+/// text until a thinking tag or the end shows what it is. Internal engine
+/// plumbing, not part of the public API.
+LlamaChatTemplateResult withThoughtClosedForThinkingOff(
+  LlamaChatTemplateResult result, {
+  required bool closed,
+}) {
+  if (closed) _thoughtClosedForThinkingOff[result] = true;
+  return result;
+}
+
+/// Whether [withThoughtClosedForThinkingOff] marked [result].
+bool thoughtClosedForThinkingOffOf(LlamaChatTemplateResult result) =>
+    _thoughtClosedForThinkingOff[result] ?? false;
+
+/// Returns [copy] with the thought marks of [source], which it copies.
+LlamaChatTemplateResult withThoughtMarksOf(
+  LlamaChatTemplateResult copy,
+  LlamaChatTemplateResult source,
+) => withThoughtClosedForThinkingOff(
+  withThinkingForcedClosed(copy, closed: thinkingForcedClosedOf(source)),
+  closed: thoughtClosedForThinkingOffOf(source),
+);
+
 /// Returns the thinking flag a request renders, parses and streams with.
 ///
 /// A boolean `enable_thinking` in [chatTemplateKwargs] overrides

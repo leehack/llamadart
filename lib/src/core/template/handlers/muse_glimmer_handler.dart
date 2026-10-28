@@ -17,6 +17,9 @@ class MuseGlimmerHandler extends DirectJinjaHandler
   ChatFormat get format => ChatFormat.museGlimmer;
 
   @override
+  bool get parsesThoughtBeforeEndTag => false;
+
+  @override
   List<String> get additionalStops => const ['<|eot|>'];
 
   @override

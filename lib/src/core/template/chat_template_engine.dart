@@ -471,10 +471,7 @@ class ChatTemplateEngine {
         parser: result.parser,
         tokenCount: result.tokenCount,
       );
-      return withThinkingForcedClosed(
-        copy,
-        closed: thinkingForcedClosedOf(result),
-      );
+      return withThoughtMarksOf(copy, result);
     }
 
     final resultFormat = result.format < ChatFormat.values.length
@@ -496,10 +493,7 @@ class ChatTemplateEngine {
         parser: result.parser,
         tokenCount: result.tokenCount,
       );
-      return withThinkingForcedClosed(
-        copy,
-        closed: thinkingForcedClosedOf(result),
-      );
+      return withThoughtMarksOf(copy, result);
     }
 
     // If tools are provided and grammar wasn't set by handler, generate it
@@ -534,10 +528,7 @@ class ChatTemplateEngine {
           parser: result.parser,
           tokenCount: result.tokenCount,
         );
-        return withThinkingForcedClosed(
-          copy,
-          closed: thinkingForcedClosedOf(result),
-        );
+        return withThoughtMarksOf(copy, result);
       }
     }
 
@@ -575,10 +566,7 @@ class ChatTemplateEngine {
       parser: result.parser,
       tokenCount: result.tokenCount,
     );
-    return withThinkingForcedClosed(
-      copy,
-      closed: thinkingForcedClosedOf(result),
-    );
+    return withThoughtMarksOf(copy, result);
   }
 
   /// Parses raw LLM output using the format's handler.
@@ -835,10 +823,7 @@ class ChatTemplateEngine {
       parser: result.parser,
       tokenCount: result.tokenCount,
     );
-    return withThinkingForcedClosed(
-      copy,
-      closed: thinkingForcedClosedOf(result),
-    );
+    return withThoughtMarksOf(copy, result);
   }
 
   static ({ChatTemplateHandler handler, ChatFormat format})

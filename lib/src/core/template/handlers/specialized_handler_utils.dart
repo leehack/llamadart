@@ -33,6 +33,10 @@ abstract class DirectJinjaHandler extends ChatTemplateHandler {
   String? buildRequiredGrammar(List<ToolDefinition>? tools) =>
       buildGrammar(tools);
 
+  /// Whether the parse takes reply text before a first thinking end tag as a
+  /// thought.
+  bool get parsesThoughtBeforeEndTag => true;
+
   @override
   LlamaChatTemplateResult render({
     required String templateSource,
@@ -62,18 +66,20 @@ abstract class DirectJinjaHandler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag)) {
       if (enableThinking) {
         thinkingForcedOpen = true;
       } else {
         prompt = '${prompt.trimRight()}$thinkingEndTag';
+        thoughtClosed = true;
       }
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
     final toolCallsRequired =
         metadata[internalToolChoiceMetadataKey] == ToolChoice.required.name;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: toolCallsRequired
@@ -91,6 +97,10 @@ abstract class DirectJinjaHandler extends ChatTemplateHandler {
                 .map((value) => GrammarTrigger(type: 0, value: value))
                 .toList(growable: false)
           : const [],
+    );
+    return withThoughtClosedForThinkingOff(
+      rendered,
+      closed: thoughtClosed && parsesThoughtBeforeEndTag,
     );
   }
 }

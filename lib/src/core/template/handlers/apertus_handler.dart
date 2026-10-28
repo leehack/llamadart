@@ -74,9 +74,11 @@ class ApertusHandler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}$thinkingEndTag';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -86,7 +88,7 @@ class ApertusHandler extends ChatTemplateHandler {
     final triggerPattern = thinkingForcedOpen
         ? r'[\s\S]*?(<\|inner_suffix\|>\s*)(<\|tools_prefix\|>)[\s\S]*'
         : r'(?:<\|inner_prefix\|>[\s\S]*?<\|inner_suffix\|>\s*)?(<\|tools_prefix\|>)[\s\S]*';
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: buildGrammar(tools),
@@ -101,6 +103,7 @@ class ApertusHandler extends ChatTemplateHandler {
           ? [GrammarTrigger(type: 3, value: triggerPattern)]
           : [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override

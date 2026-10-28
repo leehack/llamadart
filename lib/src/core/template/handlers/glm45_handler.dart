@@ -97,9 +97,11 @@ class Glm45Handler extends ChatTemplateHandler
 
     // Handle enableThinking post-render logic
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>\n';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -107,7 +109,7 @@ class Glm45Handler extends ChatTemplateHandler
 
     final hasTools = tools != null && tools.isNotEmpty;
     // GLM 4.5 tool calls are wrapped in <tool_call> XML blocks.
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -126,6 +128,7 @@ class Glm45Handler extends ChatTemplateHandler
           ? [const GrammarTrigger(type: 0, value: '<tool_call>')]
           : const [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override
