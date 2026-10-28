@@ -182,7 +182,7 @@
       "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
       "format": "qwen3CoderXml",
       "generation_prompt": "<|im_start|>assistant\n<think>\n",
-      "required_grammar_start": "root ::= \"<tool_call>\"",
+      "required_grammar_start": "root ::= tool-call-scope\ntool-call-scope ::= \"<tool_call>\"",
       "cases": [
         {
           "name": "escaped-newline-in-ended-thought",
