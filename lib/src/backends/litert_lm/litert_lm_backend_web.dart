@@ -546,30 +546,6 @@ class LiteRtLmBackend
   }
 
   @override
-  Future<void> setLoraAdapter(int contextHandle, String path, double scale) {
-    _requireContextHandle(contextHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support LoRA adapters.',
-    );
-  }
-
-  @override
-  Future<void> removeLoraAdapter(int contextHandle, String path) {
-    _requireContextHandle(contextHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support LoRA adapters.',
-    );
-  }
-
-  @override
-  Future<void> clearLoraAdapters(int contextHandle) {
-    _requireContextHandle(contextHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support LoRA adapters.',
-    );
-  }
-
-  @override
   LlamaRuntime get runtime => LlamaRuntime.liteRtLm;
 
   @override
@@ -599,35 +575,6 @@ class LiteRtLmBackend
   @override
   Future<void> dispose() async {
     await _disposeEngine();
-  }
-
-  @override
-  Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
-    _requireModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support multimodal input.',
-    );
-  }
-
-  @override
-  Future<void> multimodalContextFree(int mmContextHandle) {
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support multimodal input.',
-    );
-  }
-
-  @override
-  Future<bool> supportsVision(int mmContextHandle) {
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support multimodal input.',
-    );
-  }
-
-  @override
-  Future<bool> supportsAudio(int mmContextHandle) {
-    throw UnsupportedError(
-      'LiteRtLmBackend web does not support multimodal input.',
-    );
   }
 
   @override

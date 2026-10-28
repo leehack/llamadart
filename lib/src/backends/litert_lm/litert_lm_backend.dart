@@ -663,43 +663,6 @@ class LiteRtLmBackend
   }
 
   @override
-  Future<void> setLoraAdapter(
-    int contextHandle,
-    String path,
-    double scale,
-  ) async {
-    await _sendRequest(
-      (sendPort) => LiteRtLmLoraRequest(
-        contextHandle,
-        'set',
-        path: path,
-        scale: scale,
-        sendPort: sendPort,
-      ),
-    );
-  }
-
-  @override
-  Future<void> removeLoraAdapter(int contextHandle, String path) async {
-    await _sendRequest(
-      (sendPort) => LiteRtLmLoraRequest(
-        contextHandle,
-        'remove',
-        path: path,
-        sendPort: sendPort,
-      ),
-    );
-  }
-
-  @override
-  Future<void> clearLoraAdapters(int contextHandle) async {
-    await _sendRequest(
-      (sendPort) =>
-          LiteRtLmLoraRequest(contextHandle, 'clear', sendPort: sendPort),
-    );
-  }
-
-  @override
   LlamaRuntime get runtime => LlamaRuntime.liteRtLm;
 
   @override
@@ -870,32 +833,6 @@ class LiteRtLmBackend
     }
   }
 
-  @override
-  Future<int?> multimodalContextCreate(
-    int modelHandle,
-    String mmProjPath,
-  ) async {
-    final response = await _sendRequest(
-      (sendPort) => LiteRtLmMultimodalContextCreateRequest(
-        modelHandle,
-        mmProjPath,
-        sendPort,
-      ),
-    );
-    return _expect<LiteRtLmHandleResponse>(
-      response,
-      'multimodal context creation',
-    ).handle;
-  }
-
-  @override
-  Future<void> multimodalContextFree(int mmContextHandle) async {
-    await _sendRequest(
-      (sendPort) =>
-          LiteRtLmMultimodalContextFreeRequest(mmContextHandle, sendPort),
-    );
-  }
-
   /// Reports the image and audio input that the loaded bundle declares,
   /// which can under-report; see `LiteRtLmRuntimeClient.bundleCapabilities`.
   @override
@@ -910,22 +847,6 @@ class LiteRtLmBackend
       await _sendRequest(LiteRtLmBundleCapabilitiesRequest.new),
       'bundle capability lookup',
     ).capabilities;
-  }
-
-  @override
-  Future<bool> supportsVision(int mmContextHandle) async {
-    final response = await _sendRequest(
-      (sendPort) => LiteRtLmSupportsVisionRequest(mmContextHandle, sendPort),
-    );
-    return response as bool;
-  }
-
-  @override
-  Future<bool> supportsAudio(int mmContextHandle) async {
-    final response = await _sendRequest(
-      (sendPort) => LiteRtLmSupportsAudioRequest(mmContextHandle, sendPort),
-    );
-    return response as bool;
   }
 
   @override

@@ -95,7 +95,9 @@ streams.
 - **Integration flexibility**: Useful for specialized runtime integrations.
 - **Optional capabilities**: Backends can expose extra interfaces from
   `package:llamadart/backend.dart`, such as `BackendStatePersistence` when a
-  runtime supports native KV-cache snapshots.
+  runtime supports native KV-cache snapshots, or `BackendLoraSupport` and
+  `BackendMultimodalSupport` for runtime LoRA adapters and multimodal
+  projectors.
 
 ```dart
 import 'dart:convert';

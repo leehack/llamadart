@@ -47,6 +47,8 @@ class NativeAutoBackend
         BackendLoadCheck,
         LlamaBackend,
         BackendAvailability,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
         BackendDirectMediaInput,
         BackendToolResultMedia,
         BackendRuntimeDiagnostics,
@@ -400,17 +402,25 @@ class NativeAutoBackend
 
   @override
   Future<void> setLoraAdapter(int contextHandle, String path, double scale) {
-    return _requireDelegate().setLoraAdapter(contextHandle, path, scale);
+    return _requireLora().setLoraAdapter(contextHandle, path, scale);
   }
 
   @override
   Future<void> removeLoraAdapter(int contextHandle, String path) {
-    return _requireDelegate().removeLoraAdapter(contextHandle, path);
+    return _requireLora().removeLoraAdapter(contextHandle, path);
   }
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) {
-    return _requireDelegate().clearLoraAdapters(contextHandle);
+    return _requireLora().clearLoraAdapters(contextHandle);
+  }
+
+  BackendLoraSupport _requireLora() {
+    final delegate = _requireDelegate();
+    if (delegate is BackendLoraSupport) return delegate as BackendLoraSupport;
+    throw LlamaUnsupportedException(
+      'LoRA adapters are not supported by the active native runtime.',
+    );
   }
 
   @override
@@ -525,12 +535,25 @@ class NativeAutoBackend
 
   @override
   Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
-    return _requireDelegate().multimodalContextCreate(modelHandle, mmProjPath);
+    return _requireMultimodal().multimodalContextCreate(
+      modelHandle,
+      mmProjPath,
+    );
   }
 
   @override
   Future<void> multimodalContextFree(int mmContextHandle) {
-    return _requireDelegate().multimodalContextFree(mmContextHandle);
+    return _requireMultimodal().multimodalContextFree(mmContextHandle);
+  }
+
+  BackendMultimodalSupport _requireMultimodal() {
+    final delegate = _requireDelegate();
+    if (delegate is BackendMultimodalSupport) {
+      return delegate as BackendMultimodalSupport;
+    }
+    throw LlamaUnsupportedException(
+      'Multimodal projectors are not supported by the active native runtime.',
+    );
   }
 
   @override
@@ -552,12 +575,12 @@ class NativeAutoBackend
 
   @override
   Future<bool> supportsVision(int mmContextHandle) {
-    return _requireDelegate().supportsVision(mmContextHandle);
+    return _requireMultimodal().supportsVision(mmContextHandle);
   }
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) {
-    return _requireDelegate().supportsAudio(mmContextHandle);
+    return _requireMultimodal().supportsAudio(mmContextHandle);
   }
 
   @override

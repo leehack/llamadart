@@ -2,6 +2,38 @@
 
 This document covers the major breaking upgrade paths.
 
+<a id="unreleased-optional-lora-multimodal-backend-capabilities"></a>
+
+## Unreleased: optional LoRA and multimodal backend capabilities
+
+Custom backends and backend test fakes only. `LlamaBackend` no longer
+declares `setLoraAdapter`, `removeLoraAdapter`, `clearLoraAdapters`,
+`multimodalContextCreate`, `multimodalContextFree`, `supportsVision` or
+`supportsAudio`. They move to two optional interfaces in
+`package:llamadart/backend.dart`:
+
+- `BackendLoraSupport`: the three LoRA members.
+- `BackendMultimodalSupport`: the four projector members.
+
+A backend that supports either implements it next to `LlamaBackend`
+(`implements LlamaBackend, BackendLoraSupport, BackendMultimodalSupport`);
+its `@override` annotations stay valid. A backend that only threw from
+these members deletes them. On a backend without the interface,
+`LlamaEngine` LoRA calls and projector loads throw
+`LlamaUnsupportedException` naming the missing interface, before
+`setLoraSource`, `loadMultimodalProjectorSource` or `setModel` downloads
+anything; `removeLoraSource` of an adapter never applied does nothing, and
+vision and audio input come from `BackendDirectMediaInput` alone. Code that
+called these members through a `LlamaBackend`-typed value checks
+`backend is BackendLoraSupport` or `backend is BackendMultimodalSupport`
+first.
+
+The built-in routers (`LlamaBackend()` on native and the Web) implement both.
+When the selected runtime, such as LiteRT-LM, lacks one, they throw
+`LlamaUnsupportedException` naming the runtime instead ("LoRA adapters are
+not supported by the active Web runtime."). `LiteRtLmBackend` implements
+neither.
+
 <a id="unreleased-image-model-role-controlnet"></a>
 
 ## Unreleased: `ImageModelRole.controlNet`

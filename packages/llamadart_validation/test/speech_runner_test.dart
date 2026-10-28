@@ -116,7 +116,8 @@ const qwen3TtsCapabilities = BackendTextToSpeechCapabilities(
 
 /// Serves fake model, context and projector handles, and runs text-to-speech
 /// through [onSynthesize] and [onCancel].
-class FakeSpeechBackend implements LlamaBackend, BackendTextToSpeech {
+class FakeSpeechBackend
+    implements LlamaBackend, BackendMultimodalSupport, BackendTextToSpeech {
   BackendTextToSpeechCapabilities textToSpeech =
       const BackendTextToSpeechCapabilities(
         isSupported: false,

@@ -9,6 +9,7 @@ class EmbeddingDispatchBackend
     implements
         LlamaBackend,
         BackendMultimodalEmbeddings,
+        BackendMultimodalSupport,
         BackendRuntimeDiagnostics {
   EmbeddingDispatchBackend(this.delegate);
   final LlamaBackend delegate;
@@ -91,15 +92,6 @@ class EmbeddingDispatchBackend
   Future<Map<String, String>> modelMetadata(int modelHandle) =>
       delegate.modelMetadata(modelHandle);
   @override
-  Future<void> setLoraAdapter(int contextHandle, String path, double scale) =>
-      delegate.setLoraAdapter(contextHandle, path, scale);
-  @override
-  Future<void> removeLoraAdapter(int contextHandle, String path) =>
-      delegate.removeLoraAdapter(contextHandle, path);
-  @override
-  Future<void> clearLoraAdapters(int contextHandle) =>
-      delegate.clearLoraAdapters(contextHandle);
-  @override
   Future<String> getBackendName() => delegate.getBackendName();
   @override
   Future<bool> isGpuSupported() => delegate.isGpuSupported();
@@ -109,16 +101,27 @@ class EmbeddingDispatchBackend
   Future<void> dispose() => delegate.dispose();
   @override
   Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) =>
-      delegate.multimodalContextCreate(modelHandle, mmProjPath);
+      _multimodal.multimodalContextCreate(modelHandle, mmProjPath);
   @override
   Future<void> multimodalContextFree(int mmContextHandle) =>
-      delegate.multimodalContextFree(mmContextHandle);
+      _multimodal.multimodalContextFree(mmContextHandle);
   @override
   Future<bool> supportsVision(int mmContextHandle) =>
-      delegate.supportsVision(mmContextHandle);
+      _multimodal.supportsVision(mmContextHandle);
   @override
   Future<bool> supportsAudio(int mmContextHandle) =>
-      delegate.supportsAudio(mmContextHandle);
+      _multimodal.supportsAudio(mmContextHandle);
+  BackendMultimodalSupport get _multimodal {
+    final delegate = this.delegate;
+    if (delegate is BackendMultimodalSupport) {
+      return delegate as BackendMultimodalSupport;
+    }
+    throw LlamaUnsupportedException(
+      'Multimodal projectors are not supported by the wrapped backend: it '
+      'does not implement BackendMultimodalSupport.',
+    );
+  }
+
   @override
   Future<({int total, int free})> getVramInfo() => delegate.getVramInfo();
   @override

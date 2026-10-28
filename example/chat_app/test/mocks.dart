@@ -10,6 +10,8 @@ import 'package:llamadart_chat_example/services/settings_service.dart';
 class MockLlamaBackend
     implements
         LlamaBackend,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
         BackendAvailability,
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech {

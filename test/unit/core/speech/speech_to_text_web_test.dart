@@ -425,7 +425,10 @@ Future<LlamaEngine> _loadedEngine({
 }
 
 class _WebSpeechBackend
-    implements LlamaBackend, BackendPromptSpeechToTextSupport {
+    implements
+        LlamaBackend,
+        BackendMultimodalSupport,
+        BackendPromptSpeechToTextSupport {
   @override
   final bool supportsPromptSpeechToText;
   final Completer<void>? generationGate;

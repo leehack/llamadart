@@ -369,14 +369,17 @@ class LlamaEngine {
     final direct = candidate is BackendDirectMediaInput
         ? await (candidate as BackendDirectMediaInput).directMediaInput()
         : (vision: false, audio: false);
+    final projector = mmContextHandle != null
+        ? candidate as BackendMultimodalSupport
+        : null;
     final vision =
         direct.vision ||
-        mmContextHandle != null &&
-            await _probeMedia(() => candidate.supportsVision(mmContextHandle));
+        projector != null &&
+            await _probeMedia(() => projector.supportsVision(mmContextHandle!));
     final audio =
         direct.audio ||
-        mmContextHandle != null &&
-            await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+        projector != null &&
+            await _probeMedia(() => projector.supportsAudio(mmContextHandle!));
     return (vision: vision, audio: audio);
   }
 
@@ -721,6 +724,7 @@ class LlamaEngine {
         'carries its own media encoders. Leave LlamaModel.projector unset.',
       );
     }
+    if (model.projector != null) _requireMultimodalBackend();
     if (params.device == ComputeDevice.npu && format == ModelFormat.gguf) {
       throw LlamaUnsupportedException(
         'ComputeDevice.npu is not available for llama.cpp, which runs GGUF '
@@ -1429,6 +1433,14 @@ class LlamaEngine {
     final requested = download ?? options ?? ModelLoadOptions.defaults;
     return _withMmLifecycle(() async {
       _ensureReady(requireContext: false);
+      if (runtime == LlamaRuntime.liteRtLm) {
+        throw LlamaUnsupportedException(
+          'A LiteRT-LM model takes no multimodal projector: a .litertlm '
+          'bundle carries its own media encoders, so the projector is not '
+          'downloaded.',
+        );
+      }
+      _requireMultimodalBackend();
       final epoch = _modelEpoch;
       bool abandoned() => isDisposed || _modelEpoch != epoch;
       var resolveOptions = requested;
@@ -1522,11 +1534,8 @@ class LlamaEngine {
         await _unloadMultimodalProjectorLocked();
       }
       if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
-
-      _mmContextHandle = await backend.multimodalContextCreate(
-        _modelHandle!,
-        mmProjPath,
-      );
+      _mmContextHandle = await _requireMultimodalBackend()
+          .multimodalContextCreate(_modelHandle!, mmProjPath);
       _mmProjector = LoadedMultimodalProjector._(mmProjPath);
       if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
       LlamaLogger.instance.info(
@@ -1566,7 +1575,9 @@ class LlamaEngine {
     // Free the native context before clearing the handle so a concurrent
     // reader never observes a null handle while teardown is still in flight.
     // Serialization via _withMmLifecycle prevents a double free.
-    await backend.multimodalContextFree(mmContextHandle);
+    await (backend as BackendMultimodalSupport).multimodalContextFree(
+      mmContextHandle,
+    );
     if (_mmContextHandle == mmContextHandle) {
       _mmContextHandle = null;
       _mmProjector = null;
@@ -2824,6 +2835,31 @@ class LlamaEngine {
     }
   }
 
+  BackendLoraSupport _loraBackend() {
+    final candidate = backend;
+    if (candidate is BackendLoraSupport) return candidate as BackendLoraSupport;
+    throw _missingBackendCapability('LoRA adapters', 'BackendLoraSupport');
+  }
+
+  BackendMultimodalSupport _requireMultimodalBackend() {
+    final candidate = backend;
+    if (candidate is BackendMultimodalSupport) {
+      return candidate as BackendMultimodalSupport;
+    }
+    throw _missingBackendCapability(
+      'Multimodal projectors',
+      'BackendMultimodalSupport',
+    );
+  }
+
+  static LlamaUnsupportedException _missingBackendCapability(
+    String operation,
+    String capability,
+  ) => LlamaUnsupportedException(
+    '$operation are not supported by the active backend: it does not '
+    'implement $capability.',
+  );
+
   LlamaUnsupportedException _unsupportedBackendOperation(
     String operation,
     UnsupportedError error,
@@ -3301,8 +3337,9 @@ class LlamaEngine {
   )
   Future<void> setLora(String path, {double scale = 1.0}) async {
     _ensureReady();
+    final lora = _loraBackend();
     try {
-      await backend.setLoraAdapter(_contextHandle!, path, scale);
+      await lora.setLoraAdapter(_contextHandle!, path, scale);
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
@@ -3345,6 +3382,7 @@ class LlamaEngine {
         'downloaded.',
       );
     }
+    final lora = _loraBackend();
     final epoch = _modelEpoch;
     bool unloaded() => _modelEpoch != epoch;
     var options = download;
@@ -3383,10 +3421,10 @@ class LlamaEngine {
         _normalizeLoraPath(previous) == _normalizeLoraPath(location);
     final target = sameFile ? previous : location;
     try {
-      await backend.setLoraAdapter(_contextHandle!, target, scale);
+      await lora.setLoraAdapter(_contextHandle!, target, scale);
       _loraLocations[_loraKey(source)] = target;
       if (previous != null && previous != target) {
-        await backend.removeLoraAdapter(_contextHandle!, previous);
+        await lora.removeLoraAdapter(_contextHandle!, previous);
       }
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
@@ -3419,8 +3457,9 @@ class LlamaEngine {
   )
   Future<void> removeLora(String path) async {
     _ensureReady();
+    final lora = _loraBackend();
     try {
-      await backend.removeLoraAdapter(_contextHandle!, path);
+      await lora.removeLoraAdapter(_contextHandle!, path);
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
@@ -3434,13 +3473,24 @@ class LlamaEngine {
     final applied = _loraLocations[_loraKey(source)];
     final location = applied ?? source.path;
     if (location == null) return;
+    // Only the deprecated setLora applies an untracked path, and a backend
+    // without a runtime LoRA API rejects it.
+    final candidate = backend;
+    if (candidate is! BackendLoraSupport) {
+      if (applied == null) return;
+      throw _missingBackendCapability('LoRA adapters', 'BackendLoraSupport');
+    }
     try {
-      await backend.removeLoraAdapter(_contextHandle!, location);
+      await (candidate as BackendLoraSupport).removeLoraAdapter(
+        _contextHandle!,
+        location,
+      );
     } on UnsupportedError catch (error) {
-      // Only the deprecated setLora applies an untracked path, and a backend
-      // without a runtime LoRA API rejects it.
       if (applied == null) return;
       throw _unsupportedBackendOperation('LoRA adapters', error);
+    } on LlamaUnsupportedException {
+      if (applied == null) return;
+      rethrow;
     }
     _loraLocations.remove(_loraKey(source));
   }
@@ -3715,8 +3765,9 @@ class LlamaEngine {
   /// Removes all active LoRA adapters from the current context.
   Future<void> clearLoras() async {
     _ensureReady();
+    final lora = _loraBackend();
     try {
-      await backend.clearLoraAdapters(_contextHandle!);
+      await lora.clearLoraAdapters(_contextHandle!);
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }

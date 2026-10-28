@@ -35,6 +35,8 @@ class NativeLlamaBackend
         BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
         BackendRuntimeDiagnostics,
         BackendModelFileTypeDiagnostics,
         BackendGpuEnumeration,

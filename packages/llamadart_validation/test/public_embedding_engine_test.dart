@@ -7,7 +7,11 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:test/test.dart';
 
-class ContentBackend implements LlamaBackend, BackendMultimodalEmbeddings {
+class ContentBackend
+    implements
+        LlamaBackend,
+        BackendMultimodalEmbeddings,
+        BackendMultimodalSupport {
   final List<LlamaEmbeddingInput> received = [];
   bool? normalized;
   Object? failure;
