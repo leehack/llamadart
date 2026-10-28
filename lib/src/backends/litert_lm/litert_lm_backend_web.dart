@@ -1711,9 +1711,6 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
   external JSAny? get value;
 }
 
-/// The percent-decoded last path segment of [url], or null when it is empty
-/// or not valid UTF-8 once decoded, contains URL delimiters, or repeats a
-/// userinfo credential of [url].
 /// Throws [LlamaUnsupportedException] for what a LiteRT-LM Web load rejects
 /// from [params] alone, before it fetches the model: an NPU, and the
 /// embedding engine, which `@litert-lm/core@0.18.0` does not provide.
@@ -1740,7 +1737,11 @@ String liteRtLmWebBackendName(ModelParams params, {String? preferredBackend}) {
   final explicit = preferredBackend ?? params.liteRtLmBackend.nativeName;
   if (explicit != null) {
     if (explicit == 'npu') {
-      throw UnsupportedError('LiteRT-LM web does not support NPU backend.');
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackendPreference.npu is not available for LiteRT-LM on the '
+        'Web, which runs on the CPU or WebGPU; only LiteRT-LM on Android has '
+        'an NPU backend. Use ModelParams.device auto, cpu or gpu.',
+      );
     }
     return explicit;
   }
@@ -1750,6 +1751,9 @@ String liteRtLmWebBackendName(ModelParams params, {String? preferredBackend}) {
   return _liteRtLmWebBackendForGpuPreference(params.preferredBackend);
 }
 
+/// The LiteRT-LM Web backend an explicit [ModelParams.device] of [params]
+/// requires, or null for [ComputeDevice.auto]; throws for an NPU, or a
+/// device combined with the deprecated [preferredBackend].
 String? _liteRtLmWebDeviceBackendName(
   ModelParams params,
   String? preferredBackend,
@@ -1777,6 +1781,7 @@ String? _liteRtLmWebDeviceBackendName(
   };
 }
 
+/// The LiteRT-LM Web backend a [ModelParams.preferredBackend] selects.
 String _liteRtLmWebBackendForGpuPreference(GpuBackend backend) {
   return switch (backend) {
     GpuBackend.cpu || GpuBackend.blas => 'cpu',
@@ -1789,6 +1794,9 @@ String _liteRtLmWebBackendForGpuPreference(GpuBackend backend) {
   };
 }
 
+/// The percent-decoded last path segment of [url], or null when it is empty
+/// or not valid UTF-8 once decoded, contains URL delimiters, or repeats a
+/// userinfo credential of [url].
 String? _modelUrlName(String url) {
   final String? name;
   try {

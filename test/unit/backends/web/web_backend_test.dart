@@ -147,6 +147,17 @@ void main() {
         LlamaLoadCheckStatus.unsupported,
         'LiteRT-LM Web CPU embeddings are unavailable',
       ),
+      (
+        liteRtLm,
+        const ModelParams(
+          liteRtLmEmbeddingEngine: true,
+          // ignore: deprecated_member_use_from_same_package
+          liteRtLmBackend: LiteRtLmBackendPreference.npu,
+        ),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRtLmBackendPreference.npu is not available for LiteRT-LM on the '
+            'Web',
+      ),
       (liteRtLm, const ModelParams(), LlamaLoadCheckStatus.supported, null),
     ];
     for (final (model, params, status, reason) in cases) {

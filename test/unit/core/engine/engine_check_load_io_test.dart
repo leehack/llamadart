@@ -163,6 +163,17 @@ void main() {
         (await check(liteRtLm, params: embeddings)).status,
         LlamaLoadCheckStatus.supported,
       );
+
+      // The runtime checks the device before the embedding engine.
+      debugLiteRtLmAbiOverride = Abi.linuxArm64;
+      final gpu = await check(
+        liteRtLm,
+        params: const ModelParams(
+          liteRtLmEmbeddingEngine: true,
+          device: ComputeDevice.gpu,
+        ),
+      );
+      expect(gpu.reason, contains('ComputeDevice.gpu is not available'));
     });
 
     test('reports a direct LiteRtLmBackend as unknown, and a GGUF name as a '
