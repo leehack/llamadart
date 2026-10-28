@@ -2538,7 +2538,8 @@ void main() {
               (' it.\n', 'Plan it.', ''),
               ('</think>', 'Plan it.', ''),
               ('Sure', 'Plan it.', 'Sure'),
-              ('<think>More', 'Plan it.\nMore', 'Sure'),
+              // After the first end tag, thinking tags are content.
+              ('<think>More', 'Plan it.', 'Sure<think>More'),
             ],
           );
           await _expectStreamedAfterEachToken(ChatFormat.deepseekV3, const [
