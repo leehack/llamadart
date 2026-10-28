@@ -179,6 +179,11 @@ void main() {
       );
       expect(declared.status, LlamaLoadCheckStatus.unsupported);
       expect(declared.reason, contains('it runs only llamaCpp'));
+
+      final unnamed = await engine.checkLoad(
+        LlamaModel(ModelSource.parse('https://example.com/download?id=7')),
+      );
+      expect(unnamed.status, LlamaLoadCheckStatus.deferred);
     });
 
     test('reports the reason a backend cannot check as unknown', () async {
