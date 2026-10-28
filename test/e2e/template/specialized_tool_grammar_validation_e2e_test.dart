@@ -539,6 +539,66 @@ void main() {
     }
   });
 
+  test(
+    'Qwen3-Coder XML grammar repeats call scopes only with parallel calls',
+    () {
+      final tool = ToolDefinition(
+        name: 'get_weather',
+        description: 'w',
+        parameters: [ToolParam.string('location', required: true)],
+      );
+      String call(String location, {String name = 'get_weather'}) =>
+          '<tool_call>\n<function=$name>\n'
+          '<parameter=location>\n$location\n</parameter>\n'
+          '</function>\n</tool_call>';
+      final two = '${call('Paris')}\n${call('Rome')}';
+      for (final template in [
+        'test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja',
+        'test/fixtures/templates/Qwen3_5-0_8B.jinja',
+        'test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja',
+        'test/fixtures/llama_cpp_templates/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
+      ]) {
+        for (final parallel in [true, false]) {
+          final rendered = ChatTemplateEngine.render(
+            templateSource: File(template).readAsStringSync(),
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Weather in Paris?',
+              ),
+            ],
+            metadata: const {},
+            tools: [tool],
+            parallelToolCalls: parallel,
+            enableThinking: false,
+          );
+          expect(rendered.grammarLazy, isTrue, reason: template);
+          final repeated = [
+            two,
+            '${call('Paris')}${call('Rome')}',
+            '${call('Paris')}\n\n${call('Rome')}\n',
+            '${call('Paris')} ${call('Rome')}\n${call('Tokyo')}',
+          ];
+          _expectGrammar(
+            validator,
+            rendered.grammar!,
+            valid: [
+              call('Paris'),
+              '${call('Paris')}\n',
+              if (parallel) ...repeated,
+            ],
+            invalid: [
+              if (!parallel) ...repeated,
+              '${call('Paris')}\nThen ${call('Rome')}',
+              '${call('Paris')}\n${call('Rome', name: 'unknown')}',
+              two.replaceFirst('</tool_call>\n<tool_call>\n', ''),
+            ],
+          );
+        }
+      }
+    },
+  );
+
   test('Qwen typed result history preserves compiled follow-up grammar', () {
     for (final thinking in [true, false]) {
       final rendered = renderQwenResultHistory(
