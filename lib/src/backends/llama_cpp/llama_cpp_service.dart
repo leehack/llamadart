@@ -7720,6 +7720,10 @@ class LlamaCppService {
     final pathPtr = path.toNativeUtf8();
     final tokensPtr = malloc<Int32>(tokenCapacity);
     final countPtr = malloc<Size>();
+    // llama.cpp clears the KV cache when a load fails after reading the
+    // token list, so the cached prefix must not survive any load attempt.
+    ctx.cachedPromptTokens = null;
+    ctx.kvFromStateLoad = false;
     try {
       countPtr.value = 0;
       final ok = _calls.stateLoadFile(

@@ -340,8 +340,8 @@ Important caveats:
   `GenerationParams`. This pays the prompt-evaluation cost again; it does not
   restore a sampler's random state. Setting batch sizes to one matched one
   tested CPU/model configuration, but is not a general fidelity guarantee.
-- `stateLoadFile(...)` checks only the file's llama.cpp magic and session
-  version. See [Check a state file from another process](#check-a-state-file-from-another-process).
+- `stateLoadFile(...)` checks the file's llama.cpp magic, session version and
+  KV cache layout, not the runtime build or RoPE settings that wrote it. See [Check a state file from another process](#check-a-state-file-from-another-process).
 - Pass a `tokenCapacity` large enough for the saved prompt token sequence. The
   current context size is usually a safe default. On a ready, idle native
   llama.cpp context, capacity outside 1..context size throws
@@ -350,15 +350,19 @@ Important caveats:
 
 ### Check a state file from another process
 
-A state file loads only into the runtime build and context settings that wrote
-it, and llama.cpp checks neither. On native llama.cpp with `llamadart-native`
-`v0.7.0-3` or newer, `stateIdentity()` reports both: the runtime build identity
-(sources, patches, compiler, target and built ggml backends, with no paths),
-the session format version, the context size, and a digest of the K/V cache
-types, flash-attention mode, sequence count, unified KV and full-size SWA
-settings. Batch sizes, threads, GPU offload and the selected device are not
-part of it. Store it with the file, together with your own digest of the model
-file, and compare before loading:
+llama.cpp rejects a state file whose KV cache layout (layer count, cache
+types and sizes, V transposition, cell capacity) does not fit the loading
+context, but it does not check the runtime build that wrote the file or the
+RoPE settings its keys were computed with: a file from another build or RoPE
+base can load and then score wrongly. On native llama.cpp with
+`llamadart-native` `v0.7.0-3` or newer, `stateIdentity()` reports the runtime
+build identity (sources, patches, compiler, target and built ggml backends,
+with no paths), the session format version, the context size, and a digest of
+the K/V cache types, requested flash-attention mode, sequence count, unified
+KV, full-size SWA, and RoPE frequency base and scale. Batch sizes, threads,
+GPU offload and the selected device are not part of it. Store it with the
+file, together with your own digest of the model file, its adapters and
+projector, and compare before loading:
 
 ```dart
 final identity = await engine.stateIdentity();
@@ -377,8 +381,10 @@ if (!saved.matches(await engine.stateIdentity())) {
 }
 ```
 
-A matching identity means the file is expected to load, not that resumed
-scores equal a fresh evaluation (see the caveats above). Web, LiteRT-LM,
+A matching identity does not guarantee the load: flash attention `auto`
+resolves per device, and llama.cpp then rejects a different V layout with
+`LlamaStateException`, which you handle by evaluating the prompt again. Nor do
+resumed scores equal a fresh evaluation exactly (see the caveats above). Web, LiteRT-LM,
 custom backends without `BackendStateIdentity`, and native runtimes older than
 `v0.7.0-3` or built outside git throw `LlamaUnsupportedException`.
 
