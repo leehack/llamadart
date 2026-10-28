@@ -568,6 +568,9 @@ void main() {
             '<parameter=location>\n$location\n</parameter>\n'
             '</function>\n</$scope>';
         final two = '${call('Paris')}\n${call('Rome')}';
+        final compact =
+            '<$scope><function=get_weather><parameter=location>Paris'
+            '</parameter></function></$scope>';
         for (final parallel in [true, false]) {
           final rendered = ChatTemplateEngine.render(
             templateSource: File(template).readAsStringSync(),
@@ -583,6 +586,17 @@ void main() {
             enableThinking: false,
           );
           expect(rendered.grammarLazy, isTrue, reason: template);
+          // A lazy grammar starts on the trigger text.
+          for (final trigger in rendered.grammarTriggers) {
+            expect(
+              [
+                call('Paris'),
+                compact,
+              ].where((output) => output.startsWith(trigger.value)),
+              isNotEmpty,
+              reason: '$template ${trigger.value}',
+            );
+          }
           final repeated = [
             two,
             '${call('Paris')}${call('Rome')}',
@@ -595,6 +609,7 @@ void main() {
             valid: [
               call('Paris'),
               '${call('Paris')}\n',
+              compact,
               if (parallel) ...repeated,
             ],
             invalid: [

@@ -251,8 +251,9 @@ class LlamaCppService {
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
   /// embedding resources, the read of the Vulkan device facts, the registered
-  /// ggml devices a load selects from, the allocator of the model paths
-  /// [loadModel] and draft model loads pass to llama.cpp, and the allocator
+  /// ggml devices a load selects from, the allocator of the model paths,
+  /// tensor splits and tensor buffer overrides [loadModel] and draft model
+  /// loads pass to llama.cpp, and the allocator
   /// of each context's token batch, whose blocks `malloc`'s free must be able
   /// to free: an isolate exit frees a batch still held with it.
   LlamaCppService({
@@ -273,7 +274,7 @@ class LlamaCppService {
     void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
-    Allocator modelPathAllocator = malloc,
+    Allocator modelLoadAllocator = malloc,
     Allocator contextBatchAllocator = malloc,
     String? Function()? buildIdentity,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
@@ -292,7 +293,7 @@ class LlamaCppService {
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices,
-       _modelPathAllocator = modelPathAllocator,
+       _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
        _readBuildIdentity = buildIdentity;
 
@@ -315,7 +316,7 @@ class LlamaCppService {
       _objectCallsOverride ?? _resolveObjectCalls();
 
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
-  final Allocator _modelPathAllocator;
+  final Allocator _modelLoadAllocator;
   final Allocator _contextBatchAllocator;
   final String? Function()? _readBuildIdentity;
   late final String? _buildIdentity =
@@ -409,6 +410,8 @@ class LlamaCppService {
   final Map<int, String> _modelBackendNames = <int, String>{};
   final Map<int, int> _modelResolvedGpuLayers = <int, int>{};
   final Map<int, ModelParams> _modelLoadParams = <int, ModelParams>{};
+  final Map<int, GpuDevicePlacement> _modelPlacements =
+      <int, GpuDevicePlacement>{};
   final Map<String, _LlamaModelWrapper> _speculativeDraftModels =
       <String, _LlamaModelWrapper>{};
   final Map<int, Set<String>> _modelToSpeculativeDraftModelKeys =
@@ -1529,6 +1532,7 @@ class LlamaCppService {
         : allocateTensorBufferOverrides(
             cpuMoeOverridePatterns(modelParams.cpuMoeLayers),
             cpuMoeBuffer,
+            allocator: _modelLoadAllocator,
           );
     mparams.n_gpu_layers = gpuLayers;
     mparams.split_modeAsInt = modelParams.splitMode.llamaCppValue;
@@ -1548,7 +1552,7 @@ class LlamaCppService {
         : modelParams.preferredBackend;
 
     Pointer<llama_model> modelPtr = nullptr;
-    final modelPathPtr = modelPath.toNativeUtf8(allocator: _modelPathAllocator);
+    final modelPathPtr = modelPath.toNativeUtf8(allocator: _modelLoadAllocator);
     try {
       modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
@@ -1557,15 +1561,18 @@ class LlamaCppService {
         modelPtr,
       );
     } finally {
-      _modelPathAllocator.free(modelPathPtr);
+      _modelLoadAllocator.free(modelPathPtr);
       if (tensorSplit != null) {
-        malloc.free(tensorSplit);
+        _modelLoadAllocator.free(tensorSplit);
       }
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
       if (cpuMoeOverrides != null) {
-        freeTensorBufferOverrides(cpuMoeOverrides);
+        freeTensorBufferOverrides(
+          cpuMoeOverrides,
+          allocator: _modelLoadAllocator,
+        );
       }
     }
 
@@ -1599,6 +1606,9 @@ class LlamaCppService {
         : '$resolvedBackend (${placement.deviceNames})';
     _modelResolvedGpuLayers[handle] = gpuLayers;
     _modelLoadParams[handle] = modelParams;
+    if (placement != null) {
+      _modelPlacements[handle] = placement;
+    }
     _activateModelReport(handle);
     if (vulkan.unsupported case final unsupported?) {
       LlamaLogger.instance.warning(
@@ -1861,16 +1871,16 @@ class LlamaCppService {
     return placement;
   }
 
-  /// The `llama_model_params.tensor_split` array of [placement], sized
-  /// `llama_max_devices()` as llama.cpp reads it, or `null` without a split.
+  /// The `llama_model_params.tensor_split` array of [placement], or `null`
+  /// without a split.
   Pointer<Float>? _createTensorSplit(GpuDevicePlacement? placement) {
     final split = placement?.tensorSplit;
     if (split == null) return null;
-    final array = malloc<Float>(llama_max_devices());
-    for (var index = 0; index < llama_max_devices(); index++) {
-      array[index] = index < split.length ? split[index] : 0;
-    }
-    return array;
+    return allocateTensorSplit(
+      split,
+      maxDevices: llama_max_devices(),
+      allocator: _modelLoadAllocator,
+    );
   }
 
   /// Whether a GPU device of [backend], or any GPU device for
@@ -2062,7 +2072,7 @@ class LlamaCppService {
 
     Pointer<llama_model> modelPtr = nullptr;
     final modelPathPtr = draftModelPath.toNativeUtf8(
-      allocator: _modelPathAllocator,
+      allocator: _modelLoadAllocator,
     );
     try {
       modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
@@ -2072,12 +2082,12 @@ class LlamaCppService {
         modelPtr,
       );
     } finally {
-      _modelPathAllocator.free(modelPathPtr);
+      _modelLoadAllocator.free(modelPathPtr);
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
       if (tensorSplit != null) {
-        malloc.free(tensorSplit);
+        _modelLoadAllocator.free(tensorSplit);
       }
     }
 
@@ -3362,6 +3372,7 @@ class LlamaCppService {
     _modelBackendNames.remove(modelHandle);
     _modelResolvedGpuLayers.remove(modelHandle);
     _modelLoadParams.remove(modelHandle);
+    _modelPlacements.remove(modelHandle);
     final draftModelKeys = _modelToSpeculativeDraftModelKeys.remove(
       modelHandle,
     );
@@ -7704,6 +7715,7 @@ class LlamaCppService {
     _modelBackendNames.clear();
     _modelResolvedGpuLayers.clear();
     _modelLoadParams.clear();
+    _modelPlacements.clear();
     _activeBackendName = _backendDisplayName('cpu');
     _activeResolvedGpuLayers = 0;
     // llama_backend_free(); // DISABLED: Prevents race conditions with other isolates
@@ -7751,6 +7763,16 @@ class LlamaCppService {
   mtmd_context_params _mtmdContextParamsFor(int modelHandle) {
     final ctxParams = _mtmdContextParamsDefault();
     ctxParams.use_gpu = _modelToMtmdUseGpu[modelHandle] ?? true;
+    // Without a device mtmd takes the first GPU of any backend, which a
+    // gpuDevices list may exclude.
+    if (ctxParams.use_gpu && _modelPlacements[modelHandle] != null) {
+      final device = _placedAuxiliaryDevice(modelHandle);
+      if (device == null) {
+        ctxParams.use_gpu = false;
+      } else {
+        ctxParams.device = device;
+      }
+    }
     ctxParams.cb_eval = _ttsEvalCallback();
     return ctxParams;
   }
@@ -9235,7 +9257,20 @@ class LlamaCppService {
     return text == nullptr ? '' : text.cast<Utf8>().toDartString();
   }
 
+  /// The listed device the decision heads and projector of [modelHandle]
+  /// run on, or `null`, the CPU, when its placement lists no GPU.
+  ggml_backend_dev_t? _placedAuxiliaryDevice(int modelHandle) {
+    final params = _modelLoadParams[modelHandle] ?? const ModelParams();
+    return auxiliaryPlacementDevice(
+      _modelPlacements[modelHandle]!,
+      params.mainGpu,
+    )?.device;
+  }
+
   ggml_backend_dev_t? _decisionHeadDevice(int modelHandle) {
+    if (_modelPlacements.containsKey(modelHandle)) {
+      return _placedAuxiliaryDevice(modelHandle);
+    }
     final devices = [
       for (final entry in _registeredDevices())
         if (entry.device != null &&

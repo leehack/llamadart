@@ -75,8 +75,39 @@ void main() {
               : 'root ::= tool-call-scope\n',
         ),
       );
-      expect(rendered.grammarTriggers.single.value, '<seed:tool_call>\n');
+      // The grammar admits the scope with or without a line break, and so
+      // does the parse.
+      expect(rendered.grammarTriggers.map((trigger) => trigger.value), [
+        '<seed:tool_call>\n',
+        '<seed:tool_call><function=',
+      ]);
+      expect(
+        rendered.grammarTriggers.map((trigger) => trigger.type),
+        everyElement(0),
+      );
     }
+  });
+
+  test('SeedOssHandler.buildGrammar builds the default render grammar', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ];
+    final rendered = SeedOssHandler().render(
+      templateSource: '{{ messages[0]["content"] }}',
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+      ],
+      metadata: const {},
+      tools: tools,
+    );
+
+    expect(rendered.grammar, contains('root ::= tool-call-scope\n'));
+    expect(SeedOssHandler().buildGrammar(tools), rendered.grammar);
   });
 
   test('SeedOssHandler parses one call per <seed:tool_call> scope', () {

@@ -36,6 +36,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../../../support/recording_allocator.dart';
 import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
@@ -3015,7 +3016,7 @@ void main() {
 
       test('gpu throws when no device is a GPU or integrated GPU', () {
         final requested = <GpuBackend>[];
-        final pathAllocator = _RecordingAllocator();
+        final pathAllocator = RecordingAllocator();
         final service = LlamaCppService(
           deviceTypes: (backend) {
             requested.add(backend);
@@ -3024,7 +3025,7 @@ void main() {
               ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
             ];
           },
-          modelPathAllocator: pathAllocator,
+          modelLoadAllocator: pathAllocator,
         );
         addTearDown(service.dispose);
 
@@ -3054,13 +3055,13 @@ void main() {
         ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU,
       ]) {
         test('gpu loads when a device is a ${type.name}', () {
-          final pathAllocator = _RecordingAllocator();
+          final pathAllocator = RecordingAllocator();
           final service = LlamaCppService(
             deviceTypes: (_) => [
               ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
               type.value,
             ],
-            modelPathAllocator: pathAllocator,
+            modelLoadAllocator: pathAllocator,
           );
           addTearDown(service.dispose);
 
@@ -3179,13 +3180,13 @@ void main() {
       test('a draft load frees its model path, also when it throws before '
           'the native load', () {
         var registryFails = false;
-        final pathAllocator = _RecordingAllocator();
+        final pathAllocator = RecordingAllocator();
         final service = LlamaCppService(
           registeredDevices: () {
             if (registryFails) throw StateError('registry read failed');
             return const <GgmlDeviceEntry>[];
           },
-          modelPathAllocator: pathAllocator,
+          modelLoadAllocator: pathAllocator,
         );
         addTearDown(service.dispose);
         final target = service.loadModel(
@@ -7612,32 +7613,4 @@ class _MetalReportingService extends LlamaCppService {
 
   @override
   List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];
-}
-
-final class _RecordingAllocator implements Allocator {
-  final Set<Pointer<NativeType>> live = {};
-  int allocations = 0;
-
-  @override
-  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
-    final pointer = malloc.allocate<T>(byteCount, alignment: alignment);
-    allocations++;
-    live.add(pointer);
-    return pointer;
-  }
-
-  @override
-  void free(Pointer<NativeType> pointer) {
-    expect(live.remove(pointer), isTrue, reason: 'No unowned or double frees.');
-    malloc.free(pointer);
-  }
-
-  /// Fails unless every allocation came back through [free]. A pointer left
-  /// in [live] stays allocated: the code under test may have freed it some
-  /// other way, and freeing it again would abort the VM.
-  void expectAllFreed() => expect(
-    live,
-    isEmpty,
-    reason: 'a model path was leaked or freed outside modelPathAllocator',
-  );
 }

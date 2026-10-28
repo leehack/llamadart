@@ -30,6 +30,8 @@ import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:test/test.dart';
 
+import '../../../support/dart_script_snapshot.dart';
+
 void main() {
   test(
     'native schema admission is delegated, request scoped and reset on reload',
@@ -269,10 +271,23 @@ void main() {
             unsupported('LoRA adapters'),
           );
           await engine.removeLoraSource(api.ModelSource.path('adapter.bin'));
+          final noProjector = throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('A LiteRT-LM model takes no multimodal projector'),
+            ),
+          );
           await expectLater(
             // ignore: deprecated_member_use_from_same_package
             engine.loadMultimodalProjector('mmproj.bin'),
-            unsupported('Multimodal projectors'),
+            noProjector,
+          );
+          await expectLater(
+            engine.loadMultimodalProjectorSource(
+              api.ModelSource.path('mmproj.bin'),
+            ),
+            noProjector,
           );
           final capabilities = await engine.capabilities;
           expect(capabilities.supportsVision, isFalse);
@@ -1435,19 +1450,31 @@ void main() {
   test(
     'abandoned request cleanup allows a CLI process to exit naturally',
     () async {
+      // Running the source would compile the package before main, which took
+      // over this exit deadline on loaded macOS CI runners.
+      final child = await compileDartScript(
+        'test/fixtures/litert_lm_pending_request_exit.dart',
+      );
       final packageConfig = await Isolate.packageConfig;
       final process = await Process.start(Platform.resolvedExecutable, [
         '--packages=${packageConfig!.toFilePath()}',
-        'test/fixtures/litert_lm_pending_request_exit.dart',
+        child,
       ]);
-      final stdout = process.stdout.drain<void>();
+      final stdout = process.stdout.transform(utf8.decoder).join();
       final stderr = process.stderr.transform(utf8.decoder).join();
       try {
         final code = await process.exitCode.timeout(
           const Duration(seconds: 10),
+          onTimeout: () {
+            process.kill(ProcessSignal.sigkill);
+            return -1;
+          },
         );
-        expect(code, 0, reason: await stderr);
-        await stdout;
+        expect(
+          code,
+          0,
+          reason: 'phases:\n${await stdout}stderr:\n${await stderr}',
+        );
       } finally {
         process.kill();
       }

@@ -134,6 +134,26 @@ void main() {
       expect(manager.calls, isEmpty);
     });
 
+    test('LiteRT-LM rejects the deprecated loadMultimodalProjector on a '
+        'backend that implements BackendMultimodalSupport', () async {
+      final backend = _RuntimeBackend(LlamaRuntime.liteRtLm);
+      final engine = LlamaEngine(backend);
+      await engine.loadModel('/models/model.litertlm');
+
+      await expectLater(
+        // ignore: deprecated_member_use_from_same_package
+        engine.loadMultimodalProjector('/cache/mmproj.gguf'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('A LiteRT-LM model takes no multimodal projector'),
+          ),
+        ),
+      );
+      expect(backend.multimodalContextCreateCalls, 0);
+    });
+
     test('removeLoraSource does nothing on a backend without a LoRA API when '
         'no adapter from the source is applied', () async {
       final engine = LlamaEngine(

@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -35,6 +36,35 @@ final ToolDefinition _weatherTool = ToolDefinition(
 void main() {
   test('sends llama.cpp the tool the cases render', () {
     expect(_fixture['tools'], [_weatherTool.toJson()]);
+  });
+
+  // llama.cpp 620d2225's render fails on the same template error.
+  test('Hy3 rejects a reasoning_effort other than no_think, low or high', () {
+    final source = File(
+      'test/fixtures/llama_cpp_templates/tencent-Hy3.jinja',
+    ).readAsStringSync();
+    for (final effort in ['none', 'medium']) {
+      expect(
+        () => ChatTemplateEngine.render(
+          templateSource: source,
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ],
+          metadata: const {},
+          chatTemplateKwargs: {'reasoning_effort': effort},
+        ),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains(
+              'reasoning_effort error : $effort, should be no_think/low/high',
+            ),
+          ),
+        ),
+        reason: effort,
+      );
+    }
   });
 
   for (final entry
