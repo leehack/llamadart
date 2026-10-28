@@ -71,6 +71,21 @@
       ]
     },
     {
+      "id": "next_token_scoring",
+      "notes": "Catalog 13 binds raw top-K and candidate scores, prompt-prefix reuse equivalence and argument guards on CPU Stories15M, plus typed unsupported rejection for LiteRT-LM. A mapping is not qualification of other models, platforms or WebGPU, and reuse equivalence does not prove the cache was used.",
+      "cases": [
+        "N01.capability",
+        "N02.top_k",
+        "N03.candidates",
+        "N04.reuse",
+        "N05.guards"
+      ],
+      "profiles": [
+        "assets/profiles/scoring-gguf-cpu.json",
+        "assets/profiles/chat-litert-cpu.json"
+      ]
+    },
+    {
       "id": "streaming",
       "cases": [
         "C08.cancel",
@@ -326,11 +341,7 @@
         "capability:LlamaEngineCapabilities.supportsNextTokenScoring",
         "matrix:Next-token scores"
       ],
-      "exemption": {
-        "id": "next-token-scoring",
-        "reason": "Raw token-ID/top-K scores and unsupported runtime paths need a dedicated scoring pack; text generation does not cover scoring.",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
+      "pack": "next_token_scoring"
     },
     {
       "surfaces": [
