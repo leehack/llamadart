@@ -637,12 +637,7 @@ class ChatTemplateEngine {
   /// as in llama.cpp. Other formats still return the reasoning.
   ///
   /// Without [thinkingForcedOpen], a Seed-OSS reply has a thought only when it
-  /// starts with `<seed:think>`, as in llama.cpp. Pass
-  /// [thoughtClosedForThinkingOff] for a template that opens the thought,
-  /// rendered with thinking off: llama.cpp keeps that thought open, so a
-  /// Seed-OSS or Cohere2 MoE reply that shows a thinking tag, or for Cohere2
-  /// MoE `<|START_TEXT|>` or `<|START_ACTION|>`, parses as one with
-  /// [thinkingForcedOpen].
+  /// starts with `<seed:think>`, as in llama.cpp.
   ///
   /// Output that a PEG [parser] cannot parse, or that is nested too deeply to
   /// parse, throws [LlamaInferenceException].
@@ -654,7 +649,6 @@ class ChatTemplateEngine {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     bool thinkingForcedClosed = false,
-    bool thoughtClosedForThinkingOff = false,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -666,10 +660,7 @@ class ChatTemplateEngine {
         isPartial: isPartial,
         cancelled: cancelled,
         parseToolCalls: parseToolCalls,
-        thinkingForcedOpen:
-            thinkingForcedOpen ||
-            (thoughtClosedForThinkingOff &&
-                reopensClosedThought(formatIndex, output)),
+        thinkingForcedOpen: thinkingForcedOpen,
         thinkingForcedClosed: thinkingForcedClosed,
         parser: parser,
         tools: tools,
@@ -1004,10 +995,19 @@ List<String> closedThoughtMarkers(int formatIndex) {
   ];
 }
 
-/// Whether [output] of a Seed-OSS or Cohere2 MoE result whose handler closed
-/// the thought for thinking off parses as after the forced-open prompt
-/// llama.cpp renders: it shows one of [closedThoughtMarkers].
-bool reopensClosedThought(int formatIndex, String output) =>
-    (formatIndex == ChatFormat.seedOss.index ||
-        formatIndex == ChatFormat.cohere2Moe.index) &&
-    closedThoughtMarkers(formatIndex).any(output.contains);
+/// The `thinkingForcedOpen` that [ChatTemplateEngine.parse] takes for
+/// [output]: llama.cpp keeps open the thought a Seed-OSS or Cohere2 MoE
+/// handler closed for thinking off ([thoughtClosedForThinkingOff]), so a reply
+/// that shows one of [closedThoughtMarkers] parses as after a forced-open
+/// prompt.
+bool parsesThinkingForcedOpen(
+  int formatIndex,
+  String output, {
+  required bool thinkingForcedOpen,
+  required bool thoughtClosedForThinkingOff,
+}) =>
+    thinkingForcedOpen ||
+    (thoughtClosedForThinkingOff &&
+        (formatIndex == ChatFormat.seedOss.index ||
+            formatIndex == ChatFormat.cohere2Moe.index) &&
+        closedThoughtMarkers(formatIndex).any(output.contains));

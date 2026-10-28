@@ -459,13 +459,18 @@ class ChatCompletionStreamParser {
       lastPartialParseAtMs = elapsedMs;
 
       try {
+        final partialOutput = buffer.toString();
         final partialParsed = ChatTemplateEngine.parse(
           templateResult.format,
-          buffer.toString(),
+          partialOutput,
           isPartial: true,
           parseToolCalls: parseToolCallsEnabled,
-          thinkingForcedOpen: templateResult.thinkingForcedOpen,
-          thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
+          thinkingForcedOpen: parsesThinkingForcedOpen(
+            templateResult.format,
+            partialOutput,
+            thinkingForcedOpen: templateResult.thinkingForcedOpen,
+            thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
+          ),
           parser: templateResult.parser,
           tools: tools,
         );
@@ -577,9 +582,13 @@ class ChatCompletionStreamParser {
           isPartial: isPartial,
           cancelled: wasCancelled,
           parseToolCalls: parseToolCallsEnabled,
-          thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thinkingForcedOpen: parsesThinkingForcedOpen(
+            templateResult.format,
+            fullOutput,
+            thinkingForcedOpen: templateResult.thinkingForcedOpen,
+            thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
+          ),
           thinkingForcedClosed: thinkingForcedClosed,
-          thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           parser: templateResult.parser,
           tools: tools,
         );

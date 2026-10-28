@@ -446,10 +446,15 @@ void main() {
               rendered.format,
               output,
               parseToolCalls: withTools,
-              thinkingForcedClosed: thinkingForcedClosedOf(rendered),
-              thoughtClosedForThinkingOff: thoughtClosedForThinkingOffOf(
-                rendered,
+              thinkingForcedOpen: parsesThinkingForcedOpen(
+                rendered.format,
+                output,
+                thinkingForcedOpen: false,
+                thoughtClosedForThinkingOff: thoughtClosedForThinkingOffOf(
+                  rendered,
+                ),
               ),
+              thinkingForcedClosed: thinkingForcedClosedOf(rendered),
               tools: withTools ? [_weatherTool] : null,
             );
             final reason = 'tools: $withTools';
@@ -709,7 +714,12 @@ void main() {
               format.index,
               'Plan${handler.thinkingEndTag}Sunny.',
               parseToolCalls: false,
-              thoughtClosedForThinkingOff: true,
+              thinkingForcedOpen: parsesThinkingForcedOpen(
+                format.index,
+                'Plan${handler.thinkingEndTag}Sunny.',
+                thinkingForcedOpen: false,
+                thoughtClosedForThinkingOff: true,
+              ),
               parser: closed.parser,
             ).reasoningContent ==
             'Plan';
