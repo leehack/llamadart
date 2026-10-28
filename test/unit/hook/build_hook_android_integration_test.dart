@@ -9,38 +9,23 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
-  final cacheRelativeDir =
-      '.dart_tool/llamadart/native_bundles/$nativeTag/android-arm64';
-  final bundleRelativePath = '$cacheRelativeDir/extracted';
-  final bundleDir = Directory(bundleRelativePath);
-  final backupDir = Directory('$bundleRelativePath.__hook_test_backup');
+  final project = HookProjectRoot.create();
+  final bundleDir = Directory(
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/android-arm64/extracted',
+    ),
+  );
   final litertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/android/arm64',
+    project.resolve(
+      '.dart_tool/llamadart/litert_lm/$litertVersion/android/arm64',
+    ),
   );
-  final litertBackupDir = Directory(
-    '${litertBundleDir.path}.__hook_test_backup',
-  );
-
-  setUpAll(() async {
-    if (backupDir.existsSync()) {
-      await backupDir.delete(recursive: true);
-    }
-
-    if (bundleDir.existsSync()) {
-      await bundleDir.rename(backupDir.path);
-    }
-    if (litertBackupDir.existsSync()) {
-      await litertBackupDir.delete(recursive: true);
-    }
-    if (litertBundleDir.existsSync()) {
-      await litertBundleDir.rename(litertBackupDir.path);
-    }
-  });
 
   setUp(() async {
     if (bundleDir.existsSync()) {
@@ -50,20 +35,7 @@ void main() {
     await _writeBundleLibraries(litertBundleDir, _androidLiteRtLibraries);
   });
 
-  tearDownAll(() async {
-    if (bundleDir.existsSync()) {
-      await bundleDir.delete(recursive: true);
-    }
-    if (backupDir.existsSync()) {
-      await backupDir.rename(bundleDir.path);
-    }
-    if (litertBundleDir.existsSync()) {
-      await litertBundleDir.delete(recursive: true);
-    }
-    if (litertBackupDir.existsSync()) {
-      await litertBackupDir.rename(litertBundleDir.path);
-    }
-  });
+  tearDownAll(project.delete);
 
   test('build hook defaults Android arm64 cpu profile to full', () async {
     final userDefines = PackageUserDefines(
@@ -81,7 +53,7 @@ void main() {
       ),
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.android,
       targetArchitecture: Architecture.arm64,
@@ -134,7 +106,7 @@ void main() {
       ),
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.android,
       targetArchitecture: Architecture.arm64,
@@ -178,7 +150,7 @@ void main() {
       ),
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.android,
       targetArchitecture: Architecture.arm64,
@@ -214,6 +186,7 @@ void main() {
       targetOS: OS.android,
       targetArchitecture: Architecture.arm64,
       liteRtLmLibraries: _androidLiteRtLibraries,
+      project: project,
     ),
   );
 }

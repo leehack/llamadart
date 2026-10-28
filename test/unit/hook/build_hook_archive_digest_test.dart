@@ -15,6 +15,7 @@ import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_project_root.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 
 const _bundle = 'linux-arm64';
@@ -46,10 +47,9 @@ const _windowsCudaLibraries = [
 ];
 
 void main() {
-  final nativeBundlesDir = path.join(
-    '.dart_tool',
-    'llamadart',
-    'native_bundles',
+  final project = HookProjectRoot.create();
+  final nativeBundlesDir = project.resolve(
+    path.join('.dart_tool', 'llamadart', 'native_bundles'),
   );
   final defaultCacheDir = Directory(
     path.join(nativeBundlesDir, llamaCppTag, _bundle),
@@ -69,11 +69,13 @@ void main() {
       _bundle,
     ]),
   );
-  final stableDiffusionCacheDir = path.join(
-    '.dart_tool',
-    'llamadart',
-    'stable_diffusion',
-    stableDiffusionVersion,
+  final stableDiffusionCacheDir = project.resolve(
+    path.join(
+      '.dart_tool',
+      'llamadart',
+      'stable_diffusion',
+      stableDiffusionVersion,
+    ),
   );
   final stableDiffusionArchiveName =
       'stable-diffusion-native-runtime-$_bundle-$stableDiffusionReleaseTag'
@@ -84,11 +86,8 @@ void main() {
   final stableDiffusionBundleDir = Directory(
     path.join(stableDiffusionCacheDir, _bundle),
   );
-  final liteRtLmCacheDir = path.join(
-    '.dart_tool',
-    'llamadart',
-    'litert_lm',
-    liteRtLmVersion,
+  final liteRtLmCacheDir = project.resolve(
+    path.join('.dart_tool', 'llamadart', 'litert_lm', liteRtLmVersion),
   );
   final liteRtLmArchiveName =
       'litert-lm-native-runtime-$_bundle-$liteRtLmReleaseTag.tar.gz';
@@ -137,12 +136,6 @@ void main() {
     'assets.json',
   );
 
-  setUpAll(() async {
-    for (final entity in touched) {
-      await _move(entity, _backupOf(entity));
-    }
-  });
-
   setUp(() async {
     for (final entity in touched) {
       if (entity.existsSync()) {
@@ -151,14 +144,7 @@ void main() {
     }
   });
 
-  tearDownAll(() async {
-    for (final entity in touched) {
-      if (entity.existsSync()) {
-        await entity.delete(recursive: true);
-      }
-      await _move(_backupOf(entity), entity);
-    }
-  });
+  tearDownAll(project.delete);
 
   group('llama.cpp pinned release', () {
     test('rejects a downloaded archive that differs from its pin', () async {
@@ -168,7 +154,7 @@ void main() {
       var emitted = false;
 
       await expectLater(
-        _runHook(fixture, check: () => emitted = true),
+        _runHook(project, fixture, check: () => emitted = true),
         throwsA(
           isA<NativeArchiveDigestException>().having(
             (error) => error.message,
@@ -205,7 +191,7 @@ void main() {
 
       final log = await _captureLog(() async {
         await expectLater(
-          _runHook(fixture),
+          _runHook(project, fixture),
           throwsA(isA<NativeArchiveDigestException>()),
         );
       });
@@ -243,7 +229,7 @@ void main() {
     final fixture = RuntimeBundleHttpFixture({defaultArchiveUrl: tampered});
 
     await expectLater(
-      _runHook(fixture),
+      _runHook(project, fixture),
       throwsA(
         isA<NativeArchiveDigestException>().having(
           (error) => error.message,
@@ -270,6 +256,7 @@ void main() {
       });
 
       final libraries = await _runHook(
+        project,
         fixture,
         tag: _overrideTag,
         check: () {},
@@ -301,6 +288,7 @@ void main() {
       });
 
       final libraries = await _runHook(
+        project,
         fixture,
         tag: _overrideTag,
         check: () {},
@@ -328,7 +316,12 @@ void main() {
 
         late Map<String, String> libraries;
         final log = await _captureLog(() async {
-          libraries = await _runHook(fixture, tag: _overrideTag, check: () {});
+          libraries = await _runHook(
+            project,
+            fixture,
+            tag: _overrideTag,
+            check: () {},
+          );
         });
 
         expect(fixture.requests, [
@@ -359,7 +352,7 @@ void main() {
       });
 
       await expectLater(
-        _runHook(fixture, tag: _overrideTag),
+        _runHook(project, fixture, tag: _overrideTag),
         throwsA(
           isA<NativeArchiveDigestException>().having(
             (error) => error.message,
@@ -382,7 +375,7 @@ void main() {
         });
 
         await expectLater(
-          _runHook(fixture, tag: _overrideTag),
+          _runHook(project, fixture, tag: _overrideTag),
           throwsA(
             isA<NativeArchiveDigestException>().having(
               (error) => error.message,
@@ -411,7 +404,7 @@ void main() {
         });
 
         await expectLater(
-          _runHook(fixture, tag: _overrideTag),
+          _runHook(project, fixture, tag: _overrideTag),
           throwsA(
             isA<NativeArchiveDigestException>().having(
               (error) => error.message,
@@ -460,6 +453,7 @@ void main() {
         final fixture = RuntimeBundleHttpFixture.offline();
 
         final libraries = await _runHook(
+          project,
           fixture,
           tag: _overrideTag,
           check: () {},
@@ -478,7 +472,7 @@ void main() {
         }).codeUnits,
         overrideArchiveUrl: archive,
       });
-      await _runHook(online, tag: _overrideTag, check: () {});
+      await _runHook(project, online, tag: _overrideTag, check: () {});
       expect(
         await cachedSums.readAsString(),
         sha256SumsFor({archiveName(_overrideTag): archive}),
@@ -487,6 +481,7 @@ void main() {
       await extractedDir.delete(recursive: true);
       final offline = RuntimeBundleHttpFixture.offline();
       final libraries = await _runHook(
+        project,
         offline,
         tag: _overrideTag,
         check: () {},
@@ -503,7 +498,7 @@ void main() {
         final fixture = RuntimeBundleHttpFixture.offline();
 
         await expectLater(
-          _runHook(fixture, tag: _overrideTag),
+          _runHook(project, fixture, tag: _overrideTag),
           throwsA(
             isA<NativeArchiveDigestException>().having(
               (error) => error.message,
@@ -533,7 +528,7 @@ void main() {
         final fixture = RuntimeBundleHttpFixture.offline();
 
         await expectLater(
-          _runHook(fixture, tag: _overrideTag),
+          _runHook(project, fixture, tag: _overrideTag),
           throwsA(isA<NativeArchiveDigestException>()),
         );
         expect(fixture.requests, [overrideSumsUrl]);
@@ -556,6 +551,7 @@ void main() {
         });
 
         final libraries = await _runHook(
+          project,
           fixture,
           tag: _overrideTag,
           check: () {},
@@ -583,7 +579,7 @@ void main() {
         });
 
         await expectLater(
-          _runHook(fixture, tag: _overrideTag),
+          _runHook(project, fixture, tag: _overrideTag),
           throwsA(
             isA<NativeArchiveDigestException>().having(
               (error) => error.message,
@@ -613,6 +609,7 @@ void main() {
         });
 
         final libraries = await _runHook(
+          project,
           fixture,
           tag: _overrideTag,
           check: () {},
@@ -635,7 +632,7 @@ void main() {
         final fixture = RuntimeBundleHttpFixture.offline();
 
         await expectLater(
-          _runHook(fixture, tag: _overrideTag),
+          _runHook(project, fixture, tag: _overrideTag),
           throwsA(
             isA<NativeArchiveDigestException>().having(
               (error) => error.message,
@@ -663,6 +660,7 @@ void main() {
       final fixture = RuntimeBundleHttpFixture.offline();
 
       final libraries = await _runHook(
+        project,
         fixture,
         tag: _overrideTag,
         check: () {},
@@ -685,6 +683,7 @@ void main() {
         });
 
         final libraries = await _runHook(
+          project,
           fixture,
           tag: _overrideTag,
           check: () {},
@@ -721,6 +720,7 @@ void main() {
       });
 
       final libraries = await _runHook(
+        project,
         fixture,
         tag: _overrideTag,
         targetOS: OS.windows,
@@ -748,6 +748,7 @@ void main() {
       });
 
       final libraries = await _runHook(
+        project,
         fixture,
         tag: _overrideTag,
         check: () {},
@@ -780,6 +781,7 @@ void main() {
       });
 
       final libraries = await _runHook(
+        project,
         fixture,
         repository: _forkRepository,
         check: () {},
@@ -799,7 +801,7 @@ void main() {
       final fixture = RuntimeBundleHttpFixture({url: _archive('tampered')});
 
       await expectLater(
-        _runHook(fixture, runtimes: const ['stable_diffusion']),
+        _runHook(project, fixture, runtimes: const ['stable_diffusion']),
         throwsA(
           isA<NativeArchiveDigestException>().having(
             (error) => error.message,
@@ -818,7 +820,7 @@ void main() {
       final fixture = RuntimeBundleHttpFixture({url: _archive('tampered')});
 
       await expectLater(
-        _runHook(fixture, runtimes: const ['stable_diffusion']),
+        _runHook(project, fixture, runtimes: const ['stable_diffusion']),
         throwsA(isA<NativeArchiveDigestException>()),
       );
       expect(fixture.requests, [url]);
@@ -834,7 +836,7 @@ void main() {
       final fixture = RuntimeBundleHttpFixture({url: _archive('tampered')});
 
       await expectLater(
-        _runHook(fixture, runtimes: const ['litert_lm']),
+        _runHook(project, fixture, runtimes: const ['litert_lm']),
         throwsA(
           isA<NativeArchiveDigestException>().having(
             (error) => error.message,
@@ -853,7 +855,7 @@ void main() {
       final fixture = RuntimeBundleHttpFixture({url: _archive('tampered')});
 
       await expectLater(
-        _runHook(fixture, runtimes: const ['litert_lm']),
+        _runHook(project, fixture, runtimes: const ['litert_lm']),
         throwsA(isA<NativeArchiveDigestException>()),
       );
       expect(fixture.requests, [url]);
@@ -876,6 +878,7 @@ List<int> _utf16le(String text) => [
 /// [fixture], and returns the emitted llama.cpp libraries' contents by file
 /// name.
 Future<Map<String, String>> _runHook(
+  HookProjectRoot project,
   RuntimeBundleHttpFixture fixture, {
   String? tag,
   String? repository,
@@ -887,7 +890,7 @@ Future<Map<String, String>> _runHook(
   final libraries = <String, String>{};
   await build_hook.withRuntimeBundleHttpClientForTesting(
     fixture.createClient,
-    () => testCodeBuildHook(
+    () => project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: targetOS,
       targetArchitecture: targetArchitecture,
@@ -939,18 +942,4 @@ Future<List<String>> _captureLog(Future<void> Function() body) async {
     ),
   );
   return lines;
-}
-
-FileSystemEntity _backupOf(FileSystemEntity entity) => entity is File
-    ? File('${entity.path}.__digest_test_backup')
-    : Directory('${entity.path}.__digest_test_backup');
-
-Future<void> _move(FileSystemEntity from, FileSystemEntity to) async {
-  if (to.existsSync()) {
-    await to.delete(recursive: true);
-  }
-  if (from.existsSync()) {
-    await to.parent.create(recursive: true);
-    await from.rename(to.path);
-  }
 }

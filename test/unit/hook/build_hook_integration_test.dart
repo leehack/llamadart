@@ -13,6 +13,7 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 import '../../support/windows_version_resource.dart';
@@ -20,36 +21,20 @@ import '../../support/windows_version_resource.dart';
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
+  final project = HookProjectRoot.create();
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/windows-x64';
-  final bundleRelativePath = '$cacheRelativeDir/extracted';
-  final bundleDir = Directory(bundleRelativePath);
-  final backupDir = Directory('$bundleRelativePath.__hook_test_backup');
+  final bundleDir = Directory(project.resolve('$cacheRelativeDir/extracted'));
   final litertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/windows/x64',
+    project.resolve(
+      '.dart_tool/llamadart/litert_lm/$litertVersion/windows/x64',
+    ),
   );
-  final litertBackupDir = Directory(
-    '${litertBundleDir.path}.__hook_test_backup',
+  final archiveFile = File(
+    project.resolve(
+      '$cacheRelativeDir/llamadart-native-windows-x64-$nativeTag.tar.gz',
+    ),
   );
-  final archivePath =
-      '$cacheRelativeDir/llamadart-native-windows-x64-$nativeTag.tar.gz';
-  final archiveFile = File(archivePath);
-
-  setUpAll(() async {
-    if (backupDir.existsSync()) {
-      await backupDir.delete(recursive: true);
-    }
-
-    if (bundleDir.existsSync()) {
-      await bundleDir.rename(backupDir.path);
-    }
-    if (litertBackupDir.existsSync()) {
-      await litertBackupDir.delete(recursive: true);
-    }
-    if (litertBundleDir.existsSync()) {
-      await litertBundleDir.rename(litertBackupDir.path);
-    }
-  });
 
   setUp(() async {
     if (bundleDir.existsSync()) {
@@ -74,23 +59,7 @@ void main() {
     }
   });
 
-  tearDownAll(() async {
-    if (archiveFile.existsSync()) {
-      await archiveFile.delete();
-    }
-    if (bundleDir.existsSync()) {
-      await bundleDir.delete(recursive: true);
-    }
-    if (backupDir.existsSync()) {
-      await backupDir.rename(bundleDir.path);
-    }
-    if (litertBundleDir.existsSync()) {
-      await litertBundleDir.delete(recursive: true);
-    }
-    if (litertBackupDir.existsSync()) {
-      await litertBackupDir.rename(litertBundleDir.path);
-    }
-  });
+  tearDownAll(project.delete);
 
   test(
     'build hook selects configured backend modules and all runtimes by default',
@@ -108,7 +77,7 @@ void main() {
         ),
       );
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -162,7 +131,7 @@ void main() {
       ),
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.windows,
       targetArchitecture: Architecture.x64,
@@ -205,7 +174,7 @@ void main() {
       ),
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.windows,
       targetArchitecture: Architecture.x64,
@@ -253,7 +222,7 @@ void main() {
       ),
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.windows,
       targetArchitecture: Architecture.x64,
@@ -286,7 +255,9 @@ void main() {
     () async {
       const overrideTag = 'v9.8.7';
       final overrideCacheDir = Directory(
-        '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+        project.resolve(
+          '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+        ),
       );
       final overrideArchive = File(
         path.join(
@@ -351,7 +322,7 @@ void main() {
 
       await build_hook.withRuntimeBundleHttpClientForTesting(
         fixture.createClient,
-        () => testCodeBuildHook(
+        () => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.windows,
           targetArchitecture: Architecture.x64,
@@ -386,7 +357,9 @@ void main() {
       'b10514-llamadart.1',
     ]) {
       final overrideCacheDir = Directory(
-        '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+        project.resolve(
+          '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+        ),
       );
       final overrideBundleDir = Directory(
         path.join(overrideCacheDir.path, 'extracted'),
@@ -426,7 +399,7 @@ void main() {
           ),
         );
 
-        await testCodeBuildHook(
+        await project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.windows,
           targetArchitecture: Architecture.x64,
@@ -463,7 +436,9 @@ void main() {
     const overrideTag = 'b0';
     const customRepository = 'example/native-fork';
     final repoCacheRoot = Directory(
-      '.dart_tool/llamadart/native_bundles/github/example/native-fork',
+      project.resolve(
+        '.dart_tool/llamadart/native_bundles/github/example/native-fork',
+      ),
     );
     final overrideBundleDir = Directory(
       path.join(repoCacheRoot.path, overrideTag, 'windows-x64', 'extracted'),
@@ -505,7 +480,7 @@ void main() {
         ),
       );
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -529,7 +504,7 @@ void main() {
 
   test('build hook uses local native path directory', () async {
     const localRootPath = '.dart_tool/llamadart_hook_test_local_dir';
-    final localRoot = Directory(localRootPath);
+    final localRoot = Directory(project.resolve(localRootPath));
     final localBundleDir = Directory(path.join(localRoot.path, 'windows-x64'));
 
     if (localRoot.existsSync()) {
@@ -556,11 +531,11 @@ void main() {
               },
             },
           },
-          basePath: Directory.current.uri,
+          basePath: project.directory.uri,
         ),
       );
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -582,7 +557,7 @@ void main() {
   test('build hook uses local native path archive', () async {
     const overrideTag = 'b0-llamadart.1';
     const localRootPath = '.dart_tool/llamadart_hook_test_local_archive';
-    final localRoot = Directory(localRootPath);
+    final localRoot = Directory(project.resolve(localRootPath));
     final archiveFile = File(
       path.join(
         localRoot.path,
@@ -591,6 +566,7 @@ void main() {
     );
     final localCacheRoot = Directory(
       _localPathCacheRoot(
+        project: project,
         localRootPath: localRootPath,
         nativeTag: overrideTag,
         bundle: 'windows-x64',
@@ -628,11 +604,11 @@ void main() {
               },
             },
           },
-          basePath: Directory.current.uri,
+          basePath: project.directory.uri,
         ),
       );
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -678,7 +654,7 @@ void main() {
       );
 
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.windows,
           targetArchitecture: Architecture.x64,
@@ -700,7 +676,7 @@ void main() {
     );
 
     await expectLater(
-      testCodeBuildHook(
+      project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -755,7 +731,7 @@ void main() {
         0,
       ));
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -806,7 +782,7 @@ void main() {
         isNot(llamaCppBytes),
       );
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.windows,
         targetArchitecture: Architecture.x64,
@@ -832,7 +808,7 @@ void main() {
       ).writeAsString('LiteRT-LM copy');
 
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.windows,
           targetArchitecture: Architecture.x64,
@@ -857,6 +833,7 @@ void main() {
       targetOS: OS.windows,
       targetArchitecture: Architecture.x64,
       liteRtLmLibraries: _windowsLiteRtLibraries,
+      project: project,
     ),
   );
 }
@@ -956,19 +933,22 @@ Future<void> _writeBundleArchive({
 }
 
 String _localPathCacheRoot({
+  required HookProjectRoot project,
   required String localRootPath,
   required String nativeTag,
   required String bundle,
 }) {
-  final localRootUri = Directory.current.uri.resolve(localRootPath);
+  final localRootUri = project.directory.uri.resolve(localRootPath);
   final digest = sha1.convert(utf8.encode(localRootUri.toString())).toString();
-  return path.join(
-    '.dart_tool',
-    'llamadart',
-    'native_bundles',
-    'local',
-    digest,
-    nativeTag,
-    bundle,
+  return project.resolve(
+    path.join(
+      '.dart_tool',
+      'llamadart',
+      'native_bundles',
+      'local',
+      digest,
+      nativeTag,
+      bundle,
+    ),
   );
 }

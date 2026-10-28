@@ -8,6 +8,8 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import 'hook_project_root.dart';
+
 /// A pub resolution laid out the way `package:hooks_runner` hands it to a
 /// build hook.
 ///
@@ -145,13 +147,15 @@ typedef HookRun = ({
   List<String> warnings,
 });
 
-/// Runs [hookMain] for one target, inside [layout] when given.
+/// Runs [hookMain] for one target, inside [layout] when given and with the
+/// package root at [project] when given.
 Future<HookRun> runCodeBuildHook({
   required FutureOr<void> Function(List<String> arguments) hookMain,
   required OS targetOS,
   required Architecture targetArchitecture,
   IOSSdk? targetIOSSdk,
   HooksRunnerLayout? layout,
+  HookProjectRoot? project,
   PackageUserDefines? userDefines,
 }) async {
   final warnings = <String>[];
@@ -161,7 +165,7 @@ Future<HookRun> runCodeBuildHook({
   late final Map<String, String> assets;
   late final List<Uri> dependencies;
   try {
-    await testCodeBuildHook(
+    await (project?.testCodeBuildHook ?? testCodeBuildHook)(
       mainMethod: layout == null
           ? hookMain
           : (arguments) => layout.run(hookMain, arguments),
@@ -195,6 +199,7 @@ Future<void> expectOnlyLiteRtLmFollowsResolvedGraph({
   required OS targetOS,
   required Architecture targetArchitecture,
   required List<String> liteRtLmLibraries,
+  HookProjectRoot? project,
 }) async {
   final plain = await workspaceWithoutFlutterEdgeAi();
   addTearDown(plain.delete);
@@ -205,6 +210,7 @@ Future<void> expectOnlyLiteRtLmFollowsResolvedGraph({
     targetOS: targetOS,
     targetArchitecture: targetArchitecture,
     layout: layout,
+    project: project,
     userDefines: layout?.userDefines(),
   );
 

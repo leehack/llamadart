@@ -685,6 +685,23 @@ void main() {
       expect((await manager.list()).single.cacheKey, busy.cacheKey);
     });
 
+    test('prune by size still counts an oldest entry in use', () async {
+      final busy = named('busy.gguf');
+      final first = named('first.gguf');
+      final second = named('second.gguf');
+      for (final source in [busy, first, second]) {
+        await manager.ensureModel(source);
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await holdLock(busy);
+
+      final pruned = await manager.prune(maxBytes: 2 * server.payload.length);
+
+      expect(pruned.map((entry) => entry.cacheKey), <String>[first.cacheKey]);
+      expect(Directory(directoryOf(busy)).existsSync(), isTrue);
+      expect(Directory(directoryOf(second)).existsSync(), isTrue);
+    });
+
     test('prune keeps an entry used after it listed it', () async {
       final entry = await manager.ensureModel(source());
       final previousLocker = modelCacheEntryLocker;
@@ -794,6 +811,25 @@ void main() {
       expect(await manager.list(), isEmpty);
     });
 
+    test(
+      'clear waits for another remover before deleting a stray file',
+      () async {
+        final stray = File(path.join(root.path, 'stray.txt'))
+          ..createSync(recursive: true);
+        final removalLock = await holdRemovalLock();
+
+        var cleared = false;
+        final clearing = manager.clear().then((_) => cleared = true);
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(cleared, isFalse);
+        expect(stray.existsSync(), isTrue);
+        await removalLock.release();
+
+        await clearing.timeout(const Duration(seconds: 10));
+        expect(stray.existsSync(), isFalse);
+      },
+    );
+
     test('a same-isolate download of an entry waits for its removal and then '
         'runs', () async {
       await manager.ensureModel(source());
@@ -891,23 +927,26 @@ void main() {
       expect((await manager.list()).single.cacheKey, source().cacheKey);
     }, testOn: '!windows');
 
-    test('clear takes no lock for noCache entries', () async {
-      await manager.ensureModel(
-        source(),
-        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.noCache),
-      );
+    test(
+      'clear removes noCache entries and creates only the removal lock',
+      () async {
+        await manager.ensureModel(
+          source(),
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.noCache),
+        );
 
-      await manager.clear();
+        await manager.clear();
 
-      expect(await manager.list(), isEmpty);
-      final locks = Directory(path.join(root.path, '.locks'));
-      expect(
-        locks.existsSync()
-            ? locks.listSync().map((lock) => path.basename(lock.path))
-            : const <String>[],
-        everyElement('.removal.lock'),
-      );
-    });
+        expect(await manager.list(), isEmpty);
+        final locks = Directory(path.join(root.path, '.locks'));
+        expect(
+          locks.existsSync()
+              ? locks.listSync().map((lock) => path.basename(lock.path))
+              : const <String>[],
+          everyElement('.removal.lock'),
+        );
+      },
+    );
 
     test('clear leaves another process to finish its download', () async {
       server.holdFirst = true;

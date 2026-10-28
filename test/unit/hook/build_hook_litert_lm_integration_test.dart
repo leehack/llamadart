@@ -14,83 +14,60 @@ import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_core_version.dart';
+import '../../support/hook_project_root.dart';
 
 void main() {
   final nativeTag = _readPinnedConst('llamaCppTag');
   final litertVersion = _readPinnedConst('liteRtLmVersion');
+  final project = HookProjectRoot.create();
   final nativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/linux-arm64/extracted',
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/linux-arm64/extracted',
+    ),
   );
   final litertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/linux/arm64',
+    project.resolve(
+      '.dart_tool/llamadart/litert_lm/$litertVersion/linux/arm64',
+    ),
   );
   final macosArm64NativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/macos-arm64/extracted',
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/macos-arm64/extracted',
+    ),
   );
   final macosArm64LitertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/macos/arm64',
+    project.resolve(
+      '.dart_tool/llamadart/litert_lm/$litertVersion/macos/arm64',
+    ),
   );
   final macosX64NativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/macos-x86_64/extracted',
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/macos-x86_64/extracted',
+    ),
   );
   final iosDeviceNativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
+    ),
   );
   final iosArm64SimNativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64-sim/extracted',
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64-sim/extracted',
+    ),
   );
   final iosX64SimNativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/ios-x86_64-sim/extracted',
+    project.resolve(
+      '.dart_tool/llamadart/native_bundles/$nativeTag/ios-x86_64-sim/extracted',
+    ),
   );
   final iosDeviceLitertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/ios/arm64',
+    project.resolve('.dart_tool/llamadart/litert_lm/$litertVersion/ios/arm64'),
   );
   final iosArm64SimLitertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/ios/arm64-sim',
+    project.resolve(
+      '.dart_tool/llamadart/litert_lm/$litertVersion/ios/arm64-sim',
+    ),
   );
-  final backupPairs = [
-    (nativeBundleDir, Directory('${nativeBundleDir.path}.__litert_test')),
-    (litertBundleDir, Directory('${litertBundleDir.path}.__litert_test')),
-    (
-      macosArm64NativeBundleDir,
-      Directory('${macosArm64NativeBundleDir.path}.__litert_test'),
-    ),
-    (
-      macosArm64LitertBundleDir,
-      Directory('${macosArm64LitertBundleDir.path}.__litert_test'),
-    ),
-    (
-      macosX64NativeBundleDir,
-      Directory('${macosX64NativeBundleDir.path}.__litert_test'),
-    ),
-    (
-      iosDeviceNativeBundleDir,
-      Directory('${iosDeviceNativeBundleDir.path}.__litert_test'),
-    ),
-    (
-      iosArm64SimNativeBundleDir,
-      Directory('${iosArm64SimNativeBundleDir.path}.__litert_test'),
-    ),
-    (
-      iosX64SimNativeBundleDir,
-      Directory('${iosX64SimNativeBundleDir.path}.__litert_test'),
-    ),
-    (
-      iosDeviceLitertBundleDir,
-      Directory('${iosDeviceLitertBundleDir.path}.__litert_test'),
-    ),
-    (
-      iosArm64SimLitertBundleDir,
-      Directory('${iosArm64SimLitertBundleDir.path}.__litert_test'),
-    ),
-  ];
-
-  setUpAll(() async {
-    for (final (directory, backup) in backupPairs) {
-      await _backupDirectory(directory, backup);
-    }
-  });
-
   setUp(() async {
     await _writeBundleLibraries(nativeBundleDir, const [
       'libllamadart.so',
@@ -129,11 +106,7 @@ void main() {
     }
   });
 
-  tearDownAll(() async {
-    for (final (directory, backup) in backupPairs.reversed) {
-      await _restoreDirectory(directory, backup);
-    }
-  });
+  tearDownAll(project.delete);
 
   test('LiteRT-LM bundle specs require platform runtime companions', () {
     final source = File(
@@ -178,7 +151,7 @@ void main() {
   test(
     'build hook emits Linux arm64 LiteRT-LM runtime companions when requested',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.linux,
         targetArchitecture: Architecture.arm64,
@@ -209,7 +182,7 @@ void main() {
   test(
     'build hook keeps macOS LiteRT-LM libraries in the cache when requested',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.macOS,
         targetArchitecture: Architecture.arm64,
@@ -247,7 +220,7 @@ void main() {
       );
       addTearDown(subscription.cancel);
       final stderrLines = await _capturingStderr(
-        () async => testCodeBuildHook(
+        () async => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.x64,
@@ -270,7 +243,7 @@ void main() {
   }
 
   test('build hook can emit LiteRT-LM runtime without llama.cpp', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.arm64,
@@ -308,7 +281,7 @@ void main() {
         final result = await Process.run('chmod', ['a-w', liteRtLmBinary.path]);
         expect(result.exitCode, 0, reason: '${result.stderr}');
       }
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -374,7 +347,7 @@ void main() {
         );
         var emitted = false;
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -499,7 +472,7 @@ void main() {
         );
         var emitted = false;
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -531,7 +504,7 @@ void main() {
         final captured = _CapturedStderr();
         await expectLater(
           IOOverrides.runZoned(
-            () => testCodeBuildHook(
+            () => project.testCodeBuildHook(
               mainMethod: build_hook.main,
               targetOS: target,
               targetArchitecture: Architecture.arm64,
@@ -565,7 +538,7 @@ void main() {
         companionVersion: llamaCppAppleCompanionVersion,
       );
       final stderrLines = await _capturingStderr(
-        () => testCodeBuildHook(
+        () => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: target,
           targetArchitecture: Architecture.arm64,
@@ -707,7 +680,7 @@ void main() {
         );
         var emitted = false;
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: OS.iOS,
             targetArchitecture: Architecture.arm64,
@@ -735,7 +708,7 @@ void main() {
         dependencies: const ['llamadart_llama_cpp_flutter'],
         workspaceMember: true,
       );
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.macOS,
         targetArchitecture: Architecture.arm64,
@@ -795,7 +768,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 '''),
       );
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -830,7 +803,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       },
     );
 
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.iOS,
       targetArchitecture: Architecture.arm64,
@@ -860,7 +833,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook emits no bundled Apple assets for Flutter iOS LiteRT-LM SPM mode',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -894,7 +867,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
         );
         addTearDown(subscription.cancel);
         final stderrLines = await _capturingStderr(
-          () async => testCodeBuildHook(
+          () async => project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: OS.macOS,
             targetArchitecture: architecture,
@@ -964,7 +937,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       test('build hook keeps Flutter macOS $architecture LiteRT-LM on the '
           'hook cache with a build warning for $scenario', () async {
         final stderrLines = await _capturingStderr(
-          () async => testCodeBuildHook(
+          () async => project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: OS.macOS,
             targetArchitecture: architecture,
@@ -1063,7 +1036,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     test('build hook keeps Flutter macOS LiteRT-LM on the hook cache and '
         '$advice for $scenario', () async {
       final stderrLines = await _capturingStderr(
-        () async => testCodeBuildHook(
+        () async => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.arm64,
@@ -1103,7 +1076,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test('build hook prints no companion warning for a Flutter macOS app '
       'without the LiteRT-LM companion', () async {
     final stderrLines = await _capturingStderr(
-      () async => testCodeBuildHook(
+      () async => project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.macOS,
         targetArchitecture: Architecture.arm64,
@@ -1141,7 +1114,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       );
       addTearDown(subscription.cancel);
       final stderrLines = await _capturingStderr(
-        () async => testCodeBuildHook(
+        () async => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.x64,
@@ -1180,7 +1153,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     test('build hook fails a Flutter macOS x64 build whose $bundleKey entry '
         'names LiteRT-LM', () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.x64,
@@ -1220,7 +1193,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook keeps iOS LiteRT-LM on SwiftPM without probing the manifest',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1243,7 +1216,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook keeps non-Flutter macOS LiteRT-LM on the hook cache',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.macOS,
         targetArchitecture: Architecture.arm64,
@@ -1266,7 +1239,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   );
 
   test('build hook hands both macOS runtimes to SwiftPM companions', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.macOS,
       targetArchitecture: Architecture.arm64,
@@ -1299,7 +1272,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 
   test('build hook mixes macOS llama.cpp SPM with LiteRT-LM hook assets for an '
       'older LiteRT-LM companion', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.macOS,
       targetArchitecture: Architecture.arm64,
@@ -1330,7 +1303,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook uses SPM process lookup for Flutter iOS llama.cpp companion',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1360,7 +1333,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook bundles iOS x64 simulator llama.cpp without companion packages',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.x64,
@@ -1387,7 +1360,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       _bothRuntimeUserDefines(),
       _emptyRuntimeUserDefines(),
     ]) {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.x64,
@@ -1411,7 +1384,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook ignores nested pubspec keys when detecting companions',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1448,7 +1421,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   test(
     'build hook lets runtime config win outside Flutter Apple apps',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1478,7 +1451,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     'build hook fails when explicitly requested LiteRT-LM is unavailable',
     () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.x64,
@@ -1504,7 +1477,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     'build hook fails when Flutter companion selects unavailable LiteRT-LM',
     () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.x64,
@@ -1587,7 +1560,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     for (final target in [OS.iOS, OS.macOS]) {
       test('Apple $target validates the companion', () async {
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -1607,7 +1580,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     }
 
     test('Apple links the companion', () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1627,7 +1600,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     });
 
     test('Apple ignores a companion only a dev dependency reaches', () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1658,7 +1631,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
             ),
           ),
         );
-        await testCodeBuildHook(
+        await project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -1692,7 +1665,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
           'app member declares', () async {
         var emitted = false;
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -1712,7 +1685,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
           'by an app member before emitting assets', () async {
         var emitted = false;
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -1732,7 +1705,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     test('Apple rejects a mismatched stable_diffusion companion only the app '
         'member declares', () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -1758,7 +1731,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     test('macOS checks the LiteRT-LM companion manifest only the app member '
         'declares', () async {
       final stderrLines = await _capturingStderr(
-        () async => testCodeBuildHook(
+        () async => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.arm64,
@@ -1787,7 +1760,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 
     test('Apple follows the app past a Flutter library member and a Flutter '
         'member without llamadart', () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -1835,7 +1808,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       for (final target in [OS.iOS, OS.macOS]) {
         test('Apple $target validates the companion of $scenario', () async {
           await expectLater(
-            testCodeBuildHook(
+            project.testCodeBuildHook(
               mainMethod: build_hook.main,
               targetOS: target,
               targetArchitecture: Architecture.arm64,
@@ -1852,7 +1825,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       }
 
       test('Apple links the companion of $scenario', () async {
-        await testCodeBuildHook(
+        await project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -1868,7 +1841,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 
     test('Apple applies the companions several Flutter apps share', () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -1887,7 +1860,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       test('Apple $target bundles assets for a workspace without Flutter '
           'apps', () async {
         final stderrLines = await _capturingStderr(
-          () async => testCodeBuildHook(
+          () async => project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target,
             targetArchitecture: Architecture.arm64,
@@ -1948,7 +1921,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       test('iOS validates the Flutter app next to $scenario, which no iOS '
           'build bundles', () async {
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: OS.iOS,
             targetArchitecture: Architecture.arm64,
@@ -1968,7 +1941,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     test('macOS validates the Flutter app next to a Dart package whose '
         'dependency only dev-depends on llamadart', () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.arm64,
@@ -2085,7 +2058,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
       for (final target in targets) {
         test('$target warns and bundles assets for $scenario', () async {
           final stderrLines = await _capturingStderr(
-            () async => testCodeBuildHook(
+            () async => project.testCodeBuildHook(
               mainMethod: build_hook.main,
               targetOS: target,
               targetArchitecture: Architecture.arm64,
@@ -2126,7 +2099,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
 
     test('a Flutter workspace root decides from its own pubspec', () async {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -2220,7 +2193,7 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
           ),
         );
         final stderrLines = await _capturingStderr(
-          () => testCodeBuildHook(
+          () => project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: OS.macOS,
             targetArchitecture: Architecture.arm64,
@@ -2760,24 +2733,6 @@ const List<String> _windowsLiteRtLibraries = [
   'vcruntime140_1.dll',
   'vcruntime140_threads.dll',
 ];
-
-Future<void> _backupDirectory(Directory directory, Directory backup) async {
-  if (backup.existsSync()) {
-    await backup.delete(recursive: true);
-  }
-  if (directory.existsSync()) {
-    await directory.rename(backup.path);
-  }
-}
-
-Future<void> _restoreDirectory(Directory directory, Directory backup) async {
-  if (directory.existsSync()) {
-    await directory.delete(recursive: true);
-  }
-  if (backup.existsSync()) {
-    await backup.rename(directory.path);
-  }
-}
 
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
