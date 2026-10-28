@@ -57,6 +57,10 @@ void applyStableDiffusionContextParams(
         vae: params.ref.vae_conv_direct,
       ),
     );
+  params.ref.auto_fit = config.autoFit;
+  if (config.maxGpuMemoryGiB case final gib?) {
+    params.ref.max_vram = text('$gib');
+  }
   if (config.conditioningCacheSize case final capacity?) {
     params.ref.conditioning_cache_size = capacity;
   }

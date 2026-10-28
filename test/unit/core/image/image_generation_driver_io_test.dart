@@ -46,6 +46,26 @@ List<StableDiffusionGpuMemory>? _twoGpus({
   ),
 ];
 
+List<StableDiffusionGpuMemory>? _integratedOnly({
+  LlamaLogLevel logLevel = LlamaLogLevel.none,
+}) => [
+  (
+    name: 'Vulkan0 (Intel Xe)',
+    totalBytes: 16 << 30,
+    freeBytes: 12 << 30,
+    integrated: true,
+  ),
+];
+
+List<StableDiffusionGpuMemory>? _integratedAndDiscrete({
+  LlamaLogLevel logLevel = LlamaLogLevel.none,
+}) => [..._integratedOnly()!, ..._twoGpus()!.take(1)];
+
+/// Answers only in an isolate the driver spawns.
+List<StableDiffusionGpuMemory>? _discreteInSpawnedIsolate({
+  LlamaLogLevel logLevel = LlamaLogLevel.none,
+}) => _isolate == 'spawned' ? _twoGpus() : null;
+
 List<StableDiffusionGpuMemory>? _noGpuMemory({
   LlamaLogLevel logLevel = LlamaLogLevel.none,
 }) => null;
@@ -230,6 +250,23 @@ void main() {
           runtimePicksGpu: true,
         )).refuse?.source,
         isNot(contains('isolate')),
+      );
+    }
+  });
+
+  test('a discrete GPU is one any listed GPU is not integrated, asked in '
+      'another isolate; an unknown list is no answer', () async {
+    for (final (reader, expected) in [
+      (_discreteInSpawnedIsolate, true),
+      (_integratedAndDiscrete, true),
+      (_integratedOnly, false),
+      (_noGpuMemory, null),
+    ]) {
+      expect(
+        await createImageGenerationDriver(
+          readGpuMemory: reader,
+        ).reportsDiscreteGpu(),
+        expected,
       );
     }
   });

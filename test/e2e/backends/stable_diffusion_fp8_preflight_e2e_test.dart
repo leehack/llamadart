@@ -106,6 +106,9 @@ final class _Driver implements ImageGenerationDriver {
     required bool runtimePicksGpu,
   }) async => (refuse: null, slower: null);
   @override
+  Future<bool?> reportsDiscreteGpu() async => null;
+
+  @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) {
     starts++;
     return StableDiffusionImageWorker.start(

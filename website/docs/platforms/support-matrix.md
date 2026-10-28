@@ -95,6 +95,14 @@ other image platforms and families have not been measured for this control.
 It adds no Web image runtime or approximate sampling cache. See
 [Conditioning cache](../guides/image-generation#conditioning-cache).
 
+Image module placement (`ImageModelPlacement`: text encoders or VAE on the
+CPU, `maxGpuMemoryGiB`, `autoFit`) applies to Metal and Vulkan engines and is
+measured with SD-Turbo on macOS arm64 Metal only; Vulkan and multi-GPU hosts
+have no evidence yet. A CPU engine (Android, the CPU builds,
+`ComputeDevice.cpu`) and the Web throw `LlamaUnsupportedException`, as does
+`maxGpuMemoryGiB` on Vulkan without a discrete GPU. See
+[Module placement](../guides/image-generation#module-placement-and-gpu-memory).
+
 Image editing uses `ImageEditingRequest` with copied decoded RGB and optional
 binary masks (255 edits, 0 preserves the latent). It is bounded to a single
 SD 2.x checkpoint with embedded full VAE on macOS CPU and the pinned SD v0.3.0-1
