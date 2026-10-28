@@ -9,6 +9,9 @@ stable-diffusion-native v0.3.0-1 runtime on macOS with the CPU or Metal and
 one native-detected SD 1.x or SD 2.x checkpoint with a header-detected
 embedded full VAE and no component overrides.
 
+**Status: qualified** on macOS arm64 CPU and Metal with SD 1.5 and SD-Turbo
+(2026-10-27; [measured results](#reproduce)). Only this recipe is admitted.
+
 ## Contract
 
 | Rule | Value |
@@ -111,4 +114,59 @@ Fixed acceptance gates, recorded before any hires output was observed:
 | Cancel in the second pass | Cancelled completion, then exact hires reuse |
 | Dispose/reload | Capability cleared then restored; exact hires RGB |
 
-RESULTS_PLACEHOLDER
+Measured inputs (2026-10-27, Apple M4 Max, macOS 26.7.1, Flutter 3.47.1;
+pinned runtime `stable-diffusion-native-runtime-macos-arm64-v0.3.0-1.tar.gz`,
+SHA-256 `79c3517b363e6509df17af4d20056ed6e47bbbd134681fb9321520702534cb40`,
+upstream `be486498eadc29dc3cd234d944c2180ed42b1415`):
+
+| File | Source | SHA-256 |
+| --- | --- | --- |
+| `v1-5-pruned-emaonly.safetensors` (4.0 GB, F32) | `stable-diffusion-v1-5/stable-diffusion-v1-5` @ `451f4fe16113bff5a5d2269ed5ad43b0592e9a14` | `6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa` |
+| `sd_turbo-f16-q8_0.gguf` (1.9 GB) | as in [image editing](image_editing.md) | `d50be7655f0a554cf8041c145d88b210bd5f3c545423119dee62ae08cae51580` |
+
+All gates passed on all four runs (`image-hires-fix`, `ComputeDevice.cpu`
+with default threads and `ComputeDevice.gpu` = `MTL0`). Exact RGB matched
+the direct-C reference for `base`, `final` and `hires` in every run, as did
+size vs scale, reset, post-cancel reuse and reload.
+
+| Run | Hires vs enlarged base MAE | Downscaled hires vs base MAE | Downscaled one-pass final vs base MAE | Second-pass steps reported |
+| --- | --- | --- | --- | --- |
+| SD 1.5, Metal | 20.15 | 20.30 | 58.69 | 8 (asked 8, strength 0.55) |
+| SD 1.5, CPU | 20.14 | 20.28 | 58.56 | 8 (asked 8, strength 0.55) |
+| SD-Turbo, Metal | 34.42 | 34.30 | 56.57 | 3 (asked 2, strength 0.5) |
+| SD-Turbo, CPU | 34.56 | 34.44 | 56.64 | 3 (asked 2, strength 0.5) |
+
+SD-Turbo's 3 second-pass steps for 2 asked are upstream's schedule
+(`steps / strength` = 4, tail of `trunc(4 × 0.5) + 1` = 3); the C reference
+reported the same totals. CPU and Metal hashes differ from each other, as
+for every image recipe.
+
+Latency from the Dart run (`ImageGenerationResult.elapsed`, model loaded,
+no other load on the host):
+
+| Run | `base` 512 | `final` 768 one-pass | `hires` 512 → 768 |
+| --- | --- | --- | --- |
+| SD 1.5, Metal | 23.4 s | 99.3 s | 88.9 s |
+| SD 1.5, CPU | 57.8 s | 169.2 s | 166.9 s |
+| SD-Turbo, Metal | 2.3 s | 5.5 s | 6.7 s |
+| SD-Turbo, CPU | 10.8 s | 26.3 s | 33.9 s |
+
+Peak memory of the direct-C reference, one process per mode
+(`/usr/bin/time -l` peak memory footprint; it leaves out Metal compute
+buffers):
+
+| Run | `base` | `final` | `hires` |
+| --- | --- | --- | --- |
+| SD 1.5, Metal | 5.30 GB | 5.30 GB | 5.33 GB |
+| SD 1.5, CPU | 4.74 GB | 6.93 GB | 6.93 GB |
+| SD-Turbo, Metal | 3.11 GB | 3.11 GB | 3.13 GB |
+| SD-Turbo, CPU | 3.86 GB | 6.05 GB | 6.06 GB |
+
+The second pass costs what an ordinary generation at the final size costs:
+peak memory matches the one-pass `final` within 0.03 GB, and hires latency
+is about the first pass plus a final-size pass of the second-pass steps. Memory checks at load use
+the model's weights, as for every request size.
+
+Other families (SDXL and newer), tiny decoders, component overrides, LoRA,
+iOS/Android/Linux/Windows/Web, Vulkan, model-based upscalers and custom
+sigmas remain unqualified or refused.
