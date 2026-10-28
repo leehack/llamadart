@@ -2393,6 +2393,7 @@ Future<Directory> _acquireBundleDirectory({
           cacheDir: cacheDir,
           cachedArchiveSha256: null,
           log: log,
+          cachedListMatchedArchive: true,
         );
       }
       if (cachedArchiveSha256 == expectedDigest.sha256) {
@@ -2634,8 +2635,8 @@ Future<List<String>> _cachedSidecarLibraryPaths({
 /// A copy cached beside the release's bundle caches is reused; otherwise the
 /// manifest is downloaded and cached there. A release that publishes none is
 /// recorded there as `assets.json.absent`, so builds in the next day need no
-/// network; an older record is re-checked, and kept when the check fails.
-/// Throws
+/// network; an older or future-dated record is re-checked, and kept and
+/// renewed when the check fails or returns something other than JSON. Throws
 /// [NativeHookContractException] when it requires an unsupported hook contract
 /// or cannot be read. When the caller can do without it, a manifest that
 /// cannot be downloaded instead passes the failure, its cause and the remedy
@@ -2663,10 +2664,14 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
   final absent = File('${cached.path}.absent');
   final recordedAbsent = !cached.existsSync() && absent.existsSync();
   // A release can publish assets.json after a build recorded it missing, so
-  // the record is re-checked once it is older than a day.
-  if (recordedAbsent &&
-      DateTime.now().difference(absent.statSync().modified) <
-          _absentManifestRecheckInterval) {
+  // the record is re-checked once it is older than a day. A record dated in
+  // the future would otherwise stay fresh until the clock passes it.
+  final recordAge = recordedAbsent
+      ? DateTime.now().difference(absent.statSync().modified)
+      : null;
+  if (recordAge != null &&
+      !recordAge.isNegative &&
+      recordAge < _absentManifestRecheckInterval) {
     log.info(
       '${nativeConfig.sourceLabel} publishes no assets.json (recorded at '
       '${absent.path}); treating it as hook contract 1.',
@@ -2691,6 +2696,18 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
       'https://github.com/${nativeConfig.repository}/releases/download/'
       '${nativeConfig.tag}/assets.json';
   final downloaded = File('${cached.path}.download');
+
+  // Renewing the record keeps every later offline build of the day from
+  // retrying the download.
+  Future<NativeReleaseManifest?> keepRecordedAbsent() async {
+    try {
+      absent.setLastModifiedSync(DateTime.now());
+    } on FileSystemException catch (error) {
+      log.warning('Could not renew ${absent.path} ($error).');
+    }
+    return null;
+  }
+
   try {
     try {
       await _downloadRuntimeBundle(
@@ -2719,7 +2736,7 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
           '${nativeConfig.sourceLabel} as hook contract 1, as recorded at '
           '${absent.path}.',
         );
-        return null;
+        return await keepRecordedAbsent();
       }
       final remedy =
           'To build without network access, put that release\'s assets.json '
@@ -2738,7 +2755,23 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
     try {
       text = utf8.decode(await downloaded.readAsBytes());
     } on FormatException {
+      if (recordedAbsent) {
+        log.warning(
+          '$source from $url is not UTF-8 text; still treating '
+          '${nativeConfig.sourceLabel} as hook contract 1, as recorded at '
+          '${absent.path}.',
+        );
+        return await keepRecordedAbsent();
+      }
       throw NativeHookContractException('$source is not UTF-8 text.');
+    }
+    if (recordedAbsent && !_isJsonText(text)) {
+      log.warning(
+        '$source from $url is not JSON, such as a network block page; still '
+        'treating ${nativeConfig.sourceLabel} as hook contract 1, as recorded '
+        'at ${absent.path}.',
+      );
+      return await keepRecordedAbsent();
     }
     final manifest = parseNativeReleaseManifest(
       text,
@@ -2764,6 +2797,15 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
   }
 }
 
+bool _isJsonText(String text) {
+  try {
+    jsonDecode(text);
+    return true;
+  } on FormatException {
+    return false;
+  }
+}
+
 /// The SHA-256 a llama.cpp archive must have: the pin for the default release,
 /// or the release's own `SHA256SUMS` entry for a tag or repository override.
 ///
@@ -2773,6 +2815,9 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
 /// for later builds. Callers fetch a fresh list before downloading, so a
 /// download is never checked against the cached list. The cached list is no
 /// less trusted than the cached `extracted/` bundle, which is reused as is.
+/// [cachedListMatchedArchive] marks the fetch that follows an incomplete
+/// archive the cached list matched, whose failure must not ask for the list
+/// to be pre-seeded.
 Future<({String sha256, String source, bool cached})>
 _expectedNativeArchiveDigest({
   required _NativeBundleConfig nativeConfig,
@@ -2781,6 +2826,7 @@ _expectedNativeArchiveDigest({
   required String cacheDir,
   required String? cachedArchiveSha256,
   required Logger log,
+  bool cachedListMatchedArchive = false,
 }) async {
   if (nativeConfig.tag == llamaCppTag &&
       nativeConfig.repository == _nativeRepoSlug) {
@@ -2852,6 +2898,14 @@ _expectedNativeArchiveDigest({
           '404), so the hook cannot verify $archiveName. Use a release that '
           'publishes SHA256SUMS, or set $nativePathUserDefineKey to a local '
           'bundle you trust.',
+        );
+      }
+      if (cachedListMatchedArchive) {
+        throw NativeArchiveDigestException(
+          'Could not download $url to re-check $archiveName: $error. The '
+          'cached SHA256SUMS at ${checksumFile.path} lists the cached archive, '
+          'which lacks runtime libraries. Build again online, or set '
+          '$nativePathUserDefineKey to a local bundle you trust.',
         );
       }
       final rejectedCache = cachedListRejection == null
