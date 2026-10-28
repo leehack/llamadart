@@ -1027,7 +1027,15 @@ void main() {
       final handle = await File(
         path.join(entryDirectory().path, 'metadata.json'),
       ).open();
-      addTearDown(handle.close);
+      var open = true;
+      Future<void> close() async {
+        if (open) {
+          open = false;
+          await handle.close();
+        }
+      }
+
+      addTearDown(close);
 
       await expectLater(
         manager.remove(source().cacheKey),
@@ -1037,7 +1045,7 @@ void main() {
         File(path.join(entryDirectory().path, 'metadata.json')).existsSync(),
         isTrue,
       );
-      await handle.close();
+      await close();
       await manager.remove(source().cacheKey);
       expect(entryDirectory().existsSync(), isFalse);
     }, skip: Platform.isWindows ? null : 'a sharing violation is Windows-only');
