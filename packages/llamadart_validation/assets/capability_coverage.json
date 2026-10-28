@@ -161,7 +161,8 @@
     },
     {
       "surfaces": [
-        "matrix:Pre-load check (`checkLoad`)"
+        "api:LlamaEngine.checkLoad",
+        "matrix:Pre-load check"
       ],
       "exemption": {
         "id": "pre-load-check",
