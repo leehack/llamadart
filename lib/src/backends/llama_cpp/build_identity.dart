@@ -14,13 +14,17 @@ const String minimumBuildIdentityNativeRelease = 'v0.7.0-3';
 /// The string is a constant of the library, and the call touches no llama.cpp
 /// object, so it needs no exit-teardown guard. On Windows the `llama_dart_`
 /// functions are in llamadart.dll, not in the llama.dll the bindings default
-/// to.
-String? readNativeBuildIdentity({required bool isWindows}) {
+/// to. [call] replaces the native function and, like a runtime without the
+/// symbol, throws [ArgumentError] to report it missing.
+String? readNativeBuildIdentity({
+  required bool isWindows,
+  Pointer<Char> Function()? call,
+}) {
   final Pointer<Char> identity;
   try {
-    identity = isWindows
-        ? _wrapperBuildIdentity()
-        : llama_dart_build_identity();
+    identity =
+        (call ??
+        (isWindows ? _wrapperBuildIdentity : llama_dart_build_identity))();
   } on ArgumentError {
     return null;
   }

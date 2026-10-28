@@ -116,6 +116,55 @@ void main() async {
     expect(restored.tokens, tokens);
   });
 
+  test(
+    'a failed load stops prefix reuse of the cleared cache (#1491)',
+    () async {
+      final longPrompt = List.filled(
+        20,
+        'Lily lived in a red house beside a forest with a small brown rabbit.',
+      ).join(' ');
+      const prompt = 'Once upon a time there was a';
+      const suffix = ' little girl';
+      final large = LlamaEngine(LlamaBackend());
+      addTearDown(large.dispose);
+      await large.loadModel(
+        modelFile.path,
+        modelParams: const ModelParams(contextSize: 1024),
+      );
+      // More cells than the 256-token context holds: llama.cpp accepts the
+      // empty token list, clears the KV cache, then rejects the file.
+      expect(await large.tokenize(longPrompt), hasLength(greaterThan(256)));
+      await large.scoreNextToken(longPrompt, topK: 1, reusePromptPrefix: false);
+      final oversizedPath = '${tmpDir.path}/oversized-cells.bin';
+      expect(
+        await large.stateSaveFile(oversizedPath, tokens: const []),
+        isTrue,
+      );
+
+      await engine.scoreNextToken(prompt, topK: 1, reusePromptPrefix: false);
+      await expectLater(
+        engine.stateLoadFile(oversizedPath, tokenCapacity: 256),
+        throwsA(isA<LlamaStateException>()),
+      );
+      final afterFailure = await engine.scoreNextToken(
+        prompt + suffix,
+        topK: 4,
+        reusePromptPrefix: true,
+      );
+      final fresh = await engine.scoreNextToken(
+        prompt + suffix,
+        candidates: [for (final token in afterFailure.top) token.token],
+        reusePromptPrefix: false,
+      );
+      for (var i = 0; i < afterFailure.top.length; i++) {
+        expect(
+          afterFailure.top[i].logprob,
+          closeTo(fresh.candidates[i].logprob, 0.01),
+          reason: 'token ${afterFailure.top[i].token}',
+        );
+      }
+    },
+  );
   test('rejects token capacity larger than context size', () async {
     final unusedPath = '${tmpDir.path}/oversized-capacity.bin';
     expect(

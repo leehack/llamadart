@@ -31,6 +31,7 @@ void main() {
       expect(base.matches(other), isFalse, reason: '$other');
       expect(other.matches(base), isFalse, reason: '$other');
       expect(base == other, isFalse, reason: '$other');
+      expect(other.hashCode, isNot(base.hashCode), reason: '$other');
     }
   });
 

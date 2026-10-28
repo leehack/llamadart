@@ -559,6 +559,8 @@ void main() {
         'n_seq_max': (p) => p.n_seq_max = p.n_seq_max + 1,
         'kv_unified': (p) => p.kv_unified = !p.kv_unified,
         'swa_full': (p) => p.swa_full = !p.swa_full,
+        'rope_freq_base': (p) => p.rope_freq_base = 1000,
+        'rope_freq_scale': (p) => p.rope_freq_scale = 0.5,
       };
       final digests = <String>{base};
       for (final MapEntry(:key, :value) in changes.entries) {
@@ -567,6 +569,35 @@ void main() {
         digests.add(digest);
       }
       expect(digests, hasLength(changes.length + 1));
+    });
+
+    test('pins the version 2 encoding and its digest', () {
+      final c = calloc<llama_context_params>();
+      try {
+        c.ref = llama_context_default_params();
+        c.ref
+          ..type_k = ggml_type.GGML_TYPE_F16
+          ..type_v = ggml_type.GGML_TYPE_Q8_0
+          ..flash_attn_type =
+              llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_ENABLED
+          ..n_seq_max = 2
+          ..kv_unified = true
+          ..swa_full = false
+          ..rope_freq_base = 10000
+          ..rope_freq_scale = 0.25;
+        const encoding =
+            'llamadart-state-context/2;type_k=GGML_TYPE_F16;'
+            'type_v=GGML_TYPE_Q8_0;flash_attn=LLAMA_FLASH_ATTN_TYPE_ENABLED;'
+            'n_seq_max=2;kv_unified=true;swa_full=false;'
+            'rope_freq_base=10000.0;rope_freq_scale=0.25';
+        expect(stateContextConfigEncoding(c.ref), encoding);
+        expect(
+          stateContextConfigDigest(c.ref),
+          '0a3035d07e11d509527c587268e60af51b99d35c026d8a7392ab558dd5435a9a',
+        );
+      } finally {
+        calloc.free(c);
+      }
     });
 
     test('ignores context size, batch, threads and offload', () {

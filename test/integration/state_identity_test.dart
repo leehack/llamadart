@@ -112,4 +112,23 @@ void main() {
       },
     );
   }
+  // Audit repro: a different RoPE base gave a matching identity, loaded, and
+  // resumed scores diverged from a fresh evaluation by about 2.6 nats.
+  test('a different RoPE frequency base changes the identity', () async {
+    Future<LlamaStateIdentity> identityWith(ModelParams params) async {
+      final engine = LlamaEngine(LlamaBackend());
+      try {
+        await engine.loadModel(modelFile.path, modelParams: params);
+        return await engine.stateIdentity();
+      } finally {
+        await engine.dispose();
+      }
+    }
+
+    const params = ModelParams(contextSize: 256, gpuLayers: 0);
+    final base = await identityWith(params);
+    final rope = await identityWith(params.copyWith(ropeFrequencyBase: 1000));
+    expect(rope.runtimeBuild, base.runtimeBuild);
+    expect(rope.matches(base), isFalse);
+  });
 }

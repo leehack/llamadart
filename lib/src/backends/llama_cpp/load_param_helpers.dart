@@ -132,24 +132,33 @@ FlashAttention applyContextParams(
   return resolvedFlashAttn;
 }
 
-/// The SHA-256 hex digest of the [ctxParams] fields that change the layout
-/// of a saved llama.cpp state: K and V cache types, flash-attention mode,
-/// sequence count, unified KV and full-size SWA cache.
+/// The canonical encoding of the [ctxParams] fields that change the layout
+/// or the content of a saved llama.cpp state: K and V cache types,
+/// flash-attention mode, sequence count, unified KV, full-size SWA cache, and
+/// the RoPE frequency base and scale written into the params (0 keeps the
+/// model's value).
 ///
 /// The flash-attention mode is the requested one: llama.cpp resolves `auto`
 /// per device, and rejects a state whose V cache transposition differs.
-String stateContextConfigDigest(llama_context_params ctxParams) {
-  final fields = [
-    'llamadart-state-context/1',
-    'type_k=${ctxParams.type_k.name}',
-    'type_v=${ctxParams.type_v.name}',
-    'flash_attn=${ctxParams.flash_attn_type.name}',
-    'n_seq_max=${ctxParams.n_seq_max}',
-    'kv_unified=${ctxParams.kv_unified}',
-    'swa_full=${ctxParams.swa_full}',
-  ];
-  return sha256.convert(utf8.encode(fields.join(';'))).toString();
-}
+/// llama.cpp does not check RoPE settings, and keys saved under other ones
+/// restore without error but score wrongly. Changing a field or its spelling
+/// needs a new version tag.
+String stateContextConfigEncoding(llama_context_params ctxParams) => [
+  'llamadart-state-context/2',
+  'type_k=${ctxParams.type_k.name}',
+  'type_v=${ctxParams.type_v.name}',
+  'flash_attn=${ctxParams.flash_attn_type.name}',
+  'n_seq_max=${ctxParams.n_seq_max}',
+  'kv_unified=${ctxParams.kv_unified}',
+  'swa_full=${ctxParams.swa_full}',
+  'rope_freq_base=${ctxParams.rope_freq_base}',
+  'rope_freq_scale=${ctxParams.rope_freq_scale}',
+].join(';');
+
+/// The SHA-256 hex digest of [stateContextConfigEncoding].
+String stateContextConfigDigest(llama_context_params ctxParams) => sha256
+    .convert(utf8.encode(stateContextConfigEncoding(ctxParams)))
+    .toString();
 
 /// The context parameters a speculative session creates its draft context
 /// from, for a target context created with [targetParams].

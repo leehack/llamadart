@@ -2927,12 +2927,15 @@ class LlamaEngine {
   /// The identity of the state [stateSaveFile] writes and [stateLoadFile]
   /// reads on the loaded model's context.
   ///
-  /// [stateLoadFile] checks only the file's llama.cpp magic and session
-  /// version, which stay the same when the runtime or context settings
-  /// change. Store this identity with a state file, and before loading a
+  /// [stateLoadFile] checks the file's llama.cpp magic, session version and
+  /// KV cache layout, but not the runtime build that wrote it or its RoPE
+  /// settings. Store this identity with a state file, and before loading a
   /// file that another process saved, check that the stored identity
   /// [LlamaStateIdentity.matches] the loading engine's. Store a digest of the
-  /// model file with it too: the identity does not name the model.
+  /// model file, its adapters and projector with it too: the identity does
+  /// not name the model. A matching file can still fail to load, for
+  /// example when flash attention `auto` resolves differently on another
+  /// device; handle [LlamaStateException] by evaluating the prompt again.
   ///
   /// Supported on native llama.cpp from `llamadart-native` `v0.7.0-3`, which
   /// reports its build identity. Throws [LlamaUnsupportedException] when the
