@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:code_assets/code_assets.dart' as code_assets;
 import 'package:hooks/hooks.dart';
@@ -14,29 +15,49 @@ import 'hook_core_version.dart';
 /// tests that built in this checkout would leave their fake bundles in the
 /// cache that real builds reuse, so they build here instead.
 class HookProjectRoot {
-  HookProjectRoot._(this.directory);
+  HookProjectRoot._(this._coreVersion, this._root);
 
-  /// Creates a root holding only the `pubspec.yaml` the hook reads.
-  factory HookProjectRoot.create() {
-    final directory = Directory.systemTemp.createTempSync('hook_project_');
-    File(path.join(directory.path, 'pubspec.yaml')).writeAsStringSync(
-      'name: llamadart\nversion: ${readCheckoutCoreVersion()}\n',
+  /// Describes a root holding only the `pubspec.yaml` the hook reads, declaring
+  /// [coreVersion] or, when `null`, this checkout's core version.
+  ///
+  /// Only the path is chosen here. The directory appears on first use of
+  /// [directory] or a build, so a test file whose tests are all filtered out
+  /// leaves nothing behind.
+  factory HookProjectRoot.create({String? coreVersion}) {
+    final temp = Directory.systemTemp.resolveSymbolicLinksSync();
+    final suffix = Random.secure().nextInt(1 << 32).toRadixString(36);
+    return HookProjectRoot._(
+      coreVersion,
+      Directory(path.join(temp, 'hook_project_$suffix')),
     );
-    return HookProjectRoot._(Directory(directory.resolveSymbolicLinksSync()));
   }
 
+  final String? _coreVersion;
+  final Directory _root;
+
   /// The package root, and the working directory the hook sees.
-  final Directory directory;
+  Directory get directory {
+    final pubspec = File(path.join(_root.path, 'pubspec.yaml'));
+    if (!pubspec.existsSync()) {
+      pubspec.parent.createSync(recursive: true);
+      pubspec.writeAsStringSync(
+        'name: llamadart\n'
+        'version: ${_coreVersion ?? readCheckoutCoreVersion()}\n',
+      );
+    }
+    return _root;
+  }
 
   /// The absolute path of [relative] below the package root.
-  String resolve(String relative) => path.join(directory.path, relative);
+  String resolve(String relative) => path.join(_root.path, relative);
 
   /// Runs [body] with [Directory.current] at the package root.
   Future<T> run<T>(Future<T> Function() body) =>
       IOOverrides.runZoned(body, getCurrentDirectory: () => directory);
 
+  /// Removes the package root if it was ever created.
   void delete() {
-    if (directory.existsSync()) directory.deleteSync(recursive: true);
+    if (_root.existsSync()) _root.deleteSync(recursive: true);
   }
 
   /// [code_assets.testCodeBuildHook] with its package root at [directory].
