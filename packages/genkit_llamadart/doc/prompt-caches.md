@@ -1,4 +1,4 @@
-# Same-process native raw-prompt caches
+# Native raw-prompt caches
 
 `LlamaDartRuntimeOwner.cachePrompt` evaluates a raw prompt afresh and returns an
 opaque `LlamaDartPromptCache`. `generateFromCache` restores it and generates from
@@ -31,9 +31,10 @@ Future<String> cachedCompletion(String modelPath, String prompt) async {
 
 ## Identity and ownership
 
-Handles belong to one pool and process lifetime. Different pools cannot exchange
-them, even with the same file path. They cannot be serialized, exported or
-accepted as remote client input. Default native runtimes in the same process use
+Handles belong to one pool. Different pools cannot exchange them, even with the
+same file path. They are never accepted as remote client input. Only a pool that
+also opts into export can carry one to another process (see
+[Export to another process](#export-to-another-process)). Default native runtimes in the same process use
 the same loaded native build; each owner verifies the GGUF SHA-256 before/after
 loading and before save/restore. Keep model files immutable for the whole loaded
 lifetime. Context parameters are fixed by the pool. No user-supplied compatibility
@@ -58,7 +59,8 @@ remains separate work.
 Sensitive KV bytes and the raw prompt are retained in memory behind the handle.
 Native file APIs use a unique temporary directory, deleted before an operation
 returns or publishes a handle. File paths are never public API inputs or outputs.
-There is no persistent manifest, cross-process restore or disk-storage promise.
+Without export there is no persistent manifest, cross-process restore or
+disk-storage promise.
 OS-level termination can leave temporary files; the application controls its
 process/temp-storage policy and encryption requirements.
 
@@ -77,6 +79,59 @@ Native, identity, quota and restore failures also close that owner; valid handle
 and other owners are unchanged. Native state errors are sanitized. Keep raw
 prompts, cache bytes, model paths and token IDs out of application telemetry.
 
+## Export to another process
+
+A pool created with `enablePromptCacheExport: true` (which requires
+`enablePromptCache: true`) can export a cache and import it in another process:
+
+```dart
+import 'dart:typed_data';
+
+import 'package:genkit_llamadart/genkit_llamadart.dart';
+
+Future<Uint8List> exportPrompt(LlamaDartRuntimeOwner owner, String prompt) async {
+  final cache = await owner.cachePrompt(prompt);
+  try {
+    return cache.exportBytes();
+  } finally {
+    cache.dispose();
+  }
+}
+
+Future<String> resumePrompt(
+  LlamaDartRuntimeOwner owner,
+  Uint8List exported,
+  String prompt,
+) async {
+  final cache = await owner.importPromptCache(exported, prompt: prompt);
+  try {
+    return await owner.generateFromCache(cache,
+      params: const GenerationParams(maxTokens: 32, temp: 0));
+  } finally {
+    cache.dispose();
+  }
+}
+```
+
+The export is a versioned envelope: the native `LlamaStateIdentity` (runtime
+build, session format, context size and a digest of the state-layout context
+settings), the model file's SHA-256, the prompt tokens, the native state and its
+SHA-256. It does not contain the prompt; the application stores the prompt and
+supplies it again. The tokens and state still reveal the prompt, so store and
+encrypt exports as you store prompts. The application owns paths and storage.
+
+Import refuses, with `LlamaDartPromptCacheImportException` and its `failure`,
+bytes that are altered or truncated (`corrupt`), of another format version
+(`unsupportedVersion`), from another model file (`modelMismatch`), from another
+runtime build or state-layout settings (`identityMismatch`), whose tokens differ
+from the supplied prompt's (`tokenMismatch`), or beyond the pool's handle or
+byte limits (`overBudget`). Messages hold no path, prompt or token, and a
+refusal leaves the owner open. The checksum detects damage, not tampering:
+import only exports your application stored. Nothing is restored until
+`generateFromCache`. Caching a prompt in an export pool reads the native state
+identity, which needs llamadart-native `v0.7.0-3` or newer; other runtimes
+reject it as unsupported.
+
 ## Qualified behavior
 
 The native proof uses published llamadart 0.13.0/native `v0.6.0-3`, macOS arm64 CPU,
@@ -89,6 +144,12 @@ The same bounded proof passed again on 2026-10-18 with published llamadart
 0.15.0/native `v0.7.0-1` on macOS arm64 CPU. This retains the original fixture
 and scope; it does not extend qualification to other devices or backends.
 
+Export and import were qualified on 2026-10-27 with checkout llamadart (core
+`stateIdentity`) and native `v0.7.0-3` on macOS arm64 CPU, with the same fixture
+and controls: a separate process exports, the importing owners restore it with
+the expected cached-token reuse and fresh-output parity, interleaved with
+another owner, and every refusal above leaves its owner open.
+
 Native restore re-evaluates the final token for logits. Automatic batching is a
 numerical-tolerance contract and can change greedy output. Batch 1 is a test
 control, not a performance recommendation. Cache reuse is demonstrated; no
@@ -97,6 +158,7 @@ costs. GPU, other platforms and other model families are unqualified.
 
 ```bash
 LLAMADART_RUN_PROMPT_CACHE_PROOF=1 LLAMADART_AUTO_DOWNLOAD_TEST_MODELS=1 \
-dart test test/integration/genkit/runtime/real_model_prompt_cache_test.dart -j 1
+dart test test/integration/genkit/runtime/real_model_prompt_cache_test.dart \
+  test/integration/genkit/runtime/real_model_prompt_cache_export_test.dart -j 1
 dart run example/genkit_llamadart_prompt_cache_example.dart
 ```

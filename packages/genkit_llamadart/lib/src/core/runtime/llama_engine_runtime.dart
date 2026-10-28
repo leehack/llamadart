@@ -105,6 +105,8 @@ class LlamaEngineRuntime
     return tokens;
   }
 
+  Future<llama.LlamaStateIdentity> stateIdentity() => _engine.stateIdentity();
+
   Future<List<int>> loadPromptCache(String path, int tokenCapacity) async =>
       (await _engine.stateLoadFile(path, tokenCapacity: tokenCapacity)).tokens;
 

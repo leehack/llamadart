@@ -100,10 +100,14 @@ description: >-
   usage object as proof of token measurements. See [observability](../../doc/observability.md).
 - Genkit retains output reasoning in history, but the adapter omits incoming
   reasoning from model prompts. Reasoning replay is not qualified.
-- Opt-in same-process raw-prompt caches use `LlamaDartRuntimePool(enablePromptCache: true)`,
-  `owner.cachePrompt` and `owner.generateFromCache`. Handles stay in one pool/process;
-  only default native GGUF owners without projectors/LoRA are supported. No chat,
-  RNG or cross-process checkpoint is implied. See `doc/prompt-caches.md`.
+- Opt-in raw-prompt caches use `LlamaDartRuntimePool(enablePromptCache: true)`,
+  `owner.cachePrompt` and `owner.generateFromCache`. Handles stay in one pool;
+  only default native GGUF owners without projectors/LoRA are supported. With
+  `enablePromptCacheExport: true`, `cache.exportBytes()` and
+  `owner.importPromptCache(bytes, prompt: prompt)` carry one to another process;
+  catch `LlamaDartPromptCacheImportException` and evaluate the prompt again on
+  any `failure`. The app stores and encrypts exports. No chat or RNG checkpoint
+  is implied. See `doc/prompt-caches.md`.
 - Experimental `generateBidi` text sessions require the separate
   `package:genkit_llamadart/experimental.dart` import and `LlamaDartBidiPlugin`.
   Use `llamadart-bidi/<name>`, await one complete response before the next send,

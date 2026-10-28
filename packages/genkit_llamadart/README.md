@@ -18,7 +18,7 @@ embedding model. See [runtime support](https://github.com/leehack/llamadart/blob
 
 ## Install
 
-Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.16.x.
+Requires Dart 3.12 or newer, Genkit 1.x and llamadart 0.17.x.
 
 ```bash
 dart pub add genkit genkit_llamadart
@@ -30,8 +30,8 @@ platform setup. Apple apps using Swift Package Manager need the runtime
 companion matching their model family:
 
 ```bash
-flutter pub add 'llamadart_llama_cpp_flutter:^0.16.0'
-flutter pub add 'llamadart_litert_lm_flutter:^0.16.0'
+flutter pub add 'llamadart_llama_cpp_flutter:^0.17.0'
+flutter pub add 'llamadart_litert_lm_flutter:^0.17.0'
 ```
 
 Choose the GGUF companion, the LiteRT-LM companion, or both if your app uses
@@ -151,7 +151,7 @@ For request cancellation, pass a Genkit `CancellationController` token. See
 | Batch transcription, speech synthesis and image generation | Loaded native typed engines; [speech/image guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/media-models.md) |
 | Choice, score and yes/no decisions | Experimental Laya encoder/head; native CPU [Genkit flow recipe](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/decision-flows.md) |
 | Dedicated raw-prompt contexts and live LoRA | Application-owned native runtimes; [owner guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/runtime-owners.md) |
-| Same-process raw-prompt caches | Opt-in default native owners; [cache limits](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/prompt-caches.md); no general chat checkpoints |
+| Raw-prompt caches | Opt-in default native owners; opt-in export to another process with identity, model and token checks; [cache limits](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/prompt-caches.md); no general chat checkpoints |
 | Experimental text sessions | Separate `experimental.dart` entry point; bounded native [Genkit bidi sessions](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/bidi-sessions.md) |
 | Token counts and loaded runtime diagnostics | Explicit inspection without inference; [inspection guide](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-inspection.md) |
 | Downloads, cache and progress UI | `ModelSource` and preparation tasks; [model preparation](https://github.com/leehack/llamadart/blob/main/packages/genkit_llamadart/doc/model-preparation.md) |

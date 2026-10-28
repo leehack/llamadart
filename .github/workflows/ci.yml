@@ -131,7 +131,7 @@ jobs:
           sdk: 3.12.0
       - name: Resolve independent minimum dependencies
         working-directory: packages/genkit_llamadart
-        run: dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.16.0 schemantic@1.0.0
+        run: dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.17.0 schemantic@1.0.0
       - name: Analyze and test
         working-directory: packages/genkit_llamadart
         run: |

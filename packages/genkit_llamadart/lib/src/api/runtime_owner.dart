@@ -6,8 +6,10 @@ import 'package:llamadart/llamadart.dart' as llama;
 
 import '../core/runtime/llama_engine_runtime.dart';
 import '../core/runtime/llama_runtime.dart';
+import '../core/runtime/prompt_cache_envelope.dart';
 import '../core/runtime/prompt_cache_files.dart';
 import 'model_definition.dart';
+import 'prompt_cache_import_exception.dart';
 
 part 'runtime_prompt_cache.dart';
 
@@ -31,12 +33,15 @@ final class LlamaDartRuntimePool {
   /// and report supported llama.cpp capabilities. Reused runtime objects are
   /// rejected. Custom factories own observer installation and backend isolation;
   /// separate object identities alone cannot prove independent native contexts.
+  ///
+  /// [enablePromptCacheExport] requires [enablePromptCache].
   LlamaDartRuntimePool({
     required LlamaModelDefinition model,
     this.maxOwners = 2,
     this.maxQueuedOperations = 8,
     this.idleTimeout = const Duration(minutes: 5),
     this.enablePromptCache = false,
+    this.enablePromptCacheExport = false,
     this.maxPromptCaches = 2,
     this.maxPromptCacheBytes = 64 * 1024 * 1024,
     LlamaDartRuntimeFactory? runtimeFactory,
@@ -63,6 +68,9 @@ final class LlamaDartRuntimePool {
         maxPromptCaches < 1 ||
         maxPromptCacheBytes < 1) {
       throw ArgumentError('Runtime pool limits must be positive.');
+    }
+    if (enablePromptCacheExport && !enablePromptCache) {
+      throw ArgumentError('Prompt cache export requires enablePromptCache.');
     }
     final snapshot = List<llama.LlamaEngineObserver>.unmodifiable(observers);
     _factory = runtimeFactory ?? () => LlamaEngineRuntime(observers: snapshot);
@@ -93,6 +101,15 @@ final class LlamaDartRuntimePool {
   /// Caches cannot cross pools, processes, builds, adapters or model identities.
   /// Projectors, load-time/live LoRA and custom runtimes are unsupported.
   final bool enablePromptCache;
+
+  /// Enables [LlamaDartPromptCache.exportBytes] and
+  /// [LlamaDartRuntimePromptCache.importPromptCache] for this pool's caches.
+  ///
+  /// A second opt-in because an export leaves the process: it holds the
+  /// prompt's tokens and native KV state, which the application must store
+  /// and protect. Caching a prompt also reads the runtime's state identity,
+  /// which needs llamadart-native `v0.7.0-3` or newer.
+  final bool enablePromptCacheExport;
 
   /// Maximum retained/in-progress prompt cache handles in this pool.
   final int maxPromptCaches;

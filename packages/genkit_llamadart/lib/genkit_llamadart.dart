@@ -106,3 +106,5 @@ export 'src/api/runtime_owner.dart'
         LlamaDartRuntimeOwner,
         LlamaDartPromptCache,
         LlamaDartRuntimePromptCache;
+export 'src/api/prompt_cache_import_exception.dart'
+    show LlamaDartPromptCacheImportException, LlamaDartPromptCacheImportFailure;

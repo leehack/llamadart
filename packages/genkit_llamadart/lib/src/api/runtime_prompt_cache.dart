@@ -1,16 +1,20 @@
 part of 'runtime_owner.dart';
 
-/// Opaque same-process cache of one evaluated raw prompt, owned by one pool.
+/// Opaque cache of one evaluated raw prompt, owned by one pool.
 ///
-/// Created by [LlamaDartRuntimePromptCache.cachePrompt]. It contains sensitive native KV
-/// bytes and a prompt in memory; there is no export, file-path or serialization
-/// API. It survives owner close, but cannot cross pools or process lifetimes.
-/// This is not a chat checkpoint and contains no message history or sampler/RNG.
+/// Created by [LlamaDartRuntimePromptCache.cachePrompt] or
+/// [LlamaDartRuntimePromptCache.importPromptCache]. It contains sensitive
+/// native KV bytes and a prompt in memory, and has no file-path API. It
+/// survives owner close, but cannot cross pools. Only a pool with
+/// [LlamaDartRuntimePool.enablePromptCacheExport] can carry it to another
+/// process, through [exportBytes]. This is not a chat checkpoint and contains
+/// no message history or sampler/RNG.
 final class LlamaDartPromptCache {
   LlamaDartPromptCache._(
     this._pool,
     this._prompt,
     this._identity,
+    this._stateIdentity,
     List<int> tokens,
     List<int> bytes,
   ) : tokenCount = tokens.length,
@@ -20,6 +24,7 @@ final class LlamaDartPromptCache {
   final LlamaDartRuntimePool _pool;
   String? _prompt;
   final String _identity;
+  final llama.LlamaStateIdentity? _stateIdentity;
   List<int>? _tokens;
   Uint8List? _bytes;
 
@@ -28,6 +33,39 @@ final class LlamaDartPromptCache {
 
   /// Whether this handle has released its retained prompt and native state.
   bool get isDisposed => _bytes == null;
+
+  /// A versioned export of this cache for
+  /// [LlamaDartRuntimePromptCache.importPromptCache] in another process.
+  ///
+  /// It holds the native runtime's [llama.LlamaStateIdentity], the model
+  /// file's SHA-256, the prompt's tokens and the native KV state, but not the
+  /// prompt itself. The tokens and state reveal the prompt: store and
+  /// encrypt the bytes as the application stores the prompt. Importing checks
+  /// their integrity, not who wrote them; import only bytes your own
+  /// application stored.
+  ///
+  /// Throws [llama.LlamaUnsupportedException] unless the pool enables
+  /// [LlamaDartRuntimePool.enablePromptCacheExport], and
+  /// [llama.LlamaStateException] once the handle is disposed.
+  Uint8List exportBytes() {
+    final identity = _stateIdentity;
+    if (identity == null) {
+      throw llama.LlamaUnsupportedException(
+        'Prompt cache export requires LlamaDartRuntimePool(enablePromptCacheExport: true).',
+      );
+    }
+    final bytes = _bytes;
+    final tokens = _tokens;
+    if (bytes == null || tokens == null) {
+      throw llama.LlamaStateException('The prompt cache is disposed.');
+    }
+    return PromptCacheEnvelope(
+      identity: identity,
+      modelSha256: _identity,
+      tokens: tokens,
+      state: bytes,
+    ).encode();
+  }
 
   /// Releases retained state and pool admission; terminal and idempotent.
   ///
@@ -83,6 +121,9 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
           final bytes = await readPromptCache(path, pool.maxPromptCacheBytes);
           return (tokens, bytes);
         });
+        final stateIdentity = pool.enablePromptCacheExport
+            ? await runtime.stateIdentity()
+            : null;
         _checkCancellation(cancellation);
         if (saved.$2.length >
             pool.maxPromptCacheBytes - pool._promptCacheBytes) {
@@ -94,6 +135,7 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
           pool,
           prompt,
           _modelIdentity!,
+          stateIdentity,
           saved.$1,
           saved.$2,
         );
@@ -104,6 +146,90 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
         pool._pendingPromptCaches--;
       }
     }, cancellation: cancellation);
+  }
+
+  /// Accepts [bytes] from [LlamaDartPromptCache.exportBytes] as a cache of
+  /// [prompt] in this owner's pool.
+  ///
+  /// Requires [LlamaDartRuntimePool.enablePromptCacheExport]. The export must
+  /// be intact and of a supported version, come from the same model file
+  /// (SHA-256), match this owner's native [llama.LlamaStateIdentity] (runtime
+  /// build, session format, context size and state-layout settings), hold
+  /// exactly the tokens [prompt] tokenizes to, and fit the pool's handle and
+  /// byte limits. A refusal throws [LlamaDartPromptCacheImportException]
+  /// naming the failed check, with no path, prompt or token in its message,
+  /// and leaves this owner open.
+  ///
+  /// Nothing is restored into the context until [generateFromCache]. Failure
+  /// to read the owner's identity or tokens closes the owner, as
+  /// [cachePrompt] does.
+  Future<LlamaDartPromptCache> importPromptCache(
+    Uint8List bytes, {
+    required String prompt,
+    genkit.CancellationToken? cancellation,
+  }) async {
+    if (prompt.isEmpty) {
+      throw ArgumentError('The raw prompt must not be empty.');
+    }
+    final pool = _pool;
+    if (!pool.enablePromptCacheExport) {
+      throw llama.LlamaUnsupportedException(
+        'Prompt cache import requires LlamaDartRuntimePool(enablePromptCacheExport: true).',
+      );
+    }
+    final envelope = PromptCacheEnvelope.decode(bytes);
+    if (envelope.modelSha256 != _modelIdentity) {
+      throw LlamaDartPromptCacheImportException(
+        LlamaDartPromptCacheImportFailure.modelMismatch,
+        'The prompt cache export was saved from a different model file.',
+      );
+    }
+    _checkImportBudget(envelope.state.length);
+    final local = await _run((_) async {
+      final runtime = _promptCacheRuntime();
+      await _verifyPromptModel();
+      return (
+        identity: await runtime.stateIdentity(),
+        tokens: await runtime.tokenize(prompt, addSpecial: true),
+      );
+    }, cancellation: cancellation);
+    if (!envelope.identity.matches(local.identity)) {
+      throw LlamaDartPromptCacheImportException(
+        LlamaDartPromptCacheImportFailure.identityMismatch,
+        'The prompt cache export was saved by a different native runtime '
+        'build or with different state-layout context settings.',
+      );
+    }
+    if (!_sameTokens(envelope.tokens, local.tokens)) {
+      throw LlamaDartPromptCacheImportException(
+        LlamaDartPromptCacheImportFailure.tokenMismatch,
+        'The prompt does not match the exported prompt tokens.',
+      );
+    }
+    _checkImportBudget(envelope.state.length);
+    final cache = LlamaDartPromptCache._(
+      pool,
+      prompt,
+      _modelIdentity!,
+      envelope.identity,
+      envelope.tokens,
+      envelope.state,
+    );
+    pool._promptCaches.add(cache);
+    pool._promptCacheBytes += envelope.state.length;
+    return cache;
+  }
+
+  void _checkImportBudget(int stateBytes) {
+    final pool = _pool;
+    if (pool._promptCaches.length + pool._pendingPromptCaches >=
+            pool.maxPromptCaches ||
+        stateBytes > pool.maxPromptCacheBytes - pool._promptCacheBytes) {
+      throw LlamaDartPromptCacheImportException(
+        LlamaDartPromptCacheImportFailure.overBudget,
+        'The prompt cache export exceeds the pool prompt cache limits.',
+      );
+    }
   }
 
   /// Restores [cache] and generates from its original raw prompt atomically.
@@ -146,10 +272,7 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
       await withPromptCacheFile((path) async {
         await writePromptCache(path, bytes);
         final tokens = await runtime.loadPromptCache(path, cache.tokenCount);
-        if (tokens.length != expectedTokens.length ||
-            Iterable<int>.generate(
-              tokens.length,
-            ).any((i) => tokens[i] != expectedTokens[i])) {
+        if (!_sameTokens(tokens, expectedTokens)) {
           throw llama.LlamaStateException(
             'Restored prompt tokens do not match the cached evaluation.',
           );
@@ -186,3 +309,7 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
     }
   }
 }
+
+bool _sameTokens(List<int> a, List<int> b) =>
+    a.length == b.length &&
+    Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);

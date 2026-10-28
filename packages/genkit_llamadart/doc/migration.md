@@ -1,8 +1,14 @@
 # Migration guide
 
+## Upgrading to llamadart 0.17
+
+The current plugin requires llamadart `^0.17.0`, whose native state identity
+prompt cache export uses. Flutter iOS and macOS apps must use matching
+`^0.17.0` runtime companions. See the llamadart changelog for core changes.
+
 ## Upgrading to llamadart 0.16
 
-The current plugin requires llamadart `^0.16.0`. Genkit 1.0, Schemantic 1.0
+Plugin 3.5.0 requires llamadart `^0.16.0`. Genkit 1.0, Schemantic 1.0
 and the Dart 3.12 minimum are unchanged. Flutter iOS and macOS apps must use
 matching `^0.16.0` runtime companions.
 
