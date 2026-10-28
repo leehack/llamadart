@@ -108,8 +108,11 @@ final class ModelStore implements ModelDownloadManager {
   /// The reference is recorded before downloading, so no other app deletes
   /// the files while they download or after they are returned. When the call
   /// fails, this app's reference is put back as it was before the call:
-  /// dropped if the call created it, kept if the app already held it. Files
-  /// and partial downloads stay for a later call to resume, or for [prune].
+  /// dropped if the call created it, kept if the app already held it. Calls
+  /// of one app that overlap count as one: the reference stays when any of
+  /// them succeeds, and goes back to its state before the first when all
+  /// fail. Files and partial downloads stay for a later call to resume, or
+  /// for [prune].
   ///
   /// [options] apply to every file, as in `LlamaEngine.load`: credentials are
   /// never sent to more than one origin, and [ModelLoadOptions.sha256] needs
@@ -127,11 +130,12 @@ final class ModelStore implements ModelDownloadManager {
     final sources = <ModelSource>[model.source, ?model.projector];
     _checkEnsureArguments(sources, options);
     final id = entryIdFor(model);
-    final claim = await _lock.run(
+    await _lock.run(
       () => _addReference(id, [for (final source in sources) source.cacheKey]),
     );
+    final List<ModelCacheEntry> files;
     try {
-      final files = <ModelCacheEntry>[
+      files = <ModelCacheEntry>[
         for (final source in sources)
           await _files.ensureModel(
             source,
@@ -139,16 +143,17 @@ final class ModelStore implements ModelDownloadManager {
             onProgress: onProgress,
           ),
       ];
-      return ModelStoreEntry(
-        id: id,
-        model: files.first,
-        projector: files.length > 1 ? files[1] : null,
-        references: await _readReferences(id),
-      );
     } catch (_) {
-      await _lock.run(() => _undoReference(id, claim));
+      await _lock.run(() => _settleReference(id, succeeded: false));
       rethrow;
     }
+    await _settleReference(id, succeeded: true);
+    return ModelStoreEntry(
+      id: id,
+      model: files.first,
+      projector: files.length > 1 ? files[1] : null,
+      references: await _readReferences(id),
+    );
   }
 
   /// The entries whose files are all in the store, most recently used first.
@@ -188,10 +193,12 @@ final class ModelStore implements ModelDownloadManager {
   /// other referenced entry holds.
   ///
   /// Throws [LlamaArgumentException] when [entryId] is not an id from
-  /// [entryIdFor] or [ModelStoreEntry.id], and
-  /// [ModelCacheEntryInUseException] when a file could not be deleted
-  /// because it is downloading elsewhere; the reference is dropped anyway and
-  /// a later [prune] deletes the file.
+  /// [entryIdFor] or [ModelStoreEntry.id]. When a file could not be deleted,
+  /// the reference and the entry are gone anyway and the file stays, intact
+  /// and reusable by a later [ensure], for a later [prune]: the call throws
+  /// the [FileSystemException] of a file the OS refuses to delete, after
+  /// deleting the others, else [ModelCacheEntryInUseException] for a file
+  /// downloading elsewhere.
   Future<void> release(String entryId) async {
     if (!_entryIdPattern.hasMatch(entryId)) {
       throw LlamaArgumentException(
@@ -259,9 +266,10 @@ final class ModelStore implements ModelDownloadManager {
   /// [cacheKey], then deletes the file unless another app still references
   /// it.
   ///
-  /// Throws [ModelCacheEntryInUseException] naming the file's directory when
-  /// it is kept because another app references it or because it is
-  /// downloading elsewhere. Throws [LlamaUnsupportedException] for a
+  /// Throws the [FileSystemException] of a file the OS refuses to delete, as
+  /// [release] does, else [ModelCacheEntryInUseException] naming the file's
+  /// directory when it is kept because another app references it or because
+  /// it is downloading elsewhere. Throws [LlamaUnsupportedException] for a
   /// [cacheDirectory].
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {
@@ -281,10 +289,11 @@ final class ModelStore implements ModelDownloadManager {
   /// Drops every reference this app holds, then deletes every file no app
   /// references.
   ///
-  /// Throws [ModelCacheEntryInUseException] naming the directories of the
-  /// files kept because other apps reference them or because they are
-  /// downloading elsewhere. Throws [LlamaUnsupportedException] for a
-  /// [cacheDirectory].
+  /// Throws the first [FileSystemException] of a file the OS refuses to
+  /// delete, after deleting the others, else
+  /// [ModelCacheEntryInUseException] naming the directories of the files kept
+  /// because other apps reference them or because they are downloading
+  /// elsewhere. Throws [LlamaUnsupportedException] for a [cacheDirectory].
   @override
   Future<void> clear({String? cacheDirectory}) async {
     _rejectCacheDirectory(cacheDirectory);
@@ -308,8 +317,10 @@ final class ModelStore implements ModelDownloadManager {
   ///
   /// Never deletes a file an app references, so the store can stay above
   /// [maxBytes]; [release] references first. Also deletes leftover entries
-  /// without references and file metadata whose file is gone, and skips
-  /// files downloading elsewhere. Partial downloads stay. Throws
+  /// without references and file metadata whose file is gone. Skips files
+  /// downloading elsewhere and files the OS refuses to delete, and leaves
+  /// them out of the result, so one such file does not stop the rest.
+  /// Partial downloads stay. Throws
   /// [LlamaUnsupportedException] for a [cacheDirectory].
   @override
   Future<List<ModelCacheEntry>> prune({
@@ -355,12 +366,19 @@ final class ModelStore implements ModelDownloadManager {
           await _files.remove(file.cacheKey);
         } on ModelCacheEntryInUseException {
           continue;
+        } on FileSystemException {
+          // A file the OS refuses to delete stays, as one in use does.
+          continue;
         }
         removed.add(file);
         total -= length;
       }
       // Entries whose model file was deleted behind the store's back.
-      removed.addAll(await _files.prune());
+      try {
+        removed.addAll(await _files.prune());
+      } on FileSystemException {
+        // Left for a later prune, as a refused file above is.
+      }
       return removed;
     });
   }
@@ -417,12 +435,8 @@ final class ModelStore implements ModelDownloadManager {
   }
 
   /// Records this app's reference to [id], rewriting an entry file this
-  /// version cannot read, and returns what [_undoReference] needs to put the
-  /// previous reference back.
-  Future<_ReferenceClaim> _addReference(
-    String id,
-    List<String> cacheKeys,
-  ) async {
+  /// version cannot read, and returns the token it wrote.
+  Future<String> _addReference(String id, List<String> cacheKeys) async {
     final entryDirectory = p.join(_entriesDirectory, id);
     final entryFile = File(p.join(entryDirectory, _entryFileName));
     if (_cacheKeysOf(await _readJson(entryFile), id) == null) {
@@ -437,46 +451,77 @@ final class ModelStore implements ModelDownloadManager {
       );
     }
     final file = _referenceFile(id);
-    String? previous;
-    try {
-      previous = await file.readAsString();
-    } on FileSystemException {
-      previous = null;
+    var claims = _claims[file.path];
+    if (claims == null) {
+      String? baseline;
+      try {
+        baseline = await file.readAsString();
+      } on FileSystemException {
+        baseline = null;
+      }
+      claims = _claims[file.path] = _ReferenceClaims(baseline);
     }
     final token = _randomToken();
-    await Directory(p.dirname(file.path)).create(recursive: true);
-    await _writeAtomically(
-      file,
-      jsonEncode(<String, Object?>{
-        'schema_version': _schemaVersion,
-        'app_id': appId,
-        'last_used_at': DateTime.now().toUtc().toIso8601String(),
-        'token': token,
-      }),
-    );
-    return _ReferenceClaim(token: token, previous: previous);
+    try {
+      await Directory(p.dirname(file.path)).create(recursive: true);
+      await _writeAtomically(
+        file,
+        jsonEncode(<String, Object?>{
+          'schema_version': _schemaVersion,
+          'app_id': appId,
+          'last_used_at': DateTime.now().toUtc().toIso8601String(),
+          'token': token,
+        }),
+      );
+    } catch (_) {
+      if (claims.inFlight == 0) {
+        _claims.remove(file.path);
+      }
+      rethrow;
+    }
+    claims
+      ..inFlight += 1
+      ..tokens.add(token);
+    return token;
   }
 
-  /// Puts back the reference [claim] replaced, unless a later call of this
-  /// app has rewritten it since.
-  Future<void> _undoReference(String id, _ReferenceClaim claim) async {
+  /// Records that an `ensure` of [id] finished, and when it is the last of
+  /// this isolate's overlapping calls, they all failed and the reference is
+  /// still one they wrote, puts back the reference from before the first.
+  Future<void> _settleReference(String id, {required bool succeeded}) async {
     final file = _referenceFile(id);
-    final json = await _readJson(file);
-    if (json == null || json['token'] != claim.token) {
+    final claims = _claims[file.path]!;
+    claims.inFlight -= 1;
+    claims.succeeded = claims.succeeded || succeeded;
+    if (claims.inFlight > 0) {
       return;
     }
-    final previous = claim.previous;
-    if (previous == null) {
+    _claims.remove(file.path);
+    if (claims.succeeded) {
+      return;
+    }
+    // Not rewritten since by this app in another process, or released.
+    final json = await _readJson(file);
+    if (json == null || !claims.tokens.contains(json['token'])) {
+      return;
+    }
+    final baseline = claims.baseline;
+    if (baseline == null) {
       await _dropReference(id);
     } else {
-      await _writeAtomically(file, previous);
+      await _writeAtomically(file, baseline);
     }
   }
 
-  /// Drops this app's reference to [id].
+  /// Drops this app's reference to [id], so no overlapping failed `ensure`
+  /// puts back an earlier one.
   Future<void> _dropReference(String id) async {
+    final file = _referenceFile(id);
+    _claims[file.path]
+      ?..baseline = null
+      ..succeeded = false;
     try {
-      await _referenceFile(id).delete();
+      await file.delete();
     } on PathNotFoundException {
       // Already released.
     }
@@ -484,9 +529,10 @@ final class ModelStore implements ModelDownloadManager {
 
   /// Deletes the entries among [candidates] that no app references, then the
   /// files of those entries, and the [orphans], that no remaining referenced
-  /// entry holds. Throws [ModelCacheEntryInUseException] for the [orphans]
-  /// kept because an entry references them and for files downloading
-  /// elsewhere.
+  /// entry holds. Throws the first [FileSystemException] of a file the OS
+  /// refused to delete, after trying the others, else
+  /// [ModelCacheEntryInUseException] for the [orphans] kept because an entry
+  /// references them and for files downloading elsewhere.
   Future<void> _collect(
     Set<String> candidates, {
     Set<String> orphans = const <String>{},
@@ -512,12 +558,18 @@ final class ModelStore implements ModelDownloadManager {
         kept.add(p.dirname(file.filePath));
       }
     }
+    (FileSystemException, StackTrace)? denied;
     for (final cacheKey in unreferenced.difference(referenced)) {
       try {
         await _files.remove(cacheKey);
       } on ModelCacheEntryInUseException catch (error) {
         kept.addAll(error.entryDirectories);
+      } on FileSystemException catch (error, stackTrace) {
+        denied ??= (error, stackTrace);
       }
+    }
+    if (denied != null) {
+      Error.throwWithStackTrace(denied.$1, denied.$2);
     }
     if (kept.isNotEmpty) {
       throw ModelCacheEntryInUseException(
@@ -650,6 +702,9 @@ final class ModelStore implements ModelDownloadManager {
 
   static final Random _random = Random.secure();
 
+  static final Map<String, _ReferenceClaims> _claims =
+      <String, _ReferenceClaims>{};
+
   static String _randomToken() {
     return List<String>.generate(
       16,
@@ -658,14 +713,22 @@ final class ModelStore implements ModelDownloadManager {
   }
 }
 
-final class _ReferenceClaim {
-  const _ReferenceClaim({required this.token, required this.previous});
+/// This isolate's `ensure` calls in flight for one reference file.
+final class _ReferenceClaims {
+  _ReferenceClaims(this.baseline);
 
-  /// The token this call wrote into the reference.
-  final String token;
+  /// The reference file before the first of these calls, or null when there
+  /// was none or it has been released since.
+  String? baseline;
 
-  /// The reference file this call replaced, or null when there was none.
-  final String? previous;
+  /// The calls still running.
+  int inFlight = 0;
+
+  /// Whether one of the calls succeeded since the last release.
+  bool succeeded = false;
+
+  /// The tokens these calls wrote.
+  final Set<String> tokens = <String>{};
 }
 
 final class _EntryRecord {

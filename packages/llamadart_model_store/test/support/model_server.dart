@@ -20,6 +20,9 @@ final class ModelServer {
   /// Requests received per path.
   final Map<String, int> requests = <String, int>{};
 
+  /// Paths whose requests from now on get `503 Service Unavailable`.
+  final Set<String> failing = <String>{};
+
   /// Requests for a path wait for its gate before the server answers.
   final Map<String, Future<void>> gates = <String, Future<void>>{};
 
@@ -39,9 +42,12 @@ final class ModelServer {
     final path = request.uri.path;
     requests[path] = (requests[path] ?? 0) + 1;
     requestHeaders.add(request.headers);
+    final fail = failing.contains(path);
     await gates[path];
     final body = _files[path];
-    if (body == null) {
+    if (fail) {
+      request.response.statusCode = HttpStatus.serviceUnavailable;
+    } else if (body == null) {
       request.response.statusCode = HttpStatus.notFound;
     } else {
       request.response.contentLength = body.length;

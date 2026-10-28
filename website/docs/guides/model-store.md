@@ -63,13 +63,19 @@ be created, written or locked, so an app can fall back to its own cache.
   `clear` and `prune` also take. Another app therefore never deletes a file
   that is downloading for, or was just returned to, an app that references
   it. A failed or cancelled `ensure` leaves the app's references as they
-  were before the call; partial files stay for a retry to resume.
+  were before the call; overlapping calls of one app count as one, keeping
+  the reference when any succeeds. Partial files stay for a retry to resume.
 - **Deletes only unreferenced files.** `release` drops this app's reference
   and deletes files no app references. `remove` and `clear` do the same and
   throw `ModelCacheEntryInUseException` naming files they kept because
   another app references them or they are downloading elsewhere. `prune`
   never deletes a referenced file; it also drops file metadata whose file is
   gone, but leaves partial downloads.
+- **Refused deletes.** A file the OS refuses to delete for good, such as one
+  in a read-only directory, stays intact and reusable. `release`, `remove`
+  and `clear` delete everything else and then throw that
+  `FileSystemException`; the reference is gone either way. `prune` skips such
+  a file so it never blocks the rest.
 - **No secrets in shared metadata.** Store metadata holds file cache keys
   (SHA-256 hashes), app ids and timestamps. Tokens, headers and URLs are never
   written; core's file metadata redacts URL query strings, fragments and

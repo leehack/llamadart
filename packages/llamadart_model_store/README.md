@@ -73,15 +73,19 @@ when it cannot be created, written or locked.
 
 - `ensure` records the app's reference before downloading, so no other app
   deletes the files while they download. A failed or cancelled call leaves
-  the app's references as they were before it; downloaded and partial files
-  stay for a retry to resume.
+  the app's references as they were before it; overlapping calls of one app
+  count as one, keeping the reference when any succeeds. Downloaded and
+  partial files stay for a retry to resume.
 - `release`, `remove` and `clear` drop this app's references, then delete
   files no app references. Files another app references, or that are
   downloading elsewhere, stay, and the call throws
   `ModelCacheEntryInUseException` naming them (`release` keeps another
-  entry's files silently).
+  entry's files silently). A file the OS refuses to delete, such as one in a
+  read-only directory, stays intact and reusable; the call deletes the rest
+  and then throws that `FileSystemException`.
 - `prune` deletes only unreferenced files, by age then by size, and file
-  metadata whose file is gone. Partial downloads stay.
+  metadata whose file is gone. It skips files in use or that the OS refuses
+  to delete, and partial downloads stay.
 - `ensureModel` records a single-file entry, so an engine using the store as
   its download manager is protected the same way. Local files and `noCache`
   downloads pass through without a reference.
