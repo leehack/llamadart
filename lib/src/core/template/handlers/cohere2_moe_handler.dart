@@ -24,6 +24,9 @@ class Cohere2MoeHandler extends CommandR7BHandler {
   List<String>? get verbatimForcedThoughtOpenings =>
       forcedThoughtContentOpenings;
 
+  @override
+  bool get opensThoughtUnlessReasoningOff => true;
+
   // Matches what llama.cpp 620d2225 common/parsers/cohere2moe.cpp preserves.
   @override
   List<String> get preservedTokens => const [

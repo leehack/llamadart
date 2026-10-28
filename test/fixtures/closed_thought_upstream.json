@@ -373,6 +373,7 @@
       "template": "test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja",
       "format": "qwen3CoderXml",
       "generation_prompt": "<|im_start|>assistant\n<think>\n",
+      "closed_prompt_suffix": "</think>\n",
       "cases": [
         {
           "name": "thought",
@@ -457,6 +458,84 @@
             "content": "<tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>",
             "reasoning_content": "",
             "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+      "format": "cohere2Moe",
+      "generation_prompt": "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>",
+      "closed_prompt_suffix": "<|END_THINKING|>",
+      "cases": [
+        {
+          "name": "thought",
+          "output": "Plan<|END_THINKING|><|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "<|END_THINKING|><|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "Plan<|END_THINKING|><|START_ACTION|>[{\"tool_call_id\": \"0\", \"tool_name\": \"weather\", \"parameters\": {\"city\": \"Paris\"}}]<|END_ACTION|>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "text",
+          "output": "<|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call",
+          "output": "<|START_ACTION|>[{\"tool_call_id\": \"0\", \"tool_name\": \"weather\", \"parameters\": {\"city\": \"Paris\"}}]<|END_ACTION|>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
           }
         }
       ]

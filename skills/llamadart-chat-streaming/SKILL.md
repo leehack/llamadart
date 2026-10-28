@@ -109,11 +109,13 @@ description: >-
   `chunk.text`, as in llama-server. Templates that open the thought even with
   thinking off (StepFun3.5-Flash, DeepSeek R1 distills, MiniMax M2, Nemotron
   Nano v2) stream no `chunk.text` until `</think>` or `<think>` arrives or the
-  reply ends, so a thought the model still writes never reaches it. A boolean
-  `enable_thinking` or `thinking` in `chatTemplateKwargs` overrides it, as in
-  llama-server, and every chat template receives the result as
-  `enable_thinking`. A template's own setting in `chatTemplateKwargs`, such as
-  `reasoning_effort` (Hy3, Cohere2 MoE) or `thinking_mode` (MiniMax M3), wins
+  reply ends, so a thought the model still writes never reaches it; Cohere2
+  MoE waits likewise for a thinking tag, `<|START_TEXT|>` or
+  `<|START_ACTION|>`. A boolean `enable_thinking` or `thinking` in
+  `chatTemplateKwargs` overrides it, as in llama-server, and every chat
+  template receives the result as `enable_thinking`. A template's own
+  setting in `chatTemplateKwargs`, such as `reasoning_effort` (Hy3, Cohere2
+  MoE) or `thinking_mode` (MiniMax M3), wins
   over the value derived from `enableThinking`, but with `enableThinking:
   false` llamadart still closes a thought that setting opens. Native LiteRT-LM
   recognizes renamed Qwen 3 bundles only from a Qwen 3 model-type declaration

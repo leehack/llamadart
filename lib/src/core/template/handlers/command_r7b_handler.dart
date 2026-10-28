@@ -75,6 +75,10 @@ class CommandR7BHandler extends ChatTemplateHandler {
   /// generated, or null when the parse extracts thoughts by their tags.
   List<String>? get verbatimForcedThoughtOpenings => null;
 
+  /// Whether the template opens the reply's thought unless `reasoning` is
+  /// false.
+  bool get opensThoughtUnlessReasoningOff => false;
+
   @override
   TemplateToolCallSerialization get toolCallSerialization =>
       TemplateToolCallSerialization.normalizeOnly;
@@ -114,6 +118,9 @@ class CommandR7BHandler extends ChatTemplateHandler {
     List<ToolDefinition>? tools,
     bool enableThinking = true,
   }) {
+    final kwargs = chatTemplateKwargsFromMetadata(metadata);
+    // Cohere2 MoE reads `reasoning_effort` only without `reasoning`.
+    final defaultsReasoning = !kwargs.containsKey('reasoning_effort');
     final template = Template(templateSource);
     var prompt = renderTemplate(
       template,
@@ -129,14 +136,19 @@ class CommandR7BHandler extends ChatTemplateHandler {
         'enable_thinking': enableThinking,
       },
       defaults: {
-        // Cohere2 MoE reads `reasoning_effort` only without `reasoning`.
-        if (!chatTemplateKwargsFromMetadata(
-          metadata,
-        ).containsKey('reasoning_effort'))
-          'reasoning': enableThinking,
+        if (defaultsReasoning) 'reasoning': enableThinking,
         'skip_thinking': !enableThinking,
       },
     );
+
+    // llama.cpp sets no `reasoning`, so such a template keeps open the
+    // thought that this default closes with thinking off.
+    var thoughtClosed =
+        opensThoughtUnlessReasoningOff &&
+        !enableThinking &&
+        defaultsReasoning &&
+        !kwargs.containsKey('reasoning') &&
+        prompt.endsWith('$thinkingStartTag$thinkingEndTag');
 
     // Handle enableThinking post-render logic
     var thinkingForcedOpen = false;
@@ -144,6 +156,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
       if (!enableThinking) {
         // Matches the template's own closed thought.
         prompt = '${prompt.trimRight()}$thinkingEndTag';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -152,7 +165,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
     final hasTools = tools != null && tools.isNotEmpty;
     final toolChoice = metadata[internalToolChoiceMetadataKey];
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -171,6 +184,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
           ? [const GrammarTrigger(type: 0, value: '<|START_ACTION|>')]
           : [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override
