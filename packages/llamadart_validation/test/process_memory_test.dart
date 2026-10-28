@@ -372,8 +372,32 @@ int main(void) {
         expect(output['leak_slope_bound'], 'FAIL', reason: reason);
       });
     }
+
+    /// Whether [path] is on a tmpfs or ramfs, whose file pages are shared
+    /// memory the footprint counts, as Ubuntu 26.04's /tmp is.
+    Future<bool> inSharedMemory(String path) async {
+      if (!Platform.isLinux) return false;
+      final result = await Process.run('stat', ['-f', '-c', '%T', path]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final type = (result.stdout as String).trim();
+      return type == 'tmpfs' || type == 'ramfs';
+    }
+
+    /// A [size]-byte file in page cache, in the system temporary directory or,
+    /// when that is in shared memory, under `.dart_tool`.
     Future<File> pagesFile(int size) async {
-      final dir = await Directory.systemTemp.createTemp('footprint');
+      final parents = [Directory.systemTemp, Directory('.dart_tool')];
+      Directory? parent;
+      for (final candidate in parents) {
+        if (!await inSharedMemory(candidate.path)) {
+          parent = candidate;
+          break;
+        }
+      }
+      if (parent == null) {
+        fail('No file system outside shared memory among $parents');
+      }
+      final dir = await parent.createTemp('footprint');
       addTearDown(() => dir.delete(recursive: true));
       return File('${dir.path}/pages.bin')
         ..writeAsBytesSync(Uint8List(size)..fillRange(0, size, 7));
