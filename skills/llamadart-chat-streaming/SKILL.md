@@ -106,7 +106,10 @@ description: >-
 - Always set `GenerationParams.maxTokens`. Pass `enableThinking: false` to
   `engine.create` when reasoning output is not wanted; a `<think>` block a
   DeepSeek V3.1, Qwen3, QwQ or Qwen3.5 model still writes then stays in
-  `chunk.text`, as in llama-server. A boolean
+  `chunk.text`, as in llama-server. Templates that open the thought even with
+  thinking off (StepFun3.5-Flash, DeepSeek R1 distills, MiniMax M2, Nemotron
+  Nano v2) stream no `chunk.text` until `</think>` or `<think>` arrives or the
+  reply ends, so a thought the model still writes never reaches it. A boolean
   `enable_thinking` or `thinking` in `chatTemplateKwargs` overrides it, as in
   llama-server, and every chat template receives the result as
   `enable_thinking`. A template's own setting in `chatTemplateKwargs`, such as

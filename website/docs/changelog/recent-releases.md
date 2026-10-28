@@ -48,6 +48,7 @@ For canonical full release notes, use:
 - A Cohere2 MoE thought that the prompt opens ends at a `<|START_TEXT|>` or `<|START_ACTION|>` the model writes without `<|END_THINKING|>`, as in llama-server, so its text and tool calls no longer land in the reasoning ([#1523](https://github.com/leehack/llamadart/issues/1523)).
 - Qwen3-Coder XML replies with parallel tool calls, as from Qwen3-Coder, Qwen3.5 and StepFun3.5, return one call per `<tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1530](https://github.com/leehack/llamadart/issues/1530)).
 - Seed-OSS replies with parallel tool calls return one call per `<seed:tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1540](https://github.com/leehack/llamadart/issues/1540)).
+- With thinking off, StepFun3.5-Flash, DeepSeek R1 distills, MiniMax M2 and Nemotron Nano v2 replies no longer stream a thought the model writes before `</think>` as content: content waits for `</think>`, `<think>` or the end of the reply, matching the final message at any chunking ([#1532](https://github.com/leehack/llamadart/issues/1532)).
 
 ## 0.16.5
 

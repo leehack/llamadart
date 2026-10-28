@@ -98,9 +98,11 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     // Handle enableThinking post-render logic
     final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>\n';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -129,7 +131,10 @@ class DeepseekV3Handler extends ChatTemplateHandler {
           ? [GrammarTrigger(type: 3, value: triggerPattern)]
           : [],
     );
-    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
+    return withThoughtClosedForThinkingOff(
+      withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
+      closed: thoughtClosed,
+    );
   }
 
   /// With [thoughtTagsAreText], all of [output] is content and tool calls.

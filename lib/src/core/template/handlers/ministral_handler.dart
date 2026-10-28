@@ -68,9 +68,11 @@ class MinistralHandler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}$thinkingEndTag\n';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -89,7 +91,7 @@ class MinistralHandler extends ChatTemplateHandler {
       minToolCalls: toolChoiceRequired ? 1 : 0,
       maxToolCalls: parallelToolCalls ? -1 : 1,
     );
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: allowToolCalls
@@ -110,6 +112,7 @@ class MinistralHandler extends ChatTemplateHandler {
           : [],
       parser: parser,
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   String _buildParser(
