@@ -123,7 +123,11 @@ class HunyuanV3Handler extends ChatTemplateHandler
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: buildGrammar(tools),
+      grammar: requiredGrammarAfterThought(
+        buildGrammar(tools),
+        metadata: metadata,
+        thinkingForcedOpen: thinkingForcedOpen,
+      ),
       grammarLazy: hasTools,
       additionalStops: additionalStops,
       preservedTokens: hasTools ? preservedTokens : const [],

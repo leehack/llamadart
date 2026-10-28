@@ -68,7 +68,10 @@ void main() {
       '</seed:think>',
       '</thinking>',
       '<|end|><|begin|>assistant<|content|>',
+      '<|close|>think<|sep|>',
+      'aab',
       'abab',
+      'aaa',
     ]) {
       test('requires $endTag once before the calls', () {
         final grammar = ToolCallGrammarUtils.afterForcedOpenThought(
@@ -84,25 +87,76 @@ void main() {
         expect(lines, contains('call ::= "x"'));
 
         final body = _ExcludingRules(lines, 'think-body');
-        for (final text in [
+        final head = endTag.substring(0, endTag.length - 1);
+        final samples = [
           '',
           'plan',
-          endTag.substring(0, endTag.length - 1),
-          '<${endTag.substring(0, endTag.length - 1)}',
-          '${endTag.substring(0, 3)}${endTag.substring(0, 2)}',
-        ]) {
-          expect(body.matches(text), isTrue, reason: text);
-        }
-        for (final text in [
           endTag,
           'plan $endTag',
           '<$endTag',
           '${endTag.substring(0, 3)}$endTag tail',
-        ]) {
-          expect(body.matches(text), isFalse, reason: text);
+          head,
+          '<$head',
+          'x${endTag.substring(0, 1)}',
+          '${endTag.substring(0, 3)}${endTag.substring(0, 2)}',
+          '${endTag.substring(0, 2)}${endTag.substring(0, 2)}',
+          '$head$head',
+          '${endTag.substring(0, endTag.length ~/ 2)}$endTag',
+          // A partial match that must fall back to a shorter one, not to the
+          // start, as in `<|end|><|end|>...`.
+          '${endTag.substring(0, 2)}$endTag',
+          '${endTag.substring(0, 1)}$endTag',
+        ];
+        for (final text in samples) {
+          // The thought is the text before the first end tag.
+          expect(
+            body.matches(text),
+            '$text$endTag'.indexOf(endTag) == text.length,
+            reason: text,
+          );
         }
       });
     }
+
+    test('ends a thought at the first end tag after a partial match', () {
+      for (final (endTag, thought) in [
+        (
+          '<|end|><|begin|>assistant<|content|>',
+          '<|end|><|end|><|begin|>assistant<|content|>',
+        ),
+        ('<|close|>think<|sep|>', '<|close|>think<|close|>think<|sep|>'),
+      ]) {
+        final body = _ExcludingRules(
+          ToolCallGrammarUtils.afterForcedOpenThought(
+            'root ::= "x"\n',
+            endTag,
+          ).split('\n'),
+          'think-body',
+        );
+        expect(body.matches(thought), isFalse, reason: thought);
+        expect(
+          body.matches(thought.substring(0, thought.length - 1)),
+          isTrue,
+          reason: thought,
+        );
+      }
+    });
+
+    test('ends a thought only where its end tag cannot start earlier', () {
+      final lines = ToolCallGrammarUtils.afterForcedOpenThought(
+        'root ::= "x"\n',
+        'abab',
+      ).split('\n');
+      final body = _ExcludingRules(lines, 'think-body');
+
+      expect(body.matches('xab'), isFalse);
+      expect(body.matches('xaba'), isTrue);
+      expect(body.matches('xa'), isTrue);
+      expect(
+        lines,
+        contains('think-body-2 ::= [a] think-body-3 | [^a] think-body'),
+      );
+    });
   });
 
   test('afterForcedOpenThought leaves a grammar that takes the thought', () {
@@ -283,15 +337,17 @@ ToolDefinition _tool(String name) => ToolDefinition(
   handler: _noop,
 );
 
-/// Runs the `name ::= | [chars] next | ...` rules of an excluding grammar.
+/// Runs the `name ::= | [chars] next | ...` rules of an excluding grammar; a
+/// rule without the leading empty alternative cannot end the text.
 class _ExcludingRules {
   _ExcludingRules(List<String> lines, this.start) {
     final alternative = RegExp(r'\[(\^?)((?:\\.|[^\]\\])*)\] ([\w-]+)');
     for (final line in lines) {
-      final rule = RegExp(r'^([\w-]+) ::= \|(.*)$').firstMatch(line);
+      final rule = RegExp(r'^([\w-]+) ::= (\| )?(.*)$').firstMatch(line);
       if (rule == null || !rule[1]!.startsWith(start)) continue;
+      if (rule[2] != null) _accepting.add(rule[1]!);
       _rules[rule[1]!] = [
-        for (final m in alternative.allMatches(rule[2]!))
+        for (final m in alternative.allMatches(rule[3]!))
           (
             negated: m[1] == '^',
             chars: m[2]!.replaceAllMapped(RegExp(r'\\(.)'), (e) => e[1]!),
@@ -303,7 +359,9 @@ class _ExcludingRules {
 
   final String start;
   final _rules = <String, List<({bool negated, String chars, String next})>>{};
+  final _accepting = <String>{};
 
+  /// Whether the rules match all of [text].
   bool matches(String text) {
     var state = start;
     for (final char in text.split('')) {
@@ -314,6 +372,6 @@ class _ExcludingRules {
       if (next == null) return false;
       state = next;
     }
-    return true;
+    return _accepting.contains(state);
   }
 }
