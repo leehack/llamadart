@@ -211,7 +211,8 @@
           "structured_output",
           "tokenization",
           "state_persistence",
-          "tool_result_media"
+          "tool_result_media",
+          "next_token_scoring"
         ]
       }
     },
@@ -394,6 +395,11 @@
           "properties": {}
         },
         "tool_result_media": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "next_token_scoring": {
           "type": "object",
           "additionalProperties": false,
           "properties": {}
