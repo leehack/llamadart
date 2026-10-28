@@ -68,6 +68,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Independent adapter release routing or archives change; owner handoff checklist: website/docs/maintainers/genkit-package.md.',
   ),
   TestMatrixRow(
+    id: 'model-store-contracts',
+    tier: 'targeted',
+    mode: 'CI + local; model-free',
+    covers:
+        'shared model store references, deletes, prune, metadata redaction, cross-process store lock and the browser refusal against checkout core',
+    command:
+        'CI job model-store in .github/workflows/ci.yml; from packages/llamadart_model_store: TMPDIR="\$(mktemp -d)" flutter test, then flutter test --platform chrome test/model_store_web_test.dart',
+    useWhen:
+        'llamadart_model_store, its guide, or core download manager changes. Foreground only: no device backgrounding or sleep evidence.',
+  ),
+  TestMatrixRow(
     id: 'ci-selection',
     tier: 'targeted',
     mode: 'CI + local; no models',

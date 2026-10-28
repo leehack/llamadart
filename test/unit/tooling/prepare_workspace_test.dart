@@ -45,6 +45,7 @@ void main() {
       'packages/genkit_llamadart',
       'packages/llamadart_validation',
       'packages/llamadart_litert_lm_flutter',
+      'packages/llamadart_model_store',
       'packages/llamadart_llama_cpp_flutter',
       'packages/llamadart_stable_diffusion_flutter',
     ]);

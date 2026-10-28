@@ -44,7 +44,7 @@ def archive_errors(files):
     """Keep checkout-only dependencies together and runnable examples present."""
     errors = []
     for prefix in ('packages/llamadart_validation/', 'example/chat_app/',
-                   'packages/genkit_llamadart/'):
+                   'packages/genkit_llamadart/', 'packages/llamadart_model_store/'):
         if any(path.startswith(prefix) for path in files):
             errors.append('checkout-only files included: ' + prefix)
     for required in ('pubspec.yaml', 'lib/llamadart.dart', 'hook/build.dart',

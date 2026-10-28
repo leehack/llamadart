@@ -71,6 +71,8 @@ void main() {
         'packages/genkit_llamadart/lib/genkit_llamadart.dart',
         'packages/genkit_llamadart/skills/genkit-llamadart-getting-started/SKILL.md',
         'packages/genkit_llamadart/pubspec_overrides.yaml',
+        'packages/llamadart_model_store/pubspec.yaml',
+        'packages/llamadart_model_store/lib/llamadart_model_store.dart',
       ]) {
         expect(
           await _isIgnored(repository, candidate),
