@@ -29,9 +29,11 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/next_token_scores.dart';
+import '../../core/models/inference/state_identity.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
 import '../../platform/io/ios_simulator.dart';
+import 'build_identity.dart';
 import 'decision_head.dart';
 import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
@@ -718,6 +720,7 @@ class LlamaCppService {
     List<GgmlDeviceEntry> Function()? registeredDevices,
     Allocator modelPathAllocator = malloc,
     Allocator contextBatchAllocator = malloc,
+    String? Function()? buildIdentity,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -735,7 +738,8 @@ class LlamaCppService {
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices,
        _modelPathAllocator = modelPathAllocator,
-       _contextBatchAllocator = contextBatchAllocator;
+       _contextBatchAllocator = contextBatchAllocator,
+       _readBuildIdentity = buildIdentity;
 
   final void Function() _backendInit;
   final Abi _abi;
@@ -758,6 +762,10 @@ class LlamaCppService {
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
   final Allocator _modelPathAllocator;
   final Allocator _contextBatchAllocator;
+  final String? Function()? _readBuildIdentity;
+  late final String? _buildIdentity =
+      (_readBuildIdentity ??
+      () => readNativeBuildIdentity(isWindows: _isWindows))();
 
   // Reading the facts loads the system's GPU drivers into the process, so
   // they are read once, and only for a load that selects a registered
@@ -7700,6 +7708,10 @@ class LlamaCppService {
     final pathPtr = path.toNativeUtf8();
     final tokensPtr = malloc<Int32>(tokenCapacity);
     final countPtr = malloc<Size>();
+    // llama.cpp clears the KV cache when a load fails after reading the
+    // token list, so the cached prefix must not survive any load attempt.
+    ctx.cachedPromptTokens = null;
+    ctx.kvFromStateLoad = false;
     try {
       countPtr.value = 0;
       final ok = _calls.stateLoadFile(
@@ -7741,6 +7753,45 @@ class LlamaCppService {
       malloc.free(tokensPtr);
       malloc.free(countPtr);
     }
+  }
+
+  /// The identity of the state [stateSaveFile] writes for [contextHandle].
+  ///
+  /// Throws [LlamaUnsupportedException] when the runtime does not export
+  /// `llama_dart_build_identity` or reports an empty identity.
+  LlamaStateIdentity stateIdentity(int contextHandle) {
+    final ctx = _contexts[contextHandle];
+    if (ctx == null) {
+      throw LlamaStateException('Unknown context handle: $contextHandle');
+    }
+    _ensureContextUsable(contextHandle, ctx);
+    final build = _buildIdentity;
+    if (build == null) {
+      throw LlamaUnsupportedException(
+        'State identity needs a llama.cpp runtime that reports its build '
+        'identity (llama_dart_build_identity, llamadart-native '
+        '$minimumBuildIdentityNativeRelease or newer). The loaded runtime is '
+        'older: remove the native release override or use '
+        '$minimumBuildIdentityNativeRelease or newer.',
+      );
+    }
+    if (build.isEmpty) {
+      throw LlamaUnsupportedException(
+        'State identity needs a llama.cpp runtime that reports its build '
+        'identity, and the loaded runtime reports an empty one: it was not '
+        'built from git checkouts of llamadart-native and llama.cpp. Use a '
+        'llamadart-native $minimumBuildIdentityNativeRelease or newer release, '
+        'or build it from git checkouts.',
+      );
+    }
+    return LlamaStateIdentity(
+      runtimeBuild: build,
+      sessionFormatVersion: LLAMA_SESSION_VERSION,
+      contextSize: llama_n_ctx(ctx.pointer),
+      contextConfigDigest: stateContextConfigDigest(
+        _contextParams[contextHandle]!,
+      ),
+    );
   }
 
   /// Returns one metadata value without enumerating the full model metadata.

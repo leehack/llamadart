@@ -269,7 +269,8 @@ fallback when model template metadata is empty. See
   budgets, tool-call parsing
   and a `ChatSession.sendWithTools` loop that runs tool handlers,
   multimodal GGUF projectors, structured JSON output, embeddings, next-token
-  log-probabilities, LoRA, state persistence, per-request token usage and
+  log-probabilities, LoRA, state persistence with build and context identity
+  checks, per-request token usage and
   timings, operation observers for tracing and metrics, and runtime
   diagnostics where the active backend supports them.
 - Experimental typed speech recognition through `SpeechToTextEngine.load`

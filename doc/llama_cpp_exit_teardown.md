@@ -69,6 +69,10 @@ backend calls of the decision head). They are calls in flight for teardown
 like the others, and are resolved all or nothing in the same way. See
 "C++ exceptions".
 
+`llama_dart_build_identity` (`v0.7.0-3`) is called directly, outside both:
+it returns a constant of the library and touches no llama.cpp object, so
+teardown cannot free anything under it.
+
 One service uses one of the two for all of its calls.
 `IsolateShutdownReleases` still holds every object and frees it when its
 isolate shuts down; with exit teardown the hold's free function is

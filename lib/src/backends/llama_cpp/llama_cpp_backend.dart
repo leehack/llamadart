@@ -23,6 +23,7 @@ import '../../core/models/inference/embedding.dart';
 import '../../core/models/inference/reranking.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
+import '../../core/models/inference/state_identity.dart';
 import 'worker.dart';
 
 /// Worker entry point used by [NativeLlamaBackend].
@@ -44,6 +45,7 @@ class NativeLlamaBackend
         BackendMultimodalEmbeddings,
         BackendNextTokenScoring,
         BackendStatePersistence,
+        BackendStateIdentity,
         BackendTextToSpeech,
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
@@ -1103,6 +1105,16 @@ class NativeLlamaBackend
     }
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('State load failed');
+  }
+
+  @override
+  Future<LlamaStateIdentity> stateIdentity(int contextHandle) async {
+    await _ensureIsolate();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, StateIdentityRequest(contextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
+    if (res is StateIdentityResponse) return res.identity;
+    throw LlamaStateException('State identity request failed');
   }
 
   @override
