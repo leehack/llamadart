@@ -3,17 +3,21 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:mirrors';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
+import 'package:llamadart/src/backends/llama_cpp/gpu_device_placement.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/load_device_selection.dart';
 import 'package:llamadart/src/backends/llama_cpp/vulkan_device_probe.dart';
 import 'package:test/test.dart';
 
+import '../../../support/recording_allocator.dart';
 import '../../../support/recording_exit_teardown.dart';
+import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 const _load = 'llama_dart_model_load_from_file';
@@ -28,6 +32,25 @@ GgmlDeviceEntry _fake(String name, String registry, int address) =>
       device: Pointer.fromAddress(address),
     );
 
+Object? _private(LlamaCppService service, String field) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(
+    service,
+  ).getField(MirrorSystem.getSymbol(field, owner)).reflectee;
+}
+
+T _invokePrivate<T>(
+  LlamaCppService service,
+  String method,
+  List<Object?> args,
+) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(
+        service,
+      ).invoke(MirrorSystem.getSymbol(method, owner), args).reflectee
+      as T;
+}
+
 // Fake devices must never reach llama.cpp: each such test is refused before
 // the load. The real-device test loads the synthetic model on this host's
 // first GPU.
@@ -36,11 +59,13 @@ void main() {
   late String model;
   late RecordingExitTeardown recorder;
   late LlamaCppService service;
+  late RecordingAllocator allocator;
 
   void start({
     List<GgmlDeviceEntry> Function()? registeredDevices,
     VulkanDeviceProbe probe = const VulkanDeviceProbe.unavailable('test'),
   }) {
+    allocator = RecordingAllocator();
     recorder = RecordingExitTeardown(
       ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
     );
@@ -51,6 +76,7 @@ void main() {
       ),
       registeredDevices: registeredDevices,
       vulkanDeviceProbe: () => probe,
+      modelLoadAllocator: allocator,
     )..initializeBackend();
   }
 
@@ -193,6 +219,7 @@ void main() {
 
     service.loadModel(model, const ModelParams());
     expect(recorder.loadTensorSplits.last, isNull);
+    allocator.expectAllFreed();
   });
 
   test(
@@ -241,6 +268,175 @@ void main() {
         [2.0],
         [2.0],
       ]);
+      allocator.expectAllFreed();
     },
   );
+
+  test('a load refused at placement allocates no tensor overrides', () {
+    start(registeredDevices: () => [_fake('CUDA0', 'CUDA', 0x1000)]);
+    expect(
+      () => service.loadModel(
+        model,
+        const ModelParams(cpuMoeLayers: 1, gpuDevices: [0, 1]),
+      ),
+      refused(contains('this host has 1 (CUDA0)')),
+    );
+    expect(recorder.calls, isNot(contains(_load)));
+    expect(allocator.allocations, 0);
+  });
+
+  test('tensor overrides and the model path are freed after the load', () {
+    start();
+    expect(
+      () => service.loadModel(
+        model,
+        const ModelParams(gpuLayers: 0, cpuMoeLayers: 1),
+      ),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    expect(recorder.loadTensorOverrides.single, isNotEmpty);
+    // The model path, the override list and its pattern.
+    expect(allocator.allocations, 3);
+    allocator.expectAllFreed();
+  });
+
+  test('the tensor split holds llama_max_devices() floats', () {
+    start();
+    final array = _invokePrivate<Pointer<Float>>(
+      service,
+      '_createTensorSplit',
+      [
+        GpuDevicePlacement(
+          devices: [_fake('CUDA0', 'CUDA', 0x1000)],
+          tensorSplit: const [2],
+        ),
+      ],
+    );
+    final maxDevices = llama_max_devices();
+    try {
+      expect(allocator.byteCounts, [maxDevices * sizeOf<Float>()]);
+      expect(
+        [for (var i = 0; i < maxDevices; i++) array[i]],
+        [2, ...List.filled(maxDevices - 1, 0)],
+      );
+    } finally {
+      allocator.free(array);
+    }
+    allocator.expectAllFreed();
+  });
+
+  group('decision heads and projectors of a placed model', () {
+    const handle = 7;
+    final cuda0 = _fake('CUDA0', 'CUDA', 0x1000);
+    final cuda1 = _fake('CUDA1', 'CUDA', 0x2000);
+    final cuda2 = _fake('CUDA2', 'CUDA', 0x3000);
+
+    void place(ModelParams params, List<GgmlDeviceEntry> devices) {
+      start(registeredDevices: () => [cuda0, cuda1, cuda2]);
+      (_private(service, '_modelLoadParams') as Map<int, ModelParams>)[handle] =
+          params;
+      (_private(service, '_modelBackendNames') as Map<int, String>)[handle] =
+          'CUDA (${devices.map((device) => device.name).join(', ')})';
+      (_private(service, '_modelPlacements')
+          as Map<int, GpuDevicePlacement>)[handle] = GpuDevicePlacement(
+        devices: devices,
+      );
+      (_private(service, '_modelToMtmdUseGpu') as Map<int, bool>)[handle] =
+          true;
+    }
+
+    ggml_backend_dev_t? headDevice() => _invokePrivate<ggml_backend_dev_t?>(
+      service,
+      '_decisionHeadDevice',
+      [handle],
+    );
+    mtmd_context_params projectorParams() =>
+        _invokePrivate<mtmd_context_params>(service, '_mtmdContextParamsFor', [
+          handle,
+        ]);
+
+    test('run on the listed device mainGpu names', () {
+      place(const ModelParams(gpuDevices: [2, 1], mainGpu: 1), [cuda2, cuda1]);
+      expect(headDevice(), cuda1.device);
+      expect(projectorParams().use_gpu, isTrue);
+      expect(projectorParams().device, cuda1.device);
+    });
+
+    test('run on the first listed device, not on an excluded one', () {
+      place(const ModelParams(gpuDevices: [2]), [cuda2]);
+      expect(headDevice(), cuda2.device);
+      expect(projectorParams().device, cuda2.device);
+    });
+
+    test('a projector the load keeps on the CPU names no device', () {
+      place(const ModelParams(gpuDevices: [2]), [cuda2]);
+      (_private(service, '_modelToMtmdUseGpu') as Map<int, bool>)[handle] =
+          false;
+      expect(projectorParams().use_gpu, isFalse);
+      expect(projectorParams().device, nullptr);
+    });
+
+    test('without a listed GPU run on the CPU', () {
+      final accel = GgmlDeviceEntry(
+        name: 'ACCEL0',
+        registry: 'CUDA',
+        type: ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
+        device: Pointer.fromAddress(0x4000),
+      );
+      place(const ModelParams(gpuDevices: [0]), [accel]);
+      expect(headDevice(), isNull);
+      expect(projectorParams().use_gpu, isFalse);
+      expect(projectorParams().device, nullptr);
+    });
+
+    test('forget the placement with the model', () {
+      place(const ModelParams(gpuDevices: [2]), [cuda2]);
+      service.freeModel(handle);
+      expect(_private(service, '_modelPlacements'), isEmpty);
+    });
+
+    test('without a placement keep the default choice', () {
+      start(registeredDevices: () => [cuda0, cuda1, cuda2]);
+      (_private(service, '_modelLoadParams') as Map<int, ModelParams>)[handle] =
+          const ModelParams(mainGpu: 1);
+      (_private(service, '_modelBackendNames') as Map<int, String>)[handle] =
+          'CUDA';
+      expect(headDevice(), cuda1.device);
+      expect(projectorParams().use_gpu, isTrue);
+      expect(projectorParams().device, nullptr);
+    });
+  });
+
+  test('a decision head and projector of a model on a listed GPU use that '
+      'GPU', () {
+    start();
+    final gpus = service.listGpuDevices();
+    if (gpus.isEmpty) {
+      markTestSkipped('No GPU device on this host.');
+      return;
+    }
+    final first = gpus.first;
+    final encoder = writeSyntheticModernBertGguf(
+      '${dir.path}/encoder.gguf',
+      decisionTokens: true,
+    ).path;
+    final headPath = '${dir.path}/head.safetensors';
+    SyntheticDecisionHead(d: 16, layers: 1, seed: 1).write(headPath);
+    final configPath = '${dir.path}/config.json';
+    File(configPath).writeAsStringSync('{"max_len": 64, "head_layers": 1}');
+    final handle = service.loadModel(
+      encoder,
+      ModelParams(preferredBackend: first.backend, gpuDevices: const [0]),
+    );
+    final listed = recorder.loadDevices.single!.single;
+    expect(
+      _invokePrivate<mtmd_context_params>(service, '_mtmdContextParamsFor', [
+        handle,
+      ]).device.address,
+      listed,
+    );
+    final head = service.loadDecisionHead(handle, headPath, configPath);
+    addTearDown(() => service.freeDecisionHead(head.handle));
+    expect(head.deviceName, first.name);
+  });
 }

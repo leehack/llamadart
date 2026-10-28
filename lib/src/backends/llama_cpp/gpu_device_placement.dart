@@ -1,3 +1,5 @@
+import 'dart:ffi';
+
 import '../../core/exceptions.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/inference/model_params.dart';
@@ -131,4 +133,56 @@ GpuDevicePlacement? resolveGpuDevicePlacement(
     );
   }
   return GpuDevicePlacement(devices: devices, tensorSplit: split);
+}
+
+/// The device the decision heads and mtmd projectors of a model placed by
+/// [placement] run on: the GPU or integrated GPU [mainGpu] counts among its
+/// devices, or the first one when [mainGpu] is out of range; `null`, the CPU,
+/// when it has none.
+GgmlDeviceEntry? auxiliaryPlacementDevice(
+  GpuDevicePlacement placement,
+  int mainGpu,
+) {
+  final gpus = [
+    for (final device in placement.devices)
+      if ((device.type == _typeGpu || device.type == _typeIgpu) &&
+          device.device != null &&
+          device.device != nullptr)
+        device,
+  ];
+  if (gpus.isEmpty) return null;
+  return mainGpu >= 0 && mainGpu < gpus.length ? gpus[mainGpu] : gpus.first;
+}
+
+/// The largest proportion sum [allocateTensorSplit] passes on unscaled.
+///
+/// Tensor split mode computes `rows * runningSum` in float32, and rows stay
+/// below 2^63, so a sum of at most 2^64 keeps that product below the float32
+/// maximum of about 2^128.
+const double _maxTensorSplitSum = 18446744073709551616.0;
+
+/// Allocates the `llama_model_params.tensor_split` array of [split] with
+/// [allocator]: [maxDevices] floats, as llama.cpp copies that many, with 0
+/// after the proportions.
+///
+/// A sum above 2^64 is scaled down by a power of two, which leaves every
+/// float32 sum and ratio llama.cpp computes from the proportions unchanged
+/// unless one falls below float32's normal range (2^-126). Unscaled,
+/// tensor split mode overflows to infinity once a running sum times a
+/// tensor's row count exceeds the float32 maximum, about 8e34 for 4096 rows.
+Pointer<Float> allocateTensorSplit(
+  List<double> split, {
+  required int maxDevices,
+  required Allocator allocator,
+}) {
+  final sum = split.fold<double>(0, (sum, value) => sum + value);
+  var scale = 1.0;
+  while (sum * scale > _maxTensorSplitSum) {
+    scale /= 2;
+  }
+  final array = allocator<Float>(maxDevices);
+  for (var index = 0; index < maxDevices; index++) {
+    array[index] = index < split.length ? split[index] * scale : 0;
+  }
+  return array;
 }
