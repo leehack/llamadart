@@ -10,6 +10,7 @@ import '../template/chat_format.dart';
 import '../template/chat_format_registry.dart';
 import '../template/chat_parse_result.dart';
 import '../template/chat_template_engine.dart';
+import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
 
@@ -126,6 +127,8 @@ class ChatCompletionStreamParser {
         : null;
     final isQwen3CoderXml =
         templateResult.format == ChatFormat.qwen3CoderXml.index;
+    final verbatimForcedThought =
+        templateResult.thinkingForcedOpen && traits.keepsForcedThoughtVerbatim;
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
@@ -138,15 +141,27 @@ class ChatCompletionStreamParser {
       thoughtCallOpening: traits.parsesCallsInsideThoughts
           ? toolCallOpening
           : null,
-      unescapes: toolCallOpening != null && !isQwen3CoderXml,
+      unescapes:
+          toolCallOpening != null && !isQwen3CoderXml && !verbatimForcedThought,
       trimsLeading: !pegParsedWithoutTools,
     );
     final gptOssFrames = _GptOssFrameStream(
       parseToolCalls: parseToolCallsEnabled,
     );
     final thoughtTags = gatedOpening != null ? _ThoughtTagState() : null;
+    // Without tools, Cohere2 MoE and Command R7B content streams raw, but
+    // their parse drops the markers that wrap it.
+    final responseMarkers =
+        !parseToolCallsEnabled &&
+            (templateResult.format == ChatFormat.cohere2Moe.index ||
+                templateResult.format == ChatFormat.commandR7B.index)
+        ? _MarkerFilter(CommandR7BHandler.responseMarkers)
+        : null;
     var atForcedThoughtStart =
-        thoughtTags != null && templateResult.thinkingForcedOpen;
+        thoughtTags != null &&
+        templateResult.thinkingForcedOpen &&
+        !verbatimForcedThought;
+    var verbatimThoughtEnded = false;
     // Kimi K3 frames its response in protocol channels that only its parse
     // strips, with or without tools.
     final rawWithoutTools =
@@ -266,13 +281,29 @@ class ChatCompletionStreamParser {
           }
         }
 
-        final split = _splitThinkingBuffer(
-          pendingBuffer: pendingBuffer,
-          isThinking: isThinking,
-          startTag: startTag,
-          endTag: endTag,
-          tagState: thoughtTags,
-        );
+        final split = verbatimThoughtEnded
+            ? _ThinkingSplitResult(
+                pendingBuffer: '',
+                isThinking: false,
+                emissions: [
+                  _ThinkingSplitEmission(
+                    text: pendingBuffer,
+                    isThinking: false,
+                  ),
+                ],
+              )
+            : _splitThinkingBuffer(
+                pendingBuffer: pendingBuffer,
+                isThinking: isThinking,
+                startTag: startTag,
+                endTag: endTag,
+                tagState: thoughtTags,
+                endsAtFirstEndTag: verbatimForcedThought,
+              );
+        if (verbatimForcedThought &&
+            split.emissions.any((emission) => emission.endsThinking)) {
+          verbatimThoughtEnded = true;
+        }
         pendingBuffer = split.pendingBuffer;
         isThinking = split.isThinking;
         for (final emission in split.emissions) {
@@ -287,7 +318,7 @@ class ChatCompletionStreamParser {
             }
             streamedReasoning += text;
           } else {
-            text = contentGate.add(text);
+            text = contentGate.add(responseMarkers?.add(text) ?? text);
             if (text.isEmpty) {
               continue;
             }
@@ -417,7 +448,7 @@ class ChatCompletionStreamParser {
 
     pendingBuffer = isThinking
         ? reasoningGate.finish(pendingBuffer)
-        : contentGate.add(pendingBuffer);
+        : contentGate.add(responseMarkers?.add(pendingBuffer) ?? pendingBuffer);
     if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
       if (isThinking) {
         streamedReasoning += pendingBuffer;
@@ -963,6 +994,7 @@ class ChatCompletionStreamParser {
     required String startTag,
     required String endTag,
     _ThoughtTagState? tagState,
+    bool endsAtFirstEndTag = false,
   }) {
     final emissions = <_ThinkingSplitEmission>[];
     var localPendingBuffer = pendingBuffer;
@@ -1047,6 +1079,18 @@ class ChatCompletionStreamParser {
         localPendingBuffer = localPendingBuffer.substring(
           endIdx + endTag.length,
         );
+        if (endsAtFirstEndTag) {
+          if (localPendingBuffer.isNotEmpty) {
+            emissions.add(
+              _ThinkingSplitEmission(
+                text: localPendingBuffer,
+                isThinking: false,
+              ),
+            );
+          }
+          localPendingBuffer = '';
+          break;
+        }
         continue;
       }
 
@@ -1117,6 +1161,35 @@ class ChatCompletionStreamParser {
         codeUnit == 0x09 || // \t
         codeUnit == 0x0A || // \n
         codeUnit == 0x0D; // \r
+  }
+}
+
+/// Drops [markers] from streamed text, holding back a trailing prefix of one
+/// until it completes. The final parse reconciles a prefix that never does.
+class _MarkerFilter {
+  _MarkerFilter(this.markers);
+
+  final List<String> markers;
+  var _pending = '';
+
+  /// Adds [text] and returns the newly released text.
+  String add(String text) {
+    _pending += text;
+    for (final marker in markers) {
+      _pending = _pending.replaceAll(marker, '');
+    }
+    var held = 0;
+    for (final marker in markers) {
+      for (var length = marker.length - 1; length > held; length--) {
+        if (_pending.endsWith(marker.substring(0, length))) {
+          held = length;
+          break;
+        }
+      }
+    }
+    final released = _pending.substring(0, _pending.length - held);
+    _pending = _pending.substring(_pending.length - held);
+    return released;
   }
 }
 

@@ -33,6 +33,24 @@ ThinkingExtraction extractThinking(
   return (content: result.content.trim(), reasoning: result.reasoning);
 }
 
+/// Splits [text] that continues a thought the prompt opened at the first
+/// [endTag], as llama.cpp's PEG parser does.
+///
+/// The reasoning before it keeps escapes and a repeated start tag, and the
+/// rest is content, where thinking tags are text. Without [endTag], all of
+/// [text] is reasoning. Only the ends of each part are trimmed.
+ThinkingExtraction extractForcedOpenThoughtVerbatim(
+  String text, {
+  String endTag = '</think>',
+}) {
+  final endIdx = text.indexOf(endTag);
+  final reasoning = (endIdx == -1 ? text : text.substring(0, endIdx)).trim();
+  return (
+    content: endIdx == -1 ? '' : text.substring(endIdx + endTag.length).trim(),
+    reasoning: reasoning.isEmpty ? null : reasoning,
+  );
+}
+
 ThinkingExtraction _extractThinking(
   String text, {
   required String startTag,

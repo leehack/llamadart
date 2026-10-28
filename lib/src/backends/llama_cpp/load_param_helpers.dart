@@ -129,6 +129,7 @@ FlashAttention applyContextParams(
   if (params.ropeFrequencyScale != null) {
     ctxParams.rope_freq_scale = params.ropeFrequencyScale!;
   }
+  ctxParams.moe_cache_size = params.moeCacheBytes;
   return resolvedFlashAttn;
 }
 

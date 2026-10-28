@@ -1,7 +1,7 @@
 import 'decision_catalog.dart';
 
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 12;
+const int validationCatalogVersion = 13;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -19,6 +19,7 @@ const validationFeatures = {
   'tokenization': 1,
   'state_persistence': 1,
   'tool_result_media': 1,
+  'next_token_scoring': 1,
 };
 
 /// Feature selectors that catalogs before 8 do not declare.
@@ -99,6 +100,7 @@ const validationFixtures = <String, Map<String, Object>>{
   'tokenization': tokenizationFixture,
   'state_persistence': statePersistenceFixture,
   'tool_result_media': toolResultMediaFixture,
+  'next_token_scoring': nextTokenScoringFixture,
 };
 
 /// Case identity and fixture dependencies. False implementation flags always
@@ -249,6 +251,7 @@ const extendedValidationCases = [
   ...tokenizationValidationCases,
   ...stateValidationCases,
   ...toolResultMediaValidationCases,
+  ...nextTokenScoringValidationCases,
 ];
 
 /// Stable order for the complete selected/omitted inventory.
@@ -269,7 +272,9 @@ const catalogFiveCaseIds = {
 /// Whether [catalogVersion] declares case [id]. Decision cases exist only in
 /// catalogs 5 and newer, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    toolResultMediaValidationCases.any((definition) => definition.id == id)
+    nextTokenScoringValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion >= 13
+    : toolResultMediaValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 12
     : stateValidationCases.any((definition) => definition.id == id)
     ? catalogVersion >= 11
@@ -781,5 +786,50 @@ const toolResultMediaValidationCases = [
     'M01.tool_result_image',
     ['tools', 'tool_result_media'],
     ['tool_result_media'],
+  ),
+];
+
+/// Prompts, ranks and tolerances for public next-token scoring. Scores are raw
+/// softmax log-probabilities, so no sampler setting enters the oracle.
+const nextTokenScoringFixture = <String, Object>{
+  'prompts': [
+    'Once upon a time there was a little girl named Lily. One day Lily found a shiny key under an old tree. She took the key home and opened',
+    'The quick brown fox jumps over the lazy',
+  ],
+  'top_k': 8,
+  'candidate_ranks': [0, 2, 5],
+  'prefix':
+      'Once upon a time there was a little girl named Lily. Lily lived in a red house beside a forest. Every morning she visited her friend, a small brown rabbit. One day Lily found a shiny key under an old tree. She took the key home and opened',
+  'suffix': ' the wooden box',
+  'max_abs_logprob_delta': 0.01,
+  'max_probability_mass': 1.001,
+};
+
+/// Public scoring obligations introduced together in catalog 13.
+const nextTokenScoringValidationCases = [
+  ValidationCaseDefinition(
+    'N01.capability',
+    ['next_token_scoring'],
+    ['next_token_scoring'],
+  ),
+  ValidationCaseDefinition(
+    'N02.top_k',
+    ['next_token_scoring'],
+    ['next_token_scoring'],
+  ),
+  ValidationCaseDefinition(
+    'N03.candidates',
+    ['next_token_scoring'],
+    ['next_token_scoring'],
+  ),
+  ValidationCaseDefinition(
+    'N04.reuse',
+    ['next_token_scoring'],
+    ['next_token_scoring'],
+  ),
+  ValidationCaseDefinition(
+    'N05.guards',
+    ['next_token_scoring'],
+    ['next_token_scoring'],
   ),
 ];

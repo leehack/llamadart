@@ -255,6 +255,26 @@ Future<void> switchToLiteRtLm(LlamaEngine engine, String bundlePath) async {
 }
 ```
 
+Keep a Mixture-of-Experts GGUF's experts in host memory and cache the recently
+used ones on a CUDA or Metal GPU (native llama.cpp only; Vulkan, other
+backends, tensor split, the Web and LiteRT-LM throw
+`LlamaUnsupportedException`). It helps a discrete GPU that cannot hold every
+expert; Apple silicon gains nothing:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<LlamaEngine> loadMoeWithExpertCache(String path) {
+  return LlamaEngine.load(
+    LlamaModel(ModelSource.path(path)),
+    params: const LlamaCppModelParams(
+      cpuMoeLayers: -1, // every layer's experts stay in host memory
+      moeCacheBytes: 4 << 30, // up to 4 GiB of experts on the GPU
+    ),
+  );
+}
+```
+
 ## More
 
 - Installation and platform setup: https://llamadart.leehack.com/docs/getting-started/installation

@@ -8,6 +8,7 @@ import 'placement.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
 import 'tool_result_media_evidence.dart';
+import 'scoring_evidence.dart';
 import 'state_evidence.dart';
 
 /// Validates the event journal and produces all report formats from one source.
@@ -236,6 +237,28 @@ class ValidationReport {
           event['status'] == 'PASS' &&
           !validToolResultMediaCaseEvidence(id, event, profile)) {
         problems.add('Invalid tool-result media case evidence: $id');
+      }
+      if (profile != null &&
+          id.startsWith('N') &&
+          event['status'] == 'PASS' &&
+          !validScoringCaseEvidence(
+            id,
+            event,
+            profile,
+            web: (manifest['environment'] as Map?)?['web'] == true,
+            diagnostics:
+                events
+                    .where(
+                      (entry) =>
+                          entry['case_id'] == 'C01.load' &&
+                          entry['status'] == 'PASS',
+                    )
+                    .map((entry) => entry['diagnostics'])
+                    .whereType<Map>()
+                    .firstOrNull ??
+                const {},
+          )) {
+        problems.add('Invalid scoring case evidence: $id');
       }
       if (profile != null &&
           id.startsWith('P') &&

@@ -41,6 +41,15 @@ Validation errors (`LlamaImageGenerationException`) and recipe refusals
   the runtime to detect `SD 1.x` or `SD 2.x` and the session to report
   `ImageHiresFixSession.supportsHiresFix`; a session without the interface
   is refused.
+- Kernel options: unlike image editing and ControlNet, the recipe admits
+  any `flashAttention` and `vaeDirectConvolution`. Both passes run the
+  sampling and decode kernels an ordinary request runs, so the options
+  change hires output only as they change any request. With the defaults
+  (flash attention on; direct convolution on for CPU, off for Metal),
+  SD-Turbo `hires` differed from the direct-C reference with both off by
+  MAE 0.09 on Metal and 1.12 on CPU, within the one-pass `base` and `final`
+  differences under the same defaults (0.09–0.11 Metal, 1.18–1.55 CPU;
+  2026-10-27, pinned runtime). Exact-RGB parity is checked with both off.
 - Mapping: Dart resolves the final size, so `sd_img_gen_params_t.hires` gets
   `enabled`, `SD_HIRES_UPSCALER_LATENT`, `target_width`/`target_height`,
   `steps`, `denoising_strength`, `scale = 0`, no model path and no custom
