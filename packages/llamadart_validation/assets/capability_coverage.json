@@ -125,10 +125,13 @@
       "id": "tools",
       "cases": [
         "C07.tools",
-        "C07.tools.auto_text"
+        "C07.tools.auto_text",
+        "M01.tool_result_image"
       ],
       "profiles": [
-        "assets/profiles/chat-gguf-cpu.json"
+        "assets/profiles/chat-gguf-cpu.json",
+        "assets/profiles/qwen3vl-gguf-cpu.json",
+        "assets/profiles/qwen3vl-gguf-metal.json"
       ]
     },
     {
@@ -518,11 +521,7 @@
         "capability:LlamaEngineCapabilities.toolResultMedia",
         "matrix:Tool-result media"
       ],
-      "exemption": {
-        "id": "tool-result-media",
-        "reason": "The tools pack has no vision-model case yet. VM tests pin Qwen3-VL template rendering to llama-server 620d2225c emissions, prompt-ordered media dispatch, capability gating and typed refusals; the local-only tool-result-image-smoke scenario runs the closest-family Qwen3.5-0.8B (qwen3vl_merger projector) with the Qwen3-VL template. A tools-pack case on real Qwen3-VL weights remains open.",
-        "issue": "https://github.com/leehack/llamadart/issues/1008"
-      }
+      "pack": "tools"
     },
     {
       "surfaces": [

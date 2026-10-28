@@ -137,6 +137,14 @@ Future<void> main(List<String> args) async {
               onProgress: journal.emitPreparation,
             )
           : null;
+      final visionProjector = profile.toolResultProjector == null
+          ? null
+          : await prepareToolResultProjector(
+              profile,
+              cache,
+              suppliedPath: options['projector'],
+              onProgress: journal.emitPreparation,
+            );
       final decision = profile.isDecision
           ? await prepareDecisionAssets(
               profile,
@@ -161,6 +169,7 @@ Future<void> main(List<String> args) async {
             : PublicValidationEngine(
                 decisionHead: decision?.head,
                 decisionConfig: decision?.config,
+                projector: visionProjector?.path,
               ),
         emit: journal.emit,
         stateWorkspaceFactory: IoStateValidationWorkspace.create,
@@ -196,6 +205,7 @@ Future<void> main(List<String> args) async {
             ...prepared.evidence,
             ...?decision?.evidence,
             if (projector != null) 'embedding_projector': projector.evidence,
+            if (visionProjector != null) 'projector': visionProjector.evidence,
           },
         );
       } finally {

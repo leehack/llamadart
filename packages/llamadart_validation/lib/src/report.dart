@@ -7,6 +7,7 @@ import 'manifest.dart';
 import 'placement.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
+import 'tool_result_media_evidence.dart';
 import 'state_evidence.dart';
 
 /// Validates the event journal and produces all report formats from one source.
@@ -231,6 +232,12 @@ class ValidationReport {
         problems.add('Invalid tokenization case evidence: $id');
       }
       if (profile != null &&
+          id.startsWith('M') &&
+          event['status'] == 'PASS' &&
+          !validToolResultMediaCaseEvidence(id, event, profile)) {
+        problems.add('Invalid tool-result media case evidence: $id');
+      }
+      if (profile != null &&
           id.startsWith('P') &&
           event['status'] == 'PASS' &&
           !validStateCaseEvidence(
@@ -356,6 +363,7 @@ class ValidationReport {
     final projector =
         ((manifest['profile'] as Map?)?['embedding'] as Map?)?['projector']
             as Map?;
+    final mediaProjector = (manifest['profile'] as Map?)?['projector'] as Map?;
     final preparation = manifest['preparation'] is Map
         ? manifest['preparation'] as Map
         : const {};
@@ -377,6 +385,14 @@ class ValidationReport {
               (preparation['embedding_projector'] as Map)['bytes'] !=
                   projector['bytes']))
         'Verified embedding projector hash and byte size do not match the profile lock',
+      if (mediaProjector != null &&
+          (preparation['projector'] is! Map ||
+              (preparation['projector'] as Map)['verified'] != true ||
+              (preparation['projector'] as Map)['sha256'] !=
+                  mediaProjector['sha256'] ||
+              (preparation['projector'] as Map)['bytes'] !=
+                  mediaProjector['bytes']))
+        'Verified vision projector hash and byte size do not match the profile lock',
       for (final MapEntry(:key, :value) in decision.entries)
         if (preparation['decision_$key'] is! Map ||
             (preparation['decision_$key'] as Map)['verified'] != true ||

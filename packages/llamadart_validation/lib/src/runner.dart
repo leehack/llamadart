@@ -16,12 +16,14 @@ import 'runtime_environment.dart';
 import 'state_evidence.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
+import 'tool_result_media_evidence.dart';
 
 part 'decision_runner.dart';
 part 'embedding_runner.dart';
 part 'state_runner.dart';
 part 'structured_runner.dart';
 part 'tokenization_runner.dart';
+part 'tool_result_media_runner.dart';
 
 /// Sink implemented by file, browser and Firebase host adapters.
 typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
@@ -77,7 +79,8 @@ class PublicValidationEngine
     with
         _PublicDecisionValidation,
         _PublicStructuredValidation,
-        _PublicStateValidation
+        _PublicStateValidation,
+        _PublicToolResultMediaValidation
     implements ValidationEngine, TokenCountValidationEngine {
   /// Uses the public engine; a factory allows isolated adapter verification.
   /// [decisionHead] and [decisionConfig] are the prepared decision files or
@@ -90,6 +93,7 @@ class PublicValidationEngine
     this.projector,
   }) : _engineFactory = engineFactory;
   final NpuExecutionMonitor? npu;
+  @override
   final String? projector;
   @override
   final String? decisionHead;
@@ -116,6 +120,12 @@ class PublicValidationEngine
     requireValidationRuntimeEnvironment();
     _recordStateUsage = profile.focusFeatures.contains('state_persistence');
     profile.requireRunnable(verifiedAndroidNpuHost: npu != null, web: isWeb);
+    if (profile.toolResultProjector != null && projector == null) {
+      throw LlamaUnsupportedException(
+        'Profile ${profile.id} locks a vision projector that this host did '
+        'not prepare; run it with validation.dart local.',
+      );
+    }
     if (_disposed) {
       _engine = _createEngine();
       _disposed = false;
@@ -1397,6 +1407,7 @@ class ValidationRunner {
     if (id.startsWith('S')) return _structuredCase(id);
     if (id.startsWith('P')) return _stateCase(id, location);
     if (id.startsWith('T')) return _tokenizationCase(id);
+    if (id.startsWith('M')) return _toolResultMediaCase(id);
     if (profile.nativeReference &&
         [
           'C02.generate',

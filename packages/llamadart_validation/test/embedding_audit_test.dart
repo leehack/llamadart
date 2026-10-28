@@ -69,6 +69,10 @@ const oldHashes = <String, String>{
       "4630631b440cdbb5b8b5f2c18c61123314b225ee4025c364d43fd2cc8d60661d",
   "tokenization-gguf-cpu.json":
       "9c5c0f5a1d6b39dbe91404162dd889857fac031104505e35cd13bdd67233211c",
+  "qwen3vl-gguf-cpu.json":
+      "d90fe66455b1a9ad1cb19d4ebec718452a1e55775d3a4948a33858e637ed115e",
+  "qwen3vl-gguf-metal.json":
+      "f21fb14fbe84ad63b8ec5f662a001d35b4109aa8797fb17d251cb24773d355fd",
   "decision-gguf-webgpu.json":
       "40d0ba6b84a6ae4006d48c4e76b42ba0d8a5e669814d1fa74088d6b4ec806288",
 };

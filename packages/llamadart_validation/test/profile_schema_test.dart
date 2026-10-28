@@ -315,6 +315,7 @@ void main() {
             if (!const {
                   'native_json_schema_capability',
                   'state_persistence',
+                  'tool_result_media',
                 }.contains(entry.key) &&
                 field.value is String)
               field.key: const {'type': 'string'},

@@ -291,6 +291,16 @@ the Web builder rejects these native profiles before downloading. Local JIT
 runs cannot supply portable runtime evidence. This private pack changes no
 public core API or release changelog.
 
+## Tool-result media pack
+
+Catalog 12 adds `tool_result_media` and `M01.tool_result_image`.
+`qwen3vl-gguf-cpu` and `qwen3vl-gguf-metal` lock Qwen3-VL-2B-Instruct Q8_0
+and its projector. The case checks the public `toolResultMedia` capability,
+has the model call a tool, then sends a tool result that carries a red and a
+blue PNG in turn: each answer must name its own color only. A profile without a
+locked projector omits the case. See
+[the runbook](../../doc/cross_platform_validation.md#catalog-12-tool-result-media).
+
 ## State persistence pack
 
 Catalog 11 adds `state_persistence` and P01–P04. `state-gguf-cpu` locks
