@@ -111,41 +111,6 @@ void main() {
     expect(result.prompt, 'user:[Weather?];assistant:[];');
   });
 
-  test('a media request closes a thought the template opens only when '
-      'thinking is off', () {
-    const template =
-        '{%- for message in messages -%}'
-        '{%- for part in message.content -%}{{ part.text }}{%- endfor -%}'
-        '{%- endfor -%}'
-        '<think>';
-    const messages = <LlamaChatMessage>[
-      LlamaChatMessage.withContent(
-        role: LlamaChatRole.user,
-        content: <LlamaContentPart>[
-          LlamaImageContent(path: '/tmp/photo.png'),
-          LlamaTextContent('look'),
-        ],
-      ),
-    ];
-    LlamaChatTemplateResult render({required bool enableThinking}) =>
-        ChatTemplateEngine.handlerFor(
-          ChatFormat.contentOnly,
-        ).renderWithMultimodalContent(
-          templateSource: template,
-          messages: messages,
-          metadata: const <String, String>{},
-          enableThinking: enableThinking,
-        );
-
-    final on = render(enableThinking: true);
-    expect(on.prompt, '<__media__>look<think>');
-    expect(on.thinkingForcedOpen, isTrue);
-
-    final off = render(enableThinking: false);
-    expect(off.prompt, '<__media__>look<think></think>\n');
-    expect(off.thinkingForcedOpen, isFalse);
-  });
-
   group('required calls after a forced-open thought', () {
     final tools = [
       ToolDefinition(

@@ -1,3 +1,7 @@
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.7.0-3`.
+
 ## 0.16.0
 
 * Pair with core `0.16.x`; Apple SwiftPM stays pinned to `leehack/llamadart-native@v0.7.0-2`.

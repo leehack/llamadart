@@ -1,3 +1,4 @@
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/template/thinking_utils.dart';
 import 'package:test/test.dart';
 
@@ -74,6 +75,43 @@ void main() {
   test('isThinkingForcedOpen detects trailing think tag', () {
     expect(isThinkingForcedOpen('<think>\n'), isTrue);
     expect(isThinkingForcedOpen('hello'), isFalse);
+  });
+
+  group('withTemplateOpenedThought', () {
+    LlamaChatTemplateResult result(String prompt, {bool forcedOpen = false}) =>
+        LlamaChatTemplateResult(
+          prompt: prompt,
+          format: 0,
+          grammar: 'root ::= "x"',
+          thinkingForcedOpen: forcedOpen,
+        );
+
+    test('forces open a thought that ends the prompt in the start tag', () {
+      final opened = withTemplateOpenedThought(
+        result('look[THINK]\n'),
+        startTag: '[THINK]',
+      );
+      expect(opened.prompt, 'look[THINK]\n');
+      expect(opened.grammar, 'root ::= "x"');
+      expect(opened.thinkingForcedOpen, isTrue);
+    });
+
+    test('leaves a prompt that does not end in the start tag', () {
+      for (final prompt in ['look<think>', 'look[THINK][/THINK]']) {
+        expect(
+          withTemplateOpenedThought(
+            result(prompt),
+            startTag: '[THINK]',
+          ).thinkingForcedOpen,
+          isFalse,
+        );
+      }
+    });
+
+    test('keeps a thought the handler already tracks', () {
+      final tracked = result('look', forcedOpen: true);
+      expect(withTemplateOpenedThought(tracked, startTag: '<think>'), tracked);
+    });
   });
 
   group('effectiveEnableThinking', () {

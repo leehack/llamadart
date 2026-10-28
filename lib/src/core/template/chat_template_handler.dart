@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:dinja/dinja.dart';
 
@@ -15,7 +14,6 @@ import 'chat_parse_result.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
-import 'thinking_utils.dart';
 import 'tool_call_grammar_utils.dart';
 
 export 'template_render_context.dart' show TemplateToolCallSerialization;
@@ -221,7 +219,7 @@ abstract class ChatTemplateHandler {
         part is LlamaImageContent ||
         part is LlamaAudioContent ||
         part is LlamaVideoContent;
-    final result = render(
+    return render(
       templateSource: templateSource,
       messages: [
         for (final message in messages)
@@ -234,41 +232,10 @@ abstract class ChatTemplateHandler {
                 )
               : message,
       ],
-      // llama.cpp gives every template `enable_thinking`; most handlers' own
-      // contexts leave it out.
-      metadata: {
-        ...metadata,
-        internalChatTemplateKwargsMetadataKey: jsonEncode({
-          ...chatTemplateKwargsFromMetadata(metadata),
-          'enable_thinking': enableThinking,
-        }),
-      },
+      metadata: metadata,
       addAssistant: addAssistant,
       tools: tools,
       enableThinking: enableThinking,
-    );
-    // Handlers that do not track a thought the template opened, such as the
-    // generic one, still get it handled for media requests.
-    if (result.thinkingForcedOpen ||
-        !isThinkingForcedOpen(
-          result.prompt,
-          startTag: thinkingStartTag.trimRight(),
-        )) {
-      return result;
-    }
-    return LlamaChatTemplateResult(
-      prompt: enableThinking
-          ? result.prompt
-          : '${result.prompt.trimRight()}$thinkingEndTag\n',
-      format: result.format,
-      grammar: result.grammar,
-      grammarLazy: result.grammarLazy,
-      additionalStops: result.additionalStops,
-      preservedTokens: result.preservedTokens,
-      grammarTriggers: result.grammarTriggers,
-      thinkingForcedOpen: enableThinking,
-      parser: result.parser,
-      tokenCount: result.tokenCount,
     );
   }
 
