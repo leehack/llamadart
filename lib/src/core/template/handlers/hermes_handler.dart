@@ -183,9 +183,11 @@ class HermesHandler extends ChatTemplateHandler
     // Handle enableThinking post-render logic
     final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>\n';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -211,7 +213,10 @@ class HermesHandler extends ChatTemplateHandler
           ? [const GrammarTrigger(type: 0, value: '<tool_call>')]
           : [],
     );
-    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
+    return withThoughtClosedForThinkingOff(
+      withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
+      closed: thoughtClosed,
+    );
   }
 
   /// On [cancelled], withholds unfinished tool envelopes from answer text.

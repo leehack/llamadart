@@ -51,9 +51,11 @@ class NemotronV2Handler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -63,7 +65,7 @@ class NemotronV2Handler extends ChatTemplateHandler {
     final triggerPattern = thinkingForcedOpen
         ? r'[\s\S]*?(</think>\s*)(<TOOLCALL>)[\s\S]*'
         : r'(?:<think>[\s\S]*?</think>\s*)?(<TOOLCALL>)[\s\S]*';
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: buildGrammar(tools),
@@ -77,6 +79,7 @@ class NemotronV2Handler extends ChatTemplateHandler {
           ? [GrammarTrigger(type: 3, value: triggerPattern)]
           : [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override

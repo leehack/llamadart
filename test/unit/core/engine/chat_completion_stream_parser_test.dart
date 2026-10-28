@@ -21,6 +21,7 @@ import 'package:llamadart/src/core/template/handlers/ministral_handler.dart';
 import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 import 'package:llamadart/src/core/template/handlers/solar_open_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
+import 'package:llamadart/src/core/template/thinking_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -2556,6 +2557,99 @@ void main() {
       });
     });
 
+    // A handler closes a thought its template opened when thinking is off,
+    // but the parse still ends a reply's leading thought at the first end
+    // tag, so the stream holds text until a thinking tag shows what it is.
+    group('a thought closed for thinking off', () {
+      const qwenCall =
+          '<tool_call>\n<function=weather>\n<parameter=city>\nParis\n'
+          '</parameter>\n</function>\n</tool_call>';
+      const hermesCall =
+          '<tool_call>\n{"name": "weather", "arguments": {"city": "Paris"}}\n'
+          '</tool_call>';
+      for (final (format, call) in const [
+        (ChatFormat.qwen3CoderXml, qwenCall),
+        (ChatFormat.hermes, hermesCall),
+        (ChatFormat.deepseekR1, ''),
+        (ChatFormat.minimaxM2, ''),
+        (ChatFormat.nemotronV2, ''),
+        (ChatFormat.glm45, ''),
+      ]) {
+        final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+        final s = tags.startTag;
+        final e = tags.endTag;
+        test('${format.name} streams what the parse keeps', () async {
+          for (final output in [
+            'Plan\n$e\n\nSunny.',
+            '$e\n\nSunny.',
+            'Sunny.',
+            'Sunny, as ${s}planned$e it is.',
+            '${s}Plan$e Sunny.',
+            if (call.isNotEmpty) ...[
+              'Plan\n$e\n\n$call',
+              'Plan\n$e\n\nSunny.\n\n$call',
+              'Let me check.\n$call',
+              call,
+            ],
+          ]) {
+            for (final tools in [false, if (call.isNotEmpty) true]) {
+              for (final enableThinking in const [false, true]) {
+                await _expectStreamMatchesParse(
+                  format,
+                  output,
+                  thoughtClosed: true,
+                  tools: tools,
+                  enableThinking: enableThinking,
+                  everySplit: true,
+                );
+              }
+            }
+          }
+        });
+      }
+
+      test('content after the end tag streams as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.qwen3CoderXml,
+          thoughtClosed: true,
+          tools: false,
+          const [
+            ('Plan', '', ''),
+            ('\n</th', '', ''),
+            ('ink>\n\nSun', 'Plan', 'Sun'),
+            ('ny.', 'Plan', 'Sunny.'),
+          ],
+        );
+      });
+
+      test('content after a start tag streams as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.qwen3CoderXml,
+          thoughtClosed: true,
+          tools: false,
+          const [('Hi', '', ''), (' <think>Plan', 'Plan', 'Hi')],
+        );
+      });
+
+      test('an unmarked result streams content as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.qwen3CoderXml,
+          tools: false,
+          const [('Plan', '', 'Plan')],
+        );
+      });
+
+      test('a forced-open thought streams reasoning as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.qwen3CoderXml,
+          forcedOpen: true,
+          thoughtClosed: true,
+          tools: false,
+          const [('Plan', 'Plan', ''), ('</think>Sun', 'Plan', 'Sun')],
+        );
+      });
+    });
+
     group('whitespace matches the final parse', () {
       String pegParser(
         ChatTemplateHandler handler, {
@@ -3528,6 +3622,8 @@ Future<void> _expectStreamMatchesParse(
   bool enableThinking = true,
   bool atLimit = false,
   bool cancelled = false,
+  bool thoughtClosed = false,
+  bool everySplit = false,
 }) async {
   final parsed = ChatTemplateEngine.parse(
     format.index,
@@ -3538,14 +3634,22 @@ Future<void> _expectStreamMatchesParse(
     parser: parser,
     tools: tools ? [_weatherTool] : null,
   );
-  for (final tokens in _chunkings(output, openings)) {
+  for (final tokens in [
+    ..._chunkings(output, openings),
+    if (everySplit)
+      for (var split = 1; split < output.length; split++)
+        [output.substring(0, split), output.substring(split)],
+  ]) {
     final chunks = await ChatCompletionStreamParser.parse(
       tokenStream: Stream.fromIterable(tokens),
-      templateResult: LlamaChatTemplateResult(
-        prompt: 'prompt',
-        format: format.index,
-        thinkingForcedOpen: forcedOpen,
-        parser: parser,
+      templateResult: withThoughtClosedForThinkingOff(
+        LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: format.index,
+          thinkingForcedOpen: forcedOpen,
+          parser: parser,
+        ),
+        closed: thoughtClosed,
       ),
       parseToolCallsEnabled: tools,
       enableThinking: enableThinking,
@@ -3669,6 +3773,7 @@ Future<void> _expectStreamedAfterEachToken(
   List<(String token, String reasoning, String content)> steps, {
   bool forcedOpen = false,
   bool tools = true,
+  bool thoughtClosed = false,
 }) async {
   final tokens = StreamController<String>();
   final reasoning = StringBuffer();
@@ -3676,10 +3781,13 @@ Future<void> _expectStreamedAfterEachToken(
   final subscription =
       ChatCompletionStreamParser.parse(
         tokenStream: tokens.stream,
-        templateResult: LlamaChatTemplateResult(
-          prompt: 'prompt',
-          format: format.index,
-          thinkingForcedOpen: forcedOpen,
+        templateResult: withThoughtClosedForThinkingOff(
+          LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: format.index,
+            thinkingForcedOpen: forcedOpen,
+          ),
+          closed: thoughtClosed,
         ),
         parseToolCallsEnabled: tools,
         enableThinking: true,

@@ -40,6 +40,19 @@ List<String> _calls(Iterable<({String? name, String? arguments})> calls) => [
   for (final call in calls) '${call.name} ${jsonDecode(call.arguments!)}',
 ];
 
+/// [output] whole, bytewise, in 3-character chunks and split in two at every
+/// point.
+List<List<String>> _chunkings(String output) => [
+  [output],
+  output.split(''),
+  [
+    for (var i = 0; i < output.length; i += 3)
+      output.substring(i, i + 3 > output.length ? output.length : i + 3),
+  ],
+  for (var split = 1; split < output.length; split++)
+    [output.substring(0, split), output.substring(split)],
+];
+
 // With thinking off, these templates end the prompt with an empty thought,
 // and llama.cpp then parses the reply as content, thinking tags included.
 void main() {
@@ -214,6 +227,77 @@ void main() {
           }
         });
       }
+
+      // With thinking on, the same templates leave the thought open.
+      test('streams each reply with thinking on as it parses', () async {
+        final forcedOpen = ChatTemplateEngine.render(
+          templateSource: File(templatePath).readAsStringSync(),
+          messages: [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: _fixture['user_prompt'] as String,
+            ),
+          ],
+          metadata: const {},
+          tools: [_weatherTool],
+        );
+        // Qwen3-4B leaves opening a thought to the model.
+        final opensThought = !templatePath.endsWith('/Qwen3-4B.jinja');
+        expect(forcedOpen.thinkingForcedOpen, opensThought);
+        if (!opensThought) return;
+        for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
+          final output = c['output'] as String;
+          for (final withTools in const [true, false]) {
+            final parsed = ChatTemplateEngine.parse(
+              forcedOpen.format,
+              output,
+              parseToolCalls: withTools,
+              thinkingForcedOpen: true,
+              tools: withTools ? [_weatherTool] : null,
+            );
+            for (final tokens in _chunkings(output)) {
+              final deltas = (await ChatCompletionStreamParser.parse(
+                tokenStream: Stream.fromIterable(tokens),
+                templateResult: forcedOpen,
+                parseToolCallsEnabled: withTools,
+                enableThinking: true,
+                modelName: 'test-model',
+                completionId: 'forced-open-upstream',
+                tools: withTools ? [_weatherTool] : null,
+              ).toList()).map((chunk) => chunk.choices.single.delta);
+              final reason = '${c['name']} $tokens, tools: $withTools';
+              expect(
+                deltas.map((delta) => delta.content ?? '').join(),
+                parsed.content,
+                reason: reason,
+              );
+              expect(
+                deltas.map((delta) => delta.thinking ?? '').join(),
+                parsed.reasoningContent ?? '',
+                reason: reason,
+              );
+              expect(
+                _calls([
+                  for (final delta in deltas)
+                    for (final call in delta.toolCalls ?? const [])
+                      (
+                        name: call.function?.name,
+                        arguments: call.function?.arguments,
+                      ),
+                ]),
+                _calls([
+                  for (final call in parsed.toolCalls)
+                    (
+                      name: call.function?.name,
+                      arguments: call.function?.arguments,
+                    ),
+                ]),
+                reason: reason,
+              );
+            }
+          }
+        }
+      });
     });
   }
 
@@ -252,6 +336,53 @@ void main() {
         expect(rendered.prompt, endsWith('$generationPrompt</think>\n'));
         expect(rendered.thinkingForcedOpen, isFalse);
         expect(thinkingForcedClosedOf(rendered), isFalse);
+        expect(thoughtClosedForThinkingOffOf(rendered), isTrue);
+      });
+
+      test('keeps the mark through grammar and token counts', () async {
+        final source = File(templatePath).readAsStringSync();
+        final messages = [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: _fixture['user_prompt'] as String,
+          ),
+        ];
+        final results = [
+          ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: const {},
+            tools: [_weatherTool],
+            toolChoice: ToolChoice.required,
+            enableThinking: false,
+          ),
+          ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: const {},
+            responseFormat: const {
+              'type': 'json_schema',
+              'json_schema': {
+                'schema': {'type': 'object'},
+              },
+            },
+            enableThinking: false,
+          ),
+          await ChatTemplateRenderer.render(
+            loadMetadata: () async => {'tokenizer.chat_template': source},
+            tokenize: (text, {bool addSpecial = true}) async => const [1],
+            messages: messages,
+            enableThinking: false,
+          ),
+        ];
+        for (final (index, result) in results.indexed) {
+          expect(result.prompt, endsWith('</think>\n'), reason: '$index');
+          expect(
+            thoughtClosedForThinkingOffOf(result),
+            isTrue,
+            reason: '$index',
+          );
+        }
       });
 
       for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
@@ -300,55 +431,47 @@ void main() {
               reason: reason,
             );
 
-            for (final tokens in [
-              [output],
-              output.split(''),
-              [
-                for (var i = 0; i < output.length; i += 3)
-                  output.substring(
-                    i,
-                    i + 3 > output.length ? output.length : i + 3,
-                  ),
-              ],
-            ]) {
-              final chunks = await ChatCompletionStreamParser.parse(
-                tokenStream: Stream.fromIterable(tokens),
-                templateResult: rendered,
-                parseToolCallsEnabled: withTools,
-                enableThinking: false,
-                modelName: 'test-model',
-                completionId: 'open-thought-upstream',
-                tools: withTools ? [_weatherTool] : null,
-              ).toList();
-              final deltas = chunks.map((chunk) => chunk.choices.single.delta);
-              final streamReason = '${tokens.length} tokens, $reason';
-              // A chunked stream already emits a thought that has no start
-              // tag as content before its end tag arrives, as on main.
-              if (tokens.length == 1) {
+            for (final tokens in _chunkings(output)) {
+              for (final enableThinking in const [false, true]) {
+                final chunks = await ChatCompletionStreamParser.parse(
+                  tokenStream: Stream.fromIterable(tokens),
+                  templateResult: rendered,
+                  parseToolCallsEnabled: withTools,
+                  enableThinking: enableThinking,
+                  modelName: 'test-model',
+                  completionId: 'open-thought-upstream',
+                  tools: withTools ? [_weatherTool] : null,
+                ).toList();
+                final deltas = chunks.map(
+                  (chunk) => chunk.choices.single.delta,
+                );
+                final streamReason =
+                    '$tokens, thinking: $enableThinking, $reason';
                 expect(
                   deltas.map((delta) => delta.content ?? '').join().trim(),
                   (upstream['content'] as String).trim(),
                   reason: streamReason,
                 );
+                expect(
+                  deltas.map((delta) => delta.thinking ?? '').join(),
+                  enableThinking
+                      ? (upstream['reasoning_content'] as String).trim()
+                      : isEmpty,
+                  reason: streamReason,
+                );
+                expect(
+                  _calls([
+                    for (final delta in deltas)
+                      for (final call in delta.toolCalls ?? const [])
+                        (
+                          name: call.function?.name,
+                          arguments: call.function?.arguments,
+                        ),
+                  ]),
+                  upstreamCalls,
+                  reason: streamReason,
+                );
               }
-              // With thinking off, the stream drops the reasoning.
-              expect(
-                deltas.map((delta) => delta.thinking ?? '').join(),
-                isEmpty,
-                reason: streamReason,
-              );
-              expect(
-                _calls([
-                  for (final delta in deltas)
-                    for (final call in delta.toolCalls ?? const [])
-                      (
-                        name: call.function?.name,
-                        arguments: call.function?.arguments,
-                      ),
-                ]),
-                upstreamCalls,
-                reason: streamReason,
-              );
             }
           }
         });
@@ -382,6 +505,60 @@ void main() {
         closed.reasoningContent,
         keepsTags ? isNull : open.reasoningContent,
         reason: registration.format.name,
+      );
+    }
+  });
+
+  // With thinking off, a handler closes a thought its template opened. The
+  // stream then holds a reply's leading text where the parse may still end
+  // that thought at an end tag.
+  test('marks a thought a handler closes where the parse ends it', () {
+    // These handlers do not mark one yet (#1553).
+    const unmarked = {
+      ChatFormat.commandR7B,
+      ChatFormat.cohere2Moe,
+      ChatFormat.seedOss,
+    };
+    for (final registration in chatFormatRegistrations) {
+      final format = registration.format;
+      final handler = registration.createHandler();
+      final opened = '<|im_start|>assistant\n${handler.thinkingStartTag}';
+      LlamaChatTemplateResult render({required bool enableThinking}) =>
+          handler.render(
+            templateSource: '{{ ${jsonEncode(opened)} }}',
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+            ],
+            metadata: const {},
+            enableThinking: enableThinking,
+          );
+      final closed = render(enableThinking: false);
+      final handlerClosed =
+          closed.prompt != opened && !closed.thinkingForcedOpen;
+      final bool parsesThought;
+      try {
+        parsesThought =
+            ChatTemplateEngine.parse(
+              format.index,
+              'Plan${handler.thinkingEndTag}Sunny.',
+              parseToolCalls: false,
+            ).reasoningContent ==
+            'Plan';
+      } on StateError {
+        // PEG formats parse only with the parser their render returns.
+        expect(handlerClosed, isFalse, reason: format.name);
+        expect(thoughtClosedForThinkingOffOf(closed), isFalse);
+        continue;
+      }
+      expect(
+        thoughtClosedForThinkingOffOf(closed),
+        handlerClosed && parsesThought && !unmarked.contains(format),
+        reason: format.name,
+      );
+      expect(
+        thoughtClosedForThinkingOffOf(render(enableThinking: true)),
+        isFalse,
+        reason: format.name,
       );
     }
   });

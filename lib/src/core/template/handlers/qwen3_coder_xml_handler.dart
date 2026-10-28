@@ -81,9 +81,11 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
     final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: '<think>')) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>\n';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -143,7 +145,10 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           : const [],
       parser: parser,
     );
-    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
+    return withThoughtClosedForThinkingOff(
+      withThinkingForcedClosed(rendered, closed: thinkingForcedClosed),
+      closed: thoughtClosed,
+    );
   }
 
   bool _isNemotronV3Template(String templateSource) {
