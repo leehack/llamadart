@@ -6,6 +6,7 @@ import '../../core/image/image_generation_driver.dart';
 import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_model.dart';
 import '../../core/image/image_hires_fix_request.dart';
+import '../../core/image/image_reference_editing_request.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 
 /// Writes [config] into [params], which `sd_ctx_params_init` has filled with
@@ -129,6 +130,20 @@ void applyStableDiffusionGenerationParams(
     writePixels(params.ref.control_image, control);
     params.ref.control_strength = request.controlStrength!;
   }
+  if (request.references case final references?) {
+    final images = allocator<sd.sd_image_t>(references.length);
+    for (final (index, reference) in references.indexed) {
+      writePixels(images[index], reference);
+    }
+    params.ref
+      ..ref_images = images
+      ..ref_images_count = references.length
+      // An explicit preset keeps the runtime from choosing one by the
+      // detected family.
+      ..ref_image_args = stableDiffusionReferencePreset(
+        request.referenceRecipe!,
+      ).toNativeUtf8(allocator: allocator).cast();
+  }
   params.ref.sample_params
     ..sample_steps = request.steps
     ..guidance.txt_cfg = request.guidanceScale
@@ -175,6 +190,12 @@ sd.sample_method_t stableDiffusionSampleMethod(
   ImageGenerationSampler.dpmpp2m => sd.sample_method_t.DPMPP2M_SAMPLE_METHOD,
   ImageGenerationSampler.lcm => sd.sample_method_t.LCM_SAMPLE_METHOD,
 };
+
+/// The runtime's `ref_image_args` for [recipe].
+String stableDiffusionReferencePreset(ImageReferenceEditingRecipe recipe) =>
+    switch (recipe) {
+      ImageReferenceEditingRecipe.fluxKontext => 'preset=flux_kontext',
+    };
 
 /// The runtime's hires upscaler for [upscaler].
 sd.sd_hires_upscaler_t stableDiffusionHiresUpscaler(

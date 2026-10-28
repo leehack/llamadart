@@ -424,6 +424,12 @@ class ImageModelFileClassification {
   /// for other files and layouts.
   final int? controlHintChannels;
 
+  /// Whether separate diffusion weights have the FLUX.1 [dev] and Kontext
+  /// transformer layout: double blocks, a guidance embedder and 64-wide
+  /// patch input (16 latent channels in 2x2 patches, no inpainting or
+  /// control channels).
+  final bool fluxGuidanceTransformer;
+
   /// Creates a classification.
   const ImageModelFileClassification(
     this.kind,
@@ -433,6 +439,7 @@ class ImageModelFileClassification {
     this.embedsTinyAutoencoder = false,
     this.crossAttentionWidth,
     this.controlHintChannels,
+    this.fluxGuidanceTransformer = false,
   });
 
   const ImageModelFileClassification._role(
@@ -442,6 +449,7 @@ class ImageModelFileClassification {
     this.embedsTinyAutoencoder = false,
     this.crossAttentionWidth,
     this.controlHintChannels,
+    this.fluxGuidanceTransformer = false,
   }) : kind = ImageModelFileKind.component;
 }
 
@@ -626,10 +634,17 @@ ImageModelFileClassification classifyImageModelFile(
     'layers.',
   ];
   if (diffusionPrefixes.any(hasPrefix)) {
+    final patchInput = byName['img_in.weight'];
     return ImageModelFileClassification._role(
       ImageModelRole.diffusionModel,
       'diffusion tensor names',
       latentChannels: _diffusionLatentChannels(byName, header.isGguf, ''),
+      fluxGuidanceTransformer:
+          hasPrefix('double_blocks.') &&
+          byName.containsKey('guidance_in.in_layer.weight') &&
+          patchInput != null &&
+          patchInput.shape.length == 2 &&
+          (header.isGguf ? patchInput.shape[0] : patchInput.shape[1]) == 64,
     );
   }
   if (hasPrefix('conv_first') ||
@@ -728,12 +743,18 @@ class ImageModelAssignment {
   /// and an original-layout SD 1.x ControlNet with a three-channel hint.
   final bool controlNetRecipeVerified;
 
+  /// Header proof of exactly a 16-channel FLUX guidance transformer, the
+  /// 16-channel FLUX autoencoder, CLIP-L and T5-XXL: the file set FLUX.1
+  /// Kontext [dev] loads with.
+  final bool fluxKontextRecipeVerified;
+
   /// Creates an assignment.
   const ImageModelAssignment(
     this.roles, {
     required this.decodesWithTinyAutoencoder,
     this.vaeTilingDecoderVerified = false,
     this.controlNetRecipeVerified = false,
+    this.fluxKontextRecipeVerified = false,
   });
 }
 
@@ -753,6 +774,7 @@ Future<ImageModelAssignment> assignImageModelRoles(
   final latents = <ImageModelRole, int>{};
   final contextWidths = <ImageModelRole, int>{};
   int? controlHintChannels;
+  var fluxGuidanceTransformer = false;
   var embeddedTinyAutoencoder = false;
   var embeddedFullVae = false;
   for (final (index, file) in files.indexed) {
@@ -803,6 +825,7 @@ Future<ImageModelAssignment> assignImageModelRoles(
       if (role == ImageModelRole.controlNet) {
         controlHintChannels = classification.controlHintChannels;
       }
+      fluxGuidanceTransformer |= classification.fluxGuidanceTransformer;
     }
     if (role == ImageModelRole.checkpoint &&
         (classification?.embedsTinyAutoencoder ?? false)) {
@@ -864,6 +887,13 @@ Future<ImageModelAssignment> assignImageModelRoles(
         contextWidths[ImageModelRole.checkpoint] == 768 &&
         contextWidths[ImageModelRole.controlNet] == 768 &&
         controlHintChannels == 3,
+    fluxKontextRecipeVerified:
+        roles.length == 4 &&
+        roles.containsKey(ImageModelRole.clipL) &&
+        roles.containsKey(ImageModelRole.t5xxl) &&
+        fluxGuidanceTransformer &&
+        latents[ImageModelRole.diffusionModel] == 16 &&
+        latents[ImageModelRole.vae] == 16,
   );
 }
 

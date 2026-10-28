@@ -40,8 +40,10 @@ on macOS Metal only), and [other families](#other-families) load the same
 way; the [recipes](#recipes) give each one's files and settings. Bounded image-to-image and binary-mask editing are available through
 `ImageEditingRequest` on the [CPU recipe below](#image-editing), and an
 SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on the
-[bounded CPU recipe](#controlnet). LoRA has no public image-generation API
-yet.
+[bounded CPU recipe](#controlnet). FLUX.1 Kontext [dev] edits a reference
+image through `ReferenceImageEditingRequest` on the
+[bounded Metal recipe](#reference-image-editing). LoRA has no public
+image-generation API yet.
 
 ## Support
 
@@ -1422,3 +1424,66 @@ The second pass needs the memory and time of an ordinary generation at the
 final size. When the runtime returns images that do not have the final size,
 the task fails with `LlamaInferenceException`. Run
 `example/basic_app/bin/image_hires_fix.dart` with a local checkpoint.
+
+## Reference image editing
+
+Reference editing changes a supplied image as the prompt describes and keeps
+the rest of it: FLUX.1 Kontext [dev] encodes the reference with its
+autoencoder and attends to it at every sampling step.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.path('flux1-kontext-dev-Q4_0.gguf'),
+    components: [
+      ImageModelComponent.auto(ModelSource.path('ae.safetensors')),
+      ImageModelComponent.auto(ModelSource.path('clip_l-Q8_0.gguf')),
+      ImageModelComponent.auto(ModelSource.path('t5xxl-Q8_0.gguf')),
+    ],
+  ),
+  params: const ImageModelParams(device: ComputeDevice.gpu),
+);
+if ((await engine.capabilities).supportsReferenceImageEditing) {
+  final result = await engine.generateImage(
+    ReferenceImageEditingRequest(
+      prompt: 'Change the red circle to blue.',
+      recipe: ImageReferenceEditingRecipe.fluxKontext,
+      references: [
+        ImageEditingPixels.rgb(width: 512, height: 512, pixels: rgb),
+      ],
+      steps: 20,
+      guidanceScale: 1,
+      seed: 42,
+    ),
+  );
+  // result.images.single is 512x512.
+}
+```
+
+- `references` are decoded RGB images in the order the model receives them;
+  the recipe takes exactly one. Masks are not references.
+- The output has the reference's size. Every side is a multiple of 64 and the
+  image has at most 1024x1024 pixels, so the runtime encodes the reference as
+  given: decode, crop and resize photos before creating the request. Nothing
+  is resized, cropped or padded during generation.
+- The references are copied when the request is created and stay owned until
+  the native call ends, including after a cancel.
+- `guidanceScale` 1 is the recommended setting; the transformer's own
+  guidance embedding keeps the runtime default.
+
+Size violations throw `LlamaImageGenerationException` before the task starts.
+The bounded recipe requires stable-diffusion-native `v0.3.0-1` (upstream
+`be48649`) on macOS with Metal, and exactly a FLUX transformer with a
+guidance embedder and 64-wide patch input, the 16-channel FLUX autoencoder,
+CLIP-L and T5-XXL, which the runtime detects as `Flux`. FLUX.1 [dev] has the
+same layout, so the headers cannot tell it from Kontext; with it, the
+reference does not steer the output as an edit. FLUX.1-schnell, Fill and
+other families, TAEF1 or extra components, the CPU, Vulkan, other platforms,
+more references and requests that combine references with image editing,
+ControlNet, a hires fix, VAE tiling or circular axes report
+`supportsReferenceImageEditing: false` or throw `LlamaUnsupportedException`.
+See [the qualification](https://github.com/leehack/llamadart/blob/main/doc/image_reference_editing.md).
+
+FLUX.1 Kontext [dev] is released under the FLUX.1 [dev] Non-Commercial
+License. Run `example/basic_app/bin/image_reference_editing.dart` with local
+files.

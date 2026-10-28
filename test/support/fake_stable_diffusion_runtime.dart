@@ -83,7 +83,17 @@ const _loadsFp8AsF16OnMetal = _controlInput + _controlInputBytes * 2;
 // count as Int32 and the upscaler model path address as Int64.
 const _hires = _loadsFp8AsF16OnMetal + 8;
 const _hiresBytes = 40;
-const _stateBytes = _hires + _hiresBytes;
+// References at entry and after the held start: the count, then width,
+// height, channels, sum and position-weighted sum of the first
+// [_recordedReferences] references, all as Int64.
+const _referenceInput = _hires + _hiresBytes;
+const _recordedReferences = 2;
+const _referenceInputBytes = 8 + _recordedReferences * 5 * 8;
+// `ref_image_args`: its length as Int32 (-1 for a null pointer), then up to
+// [_referenceArgsBytes] UTF-8 bytes.
+const _referenceArgs = _referenceInput + _referenceInputBytes * 2;
+const _referenceArgsBytes = 64;
+const _stateBytes = _referenceArgs + 4 + _referenceArgsBytes;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -162,6 +172,27 @@ final class FakeStableDiffusionRuntime {
       for (var i = 0; i < 5; i++) (_state + offset + i * 8).cast<Int64>().value,
       (_state + offset + 40).cast<Double>().value,
     ];
+  }
+
+  /// The reference count, then width, height, channels, checksum and
+  /// position-weighted checksum of each of the first two references, at
+  /// entry and after the held native start, read in the worker from the
+  /// native array.
+  List<int> referenceInputSnapshot({bool afterHold = false}) {
+    final offset = _referenceInput + (afterHold ? _referenceInputBytes : 0);
+    return [
+      for (var i = 0; i < _referenceInputBytes ~/ 8; i++)
+        (_state + offset + i * 8).cast<Int64>().value,
+    ];
+  }
+
+  /// The `ref_image_args` the guarded generation received last, or `null`
+  /// for a null pointer.
+  String? get lastReferenceArgs {
+    final length = _state.cast<Int32>()[_referenceArgs ~/ 4];
+    return length < 0
+        ? null
+        : utf8.decode((_state + _referenceArgs + 4).asTypedList(length));
   }
 
   /// Makes `sd_ctx_has_control_net` answer false although the load named a
@@ -826,8 +857,44 @@ final class _FakeCalls {
       }
       (_state + controlOffset + 40).cast<Double>().value =
           params.ref.control_strength;
+      final referenceOffset =
+          _referenceInput + (afterHold ? _referenceInputBytes : 0);
+      final count = params.ref.ref_images_count;
+      (_state + referenceOffset).cast<Int64>().value = count;
+      for (var index = 0; index < _recordedReferences; index++) {
+        var values = const [0, 0, 0, 0, 0];
+        if (index < count) {
+          final image = params.ref.ref_images[index];
+          final length = image.width * image.height * image.channel;
+          final bytes = image.data.asTypedList(length);
+          var sum = 0;
+          var weighted = 0;
+          for (var i = 0; i < length; i++) {
+            sum += bytes[i];
+            weighted += bytes[i] * (i + 1);
+          }
+          values = [image.width, image.height, image.channel, sum, weighted];
+        }
+        for (final (field, value) in values.indexed) {
+          (_state + referenceOffset + 8 + (index * 5 + field) * 8)
+                  .cast<Int64>()
+                  .value =
+              value;
+        }
+      }
     }
 
+    final args = params.ref.ref_image_args;
+    if (args == nullptr) {
+      _ints[_referenceArgs ~/ 4] = -1;
+    } else {
+      final bytes = utf8.encode(args.cast<Utf8>().toDartString());
+      final length = bytes.length.clamp(0, _referenceArgsBytes);
+      _ints[_referenceArgs ~/ 4] = length;
+      (_state + _referenceArgs + 4)
+          .asTypedList(length)
+          .setAll(0, bytes.take(length));
+    }
     recordImageInput(false);
     if (_state[_holdStart] != 0) _log.send(('signal', 'image-input-held'));
     _waitWhile(() => _state[_holdStart] != 0);

@@ -103,6 +103,22 @@ void main() {
     expect(row.command, contains('--scenario image-hires-fix'));
     expect(row.command, contains('LLAMADART_HIRES_DEVICE='));
   });
+  test('reference-editing matrix identifies its bounded Metal '
+      'qualification', () {
+    final row = testMatrixRows.singleWhere(
+      (r) => r.id == 'image-reference-editing',
+    );
+    expect(row.tier, 'targeted');
+    expect(row.mode, 'local-only');
+    expect(row.covers, contains('macOS Metal'));
+    expect(row.covers, contains('direct-C'));
+    final scenario = buildLocalE2eScenarios().singleWhere(
+      (s) => s.name == row.id,
+    );
+    expect(scenario.requiresDevice, isFalse);
+    expect(row.command, contains('--scenario image-reference-editing'));
+    expect(row.command, contains('LLAMADART_REFERENCE_EDIT_T5XXL='));
+  });
   test('ControlNet matrix identifies its bounded CPU qualification', () {
     final row = testMatrixRows.singleWhere((r) => r.id == 'image-controlnet');
     expect(row.tier, 'targeted');

@@ -602,6 +602,15 @@ Metal; other recipes throw `LlamaUnsupportedException`. Qualified on SD 1.5
 and SD-Turbo. See the [hires-fix recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#hires-fix)
 and `example/basic_app/bin/image_hires_fix.dart`.
 
+To edit an image as a prompt describes, use `ReferenceImageEditingRequest`
+with `ImageReferenceEditingRecipe.fluxKontext` and one decoded RGB reference
+at the output size (at most 1024x1024; crop or resize it first). Check
+`(await engine.capabilities).supportsReferenceImageEditing`: the bounded
+recipe is the FLUX.1 Kontext [dev] transformer with `ae`, CLIP-L and T5-XXL
+on macOS Metal; other models, devices and reference counts throw
+`LlamaUnsupportedException`. See the [reference-editing recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#reference-image-editing)
+and `example/basic_app/bin/image_reference_editing.dart`.
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |

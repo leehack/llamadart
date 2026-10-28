@@ -21,6 +21,7 @@ import 'package:llamadart/src/core/image/image_generation_events.dart';
 import 'package:llamadart/src/core/image/image_generation_progress.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
 import 'package:llamadart/src/core/image/image_hires_fix_request.dart';
+import 'package:llamadart/src/core/image/image_reference_editing_request.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 
@@ -516,6 +517,145 @@ void main() {
           runtime
             ..hideControlNet = false
             ..olderRelease = false;
+        }
+      });
+    });
+
+    group('reference image editing', () {
+      const referenceConfig = ImageGenerationSessionConfig(
+        files: {
+          'diffusionModel': '/models/flux1-kontext-dev.gguf',
+          'vae': '/models/ae.safetensors',
+          'clipL': '/models/clip_l.gguf',
+          't5xxl': '/models/t5xxl.gguf',
+        },
+        backend: 'gpu',
+        threads: 1,
+        referenceEditingRecipeVerified: true,
+      );
+      ImageGenerationSessionRequest referenceRequest(
+        List<ImageEditingPixels> references,
+      ) => ImageGenerationSessionRequest(
+        prompt: 'make the fox blue',
+        negativePrompt: '',
+        width: 64,
+        height: 128,
+        steps: 4,
+        guidanceScale: 1,
+        seed: 42,
+        count: 1,
+        references: references,
+        referenceRecipe: ImageReferenceEditingRecipe.fluxKontext,
+      );
+      List<int> snapshot(Uint8List pixels) => [
+        64,
+        128,
+        3,
+        pixels.fold<int>(0, (a, b) => a + b),
+        [
+          for (var i = 0; i < pixels.length; i++) pixels[i] * (i + 1),
+        ].fold<int>(0, (a, b) => a + b),
+      ];
+
+      test('the reference and preset reach the guarded generation and stay '
+          'owned through a held cancel, and an ordinary request after it '
+          'has none', () async {
+        runtime.modelVersion = 'Flux';
+        final worker = await start(config: referenceConfig);
+        expect(worker.supportsReferenceImageEditing, isTrue);
+        final rgb = Uint8List.fromList(
+          List.generate(64 * 128 * 3, (i) => i % 251),
+        );
+        final reference = ImageEditingPixels.rgb(
+          width: 64,
+          height: 128,
+          pixels: rgb,
+        );
+        final original = [1, ...snapshot(rgb), 0, 0, 0, 0, 0];
+        runtime
+          ..holdStart = true
+          ..pauseAfter = 0;
+        final generation = worker.generate(
+          referenceRequest([reference]),
+          (_, _) {},
+        );
+        await runtime.imageInputHeld();
+        expect(runtime.referenceInputSnapshot(), original);
+        expect(runtime.lastReferenceArgs, 'preset=flux_kontext');
+        rgb.fillRange(0, rgb.length, 0);
+        reference.pixels.fillRange(0, rgb.length, 255);
+        worker.cancel();
+        runtime.holdStart = false;
+        await runtime.pausedIn(generation);
+        expect(runtime.referenceInputSnapshot(afterHold: true), original);
+        timers.poll();
+        runtime.resume();
+        expect(await generation, isNull);
+        runtime.pauseAfter = -1;
+        final images = await worker.generate(
+          referenceRequest([reference]),
+          (_, _) {},
+        );
+        expect(
+          [for (final image in images!) (image.width, image.height)],
+          [(64, 128)],
+        );
+        await worker.generate(_request(), (_, _) {});
+        expect(runtime.referenceInputSnapshot(), everyElement(0));
+        expect(runtime.lastReferenceArgs, isNull);
+        await runtime.flush();
+        expect(
+          runtime
+              .calls('worker')
+              .where((c) => c.startsWith('sd_dart_generate_image')),
+          everyElement('sd_dart_generate_image+held'),
+        );
+      });
+
+      test('direct worker refuses references without recipe proof, for '
+          'another family and in another number, before generation', () async {
+        final reference = ImageEditingPixels.rgb(
+          width: 64,
+          height: 128,
+          pixels: Uint8List(64 * 128 * 3),
+        );
+        for (final kind in ['no proof', 'family', 'two']) {
+          runtime.modelVersion = kind == 'family' ? 'Flux Fill' : 'Flux';
+          final worker = await start(
+            config: kind == 'no proof'
+                ? const ImageGenerationSessionConfig(
+                    files: {'diffusionModel': '/models/flux1-dev.gguf'},
+                    backend: 'gpu',
+                    threads: 1,
+                  )
+                : referenceConfig,
+          );
+          expect(
+            worker.supportsReferenceImageEditing,
+            kind == 'two',
+            reason: kind,
+          );
+          await runtime.flush();
+          runtime.clearCalls();
+          await expectLater(
+            worker.generate(
+              referenceRequest(
+                kind == 'two' ? [reference, reference] : [reference],
+              ),
+              (_, _) {},
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('eference'),
+              ),
+            ),
+            reason: kind,
+          );
+          await runtime.flush();
+          expect(runtime.calls('worker'), isEmpty, reason: kind);
+          await worker.dispose();
         }
       });
     });
