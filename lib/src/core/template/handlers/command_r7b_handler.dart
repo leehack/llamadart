@@ -27,6 +27,14 @@ class CommandR7BHandler extends ChatTemplateHandler {
   static const String _startText = '<|START_TEXT|>';
   static const String _startResponse = '<|START_RESPONSE|>';
 
+  /// The markers that wrap a text response, which [parse] drops.
+  static const List<String> responseMarkers = [
+    _startText,
+    '<|END_TEXT|>',
+    _startResponse,
+    '<|END_RESPONSE|>',
+  ];
+
   /// Finds where [parse] may find a tool-call or text opening in [text].
   ///
   /// Returns the first index at or after [from] where `<|START_ACTION|>`,
@@ -75,6 +83,18 @@ class CommandR7BHandler extends ChatTemplateHandler {
 
   @override
   List<String> get additionalStops => ['<|END_RESPONSE|>'];
+
+  // Converted GGUFs mark these as control tokens, which decode as empty text
+  // unless preserved. Matches what llama.cpp 620d2225 preserves.
+  @override
+  List<String> get preservedTokens => const [
+    '<|START_THINKING|>',
+    '<|END_THINKING|>',
+    '<|START_RESPONSE|>',
+    '<|END_RESPONSE|>',
+    '<|START_ACTION|>',
+    '<|END_ACTION|>',
+  ];
 
   @override
   List<String> getStops({bool hasTools = false, bool enableThinking = true}) {
@@ -137,6 +157,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
       ),
       grammarLazy: hasTools && !toolChoiceRequired,
       thinkingForcedOpen: thinkingForcedOpen,
+      preservedTokens: preservedTokens,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
@@ -164,7 +185,6 @@ class CommandR7BHandler extends ChatTemplateHandler {
 
     const endAction = '<|END_ACTION|>';
     const endText = '<|END_TEXT|>';
-    const endResponse = '<|END_RESPONSE|>';
 
     final textStart = text.indexOf(_startText);
     if (textStart != -1) {
@@ -189,10 +209,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
     }
 
     if (!parseToolCalls) {
-      return ChatParseResult(
-        content: text.trim(),
-        reasoningContent: thinking.reasoning,
-      );
+      return _parseResponse(text, thinking.reasoning);
     }
 
     final actionStart = text.indexOf(_startAction);
@@ -265,37 +282,35 @@ class CommandR7BHandler extends ChatTemplateHandler {
       );
     }
 
+    return _parseResponse(text, thinking.reasoning);
+  }
+
+  ChatParseResult _parseResponse(String text, String? reasoning) {
+    const endResponse = '<|END_RESPONSE|>';
     final responseStart = text.indexOf(_startResponse);
     if (responseStart != -1) {
       final prelude = text.substring(0, responseStart);
       final responseBodyStart = responseStart + _startResponse.length;
       final responseEnd = text.indexOf(endResponse, responseBodyStart);
-      if (responseEnd == -1) {
-        return ChatParseResult(
-          content: text.trim(),
-          reasoningContent: thinking.reasoning,
-        );
-      }
-
-      final trailing = text.substring(responseEnd + endResponse.length);
+      final bodyEnd = responseEnd == -1 ? text.length : responseEnd;
+      final trailing = responseEnd == -1
+          ? ''
+          : text.substring(responseEnd + endResponse.length);
       if (trailing.isNotEmpty) {
         return ChatParseResult(
           content: text.trim(),
-          reasoningContent: thinking.reasoning,
+          reasoningContent: reasoning,
         );
       }
 
-      final responseBody = text.substring(responseBodyStart, responseEnd);
+      final responseBody = text.substring(responseBodyStart, bodyEnd);
       return ChatParseResult(
         content: '$prelude$responseBody'.trim(),
-        reasoningContent: thinking.reasoning,
+        reasoningContent: reasoning,
       );
     }
 
-    return ChatParseResult(
-      content: text.trim(),
-      reasoningContent: thinking.reasoning,
-    );
+    return ChatParseResult(content: text.trim(), reasoningContent: reasoning);
   }
 
   @override

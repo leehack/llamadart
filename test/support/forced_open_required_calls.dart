@@ -55,18 +55,21 @@ const forcedOpenRequiredCalls =
     ];
 
 /// Renders [template] for a required [forcedOpenRequiredTool] call.
-LlamaChatTemplateResult renderForcedOpenRequiredCall(String template) =>
-    ChatTemplateEngine.render(
-      templateSource: File(
-        'test/fixtures/llama_cpp_templates/$template',
-      ).readAsStringSync(),
-      messages: [
-        const LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'Weather in Paris?',
-        ),
-      ],
-      metadata: const {},
-      tools: [forcedOpenRequiredTool],
-      toolChoice: ToolChoice.required,
-    );
+LlamaChatTemplateResult renderForcedOpenRequiredCall(
+  String template, {
+  bool enableThinking = true,
+}) => ChatTemplateEngine.render(
+  templateSource: File(
+    'test/fixtures/llama_cpp_templates/$template',
+  ).readAsStringSync(),
+  messages: [
+    const LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Weather in Paris?',
+    ),
+  ],
+  metadata: const {},
+  tools: [forcedOpenRequiredTool],
+  toolChoice: ToolChoice.required,
+  enableThinking: enableThinking,
+);
