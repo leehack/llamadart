@@ -573,6 +573,16 @@
         "issue": "https://github.com/leehack/llamadart/issues/1228",
         "reason": "Hires-fix limits, load-time recipe admission, session probe, two-pass progress, output-size check and sd_hires_params_t mapping have maintained unit and worker tests plus the local-only image-hires-fix macOS CPU/Metal direct-C scenario (doc/image_hires_fix.md); a versioned validation-pack profile is not yet defined. Inventory presence is not platform/model qualification."
       }
+    },
+    {
+      "surfaces": [
+        "matrix:MoE expert placement and cache"
+      ],
+      "exemption": {
+        "id": "moe-expert-cache",
+        "reason": "ModelParams.cpuMoeLayers and moeCacheBytes have maintained validation, runtime-rejection, override-pattern, device-gate and native parameter tests, plus the local-only LLAMADART_MOE_MODEL scenario that checks the cache allocates its budget and keeps greedy output on Metal (OLMoE-1B-7B). No validation-pack profile covers MoE models; CUDA, multiple GPUs and performance gains are not qualified by this binding.",
+        "issue": "https://github.com/leehack/llamadart/issues/1123"
+      }
     }
   ]
 }
