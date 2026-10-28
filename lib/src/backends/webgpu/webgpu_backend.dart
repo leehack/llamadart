@@ -1895,7 +1895,8 @@ class WebGpuLlamaBackend
     if (params.grammarRoot != const GenerationParams().grammarRoot) {
       throw LlamaUnsupportedException(
         'WebGPU does not support GenerationParams.grammarRoot other than '
-        '"root": the bridge always starts a grammar at "root".',
+        '"root": llamadart does not forward it to the Web bridge yet '
+        '(https://github.com/leehack/llamadart/issues/1480).',
       );
     }
 

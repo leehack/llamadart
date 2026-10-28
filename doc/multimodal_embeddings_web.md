@@ -46,7 +46,7 @@ results, on `v0.1.66`, are tracked in
 retains its original artifact identity. The current pin adds URL
 resolution, teardown, state-file, truncated-snapshot, UTF-8 decoding,
 string-embedding rejection, download-progress, draft-allocation and
-projector-memory fixes, and (since `v0.1.73`) lazy-grammar options that
+projector-memory fixes, and (since `v0.1.75`) lazy-grammar options that
 llamadart does not use yet ([llama-web-bridge#199](https://github.com/leehack/llama-web-bridge/pull/199)), on the same llama.cpp, passed the
 bridge's hosted multimodal gate, and has not been rerun against these reference
 vectors.
