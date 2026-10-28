@@ -2869,7 +2869,7 @@ class LlamaCppService {
     final setLogLevel = probeLibraryCandidates(
       candidates ?? _libraryCandidates.wrapperPaths(directories),
       failures: failures,
-      open: open ?? _openWrapperLibrary,
+      open: open ?? DynamicLibrary.open,
       accept: (candidate, library) {
         try {
           return library.lookupFunction<
