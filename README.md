@@ -626,6 +626,12 @@ Decision heads follow this CPU placement and report `CPU` in
 The WebGPU bridge ignores negative `mainGpu` values; `device: ComputeDevice.gpu`
 still requires a WebGPU adapter and active GPU layers after load.
 
+For Mixture-of-Experts GGUF models, native llama.cpp can keep expert weights in
+host memory with `cpuMoeLayers` and cache recently used experts on a Metal or
+CUDA GPU with an experimental `moeCacheBytes` budget; other backends throw
+`LlamaUnsupportedException`. See
+[Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
+
 Current default runtime pins:
 
 | Runtime | Pin |
