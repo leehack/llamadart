@@ -1,5 +1,6 @@
 import 'dart:ffi';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 
@@ -64,6 +65,18 @@ final class RecordingExitTeardown {
   /// The `llama_model_params.n_gpu_layers` of each
   /// `llama_dart_model_load_from_file` so far.
   final List<int> loadGpuLayers = <int>[];
+
+  /// The `llama_model_params.tensor_buft_overrides` patterns of each
+  /// `llama_dart_model_load_from_file` so far.
+  final List<List<String>> loadTensorOverrides = <List<String>>[];
+
+  /// The `llama_model_params.use_extra_bufts` of each
+  /// `llama_dart_model_load_from_file` so far.
+  final List<bool> loadUseExtraBufts = <bool>[];
+
+  /// The `llama_context_params.moe_cache_size` of each
+  /// `llama_dart_init_from_model` so far.
+  final List<int> contextMoeCacheSizes = <int>[];
 
   /// Whether each `llama_dart_init_from_model` so far offloads the KV cache
   /// and ops, and its flash attention type.
@@ -161,6 +174,13 @@ final class RecordingExitTeardown {
             : [for (var i = 0; devices[i] != nullptr; i++) devices[i].address],
       );
       loadGpuLayers.add(params.n_gpu_layers);
+      final overrides = params.tensor_buft_overrides;
+      loadTensorOverrides.add([
+        if (overrides != nullptr)
+          for (var i = 0; overrides[i].pattern != nullptr; i++)
+            overrides[i].pattern.cast<Utf8>().toDartString(),
+      ]);
+      loadUseExtraBufts.add(params.use_extra_bufts);
       if (!_proceeds('llama_dart_model_load_from_file')) return nullptr;
       final model = real.modelLoadFromFile(path, params);
       owned.add(model.address);
@@ -172,6 +192,7 @@ final class RecordingExitTeardown {
         opOffload: params.op_offload,
         flashAttnType: params.flash_attn_typeAsInt,
       ));
+      contextMoeCacheSizes.add(params.moe_cache_size);
       if (!_proceeds('llama_dart_init_from_model')) return nullptr;
       final context = real.initFromModel(model, params);
       owned.add(context.address);

@@ -17,7 +17,7 @@ dart test -p vm test/unit/tooling/validation_coverage_test.dart
 CI rejects missing/stale/duplicate mappings, invented cases, missing profiles
 and cases that no declared profile selects. Exemptions need a concrete reason
 and a GitHub issue. The test prints the current gap inventory; do not maintain
-a second copied list. Multimodal chat, LoRA, scoring, speculative
+a second copied list. Multimodal chat, LoRA, speculative
 decoding and sampling still need dedicated pack work.
 Speech/image profiles exist, while their individual reported capability
 contracts remain explicitly exempt pending case-ID bindings.

@@ -46,6 +46,7 @@ import 'stop_sequence_buffer.dart';
 import 'token_batch.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
+import 'moe_expert_placement.dart';
 import 'mtmd_chunk_eval.dart';
 import 'native_barrier_api.dart';
 import 'native_library_candidates.dart';
@@ -361,6 +362,7 @@ class LlamaCppService {
   _GgmlBackendDevNameDart? _ggmlBackendDevNameFallback;
   _GgmlBackendDevBackendRegDart? _ggmlBackendDevBackendRegFallback;
   _GgmlBackendDevByTypeDart? _ggmlBackendDevByTypeFallback;
+  _GgmlBackendDevBufferTypeDart? _ggmlBackendDevBufferTypeFallback;
   _GgmlBackendDevTypeDart? _ggmlBackendDevTypeFallback;
   _GgmlBackendDevGetPropsDart? _ggmlBackendDevGetPropsFallback;
   _GgmlBackendDevMemoryDart? _ggmlBackendDevMemoryFallback;
@@ -1473,6 +1475,21 @@ class LlamaCppService {
       }
       preferredDevices = _createDeviceList(usable);
     }
+    final Pointer<llama_model_tensor_buft_override>? cpuMoeOverrides;
+    try {
+      _checkMoeCacheSupported(
+        modelParams,
+        backend: effectiveBackend,
+        gpuLayers: gpuLayers,
+        vulkan: vulkan,
+      );
+      cpuMoeOverrides = _createCpuMoeOverrides(modelParams.cpuMoeLayers);
+    } catch (_) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      rethrow;
+    }
     final mtmdUseGpu = resolveMtmdUseGpuForLoad(
       modelParams,
       gpuLayers,
@@ -1484,8 +1501,12 @@ class LlamaCppService {
     mparams.split_modeAsInt = modelParams.splitMode.llamaCppValue;
     mparams.main_gpu = modelParams.mainGpu;
     applyModelParams(mparams, modelParams);
+    applyMoeCacheModelParams(mparams, modelParams);
     if (preferredDevices != null) {
       mparams.devices = preferredDevices;
+    }
+    if (cpuMoeOverrides != null) {
+      mparams.tensor_buft_overrides = cpuMoeOverrides;
     }
     // Without a device list llama.cpp offloads to every registered GPU,
     // whichever backend was requested.
@@ -1507,6 +1528,9 @@ class LlamaCppService {
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
+      if (cpuMoeOverrides != null) {
+        freeTensorBufferOverrides(cpuMoeOverrides);
+      }
     }
 
     if (modelPtr == nullptr) {
@@ -1524,6 +1548,11 @@ class LlamaCppService {
     _models[handle] = model;
     _loraAdapters[handle] = {};
     _modelToMtmdUseGpu[handle] = mtmdUseGpu;
+    if (_moeExpertPlacementProblem(model, modelParams, gpuLayers)
+        case final problem?) {
+      freeModel(handle);
+      throw LlamaUnsupportedException(problem);
+    }
     final resolvedBackend = _resolveBackendNameForLoad(
       requestedBackend: reportedBackend,
       resolvedGpuLayers: gpuLayers,
@@ -1593,6 +1622,110 @@ class LlamaCppService {
     probe: () => _vulkanDeviceProbe,
     isAndroid: _isAndroid,
   );
+
+  /// Throws [LlamaUnsupportedException] when the MoE expert cache budget of
+  /// [params] cannot run on the devices a load on [backend] with [gpuLayers]
+  /// uses.
+  void _checkMoeCacheSupported(
+    ModelParams params, {
+    required GpuBackend backend,
+    required int gpuLayers,
+    required VulkanLoadDecision vulkan,
+  }) {
+    if (params.moeCacheBytes == 0) return;
+    final splitMode = params.splitMode.llamaCppValue;
+    final List<GgmlDeviceEntry> devices;
+    if (gpuLayers == 0 || backend == GpuBackend.cpu) {
+      devices = const [];
+    } else {
+      final registered = _registeredDevices();
+      final registry = ggmlGpuRegistryName(backend)?.toLowerCase();
+      final listed =
+          vulkan.devices ??
+          [
+            for (final device in registered)
+              if (device.registry.toLowerCase() == registry) device,
+          ];
+      devices = selectModelDevices(
+        registered: registered,
+        listed: listed.isEmpty ? null : listed,
+        splitMode: splitMode,
+        mainGpu: params.mainGpu,
+      );
+    }
+    final unsupported = moeCacheUnsupportedReason(
+      gpuLayers: gpuLayers,
+      splitMode: splitMode,
+      devices: devices,
+    );
+    if (unsupported == null) return;
+    throw LlamaUnsupportedException(
+      'ModelParams.moeCacheBytes, the llama.cpp MoE expert cache, is not '
+      'available for this load on ${Platform.operatingSystem}: $unsupported. '
+      'Set moeCacheBytes to 0.',
+    );
+  }
+
+  /// The tensor overrides that keep the experts of [cpuMoeLayers] layers in
+  /// host memory, or `null` for `0`.
+  Pointer<llama_model_tensor_buft_override>? _createCpuMoeOverrides(
+    int cpuMoeLayers,
+  ) {
+    if (cpuMoeLayers == 0) return null;
+    final cpu = _ggmlBackendDevByType(
+      ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
+    );
+    final buft = cpu == nullptr ? nullptr : _ggmlBackendDevBufferType(cpu);
+    if (buft == nullptr) {
+      throw LlamaUnsupportedException(
+        'ModelParams.cpuMoeLayers needs the llama.cpp CPU backend, which '
+        'this runtime does not register on ${Platform.operatingSystem}.',
+      );
+    }
+    return allocateTensorBufferOverrides(
+      cpuMoeOverridePatterns(cpuMoeLayers),
+      buft,
+    );
+  }
+
+  /// Why the MoE fields of [params] do nothing for the loaded [model], or
+  /// `null` when they apply or are unset.
+  String? _moeExpertPlacementProblem(
+    _LlamaModelWrapper model,
+    ModelParams params,
+    int gpuLayers,
+  ) {
+    if (params.cpuMoeLayers == 0) return null;
+    final architecture = _readModelMetadataValue(
+      model.pointer,
+      'general.architecture',
+    );
+    final experts = architecture == null
+        ? null
+        : int.tryParse(
+            _readModelMetadataValue(
+                  model.pointer,
+                  '$architecture.expert_count',
+                ) ??
+                '',
+          );
+    if (experts == null || experts <= 0) {
+      return 'ModelParams.cpuMoeLayers and moeCacheBytes apply to '
+          'Mixture-of-Experts models, and this ${architecture ?? 'model'} '
+          'model has no experts. Leave them at 0.';
+    }
+    if (params.moeCacheBytes == 0) return null;
+    final cacheable = moeCacheableLayerCount(
+      layerCount: llama_model_n_layer(model.pointer),
+      gpuLayers: gpuLayers,
+      cpuMoeLayers: params.cpuMoeLayers,
+    );
+    if (cacheable > 0) return null;
+    return 'ModelParams.moeCacheBytes caches the host experts of offloaded '
+        'layers, and no layer that cpuMoeLayers ${params.cpuMoeLayers} keeps '
+        'in host memory is among the $gpuLayers gpuLayers, which llama.cpp '
+        'takes from the end of the model. Raise gpuLayers or cpuMoeLayers.';
+  }
 
   /// The registered ggml devices, in registry order.
   List<GgmlDeviceEntry> _registeredDevices() {
@@ -2306,18 +2439,24 @@ class LlamaCppService {
 
   bool _tryRegisterBackendModuleViaAsset(
     String backend,
-    BackendProbeFailures failures,
-  ) {
-    final assetCandidates = _libraryCandidates.backendAssetUris(backend);
+    BackendProbeFailures failures, {
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+    int? Function(DynamicLibrary)? lookupScore,
+    _GgmlBackendInitDart Function(DynamicLibrary)? lookupInit,
+    bool Function(ggml_backend_reg_t)? register,
+  }) {
+    final assetCandidates =
+        candidates ?? _libraryCandidates.backendAssetUris(backend);
     final recordAssetDiagnostics = backend == 'cpu' && Platform.isAndroid;
 
     final registered = probeLibraryCandidates(
       assetCandidates,
       failures: failures,
-      open: DynamicLibrary.open,
+      open: open ?? DynamicLibrary.open,
       accept: (assetUri, library) {
         try {
-          final score = _lookupBackendAssetScore(library);
+          final score = (lookupScore ?? _lookupBackendAssetScore)(library);
           if (!isBackendCandidateScoreSupported(score)) {
             if (recordAssetDiagnostics && score != null) {
               _recordStartupDiagnostic(
@@ -2330,10 +2469,12 @@ class LlamaCppService {
 
           final _GgmlBackendInitDart init;
           try {
-            init = library
-                .lookupFunction<_GgmlBackendInitNative, _GgmlBackendInitDart>(
-                  'ggml_backend_init',
-                );
+            init =
+                lookupInit?.call(library) ??
+                library.lookupFunction<
+                  _GgmlBackendInitNative,
+                  _GgmlBackendInitDart
+                >('ggml_backend_init');
           } catch (_) {
             failures.add(assetUri, 'no `ggml_backend_init` export');
             return null;
@@ -2354,7 +2495,7 @@ class LlamaCppService {
           // optional backend score gates before initialization, then
           // explicitly registering the backend because asset loading
           // bypasses the native dynamic-loader helper.
-          if (!_registerBackendRegBestEffort(reg)) {
+          if (!(register ?? _registerBackendRegBestEffort)(reg)) {
             if (recordAssetDiagnostics) {
               _recordStartupDiagnostic(
                 'Backend asset `$assetUri` failed explicit backend '
@@ -2381,7 +2522,7 @@ class LlamaCppService {
     return registered ?? false;
   }
 
-  void _resolveGgmlFallbackFunctions() {
+  List<String> _ggmlFallbackCandidates() {
     final fileNameCandidates = _libraryCandidates.ggml();
     final candidates = <String>[..._libraryCandidates.ggmlAssetUris()];
     final filesystemCandidates = <String>{};
@@ -2394,6 +2535,14 @@ class LlamaCppService {
     // Keep bare-name fallback last so module-dir resolution wins when present.
     filesystemCandidates.addAll(fileNameCandidates);
     candidates.addAll(filesystemCandidates);
+    return candidates;
+  }
+
+  void _resolveGgmlFallbackFunctions({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
+    candidates ??= _ggmlFallbackCandidates();
 
     final searchKey = candidates.map(path.normalize).join('|');
     if (_ggmlFallbackLookupAttempted &&
@@ -2408,7 +2557,7 @@ class LlamaCppService {
     probeLibraryCandidates(
       candidates,
       failures: failures,
-      open: DynamicLibrary.open,
+      open: open ?? DynamicLibrary.open,
       accept: (candidate, library) {
         opened.add(probeCandidateIdentity(candidate));
 
@@ -2514,6 +2663,13 @@ class LlamaCppService {
                 _GgmlBackendDevByTypeDart
               >('ggml_backend_dev_by_type'),
         );
+        _ggmlBackendDevBufferTypeFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevBufferTypeNative,
+                _GgmlBackendDevBufferTypeDart
+              >('ggml_backend_dev_buffer_type'),
+        );
         _ggmlBackendDevTypeFallback ??= _tryBind(
           () =>
               library.lookupFunction<
@@ -2561,7 +2717,10 @@ class LlamaCppService {
     }
   }
 
-  void _resolveLogLevelFallbackFunction() {
+  void _resolveLogLevelFallbackFunction({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
     final directories = _llamadartFallbackLookupDirectories();
     final searchKey = directories.map(path.normalize).join('|');
 
@@ -2579,13 +2738,11 @@ class LlamaCppService {
     _logLevelFallbackLookupAttempted = true;
     _logLevelFallbackLookupSearchKey = searchKey;
 
-    final candidates = _libraryCandidates.wrapperPaths(directories);
-
     final failures = BackendProbeFailures();
     final setLogLevel = probeLibraryCandidates(
-      candidates,
+      candidates ?? _libraryCandidates.wrapperPaths(directories),
       failures: failures,
-      open: _openWrapperLibrary,
+      open: open ?? _openWrapperLibrary,
       accept: (candidate, library) {
         try {
           return library.lookupFunction<
@@ -3219,6 +3376,14 @@ class LlamaCppService {
       ctxPtr,
     );
     if (ctxPtr == nullptr) {
+      if (params.moeCacheBytes > 0) {
+        throw LlamaContextException(
+          'Failed to create the context with a ${params.moeCacheBytes}-byte '
+          'MoE expert cache (ModelParams.moeCacheBytes): llama.cpp could not '
+          'allocate it on the GPU, or it cannot hold the experts of one '
+          'token. Change moeCacheBytes, or set it to 0 to disable the cache.',
+        );
+      }
       throw Exception("Failed to create context");
     }
 

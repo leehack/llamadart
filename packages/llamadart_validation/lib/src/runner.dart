@@ -13,6 +13,7 @@ import 'inflight_evidence.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 import 'runtime_environment.dart';
+import 'scoring_evidence.dart';
 import 'state_evidence.dart';
 import 'structured_output_evidence.dart';
 import 'tokenization_evidence.dart';
@@ -20,6 +21,7 @@ import 'tool_result_media_evidence.dart';
 
 part 'decision_runner.dart';
 part 'embedding_runner.dart';
+part 'scoring_runner.dart';
 part 'state_runner.dart';
 part 'structured_runner.dart';
 part 'tokenization_runner.dart';
@@ -1406,6 +1408,7 @@ class ValidationRunner {
     if (id.startsWith('D')) return _decisionCase(id, location);
     if (id.startsWith('S')) return _structuredCase(id);
     if (id.startsWith('P')) return _stateCase(id, location);
+    if (id.startsWith('N')) return _scoringCase(id);
     if (id.startsWith('T')) return _tokenizationCase(id);
     if (id.startsWith('M')) return _toolResultMediaCase(id);
     if (profile.nativeReference &&

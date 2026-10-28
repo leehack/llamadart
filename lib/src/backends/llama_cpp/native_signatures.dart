@@ -111,6 +111,10 @@ typedef _GgmlBackendDevBackendRegDart =
     ggml_backend_reg_t Function(ggml_backend_dev_t);
 typedef _GgmlBackendDevByTypeNative = ggml_backend_dev_t Function(UnsignedInt);
 typedef _GgmlBackendDevByTypeDart = ggml_backend_dev_t Function(int);
+typedef _GgmlBackendDevBufferTypeNative =
+    ggml_backend_buffer_type_t Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevBufferTypeDart =
+    ggml_backend_buffer_type_t Function(ggml_backend_dev_t);
 typedef _GgmlBackendDevTypeNative = UnsignedInt Function(ggml_backend_dev_t);
 typedef _GgmlBackendDevTypeDart = int Function(ggml_backend_dev_t);
 typedef _GgmlBackendDevGetPropsNative =

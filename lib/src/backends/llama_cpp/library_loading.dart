@@ -520,6 +520,18 @@ class _MtmdApi {
   }
 }
 
+/// Native bundle directory names for the Linux [abi], empty for other ABIs.
+List<String> linuxNativeBundleNames(Abi abi) {
+  switch (abi) {
+    case Abi.linuxArm64:
+      return const <String>['linux-arm64'];
+    case Abi.linuxX64:
+      return const <String>['linux-x64'];
+    default:
+      return const <String>[];
+  }
+}
+
 /// Candidate failures of one native discovery family, grouped by reason.
 ///
 /// Candidates are stored as [probeCandidateIdentity] and reasons in
@@ -928,16 +940,8 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
     return dirs.toList(growable: false);
   }
 
-  List<String> _linuxBundleNamesForCurrentAbi() {
-    switch (Abi.current()) {
-      case Abi.linuxArm64:
-        return const <String>['linux-arm64'];
-      case Abi.linuxX64:
-        return const <String>['linux-x64'];
-      default:
-        return const <String>[];
-    }
-  }
+  List<String> _linuxBundleNamesForCurrentAbi() =>
+      linuxNativeBundleNames(Abi.current());
 
   bool _tryLoadAllBackendsBestEffort() {
     if (_backendLoadAllSymbolUnavailable) {
@@ -1195,6 +1199,14 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
       nullptr,
       () => ggml_backend_dev_by_type(type),
       () => _ggmlBackendDevByTypeFallback?.call(type.value),
+    );
+  }
+
+  ggml_backend_buffer_type_t _ggmlBackendDevBufferType(ggml_backend_dev_t dev) {
+    return _ggmlRegistryFallbackOr<ggml_backend_buffer_type_t>(
+      nullptr,
+      () => ggml_backend_dev_buffer_type(dev),
+      () => _ggmlBackendDevBufferTypeFallback?.call(dev),
     );
   }
 

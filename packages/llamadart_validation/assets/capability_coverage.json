@@ -71,6 +71,21 @@
       ]
     },
     {
+      "id": "next_token_scoring",
+      "notes": "Catalog 13 binds raw top-K and candidate scores, prompt-prefix reuse equivalence and argument guards on CPU Stories15M, plus typed unsupported rejection for LiteRT-LM. A mapping is not qualification of other models, platforms or WebGPU, and reuse equivalence does not prove the cache was used.",
+      "cases": [
+        "N01.capability",
+        "N02.top_k",
+        "N03.candidates",
+        "N04.reuse",
+        "N05.guards"
+      ],
+      "profiles": [
+        "assets/profiles/scoring-gguf-cpu.json",
+        "assets/profiles/chat-litert-cpu.json"
+      ]
+    },
+    {
       "id": "streaming",
       "cases": [
         "C08.cancel",
@@ -316,11 +331,7 @@
         "capability:LlamaEngineCapabilities.supportsNextTokenScoring",
         "matrix:Next-token scores"
       ],
-      "exemption": {
-        "id": "next-token-scoring",
-        "reason": "Raw token-ID/top-K scores and unsupported runtime paths need a dedicated scoring pack; text generation does not cover scoring.",
-        "issue": "https://github.com/leehack/llamadart/issues/1196"
-      }
+      "pack": "next_token_scoring"
     },
     {
       "surfaces": [
@@ -582,6 +593,16 @@
         "id": "bounded-image-reference-editing",
         "issue": "https://github.com/leehack/llamadart/issues/1222",
         "reason": "FLUX.1 Kontext header admission, load-time recipe gate, session probe, reference size/count validation and ref_images/ref_image_args mapping have maintained unit and worker tests plus the local-only image-reference-editing macOS Metal direct-C scenario (doc/image_reference_editing.md); a versioned validation-pack profile is not yet defined. Inventory presence is not platform/model qualification."
+      }
+    },
+    {
+      "surfaces": [
+        "matrix:MoE expert placement and cache"
+      ],
+      "exemption": {
+        "id": "moe-expert-cache",
+        "reason": "ModelParams.cpuMoeLayers and moeCacheBytes have maintained validation, runtime-rejection, override-pattern, device-gate and native parameter tests, plus the local-only LLAMADART_MOE_MODEL scenario that checks the cache allocates its budget and keeps greedy output on Metal (OLMoE-1B-7B). No validation-pack profile covers MoE models; CUDA, multiple GPUs and performance gains are not qualified by this binding.",
+        "issue": "https://github.com/leehack/llamadart/issues/1123"
       }
     }
   ]
