@@ -3115,6 +3115,11 @@ class LlamaCppService {
     return _tryLoadBackendModule(backend);
   }
 
+  /// Returns the Linux native bundle directory names for the running ABI for
+  /// VM regression tests.
+  List<String> debugLinuxBundleNamesForTesting() =>
+      _linuxBundleNamesForCurrentAbi();
+
   /// Returns wrapper-library lookup candidates for VM regression tests.
   List<String> debugLlamadartWrapperLibraryCandidatesForTesting() {
     return _llamadartWrapperLibraryCandidates();

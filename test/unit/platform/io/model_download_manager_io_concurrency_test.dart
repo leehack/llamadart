@@ -1021,6 +1021,24 @@ void main() {
       expect(entryDirectory().existsSync(), isFalse);
     });
 
+    test('an entry whose metadata file is open elsewhere is in use on '
+        'Windows', () async {
+      await manager.ensureModel(source());
+      final handle = await File(
+        path.join(entryDirectory().path, 'metadata.json'),
+      ).open();
+      addTearDown(handle.close);
+
+      await expectLater(
+        manager.remove(source().cacheKey),
+        throwsA(inUse(<String>[entryDirectory().path])),
+      );
+      expect((await manager.list()).single.cacheKey, source().cacheKey);
+      await handle.close();
+      await manager.remove(source().cacheKey);
+      expect(entryDirectory().existsSync(), isFalse);
+    }, skip: Platform.isWindows ? null : 'a sharing violation is Windows-only');
+
     test('a cache hit on a read-only cache root returns the entry', () async {
       final entry = await manager.ensureModel(source());
       final unrecorded = named('unrecorded.gguf');

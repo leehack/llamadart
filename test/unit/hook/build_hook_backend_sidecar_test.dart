@@ -596,6 +596,28 @@ void main() {
       expect(nextOffline.requests, isEmpty);
     });
 
+    test('is re-stamped with the local clock when a future-dated record '
+        'is re-checked and the release still has no assets.json', () async {
+      final legacyRelease = {
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+      };
+      await runHook(RuntimeBundleHttpFixture(legacyRelease));
+      absentRecord().setLastModifiedSync(
+        DateTime.now().add(const Duration(days: 30)),
+      );
+
+      await runHook(
+        RuntimeBundleHttpFixture(legacyRelease),
+        backends: ['cuda'],
+      );
+
+      expect(
+        DateTime.now().difference(absentRecord().lastModifiedSync()).abs(),
+        lessThan(const Duration(minutes: 5)),
+      );
+    });
+
     test('is re-checked when dated in the future', () async {
       await runHook(
         RuntimeBundleHttpFixture({
@@ -661,7 +683,15 @@ void main() {
 
         await expectLater(
           runHook(fixture, backends: ['cuda']),
-          throwsA(isA<NativeHookContractException>()),
+          throwsA(
+            isA<NativeHookContractException>().having(
+              (error) => error.message,
+              'message',
+              name.contains('not a manifest')
+                  ? anything
+                  : allOf(contains('Retry the build'), contains('assets.json')),
+            ),
+          ),
         );
         expect(
           File(path.join(releaseCacheDir.path, 'assets.json')).existsSync(),

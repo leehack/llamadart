@@ -2750,11 +2750,19 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
         '${nativeConfig.sourceLabel}: $error. $remedy',
       );
     }
+    // A cut-short or garbled download, unlike a network block page, is
+    // corrupt: failing keeps it from passing for a release without assets.json.
+    NativeHookContractException corrupt(String problem) =>
+        NativeHookContractException(
+          '$source from $url $problem. Retry the build; if it keeps failing, '
+          'put that release\'s assets.json at ${cached.path}, or set '
+          '$nativePathUserDefineKey to a local bundle you trust.',
+        );
     final String text;
     try {
       text = utf8.decode(await downloaded.readAsBytes());
     } on FormatException {
-      throw NativeHookContractException('$source is not UTF-8 text.');
+      throw corrupt('is not UTF-8 text');
     }
     if (recordedAbsent && _looksLikeBlockPage(text)) {
       log.warning(
@@ -2763,6 +2771,13 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
         'at ${absent.path}.',
       );
       return await keepRecordedAbsent();
+    }
+    if (!_looksLikeBlockPage(text)) {
+      try {
+        jsonDecode(text);
+      } on FormatException {
+        throw corrupt('is empty or truncated JSON');
+      }
     }
     final manifest = parseNativeReleaseManifest(
       text,

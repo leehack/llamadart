@@ -504,6 +504,17 @@ void main() {
     });
   });
 
+  test('the running Linux ABI selects its bundle directory', () {
+    final names = LlamaCppService().debugLinuxBundleNamesForTesting();
+
+    expect(names, linuxNativeBundleNames(Abi.current()));
+    expect(names, switch (Abi.current()) {
+      Abi.linuxX64 => <String>['linux-x64'],
+      Abi.linuxArm64 => <String>['linux-arm64'],
+      _ => isEmpty,
+    });
+  }, skip: Platform.isLinux ? null : 'selects bundles on Linux only');
+
   group('Linux native bundle names', () {
     test('map the Linux ABIs to their bundle directories', () {
       expect(linuxNativeBundleNames(Abi.linuxX64), <String>['linux-x64']);
