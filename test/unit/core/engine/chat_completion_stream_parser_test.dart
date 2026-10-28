@@ -2662,6 +2662,27 @@ void main() {
         }
       });
 
+      // Only a thought the prompt opens ends at a content opening.
+      test('a content opening in a thought the model opens streams as it '
+          'parses', () async {
+        for (final (format, outputs) in [
+          (
+            ChatFormat.cohere2Moe,
+            [
+              '<|START_THINKING|>Plan <|START_TEXT|>Hi<|END_TEXT|>',
+              '<|START_THINKING|>Plan <|START_TEXT|>Hi<|END_THINKING|>Yo',
+            ],
+          ),
+          (ChatFormat.qwen3CoderXml, ['<think>Plan <tool_call>x</think>Hi']),
+        ]) {
+          for (final output in outputs) {
+            for (final tools in const [true, false]) {
+              await _expectStreamMatchesParse(format, output, tools: tools);
+            }
+          }
+        }
+      });
+
       test('thoughts in formats whose tool-call streams are gated', () async {
         const thoughts = [
           '<think>\nPlan.\n</think>\n\nSure.',

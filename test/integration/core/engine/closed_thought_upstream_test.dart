@@ -16,6 +16,10 @@ import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_format_registry.dart';
 import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/chat_template_handler.dart';
+import 'package:llamadart/src/core/template/handlers/deepseek_v3_handler.dart';
+import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 import 'package:llamadart/src/core/template/thinking_utils.dart';
 import 'package:test/test.dart';
 
@@ -438,4 +442,42 @@ void main() {
       );
     }
   });
+
+  // A template that always opens the thought, as StepFun's does, renders no
+  // empty thought; the handler's own close with thinking off must not count.
+  test(
+    'a thought the handler closes keeps parsing the reply thought',
+    () async {
+      for (final (ChatTemplateHandler handler, templateSource) in [
+        (HermesHandler(), '<|im_start|>assistant\n<think>\n'),
+        (DeepseekV3Handler(), '<｜Assistant｜><think>'),
+        (Qwen3CoderXmlHandler(), '<|im_start|>assistant\n<think>\n'),
+      ]) {
+        final rendered = handler.render(
+          templateSource: templateSource,
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ],
+          metadata: const {},
+          enableThinking: false,
+        );
+        expect(rendered.prompt, endsWith('<think></think>\n'));
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.value('<think>Plan</think>Sunny.'),
+          templateResult: rendered,
+          parseToolCallsEnabled: false,
+          enableThinking: false,
+          modelName: 'test-model',
+          completionId: 'handler-closed',
+        ).toList();
+        expect(
+          chunks
+              .map((chunk) => chunk.choices.single.delta.content ?? '')
+              .join(),
+          'Sunny.',
+          reason: handler.format.name,
+        );
+      }
+    },
+  );
 }

@@ -283,6 +283,25 @@
             "reasoning_content": "Plan ",
             "tool_calls": []
           }
+        },
+        {
+          "name": "two-calls-end-unended-thought",
+          "output": "Plan <tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=weather>\n<parameter=city>\nRome\n</parameter>\n</function>\n</tool_call>",
+          "parallel_tool_calls": true,
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan ",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Paris\"}"
+              },
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"Rome\"}"
+              }
+            ]
+          }
         }
       ]
     },

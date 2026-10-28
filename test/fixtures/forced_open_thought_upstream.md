@@ -30,7 +30,9 @@ thought is the text before the first `</think>`; with Qwen3.5 a `<tool_call>`
 ends it first and starts the content. A thought that has not ended drops a
 trailing partial end tag. llama.cpp's Qwen3.5 required-call grammar allows a
 thought and text before the call; llamadart's grammar starts the call at once,
-which ends the thought, so that entry sets `required_grammar_start`.
+which ends the thought, so that entry sets `required_grammar_start`. Its
+`two-calls-end-unended-thought` case, added for issue #1531, sets
+`parallel_tool_calls`: the probe and the test pass parallel tool calls.
 
 The `Cohere2MoE.jinja` entry (format `cohere2Moe`), added for issue #1523
 with the same probe, ends its generation prompt with `<|START_THINKING|>`. A

@@ -142,7 +142,8 @@ class CommandR7BHandler extends ChatTemplateHandler {
     var thinkingForcedOpen = false;
     if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag)) {
       if (!enableThinking) {
-        prompt = '${prompt.trimRight()}$thinkingEndTag\n';
+        // Matches the template's own closed thought.
+        prompt = '${prompt.trimRight()}$thinkingEndTag';
       } else {
         thinkingForcedOpen = true;
       }
