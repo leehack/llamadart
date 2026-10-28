@@ -1433,13 +1433,7 @@ class LlamaEngine {
     final requested = download ?? options ?? ModelLoadOptions.defaults;
     return _withMmLifecycle(() async {
       _ensureReady(requireContext: false);
-      if (runtime == LlamaRuntime.liteRtLm) {
-        throw LlamaUnsupportedException(
-          'A LiteRT-LM model takes no multimodal projector: a .litertlm '
-          'bundle carries its own media encoders, so the projector is not '
-          'downloaded.',
-        );
-      }
+      _rejectLiteRtLmProjector();
       _requireMultimodalBackend();
       final epoch = _modelEpoch;
       bool abandoned() => isDisposed || _modelEpoch != epoch;
@@ -1524,10 +1518,19 @@ class LlamaEngine {
     }
   }
 
+  void _rejectLiteRtLmProjector() {
+    if (runtime != LlamaRuntime.liteRtLm) return;
+    throw LlamaUnsupportedException(
+      'A LiteRT-LM model takes no multimodal projector: a .litertlm bundle '
+      'carries its own media encoders.',
+    );
+  }
+
   Future<void> _loadMultimodalProjectorLocked(String mmProjPath) async {
     final mmProjName = _displayNameForSource(mmProjPath);
     LlamaLogger.instance.info('Loading multimodal projector: $mmProjName');
     _ensureReady(requireContext: false);
+    _rejectLiteRtLmProjector();
     final epoch = _modelEpoch;
     try {
       if (_mmContextHandle != null) {
