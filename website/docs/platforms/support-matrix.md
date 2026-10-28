@@ -113,6 +113,14 @@ convolution off and no other components; other recipes throw at load. Qualified
 on SD 1.5 with `control_v11p_sd15_canny` (fp16 Safetensors), and no other platform, family or ControlNet
 layout is supported. See [ControlNet](../guides/image-generation#controlnet).
 
+A hires fix uses `HiresFixImageGenerationRequest` with an `ImageHiresFix`:
+a latent upscale to at most twice each side and 1024x1024, then a second
+sampling pass. It is bounded to an SD 1.x or SD 2.x checkpoint with embedded
+full VAE and no components on macOS CPU or Metal with the pinned SD
+v0.3.0-1 runtime; SD 1.5 and SD-Turbo are measured. Other recipes report
+`supportsHiresFix: false` and throw on a hires-fix request. See
+[hires fix](../guides/image-generation#hires-fix).
+
 Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
 flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
 512×512, flash attention and direct VAE convolutions disabled; CPU and actual

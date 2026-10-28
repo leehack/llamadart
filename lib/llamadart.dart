@@ -69,6 +69,8 @@ export 'src/core/image/image_editing_request.dart'
     show ImageEditingPixels, ImageEditingRequest;
 export 'src/core/image/image_control_net_request.dart'
     show ControlNetImageGenerationRequest, ImageControlNetCondition;
+export 'src/core/image/image_hires_fix_request.dart'
+    show HiresFixImageGenerationRequest, ImageHiresFix, ImageHiresUpscaler;
 export 'src/core/image/image_generation_request.dart'
     show
         ImageGenerationRequest,

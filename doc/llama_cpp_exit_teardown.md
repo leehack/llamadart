@@ -281,6 +281,14 @@ must not race exit teardown goes through `LlamaCppObjectCalls` or
 in `llamadart-native` first; calling the upstream function leaves the call
 unprotected at a direct C `exit()`.
 
+A hires fix (`sd_img_gen_params_t.hires`) runs inside the one
+`sd_dart_generate_image` call: both sampling passes and the latent upscale
+use the generation's context and buffers, check the cancel flag as an
+ordinary generation does, and need no new native call. The model upscaler
+(`SD_HIRES_UPSCALER_MODEL`) would instead load an ESRGAN model from a path
+inside that call, a load no cancel reaches; llamadart offers only the latent
+upscaler.
+
 Every native call of an image worker goes through `StableDiffusionCalls`. A
 new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
 (`generate_video`, `sd_ctx_load_control_net`, an upscaler) needs an

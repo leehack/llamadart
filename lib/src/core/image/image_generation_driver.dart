@@ -4,6 +4,7 @@ import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'generated_image.dart';
 import 'image_editing_request.dart';
 import 'image_generation_model.dart';
+import 'image_hires_fix_request.dart';
 import 'image_generation_request.dart';
 
 /// Model files and runtime settings for one native image-generation context.
@@ -36,6 +37,10 @@ final class ImageGenerationSessionConfig {
   /// recipe.
   final bool controlNetRecipeVerified;
 
+  /// Header, runtime, host and device evidence for the macOS CPU or Metal
+  /// SD 1.x and 2.x full-VAE hires-fix recipe.
+  final bool hiresFixRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -55,6 +60,7 @@ final class ImageGenerationSessionConfig {
     this.vaeTilingRecipeVerified = false,
     this.imageEditingRecipeVerified = false,
     this.controlNetRecipeVerified = false,
+    this.hiresFixRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -119,6 +125,9 @@ final class ImageGenerationSessionRequest {
   /// ControlNet strength for [controlImage], otherwise unused.
   final double? controlStrength;
 
+  /// Second, refining pass, or `null` for one pass.
+  final ImageGenerationSessionHiresFix? hiresFix;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -140,6 +149,34 @@ final class ImageGenerationSessionRequest {
     this.strength,
     this.controlImage,
     this.controlStrength,
+    this.hiresFix,
+  });
+}
+
+/// Fully resolved hires-fix pass of one native generation.
+final class ImageGenerationSessionHiresFix {
+  /// Final width in pixels.
+  final int width;
+
+  /// Final height in pixels.
+  final int height;
+
+  /// Sampling steps of the second pass.
+  final int steps;
+
+  /// Noise the second pass adds, from 0 to 1.
+  final double denoisingStrength;
+
+  /// How the first pass is enlarged.
+  final ImageHiresUpscaler upscaler;
+
+  /// Creates a resolved pass.
+  const ImageGenerationSessionHiresFix({
+    required this.width,
+    required this.height,
+    required this.steps,
+    required this.denoisingStrength,
+    required this.upscaler,
   });
 }
 
@@ -188,6 +225,12 @@ abstract interface class ImageControlNetSession {
   /// Whether this loaded session holds a ControlNet and can honor a control
   /// image and strength.
   bool get supportsControlNet;
+}
+
+/// Optional active-session capability for the bounded hires-fix recipe.
+abstract interface class ImageHiresFixSession {
+  /// Whether this loaded session can honor a second, refining pass.
+  bool get supportsHiresFix;
 }
 
 /// A loaded native image-generation context.
