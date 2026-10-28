@@ -6,6 +6,7 @@ import 'image_editing_request.dart';
 import 'image_generation_model.dart';
 import 'image_hires_fix_request.dart';
 import 'image_generation_request.dart';
+import 'image_reference_editing_request.dart';
 
 /// Model files and runtime settings for one native image-generation context.
 final class ImageGenerationSessionConfig {
@@ -41,6 +42,10 @@ final class ImageGenerationSessionConfig {
   /// SD 1.x and 2.x full-VAE hires-fix recipe.
   final bool hiresFixRecipeVerified;
 
+  /// Header, runtime, host and device evidence for the macOS Metal
+  /// FLUX.1 Kontext reference-editing recipe.
+  final bool referenceEditingRecipeVerified;
+
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
@@ -61,6 +66,7 @@ final class ImageGenerationSessionConfig {
     this.imageEditingRecipeVerified = false,
     this.controlNetRecipeVerified = false,
     this.hiresFixRecipeVerified = false,
+    this.referenceEditingRecipeVerified = false,
     this.flashAttention = false,
     this.vaeDirectConvolution = false,
   });
@@ -128,6 +134,13 @@ final class ImageGenerationSessionRequest {
   /// Second, refining pass, or `null` for one pass.
   final ImageGenerationSessionHiresFix? hiresFix;
 
+  /// Owned RGB references in model order, or `null` to generate without
+  /// them.
+  final List<ImageEditingPixels>? references;
+
+  /// How the model uses [references], otherwise unused.
+  final ImageReferenceEditingRecipe? referenceRecipe;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -150,6 +163,8 @@ final class ImageGenerationSessionRequest {
     this.controlImage,
     this.controlStrength,
     this.hiresFix,
+    this.references,
+    this.referenceRecipe,
   });
 }
 
@@ -231,6 +246,13 @@ abstract interface class ImageControlNetSession {
 abstract interface class ImageHiresFixSession {
   /// Whether this loaded session can honor a second, refining pass.
   bool get supportsHiresFix;
+}
+
+/// Optional active-session capability for the bounded reference-editing
+/// recipe.
+abstract interface class ImageReferenceEditingSession {
+  /// Whether this loaded session can honor ordered reference images.
+  bool get supportsReferenceImageEditing;
 }
 
 /// A loaded native image-generation context.

@@ -802,6 +802,225 @@ void main() {
     });
   });
 
+  group('reference image editing', () {
+    ImageEditingPixels reference([int value = 5, int width = 512]) =>
+        ImageEditingPixels.rgb(
+          width: width,
+          height: 384,
+          pixels: Uint8List(width * 384 * 3)..fillRange(0, 6, value),
+        );
+    ReferenceImageEditingRequest edit([List<ImageEditingPixels>? references]) =>
+        ReferenceImageEditingRequest(
+          prompt: 'make the fox blue',
+          recipe: ImageReferenceEditingRecipe.fluxKontext,
+          references: references ?? [reference()],
+          steps: 3,
+          guidanceScale: 1,
+          seed: 4,
+        );
+
+    setUp(() {
+      driver.headers[_flux] = ImageModelHeaders.fluxKontextDiffusion;
+      driver.session.modelVersion = 'Flux';
+    });
+
+    test('a FLUX.1 Kontext set on macOS Metal maps the reference, its size '
+        'and the recipe, and an ordinary request after it has none', () async {
+      for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+        driver = _FakeDriver()
+          ..headers[_flux] = ImageModelHeaders.fluxKontextDiffusion;
+        driver.session.modelVersion = 'Flux';
+        downloads = _FakeDownloads(driver);
+        debugImageGenerationDriverOverride = driver;
+        final engine = await load(
+          _fluxModel([2, 0, 1]),
+          params: ImageModelParams(device: device),
+        );
+        expect(driver.started.single.referenceEditingRecipeVerified, isTrue);
+        expect(
+          (await engine.capabilities).supportsReferenceImageEditing,
+          isTrue,
+          reason: device.name,
+        );
+        final result = await engine.generateImage(edit());
+        final mapped = driver.session.requests.single;
+        expect(mapped.referenceRecipe, ImageReferenceEditingRecipe.fluxKontext);
+        expect(
+          [
+            for (final image in mapped.references!)
+              (image.width, image.height, image.channels, image.pixels[5]),
+          ],
+          [(512, 384, 3, 5)],
+        );
+        expect((mapped.width, mapped.height), (512, 384));
+        expect(
+          [for (final image in result.images) (image.width, image.height)],
+          [(512, 384)],
+        );
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'plain'),
+        );
+        expect(driver.session.requests.last.references, isNull);
+        expect(driver.session.requests.last.referenceRecipe, isNull);
+        await engine.dispose();
+        expect(
+          (await engine.capabilities).supportsReferenceImageEditing,
+          isFalse,
+        );
+      }
+    });
+
+    test(
+      'unqualified hosts, runtimes, devices and model sets load without '
+      'the capability and refuse references before the task starts',
+      () async {
+        for (final kind in [
+          'host',
+          'runtime',
+          'cpu',
+          'vulkan',
+          'schnell',
+          'missing T5-XXL',
+          'family',
+          'legacy session',
+          'session probe',
+        ]) {
+          driver = _FakeDriver()
+            ..headers[_flux] = kind == 'schnell'
+                ? ImageModelHeaders.fluxDiffusion
+                : ImageModelHeaders.fluxKontextDiffusion;
+          driver.session.modelVersion = kind == 'family' ? 'Flux Fill' : 'Flux';
+          downloads = _FakeDownloads(driver);
+          debugImageGenerationDriverOverride = driver;
+          if (kind == 'host') driver.operatingSystem = 'linux';
+          if (kind == 'runtime') {
+            driver.status = StableDiffusionRuntimeStatus.available(
+              version: 'master-929',
+              commit: '3f8527a',
+              devices: parseStableDiffusionDeviceList('MTL0\tApple M4\n'),
+            );
+          }
+          if (kind == 'vulkan') {
+            driver.status = _available('Vulkan0\tRTX\nCPU\tCPU\n');
+          }
+          if (kind == 'legacy session') {
+            driver.sessionOverride = _LegacySession(driver.session);
+          }
+          if (kind == 'session probe') {
+            driver.session.supportsReferenceImageEditing = false;
+          }
+          final engine = await load(
+            kind == 'missing T5-XXL'
+                ? ImageGenerationModel(
+                    _local(_flux),
+                    components: [
+                      ImageModelComponent.auto(_local(_ae)),
+                      ImageModelComponent.auto(_local(_clipL)),
+                    ],
+                  )
+                : _fluxModel(),
+            params: ImageModelParams(
+              device: switch (kind) {
+                'cpu' => ComputeDevice.cpu,
+                'vulkan' => ComputeDevice.gpu,
+                _ => ComputeDevice.auto,
+              },
+            ),
+          );
+          expect(
+            driver.started.single.referenceEditingRecipeVerified,
+            ['family', 'legacy session', 'session probe'].contains(kind),
+            reason: kind,
+          );
+          expect(
+            (await engine.capabilities).supportsReferenceImageEditing,
+            isFalse,
+            reason: kind,
+          );
+          await expectLater(
+            engine.generate(edit()),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(contains('reference'), contains('v0.3.0-1')),
+              ),
+            ),
+            reason: kind,
+          );
+          expect(driver.session.requests, isEmpty, reason: kind);
+          await engine.generateImage(
+            const ImageGenerationRequest(prompt: 'plain'),
+          );
+          await engine.dispose();
+        }
+      },
+    );
+
+    test('invalid references and counts throw before the task starts and '
+        'leave the slot free', () async {
+      final engine = await load(_fluxModel());
+      for (final (request, matcher) in [
+        (
+          edit([reference(), reference(5, 576)]),
+          isA<LlamaImageGenerationException>(),
+        ),
+        (
+          ReferenceImageEditingRequest(
+            prompt: 'edit',
+            recipe: ImageReferenceEditingRecipe.fluxKontext,
+            references: [
+              ImageEditingPixels.rgb(
+                width: 1088,
+                height: 1024,
+                pixels: Uint8List(1088 * 1024 * 3),
+              ),
+            ],
+          ),
+          isA<LlamaImageGenerationException>(),
+        ),
+        (edit([reference(), reference(6)]), isA<LlamaUnsupportedException>()),
+      ]) {
+        await expectLater(engine.generate(request), throwsA(matcher));
+      }
+      expect(driver.session.requests, isEmpty);
+      await engine.generateImage(edit());
+      expect(driver.session.requests.single.references, hasLength(1));
+    });
+
+    test('a cancel stops the edit with no images, an overlapping request is '
+        'refused, and dispose during an edit waits for it', () async {
+      final engine = await load(_fluxModel());
+      final task = await engine.generate(edit());
+      await expectLater(
+        engine.generate(edit()),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await task.events.firstWhere(
+        (event) =>
+            event is ImageGenerationProgressEvent &&
+            event.phase == ImageGenerationPhase.sampling &&
+            event.step > 0,
+      );
+      task.cancel();
+      expect((await task.done).state, ImageGenerationCompletionState.cancelled);
+      expect((await task.done).result, isNull);
+      final reused = await engine.generateImage(edit());
+      expect(reused.images.single.width, 512);
+
+      final pending = await engine.generate(edit());
+      await pending.events.firstWhere(
+        (event) => event is ImageGenerationProgressEvent,
+      );
+      await engine.dispose();
+      expect(
+        (await pending.done).state,
+        ImageGenerationCompletionState.cancelled,
+      );
+      expect(driver.session.disposedAfterGenerate, isTrue);
+    });
+  });
+
   group('ControlNet', () {
     const params = ImageModelParams(
       device: ComputeDevice.cpu,
@@ -3496,11 +3715,14 @@ final class _FakeSession
         ImageVaeTilingSession,
         ImageEditingSession,
         ImageControlNetSession,
-        ImageHiresFixSession {
+        ImageHiresFixSession,
+        ImageReferenceEditingSession {
   @override
   bool supportsVaeTiling = true;
   @override
   bool supportsHiresFix = true;
+  @override
+  bool supportsReferenceImageEditing = true;
 
   /// Returns first-pass images for a hires fix, as a runtime that disabled
   /// it would.

@@ -24,6 +24,7 @@ import 'image_generation_model.dart';
 import 'image_generation_progress.dart';
 import 'image_generation_request.dart';
 import 'image_hires_fix_request.dart';
+import 'image_reference_editing_request.dart';
 import 'image_model_classifier.dart';
 import 'image_model_metal_preflight.dart';
 import 'image_model_params.dart';
@@ -82,6 +83,13 @@ class ImageGenerationCapabilities implements EngineCapabilities {
   /// model, decoder, host or device recipes, and after disposal.
   final bool supportsHiresFix;
 
+  /// Whether the loaded model and runtime support
+  /// `ReferenceImageEditingRequest`. False before load, for unqualified
+  /// model, component, host or device recipes, and after disposal. The
+  /// headers cannot tell FLUX.1 Kontext [dev] from FLUX.1 [dev], which has
+  /// the same layout.
+  final bool supportsReferenceImageEditing;
+
   /// Maximum concurrent generations: one per process.
   final int maxConcurrentTasks;
 
@@ -98,6 +106,7 @@ class ImageGenerationCapabilities implements EngineCapabilities {
     this.supportsImageEditing = false,
     this.supportsControlNet = false,
     this.supportsHiresFix = false,
+    this.supportsReferenceImageEditing = false,
     this.maxConcurrentTasks = 0,
   });
 }
@@ -669,6 +678,11 @@ class ImageGenerationEngine {
             !assignment.decodesWithTinyAutoencoder &&
             assignment.roles.length == 1 &&
             assignment.roles.containsKey(ImageModelRole.checkpoint),
+        referenceEditingRecipeVerified:
+            driver.operatingSystem == 'macos' &&
+            _isMetal(backendName) &&
+            _isQualifiedRuntime(runtime) &&
+            assignment.fluxKontextRecipeVerified,
         seamlessRecipeVerified:
             assignment.decodesWithTinyAutoencoder &&
             assignment.roles.length == 1 &&
@@ -755,6 +769,10 @@ class ImageGenerationEngine {
           _config.hiresFixRecipeVerified &&
           imageHiresFixModelVersions.contains(_session.modelVersion) &&
           _supportsHiresFix(_session),
+      supportsReferenceImageEditing:
+          _config.referenceEditingRecipeVerified &&
+          _session.modelVersion == 'Flux' &&
+          _supportsReferenceImageEditing(_session),
       maxConcurrentTasks: 1,
     );
   }
@@ -787,13 +805,18 @@ class ImageGenerationEngine {
   /// a [ControlNetImageGenerationRequest] whose control image is not RGB at
   /// the output size or whose strength is outside 0 through 2, and a
   /// [HiresFixImageGenerationRequest] whose sizes, steps, strength or count
-  /// break the [ImageHiresFix] limits, and
+  /// break the [ImageHiresFix] limits, and a [ReferenceImageEditingRequest]
+  /// whose references are not RGB at the output size within
+  /// [ReferenceImageEditingRequest.maxPixels], and
   /// [LlamaUnsupportedException] for an unqualified
   /// [SeamlessImageGenerationRequest] recipe, for a
   /// [ControlNetImageGenerationRequest] when no ControlNet is loaded or the
   /// request combines it with image editing, VAE tiling or circular axes,
-  /// and for a [HiresFixImageGenerationRequest] when
-  /// [ImageGenerationCapabilities.supportsHiresFix] is false, and
+  /// for a [HiresFixImageGenerationRequest] when
+  /// [ImageGenerationCapabilities.supportsHiresFix] is false, and for a
+  /// [ReferenceImageEditingRequest] when
+  /// [ImageGenerationCapabilities.supportsReferenceImageEditing] is false or
+  /// its reference count is not the recipe's, and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running; these checks run before the returned future completes,
   /// and the one-generation slot is taken when this is called. A runtime
@@ -841,6 +864,12 @@ class ImageGenerationEngine {
           ? request.control.strength
           : null,
       hiresFix: hiresFix,
+      references: request is ReferenceImageEditingRequest
+          ? request.references
+          : null,
+      referenceRecipe: request is ReferenceImageEditingRequest
+          ? request.recipe
+          : null,
     );
     validateSeamlessImageGenerationRecipe(
       resolved,
@@ -851,6 +880,19 @@ class ImageGenerationEngine {
     validateImageEditingRecipe(resolved, _config, _session.modelVersion);
     validateImageControlNetRecipe(resolved, _config, _session.modelVersion);
     validateImageHiresFixRecipe(resolved, _config, _session.modelVersion);
+    validateImageReferenceEditingRecipe(
+      resolved,
+      _config,
+      _session.modelVersion,
+    );
+    if (resolved.references != null &&
+        !_supportsReferenceImageEditing(_session)) {
+      throw LlamaUnsupportedException(
+        'This image-generation backend does not report support for '
+        'reference images. Use the pinned stable_diffusion v0.3.0-1 runtime '
+        'with the supported macOS Metal FLUX.1 Kontext recipe.',
+      );
+    }
     if (resolved.hiresFix != null && !_supportsHiresFix(_session)) {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report support for a hires '
@@ -1098,6 +1140,13 @@ class ImageGenerationEngine {
   static bool _isQualifiedRuntime(StableDiffusionRuntimeStatus status) =>
       status.commit == 'be48649' ||
       status.commit == 'be486498eadc29dc3cd234d944c2180ed42b1415';
+
+  static bool _supportsReferenceImageEditing(ImageGenerationSession session) =>
+      switch (session) {
+        ImageReferenceEditingSession editing =>
+          editing.supportsReferenceImageEditing,
+        _ => false,
+      };
 
   static bool _supportsHiresFix(ImageGenerationSession session) =>
       switch (session) {

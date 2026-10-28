@@ -202,6 +202,28 @@ abstract final class ImageModelHeaders {
     ],
   );
 
+  /// FLUX.1-Kontext-dev GGUF diffusion transformer: the FLUX.1-schnell
+  /// layout plus a guidance embedder.
+  static final Uint8List fluxKontextDiffusion = ggufHeader(
+    tensors: [
+      ('double_blocks.0.img_attn.qkv.weight', [3072, 9216]),
+      ('guidance_in.in_layer.weight', [256, 3072]),
+      ('img_in.weight', [64, 3072]),
+      ('final_layer.linear.bias', [64]),
+    ],
+  );
+
+  /// FLUX.1-Fill-dev GGUF diffusion transformer: a guidance embedder and
+  /// 384-wide patch input for the masked image and mask.
+  static final Uint8List fluxFillDiffusion = ggufHeader(
+    tensors: [
+      ('double_blocks.0.img_attn.qkv.weight', [3072, 9216]),
+      ('guidance_in.in_layer.weight', [256, 3072]),
+      ('img_in.weight', [384, 3072]),
+      ('final_layer.linear.bias', [64]),
+    ],
+  );
+
   /// Z-Image-Turbo GGUF diffusion transformer (16 latent channels).
   static final Uint8List zImageDiffusion = ggufHeader(
     tensors: [
