@@ -447,6 +447,9 @@ void main() {
               output,
               parseToolCalls: withTools,
               thinkingForcedClosed: thinkingForcedClosedOf(rendered),
+              thoughtClosedForThinkingOff: thoughtClosedForThinkingOffOf(
+                rendered,
+              ),
               tools: withTools ? [_weatherTool] : null,
             );
             final reason = 'tools: $withTools';
@@ -520,6 +523,133 @@ void main() {
     });
   }
 
+  // These renders leave no thought open: Seed-OSS's template never opens one,
+  // and Cohere2 MoE's closes its own with `reasoning_effort: none`. llama.cpp
+  // then takes a Seed-OSS thought only from the start of the reply, and keeps
+  // thinking tags in a Cohere2 MoE text as text.
+  for (final entry
+      in (_fixture['no_thought_templates'] as List)
+          .cast<Map<String, dynamic>>()) {
+    final templatePath = entry['template'] as String;
+    final kwargs = (entry['chat_template_kwargs'] as Map)
+        .cast<String, dynamic>();
+    for (final enableThinking in const [false, true]) {
+      group('${templatePath.split('/').last}, thinking: $enableThinking', () {
+        late LlamaChatTemplateResult rendered;
+
+        setUpAll(
+          () => rendered = ChatTemplateEngine.render(
+            templateSource: File(templatePath).readAsStringSync(),
+            messages: [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: _fixture['user_prompt'] as String,
+              ),
+            ],
+            metadata: const {},
+            tools: [_weatherTool],
+            chatTemplateKwargs: kwargs,
+            enableThinking: enableThinking,
+          ),
+        );
+
+        test('leaves no thought open', () {
+          expect(
+            rendered.format,
+            ChatFormat.values.byName(entry['format'] as String).index,
+          );
+          expect(rendered.thinkingForcedOpen, isFalse);
+          expect(thoughtClosedForThinkingOffOf(rendered), isFalse);
+        });
+
+        for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
+          final output = c['output'] as String;
+          test('${c['name']} parses and streams as llama.cpp parses', () async {
+            for (final withTools in const [true, false]) {
+              final upstream =
+                  c[withTools ? 'upstream' : 'upstream_without_tools']
+                      as Map<String, dynamic>;
+              final upstreamCalls = _calls([
+                for (final call
+                    in (upstream['tool_calls'] as List)
+                        .cast<Map<String, dynamic>>())
+                  (
+                    name: call['name'] as String,
+                    arguments: call['arguments'] as String,
+                  ),
+              ]);
+              final upstreamReasoning =
+                  (upstream['reasoning_content'] as String).trim();
+              final parsed = ChatTemplateEngine.parse(
+                rendered.format,
+                output,
+                parseToolCalls: withTools,
+                tools: withTools ? [_weatherTool] : null,
+              );
+              final reason = 'tools: $withTools';
+              expect(
+                parsed.content.trim(),
+                (upstream['content'] as String).trim(),
+                reason: reason,
+              );
+              expect(
+                parsed.reasoningContent?.trim() ?? '',
+                upstreamReasoning,
+                reason: reason,
+              );
+              expect(
+                _calls([
+                  for (final call in parsed.toolCalls)
+                    (
+                      name: call.function?.name,
+                      arguments: call.function?.arguments,
+                    ),
+                ]),
+                upstreamCalls,
+                reason: reason,
+              );
+
+              for (final tokens in _chunkings(output)) {
+                final deltas = (await ChatCompletionStreamParser.parse(
+                  tokenStream: Stream.fromIterable(tokens),
+                  templateResult: rendered,
+                  parseToolCallsEnabled: withTools,
+                  enableThinking: enableThinking,
+                  modelName: 'test-model',
+                  completionId: 'no-thought-upstream',
+                  tools: withTools ? [_weatherTool] : null,
+                ).toList()).map((chunk) => chunk.choices.single.delta);
+                final streamReason = '$tokens, $reason';
+                expect(
+                  deltas.map((delta) => delta.content ?? '').join().trim(),
+                  (upstream['content'] as String).trim(),
+                  reason: streamReason,
+                );
+                expect(
+                  deltas.map((delta) => delta.thinking ?? '').join(),
+                  enableThinking ? upstreamReasoning : isEmpty,
+                  reason: streamReason,
+                );
+                expect(
+                  _calls([
+                    for (final delta in deltas)
+                      for (final call in delta.toolCalls ?? const [])
+                        (
+                          name: call.function?.name,
+                          arguments: call.function?.arguments,
+                        ),
+                  ]),
+                  upstreamCalls,
+                  reason: streamReason,
+                );
+              }
+            }
+          });
+        }
+      });
+    }
+  }
+
   // The stream keeps thinking tags as content for exactly these formats.
   test('only formats with the trait parse no thought after a closed one', () {
     for (final registration in chatFormatRegistrations) {
@@ -579,6 +709,7 @@ void main() {
               format.index,
               'Plan${handler.thinkingEndTag}Sunny.',
               parseToolCalls: false,
+              thoughtClosedForThinkingOff: true,
               parser: closed.parser,
             ).reasoningContent ==
             'Plan';
@@ -663,6 +794,48 @@ void main() {
     );
     expect(commandR7B.prompt, endsWith('<|START_THINKING|><|END_THINKING|>'));
     expect(thoughtClosedForThinkingOffOf(commandR7B), isFalse);
+  });
+
+  // A response schema renders Cohere2 MoE through another handler, which
+  // must close the thought for thinking off as the Cohere2 MoE handler does.
+  test('closes a Cohere thought for a response schema with thinking off', () {
+    final source = File(
+      'test/fixtures/llama_cpp_templates/Cohere2MoE.jinja',
+    ).readAsStringSync();
+    for (final withTools in const [false, true]) {
+      for (final enableThinking in const [false, true]) {
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          ],
+          metadata: const {},
+          tools: withTools ? [_weatherTool] : null,
+          responseFormat: const {
+            'type': 'json_schema',
+            'json_schema': {
+              'schema': {'type': 'object'},
+            },
+          },
+          enableThinking: enableThinking,
+        );
+        final reason = 'tools: $withTools, thinking: $enableThinking';
+        expect(
+          rendered.format,
+          withTools ? ChatFormat.generic.index : ChatFormat.contentOnly.index,
+          reason: reason,
+        );
+        expect(
+          rendered.prompt,
+          endsWith(
+            enableThinking
+                ? '<|CHATBOT_TOKEN|><|START_THINKING|>'
+                : '<|CHATBOT_TOKEN|><|START_THINKING|><|END_THINKING|>',
+          ),
+          reason: reason,
+        );
+      }
+    }
   });
 
   test('a forced-open thought keeps the reasoning', () async {

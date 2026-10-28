@@ -116,17 +116,40 @@ class SeedOssHandler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
+    if (thinkingForcedOpen) {
+      final parsed = parseXmlToolCalls(
+        output,
+        XmlToolCallFormat.seedOss,
+        startThink: thinkingStartTag,
+        endThink: thinkingEndTag,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: true,
+      );
+      return ChatParseResult(
+        content: parsed.content.trim(),
+        reasoningContent: parsed.reasoningContent,
+        toolCalls: parsed.toolCalls,
+      );
+    }
+    // As in llama.cpp, a reply to a prompt that opens no thought has one only
+    // when it starts with the start tag; it ends at the first end tag, as
+    // generated, and later thinking tags are content.
+    final reply = output.trimLeft();
+    final thought = reply.startsWith(thinkingStartTag)
+        ? extractForcedOpenThoughtVerbatim(
+            reply.substring(thinkingStartTag.length),
+            endTag: thinkingEndTag,
+          )
+        : null;
     final parsed = parseXmlToolCalls(
-      output,
+      thought?.content ?? output,
       XmlToolCallFormat.seedOss,
-      startThink: thinkingStartTag,
-      endThink: thinkingEndTag,
       parseToolCalls: parseToolCalls,
-      thinkingForcedOpen: thinkingForcedOpen,
+      extractsThought: false,
     );
     return ChatParseResult(
       content: parsed.content.trim(),
-      reasoningContent: parsed.reasoningContent,
+      reasoningContent: thought?.reasoning,
       toolCalls: parsed.toolCalls,
     );
   }

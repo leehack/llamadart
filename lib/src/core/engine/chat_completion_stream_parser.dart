@@ -49,11 +49,16 @@ class _ThinkingSplitResult {
     required this.pendingBuffer,
     required this.isThinking,
     required this.emissions,
+    this.bodyStarted = false,
   });
 
   final String pendingBuffer;
   final bool isThinking;
   final List<_ThinkingSplitEmission> emissions;
+
+  /// Whether a body opening outside a thought started content in which
+  /// thinking tags are text.
+  final bool bodyStarted;
 }
 
 /// Parses generated token streams into OpenAI-style chat completion chunks.
@@ -90,6 +95,53 @@ class ChatCompletionStreamParser {
     bool Function()? cancelled,
     LlamaGenerationUsage? Function()? usage,
   }) async* {
+    var result = templateResult;
+    var tokens = tokenStream;
+    // The parse ends the thought a handler closed for thinking off at a
+    // marker, as llama.cpp ends the thought it keeps open, so text before one
+    // may be reasoning.
+    if (thoughtClosedForThinkingOffOf(templateResult) &&
+        !templateResult.thinkingForcedOpen) {
+      final markers = closedThoughtMarkers(templateResult.format);
+      final held = StreamIterator(_heldUntilAny(tokenStream, markers));
+      if (await held.moveNext()) {
+        // A Cohere2 MoE reply that reaches a marker then parses as after the
+        // forced-open prompt llama.cpp renders.
+        if (templateResult.format == ChatFormat.cohere2Moe.index &&
+            markers.any(held.current.contains)) {
+          result = _withForcedOpenThought(templateResult);
+        }
+        tokens = _resumed(held);
+      } else {
+        tokens = const Stream.empty();
+      }
+    }
+    yield* _parse(
+      tokenStream: tokens,
+      templateResult: result,
+      parseToolCallsEnabled: parseToolCallsEnabled,
+      enableThinking: enableThinking,
+      modelName: modelName,
+      completionId: completionId,
+      tools: tools,
+      stoppedAtLimit: stoppedAtLimit,
+      cancelled: cancelled,
+      usage: usage,
+    );
+  }
+
+  static Stream<LlamaCompletionChunk> _parse({
+    required Stream<String> tokenStream,
+    required LlamaChatTemplateResult templateResult,
+    required bool parseToolCallsEnabled,
+    required bool enableThinking,
+    required String modelName,
+    required String completionId,
+    List<ToolDefinition>? tools,
+    bool Function()? stoppedAtLimit,
+    bool Function()? cancelled,
+    LlamaGenerationUsage? Function()? usage,
+  }) async* {
     final buffer = StringBuffer();
     var streamedContent = '';
     var streamedReasoning = '';
@@ -113,6 +165,9 @@ class ChatCompletionStreamParser {
     final thinkingForcedClosed =
         !templateResult.thinkingForcedOpen &&
         thinkingForcedClosedOf(templateResult);
+    final thoughtClosedForThinkingOff = thoughtClosedForThinkingOffOf(
+      templateResult,
+    );
     // Functionary v3.2 and MiniMax M1 stream through their partial parse
     // with tools.
     final keepsThoughtTagsAsContent =
@@ -138,6 +193,19 @@ class ChatCompletionStreamParser {
     final verbatimThoughtOpenings = verbatimForcedThought
         ? traits.forcedThoughtContentOpenings
         : const <String>[];
+    // After a prompt that opens no thought, a Seed-OSS reply has one only at
+    // its start, kept as generated, as the parse takes it.
+    final leadingThoughtOnly =
+        templateResult.format == ChatFormat.seedOss.index &&
+        !templateResult.thinkingForcedOpen &&
+        !thoughtClosedForThinkingOff;
+    final verbatimThought = verbatimForcedThought || leadingThoughtOnly;
+    // Thinking tags in a Cohere2 MoE text or action are text.
+    final bodyOpenings =
+        templateResult.format == ChatFormat.cohere2Moe.index &&
+            !templateResult.thinkingForcedOpen
+        ? Cohere2MoeHandler.forcedThoughtContentOpenings
+        : const <String>[];
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
@@ -151,7 +219,7 @@ class ChatCompletionStreamParser {
           ? toolCallOpening
           : null,
       unescapes:
-          toolCallOpening != null && !isQwen3CoderXml && !verbatimForcedThought,
+          toolCallOpening != null && !isQwen3CoderXml && !verbatimThought,
       trimsLeading: !pegParsedWithoutTools,
     );
     final gptOssFrames = _GptOssFrameStream(
@@ -171,6 +239,7 @@ class ChatCompletionStreamParser {
         templateResult.thinkingForcedOpen &&
         !verbatimForcedThought;
     var verbatimThoughtEnded = false;
+    var atReplyStart = leadingThoughtOnly;
     // Kimi K3 frames its response in protocol channels that only its parse
     // strips, with or without tools.
     final rawWithoutTools =
@@ -199,22 +268,8 @@ class ChatCompletionStreamParser {
     final endTag = thinkingTags.endTag;
     var isThinking = templateResult.thinkingForcedOpen;
     var pendingBuffer = '';
-    // The parse ends the thought a handler closed for thinking off at the
-    // first end tag, as llama.cpp ends the thought it keeps open, so text
-    // before a thinking tag may be reasoning. llama.cpp also ends a Cohere2
-    // MoE thought where its text or action starts.
-    final tokens =
-        thoughtClosedForThinkingOffOf(templateResult) &&
-            !templateResult.thinkingForcedOpen
-        ? _heldUntilAny(tokenStream, [
-            startTag,
-            endTag,
-            if (templateResult.format == ChatFormat.cohere2Moe.index)
-              ...Cohere2MoeHandler.forcedThoughtContentOpenings,
-          ])
-        : tokenStream;
 
-    await for (final token in tokens) {
+    await for (final token in tokenStream) {
       buffer.write(token);
 
       // GPT-OSS reasoning uses assistant channel frames, and the other formats
@@ -303,6 +358,19 @@ class ChatCompletionStreamParser {
             reasoningGate.leaveForcedThought();
           }
         }
+        if (atReplyStart) {
+          final rest = pendingBuffer.trimLeft();
+          if (rest.length < startTag.length && startTag.startsWith(rest)) {
+            continue;
+          }
+          atReplyStart = false;
+          if (rest.startsWith(startTag)) {
+            pendingBuffer = rest.substring(startTag.length);
+            isThinking = true;
+          } else {
+            verbatimThoughtEnded = true;
+          }
+        }
 
         final split = verbatimThoughtEnded
             ? _ThinkingSplitResult(
@@ -321,11 +389,13 @@ class ChatCompletionStreamParser {
                 startTag: startTag,
                 endTag: endTag,
                 tagState: thoughtTags,
-                endsAtFirstEndTag: verbatimForcedThought,
+                endsAtFirstEndTag: verbatimThought,
                 thoughtContentOpenings: verbatimThoughtOpenings,
+                bodyOpenings: bodyOpenings,
               );
-        if (verbatimForcedThought &&
-            split.emissions.any((emission) => emission.endsThinking)) {
+        if (split.bodyStarted ||
+            (verbatimThought &&
+                split.emissions.any((emission) => emission.endsThinking))) {
           verbatimThoughtEnded = true;
         }
         pendingBuffer = split.pendingBuffer;
@@ -395,6 +465,7 @@ class ChatCompletionStreamParser {
           isPartial: true,
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -472,7 +543,7 @@ class ChatCompletionStreamParser {
 
     // A verbatim thought that has not ended holds only the start of a tag that
     // would end it, which its parse drops.
-    if (verbatimForcedThought && isThinking) {
+    if (verbatimThought && isThinking) {
       pendingBuffer = '';
     }
 
@@ -508,6 +579,7 @@ class ChatCompletionStreamParser {
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
           thinkingForcedClosed: thinkingForcedClosed,
+          thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -658,6 +730,37 @@ class ChatCompletionStreamParser {
   }
 
   static int _noOpening(String text, int from) => text.length;
+
+  /// [held]'s current text, then the rest of it.
+  static Stream<String> _resumed(StreamIterator<String> held) async* {
+    try {
+      yield held.current;
+      while (await held.moveNext()) {
+        yield held.current;
+      }
+    } finally {
+      await held.cancel();
+    }
+  }
+
+  /// [result] with its prompt's thought forced open.
+  static LlamaChatTemplateResult _withForcedOpenThought(
+    LlamaChatTemplateResult result,
+  ) => withThinkingForcedClosed(
+    LlamaChatTemplateResult(
+      prompt: result.prompt,
+      format: result.format,
+      grammar: result.grammar,
+      grammarLazy: result.grammarLazy,
+      additionalStops: result.additionalStops,
+      preservedTokens: result.preservedTokens,
+      grammarTriggers: result.grammarTriggers,
+      thinkingForcedOpen: true,
+      parser: result.parser,
+      tokenCount: result.tokenCount,
+    ),
+    closed: thinkingForcedClosedOf(result),
+  );
 
   /// [tokens] with their text held until it contains one of [markers], or
   /// [tokens] ends.
@@ -1041,10 +1144,12 @@ class ChatCompletionStreamParser {
     _ThoughtTagState? tagState,
     bool endsAtFirstEndTag = false,
     List<String> thoughtContentOpenings = const [],
+    List<String> bodyOpenings = const [],
   }) {
     final emissions = <_ThinkingSplitEmission>[];
     var localPendingBuffer = pendingBuffer;
     var localIsThinking = isThinking;
+    var bodyStarted = false;
 
     while (localPendingBuffer.isNotEmpty) {
       if (!localIsThinking) {
@@ -1054,6 +1159,21 @@ class ChatCompletionStreamParser {
             (tagState?.endTagIsContent ?? false) &&
             !(startIdx > endIdx)) {
           endIdx = -1;
+        }
+        var bodyIdx = -1;
+        for (final opening in bodyOpenings) {
+          final at = localPendingBuffer.indexOf(opening);
+          if (at != -1 && (bodyIdx == -1 || at < bodyIdx)) bodyIdx = at;
+        }
+        if (bodyIdx != -1 &&
+            (startIdx == -1 || bodyIdx < startIdx) &&
+            (endIdx == -1 || bodyIdx < endIdx)) {
+          emissions.add(
+            _ThinkingSplitEmission(text: localPendingBuffer, isThinking: false),
+          );
+          localPendingBuffer = '';
+          bodyStarted = true;
+          break;
         }
 
         if (startIdx != -1 && (endIdx == -1 || startIdx < endIdx)) {
@@ -1086,6 +1206,24 @@ class ChatCompletionStreamParser {
         }
 
         var potentialMatch = false;
+        if (bodyOpenings.isNotEmpty) {
+          final emitIdx = withoutTrailingTagPrefix(localPendingBuffer, [
+            startTag,
+            ...bodyOpenings,
+          ]).length;
+          if (emitIdx < localPendingBuffer.length) {
+            if (emitIdx > 0) {
+              emissions.add(
+                _ThinkingSplitEmission(
+                  text: localPendingBuffer.substring(0, emitIdx),
+                  isThinking: false,
+                ),
+              );
+              localPendingBuffer = localPendingBuffer.substring(emitIdx);
+            }
+            break;
+          }
+        }
         for (var i = startTag.length - 1; i >= 1; i--) {
           if (localPendingBuffer.endsWith(startTag.substring(0, i))) {
             final emitIdx = localPendingBuffer.length - i;
@@ -1178,6 +1316,7 @@ class ChatCompletionStreamParser {
       pendingBuffer: localPendingBuffer,
       isThinking: localIsThinking,
       emissions: emissions,
+      bodyStarted: bodyStarted,
     );
   }
 

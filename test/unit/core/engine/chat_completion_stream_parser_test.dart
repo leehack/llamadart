@@ -2660,6 +2660,26 @@ void main() {
         );
       });
 
+      test('a Cohere2 MoE action streams as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.cohere2Moe,
+          thoughtClosed: true,
+          tools: false,
+          const [('<|START_ACT', '', ''), ('ION|>x', '', '<|START_ACTION|>x')],
+        );
+      });
+
+      // The 18-character start tag split after 17 characters is the longest
+      // marker held across tokens.
+      test('text before a split start tag streams once it ends', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.commandR7B,
+          thoughtClosed: true,
+          tools: false,
+          const [('Hi <|START_THINKING|', '', ''), ('>Plan', 'Plan', 'Hi')],
+        );
+      });
+
       test('Command R7B text waits for a thinking tag', () async {
         await _expectStreamedAfterEachToken(
           ChatFormat.commandR7B,
@@ -2811,6 +2831,25 @@ void main() {
             for (final tools in const [true, false]) {
               await _expectStreamMatchesParse(format, output, tools: tools);
             }
+          }
+        }
+      });
+
+      test('text between a Cohere2 MoE thought and its body streams as it '
+          'parses', () async {
+        for (final output in const [
+          '<|START_THINKING|>x<|END_THINKING|> Hi <|START_TEXT|>Sunny.'
+              '<|END_TEXT|>',
+          '<|START_THINKING|>x<|END_THINKING|> Hi <|START_ACTION|>[]'
+              '<|END_ACTION|>',
+        ]) {
+          for (final tools in const [true, false]) {
+            await _expectStreamMatchesParse(
+              ChatFormat.cohere2Moe,
+              output,
+              tools: tools,
+              everySplit: true,
+            );
           }
         }
       });
@@ -3668,6 +3707,7 @@ Future<void> _expectStreamMatchesParse(
     output,
     parseToolCalls: tools,
     thinkingForcedOpen: forcedOpen,
+    thoughtClosedForThinkingOff: thoughtClosed,
     cancelled: cancelled,
     parser: parser,
     tools: tools ? [_weatherTool] : null,

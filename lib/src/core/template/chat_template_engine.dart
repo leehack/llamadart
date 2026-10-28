@@ -16,6 +16,7 @@ import 'chat_parse_result.dart';
 import 'peg_chat_parser.dart';
 import 'chat_template_handler.dart';
 import 'media_placeholders.dart';
+import 'handlers/cohere2_moe_handler.dart';
 import 'handlers/generic_handler.dart';
 import 'handlers/deepseek_v3_handler.dart';
 import 'handlers/hermes_handler.dart';
@@ -303,7 +304,12 @@ class ChatTemplateEngine {
         ),
       );
       rendered = withTemplateOpenedThought(
-        rendered,
+        _withCohereThoughtClosed(
+          rendered,
+          format: format,
+          effectiveFormat: effectiveFormat,
+          enableThinking: enableThinking,
+        ),
         startTag: handler.thinkingStartTag,
       );
       if (effectiveFormat == ChatFormat.contentOnly) {
@@ -363,7 +369,12 @@ class ChatTemplateEngine {
     );
 
     baseResult = withTemplateOpenedThought(
-      baseResult,
+      _withCohereThoughtClosed(
+        baseResult,
+        format: format,
+        effectiveFormat: effectiveFormat,
+        enableThinking: enableThinking,
+      ),
       startTag: handler.thinkingStartTag,
     );
     if (effectiveFormat == ChatFormat.contentOnly) {
@@ -385,6 +396,42 @@ class ChatTemplateEngine {
       thinkingEndTag: handler.thinkingEndTag,
     );
     return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
+  }
+
+  /// [result], with thinking off, closing the thought that a Cohere2 MoE
+  /// template opens when another handler renders it, as for a response
+  /// schema, the way [Cohere2MoeHandler] closes it.
+  static LlamaChatTemplateResult _withCohereThoughtClosed(
+    LlamaChatTemplateResult result, {
+    required ChatFormat format,
+    required ChatFormat effectiveFormat,
+    required bool enableThinking,
+  }) {
+    final cohere = handlerFor(ChatFormat.cohere2Moe);
+    if (format != ChatFormat.cohere2Moe ||
+        effectiveFormat == format ||
+        enableThinking ||
+        !isThinkingForcedOpen(
+          result.prompt,
+          startTag: cohere.thinkingStartTag,
+        )) {
+      return result;
+    }
+    return withThoughtMarksOf(
+      LlamaChatTemplateResult(
+        prompt: '${result.prompt.trimRight()}${cohere.thinkingEndTag}',
+        format: result.format,
+        grammar: result.grammar,
+        grammarLazy: result.grammarLazy,
+        additionalStops: result.additionalStops,
+        preservedTokens: result.preservedTokens,
+        grammarTriggers: result.grammarTriggers,
+        thinkingForcedOpen: result.thinkingForcedOpen,
+        parser: result.parser,
+        tokenCount: result.tokenCount,
+      ),
+      result,
+    );
   }
 
   /// Runs a handler [render], turning an [Exception] that is not already a
@@ -589,6 +636,14 @@ class ChatTemplateEngine {
   /// Qwen3-Coder XML output has no reasoning: its thinking tags are content,
   /// as in llama.cpp. Other formats still return the reasoning.
   ///
+  /// Without [thinkingForcedOpen], a Seed-OSS reply has a thought only when it
+  /// starts with `<seed:think>`, as in llama.cpp. Pass
+  /// [thoughtClosedForThinkingOff] for a template that opens the thought,
+  /// rendered with thinking off: llama.cpp keeps that thought open, so a
+  /// Seed-OSS or Cohere2 MoE reply that shows a thinking tag, or for Cohere2
+  /// MoE `<|START_TEXT|>` or `<|START_ACTION|>`, parses as one with
+  /// [thinkingForcedOpen].
+  ///
   /// Output that a PEG [parser] cannot parse, or that is nested too deeply to
   /// parse, throws [LlamaInferenceException].
   static ChatParseResult parse(
@@ -599,6 +654,7 @@ class ChatTemplateEngine {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     bool thinkingForcedClosed = false,
+    bool thoughtClosedForThinkingOff = false,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -610,7 +666,10 @@ class ChatTemplateEngine {
         isPartial: isPartial,
         cancelled: cancelled,
         parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
+        thinkingForcedOpen:
+            thinkingForcedOpen ||
+            (thoughtClosedForThinkingOff &&
+                reopensClosedThought(formatIndex, output)),
         thinkingForcedClosed: thinkingForcedClosed,
         parser: parser,
         tools: tools,
@@ -931,3 +990,24 @@ class ChatTemplateEngine {
     ], supportsSystemRole: false);
   }
 }
+
+/// The markers that show where a reply ends a thought that a handler closed
+/// for thinking off: the format's thinking tags and, for Cohere2 MoE, where
+/// its text or action starts, as llama.cpp ends the thought it keeps open.
+List<String> closedThoughtMarkers(int formatIndex) {
+  final tags = ChatTemplateEngine.thinkingTagsFor(formatIndex);
+  return [
+    tags.startTag,
+    tags.endTag,
+    if (formatIndex == ChatFormat.cohere2Moe.index)
+      ...Cohere2MoeHandler.forcedThoughtContentOpenings,
+  ];
+}
+
+/// Whether [output] of a Seed-OSS or Cohere2 MoE result whose handler closed
+/// the thought for thinking off parses as after the forced-open prompt
+/// llama.cpp renders: it shows one of [closedThoughtMarkers].
+bool reopensClosedThought(int formatIndex, String output) =>
+    (formatIndex == ChatFormat.seedOss.index ||
+        formatIndex == ChatFormat.cohere2Moe.index) &&
+    closedThoughtMarkers(formatIndex).any(output.contains);

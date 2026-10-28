@@ -12,13 +12,15 @@ typedef ThinkingExtraction = ({String content, String? reasoning});
 /// [startTag] is treated as reasoning (model may still be thinking).
 ///
 /// Escaped `\n` and `\r` in reasoning become a newline and a carriage return
-/// unless [unescape] is false.
+/// unless [unescape] is false. The content keeps the whitespace at its ends
+/// unless [trimContent] is true.
 ThinkingExtraction extractThinking(
   String text, {
   String startTag = '<think>',
   String endTag = '</think>',
   bool thinkingForcedOpen = false,
   bool unescape = true,
+  bool trimContent = true,
 }) {
   final result = _extractThinking(
     text,
@@ -30,7 +32,10 @@ ThinkingExtraction extractThinking(
   // Trim only the overall content ends here, once. The recursion keeps content
   // raw so whitespace between stripped thinking blocks (e.g. the space in
   // "Hello<think>x</think> world<think>y</think>!") is preserved.
-  return (content: result.content.trim(), reasoning: result.reasoning);
+  return (
+    content: trimContent ? result.content.trim() : result.content,
+    reasoning: result.reasoning,
+  );
 }
 
 /// Splits [text] that continues a thought the prompt opened at the first

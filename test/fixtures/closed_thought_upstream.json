@@ -537,6 +537,319 @@
               }
             ]
           }
+        },
+        {
+          "name": "thought-then-text",
+          "output": "Plan<|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-in-text",
+          "output": "<|START_TEXT|>Use <|END_THINKING|> tag.<|END_TEXT|>",
+          "upstream": {
+            "content": "Use <|END_THINKING|> tag.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Use <|END_THINKING|> tag.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "start-tag-thought",
+          "output": "<|START_THINKING|>Plan<|END_THINKING|><|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<|START_THINKING|>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "<|START_THINKING|>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-action",
+          "output": "Plan<|START_ACTION|>[{\"tool_call_id\": \"0\", \"tool_name\": \"weather\", \"parameters\": {\"city\": \"Paris\"}}]<|END_ACTION|>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "no_thought_templates": [
+    {
+      "template": "test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja",
+      "format": "seedOss",
+      "chat_template_kwargs": {},
+      "cases": [
+        {
+          "name": "end-tag-without-start-tag",
+          "output": "Plan</seed:think>Sunny.",
+          "upstream": {
+            "content": "Plan</seed:think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Plan</seed:think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought",
+          "output": "<seed:think>Plan</seed:think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-after-whitespace",
+          "output": "\n<seed:think>Plan</seed:think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-after-text",
+          "output": "Hello <seed:think>x</seed:think> world",
+          "upstream": {
+            "content": "Hello <seed:think>x</seed:think> world",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Hello <seed:think>x</seed:think> world",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-thought",
+          "output": "<seed:think>Plan</seed:think>A<seed:think>B</seed:think>C",
+          "upstream": {
+            "content": "A<seed:think>B</seed:think>C",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "A<seed:think>B</seed:think>C",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<seed:think><seed:think>Plan</seed:think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<seed:think>Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "<seed:think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escape-in-thought",
+          "output": "<seed:think>Plan \\n x.</seed:think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-in-thought",
+          "output": "<seed:think>Plan <seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call></seed:think>Done.",
+          "upstream": {
+            "content": "Done.",
+            "reasoning_content": "Plan <seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Done.",
+            "reasoning_content": "Plan <seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "end-tag-then-call",
+          "output": "Plan</seed:think><seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+          "upstream": {
+            "content": "Plan</seed:think>",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"\\nParis\\n\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "Plan</seed:think><seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-then-call",
+          "output": "<seed:think>Plan</seed:think><seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"\\nParis\\n\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "<seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unfinished-thought",
+          "output": "<seed:think>Plan",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "unfinished-end-tag",
+          "output": "<seed:think>Plan</seed:thi",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "text-then-call",
+          "output": "Plan <seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+          "upstream": {
+            "content": "Plan ",
+            "reasoning_content": "",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\":\"\\nParis\\n\"}"
+              }
+            ]
+          },
+          "upstream_without_tools": {
+            "content": "Plan <seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        }
+      ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+      "format": "cohere2Moe",
+      "chat_template_kwargs": {
+        "reasoning_effort": "none"
+      },
+      "cases": [
+        {
+          "name": "end-tag-in-text",
+          "output": "<|START_TEXT|>Use <|END_THINKING|> tag.<|END_TEXT|>",
+          "upstream": {
+            "content": "Use <|END_THINKING|> tag.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Use <|END_THINKING|> tag.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-in-text",
+          "output": "<|START_TEXT|>Use <|START_THINKING|>x<|END_THINKING|> tag.<|END_TEXT|>",
+          "upstream": {
+            "content": "Use <|START_THINKING|>x<|END_THINKING|> tag.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Use <|START_THINKING|>x<|END_THINKING|> tag.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "text",
+          "output": "<|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
         }
       ]
     }
