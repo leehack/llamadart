@@ -378,6 +378,105 @@
           }
         }
       ]
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+      "format": "cohere2Moe",
+      "generation_prompt": "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>",
+      "required_grammar_start": "root ::= think-body \"<|END_THINKING|>\" think-space (",
+      "cases": [
+        {
+          "name": "ended-thought",
+          "output": "Plan.<|END_THINKING|><|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "text-marker-ends-thought",
+          "output": "Plan.<|START_TEXT|>Sunny.<|END_TEXT|>",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "text-marker-ends-thought-unended-text",
+          "output": "Plan.<|START_TEXT|>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "action-marker-ends-thought",
+          "output": "Plan. <|START_ACTION|>[{\"tool_call_id\": \"0\", \"tool_name\": \"weather\", \"parameters\": {\"city\": \"Paris\"}}]<|END_ACTION|>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan. ",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "call-after-ended-thought",
+          "output": "Plan.<|END_THINKING|><|START_ACTION|>[{\"tool_call_id\": \"0\", \"tool_name\": \"weather\", \"parameters\": {\"city\": \"Paris\"}}]<|END_ACTION|>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan.",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "end-tag-inside-text",
+          "output": "Plan.<|START_TEXT|>A <|END_THINKING|> B<|END_TEXT|>",
+          "upstream": {
+            "content": "A <|END_THINKING|> B",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-end-tag-at-end",
+          "output": "Plan it <|END_THI",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "partial-text-marker-at-end",
+          "output": "Plan it <|START_TE",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it ",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "start-tag-inside-thought",
+          "output": "Plan <|START_THINKING|>x<|END_THINKING|><|START_TEXT|>A<|END_TEXT|>",
+          "upstream": {
+            "content": "A",
+            "reasoning_content": "Plan <|START_THINKING|>x",
+            "tool_calls": []
+          }
+        }
+      ]
     }
   ]
 }

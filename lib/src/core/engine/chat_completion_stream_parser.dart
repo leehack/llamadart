@@ -14,7 +14,6 @@ import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
 import '../template/thinking_utils.dart';
-import '../template/xml_tool_call_format.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -131,10 +130,8 @@ class ChatCompletionStreamParser {
         templateResult.format == ChatFormat.qwen3CoderXml.index;
     final verbatimForcedThought =
         templateResult.thinkingForcedOpen && traits.keepsForcedThoughtVerbatim;
-    // A Qwen3-Coder XML tool-call scope also ends a verbatim thought, with or
-    // without tools, and starts the content.
-    final verbatimThoughtOpenings = verbatimForcedThought && isQwen3CoderXml
-        ? const [XmlToolCallFormat.qwen3CoderScopeStart]
+    final verbatimThoughtOpenings = verbatimForcedThought
+        ? traits.forcedThoughtContentOpenings
         : const <String>[];
     final pegParsedWithoutTools =
         !parseToolCallsEnabled && _usesPegParser(templateResult);

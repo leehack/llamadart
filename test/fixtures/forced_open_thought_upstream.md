@@ -32,6 +32,12 @@ trailing partial end tag. llama.cpp's Qwen3.5 required-call grammar allows a
 thought and text before the call; llamadart's grammar starts the call at once,
 which ends the thought, so that entry sets `required_grammar_start`.
 
+The `Cohere2MoE.jinja` entry (format `cohere2Moe`), added for issue #1523
+with the same probe, ends its generation prompt with `<|START_THINKING|>`. A
+`<|START_TEXT|>` or `<|START_ACTION|>` before `<|END_THINKING|>` also ends the
+thought and starts the content. Its required-call grammar ends the thought at
+`<|END_THINKING|>`, so that entry sets `required_grammar_start` too.
+
 A thought that never closes is reasoning, including a tool-call envelope inside
 it. llamadart trims some of the whitespace llama.cpp keeps around reasoning and
 content, so the test compares trimmed text.

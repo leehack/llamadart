@@ -86,6 +86,7 @@ final class ChatFormatTraits {
     this.keepsThoughtTagsAsContent = false,
     this.parsesCallsInsideThoughts = false,
     this.keepsForcedThoughtVerbatim = false,
+    this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.disabledByResponseSchema = false,
     this.requiredKeepsLazyGrammar = false,
@@ -115,6 +116,10 @@ final class ChatFormatTraits {
   /// first end tag, with escapes and a repeated start tag, and takes the rest
   /// as content in which thinking tags are text.
   final bool keepsForcedThoughtVerbatim;
+
+  /// Markers that, with [keepsForcedThoughtVerbatim], also end a forced-open
+  /// thought when they come before its end tag, and start the content.
+  final List<String> forcedThoughtContentOpenings;
 
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
@@ -249,6 +254,9 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => _hasAll(s, const ['<|START_TEXT|>', '<|START_ACTION|>']),
     traits: ChatFormatTraits(
       toolCallOpening: CommandR7BHandler.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
+      forcedThoughtContentOpenings:
+          Cohere2MoeHandler.forcedThoughtContentOpenings,
       disabledByResponseSchema: true,
     ),
   ),
@@ -317,6 +325,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     traits: ChatFormatTraits(
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
+      forcedThoughtContentOpenings: [XmlToolCallFormat.qwen3CoderScopeStart],
     ),
   ),
   ChatFormatRegistration(

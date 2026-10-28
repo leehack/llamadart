@@ -30,6 +30,7 @@
 - Private validation harness: catalog 13 adds a `next_token_scoring` pack for `scoreNextToken` (top-K, candidates, prompt-prefix reuse and argument guards on the CPU test model, and typed rejection on LiteRT-LM), replacing its coverage exemption ([#1196](https://github.com/leehack/llamadart/issues/1196)).
 - DeepSeek V3.1 keeps a forced-open thought as llama-server does: an escaped `\n` and a repeated `<think>` stay in the reasoning as generated, and thinking tags after the first `</think>` stay in the content instead of being parsed as more reasoning ([#750](https://github.com/leehack/llamadart/issues/750)).
 - Qwen3.5, QwQ and other Hermes-style templates that open a thought in the prompt keep it as llama-server does: an escaped `\n` and a repeated `<think>` stay in the reasoning, a `<tool_call>` also ends a Qwen3.5 thought, and thinking tags after the first `</think>` stay in the content. These templates and DeepSeek V3.1 also drop a partial `</think>` that ends an unfinished thought ([#750](https://github.com/leehack/llamadart/issues/750)).
+- A Cohere2 MoE thought that the prompt opens ends at a `<|START_TEXT|>` or `<|START_ACTION|>` the model writes without `<|END_THINKING|>`, as in llama-server, so its text and tool calls no longer land in the reasoning ([#1523](https://github.com/leehack/llamadart/issues/1523)).
 
 ## 0.16.5
 
