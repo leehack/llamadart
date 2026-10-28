@@ -150,11 +150,7 @@ ImageGenerationSessionHiresFix resolveImageHiresFix(
   final int finalHeight;
   if (hiresFix.scale case final scale?) {
     if (!scale.isFinite || scale <= 1 || scale > ImageHiresFix.maxScale) {
-      reject(
-        'hiresFix.scale must be greater than 1 and at most '
-        '${ImageHiresFix.maxScale}.',
-        scale,
-      );
+      reject('hiresFix.scale must be greater than 1 and at most 2.', scale);
     }
     finalWidth = (width * scale).round();
     finalHeight = (height * scale).round();
@@ -177,7 +173,7 @@ ImageGenerationSessionHiresFix resolveImageHiresFix(
     reject(
       'The hires-fix final size must be larger than the ${width}x$height '
       'first pass, with each side at least the first pass and at most '
-      '${ImageHiresFix.maxScale} times it.',
+      'twice it.',
       size,
     );
   }

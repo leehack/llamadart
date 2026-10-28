@@ -143,8 +143,8 @@ void main() {
       (768, 600, 'multiples of 64'),
       (512, 512, 'larger than the 512x512 first pass'),
       (448, 768, 'larger than the 512x512 first pass'),
-      (1088, 512, 'at most 2.0 times'),
-      (512, 1088, 'at most 2.0 times'),
+      (1088, 512, 'at most twice'),
+      (512, 1088, 'at most twice'),
     ]) {
       expect(
         () => _resolve(ImageHiresFix.size(width: width, height: height)),
