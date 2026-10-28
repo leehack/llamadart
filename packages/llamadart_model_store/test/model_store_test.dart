@@ -50,8 +50,12 @@ void main() {
     final refs = Directory(
       p.join(root.path, 'entries', ModelStore.entryIdFor(model), 'refs'),
     );
+    // Leaves out the temporary files of writes in progress.
     return refs.existsSync()
-        ? [for (final file in refs.listSync()) p.basename(file.path)]
+        ? [
+            for (final file in refs.listSync())
+              if (p.extension(file.path) == '.json') p.basename(file.path),
+          ]
         : <String>[];
   }
 
@@ -491,6 +495,58 @@ void main() {
       expect(await Future.wait([first, second]), ['fail', 'fail']);
       expect(referenceFiles(model), isEmpty);
     });
+
+    test(
+      'failed calls keep a reference another process records between them',
+      () async {
+        final a = await open('app.a');
+        final model = single('/model.gguf');
+        await DefaultModelDownloadManager(
+          defaultCacheDirectory: p.join(a.directory, 'files'),
+        ).ensureModel(model.source);
+        final gate = Completer<void>();
+        server
+          ..gates['/model.gguf'] = gate.future
+          ..failing.add('/model.gguf');
+        final refresh = ModelLoadOptions(
+          cachePolicy: ModelCachePolicy.refresh,
+          maxRetries: 0,
+        );
+
+        final first = a
+            .ensure(model, options: refresh)
+            .then((_) => 'ok', onError: (_) => 'fail');
+        while (server.requests['/model.gguf'] != 2) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        final own = referenceContents(model);
+        // Records its reference, then waits for the entry lock of the first
+        // call's download.
+        final other = await Process.start(_dartExecutable(), [
+          'test/support/ensure_entry.dart',
+          root.path,
+          'app.a',
+          server.url('/model.gguf').toString(),
+        ]);
+        addTearDown(other.kill);
+        final errors = other.stderr.transform(utf8.decoder).join();
+        while (referenceContents(model) == own) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        final recorded = referenceContents(model);
+        final second = a
+            .ensure(model, options: refresh)
+            .then((_) => 'ok', onError: (_) => 'fail');
+        while (referenceContents(model) == recorded) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        gate.complete();
+
+        expect(await Future.wait([first, second]), ['fail', 'fail']);
+        expect(await other.exitCode, 0, reason: await errors);
+        expect(referenceContents(model), recorded);
+      },
+    );
 
     test('a failed call keeps a reference another process rewrote', () async {
       final a = await open('app.a');
