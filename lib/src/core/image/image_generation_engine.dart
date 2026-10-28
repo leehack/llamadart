@@ -664,7 +664,9 @@ class ImageGenerationEngine {
         _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
         _ => ImageGenerationComputeDevice.cpu,
       };
-      if (memoryDevice == ImageGenerationComputeDevice.otherGpu && !readGpus) {
+      // The budget read predates any download, so refresh free memory then.
+      if (memoryDevice == ImageGenerationComputeDevice.otherGpu &&
+          (!readGpus || sources.any((source) => !source.isLocal))) {
         gpus = await driver.readGpuMemory();
       }
       _checkMemory(

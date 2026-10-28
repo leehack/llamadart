@@ -47,8 +47,8 @@ Size errors (`LlamaImageGenerationException`) and recipe refusals
   tell them apart, and the runtime detects both as `Flux`
   (`VERSION_FLUX`, whose default reference preset is also `flux_kontext`).
   The pinned runtime keys `Flux` on the double/single block tensor names and
-  the patch width alone, so the tensor set has no discriminator either, and
-  a model-name check would be a guess. With FLUX.1 [dev], references do not
+  the `img_in` patch width and the `txt_in` width alone, so the tensor set has
+  no discriminator either, and a model-name check would be a guess. With FLUX.1 [dev], references do not
   steer the output as an edit.
 - Load: `referenceEditingRecipeVerified` also needs macOS, a Metal backend
   and the pinned runtime commit (`be48649`).

@@ -1226,6 +1226,39 @@ void main() {
       expect(driver.memoryGpus.single, hasLength(1));
     });
 
+    test('a GPU budget on a host with an integrated and a discrete GPU is '
+        'taken', () async {
+      driver
+        ..status = _available(vulkan)
+        ..mixedGpus = true;
+
+      final config = await startedWith(
+        const ImageModelPlacement(maxGpuMemoryGiB: 4),
+        devices: vulkan,
+      );
+
+      expect(config.maxGpuMemoryGiB, 4);
+    });
+
+    test('a GPU budget reads the GPU memory again for the memory check only '
+        'when files were downloaded', () async {
+      driver.status = _available(vulkan);
+      const params = ImageModelParams(device: ComputeDevice.gpu);
+      const placement = ImageModelPlacement(maxGpuMemoryGiB: 4);
+
+      await load(_sdxs(), params: params, placement: placement);
+      expect(driver.gpuMemoryReads, 1);
+
+      driver.gpuMemoryReads = 0;
+      await load(
+        _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+        params: params,
+        placement: placement,
+      );
+      expect(driver.gpuMemoryReads, 2);
+      expect(driver.memoryGpus.last, hasLength(1));
+    });
+
     test('the memory check alone reads the GPU memory once, and without '
         'one it reads none', () async {
       driver.status = _available(vulkan);
@@ -3991,12 +4024,24 @@ final class _FakeDriver implements ImageGenerationDriver {
   /// What [readGpuMemory] lists: a discrete GPU, an integrated one, or
   /// nothing.
   bool? discreteGpu = true;
+  bool mixedGpus = false;
   int gpuMemoryReads = 0;
   final List<List<StableDiffusionGpuMemory>?> memoryGpus = [];
 
   @override
   Future<List<StableDiffusionGpuMemory>?> readGpuMemory() async {
     gpuMemoryReads++;
+    if (mixedGpus) {
+      return [
+        for (final integrated in [true, false])
+          (
+            name: integrated ? 'Vulkan0' : 'Vulkan1',
+            totalBytes: 8 << 30,
+            freeBytes: 8 << 30,
+            integrated: integrated,
+          ),
+      ];
+    }
     return switch (discreteGpu) {
       null => null,
       final discrete => [
