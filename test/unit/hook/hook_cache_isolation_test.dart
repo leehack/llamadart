@@ -9,35 +9,45 @@ import 'package:test/test.dart';
 import '../../support/hook_project_root.dart';
 import '../../support/native_library_headers.dart';
 
-/// Whether [source] calls `testCodeBuildHook` other than through a
+/// Whether [source] mentions `testCodeBuildHook` other than as a member of a
 /// `HookProjectRoot` receiver, or imports `code_assets` under a prefix that
-/// would hide the call from this check.
+/// would hide the mention from this check.
 bool escapesHookRoot(String source) {
-  final calls = RegExp(r'testCodeBuildHook\(').allMatches(source).length;
+  final mentions = RegExp(r'\btestCodeBuildHook\b').allMatches(source).length;
   final onRoot = RegExp(
-    r'(?<![\w.])(?!code_assets\b)\w+\.testCodeBuildHook\(',
+    r'(?<![\w.])(?!code_assets\b)\w+\.testCodeBuildHook\b',
   ).allMatches(source).length;
   final prefixed = RegExp(
-    r"import 'package:code_assets/[^;]*\bas\b",
+    r'''import\s+['"]package:code_assets/[^;]*\bas\b''',
   ).hasMatch(source);
-  return calls != onRoot || prefixed;
+  return mentions != onRoot || prefixed;
 }
+
+/// [source] without string literals and comments, which may quote what the
+/// guard flags.
+String withoutLiteralsAndComments(String source) => source
+    .replaceAll(
+      RegExp(r'''(?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")'''),
+      "''",
+    )
+    .replaceAll(RegExp(r'//.*'), '');
 
 /// Every hook test builds in a `HookProjectRoot`. One that built in this
 /// checkout would leave its fake bundles in `.dart_tool/llamadart`, which the
 /// next build in the checkout reuses (#1558).
 void main() {
   test('hook tests build in a throwaway package root', () {
-    final ownRoot = {
-      'build_hook_backend_sidecar_test.dart',
-      'hook_cache_isolation_test.dart',
-    };
+    final ownRoot = {'build_hook_backend_sidecar_test.dart'};
     final offenders = [
       for (final file in Directory('test/unit/hook').listSync())
         if (file is File &&
             file.path.endsWith('_test.dart') &&
             !ownRoot.contains(path.basename(file.path)) &&
-            escapesHookRoot(file.readAsStringSync()))
+            escapesHookRoot(
+              path.basename(file.path) == 'hook_cache_isolation_test.dart'
+                  ? withoutLiteralsAndComments(file.readAsStringSync())
+                  : file.readAsStringSync(),
+            ))
           path.basename(file.path),
     ];
 
@@ -56,6 +66,45 @@ void main() {
       expect(escapesHookRoot('a.b.testCodeBuildHook(a);'), isTrue);
       expect(
         escapesHookRoot("import 'package:code_assets/code_assets.dart' as ca;"),
+        isTrue,
+      );
+      expect(
+        escapesHookRoot('import "package:code_assets/code_assets.dart" as ca;'),
+        isTrue,
+      );
+    });
+
+    test('flags a tear-off', () {
+      expect(escapesHookRoot('final build = testCodeBuildHook;'), isTrue);
+      expect(
+        escapesHookRoot('final build = project.testCodeBuildHook;'),
+        isFalse,
+      );
+    });
+
+    test('flags a double-quoted aliased import with a call', () {
+      expect(
+        escapesHookRoot(
+          'import "package:code_assets/code_assets.dart" as ca;\n'
+          'await ca.testCodeBuildHook(a);',
+        ),
+        isTrue,
+      );
+    });
+
+    test('ignores literals and comments only once they are stripped', () {
+      const quoted =
+          "// testCodeBuildHook(\n"
+          "final a = 'testCodeBuildHook(';\n"
+          'final b = "import \'package:code_assets/c.dart\' as ca;";\n'
+          'project.testCodeBuildHook(a);';
+
+      expect(escapesHookRoot(quoted), isTrue);
+      expect(escapesHookRoot(withoutLiteralsAndComments(quoted)), isFalse);
+      expect(
+        escapesHookRoot(
+          withoutLiteralsAndComments('$quoted\ntestCodeBuildHook(x);'),
+        ),
         isTrue,
       );
     });
@@ -86,6 +135,16 @@ void main() {
         root.delete();
         expect(created.existsSync(), isFalse);
       }, getSystemTempDirectory: () => temp);
+    });
+
+    test('refuses to share a root whose name is already taken', () {
+      final root = HookProjectRoot.create();
+      addTearDown(root.delete);
+      File(root.resolve('pubspec.yaml'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('name: other\n');
+
+      expect(() => root.directory, throwsA(isA<FileSystemException>()));
     });
 
     test('declares the requested core version', () {
