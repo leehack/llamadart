@@ -71,14 +71,18 @@ void main() {
       });
 
       // An unended thought parses as reasoning, so a required call that the
-      // grammar let the model start inside it would be lost.
+      // grammar let the model start inside it would be lost. A Qwen3-Coder XML
+      // call ends the thought itself.
       test('a required call must end the thought first', () {
         final required = render(toolChoice: ToolChoice.required);
         expect(required.thinkingForcedOpen, isTrue);
         expect(required.grammarLazy, isFalse);
         expect(
           required.grammar,
-          startsWith('root ::= think-body "</think>" think-space ('),
+          startsWith(
+            entry['required_grammar_start'] as String? ??
+                'root ::= think-body "</think>" think-space (',
+          ),
         );
       });
 
