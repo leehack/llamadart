@@ -12,6 +12,7 @@ import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
 import 'json_schema_chat_request.dart';
+import 'load_check_report.dart';
 import '../template/response_format.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
@@ -438,6 +439,46 @@ class LlamaEngine {
     return engine;
   }
 
+  /// Checks whether [setModel] can load [model] with [params] on this
+  /// platform, without loading it.
+  ///
+  /// Runs the checks [setModel] runs before any file resolves, and nothing
+  /// else: no file is resolved, read or downloaded, no runtime starts, and a
+  /// loaded model keeps serving. [LlamaLoadCheckReport.status] is
+  /// [LlamaLoadCheckStatus.unsupported] exactly when [setModel] would throw
+  /// [LlamaLoadCheckReport.error] before any download, as for LiteRT-LM where
+  /// no runtime is published (macOS x86_64, Windows arm64, the x86_64 iOS
+  /// simulator) or an explicit [ModelParams.device] the platform lacks.
+  /// A model whose format neither [ModelSource.format] nor its file name
+  /// gives is [LlamaLoadCheckStatus.deferred]: the load checks it once it
+  /// reads the file.
+  ///
+  /// [capabilities] keeps describing the loaded model only. A supported
+  /// report is not proof the load succeeds: the file, its memory and the
+  /// runtime's native library or browser assets are checked by the load.
+  ///
+  /// ```dart
+  /// final engine = LlamaEngine(LlamaBackend());
+  /// final model = LlamaModel(ModelSource.parse('hf://owner/repo/model.litertlm'));
+  /// const params = ModelParams(device: ComputeDevice.gpu);
+  /// final check = await engine.checkLoad(model, params: params);
+  /// if (check.status == LlamaLoadCheckStatus.unsupported) {
+  ///   print(check.reason);
+  /// } else {
+  ///   await engine.setModel(model, params: params);
+  /// }
+  /// ```
+  ///
+  /// Throws [LlamaArgumentException] for an invalid [params], as [setModel]
+  /// does, and [LlamaStateException] after [dispose].
+  Future<LlamaLoadCheckReport> checkLoad(
+    LlamaModel model, {
+    ModelParams params = const ModelParams(),
+  }) async {
+    _throwIfDisposed();
+    return _checkModelBeforeIo(model, params);
+  }
+
   /// Loads [model] with [params], replacing the model this engine holds.
   ///
   /// Before any download or file access, the call throws for what it can
@@ -536,13 +577,14 @@ class LlamaEngine {
             ? '${source.resolvedUri}'
             : source.fileName);
     Future<void> load() => _withModelLifecycle('set a model', () async {
-      params.validate();
+      if (_checkModelBeforeIo(model, params).error case final error?) {
+        throw error;
+      }
       final sources = <ModelSource>[
         model.source,
         ?model.projector,
         ...companions,
       ];
-      _checkModelBeforeIo(model, params);
 
       void throwIfCancelled() {
         if (download.cancelToken?.isCancelled ?? false) {
@@ -620,9 +662,14 @@ class LlamaEngine {
     return companionLocations;
   }
 
-  /// Throws [LlamaUnsupportedException] for what [setModel] can reject from
-  /// its arguments alone.
-  void _checkModelBeforeIo(LlamaModel model, ModelParams params) {
+  /// What [setModel] can tell from its arguments alone, before any file
+  /// resolves: the [LlamaUnsupportedException] it throws, or what is left to
+  /// the load. Throws [LlamaArgumentException] for an invalid [params].
+  LlamaLoadCheckReport _checkModelBeforeIo(
+    LlamaModel model,
+    ModelParams params,
+  ) {
+    params.validate();
     final source = model.source;
     final format =
         source.format ??
@@ -632,6 +679,36 @@ class LlamaEngine {
                   ? '${source.resolvedUri}'
                   : source.fileName),
         );
+    final candidate = backend;
+    LlamaUnsupportedException? error;
+    String? backendUncheckedReason;
+    try {
+      backendUncheckedReason = _rejectBeforeIo(model, params, format);
+    } on LlamaUnsupportedException catch (unsupported) {
+      error = unsupported;
+    }
+    return buildLoadCheckReport(
+      format: format,
+      runtime: candidate is BackendModelFormatRouting
+          ? format?.runtime
+          : candidate is BackendRuntimeIdentity
+          ? (candidate as BackendRuntimeIdentity).runtime
+          : null,
+      device: params.device,
+      error: error,
+      backendUncheckedReason: backendUncheckedReason,
+    );
+  }
+
+  /// Throws [LlamaUnsupportedException] for what [setModel] can reject from
+  /// its arguments alone, reading the model as [format]. Otherwise returns
+  /// why the backend cannot tell before the load, or null when it checked.
+  String? _rejectBeforeIo(
+    LlamaModel model,
+    ModelParams params,
+    ModelFormat? format,
+  ) {
+    final source = model.source;
     if (model.projector != null && format == ModelFormat.liteRtLm) {
       throw LlamaUnsupportedException(
         'A LiteRT-LM model takes no multimodal projector: a .litertlm bundle '
@@ -654,9 +731,11 @@ class LlamaEngine {
     }
     if (source.format case final declared?) _checkBackendLoads(declared);
     final candidate = backend;
-    if (candidate is BackendModelParamsCheck) {
-      (candidate as BackendModelParamsCheck).checkModelParams(params, format);
+    if (candidate is BackendLoadCheck) {
+      return (candidate as BackendLoadCheck).checkLoad(params, format);
     }
+    return 'This backend does not check a load before it reads the model '
+        'file.';
   }
 
   /// Where the backend loads each of [sources] from, in order, and [params]
