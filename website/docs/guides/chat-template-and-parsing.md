@@ -54,6 +54,13 @@ print(result.format);
   values do not. Every template receives the resulting flag as
   `enable_thinking`, as llama.cpp passes it, so `enableThinking` alone
   reaches templates such as GLM-OCR (`/nothink`) and SmolLM3 (`/no_think`).
+  Templates that ignore `enable_thinking` get their own switch from
+  `enableThinking` instead: `reasoning` and `skip_thinking` for Cohere2 MoE,
+  `reasoning_effort` for Hy3 and `thinking_mode` for MiniMax M3. A kwarg that
+  sets that switch wins over the value `enableThinking` sets, as in
+  llama-server. Hy3 accepts only `no_think`, `low` and `high`; any other
+  `reasoning_effort`, such as `none` or `medium`, makes the template throw
+  `LlamaInferenceException`, as llama.cpp's render fails.
 - `templateNow`: deterministic time injection, including `strftime_now` and
   date globals. For multi-turn chat, construct
   `TemplateTimeChatSession(engine, templateNow: DateTime.utc(2026, 1, 2))`.

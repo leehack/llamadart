@@ -176,6 +176,45 @@ llama.cpp runs on the CPU. The WebGPU bridge ignores negative `mainGpu`
 values; explicit `gpu` still requires an adapter and active GPU layers after
 load.
 
+## Check a load before it runs
+
+`LlamaEngine.checkLoad` runs the checks `setModel` runs before any file
+resolves, and only those: it downloads nothing, reads no file, starts no
+runtime and leaves a loaded model in place. Use it to grey out a model or a
+device in a picker before the user waits for a download.
+
+```dart
+final engine = LlamaEngine(LlamaBackend());
+final model = LlamaModel(ModelSource.parse('hf://owner/repo/model.litertlm'));
+const params = ModelParams(device: ComputeDevice.gpu);
+
+final check = await engine.checkLoad(model, params: params);
+if (check.status == LlamaLoadCheckStatus.unsupported) {
+  print('Cannot load here: ${check.reason}');
+} else {
+  // supported, deferred or unknown: the load checks the rest.
+  await engine.setModel(model, params: params);
+}
+```
+
+| Status | Meaning |
+| --- | --- |
+| `supported` | Every pre-load check passed. `format`, `runtime` and `device` say what the load would use; `ComputeDevice.auto` is resolved by the runtime at load. |
+| `unsupported` | `setModel` would throw `error`, a `LlamaUnsupportedException` naming the missing capability and the platform or runtime condition, before any download. |
+| `deferred` | Neither `ModelSource.format` nor the file name names the format, so the load checks the runtime once it reads the file. Set `ModelSource.format` to check earlier. |
+| `unknown` | The backend cannot tell before loading: a backend without `BackendLoadCheck`, such as `LlamaEngine(LiteRtLmBackend())` or a custom `LlamaBackend`, or a single-runtime backend given a file name of another format, which it loads anyway. |
+
+`setModel` and `checkLoad` share one check, so a report is `unsupported`
+exactly when the load would fail before downloading. A `supported` report is
+not proof the load succeeds: like `dart run llamadart:doctor`, it reports
+policy, and the native library or browser assets, LoRA adapter limits, the
+file and its memory are checked by the load. `checkLoad` takes no
+`ModelLoadOptions`, so `setModel`'s download-option rejections (a `sha256`
+with a projector, credentials across hosts, options a URL-loading backend does
+not take) are not reported. `engine.capabilities` keeps describing the loaded model
+only. A custom backend joins the check by implementing `BackendLoadCheck` from
+`package:llamadart/backend.dart`.
+
 `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are deprecated
 and keep working until 1.0. Under `device: auto` they still choose the
 LiteRT-LM backend alone, for example to run llama.cpp on the CPU and LiteRT-LM

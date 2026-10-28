@@ -2,8 +2,6 @@ import 'dart:async';
 
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/backends/backend.dart'
-    show BackendModelParamsCheck;
 import 'package:llamadart/src/core/models/model_target_file.dart'
     show UncacheableLocalModelFileException;
 import 'package:test/test.dart';
@@ -1794,15 +1792,16 @@ class _RoutingBackend extends _Backend
 /// [failing] one throws; and an [uncacheable] local path throws what the
 /// package download manager throws for a name no cache entry can hold. With
 /// [ignoresCancel] a download completes although its token is cancelled.
-class _ParamsCheckBackend extends _Backend implements BackendModelParamsCheck {
+class _ParamsCheckBackend extends _Backend implements BackendLoadCheck {
   final List<ModelFormat?> checkedFormats = <ModelFormat?>[];
 
   @override
-  void checkModelParams(ModelParams params, ModelFormat? format) {
+  String? checkLoad(ModelParams params, ModelFormat? format) {
     checkedFormats.add(format);
     if (params.liteRtLmCacheDir != null) {
       throw LlamaUnsupportedException('liteRtLmCacheDir');
     }
+    return null;
   }
 }
 

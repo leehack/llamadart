@@ -270,14 +270,11 @@ void main() {
     () async {
       final backend = LlamaBackend.withTextHistory();
       addTearDown(backend.dispose);
-      final checks = backend as BackendModelParamsCheck;
+      final checks = backend as BackendLoadCheck;
 
-      checks.checkModelParams(const LlamaCppModelParams(), ModelFormat.gguf);
+      checks.checkLoad(const LlamaCppModelParams(), ModelFormat.gguf);
       expect(
-        () => checks.checkModelParams(
-          const LiteRtLmModelParams(),
-          ModelFormat.gguf,
-        ),
+        () => checks.checkLoad(const LiteRtLmModelParams(), ModelFormat.gguf),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -287,10 +284,8 @@ void main() {
         ),
       );
       expect(
-        () => checks.checkModelParams(
-          const LlamaCppModelParams(),
-          ModelFormat.liteRtLm,
-        ),
+        () =>
+            checks.checkLoad(const LlamaCppModelParams(), ModelFormat.liteRtLm),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -316,7 +311,7 @@ void main() {
     },
   );
 
-  group('checkModelParams before any download', () {
+  group('checkLoad before any download', () {
     void onAbi(Abi abi) {
       debugLiteRtLmAbiOverride = abi;
       addTearDown(() => debugLiteRtLmAbiOverride = null);
@@ -333,7 +328,7 @@ void main() {
     test('rejects fields the runtime of a named format ignores', () {
       final backend = NativeAutoBackend();
       expect(
-        () => backend.checkModelParams(
+        () => backend.checkLoad(
           const ModelParams(liteRtLmCacheDir: '/cache'),
           ModelFormat.gguf,
         ),
@@ -343,7 +338,7 @@ void main() {
         ),
       );
       expect(
-        () => backend.checkModelParams(
+        () => backend.checkLoad(
           const ModelParams(loadMtp: true),
           ModelFormat.liteRtLm,
         ),
@@ -351,37 +346,31 @@ void main() {
           'does not support llama.cpp-specific ModelParams: loadMtp.',
         ),
       );
-      backend.checkModelParams(
+      backend.checkLoad(
         const ModelParams(liteRtLmCacheDir: '/cache'),
         ModelFormat.liteRtLm,
       );
-      backend.checkModelParams(
-        const ModelParams(batchSize: 256),
-        ModelFormat.gguf,
-      );
+      backend.checkLoad(const ModelParams(batchSize: 256), ModelFormat.gguf);
     });
 
     test('rejects a runtime-specific subtype for the other runtime', () {
       final backend = NativeAutoBackend();
       expect(
-        () => backend.checkModelParams(
+        () => backend.checkLoad(
           const LlamaCppModelParams(),
           ModelFormat.liteRtLm,
         ),
         unsupported('LlamaCppModelParams configures llama.cpp (GGUF) models'),
       );
       expect(
-        () => backend.checkModelParams(
-          const LiteRtLmModelParams(),
-          ModelFormat.gguf,
-        ),
+        () => backend.checkLoad(const LiteRtLmModelParams(), ModelFormat.gguf),
         unsupported('LiteRtLmModelParams configures LiteRT-LM (.litertlm)'),
       );
-      backend.checkModelParams(const LlamaCppModelParams(), ModelFormat.gguf);
+      backend.checkLoad(const LlamaCppModelParams(), ModelFormat.gguf);
     });
 
     test('leaves a format only the file can tell to the load', () {
-      NativeAutoBackend().checkModelParams(
+      NativeAutoBackend().checkLoad(
         const ModelParams(liteRtLmCacheDir: '/cache', loadMtp: true),
         null,
       );
@@ -396,46 +385,49 @@ void main() {
       for (final MapEntry(key: abi, value: message) in cases.entries) {
         onAbi(abi);
         expect(
-          () => NativeAutoBackend().checkModelParams(
+          () => NativeAutoBackend().checkLoad(
             const ModelParams(),
             ModelFormat.liteRtLm,
           ),
           unsupported(message),
         );
-        NativeAutoBackend().checkModelParams(
-          const ModelParams(),
-          ModelFormat.gguf,
+        expect(
+          NativeAutoBackend().checkLoad(const ModelParams(), ModelFormat.gguf),
+          isNull,
         );
         // A custom LiteRT-LM factory can bring its own runtime library.
-        NativeAutoBackend(
-          liteRtLmFactory: () => _FakeBackend(handle: 22),
-        ).checkModelParams(const ModelParams(), ModelFormat.liteRtLm);
+        expect(
+          NativeAutoBackend(
+            liteRtLmFactory: () => _FakeBackend(handle: 22),
+          ).checkLoad(const ModelParams(), ModelFormat.liteRtLm),
+          contains('custom LiteRT-LM factory'),
+        );
       }
     });
 
     test('rejects an explicit LiteRT-LM device the target lacks', () {
       onAbi(Abi.linuxArm64);
       expect(
-        () => NativeAutoBackend().checkModelParams(
+        () => NativeAutoBackend().checkLoad(
           const ModelParams(device: ComputeDevice.gpu),
           ModelFormat.liteRtLm,
         ),
         unsupported('ComputeDevice.gpu is not available for LiteRT-LM on '),
       );
       expect(
-        () => NativeAutoBackend().checkModelParams(
+        () => NativeAutoBackend().checkLoad(
           const ModelParams(device: ComputeDevice.gpu),
           ModelFormat.liteRtLm,
         ),
         unsupported('(linux_arm64)'),
       );
-      NativeAutoBackend().checkModelParams(
+      NativeAutoBackend().checkLoad(
         const ModelParams(device: ComputeDevice.cpu),
         ModelFormat.liteRtLm,
       );
 
       onAbi(Abi.linuxX64);
-      NativeAutoBackend().checkModelParams(
+      NativeAutoBackend().checkLoad(
         const ModelParams(device: ComputeDevice.gpu),
         ModelFormat.liteRtLm,
       );

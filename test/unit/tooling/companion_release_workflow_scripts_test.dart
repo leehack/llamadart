@@ -852,7 +852,36 @@ List<String> _companionPublishProblems(String workflow) {
 
 /// Why [workflow]'s companion publish dry-run could resolve `llamadart` from
 /// pub.dev, or from a path outside this checkout.
-List<String> _ciDryRunProblems(String workflow) {
+/// The CI jobs whose publish dry-run resolves llamadart from the checkout,
+/// with the working directory each must start in.
+const _ciDryRunJobs = <String, String>{
+  'companion-packages': r'${{ matrix.package }}',
+  'model-store': 'packages/llamadart_model_store',
+};
+
+/// [workflow] with [edit] applied only to [job]'s block.
+String _editJob(String workflow, String job, String Function(String) edit) {
+  final start = workflow.indexOf('\n  $job:\n');
+  final next = RegExp(
+    r'\n  [a-z][a-z0-9-]*:\n',
+  ).firstMatch(workflow.substring(start + 1));
+  final end = next == null ? workflow.length : start + 1 + next.start;
+  return workflow.substring(0, start) +
+      edit(workflow.substring(start, end)) +
+      workflow.substring(end);
+}
+
+/// [job]'s block of [workflow].
+String _jobBlock(String workflow, String job) {
+  var block = '';
+  _editJob(workflow, job, (text) => block = text);
+  return block;
+}
+
+List<String> _ciDryRunProblems(
+  String workflow, {
+  String job = 'companion-packages',
+}) {
   final problems = <String>[];
   final sandbox = _Sandbox();
   final workspace = '${sandbox.root}/workspace';
@@ -866,9 +895,9 @@ List<String> _ciDryRunProblems(String workflow) {
   final runnerTemp = '${sandbox.root}/runner';
   Directory(runnerTemp).createSync();
 
-  final step = _step(workflow, 'companion-packages', 'Publish dry-run');
-  if (step['working-directory'] != r'${{ matrix.package }}') {
-    problems.add('the dry-run must start in the companion package');
+  final step = _step(workflow, job, 'Publish dry-run');
+  if (step['working-directory'] != _ciDryRunJobs[job]) {
+    problems.add('the dry-run must start in the package');
   }
   final result = sandbox.run(
     step,
@@ -1123,32 +1152,47 @@ void main() {
     });
   }, skip: Platform.isWindows ? _posixOnly : false);
 
-  group('ci.yml companion publish dry-run', () {
+  group('ci.yml publish dry-runs', () {
     final workflow = _read(_ciWorkflow);
 
-    test('resolves llamadart from this checkout', () {
-      expect(_ciDryRunProblems(workflow), isEmpty);
-    });
+    for (final job in _ciDryRunJobs.keys) {
+      test('$job resolves llamadart from this checkout', () {
+        expect(_ciDryRunProblems(workflow, job: job), isEmpty);
+      });
 
-    test('rejects a dry-run without the checkout override', () {
-      const override =
-          "          printf 'dependency_overrides:\\n  llamadart:\\n    path: %s\\n' \\\n"
-          '            "\$GITHUB_WORKSPACE" > "\$tmp_package/pubspec_overrides.yaml"\n';
-      const exclude = "            --exclude='pubspec_overrides.yaml' \\\n";
-      final mutations = <String, String Function(String)>{
-        'W6 drops the override': (source) => source.replaceFirst(override, ''),
-        'W7 keeps the checkout override in the copy': (source) => source
-            .replaceFirst(override, '')
-            .replaceFirst(
-              "            --exclude='pubspec.lock' \\\n$exclude",
-              "            --exclude='pubspec.lock' \\\n",
-            ),
-      };
-      for (final mutation in mutations.entries) {
-        final mutated = mutation.value(workflow);
-        expect(mutated, isNot(workflow), reason: mutation.key);
-        expect(_ciDryRunProblems(mutated), isNotEmpty, reason: mutation.key);
-      }
-    });
+      test('$job rejects a dry-run without the checkout override', () {
+        final override = RegExp(
+          r"          printf 'dependency_overrides:.*\n"
+          r'.*/pubspec_overrides\.yaml"\n',
+        );
+        const exclude = "            --exclude='pubspec_overrides.yaml' \\\n";
+        final mutations = <String, String Function(String)>{
+          'W6 drops the override': (source) =>
+              source.replaceFirst(override, ''),
+          'W7 keeps the checkout override in the copy': (source) => source
+              .replaceFirst(override, '')
+              .replaceFirst(
+                "            --exclude='pubspec.lock' \\\n$exclude",
+                "            --exclude='pubspec.lock' \\\n",
+              ),
+        };
+        for (final mutation in mutations.entries) {
+          final mutated = _editJob(workflow, job, mutation.value);
+          expect(mutated, isNot(workflow), reason: mutation.key);
+          if (mutation.key.startsWith('W7')) {
+            expect(
+              _jobBlock(mutated, job),
+              isNot(contains(exclude)),
+              reason: '${mutation.key} must drop $job\'s exclude',
+            );
+          }
+          expect(
+            _ciDryRunProblems(mutated, job: job),
+            isNotEmpty,
+            reason: mutation.key,
+          );
+        }
+      });
+    }
   }, skip: Platform.isWindows ? _posixOnly : false);
 }

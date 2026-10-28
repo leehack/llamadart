@@ -206,13 +206,7 @@ class LiteRtLmBackend
     ModelParams params, {
     void Function(double progress)? onProgress,
   }) async {
-    if (params.liteRtLmEmbeddingEngine) {
-      throw LlamaUnsupportedException(
-        _resolveBackendName(params) == 'cpu'
-            ? 'LiteRT-LM Web CPU embeddings are unavailable in @litert-lm/core@0.18.0: upstream streams text-encoder weights only for WebGPU (Failed to get external weight).'
-            : 'LiteRT-LM WebGPU embeddings are unavailable in @litert-lm/core@0.18.0: EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
-      );
-    }
+    liteRtLmWebCheckLoad(params, preferredBackend: _preferredBackend);
     _validateModelParams(params);
     final backend = _resolveBackendName(params);
     if (params.device == ComputeDevice.gpu && !await webGpuAdapterAvailable()) {
@@ -1438,49 +1432,13 @@ class LiteRtLmBackend
     );
   }
 
-  String _resolveBackendName(ModelParams params) {
-    final device = _deviceBackendName(params);
-    if (device != null) {
-      return device;
-    }
-    final explicit = _preferredBackend ?? params.liteRtLmBackend.nativeName;
-    if (explicit != null) {
-      if (explicit == 'npu') {
-        throw UnsupportedError('LiteRT-LM web does not support NPU backend.');
-      }
-      return explicit;
-    }
-    if (resolveGpuLayerCount(params.gpuLayers) == 0) {
-      return 'cpu';
-    }
-    return _backendNameForGpuPreference(params.preferredBackend);
-  }
+  String _resolveBackendName(ModelParams params) =>
+      liteRtLmWebBackendName(params, preferredBackend: _preferredBackend);
 
   /// The backend an explicit [ModelParams.device] requires, or null for
   /// [ComputeDevice.auto].
-  String? _deviceBackendName(ModelParams params) {
-    final device = params.device;
-    if (device == ComputeDevice.auto) {
-      return null;
-    }
-    if (_preferredBackend != null) {
-      throw LlamaUnsupportedException(
-        'ModelParams.device ${device.name} cannot be combined with the '
-        'deprecated LiteRtLmBackend(preferredBackend: $_preferredBackend). '
-        'Set only ModelParams.device.',
-      );
-    }
-    return switch (device) {
-      ComputeDevice.cpu => 'cpu',
-      ComputeDevice.gpu => 'gpu',
-      ComputeDevice.npu => throw LlamaUnsupportedException(
-        'ComputeDevice.npu is not available for LiteRT-LM on the Web, which '
-        'runs on the CPU or WebGPU; only LiteRT-LM on Android has an NPU '
-        'backend. Use ComputeDevice.auto, cpu or gpu.',
-      ),
-      ComputeDevice.auto => null,
-    };
-  }
+  String? _deviceBackendName(ModelParams params) =>
+      _liteRtLmWebDeviceBackendName(params, _preferredBackend);
 
   String? _explicitBackendName(ModelParams params) {
     final device = _deviceBackendName(params);
@@ -1500,17 +1458,8 @@ class LiteRtLmBackend
     return null;
   }
 
-  String _backendNameForGpuPreference(GpuBackend backend) {
-    return switch (backend) {
-      GpuBackend.cpu || GpuBackend.blas => 'cpu',
-      GpuBackend.auto ||
-      GpuBackend.vulkan ||
-      GpuBackend.metal ||
-      GpuBackend.cuda ||
-      GpuBackend.opencl ||
-      GpuBackend.hip => 'gpu',
-    };
-  }
+  String _backendNameForGpuPreference(GpuBackend backend) =>
+      _liteRtLmWebBackendForGpuPreference(backend);
 
   int _backendValueFor(String backend) {
     final moduleBackend = _backendValueFromGlobalEnum(backend);
@@ -1760,6 +1709,89 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
   external bool get done;
 
   external JSAny? get value;
+}
+
+/// Throws [LlamaUnsupportedException] for what a LiteRT-LM Web load rejects
+/// from [params] alone, before it fetches the model: an NPU, and the
+/// embedding engine, which `@litert-lm/core@0.18.0` does not provide.
+/// [preferredBackend] is the backend's deprecated preferred backend.
+void liteRtLmWebCheckLoad(ModelParams params, {String? preferredBackend}) {
+  if (params.liteRtLmEmbeddingEngine) {
+    throw LlamaUnsupportedException(
+      liteRtLmWebBackendName(params, preferredBackend: preferredBackend) ==
+              'cpu'
+          ? 'LiteRT-LM Web CPU embeddings are unavailable in @litert-lm/core@0.18.0: upstream streams text-encoder weights only for WebGPU (Failed to get external weight).'
+          : 'LiteRT-LM WebGPU embeddings are unavailable in @litert-lm/core@0.18.0: EmbeddingGemma-2 qualification missed native CPU parity (cosine >= 0.9998 and relative L2 < 2%). A qualified runtime is required.',
+    );
+  }
+  _liteRtLmWebDeviceBackendName(params, preferredBackend);
+}
+
+/// The LiteRT-LM Web backend, `cpu` or `gpu`, that [params] selects on a
+/// backend with the deprecated [preferredBackend].
+String liteRtLmWebBackendName(ModelParams params, {String? preferredBackend}) {
+  final device = _liteRtLmWebDeviceBackendName(params, preferredBackend);
+  if (device != null) {
+    return device;
+  }
+  final explicit = preferredBackend ?? params.liteRtLmBackend.nativeName;
+  if (explicit != null) {
+    if (explicit == 'npu') {
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackendPreference.npu is not available for LiteRT-LM on the '
+        'Web, which runs on the CPU or WebGPU; only LiteRT-LM on Android has '
+        'an NPU backend. Use ModelParams.device auto, cpu or gpu.',
+      );
+    }
+    return explicit;
+  }
+  if (resolveGpuLayerCount(params.gpuLayers) == 0) {
+    return 'cpu';
+  }
+  return _liteRtLmWebBackendForGpuPreference(params.preferredBackend);
+}
+
+/// The LiteRT-LM Web backend an explicit [ModelParams.device] of [params]
+/// requires, or null for [ComputeDevice.auto]; throws for an NPU, or a
+/// device combined with the deprecated [preferredBackend].
+String? _liteRtLmWebDeviceBackendName(
+  ModelParams params,
+  String? preferredBackend,
+) {
+  final device = params.device;
+  if (device == ComputeDevice.auto) {
+    return null;
+  }
+  if (preferredBackend != null) {
+    throw LlamaUnsupportedException(
+      'ModelParams.device ${device.name} cannot be combined with the '
+      'deprecated LiteRtLmBackend(preferredBackend: $preferredBackend). '
+      'Set only ModelParams.device.',
+    );
+  }
+  return switch (device) {
+    ComputeDevice.cpu => 'cpu',
+    ComputeDevice.gpu => 'gpu',
+    ComputeDevice.npu => throw LlamaUnsupportedException(
+      'ComputeDevice.npu is not available for LiteRT-LM on the Web, which '
+      'runs on the CPU or WebGPU; only LiteRT-LM on Android has an NPU '
+      'backend. Use ComputeDevice.auto, cpu or gpu.',
+    ),
+    ComputeDevice.auto => null,
+  };
+}
+
+/// The LiteRT-LM Web backend a [ModelParams.preferredBackend] selects.
+String _liteRtLmWebBackendForGpuPreference(GpuBackend backend) {
+  return switch (backend) {
+    GpuBackend.cpu || GpuBackend.blas => 'cpu',
+    GpuBackend.auto ||
+    GpuBackend.vulkan ||
+    GpuBackend.metal ||
+    GpuBackend.cuda ||
+    GpuBackend.opencl ||
+    GpuBackend.hip => 'gpu',
+  };
 }
 
 /// The percent-decoded last path segment of [url], or null when it is empty

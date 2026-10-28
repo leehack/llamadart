@@ -38,6 +38,7 @@
         "guides/backend-selection",
         "guides/model-lifecycle",
         "guides/model-downloads",
+        "guides/model-store",
         "guides/generation-and-streaming",
         "guides/chat-template-and-parsing"
       ]
@@ -121,6 +122,7 @@
         "guides/template-engine-internals"
       ]
     },
-    "maintainers/genkit-package"
+    "maintainers/genkit-package",
+    "maintainers/model-store-package"
   ]
 }
