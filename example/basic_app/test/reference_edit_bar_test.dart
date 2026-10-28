@@ -71,4 +71,34 @@ void main() {
       isFalse,
     );
   });
+
+  test('a 32 by 200 bar fails the shape gate on its width alone', () {
+    final bar = findDarkBar(
+      _image(top: 432, rows: 32, left: 100, columns: 200),
+    );
+
+    expect(bar.height, 32);
+    expect(bar.width, 200);
+    expect(hasFixtureBarShape(bar), isFalse);
+  });
+
+  test('a bar with a lighter upper half still passes by growing upward', () {
+    const size = referenceEditSize;
+    final pixels = _image(top: 432, rows: 16, left: 64, columns: 384);
+    for (var y = 416; y < 432; y++) {
+      pixels.fillRange((y * size + 64) * 3, (y * size + 448) * 3, 100);
+    }
+
+    final bar = findDarkBar(pixels);
+
+    expect((bar.top, bar.height, bar.width), (432, 32, 384));
+    expect(hasFixtureBarShape(bar), isTrue);
+  });
+
+  test('a 44 row bar fails the shape gate', () {
+    final bar = findDarkBar(_image(top: 430, rows: 44, left: 64, columns: 384));
+
+    expect(bar.height, 44);
+    expect(hasFixtureBarShape(bar), isFalse);
+  });
 }
