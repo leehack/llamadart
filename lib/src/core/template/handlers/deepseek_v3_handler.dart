@@ -137,12 +137,12 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    // As in llama.cpp (`7fe450e1`), a forced-open thought that never closes
-    // is reasoning.
-    final thinking = extractThinking(
-      output,
-      thinkingForcedOpen: thinkingForcedOpen,
-    );
+    // As in llama.cpp (`620d2225`), a forced-open thought is the text before
+    // the first `</think>`, kept as generated, and the rest is content; a
+    // thought that never closes is reasoning.
+    final thinking = thinkingForcedOpen
+        ? extractForcedOpenThoughtVerbatim(output)
+        : extractThinking(output);
     return _parseContentAndToolCalls(
       thinking.content,
       reasoning: thinking.reasoning,
