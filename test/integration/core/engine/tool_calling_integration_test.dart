@@ -4,7 +4,12 @@ import 'package:test/test.dart';
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 
-class MockLlamaBackend implements LlamaBackend, BackendAvailability {
+class MockLlamaBackend
+    implements
+        LlamaBackend,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
+        BackendAvailability {
   bool _isReady = false;
   final List<String> prompts = [];
   final List<GenerationParams> paramsList = [];

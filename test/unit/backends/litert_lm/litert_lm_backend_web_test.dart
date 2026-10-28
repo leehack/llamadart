@@ -1885,61 +1885,40 @@ void main() {
     expect(await backend.getVramInfo(), (total: 0, free: 0));
   });
 
-  test('validates LoRA context handles before unsupported errors', () async {
-    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+  for (final (name, spi.LlamaBackend Function() factory, String reason)
+      in <(String, spi.LlamaBackend Function(), String)>[
+        ('LiteRtLmBackend', LiteRtLmBackend.new, 'does not implement'),
+        ('default factory', spi.LlamaBackend.new, 'active Web runtime'),
+      ]) {
+    test('$name engine rejects LoRA adapters and projectors', () async {
+      _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+      final engine = LlamaEngine(factory());
+      addTearDown(engine.dispose);
+      await engine.loadModelFromUrl('model.litertlm');
 
-    final backend = LiteRtLmBackend();
-    try {
-      final modelHandle = await backend.modelLoadFromUrl(
-        'https://example.com/model.litertlm',
-        const ModelParams(),
+      Matcher unsupported(String operation) => throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains(operation), contains(reason)),
+        ),
       );
-
-      expect(
-        () => backend.setLoraAdapter(123, 'adapter.lora', 1),
-        throwsStateError,
+      await expectLater(engine.clearLoras(), unsupported('LoRA adapters'));
+      await expectLater(
+        // ignore: deprecated_member_use_from_same_package
+        engine.removeLora('adapter.lora'),
+        unsupported('LoRA adapters'),
       );
-      final contextHandle = await backend.contextCreate(
-        modelHandle,
-        const ModelParams(),
+      await expectLater(
+        // ignore: deprecated_member_use_from_same_package
+        engine.loadMultimodalProjector('mmproj.gguf'),
+        unsupported('Multimodal projectors'),
       );
-      expect(
-        () => backend.setLoraAdapter(contextHandle, 'adapter.lora', 1),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => backend.removeLoraAdapter(contextHandle, 'adapter.lora'),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => backend.clearLoraAdapters(contextHandle),
-        throwsUnsupportedError,
-      );
-
-      await backend.contextFree(contextHandle);
-      expect(() => backend.clearLoraAdapters(contextHandle), throwsStateError);
-    } finally {
-      await backend.dispose();
-    }
-  });
-
-  test('rejects unsupported multimodal operations consistently', () async {
-    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
-
-    final backend = LiteRtLmBackend();
-    final modelHandle = await backend.modelLoadFromUrl(
-      'https://example.com/model.litertlm',
-      const ModelParams(),
-    );
-
-    expect(
-      () => backend.multimodalContextCreate(modelHandle, 'mmproj.gguf'),
-      throwsUnsupportedError,
-    );
-    expect(() => backend.multimodalContextFree(1), throwsUnsupportedError);
-    expect(() => backend.supportsVision(1), throwsUnsupportedError);
-    expect(() => backend.supportsAudio(1), throwsUnsupportedError);
-  });
+      final capabilities = await engine.capabilities;
+      expect(capabilities.supportsVision, isFalse);
+      expect(capabilities.supportsAudio, isFalse);
+    });
+  }
 
   test('loads LiteRT-LM Engine from module URL', () async {
     final moduleUrl =

@@ -10,7 +10,12 @@ import '../../../support/chat_session_application_extension.dart';
 import '../../../support/legacy_chat_session.dart';
 import '../../../support/scripted_chat_engine.dart';
 
-class MockLlamaBackend implements LlamaBackend, BackendAvailability {
+class MockLlamaBackend
+    implements
+        LlamaBackend,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
+        BackendAvailability {
   int _generateCallCount = 0;
   int generateCalls = 0;
   Future<void>? contextSizeGate;

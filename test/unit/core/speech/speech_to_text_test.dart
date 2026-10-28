@@ -11,7 +11,8 @@ import 'package:llamadart/src/backends/backend.dart'
     show
         BackendGenerationLimit,
         BackendGenerationLimitReporting,
-        BackendModelFormatRouting;
+        BackendModelFormatRouting,
+        BackendMultimodalSupport;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -1709,7 +1710,11 @@ Future<void> _loadSpeechModel(LlamaEngine engine) async {
   await engine.loadMultimodalProjector('mmproj.gguf');
 }
 
-class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
+class _SpeechBackend
+    implements
+        LlamaBackend,
+        BackendMultimodalSupport,
+        BackendGenerationLimitReporting {
   bool _ready = false;
   BackendGenerationLimit? generationLimit;
   final Expando<BackendGenerationLimit> _generationLimits =

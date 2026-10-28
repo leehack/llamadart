@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_cli_example/llamadart_cli.dart';
 import 'package:path/path.dart' as p;
@@ -98,7 +99,8 @@ void main() {
   });
 }
 
-class _QueuedBackend implements LlamaBackend {
+class _QueuedBackend
+    implements LlamaBackend, BackendLoraSupport, BackendMultimodalSupport {
   final List<List<String>> _responses = <List<String>>[];
   final List<String> prompts = <String>[];
 

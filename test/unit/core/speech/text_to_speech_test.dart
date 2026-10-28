@@ -735,7 +735,8 @@ Future<void> _loadTextToSpeechModel(LlamaEngine engine) async {
   await engine.loadMultimodalProjector('qwen3-tts-mmproj.gguf');
 }
 
-class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
+class _TextToSpeechBackend
+    implements LlamaBackend, BackendMultimodalSupport, BackendTextToSpeech {
   bool _ready = false;
   BackendTextToSpeechCapabilities capabilities =
       const BackendTextToSpeechCapabilities(

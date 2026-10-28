@@ -53,6 +53,8 @@ class WebGpuLlamaBackend
         BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
+        BackendLoraSupport,
+        BackendMultimodalSupport,
         BackendBatchEmbeddings,
         BackendMultimodalEmbeddings,
         BackendPromptSpeechToTextSupport,
