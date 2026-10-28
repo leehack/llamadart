@@ -98,6 +98,11 @@ Gemma 4 thought-channel output is parsed incrementally during streaming, so
 `chunk.thinking` carries reasoning text while `chunk.text` remains reserved
 for final answer content.
 
+With thinking off, DeepSeek V3.1, Qwen3, QwQ and Qwen3.5 templates close the
+thought in the prompt, and the reply is parsed as content, as in llama-server:
+a `<think>` block the model still writes stays in `chunk.text` and the
+message content.
+
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.
 
