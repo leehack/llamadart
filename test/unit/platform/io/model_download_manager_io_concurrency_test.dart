@@ -901,7 +901,12 @@ void main() {
 
       expect(await manager.list(), isEmpty);
       final locks = Directory(path.join(root.path, '.locks'));
-      expect(locks.existsSync() ? locks.listSync() : const [], isEmpty);
+      expect(
+        locks.existsSync()
+            ? locks.listSync().map((lock) => path.basename(lock.path))
+            : const <String>[],
+        everyElement('.removal.lock'),
+      );
     });
 
     test('clear leaves another process to finish its download', () async {
