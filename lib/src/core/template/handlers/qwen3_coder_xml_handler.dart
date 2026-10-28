@@ -113,7 +113,13 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       prompt: prompt,
       format: resultFormat,
       grammar: isNemotronV3
-          ? (nemotronAllowToolCalls ? grammar : null)
+          ? (nemotronAllowToolCalls
+                ? requiredGrammarAfterThought(
+                    grammar,
+                    metadata: metadata,
+                    thinkingForcedOpen: thinkingForcedOpen,
+                  )
+                : null)
           : grammar,
       grammarLazy: isNemotronV3
           ? (nemotronAllowToolCalls && !toolChoiceRequired)

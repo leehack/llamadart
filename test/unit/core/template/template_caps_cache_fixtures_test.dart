@@ -36,6 +36,15 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/Apertus-8B-Instruct.jinja': '11111001',
   'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
       '11111101',
+  // Cohere2MoE, Kimi-K3, MiniMax-M3, Nemotron 3 Nano, MiniCPM5 and Hy3 are
+  // pinned from llama-server 620d2225c `/props`.
+  'test/fixtures/llama_cpp_templates/Cohere2MoE.jinja': '11111101',
+  'test/fixtures/llama_cpp_templates/Kimi-K3.jinja': '11111101',
+  'test/fixtures/llama_cpp_templates/MiniMax-M3.jinja': '11111101',
+  'test/fixtures/llama_cpp_templates/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja':
+      '11111011',
+  'test/fixtures/llama_cpp_templates/openbmb-MiniCPM5-1B.jinja': '11111011',
+  'test/fixtures/llama_cpp_templates/tencent-Hy3.jinja': '11111101',
   // Command R+ and Hermes are pinned from Dart detection, without a server probe.
   'test/fixtures/llama_cpp_templates/CohereForAI-c4ai-command-r-plus-tool_use.jinja':
       '11111001',
