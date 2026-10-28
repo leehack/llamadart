@@ -2697,13 +2697,17 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
       '${nativeConfig.tag}/assets.json';
   final downloaded = File('${cached.path}.download');
 
-  // Renewing the record keeps every later offline build of the day from
-  // retrying the download.
+  // Stamps the record with this machine's clock, which the next build compares
+  // it with; writing it would use the file system's, which a network file
+  // system can run ahead of this one.
   Future<NativeReleaseManifest?> keepRecordedAbsent() async {
     try {
+      if (!absent.existsSync()) {
+        absent.createSync();
+      }
       absent.setLastModifiedSync(DateTime.now());
     } on FileSystemException catch (error) {
-      log.warning('Could not renew ${absent.path} ($error).');
+      log.warning('Could not record ${absent.path} ($error).');
     }
     return null;
   }
@@ -2723,12 +2727,7 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
           '${nativeConfig.sourceLabel} publishes no assets.json; treating it '
           'as hook contract 1.',
         );
-        try {
-          await absent.writeAsString('');
-        } on FileSystemException catch (error) {
-          log.warning('Could not record ${absent.path} ($error).');
-        }
-        return null;
+        return await keepRecordedAbsent();
       }
       if (recordedAbsent) {
         log.info(
@@ -2751,27 +2750,34 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
         '${nativeConfig.sourceLabel}: $error. $remedy',
       );
     }
+    // A cut-short or garbled download, unlike a network block page, is
+    // corrupt: failing keeps it from passing for a release without assets.json.
+    NativeHookContractException corrupt(String problem) =>
+        NativeHookContractException(
+          '$source from $url $problem. Retry the build; if it keeps failing, '
+          'put that release\'s assets.json at ${cached.path}, or set '
+          '$nativePathUserDefineKey to a local bundle you trust.',
+        );
     final String text;
     try {
       text = utf8.decode(await downloaded.readAsBytes());
     } on FormatException {
-      if (recordedAbsent) {
-        log.warning(
-          '$source from $url is not UTF-8 text; still treating '
-          '${nativeConfig.sourceLabel} as hook contract 1, as recorded at '
-          '${absent.path}.',
-        );
-        return await keepRecordedAbsent();
-      }
-      throw NativeHookContractException('$source is not UTF-8 text.');
+      throw corrupt('is not UTF-8 text');
     }
-    if (recordedAbsent && !_isJsonText(text)) {
+    if (recordedAbsent && _looksLikeBlockPage(text)) {
       log.warning(
         '$source from $url is not JSON, such as a network block page; still '
         'treating ${nativeConfig.sourceLabel} as hook contract 1, as recorded '
         'at ${absent.path}.',
       );
       return await keepRecordedAbsent();
+    }
+    if (!_looksLikeBlockPage(text)) {
+      try {
+        jsonDecode(text);
+      } on FormatException {
+        throw corrupt('is empty or truncated JSON');
+      }
     }
     final manifest = parseNativeReleaseManifest(
       text,
@@ -2797,13 +2803,13 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
   }
 }
 
-bool _isJsonText(String text) {
-  try {
-    jsonDecode(text);
-    return true;
-  } on FormatException {
-    return false;
-  }
+/// Whether [text] is a page rather than a manifest: not empty and not starting
+/// as JSON, unlike a truncated or invalid manifest, which must still fail.
+bool _looksLikeBlockPage(String text) {
+  final trimmed = text.trimLeft();
+  return trimmed.isNotEmpty &&
+      !trimmed.startsWith('{') &&
+      !trimmed.startsWith('[');
 }
 
 /// The SHA-256 a llama.cpp archive must have: the pin for the default release,

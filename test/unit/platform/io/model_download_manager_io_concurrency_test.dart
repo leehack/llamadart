@@ -901,7 +901,12 @@ void main() {
 
       expect(await manager.list(), isEmpty);
       final locks = Directory(path.join(root.path, '.locks'));
-      expect(locks.existsSync() ? locks.listSync() : const [], isEmpty);
+      expect(
+        locks.existsSync()
+            ? locks.listSync().map((lock) => path.basename(lock.path))
+            : const <String>[],
+        everyElement('.removal.lock'),
+      );
     });
 
     test('clear leaves another process to finish its download', () async {
@@ -1015,6 +1020,35 @@ void main() {
       await manager.remove(source().cacheKey);
       expect(entryDirectory().existsSync(), isFalse);
     });
+
+    test('an entry whose metadata file is open elsewhere is in use on '
+        'Windows', () async {
+      await manager.ensureModel(source());
+      final handle = await File(
+        path.join(entryDirectory().path, 'metadata.json'),
+      ).open();
+      var open = true;
+      Future<void> close() async {
+        if (open) {
+          open = false;
+          await handle.close();
+        }
+      }
+
+      addTearDown(close);
+
+      await expectLater(
+        manager.remove(source().cacheKey),
+        throwsA(inUse(<String>[entryDirectory().path])),
+      );
+      expect(
+        File(path.join(entryDirectory().path, 'metadata.json')).existsSync(),
+        isTrue,
+      );
+      await close();
+      await manager.remove(source().cacheKey);
+      expect(entryDirectory().existsSync(), isFalse);
+    }, skip: Platform.isWindows ? null : 'a sharing violation is Windows-only');
 
     test('a cache hit on a read-only cache root returns the entry', () async {
       final entry = await manager.ensureModel(source());

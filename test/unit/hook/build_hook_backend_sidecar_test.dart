@@ -596,6 +596,28 @@ void main() {
       expect(nextOffline.requests, isEmpty);
     });
 
+    test('is re-stamped with the local clock when a future-dated record '
+        'is re-checked and the release still has no assets.json', () async {
+      final legacyRelease = {
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+      };
+      await runHook(RuntimeBundleHttpFixture(legacyRelease));
+      absentRecord().setLastModifiedSync(
+        DateTime.now().add(const Duration(days: 30)),
+      );
+
+      await runHook(
+        RuntimeBundleHttpFixture(legacyRelease),
+        backends: ['cuda'],
+      );
+
+      expect(
+        DateTime.now().difference(absentRecord().lastModifiedSync()).abs(),
+        lessThan(const Duration(minutes: 5)),
+      );
+    });
+
     test('is re-checked when dated in the future', () async {
       await runHook(
         RuntimeBundleHttpFixture({
@@ -636,6 +658,47 @@ void main() {
       expect(libraries, isNot(contains('ggml-cuda.dll')));
       expect(warnings, contains(contains('is not JSON')));
       expect(absentRecord().lastModifiedSync().isAfter(old), isTrue);
+    });
+
+    final undecidableBodies = <String, List<int>>{
+      'truncated JSON': utf8.encode('{"hook_contract_version": 2, "artif'),
+      'an empty body': const <int>[],
+      'bytes that are not UTF-8': const <int>[0xff, 0xfe, 0x7b],
+      'JSON that is not a manifest': utf8.encode('{"error":"blocked"}'),
+    };
+    undecidableBodies.forEach((name, body) {
+      test('fails instead of keeping the record when the re-check returns '
+          '$name', () async {
+        final legacyRelease = {
+          _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+          _coreUrl: core,
+        };
+        await runHook(RuntimeBundleHttpFixture(legacyRelease));
+        final old = DateTime.now().subtract(const Duration(days: 2));
+        absentRecord().setLastModifiedSync(old);
+        final fixture = RuntimeBundleHttpFixture({
+          ...legacyRelease,
+          _manifestUrl: body,
+        });
+
+        await expectLater(
+          runHook(fixture, backends: ['cuda']),
+          throwsA(
+            isA<NativeHookContractException>().having(
+              (error) => error.message,
+              'message',
+              name.contains('not a manifest')
+                  ? anything
+                  : allOf(contains('Retry the build'), contains('assets.json')),
+            ),
+          ),
+        );
+        expect(
+          File(path.join(releaseCacheDir.path, 'assets.json')).existsSync(),
+          isFalse,
+        );
+        expect(absentRecord().lastModifiedSync().isAtSameMomentAs(old), isTrue);
+      });
     });
 
     test('does not hide a body that is not JSON without a record', () async {

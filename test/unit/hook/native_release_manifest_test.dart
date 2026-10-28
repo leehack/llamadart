@@ -49,6 +49,14 @@ void main() {
     expect(manifest.sidecars, isEmpty);
   });
 
+  test('rejects an object that is neither a contract nor an artifact list', () {
+    expect(
+      () => _parse({'error': 'blocked'}),
+      _contractError(contains('neither hook_contract_version nor artifacts')),
+    );
+    expect(() => _parse({}), _contractError(contains('not a release')));
+  });
+
   test('reads a contract 2 backend sidecar and ignores core artifacts', () {
     final manifest = _parse({
       'hook_contract_version': 2,
