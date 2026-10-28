@@ -135,6 +135,15 @@ sequenceDiagram
   fails a cut-short `required` reply with a parse error. llamadart withholds
   the calls and finishes with `length` or `stop` instead
   ([#890](https://github.com/leehack/llamadart/issues/890)).
+- When the template ends the prompt with an empty thought, as DeepSeek
+  V3.1, Qwen3, QwQ and Qwen3.5 templates render with thinking off, the
+  DeepSeek V3, Hermes and Qwen3-Coder XML parse and stream take the reply as
+  content and tool calls, thinking tags included, as llama.cpp (`620d2225`)
+  does. Other formats, and templates that leave the thought open, still
+  parse thoughts; with thinking off, the stream drops that reasoning.
+  StepFun3.5-Flash leaves it open even with thinking off: llamadart closes
+  it in the prompt, but still parses a leading thought, as llama.cpp does
+  with the open one.
 
 ## Tool-call parsing
 

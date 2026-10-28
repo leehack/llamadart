@@ -177,6 +177,7 @@ void main() {
         'Kimi-K3.jinja',
         'MiniMax-M2.jinja',
         'MiniMax-M3.jinja',
+        'StepFun3.5-Flash.jinja',
         'google-gemma-4-31B-it-interleaved.jinja',
         'moonshotai-Kimi-K2.jinja',
         'tencent-Hy3.jinja',

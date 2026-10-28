@@ -177,6 +177,56 @@ void main() {
     });
   });
 
+  group('isThinkingForcedClosed', () {
+    test('is true for a prompt that ends with an empty thought', () {
+      for (final prompt in [
+        'assistant\n<think>\n\n</think>\n\n',
+        '<｜Assistant｜><think></think>',
+        'ai<|START_THINKING|> <|END_THINKING|>',
+      ]) {
+        expect(
+          isThinkingForcedClosed(
+            prompt,
+            startTag: prompt.contains('START')
+                ? '<|START_THINKING|>'
+                : '<think>',
+            endTag: prompt.contains('START') ? '<|END_THINKING|>' : '</think>',
+          ),
+          isTrue,
+          reason: prompt,
+        );
+      }
+    });
+
+    test('is false without an empty thought at the end', () {
+      for (final prompt in [
+        'assistant\n',
+        'assistant\n<think>\n',
+        '<|Bot|></think>',
+        '<think>Plan</think>',
+        '<think></think>Answer',
+      ]) {
+        expect(isThinkingForcedClosed(prompt), isFalse, reason: prompt);
+      }
+    });
+  });
+
+  group('withThinkingForcedClosed', () {
+    test('marks only the result it is given, and only when closed', () {
+      LlamaChatTemplateResult result() =>
+          LlamaChatTemplateResult(prompt: 'assistant\n<think></think>\n');
+      final marked = withThinkingForcedClosed(result(), closed: true);
+      expect(thinkingForcedClosedOf(marked), isTrue);
+      expect(
+        thinkingForcedClosedOf(
+          withThinkingForcedClosed(result(), closed: false),
+        ),
+        isFalse,
+      );
+      expect(thinkingForcedClosedOf(result()), isFalse);
+    });
+  });
+
   group('withTemplateOpenedThought', () {
     LlamaChatTemplateResult result(String prompt, {bool forcedOpen = false}) =>
         LlamaChatTemplateResult(

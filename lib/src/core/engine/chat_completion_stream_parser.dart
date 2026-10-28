@@ -109,13 +109,17 @@ class ChatCompletionStreamParser {
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
     final isFunctionaryV32 =
         templateResult.format == ChatFormat.functionaryV32.index;
+    final thinkingForcedClosed =
+        !templateResult.thinkingForcedOpen &&
+        thinkingForcedClosedOf(templateResult);
     // Functionary v3.2 and MiniMax M1 stream through their partial parse
     // with tools.
     final keepsThoughtTagsAsContent =
         traits.keepsThoughtTagsAsContent ||
         ((isFunctionaryV32 ||
                 templateResult.format == ChatFormat.minimaxM1.index) &&
-            !parseToolCallsEnabled);
+            !parseToolCallsEnabled) ||
+        (traits.closedThoughtKeepsTagsAsContent && thinkingForcedClosed);
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -488,6 +492,7 @@ class ChatCompletionStreamParser {
           cancelled: wasCancelled,
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thinkingForcedClosed: thinkingForcedClosed,
           parser: templateResult.parser,
           tools: tools,
         );

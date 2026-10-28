@@ -186,6 +186,44 @@ bool isThinkingForcedOpen(String prompt, {String startTag = '<think>'}) {
   return trimmed.endsWith(startTag);
 }
 
+/// Checks if the prompt ends with an empty thought, allowing for whitespace
+/// around its end tag, as templates render one with thinking off.
+bool isThinkingForcedClosed(
+  String prompt, {
+  String startTag = '<think>',
+  String endTag = '</think>',
+}) {
+  final trimmed = prompt.trimRight();
+  return trimmed.endsWith(endTag) &&
+      trimmed
+          .substring(0, trimmed.length - endTag.length)
+          .trimRight()
+          .endsWith(startTag);
+}
+
+final Expando<bool> _thinkingForcedClosed = Expando<bool>(
+  'llamadart.thinkingForcedClosed',
+);
+
+/// Returns [result], marked when [closed] as rendered by a template that ended
+/// the prompt with an empty thought.
+///
+/// Only the template's own render counts, not a thought a handler closes
+/// because thinking is off. The DeepSeek V3, Hermes and Qwen3-Coder XML
+/// parse and stream then take thinking tags in the reply as content, as
+/// llama.cpp does. Internal engine plumbing, not part of the public API.
+LlamaChatTemplateResult withThinkingForcedClosed(
+  LlamaChatTemplateResult result, {
+  required bool closed,
+}) {
+  if (closed) _thinkingForcedClosed[result] = true;
+  return result;
+}
+
+/// Whether [withThinkingForcedClosed] marked [result].
+bool thinkingForcedClosedOf(LlamaChatTemplateResult result) =>
+    _thinkingForcedClosed[result] ?? false;
+
 /// Returns the thinking flag a request renders, parses and streams with.
 ///
 /// A boolean `enable_thinking` in [chatTemplateKwargs] overrides

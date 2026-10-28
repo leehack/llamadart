@@ -181,6 +181,7 @@ class HermesHandler extends ChatTemplateHandler
     );
 
     // Handle enableThinking post-render logic
+    final thinkingForcedClosed = isThinkingForcedClosed(prompt);
     var thinkingForcedOpen = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
@@ -191,7 +192,7 @@ class HermesHandler extends ChatTemplateHandler
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -210,6 +211,7 @@ class HermesHandler extends ChatTemplateHandler
           ? [const GrammarTrigger(type: 0, value: '<tool_call>')]
           : [],
     );
+    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
   }
 
   /// On [cancelled], withholds unfinished tool envelopes from answer text.
@@ -231,6 +233,7 @@ class HermesHandler extends ChatTemplateHandler
   /// Parses like [parse]; with canonical schema tools, an untagged or
   /// generically tagged `{"name"` object is a call only when it is complete
   /// and names a declared tool. Otherwise it stays answer content.
+  /// With [thoughtTagsAreText], all of [output] is content and tool calls.
   @override
   ChatParseResult parseWithTools(
     String output, {
@@ -239,12 +242,14 @@ class HermesHandler extends ChatTemplateHandler
     bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+    bool thoughtTagsAreText = false,
   }) => _parse(
     output,
     isPartial: isPartial,
     cancelled: cancelled,
     parseToolCalls: parseToolCalls,
     thinkingForcedOpen: thinkingForcedOpen,
+    thoughtTagsAreText: thoughtTagsAreText,
     declaredNames: tools != null && tools.any(toolUsesJsonSchema)
         ? {for (final tool in tools) tool.name}
         : null,
@@ -256,11 +261,14 @@ class HermesHandler extends ChatTemplateHandler
     required bool cancelled,
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
+    bool thoughtTagsAreText = false,
     Set<String>? declaredNames,
   }) {
     // As in llama.cpp (`620d2225`), a forced-open thought is the text before
     // the first `</think>`, kept as generated, and the rest is content.
-    final thinking = thinkingForcedOpen
+    final ThinkingExtraction thinking = thoughtTagsAreText
+        ? (content: output.trim(), reasoning: null)
+        : thinkingForcedOpen
         ? extractForcedOpenThoughtVerbatim(output)
         : extractThinking(output);
     final text = thinking.content;

@@ -86,6 +86,7 @@ final class ChatFormatTraits {
     this.keepsThoughtTagsAsContent = false,
     this.parsesCallsInsideThoughts = false,
     this.keepsForcedThoughtVerbatim = false,
+    this.closedThoughtKeepsTagsAsContent = false,
     this.forcedThoughtContentOpenings = const [],
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.disabledByResponseSchema = false,
@@ -116,6 +117,10 @@ final class ChatFormatTraits {
   /// first end tag, with escapes and a repeated start tag, and takes the rest
   /// as content in which thinking tags are text.
   final bool keepsForcedThoughtVerbatim;
+
+  /// Whether, after a prompt that ends with a closed thought, the parse
+  /// extracts no reasoning, so thinking tags are content.
+  final bool closedThoughtKeepsTagsAsContent;
 
   /// Markers that, with [keepsForcedThoughtVerbatim], also end a forced-open
   /// thought when they come before its end tag, and start the content.
@@ -235,6 +240,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       toolCallOpening: DeepseekV3Handler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
+      closedThoughtKeepsTagsAsContent: true,
     ),
   ),
   ChatFormatRegistration(
@@ -324,6 +330,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
             s.contains('Function calls MUST follow the specified format')),
     traits: ChatFormatTraits(
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
+      closedThoughtKeepsTagsAsContent: true,
       keepsForcedThoughtVerbatim: true,
       forcedThoughtContentOpenings: [XmlToolCallFormat.qwen3CoderScopeStart],
     ),
@@ -360,6 +367,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       toolCallOpening: HermesHandler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
+      closedThoughtKeepsTagsAsContent: true,
       // Qualified on Qwen3-VL against llama-server's rendering (#1008).
       rendersToolResultContent: true,
       leavesIncompleteToolCall: _hermesLeavesIncompleteToolCall,
