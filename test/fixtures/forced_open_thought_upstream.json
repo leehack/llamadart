@@ -107,6 +107,65 @@
               }
             ]
           }
+        },
+        {
+          "name": "escaped-newline-in-ended-thought",
+          "output": "Plan \\n x.</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "escaped-newline-in-unended-thought",
+          "output": "Plan it out \\n more",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan it out \\n more",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "repeated-start-tag",
+          "output": "<think>Plan</think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "<think>Plan",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "tags-after-first-end-tag",
+          "output": "Plan.</think>A</think>B<think>X</think>C",
+          "upstream": {
+            "content": "A</think>B<think>X</think>C",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "call-after-thought-with-escaped-newline",
+          "output": "Plan \\n x.</think><｜tool▁calls▁begin｜><｜tool▁call▁begin｜>weather<｜tool▁sep｜>{\"city\": \"Paris\"}<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "Plan \\n x.",
+            "tool_calls": [
+              {
+                "name": "weather",
+                "arguments": "{\"city\": \"Paris\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "escaped-newline-in-content",
+          "output": "Plan.</think>Sunny \\n there.",
+          "upstream": {
+            "content": "Sunny \\n there.",
+            "reasoning_content": "Plan.",
+            "tool_calls": []
+          }
         }
       ]
     }
