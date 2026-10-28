@@ -62,6 +62,30 @@ Important fields:
   not use a negative `mainGpu` to disable GPUs. Explicit `gpu` and
   `npu` requests still reject the single-device negative-index combination
   with `LlamaArgumentException`.
+- `cpuMoeLayers`: keeps the Mixture-of-Experts expert weights of the first N
+  layers in host memory, as llama.cpp's `--n-cpu-moe` does; a negative value
+  keeps every layer's experts there, as `--cpu-moe` does. Other weights still
+  follow `gpuLayers`. A model without experts throws
+  `LlamaUnsupportedException` after it loads.
+- `moeCacheBytes`: device memory budget in bytes for llama.cpp's
+  experimental GPU cache of those host experts (`--moe-cache-mib`, which
+  takes MiB). `0` disables it; it needs a nonzero `cpuMoeLayers`, and the
+  load then disables CPU weight repacking so the experts stay cacheable. It
+  runs on Metal and CUDA; a load that offloads nothing, `ModelSplitMode.tensor`,
+  Vulkan (llama.cpp aborts:
+  [ggml-org/llama.cpp#30697](https://github.com/ggml-org/llama.cpp/issues/30697))
+  and other backends throw `LlamaUnsupportedException` before the model
+  loads. A budget the GPU cannot allocate, or too small for one token's
+  experts, fails the load with `LlamaModelException` naming `moeCacheBytes`.
+  It helps discrete GPUs that cannot hold every expert; on Apple silicon,
+  whose GPU shares system memory, it only adds copies.
+
+```dart
+const params = LlamaCppModelParams(
+  cpuMoeLayers: -1, // every layer's experts stay in host memory
+  moeCacheBytes: 4 << 30, // keep up to 4 GiB of recently used experts on the GPU
+);
+```
 - `batchSize`: context logical batch size (`n_batch`). On native,
   decoder/generative models use the llama.cpp-aligned `min(n_ctx, 2048)`
   default when this is `0`. Native encoder-only models retain a full-context
@@ -176,7 +200,8 @@ LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
 `numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
-`speculativeRollbackTokenMax`, `preferMemory64` and `modelBytesHint`.
+`speculativeRollbackTokenMax`, `cpuMoeLayers`, `moeCacheBytes`,
+`preferMemory64` and `modelBytesHint`.
 LiteRT-LM web accepts `device` or `liteRtLmBackend` for CPU or GPU selection
 and rejects every other field in the table the same way.
 
