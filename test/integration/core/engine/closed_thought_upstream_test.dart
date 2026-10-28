@@ -16,6 +16,7 @@ import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_format_registry.dart';
 import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/thinking_utils.dart';
 import 'package:test/test.dart';
 
 final Map<String, dynamic> _fixture =
@@ -66,7 +67,7 @@ void main() {
         );
         expect(rendered.prompt, endsWith(entry['generation_prompt'] as String));
         expect(rendered.thinkingForcedOpen, isFalse);
-        expect(rendered.thinkingForcedClosed, isTrue);
+        expect(thinkingForcedClosedOf(rendered), isTrue);
       });
 
       test(
@@ -112,7 +113,7 @@ void main() {
             // content-only, where the closed thought does not apply.
             if (result.format == ChatFormat.contentOnly.index) continue;
             expect(result.format, rendered.format, reason: '$index');
-            expect(result.thinkingForcedClosed, isTrue, reason: '$index');
+            expect(thinkingForcedClosedOf(result), isTrue, reason: '$index');
           }
         },
       );
@@ -246,7 +247,7 @@ void main() {
             .trimRight();
         expect(rendered.prompt, endsWith('$generationPrompt</think>\n'));
         expect(rendered.thinkingForcedOpen, isFalse);
-        expect(rendered.thinkingForcedClosed, isFalse);
+        expect(thinkingForcedClosedOf(rendered), isFalse);
       });
 
       for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
@@ -269,7 +270,7 @@ void main() {
               rendered.format,
               output,
               parseToolCalls: withTools,
-              thinkingForcedClosed: rendered.thinkingForcedClosed,
+              thinkingForcedClosed: thinkingForcedClosedOf(rendered),
               tools: withTools ? [_weatherTool] : null,
             );
             final reason = 'tools: $withTools';
@@ -393,11 +394,13 @@ void main() {
     );
     final chunks = await ChatCompletionStreamParser.parse(
       tokenStream: Stream.fromIterable('Plan</think>Sunny.'.split('')),
-      templateResult: LlamaChatTemplateResult(
-        prompt: '<|im_start|>assistant\n<think>\n',
-        format: ChatFormat.hermes.index,
-        thinkingForcedOpen: true,
-        thinkingForcedClosed: true,
+      templateResult: withThinkingForcedClosed(
+        LlamaChatTemplateResult(
+          prompt: '<|im_start|>assistant\n<think>\n',
+          format: ChatFormat.hermes.index,
+          thinkingForcedOpen: true,
+        ),
+        closed: true,
       ),
       parseToolCallsEnabled: false,
       enableThinking: true,
@@ -416,10 +419,12 @@ void main() {
     for (final closed in const [false, true]) {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.value('<think>Plan</think>Sunny.'),
-        templateResult: LlamaChatTemplateResult(
-          prompt: '<|im_start|>assistant\n<think></think>\n',
-          format: ChatFormat.hermes.index,
-          thinkingForcedClosed: closed,
+        templateResult: withThinkingForcedClosed(
+          LlamaChatTemplateResult(
+            prompt: '<|im_start|>assistant\n<think></think>\n',
+            format: ChatFormat.hermes.index,
+          ),
+          closed: closed,
         ),
         parseToolCallsEnabled: false,
         enableThinking: false,

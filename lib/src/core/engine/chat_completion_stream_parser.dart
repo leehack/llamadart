@@ -13,6 +13,7 @@ import '../template/chat_template_engine.dart';
 import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
+import '../template/thinking_utils.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -110,7 +111,7 @@ class ChatCompletionStreamParser {
         templateResult.format == ChatFormat.functionaryV32.index;
     final thinkingForcedClosed =
         !templateResult.thinkingForcedOpen &&
-        templateResult.thinkingForcedClosed;
+        thinkingForcedClosedOf(templateResult);
     // Functionary v3.2 and MiniMax M1 stream through their partial parse
     // with tools.
     final keepsThoughtTagsAsContent =

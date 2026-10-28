@@ -110,7 +110,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     final triggerPattern = thinkingForcedOpen
         ? r'[\s\S]*?(</think>\s*)(<｜tool▁calls▁begin｜>|<｜tool_calls_begin｜>|<｜tool calls begin｜>|<｜tool\\_calls\\_begin｜>|<｜tool▁calls｜>)[\s\S]*'
         : r'(?:<think>[\s\S]*?</think>\s*)?(<｜tool▁calls▁begin｜>|<｜tool_calls_begin｜>|<｜tool calls begin｜>|<｜tool\\_calls\\_begin｜>|<｜tool▁calls｜>)[\s\S]*';
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -120,7 +120,6 @@ class DeepseekV3Handler extends ChatTemplateHandler {
       ),
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
-      thinkingForcedClosed: thinkingForcedClosed,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
@@ -130,6 +129,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
           ? [GrammarTrigger(type: 3, value: triggerPattern)]
           : [],
     );
+    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
   }
 
   /// With [thoughtTagsAreText], all of [output] is content and tool calls.

@@ -192,7 +192,7 @@ class HermesHandler extends ChatTemplateHandler
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -202,7 +202,6 @@ class HermesHandler extends ChatTemplateHandler
       ),
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
-      thinkingForcedClosed: thinkingForcedClosed,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
@@ -212,6 +211,7 @@ class HermesHandler extends ChatTemplateHandler
           ? [const GrammarTrigger(type: 0, value: '<tool_call>')]
           : [],
     );
+    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
   }
 
   /// On [cancelled], withholds unfinished tool envelopes from answer text.

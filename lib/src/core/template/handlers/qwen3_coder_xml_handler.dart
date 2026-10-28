@@ -110,7 +110,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       parallelToolCalls: !isNemotronV3 || parallelToolCalls,
     );
 
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: resultFormat,
       grammar: isNemotronV3
@@ -126,7 +126,6 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           ? (nemotronAllowToolCalls && !toolChoiceRequired)
           : hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
-      thinkingForcedClosed: thinkingForcedClosed,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
@@ -144,6 +143,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
           : const [],
       parser: parser,
     );
+    return withThinkingForcedClosed(rendered, closed: thinkingForcedClosed);
   }
 
   bool _isNemotronV3Template(String templateSource) {

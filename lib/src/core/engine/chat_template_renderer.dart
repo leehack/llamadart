@@ -8,6 +8,7 @@ import '../models/tools/tool_definition.dart';
 import '../template/chat_template_engine.dart';
 import '../template/media_placeholders.dart';
 import '../template/template_internal_metadata.dart';
+import '../template/thinking_utils.dart';
 
 /// Loads model metadata for chat-template rendering.
 typedef ChatTemplateMetadataLoader = Future<Map<String, String>> Function();
@@ -145,7 +146,7 @@ class ChatTemplateRenderer {
       }
     }
 
-    return LlamaChatTemplateResult(
+    final copy = LlamaChatTemplateResult(
       prompt: prompt,
       format: result.format,
       grammar: result.grammar,
@@ -153,10 +154,13 @@ class ChatTemplateRenderer {
       additionalStops: result.additionalStops,
       grammarTriggers: result.grammarTriggers,
       thinkingForcedOpen: result.thinkingForcedOpen,
-      thinkingForcedClosed: result.thinkingForcedClosed,
       preservedTokens: result.preservedTokens,
       parser: result.parser,
       tokenCount: tokenCount,
+    );
+    return withThinkingForcedClosed(
+      copy,
+      closed: thinkingForcedClosedOf(result),
     );
   }
 }

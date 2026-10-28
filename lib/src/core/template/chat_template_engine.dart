@@ -459,7 +459,7 @@ class ChatTemplateEngine {
           'Canonical schema tools cannot be combined with responseFormat: the response grammar would replace the tool grammar. Use separate requests.',
         );
       }
-      return LlamaChatTemplateResult(
+      final copy = LlamaChatTemplateResult(
         prompt: result.prompt,
         format: result.format,
         grammar: afterThought(responseFormatGrammar(responseSchema)),
@@ -468,9 +468,12 @@ class ChatTemplateEngine {
         preservedTokens: result.preservedTokens,
         grammarTriggers: result.grammarTriggers,
         thinkingForcedOpen: result.thinkingForcedOpen,
-        thinkingForcedClosed: result.thinkingForcedClosed,
         parser: result.parser,
         tokenCount: result.tokenCount,
+      );
+      return withThinkingForcedClosed(
+        copy,
+        closed: thinkingForcedClosedOf(result),
       );
     }
 
@@ -481,7 +484,7 @@ class ChatTemplateEngine {
     if (toolChoice == ToolChoice.none &&
         resultFormat == ChatFormat.ministral &&
         result.grammar != null) {
-      return LlamaChatTemplateResult(
+      final copy = LlamaChatTemplateResult(
         prompt: result.prompt,
         format: result.format,
         grammar: null,
@@ -490,9 +493,12 @@ class ChatTemplateEngine {
         preservedTokens: result.preservedTokens,
         grammarTriggers: const [],
         thinkingForcedOpen: result.thinkingForcedOpen,
-        thinkingForcedClosed: result.thinkingForcedClosed,
         parser: result.parser,
         tokenCount: result.tokenCount,
+      );
+      return withThinkingForcedClosed(
+        copy,
+        closed: thinkingForcedClosedOf(result),
       );
     }
 
@@ -516,7 +522,7 @@ class ChatTemplateEngine {
       if (grammarResult != null) {
         // Match llama.cpp generic/content-only behavior: tool grammar is
         // eagerly applied (non-lazy) for auto/required selection.
-        return LlamaChatTemplateResult(
+        final copy = LlamaChatTemplateResult(
           prompt: result.prompt,
           format: result.format,
           grammar: afterThought(grammarResult.grammar),
@@ -525,9 +531,12 @@ class ChatTemplateEngine {
           preservedTokens: result.preservedTokens,
           grammarTriggers: const [],
           thinkingForcedOpen: result.thinkingForcedOpen,
-          thinkingForcedClosed: result.thinkingForcedClosed,
           parser: result.parser,
           tokenCount: result.tokenCount,
+        );
+        return withThinkingForcedClosed(
+          copy,
+          closed: thinkingForcedClosedOf(result),
         );
       }
     }
@@ -554,7 +563,7 @@ class ChatTemplateEngine {
       return result;
     }
 
-    return LlamaChatTemplateResult(
+    final copy = LlamaChatTemplateResult(
       prompt: result.prompt,
       format: result.format,
       grammar: result.grammar,
@@ -563,9 +572,12 @@ class ChatTemplateEngine {
       preservedTokens: result.preservedTokens,
       grammarTriggers: const [],
       thinkingForcedOpen: result.thinkingForcedOpen,
-      thinkingForcedClosed: result.thinkingForcedClosed,
       parser: result.parser,
       tokenCount: result.tokenCount,
+    );
+    return withThinkingForcedClosed(
+      copy,
+      closed: thinkingForcedClosedOf(result),
     );
   }
 
@@ -811,18 +823,21 @@ class ChatTemplateEngine {
       return result;
     }
 
-    return LlamaChatTemplateResult(
+    final copy = LlamaChatTemplateResult(
       prompt: result.prompt,
       format: format,
       grammar: result.grammar,
       grammarLazy: result.grammarLazy,
       thinkingForcedOpen: result.thinkingForcedOpen,
-      thinkingForcedClosed: result.thinkingForcedClosed,
       additionalStops: result.additionalStops,
       preservedTokens: result.preservedTokens,
       grammarTriggers: result.grammarTriggers,
       parser: result.parser,
       tokenCount: result.tokenCount,
+    );
+    return withThinkingForcedClosed(
+      copy,
+      closed: thinkingForcedClosedOf(result),
     );
   }
 

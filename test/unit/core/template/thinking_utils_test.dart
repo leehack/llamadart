@@ -150,6 +150,22 @@ void main() {
     });
   });
 
+  group('withThinkingForcedClosed', () {
+    test('marks only the result it is given, and only when closed', () {
+      LlamaChatTemplateResult result() =>
+          LlamaChatTemplateResult(prompt: 'assistant\n<think></think>\n');
+      final marked = withThinkingForcedClosed(result(), closed: true);
+      expect(thinkingForcedClosedOf(marked), isTrue);
+      expect(
+        thinkingForcedClosedOf(
+          withThinkingForcedClosed(result(), closed: false),
+        ),
+        isFalse,
+      );
+      expect(thinkingForcedClosedOf(result()), isFalse);
+    });
+  });
+
   group('withTemplateOpenedThought', () {
     LlamaChatTemplateResult result(String prompt, {bool forcedOpen = false}) =>
         LlamaChatTemplateResult(
