@@ -8,10 +8,9 @@ sampling step. The admitted recipe is the pinned stable-diffusion-native
 v0.3.0-1 runtime on macOS with Metal and exactly the FLUX.1 Kontext [dev]
 transformer, `ae`, CLIP-L and T5-XXL.
 
-**Status: pending real-model qualification.** The contract, admission,
-mapping and maintained tests are in place; the real-model run below has not
-been recorded yet, so no visible-edit, parity, latency or memory result is
-claimed.
+**Status: qualified** on macOS Metal with `flux1-kontext-dev` Q4_0: the Dart
+output is byte-identical to the direct C reference for `edit` and `plain`, and
+every gate below passes ([run record](https://github.com/leehack/llamadart/pull/1515#issuecomment-6465651561)).
 
 ## Family choice
 
@@ -114,7 +113,7 @@ blue. Keep the gray background and the dark bar.", seed 42, 20 Euler steps,
 passes the fixture as the one reference; `plain` is ordinary text-to-image
 with the same prompt and settings.
 
-Fixed acceptance gates, recorded before any output was observed:
+Acceptance gates, fixed before the first real-model run except the bar row (see below):
 
 | Check | Required |
 | --- | --- |
@@ -128,8 +127,11 @@ Fixed acceptance gates, recorded before any output was observed:
 | Dispose/reload | Capability cleared then restored; exact `edit` RGB |
 
 The bar is searched rather than read at a fixed window because Kontext redraws
-the fixture a few pixels shifted and enlarged (about 13 px up on the recorded
-run); an absent bar still fails.
+the fixture a few pixels shifted and enlarged (on the recorded run the disk
+centre moved 13 px up and the bar top 20 px, rows 432 to 412); an absent bar
+still fails. The bar row was revised after the first real-model run, with the
+threshold unchanged: the original fixed window failed (mean 164.69). See the
+[run record](https://github.com/leehack/llamadart/pull/1515#issuecomment-6465651561).
 
 Record the backend, latency per image (`ImageGenerationResult.elapsed`), the
 direct-C peak memory footprint per mode and the Dart process's peak RSS.
