@@ -85,6 +85,7 @@ final class ChatFormatTraits {
     this.toolCallOpening,
     this.keepsThoughtTagsAsContent = false,
     this.parsesCallsInsideThoughts = false,
+    this.keepsForcedThoughtVerbatim = false,
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.disabledByResponseSchema = false,
     this.requiredKeepsLazyGrammar = false,
@@ -109,6 +110,11 @@ final class ChatFormatTraits {
   /// Whether the parse extracts tool calls before thinking, so a call inside
   /// a thought leaves the reasoning.
   final bool parsesCallsInsideThoughts;
+
+  /// Whether the parse keeps a forced-open thought as generated up to the
+  /// first end tag, with escapes and a repeated start tag, and takes the rest
+  /// as content in which thinking tags are text.
+  final bool keepsForcedThoughtVerbatim;
 
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
@@ -222,6 +228,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     ),
     traits: ChatFormatTraits(
       toolCallOpening: DeepseekV3Handler.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
     ),
   ),

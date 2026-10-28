@@ -31,6 +31,7 @@ For canonical full release notes, use:
 - Chat templates now receive `enableThinking` as `enable_thinking` on every request, including `responseFormat` and generic tool-call routes, as in llama.cpp, so templates such as GLM-4.6, GLM-4.7-Flash, GLM-OCR, SmolLM3, Apertus and DeepSeek-R1 distills render thinking as llama-server does for the same flag. `enableThinking` still defaults to `true`, so Apertus now deliberates and DeepSeek-R1 distills open a thought unless you pass `false` ([#1465](https://github.com/leehack/llamadart/issues/1465)).
 - A `responseFormat` or tool-call grammar after a thought the prompt leaves open now lets the model finish the thought first, as llama-server does, instead of returning the JSON as reasoning; a thought the template opens stays open with `enableThinking: false`, as in llama-server ([#1465](https://github.com/leehack/llamadart/issues/1465)).
 - A required tool call after a thought the prompt leaves open now lets Cohere2 MoE, Nemotron 3 Nano, MiniCPM5 and Hy3 models finish the thought first, as llama-server does; MiniCPM5 previously wrote the call inside the thought and returned no tool call.
+- DeepSeek V3.1 keeps a forced-open thought as llama-server does: an escaped `\n` and a repeated `<think>` stay in the reasoning as generated, and thinking tags after the first `</think>` stay in the content instead of being parsed as more reasoning ([#750](https://github.com/leehack/llamadart/issues/750)).
 
 ## 0.16.5
 
