@@ -782,6 +782,48 @@
           }
         },
         {
+          "name": "bare-start-tag",
+          "output": "<seed:think>",
+          "upstream": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-after-unicode-space",
+          "output": " <seed:think>Plan</seed:think>Sunny.",
+          "upstream": {
+            "content": " <seed:think>Plan</seed:think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": " <seed:think>Plan</seed:think>Sunny.",
+            "reasoning_content": "",
+            "tool_calls": []
+          }
+        },
+        {
+          "name": "thought-after-ascii-spaces",
+          "output": " \t\r\u000b\f\n<seed:think>Plan</seed:think>Sunny.",
+          "upstream": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          },
+          "upstream_without_tools": {
+            "content": "Sunny.",
+            "reasoning_content": "Plan",
+            "tool_calls": []
+          }
+        },
+        {
           "name": "text-then-call",
           "output": "Plan <seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</seed:tool_call>",
           "upstream": {

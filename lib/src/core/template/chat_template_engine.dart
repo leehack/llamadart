@@ -636,8 +636,9 @@ class ChatTemplateEngine {
   /// Qwen3-Coder XML output has no reasoning: its thinking tags are content,
   /// as in llama.cpp. Other formats still return the reasoning.
   ///
-  /// Without [thinkingForcedOpen], a Seed-OSS reply has a thought only when it
-  /// starts with `<seed:think>`, as in llama.cpp.
+  /// Without [thinkingForcedOpen], a Seed-OSS reply has a thought when it
+  /// starts with `<seed:think>`, as in llama.cpp, or, as after a template that
+  /// opens the thought, before a `</seed:think>` in a reply that does not.
   ///
   /// Output that a PEG [parser] cannot parse, or that is nested too deeply to
   /// parse, throws [LlamaInferenceException].
@@ -649,6 +650,39 @@ class ChatTemplateEngine {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     bool thinkingForcedClosed = false,
+    String? parser,
+    List<ToolDefinition>? tools,
+  }) => _parseOutput(
+    formatIndex,
+    output,
+    isPartial: isPartial,
+    cancelled: cancelled,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen:
+        thinkingForcedOpen || _endsUnopenedSeedOssThought(formatIndex, output),
+    thinkingForcedClosed: thinkingForcedClosed,
+    parser: parser,
+    tools: tools,
+  );
+
+  /// Whether [output] is a Seed-OSS reply that ends a thought it did not
+  /// open. The caller of [parse] cannot say whether the template opened the
+  /// thought, so this parses as if it did.
+  static bool _endsUnopenedSeedOssThought(int formatIndex, String output) {
+    if (formatIndex != ChatFormat.seedOss.index) return false;
+    final tags = thinkingTagsFor(formatIndex);
+    return output.contains(tags.endTag) &&
+        !trimLeftAsciiSpace(output).startsWith(tags.startTag);
+  }
+
+  static ChatParseResult _parseOutput(
+    int formatIndex,
+    String output, {
+    required bool isPartial,
+    required bool cancelled,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
+    required bool thinkingForcedClosed,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -995,19 +1029,38 @@ List<String> closedThoughtMarkers(int formatIndex) {
   ];
 }
 
-/// The `thinkingForcedOpen` that [ChatTemplateEngine.parse] takes for
-/// [output]: llama.cpp keeps open the thought a Seed-OSS or Cohere2 MoE
-/// handler closed for thinking off ([thoughtClosedForThinkingOff]), so a reply
-/// that shows one of [closedThoughtMarkers] parses as after a forced-open
-/// prompt.
-bool parsesThinkingForcedOpen(
+/// Parses [output] of a render of this engine, whose internal thought mark
+/// [ChatTemplateEngine.parse] cannot see.
+///
+/// llama.cpp keeps open the thought a Seed-OSS or Cohere2 MoE handler closed
+/// for thinking off ([thoughtClosedForThinkingOff]), so a reply that shows one
+/// of [closedThoughtMarkers] parses as after a forced-open prompt. Without it
+/// or [thinkingForcedOpen] the prompt opened no thought, so a Seed-OSS end tag
+/// in a reply that does not start with a thought is content.
+ChatParseResult parseRenderedOutput(
   int formatIndex,
   String output, {
-  required bool thinkingForcedOpen,
   required bool thoughtClosedForThinkingOff,
-}) =>
-    thinkingForcedOpen ||
-    (thoughtClosedForThinkingOff &&
-        (formatIndex == ChatFormat.seedOss.index ||
-            formatIndex == ChatFormat.cohere2Moe.index) &&
-        closedThoughtMarkers(formatIndex).any(output.contains));
+  bool isPartial = false,
+  bool cancelled = false,
+  bool parseToolCalls = true,
+  bool thinkingForcedOpen = false,
+  bool thinkingForcedClosed = false,
+  String? parser,
+  List<ToolDefinition>? tools,
+}) => ChatTemplateEngine._parseOutput(
+  formatIndex,
+  output,
+  isPartial: isPartial,
+  cancelled: cancelled,
+  parseToolCalls: parseToolCalls,
+  thinkingForcedOpen:
+      thinkingForcedOpen ||
+      (thoughtClosedForThinkingOff &&
+          (formatIndex == ChatFormat.seedOss.index ||
+              formatIndex == ChatFormat.cohere2Moe.index) &&
+          closedThoughtMarkers(formatIndex).any(output.contains)),
+  thinkingForcedClosed: thinkingForcedClosed,
+  parser: parser,
+  tools: tools,
+);

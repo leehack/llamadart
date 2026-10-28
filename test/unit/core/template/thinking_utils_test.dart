@@ -77,6 +77,15 @@ void main() {
     expect(isThinkingForcedOpen('hello'), isFalse);
   });
 
+  // llama.cpp skips only what C `isspace` accepts.
+  test('trimLeftAsciiSpace keeps Unicode whitespace', () {
+    expect(trimLeftAsciiSpace(' \t\n\v\f\rx '), 'x ');
+    for (final space in const ['\u00a0', '\u3000', '\u2028', '\u0085']) {
+      expect(trimLeftAsciiSpace(' ${space}x'), '${space}x');
+    }
+    expect(trimLeftAsciiSpace(' \n'), '');
+  });
+
   group('extractForcedOpenThoughtVerbatim', () {
     test('splits at the first end tag and keeps both parts as generated', () {
       expect(

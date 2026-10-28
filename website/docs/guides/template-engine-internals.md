@@ -153,14 +153,17 @@ sequenceDiagram
   begins with a thought; for Cohere2 MoE, also until `<|START_TEXT|>` or
   `<|START_ACTION|>`, where llama.cpp ends the thought. A Seed-OSS or
   Cohere2 MoE reply that shows one of these markers parses as after a
-  forced-open prompt (the internal `parsesThinkingForcedOpen`), and a Cohere2
-  MoE one also streams as such.
+  forced-open prompt (the internal `parseRenderedOutput`), and a Cohere2 MoE
+  one also streams as such.
   Ministral and Solar Open close it unmarked: their parse takes a thought only
   after its start tag.
 - After a prompt that opens no thought, a Seed-OSS reply has one only when it
   starts with `<seed:think>`, kept as generated up to the first
   `</seed:think>`, and the rest is content in which thinking tags are text, as
-  llama.cpp (`620d2225`) parses it. Outside a thought, a Cohere2 MoE
+  llama.cpp (`620d2225`) parses it; only ASCII whitespace may precede the
+  start tag. The public `ChatTemplateEngine.parse` cannot see the mark, so it
+  also ends a thought at an end tag in a reply that does not start with the
+  start tag, as after a template that opens one. Outside a thought, a Cohere2 MoE
   `<|START_TEXT|>` or `<|START_ACTION|>` starts content in which thinking tags
   are text.
 

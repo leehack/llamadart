@@ -38,6 +38,18 @@ ThinkingExtraction extractThinking(
   );
 }
 
+/// [text] without the ASCII whitespace that starts it, which llama.cpp's
+/// parsers skip (`std::isspace`); other Unicode whitespace stays.
+String trimLeftAsciiSpace(String text) {
+  var start = 0;
+  while (start < text.length) {
+    final unit = text.codeUnitAt(start);
+    if (unit != 0x20 && (unit < 0x09 || unit > 0x0d)) break;
+    start++;
+  }
+  return text.substring(start);
+}
+
 /// Splits [text] that continues a thought the prompt opened at the first
 /// [endTag], as llama.cpp's PEG parser does.
 ///

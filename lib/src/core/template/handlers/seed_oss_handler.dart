@@ -134,7 +134,7 @@ class SeedOssHandler extends ChatTemplateHandler {
     // As in llama.cpp, a reply to a prompt that opens no thought has one only
     // when it starts with the start tag; it ends at the first end tag, as
     // generated, and later thinking tags are content.
-    final reply = output.trimLeft();
+    final reply = trimLeftAsciiSpace(output);
     final thought = reply.startsWith(thinkingStartTag)
         ? extractForcedOpenThoughtVerbatim(
             reply.substring(thinkingStartTag.length),

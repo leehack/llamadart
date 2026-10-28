@@ -359,7 +359,7 @@ class ChatCompletionStreamParser {
           }
         }
         if (atReplyStart) {
-          final rest = pendingBuffer.trimLeft();
+          final rest = trimLeftAsciiSpace(pendingBuffer);
           if (rest.length < startTag.length && startTag.startsWith(rest)) {
             continue;
           }
@@ -459,18 +459,13 @@ class ChatCompletionStreamParser {
       lastPartialParseAtMs = elapsedMs;
 
       try {
-        final partialOutput = buffer.toString();
-        final partialParsed = ChatTemplateEngine.parse(
+        final partialParsed = parseRenderedOutput(
           templateResult.format,
-          partialOutput,
+          buffer.toString(),
           isPartial: true,
           parseToolCalls: parseToolCallsEnabled,
-          thinkingForcedOpen: parsesThinkingForcedOpen(
-            templateResult.format,
-            partialOutput,
-            thinkingForcedOpen: templateResult.thinkingForcedOpen,
-            thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
-          ),
+          thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -576,18 +571,14 @@ class ChatCompletionStreamParser {
     final endedAtLimit = stoppedAtLimit?.call() == true;
     final wasCancelled = cancelled?.call() == true;
     ChatParseResult parseOutput({required bool isPartial}) =>
-        ChatTemplateEngine.parse(
+        parseRenderedOutput(
           templateResult.format,
           fullOutput,
           isPartial: isPartial,
           cancelled: wasCancelled,
           parseToolCalls: parseToolCallsEnabled,
-          thinkingForcedOpen: parsesThinkingForcedOpen(
-            templateResult.format,
-            fullOutput,
-            thinkingForcedOpen: templateResult.thinkingForcedOpen,
-            thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
-          ),
+          thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thoughtClosedForThinkingOff: thoughtClosedForThinkingOff,
           thinkingForcedClosed: thinkingForcedClosed,
           parser: templateResult.parser,
           tools: tools,
