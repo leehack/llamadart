@@ -378,6 +378,44 @@ void main() {
     expect(fixture.requests, [_sumsUrl]);
   });
 
+  test(
+    'a cached core archive that matches the cached SHA256SUMS but lacks '
+    'runtime libraries does not ask to pre-seed SHA256SUMS offline',
+    () async {
+      final incompleteCore = _archive('core', [
+        ..._coreLibraries,
+        'ggml-cuda.dll',
+      ]);
+      final incompleteRelease = {
+        ...release(manifest: _manifest()),
+        _sumsUrl: sha256SumsFor({
+          _coreArchive: incompleteCore,
+          _sidecarArchive: sidecar,
+        }).codeUnits,
+        _coreUrl: incompleteCore,
+      };
+      await expectLater(
+        runHook(RuntimeBundleHttpFixture(incompleteRelease)),
+        throwsA(isA<Exception>()),
+      );
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      await expectLater(
+        runHook(offline),
+        throwsA(
+          isA<NativeArchiveDigestException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('lists the cached archive'),
+              isNot(contains('put that release')),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
   test('a sidecar may rely on CUDA runtime libraries the core ships', () async {
     final coreWithCudart = _archive('core', [
       ..._coreLibraries,
@@ -532,7 +570,7 @@ void main() {
     });
 
     test('is renewed when a re-check finds no assets.json again, and kept '
-        'when the re-check fails', () async {
+        'and renewed when the re-check fails', () async {
       final legacyRelease = {
         _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
         _coreUrl: core,
@@ -551,7 +589,67 @@ void main() {
       final libraries = await runHook(offline, backends: ['cuda']);
       expect(offline.requests, [_manifestUrl]);
       expect(libraries, isNot(contains('ggml-cuda.dll')));
-      expect(absentRecord().lastModifiedSync(), old);
+      expect(absentRecord().lastModifiedSync().isAfter(old), isTrue);
+
+      final nextOffline = RuntimeBundleHttpFixture.offline();
+      await runHook(nextOffline, backends: ['cuda']);
+      expect(nextOffline.requests, isEmpty);
+    });
+
+    test('is re-checked when dated in the future', () async {
+      await runHook(
+        RuntimeBundleHttpFixture({
+          _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+          _coreUrl: core,
+        }),
+      );
+      absentRecord().setLastModifiedSync(
+        DateTime.now().add(const Duration(days: 30)),
+      );
+      final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
+
+      final libraries = await runHook(fixture, backends: ['cuda']);
+
+      expect(fixture.requests, [_manifestUrl, _sumsUrl, _sidecarUrl]);
+      expect(libraries, containsPair('ggml-cuda.dll', 'sidecar-ggml-cuda.dll'));
+      expect(absentRecord().existsSync(), isFalse);
+    });
+
+    test('is kept and renewed with a warning when the re-check returns a '
+        'page that is not JSON', () async {
+      final legacyRelease = {
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+      };
+      await runHook(RuntimeBundleHttpFixture(legacyRelease));
+      final old = DateTime.now().subtract(const Duration(days: 2));
+      absentRecord().setLastModifiedSync(old);
+      final fixture = RuntimeBundleHttpFixture({
+        ...legacyRelease,
+        _manifestUrl: utf8.encode('<html>Blocked by the network</html>'),
+      });
+      final warnings = _captureWarnings();
+
+      final libraries = await runHook(fixture, backends: ['cuda']);
+
+      expect(fixture.requests, [_manifestUrl]);
+      expect(libraries, isNot(contains('ggml-cuda.dll')));
+      expect(warnings, contains(contains('is not JSON')));
+      expect(absentRecord().lastModifiedSync().isAfter(old), isTrue);
+    });
+
+    test('does not hide a body that is not JSON without a record', () async {
+      final fixture = RuntimeBundleHttpFixture({
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+        _manifestUrl: utf8.encode('<html>Blocked by the network</html>'),
+      });
+
+      await expectLater(
+        runHook(fixture, backends: ['cuda']),
+        throwsA(isA<NativeHookContractException>()),
+      );
+      expect(absentRecord().existsSync(), isFalse);
     });
 
     test('still lets a core download proceed when its re-check '
