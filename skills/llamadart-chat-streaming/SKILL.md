@@ -107,7 +107,9 @@ description: >-
   `engine.create` when reasoning output is not wanted. A boolean
   `enable_thinking` or `thinking` in `chatTemplateKwargs` overrides it, as in
   llama-server, and every chat template receives the result as
-  `enable_thinking`. Native LiteRT-LM
+  `enable_thinking`. A template's own setting in `chatTemplateKwargs`, such as
+  `reasoning_effort` (Hy3, Cohere2 MoE) or `thinking_mode` (MiniMax M3), wins
+  over the value derived from `enableThinking`. Native LiteRT-LM
   recognizes renamed Qwen 3 bundles only from a Qwen 3 model-type declaration
   (field 6), or the complete canonical Qwen 3 template in field 7 or
   `ModelParams.chatTemplate`. Legacy litert-community Qwen3-0.6B bundles have

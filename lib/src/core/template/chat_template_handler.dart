@@ -180,16 +180,20 @@ abstract class ChatTemplateHandler {
   /// Renders [template] with [context] plus llama.cpp-style extra globals.
   ///
   /// This injects `chat_template_kwargs` values encoded by
-  /// [ChatTemplateEngine]/[LlamaEngine] through metadata.
+  /// [ChatTemplateEngine]/[LlamaEngine] through metadata. [context] overrides
+  /// them, and they override [defaults]: template settings derived from
+  /// `enableThinking` that a caller can set itself, as in llama-server.
   String renderTemplate(
     Template template, {
     required Map<String, String> metadata,
     required Map<String, dynamic> context,
+    Map<String, dynamic> defaults = const {},
   }) {
     final templateNow = DateTime.tryParse(
       metadata[internalTemplateNowMetadataKey] ?? '',
     );
     return template.render(<String, dynamic>{
+      ...defaults,
       ...chatTemplateKwargsFromMetadata(metadata),
       ...context,
       if (templateNow != null) 'strftime_now': strftimeNow(templateNow),

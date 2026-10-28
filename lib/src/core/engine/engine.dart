@@ -1631,6 +1631,11 @@ class LlamaEngine {
   /// A boolean `enable_thinking` in [chatTemplateKwargs], or failing that a
   /// boolean `thinking`, overrides [enableThinking] for rendering, parsing and
   /// streaming, as in llama-server; other values leave [enableThinking].
+  /// A template's own thinking setting in [chatTemplateKwargs], such as the
+  /// `reasoning_effort` of Hy3 and Cohere2 MoE or the `thinking_mode` of
+  /// MiniMax M3, replaces the value llamadart derives from [enableThinking],
+  /// as in llama-server, while `enableThinking: false` still ends a thought
+  /// the prompt leaves open.
   /// Use [templateNow] to set deterministic template time context.
   ///
   /// Pass [responseFormat] to request strict structured output through

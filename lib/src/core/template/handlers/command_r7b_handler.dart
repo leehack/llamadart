@@ -123,7 +123,13 @@ class CommandR7BHandler extends ChatTemplateHandler {
         'eos_token':
             metadata['tokenizer.ggml.eos_token'] ?? '<|END_OF_TURN_TOKEN|>',
         'enable_thinking': enableThinking,
-        'reasoning': enableThinking,
+      },
+      defaults: {
+        // Cohere2 MoE reads `reasoning_effort` only without `reasoning`.
+        if (!chatTemplateKwargsFromMetadata(
+          metadata,
+        ).containsKey('reasoning_effort'))
+          'reasoning': enableThinking,
         'skip_thinking': !enableThinking,
       },
     );
