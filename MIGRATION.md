@@ -255,7 +255,7 @@ and projector first. Paths and image URLs throw `LlamaUnsupportedException`.
 Older or mismatched bridge assets retain text embeddings and report media
 unavailable with an upgrade diagnostic. The default pinned assets include the API;
 EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
-native CPU/Metal; repeated media batches require memory64. Hardware WebGPU is
+native CPU/Metal; repeated media batches are qualified only on memory64. Hardware WebGPU is
 unqualified. Text-only content keeps legacy `embed` support on pooling NONE.
 Image bytes are always encoded data; width/height are ignored for embeddings.
 Reserved mixed-input media markers are unsupported, matching native.

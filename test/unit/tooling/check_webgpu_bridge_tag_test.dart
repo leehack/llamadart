@@ -404,6 +404,15 @@ void main() {
       );
     });
 
+    test('accepts a `-` bullet in the changelog claim', () {
+      final root = releaseNotesRepo('Unreleased');
+      final changelog = File('${root.path}/CHANGELOG.md');
+      changelog.writeAsStringSync(
+        changelog.readAsStringSync().replaceFirst('* Aligned', '- Aligned'),
+      );
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), isEmpty);
+    });
+
     test('accepts the promoted `## <pubspec version>` heading', () {
       expect(
         findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.3'), 'v9.9.9'),

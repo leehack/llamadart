@@ -171,7 +171,7 @@ void main() {
         expect(
           core,
           'wasm64',
-          reason: 'Repeated media batches require memory64.',
+          reason: 'Repeated media batches are qualified only on memory64.',
         );
         await engine.loadMultimodalProjector(url('projector'));
         expect(
