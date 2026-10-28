@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/hook/native_runtime_coexistence.dart';
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 
 const _llama = 'flutter_edge_ai_llama';
@@ -18,6 +19,8 @@ const _both = ['llama_cpp', 'litert_lm'];
 const _define = 'hooks.user_defines.llamadart.llamadart_native_runtimes';
 
 void main() {
+  final project = HookProjectRoot.create();
+  tearDownAll(project.delete);
   late Directory scratch;
   late File graph;
   late List<String> warnings;
@@ -280,7 +283,7 @@ void main() {
     }) async {
       var emitted = false;
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: (arguments) => layout.run(build_hook.main, arguments),
           targetOS: os,
           targetArchitecture: os == OS.linux || os == OS.windows
@@ -377,6 +380,7 @@ void main() {
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
         layout: connector,
+        project: project,
         userDefines: connector.userDefines(),
       );
       expect(run.assets, isEmpty);

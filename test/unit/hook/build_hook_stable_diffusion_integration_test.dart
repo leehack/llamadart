@@ -14,6 +14,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_core_version.dart';
+import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 
 const _stableDiffusionAssetId = 'package:llamadart/stable_diffusion';
@@ -21,9 +22,13 @@ const _primaryAssetId = 'package:llamadart/llamadart';
 const _liteRtLmAssetIdPrefix = 'package:llamadart/litert_lm_';
 
 void main() {
-  final nativeBundlesRoot = '.dart_tool/llamadart/native_bundles/$llamaCppTag';
-  final stableDiffusionRoot =
-      '.dart_tool/llamadart/stable_diffusion/$stableDiffusionVersion';
+  final project = HookProjectRoot.create();
+  final nativeBundlesRoot = project.resolve(
+    '.dart_tool/llamadart/native_bundles/$llamaCppTag',
+  );
+  final stableDiffusionRoot = project.resolve(
+    '.dart_tool/llamadart/stable_diffusion/$stableDiffusionVersion',
+  );
 
   Directory nativeBundle(String bundle) =>
       Directory('$nativeBundlesRoot/$bundle/extracted');
@@ -69,25 +74,16 @@ void main() {
   };
   final liteRtLmBundles = {
     'linux-x64': Directory(
-      '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/linux/x64',
+      project.resolve(
+        '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/linux/x64',
+      ),
     ),
     'android-x64': Directory(
-      '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/android/x64',
+      project.resolve(
+        '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/android/x64',
+      ),
     ),
   };
-  final backups = [
-    for (final bundle in nativeBundles.keys) nativeBundle(bundle),
-    for (final bundle in stableDiffusionBundles.keys)
-      stableDiffusionBundle(bundle),
-    ...liteRtLmBundles.values,
-  ];
-
-  setUpAll(() async {
-    for (final directory in backups) {
-      await _moveDirectory(directory, _backupOf(directory));
-    }
-  });
-
   setUp(() async {
     for (final MapEntry(key: bundle, value: libraries)
         in nativeBundles.entries) {
@@ -113,14 +109,7 @@ void main() {
     }
   });
 
-  tearDownAll(() async {
-    for (final directory in backups.reversed) {
-      if (directory.existsSync()) {
-        await directory.delete(recursive: true);
-      }
-      await _moveDirectory(_backupOf(directory), directory);
-    }
-  });
+  tearDownAll(project.delete);
 
   test('unset, empty, unrecognised and both selections never bundle '
       'stable_diffusion', () async {
@@ -140,7 +129,7 @@ void main() {
       },
     ]) {
       final log = await _captureHookLog(
-        () => testCodeBuildHook(
+        () => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.linux,
           targetArchitecture: Architecture.x64,
@@ -220,7 +209,7 @@ void main() {
         final reason = '${target.bundle} $runtimes';
         final stableDiffusion = selectsImages && target.stableDiffusion;
         final log = await _captureHookLog(
-          () => testCodeBuildHook(
+          () => project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: target.os,
             targetArchitecture: target.architecture,
@@ -276,6 +265,7 @@ void main() {
     final layout = await flutterEdgeAiWorkspace();
     addTearDown(layout.delete);
     final run = await runCodeBuildHook(
+      project: project,
       hookMain: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.x64,
@@ -294,7 +284,7 @@ void main() {
 
   test('all under an exact bundle key still skips an unpublished '
       'stable_diffusion', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.android,
       targetArchitecture: Architecture.x64,
@@ -334,7 +324,7 @@ void main() {
           late final List<String> log;
           final stderrLines = await _captureStderr(() async {
             log = await _captureHookLog(
-              () => testCodeBuildHook(
+              () => project.testCodeBuildHook(
                 mainMethod: build_hook.main,
                 targetOS: os,
                 targetArchitecture: Architecture.arm64,
@@ -392,7 +382,7 @@ void main() {
     late final List<String> log;
     final stderrLines = await _captureStderr(() async {
       log = await _captureHookLog(
-        () => testCodeBuildHook(
+        () => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.x64,
@@ -417,6 +407,7 @@ void main() {
       late final HookRun run;
       final stderrLines = await _captureStderr(() async {
         run = await runCodeBuildHook(
+          project: project,
           hookMain: build_hook.main,
           targetOS: OS.linux,
           targetArchitecture: Architecture.x64,
@@ -432,7 +423,7 @@ void main() {
   );
 
   test('Linux bundles the Vulkan archive with default backends', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.x64,
@@ -451,7 +442,7 @@ void main() {
   });
 
   test('Linux bundles the CPU archive when Vulkan is not selected', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.x64,
@@ -479,7 +470,7 @@ void main() {
 
   test('stable_diffusion picks its own build independently of llama.cpp '
       'backends', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.x64,
@@ -507,7 +498,7 @@ void main() {
   });
 
   test('stable_diffusion can be bundled without llama.cpp', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.macOS,
       targetArchitecture: Architecture.arm64,
@@ -541,7 +532,7 @@ void main() {
           },
         },
       ]) {
-        await testCodeBuildHook(
+        await project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.android,
           targetArchitecture: Architecture.x64,
@@ -555,7 +546,7 @@ void main() {
         );
       }
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.android,
         targetArchitecture: Architecture.x64,
@@ -573,7 +564,7 @@ void main() {
   test('an unpublished target rejects a bundle-scoped request', () async {
     var emitted = false;
     await expectLater(
-      testCodeBuildHook(
+      project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.android,
         targetArchitecture: Architecture.x64,
@@ -620,7 +611,7 @@ dependencies:
   llamadart_litert_lm_flutter: ^0.0.17
 ''');
 
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -655,7 +646,7 @@ dependencies:
       },
     );
     final warnings = await _captureStderr(
-      () => testCodeBuildHook(
+      () => project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
@@ -688,7 +679,7 @@ dependencies:
         companions: const [_stableDiffusionCompanionName],
       );
       final warnings = await _captureStderr(
-        () => testCodeBuildHook(
+        () => project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: Architecture.arm64,
@@ -731,7 +722,7 @@ dependencies:
           'llamadart_native_runtimes': ['llama_cpp'],
         },
       );
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.x64,
@@ -797,7 +788,7 @@ dependencies:
         );
         var emitted = false;
         await expectLater(
-          testCodeBuildHook(
+          project.testCodeBuildHook(
             mainMethod: build_hook.main,
             targetOS: OS.iOS,
             targetArchitecture: Architecture.arm64,
@@ -846,7 +837,7 @@ dependencies:
             ),
       );
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.iOS,
           targetArchitecture: Architecture.arm64,
@@ -1030,19 +1021,6 @@ CodeAsset _stableDiffusionAsset(BuildOutput output) => output
     .where((asset) => asset.isCodeAsset)
     .map((asset) => asset.asCodeAsset)
     .singleWhere((asset) => asset.id == _stableDiffusionAssetId);
-
-Directory _backupOf(Directory directory) =>
-    Directory('${directory.path}.__sd_hook_test');
-
-Future<void> _moveDirectory(Directory from, Directory to) async {
-  if (to.existsSync()) {
-    await to.delete(recursive: true);
-  }
-  if (from.existsSync()) {
-    await to.parent.create(recursive: true);
-    await from.rename(to.path);
-  }
-}
 
 Future<void> _writeLibraries(
   Directory directory,

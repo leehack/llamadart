@@ -10,63 +10,32 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../hook/build.dart' as build_hook;
+import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
+  final project = HookProjectRoot.create();
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/linux-x64';
-  final bundleRelativePath = '$cacheRelativeDir/extracted';
-  final bundleDir = Directory(bundleRelativePath);
-  final backupDir = Directory('$bundleRelativePath.__hook_test_backup');
+  final bundleDir = Directory(project.resolve('$cacheRelativeDir/extracted'));
   const historicalNativeTag = 'b10545';
-  final historicalBundleRelativePath =
+  final historicalBundleDir = Directory(
+    project.resolve(
       '.dart_tool/llamadart/native_bundles/$historicalNativeTag/'
-      'linux-x64/extracted';
-  final historicalBundleDir = Directory(historicalBundleRelativePath);
-  final historicalBackupDir = Directory(
-    '$historicalBundleRelativePath.__hook_test_backup',
+      'linux-x64/extracted',
+    ),
   );
   final litertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/linux/x64',
-  );
-  final litertBackupDir = Directory(
-    '${litertBundleDir.path}.__hook_test_backup',
+    project.resolve('.dart_tool/llamadart/litert_lm/$litertVersion/linux/x64'),
   );
   final archiveFile = File(
-    '$cacheRelativeDir/llamadart-native-linux-x64-$nativeTag.tar.gz',
+    project.resolve(
+      '$cacheRelativeDir/llamadart-native-linux-x64-$nativeTag.tar.gz',
+    ),
   );
-  final archiveBackupFile = File('${archiveFile.path}.__hook_test_backup');
-
-  setUpAll(() async {
-    if (backupDir.existsSync()) {
-      await backupDir.delete(recursive: true);
-    }
-    if (historicalBackupDir.existsSync()) {
-      await historicalBackupDir.delete(recursive: true);
-    }
-    if (litertBackupDir.existsSync()) {
-      await litertBackupDir.delete(recursive: true);
-    }
-    if (archiveBackupFile.existsSync()) {
-      await archiveBackupFile.delete();
-    }
-
-    if (bundleDir.existsSync()) {
-      await bundleDir.rename(backupDir.path);
-    }
-    if (archiveFile.existsSync()) {
-      await archiveFile.rename(archiveBackupFile.path);
-    }
-    if (historicalBundleDir.existsSync()) {
-      await historicalBundleDir.rename(historicalBackupDir.path);
-    }
-    if (litertBundleDir.existsSync()) {
-      await litertBundleDir.rename(litertBackupDir.path);
-    }
-  });
 
   setUp(() async {
     if (bundleDir.existsSync()) {
@@ -99,37 +68,12 @@ void main() {
     }
   });
 
-  tearDownAll(() async {
-    if (archiveFile.existsSync()) {
-      await archiveFile.delete();
-    }
-    if (archiveBackupFile.existsSync()) {
-      await archiveBackupFile.rename(archiveFile.path);
-    }
-    if (bundleDir.existsSync()) {
-      await bundleDir.delete(recursive: true);
-    }
-    if (backupDir.existsSync()) {
-      await backupDir.rename(bundleDir.path);
-    }
-    if (historicalBundleDir.existsSync()) {
-      await historicalBundleDir.delete(recursive: true);
-    }
-    if (historicalBackupDir.existsSync()) {
-      await historicalBackupDir.rename(historicalBundleDir.path);
-    }
-    if (litertBundleDir.existsSync()) {
-      await litertBundleDir.delete(recursive: true);
-    }
-    if (litertBackupDir.existsSync()) {
-      await litertBackupDir.rename(litertBundleDir.path);
-    }
-  });
+  tearDownAll(project.delete);
 
   test(
     'build hook emits linux SONAME aliases and all runtimes by default',
     () async {
-      await testCodeBuildHook(
+      await project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.linux,
         targetArchitecture: Architecture.x64,
@@ -348,6 +292,7 @@ void main() {
         );
         addTearDown(layout.delete);
         final run = await _runLinuxHook(
+          project: project,
           layout: layout,
           defines: scenario.runtimes == null
               ? null
@@ -385,6 +330,7 @@ void main() {
       );
       addTearDown(layout.delete);
       final run = await _runLinuxHook(
+        project: project,
         layout: layout,
         defines: {
           'llamadart_native_runtimes': ['litert_lm'],
@@ -406,6 +352,7 @@ void main() {
       addTearDown(layout.delete);
       await expectLater(
         _runLinuxHook(
+          project: project,
           layout: layout,
           defines: {
             'llamadart_native_runtimes': ['litert_lm'],
@@ -428,6 +375,7 @@ void main() {
         targetOS: OS.linux,
         targetArchitecture: Architecture.x64,
         liteRtLmLibraries: _linuxLiteRtLibraries,
+        project: project,
       ),
     );
 
@@ -440,7 +388,7 @@ void main() {
       );
       addTearDown(layout.delete);
       await layout.packageGraph.writeAsString('{"roots": ["app"]}');
-      final run = await _runLinuxHook(layout: layout);
+      final run = await _runLinuxHook(project: project, layout: layout);
       expect(run.assets.values, containsAll(_linuxLiteRtLibraries));
       expect(
         run.warnings.single,
@@ -453,7 +401,7 @@ void main() {
   });
 
   test('build hook preserves historical linux mtmd SONAME alias', () async {
-    await testCodeBuildHook(
+    await project.testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.x64,
@@ -480,7 +428,9 @@ void main() {
   test('build hook emits archive symlink aliases with target bytes', () async {
     const overrideTag = 'v9.8.7';
     final overrideCacheDir = Directory(
-      '.dart_tool/llamadart/native_bundles/$overrideTag/linux-x64',
+      project.resolve(
+        '.dart_tool/llamadart/native_bundles/$overrideTag/linux-x64',
+      ),
     );
     final overrideArchive = File(
       path.join(
@@ -506,7 +456,7 @@ void main() {
 
     await build_hook.withRuntimeBundleHttpClientForTesting(
       fixture.createClient,
-      () => testCodeBuildHook(
+      () => project.testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.linux,
         targetArchitecture: Architecture.x64,
@@ -549,7 +499,7 @@ void main() {
   test('build hook fails when runtimes config selects none', () async {
     for (final rawUserConfig in const <Object>['none', false]) {
       await expectLater(
-        testCodeBuildHook(
+        project.testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.linux,
           targetArchitecture: Architecture.x64,
@@ -623,6 +573,7 @@ const String _edgeAiLlama = 'flutter_edge_ai_llama';
 const String _edgeAiLiteRtLm = 'flutter_edge_ai_litertlm';
 
 Future<HookRun> _runLinuxHook({
+  required HookProjectRoot project,
   HooksRunnerLayout? layout,
   Map<String, Object?>? defines,
 }) => runCodeBuildHook(
@@ -630,6 +581,7 @@ Future<HookRun> _runLinuxHook({
   targetOS: OS.linux,
   targetArchitecture: Architecture.x64,
   layout: layout,
+  project: project,
   userDefines: layout?.userDefines(defines),
 );
 
