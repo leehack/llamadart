@@ -73,6 +73,8 @@ const oldHashes = <String, String>{
       "d90fe66455b1a9ad1cb19d4ebec718452a1e55775d3a4948a33858e637ed115e",
   "qwen3vl-gguf-metal.json":
       "f21fb14fbe84ad63b8ec5f662a001d35b4109aa8797fb17d251cb24773d355fd",
+  "scoring-gguf-cpu.json":
+      "688fc4c9bc10129689c2e8e95f3933e837a0e3082be60859ab05551b3a517d24",
   "decision-gguf-webgpu.json":
       "40d0ba6b84a6ae4006d48c4e76b42ba0d8a5e669814d1fa74088d6b4ec806288",
 };
