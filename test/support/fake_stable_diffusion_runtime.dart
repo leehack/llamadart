@@ -78,7 +78,12 @@ const _imageInputBytes = 96;
 const _controlInput = _imageInput + _imageInputBytes * 2;
 const _controlInputBytes = 48;
 const _loadsFp8AsF16OnMetal = _controlInput + _controlInputBytes * 2;
-const _stateBytes = _loadsFp8AsF16OnMetal + 8;
+// Hires: enabled and ignore flags as bytes, then upscaler, target width and
+// height and steps as Int32, strength and scale as Float, the custom sigma
+// count as Int32 and the upscaler model path address as Int64.
+const _hires = _loadsFp8AsF16OnMetal + 8;
+const _hiresBytes = 40;
+const _stateBytes = _hires + _hiresBytes;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -162,6 +167,26 @@ final class FakeStableDiffusionRuntime {
   /// Makes `sd_ctx_has_control_net` answer false although the load named a
   /// ControlNet, as a runtime that skipped it would.
   set hideControlNet(bool value) => _state[_hideControlNet] = value ? 1 : 0;
+
+  /// The hires-fix fields the guarded generation received last: enabled,
+  /// upscaler, target width and height, steps, denoising strength, scale,
+  /// custom sigma count and model path address.
+  (bool, int, int, int, int, double, double, int, int) get lastHires => (
+    _state[_hires] != 0,
+    _state.cast<Int32>()[(_hires + 4) ~/ 4],
+    _state.cast<Int32>()[(_hires + 8) ~/ 4],
+    _state.cast<Int32>()[(_hires + 12) ~/ 4],
+    _state.cast<Int32>()[(_hires + 16) ~/ 4],
+    (_state + _hires + 20).cast<Float>().value,
+    (_state + _hires + 24).cast<Float>().value,
+    _state.cast<Int32>()[(_hires + 28) ~/ 4],
+    (_state + _hires + 32).cast<Int64>().value,
+  );
+
+  /// Makes a generation skip an enabled hires pass and return first-pass
+  /// images as success, as the runtime does after disabling a hires fix it
+  /// cannot apply.
+  set ignoreHires(bool value) => _state[_hires + 1] = value ? 1 : 0;
 
   /// What `sd_get_model_version_name` answers; `SD 2.x` at first.
   set modelVersion(String value) {
@@ -737,6 +762,16 @@ final class _FakeCalls {
     (_state + _vaeTiling + 12).cast<Float>().value = tiling.target_overlap;
     (_state + _vaeTiling + 16).cast<Float>().value = tiling.rel_size_w;
     (_state + _vaeTiling + 20).cast<Float>().value = tiling.rel_size_h;
+    final hires = params.ref.hires;
+    _state[_hires] = hires.enabled ? 1 : 0;
+    _ints[(_hires + 4) ~/ 4] = hires.upscalerAsInt;
+    _ints[(_hires + 8) ~/ 4] = hires.target_width;
+    _ints[(_hires + 12) ~/ 4] = hires.target_height;
+    _ints[(_hires + 16) ~/ 4] = hires.steps;
+    (_state + _hires + 20).cast<Float>().value = hires.denoising_strength;
+    (_state + _hires + 24).cast<Float>().value = hires.scale;
+    _ints[(_hires + 28) ~/ 4] = hires.custom_sigmas_count;
+    (_state + _hires + 32).cast<Int64>().value = hires.model_path.address;
     _logText(_sdLogDebug, 'stable-diffusion.cpp:3120 - sampling');
     _logText(_sdLogInfo, 'stable-diffusion.cpp:3391 - generating');
     imagesOut.value = nullptr;
@@ -841,6 +876,21 @@ final class _FakeCalls {
         report(step, steps);
       }
     }
+    final refines = hires.enabled && _state[_hires + 1] == 0;
+    if (refines) {
+      for (var image = 0; image < images; image++) {
+        if (_state[_cancelled] != 0) {
+          return false;
+        }
+        report(0, hires.steps);
+        for (var step = 1; step <= hires.steps; step++) {
+          if (_state[_cancelled] != 0) {
+            return false;
+          }
+          report(step, hires.steps);
+        }
+      }
+    }
     if (_state[_cancelled] != 0) {
       return false;
     }
@@ -849,8 +899,8 @@ final class _FakeCalls {
       report(tile, tiles);
     }
 
-    final width = params.ref.width;
-    final height = params.ref.height;
+    final width = refines ? hires.target_width : params.ref.width;
+    final height = refines ? hires.target_height : params.ref.height;
     final result = malloc<sd.sd_image_t>(images);
     for (var image = 0; image < images; image++) {
       final length = width * height * 3;

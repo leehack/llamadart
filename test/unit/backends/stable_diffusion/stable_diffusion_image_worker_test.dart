@@ -8,6 +8,8 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_bindings.dart'
+    as sd;
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_worker.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
@@ -18,6 +20,7 @@ import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_events.dart';
 import 'package:llamadart/src/core/image/image_generation_progress.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
+import 'package:llamadart/src/core/image/image_hires_fix_request.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 
@@ -517,6 +520,156 @@ void main() {
       });
     });
 
+    group('hires fix', () {
+      const hiresConfig = ImageGenerationSessionConfig(
+        files: {'model': '/models/sd15.safetensors'},
+        backend: 'cpu',
+        threads: 1,
+        hiresFixRecipeVerified: true,
+      );
+      ImageGenerationSessionRequest hiresRequest({
+        int steps = 3,
+        int hiresSteps = 2,
+        int count = 1,
+        ImageVaeTiling? tiling,
+      }) => ImageGenerationSessionRequest(
+        prompt: 'a fox',
+        negativePrompt: '',
+        width: 64,
+        height: 128,
+        steps: steps,
+        guidanceScale: 7,
+        seed: 42,
+        count: count,
+        vaeTiling: tiling,
+        hiresFix: ImageGenerationSessionHiresFix(
+          width: 128,
+          height: 192,
+          steps: hiresSteps,
+          denoisingStrength: 0.55,
+          upscaler: ImageHiresUpscaler.latent,
+        ),
+      );
+
+      test('the pass reaches the guarded generation, both passes report '
+          'progress, and an ordinary request after it has none', () async {
+        runtime.modelVersion = 'SD 1.x';
+        final worker = await start(config: hiresConfig);
+        expect(worker.supportsHiresFix, isTrue);
+        await runtime.flush();
+        runtime.clearCalls();
+        final progress = <(int, int)>[];
+        final images = await worker.generate(
+          hiresRequest(count: 2),
+          (step, steps) => progress.add((step, steps)),
+        );
+        expect(
+          [for (final image in images!) (image.width, image.height)],
+          [(128, 192), (128, 192)],
+        );
+        final (
+          enabled,
+          upscaler,
+          width,
+          height,
+          steps,
+          strength,
+          scale,
+          sigmas,
+          modelPath,
+        ) = runtime.lastHires;
+        expect(
+          (enabled, width, height, steps, scale, sigmas, modelPath),
+          (true, 128, 192, 2, 0.0, 0, 0),
+        );
+        expect(upscaler, sd.sd_hires_upscaler_t.SD_HIRES_UPSCALER_LATENT.value);
+        expect(strength, closeTo(0.55, 0.000001));
+        expect(progress, [
+          ..._upstreamReports(steps: 3, count: 2),
+          ..._upstreamReports(steps: 2, count: 2),
+        ]);
+        await runtime.flush();
+        expect(runtime.calls('worker'), _generateCalls);
+
+        final plain = await worker.generate(_request(), (_, _) {});
+        expect((plain!.single.width, plain.single.height), (8, 8));
+        expect(runtime.lastHires.$1, isFalse);
+        expect(runtime.lastHires.$3, 0);
+      });
+
+      test('a cancel during the second pass stops it before its next step '
+          'and returns no images', () async {
+        runtime.modelVersion = 'SD 2.x';
+        final worker = await start(config: hiresConfig);
+        // 4 first-pass reports, then 0/3 and 1/3 of the second pass.
+        runtime.pauseAfter = 6;
+        final progress = <(int, int)>[];
+        final generation = worker.generate(
+          hiresRequest(hiresSteps: 3),
+          (step, steps) => progress.add((step, steps)),
+        );
+        await runtime.pausedIn(generation);
+        worker.cancel();
+        runtime.resume();
+        expect(await generation, isNull);
+        expect(progress, [
+          ..._upstreamReports(steps: 3, count: 1),
+          (0, 3),
+          (1, 3),
+        ]);
+        runtime.pauseAfter = -1;
+        expect(await worker.generate(hiresRequest(), (_, _) {}), hasLength(1));
+      });
+
+      test('direct worker refuses a hires fix without recipe proof, for '
+          'another family, and combined with another input, before '
+          'generation', () async {
+        for (final kind in ['no proof', 'family', 'tiling']) {
+          runtime.modelVersion = switch (kind) {
+            'family' => 'SDXL',
+            'tiling' => 'SD 2.x',
+            _ => 'SD 1.x',
+          };
+          final worker = await start(
+            config: switch (kind) {
+              'no proof' => _config,
+              // Tiling alone is admitted, so only the combination refuses.
+              'tiling' => const ImageGenerationSessionConfig(
+                files: {'model': '/models/sd-turbo.gguf'},
+                backend: 'cpu',
+                threads: 1,
+                hiresFixRecipeVerified: true,
+                vaeTilingRecipeVerified: true,
+              ),
+              _ => hiresConfig,
+            },
+          );
+          expect(worker.supportsHiresFix, kind == 'tiling', reason: kind);
+          await runtime.flush();
+          runtime.clearCalls();
+          await expectLater(
+            worker.generate(
+              hiresRequest(
+                tiling: kind == 'tiling' ? const ImageVaeTiling() : null,
+              ),
+              (_, _) {},
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('hires fix'),
+              ),
+            ),
+            reason: kind,
+          );
+          await runtime.flush();
+          expect(runtime.calls('worker'), isEmpty, reason: kind);
+          await worker.dispose();
+        }
+      });
+    });
+
     test(
       'direct worker refuses image editing without recipe proof before generation',
       () async {
@@ -902,6 +1055,15 @@ void main() {
         'keeps', () {
       expect(
         ImageGenerationRequest.maxCount * (ImageGenerationRequest.maxSteps + 1),
+        lessThanOrEqualTo(StableDiffusionCalls.progressHistory),
+      );
+      // A hires pass can run one step more than asked.
+      expect(
+        ImageHiresFix.maxCount *
+            (ImageGenerationRequest.maxSteps +
+                1 +
+                ImageGenerationRequest.maxSteps +
+                2),
         lessThanOrEqualTo(StableDiffusionCalls.progressHistory),
       );
     });

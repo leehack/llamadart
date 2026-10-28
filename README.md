@@ -592,6 +592,16 @@ map (edges, depth, pose); no preprocessor runs. Qualified on SD 1.5 with
 `control_v11p_sd15_canny` on macOS CPU. See the [ControlNet recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#controlnet)
 and `example/basic_app/bin/image_controlnet.dart`.
 
+For a hires fix, use `HiresFixImageGenerationRequest` with an
+`ImageHiresFix`: the request's size is the first pass, which the runtime
+enlarges in latent space (`ImageHiresFix.scale` or `ImageHiresFix.size`, at
+most twice each side and 1024x1024) and samples again before decoding.
+Check `(await engine.capabilities).supportsHiresFix`: the bounded recipe is
+an SD 1.x or SD 2.x checkpoint with its embedded full VAE on macOS CPU or
+Metal; other recipes throw `LlamaUnsupportedException`. Qualified on SD 1.5
+and SD-Turbo. See the [hires-fix recipe](https://llamadart.leehack.com/docs/next/guides/image-generation#hires-fix)
+and `example/basic_app/bin/image_hires_fix.dart`.
+
 ## Choosing a Runtime
 
 | Model format | Typical use | Runtime |

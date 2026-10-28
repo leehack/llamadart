@@ -992,6 +992,41 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-hires-fix',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Qualify the bounded two-pass hires fix with an SD 1.x or SD 2.x '
+          'full-VAE checkpoint on macOS CPU or Metal: final size, direct-C '
+          'parity, one-pass reset, composition, second-pass cancellation and '
+          'reload; LLAMADART_HIRES_RECIPE (sd15, turbo) and '
+          'LLAMADART_HIRES_DEVICE (cpu, gpu) pick the recipe and device.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
+            '-t',
+            'local-only',
+            'test/image_hires_fix_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_HIRES_MODEL': context.modelPath!,
+            'LLAMADART_HIRES_RECIPE':
+                context.environment['LLAMADART_HIRES_RECIPE'] ?? 'sd15',
+            'LLAMADART_HIRES_DEVICE':
+                context.environment['LLAMADART_HIRES_DEVICE'] ?? 'cpu',
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-hires-fix',
+          },
+          description: 'Bounded hires-fix qualification',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'image-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -2404,6 +2439,26 @@ Future<LocalE2eResult> runLocalE2e(
           '--model-path <sd15-checkpoint> and LLAMADART_SD15_CONTROLNET are '
           'required for image-controlnet; see doc/image_controlnet.md.\n',
     );
+  }
+  if (scenario.name == 'image-hires-fix') {
+    final env = environment ?? Platform.environment;
+    if (parsed.modelPath == null ||
+        !const {
+          'sd15',
+          'turbo',
+        }.contains(env['LLAMADART_HIRES_RECIPE'] ?? 'sd15') ||
+        !const {
+          'cpu',
+          'gpu',
+        }.contains(env['LLAMADART_HIRES_DEVICE'] ?? 'cpu')) {
+      return const LocalE2eResult(
+        64,
+        stderr:
+            '--model-path <sd15-or-sd2-checkpoint> is required for '
+            'image-hires-fix; LLAMADART_HIRES_RECIPE is sd15 or turbo and '
+            'LLAMADART_HIRES_DEVICE cpu or gpu. See doc/image_hires_fix.md.\n',
+      );
+    }
   }
   if (scenario.name == 'image-container-formats' &&
       (parsed.modelPath == null ||

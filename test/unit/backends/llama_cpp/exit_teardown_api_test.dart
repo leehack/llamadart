@@ -10,6 +10,7 @@ import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:test/test.dart';
 
 import '../../../support/fake_native_barrier.dart';
@@ -45,6 +46,37 @@ final _statusException = llama_dart_status.LLAMA_DART_STATUS_EXCEPTION.value;
 
 // Runs the real llama.cpp runtime on the CPU.
 void main() {
+  test('a runtime without the reranker symbols is unsupported, naming the '
+      'pinned runtime that has them', () {
+    expect(requireRerankingSymbols(() => 3), 3);
+    expect(
+      () => requireRerankingSymbols<int>(
+        () => throw ArgumentError(
+          "Couldn't resolve native function 'llama_model_n_cls_out'",
+        ),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('pinned llama.cpp runtime ($llamaCppTag)'),
+        ),
+      ),
+    );
+    expect(
+      () => requireRerankingSymbols<int>(
+        () => throw LlamaUnsupportedException('no classifier outputs'),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          'no classifier outputs',
+        ),
+      ),
+    );
+  });
+
   late Directory dir;
   late String modelPath;
 
