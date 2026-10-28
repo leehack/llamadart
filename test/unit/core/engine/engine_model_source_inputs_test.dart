@@ -112,6 +112,28 @@ void main() {
       expect(manager.calls, isEmpty);
     });
 
+    test('LiteRT-LM rejects loadMultimodalProjectorSource before it '
+        'downloads', () async {
+      final manager = _CacheManager({hfAdapter: '/cache/mmproj.gguf'});
+      final engine = LlamaEngine(
+        _RuntimeBackend(LlamaRuntime.liteRtLm),
+        modelDownloadManager: manager,
+      );
+      await engine.loadModel('/models/model.litertlm');
+
+      await expectLater(
+        engine.loadMultimodalProjectorSource(hfAdapter),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('A LiteRT-LM model takes no multimodal projector'),
+          ),
+        ),
+      );
+      expect(manager.calls, isEmpty);
+    });
+
     test('removeLoraSource does nothing on a backend without a LoRA API when '
         'no adapter from the source is applied', () async {
       final engine = LlamaEngine(

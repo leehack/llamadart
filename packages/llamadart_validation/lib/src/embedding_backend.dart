@@ -111,8 +111,17 @@ class EmbeddingDispatchBackend
   @override
   Future<bool> supportsAudio(int mmContextHandle) =>
       _multimodal.supportsAudio(mmContextHandle);
-  BackendMultimodalSupport get _multimodal =>
-      delegate as BackendMultimodalSupport;
+  BackendMultimodalSupport get _multimodal {
+    final delegate = this.delegate;
+    if (delegate is BackendMultimodalSupport) {
+      return delegate as BackendMultimodalSupport;
+    }
+    throw LlamaUnsupportedException(
+      'Multimodal projectors are not supported by the wrapped backend: it '
+      'does not implement BackendMultimodalSupport.',
+    );
+  }
+
   @override
   Future<({int total, int free})> getVramInfo() => delegate.getVramInfo();
   @override

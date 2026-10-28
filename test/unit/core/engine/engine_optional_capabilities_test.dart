@@ -59,6 +59,16 @@ void main() {
   group('a backend without BackendMultimodalSupport', () {
     late LlamaEngine engine;
 
+    final unsupportedError = isA<LlamaUnsupportedException>().having(
+      (error) => error.message,
+      'message',
+      allOf(
+        contains('Multimodal projectors'),
+        contains('BackendMultimodalSupport'),
+      ),
+    );
+    final unsupported = throwsA(unsupportedError);
+
     setUp(() async {
       engine = LlamaEngine(_TextOnlyBackend());
       await engine.loadModel('/models/model.gguf');
@@ -82,6 +92,33 @@ void main() {
         ),
       );
       await engine.unloadMultimodalProjector();
+    });
+
+    test('rejects a projector source and a model projector before they '
+        'download', () async {
+      final downloads = _RecordingDownloads();
+      final remote = LlamaEngine(
+        _TextOnlyBackend(),
+        modelDownloadManager: downloads,
+      );
+      addTearDown(remote.dispose);
+      await remote.loadModel('/models/model.gguf');
+      final projector = ModelSource.parse('https://example.com/mmproj.gguf');
+      final model = LlamaModel(
+        ModelSource.parse('https://example.com/other.gguf'),
+        projector: projector,
+      );
+
+      await expectLater(
+        remote.loadMultimodalProjectorSource(projector),
+        unsupported,
+      );
+      await expectLater(remote.setModel(model), unsupported);
+      final check = await remote.checkLoad(model);
+      expect(check.status, LlamaLoadCheckStatus.unsupported);
+      expect(check.error, unsupportedError);
+      expect(downloads.calls, 0);
+      expect(remote.isReady, isTrue);
     });
 
     test('reports no vision or audio input', () async {

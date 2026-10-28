@@ -724,6 +724,7 @@ class LlamaEngine {
         'carries its own media encoders. Leave LlamaModel.projector unset.',
       );
     }
+    if (model.projector != null) _requireMultimodalBackend();
     if (params.device == ComputeDevice.npu && format == ModelFormat.gguf) {
       throw LlamaUnsupportedException(
         'ComputeDevice.npu is not available for llama.cpp, which runs GGUF '
@@ -1432,6 +1433,14 @@ class LlamaEngine {
     final requested = download ?? options ?? ModelLoadOptions.defaults;
     return _withMmLifecycle(() async {
       _ensureReady(requireContext: false);
+      if (runtime == LlamaRuntime.liteRtLm) {
+        throw LlamaUnsupportedException(
+          'A LiteRT-LM model takes no multimodal projector: a .litertlm '
+          'bundle carries its own media encoders, so the projector is not '
+          'downloaded.',
+        );
+      }
+      _requireMultimodalBackend();
       final epoch = _modelEpoch;
       bool abandoned() => isDisposed || _modelEpoch != epoch;
       var resolveOptions = requested;
@@ -1525,15 +1534,7 @@ class LlamaEngine {
         await _unloadMultimodalProjectorLocked();
       }
       if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
-      final candidate = backend;
-      if (candidate is! BackendMultimodalSupport) {
-        throw _missingBackendCapability(
-          'Multimodal projectors',
-          'BackendMultimodalSupport',
-        );
-      }
-
-      _mmContextHandle = await (candidate as BackendMultimodalSupport)
+      _mmContextHandle = await _requireMultimodalBackend()
           .multimodalContextCreate(_modelHandle!, mmProjPath);
       _mmProjector = LoadedMultimodalProjector._(mmProjPath);
       if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
@@ -2838,6 +2839,17 @@ class LlamaEngine {
     final candidate = backend;
     if (candidate is BackendLoraSupport) return candidate as BackendLoraSupport;
     throw _missingBackendCapability('LoRA adapters', 'BackendLoraSupport');
+  }
+
+  BackendMultimodalSupport _requireMultimodalBackend() {
+    final candidate = backend;
+    if (candidate is BackendMultimodalSupport) {
+      return candidate as BackendMultimodalSupport;
+    }
+    throw _missingBackendCapability(
+      'Multimodal projectors',
+      'BackendMultimodalSupport',
+    );
   }
 
   static LlamaUnsupportedException _missingBackendCapability(

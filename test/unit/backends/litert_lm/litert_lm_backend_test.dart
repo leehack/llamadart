@@ -238,6 +238,54 @@ void main() {
   });
 
   for (final routed in [false, true]) {
+    test(
+      'engine rejects LoRA adapters and projectors (routed: $routed)',
+      () async {
+        final worker = _FakeLiteRtLmWorker(
+          tokenizeResponse: const <int>[],
+          detokenizeResponse: '',
+        );
+        final liteRt = LiteRtLmBackend(initialSendPort: worker.sendPort);
+        final LlamaBackend backend = routed
+            ? NativeAutoBackend(liteRtLmFactory: () => liteRt)
+            : liteRt;
+        final engine = LlamaEngine(backend);
+        try {
+          await engine.loadModel(modelFile.path);
+          Matcher unsupported(String operation) => throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              routed
+                  ? '$operation are not supported by the active native runtime.'
+                  : allOf(contains(operation), contains('does not implement')),
+            ),
+          );
+
+          await expectLater(engine.clearLoras(), unsupported('LoRA adapters'));
+          await expectLater(
+            // ignore: deprecated_member_use_from_same_package
+            engine.removeLora('adapter.bin'),
+            unsupported('LoRA adapters'),
+          );
+          await engine.removeLoraSource(api.ModelSource.path('adapter.bin'));
+          await expectLater(
+            // ignore: deprecated_member_use_from_same_package
+            engine.loadMultimodalProjector('mmproj.bin'),
+            unsupported('Multimodal projectors'),
+          );
+          final capabilities = await engine.capabilities;
+          expect(capabilities.supportsVision, isFalse);
+          expect(capabilities.supportsAudio, isFalse);
+        } finally {
+          await engine.dispose();
+          worker.close();
+        }
+      },
+    );
+  }
+
+  for (final routed in [false, true]) {
     test('rejects automatic tool loops before native generation '
         '(routed: $routed)', () async {
       final worker = _FakeLiteRtLmWorker(
