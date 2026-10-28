@@ -11,6 +11,9 @@ import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 const _size = 512;
+const _barCoreTop = 440;
+const _maxBarDrift = 48;
+const _barCoreRows = 16;
 const _prompt =
     'Change the red circle to blue. Keep the gray background and the dark bar.';
 
@@ -146,10 +149,7 @@ void main() {
       bool background(int x, int y) =>
           _distance2(x, y) >= 150 * 150 && (y < 416 || y >= 480) && y >= 16;
       final keptMae = _maeIn(edited.pixels, referencePixels, background);
-      final bar = _region(
-        edited.pixels,
-        (x, y) => y >= 440 && y < 456 && x >= 96 && x < 416,
-      );
+      final bar = _darkestBand(edited.pixels);
       final referencesUsedMae = _mae(edited.pixels, ordinary.pixels);
       expect(
         sourceDisk.b - sourceDisk.r,
@@ -158,10 +158,11 @@ void main() {
       );
       expect(disk.b - disk.r, greaterThan(40), reason: 'the disk turned blue');
       expect(keptMae, lessThan(25), reason: 'the background is kept');
+      expect(bar.mean, lessThan(90), reason: 'the dark bar is kept');
       expect(
-        (bar.r + bar.g + bar.b) / 3,
-        lessThan(90),
-        reason: 'the dark bar is kept',
+        (bar.top - _barCoreTop).abs(),
+        lessThanOrEqualTo(_maxBarDrift),
+        reason: 'the dark bar stays near its fixture position',
       );
       expect(
         referencesUsedMae,
@@ -219,7 +220,8 @@ void main() {
         'family': capabilities.modelVersion,
         'diskBlueMinusRed': disk.b - disk.r,
         'backgroundKeptMae': keptMae,
-        'barMean': (bar.r + bar.g + bar.b) / 3,
+        'barMean': bar.mean,
+        'barTop': bar.top,
         'editVsPlainMae': referencesUsedMae,
         'maxRssBytes': ProcessInfo.maxRss,
         'images': records,
@@ -237,6 +239,33 @@ void main() {
         ? 'Set LLAMADART_REFERENCE_EDIT_DIFFUSION, _VAE, _CLIP_L and _T5XXL'
         : false,
   );
+}
+
+/// The darkest [_barCoreRows]-row band over the bar's columns in the lower
+/// part of the image; Kontext may shift and rescale the bar a little.
+({int top, double mean}) _darkestBand(Uint8List pixels) {
+  final rowSums = <int>[for (var y = 0; y < _size; y++) _rowSum(pixels, y)];
+  const samples = (416 - 96) * 3 * _barCoreRows;
+  var window = 0;
+  var best = (top: 0, mean: double.infinity);
+  for (var y = _size * 6 ~/ 10; y < _size; y++) {
+    window += rowSums[y];
+    final top = y - _barCoreRows + 1;
+    if (top < _size * 6 ~/ 10) continue;
+    if (top > _size * 6 ~/ 10) window -= rowSums[top - 1];
+    final mean = window / samples;
+    if (mean < best.mean) best = (top: top, mean: mean);
+  }
+  return best;
+}
+
+int _rowSum(Uint8List pixels, int y) {
+  var sum = 0;
+  for (var x = 96; x < 416; x++) {
+    final offset = (y * _size + x) * 3;
+    sum += pixels[offset] + pixels[offset + 1] + pixels[offset + 2];
+  }
+  return sum;
 }
 
 /// Squared distance from the fixture disk's centre.

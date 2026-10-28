@@ -121,11 +121,15 @@ Fixed acceptance gates, recorded before any output was observed:
 | Public Dart vs independent C, `edit` and `plain` | Exact RGB |
 | Disk core (radius ≤ 90): mean blue − mean red | > 40 (the fixture's is −170) |
 | Background (radius ≥ 150, outside rows 416–479 and the top 16 rows) vs the fixture | MAE < 25 |
-| Bar core (rows 440–455, columns 96–415) | Mean < 90 |
+| Darkest 16-row band over columns 96–415 in rows 307–511 | Mean < 90, top row within 48 of row 440 |
 | `edit` vs `plain` | MAE > 10 (the reference is used) |
 | Cancel during sampling | Cancelled completion, no images, then exact `edit` reuse |
 | Ordinary request after an edit | Exact `plain` RGB |
 | Dispose/reload | Capability cleared then restored; exact `edit` RGB |
+
+The bar is searched rather than read at a fixed window because Kontext redraws
+the fixture a few pixels shifted and enlarged (about 13 px up on the recorded
+run); an absent bar still fails.
 
 Record the backend, latency per image (`ImageGenerationResult.elapsed`), the
 direct-C peak memory footprint per mode and the Dart process's peak RSS.
