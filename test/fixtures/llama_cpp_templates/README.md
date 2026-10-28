@@ -14,7 +14,7 @@ that `test/unit/core/template/handlers/firefunction_v2_handler_test.dart`,
 `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart`,
 `test/integration/core/engine/forced_open_thought_upstream_test.dart`,
 `test/integration/core/engine/closed_thought_upstream_test.dart` and
-`test/integration/core/engine/qwen3_coder_parallel_upstream_test.dart` read live
+`test/integration/core/engine/xml_parallel_tool_calls_upstream_test.dart` read live
 here, so those tests run on a clean checkout with no network.
 
 `test/integration/core/template/llama_cpp_template_detection_integration_test.dart`

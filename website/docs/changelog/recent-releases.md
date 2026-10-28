@@ -47,6 +47,7 @@ For canonical full release notes, use:
 - Qwen3.5, QwQ and other Hermes-style templates that open a thought in the prompt keep it as llama-server does: an escaped `\n` and a repeated `<think>` stay in the reasoning, a `<tool_call>` also ends a Qwen3.5 thought, and thinking tags after the first `</think>` stay in the content. These templates and DeepSeek V3.1 also drop a partial `</think>` that ends an unfinished thought ([#750](https://github.com/leehack/llamadart/issues/750)).
 - A Cohere2 MoE thought that the prompt opens ends at a `<|START_TEXT|>` or `<|START_ACTION|>` the model writes without `<|END_THINKING|>`, as in llama-server, so its text and tool calls no longer land in the reasoning ([#1523](https://github.com/leehack/llamadart/issues/1523)).
 - Qwen3-Coder XML replies with parallel tool calls, as from Qwen3-Coder, Qwen3.5 and StepFun3.5, return one call per `<tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1530](https://github.com/leehack/llamadart/issues/1530)).
+- Seed-OSS replies with parallel tool calls return one call per `<seed:tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1540](https://github.com/leehack/llamadart/issues/1540)).
 
 ## 0.16.5
 
