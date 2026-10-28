@@ -65,6 +65,16 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `LlamaModelFormatException`. Web routes by URL extension: for a URL without
   one, pass `ModelSource.url(uri, format: ModelFormat.liteRtLm)`. The formats
   are not interchangeable.
+- To learn before any download whether a model and `ModelParams` can load
+  here, call `await engine.checkLoad(model, params: params)`. It runs the
+  checks `setModel` runs before resolving files, starts no runtime, and
+  reports `unsupported` exactly when the load would throw (with `error` and
+  `reason`), `deferred` when only the file header gives the format, `unknown`
+  for a backend that cannot tell, such as `LlamaEngine(LiteRtLmBackend())`, or
+  `supported` with the `runtime` and `device` it would use. `supported` is
+  policy, not proof the load succeeds: LoRA limits, download options
+  (`ModelLoadOptions`) and the file are checked by the load, and
+  `engine.capabilities` still describes only a loaded model.
 - Prefer GGUF / llama.cpp unless the model only ships as `.litertlm`. Only
   llama.cpp supports embeddings, grammar-constrained and structured JSON output,
   runtime LoRA, KV-cache state persistence, next-token scores and external
@@ -198,6 +208,25 @@ Future<void> main() async {
   } finally {
     await engine.dispose();
   }
+}
+```
+
+Check a model and device before downloading, then load it:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> loadIfSupported(LlamaEngine engine, LlamaModel model) async {
+  const ModelParams params = ModelParams(device: ComputeDevice.gpu);
+  final LlamaLoadCheckReport check = await engine.checkLoad(
+    model,
+    params: params,
+  );
+  if (check.status == LlamaLoadCheckStatus.unsupported) {
+    print('Cannot load here: ${check.reason}');
+    return;
+  }
+  await engine.setModel(model, params: params);
 }
 ```
 

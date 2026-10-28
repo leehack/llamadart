@@ -176,6 +176,17 @@
     },
     {
       "surfaces": [
+        "api:LlamaEngine.checkLoad",
+        "matrix:Pre-load check"
+      ],
+      "exemption": {
+        "id": "pre-load-check",
+        "reason": "LlamaEngine.checkLoad reports the pre-I/O policy that setModel enforces and starts no runtime, so no model pack can qualify it. VM tests cover every native router gap (LiteRT-LM ABIs, Linux arm64 GPU, explicit NPU, unqualified embedding ABIs, deferred formats) and a single-runtime backend such as LlamaEngine(LiteRtLmBackend()) reporting unknown; Chrome tests the Web option, NPU and embedding-engine checks; each has a property test that setModel throws the reported error before resolving a file exactly when the report is unsupported. ModelLoadOptions rejections are out of scope: checkLoad takes none.",
+        "issue": "https://github.com/leehack/llamadart/issues/861"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Deterministic session template time"
       ],
       "exemption": {

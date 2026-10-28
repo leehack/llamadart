@@ -164,6 +164,16 @@ the ABI. This applies when `ModelSource.format` or the file name says
 `.litertlm`; a model known only from its file header is rejected when it
 loads.
 
+`await engine.checkLoad(model, params: params)` returns the same verdict as a
+`LlamaLoadCheckReport` without downloading, reading a file or starting a
+runtime: `unsupported` with the exception the load would throw, `deferred`
+when only the file header can tell the format, `unknown` when the backend
+cannot tell, as with `LlamaEngine(LiteRtLmBackend())`, and otherwise
+`supported`, with the format, runtime and device the load would use. Like the
+setup report, it is policy: native libraries, browser assets, `auto` device
+selection, LoRA limits, download options and the file are checked by the load
+([backend selection](../guides/backend-selection#check-a-load-before-it-runs)).
+
 Dart-side chat-template rendering accepts Jinja `\xHH` string escapes on
 native and web. Model architecture support depends on the pinned runtime; see
 [chat templates](../guides/chat-template-and-parsing).
@@ -173,6 +183,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
+| Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings off macOS arm64, iOS arm64 and Android arm64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
 | Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.18.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
