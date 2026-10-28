@@ -6,17 +6,25 @@ import 'package:laya_tetris_example/laya/store.dart';
 import 'package:llamadart/llamadart.dart';
 
 class _FakeDownloads implements ModelDownloadManager {
-  _FakeDownloads(this.entries);
+  _FakeDownloads(this.entries, {this.inUse = const <String>{}});
 
   final List<ModelCacheEntry> entries;
+  final Set<String> inUse;
 
   @override
   Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async =>
       List.of(entries);
 
   @override
-  Future<void> remove(String cacheKey, {String? cacheDirectory}) async =>
-      entries.removeWhere((e) => e.cacheKey == cacheKey);
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {
+    if (inUse.contains(cacheKey)) {
+      throw ModelCacheEntryInUseException(
+        'in use',
+        entryDirectories: <String>['/cache/$cacheKey'],
+      );
+    }
+    entries.removeWhere((e) => e.cacheKey == cacheKey);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -136,8 +144,13 @@ void main() {
   });
 
   test(
-    'ModelStore.removeSupersededDownloads drops only stale entries',
+    'ModelStore.removeSupersededDownloads drops every stale entry not in use',
     () async {
+      final busy = ModelSource.huggingFace(
+        repoId: tunedHeadRepoId,
+        revision: '0a1b2c3d',
+        filePath: tunedHeadFile,
+      );
       final stale = ModelSource.huggingFace(
         repoId: tunedHeadRepoId,
         revision: '83794e0b',
@@ -149,10 +162,14 @@ void main() {
         layaSource(baseHeadFile),
         publishedTunedHead,
       ];
-      final downloads = _FakeDownloads([
-        _entry(stale.cacheKey),
-        for (final source in pinned) _entry(source.cacheKey),
-      ]);
+      final downloads = _FakeDownloads(
+        [
+          _entry(busy.cacheKey),
+          _entry(stale.cacheKey),
+          for (final source in pinned) _entry(source.cacheKey),
+        ],
+        inUse: {busy.cacheKey},
+      );
       final store = ModelStore(
         dir.path,
         tunedHeadUrl: '',
@@ -163,6 +180,7 @@ void main() {
       await store.removeSupersededDownloads();
 
       expect(downloads.entries.map((e) => e.cacheKey), [
+        busy.cacheKey,
         for (final source in pinned) source.cacheKey,
       ]);
       expect(userFile.existsSync(), isTrue);

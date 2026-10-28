@@ -14,9 +14,13 @@ import '../../core/models/model_target_file.dart';
 import '../../core/url_redaction.dart';
 import 'mobile_app_cache_directory.dart';
 import 'model_cache_entry_lock.dart';
+import 'windows_delete_refusal.dart';
 
 const String _metadataFileName = 'metadata.json';
 const String _lockDirectoryName = '.locks';
+// Entry directory names end in `-<12 hex digits>`, so no entry lock file can
+// take this name.
+const String _removalLockFileName = '.removal.lock';
 const int _metadataSchemaVersion = 1;
 
 /// Native file-backed package-managed model download manager.
@@ -205,6 +209,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       _explicitDefaultCacheDirectory ?? _defaultImplicitCacheDirectory();
 
   static final Map<String, Future<void>> _cacheLocks = <String, Future<void>>{};
+  static final Map<String, Future<void>> _removalLocks =
+      <String, Future<void>>{};
 
   /// Returns the default per-user shared model cache directory for desktop/CLI.
   ///
@@ -394,8 +400,17 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   Future<ModelCacheEntryLock?> _lockEntry(
     Directory cacheDir, {
     required void Function() throwIfBusy,
+  }) => _lockInCacheRoot(
+    cacheDir.parent,
+    '${path.basename(cacheDir.path)}.lock',
+    throwIfBusy: throwIfBusy,
+  );
+
+  Future<ModelCacheEntryLock?> _lockInCacheRoot(
+    Directory root,
+    String lockFileName, {
+    required void Function() throwIfBusy,
   }) async {
-    final root = cacheDir.parent;
     // Lock files live outside the entry directories, which remove(), prune()
     // and clear() delete, and are never deleted themselves: a waiter that
     // opened a lock file before it was unlinked would take a lock that no
@@ -405,7 +420,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     try {
       await lockDirectory.create(recursive: true);
       lock = await modelCacheEntryLocker(
-        path.join(lockDirectory.path, '${path.basename(cacheDir.path)}.lock'),
+        path.join(lockDirectory.path, lockFileName),
         throwIfCancelled: throwIfBusy,
       );
     } on FileSystemException {
@@ -515,10 +530,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
   }
 
-  Future<T> _withCacheLock<T>(String key, Future<T> Function() action) async {
-    final previous = _cacheLocks[key];
+  Future<T> _withCacheLock<T>(
+    String key,
+    Future<T> Function() action, {
+    Map<String, Future<void>>? locks,
+  }) async {
+    final held = locks ?? _cacheLocks;
+    final previous = held[key];
     final current = Completer<void>();
-    _cacheLocks[key] = current.future;
+    held[key] = current.future;
 
     if (previous != null) {
       await previous;
@@ -527,12 +547,32 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     try {
       return await action();
     } finally {
-      if (identical(_cacheLocks[key], current.future)) {
-        _cacheLocks.remove(key);
+      if (identical(held[key], current.future)) {
+        held.remove(key);
       }
       current.complete();
     }
   }
+
+  /// Runs [action] as the only remover of [root] in any isolate or process.
+  ///
+  /// Removers hold an entry's locks only while deleting it, so they wait for
+  /// each other: an entry lock another remover holds would otherwise read as
+  /// in use. Downloads never take this lock, so a remover holding it and
+  /// finding an entry lock busy knows a download or cache hit holds it.
+  Future<T> _withRemovalLock<T>(Directory root, Future<T> Function() action) =>
+      _withCacheLock(_cacheLockKey(root), () async {
+        final lock = await _lockInCacheRoot(
+          root,
+          _removalLockFileName,
+          throwIfBusy: () {},
+        );
+        try {
+          return await action();
+        } finally {
+          await lock?.release();
+        }
+      }, locks: _removalLocks);
 
   @override
   Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async {
@@ -597,8 +637,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   /// Removes the entries for [cacheKey] under [cacheDirectory].
   ///
   /// Throws [ModelCacheEntryInUseException], after removing the others, when
-  /// an entry is in use: another isolate or process holds its entry lock, or
-  /// on Windows a process has its model file open.
+  /// an entry is in use: another isolate or process downloads or verifies it
+  /// under its entry lock, or on Windows a process has its model file open or
+  /// mapped. Removals from the same cache root take turns, so overlapping
+  /// [remove], [prune] and [clear] calls never report each other's entries.
+  /// A file the platform refuses to delete for good, such as a read-only one,
+  /// throws its [FileSystemException].
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {
     final inUse = <String>[];
@@ -1546,10 +1590,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       await remove();
       return result;
     }
-    if (!await _tryWithEntryLocks(cacheDirectoryToRemove, remove)) {
-      return _Removal.inUse;
-    }
-    return result;
+    return _withRemovalLock(Directory(rootPath), () async {
+      if (!await _tryWithEntryLocks(cacheDirectoryToRemove, remove)) {
+        return _Removal.inUse;
+      }
+      return result;
+    });
   }
 
   /// Deletes the model files first, so an entry whose model file Windows
@@ -1559,14 +1605,25 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     try {
       await for (final entity in directory.list(followLinks: false)) {
         if (entity is File && path.basename(entity.path) != _metadataFileName) {
-          await entity.delete();
+          try {
+            await entity.delete();
+          } on FileSystemException catch (error) {
+            if (Platform.isWindows &&
+                await isWindowsDeleteRefusedForOpenFile(
+                  entity,
+                  error.osError?.errorCode,
+                )) {
+              return _Removal.inUse;
+            }
+            rethrow;
+          }
         }
       }
       await directory.delete(recursive: true);
       return _Removal.removed;
     } on FileSystemException catch (error) {
       if (Platform.isWindows &&
-          _windowsFileInUseErrors.contains(error.osError?.errorCode)) {
+          windowsFileInUseErrors.contains(error.osError?.errorCode)) {
         return _Removal.inUse;
       }
       rethrow;
@@ -1582,11 +1639,6 @@ final class _EntryBusy implements Exception {
 }
 
 final RegExp _transientDirectoryName = RegExp(r'-[0-9a-f]{12}-nocache-\d+$');
-
-/// `ERROR_ACCESS_DENIED`, which also reports deleting a mapped file,
-/// `ERROR_SHARING_VIOLATION`, `ERROR_LOCK_VIOLATION` and
-/// `ERROR_USER_MAPPED_FILE`.
-const Set<int> _windowsFileInUseErrors = <int>{5, 32, 33, 1224};
 
 class _PartMetadata {
   const _PartMetadata({this.etag, this.lastModified});

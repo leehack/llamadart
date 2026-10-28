@@ -89,8 +89,9 @@ class ModelStore {
 
   /// Removes cached downloads whose source no pinned file uses, such as the
   /// previous revision after a pin bump. Files placed directly in
-  /// [directory] are not cache entries and stay. Failures are ignored: the
-  /// leftover only costs disk space.
+  /// [directory] are not cache entries and stay. Failures, such as an entry
+  /// in use, are ignored and the rest are still removed: a leftover only
+  /// costs disk space.
   Future<void> removeSupersededDownloads() async {
     final manager = downloads;
     if (manager == null) return;
@@ -101,12 +102,17 @@ class ModelStore {
       publishedTunedHead.cacheKey,
       tunedHead().cacheKey,
     };
+    final List<ModelCacheEntry> entries;
     try {
-      for (final entry in await manager.list()) {
-        if (!pinned.contains(entry.cacheKey)) {
-          await manager.remove(entry.cacheKey);
-        }
-      }
-    } catch (_) {}
+      entries = await manager.list();
+    } catch (_) {
+      return;
+    }
+    for (final entry in entries) {
+      if (pinned.contains(entry.cacheKey)) continue;
+      try {
+        await manager.remove(entry.cacheKey);
+      } catch (_) {}
+    }
   }
 }
