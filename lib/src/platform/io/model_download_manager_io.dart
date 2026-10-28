@@ -18,9 +18,10 @@ import 'windows_delete_refusal.dart';
 
 const String _metadataFileName = 'metadata.json';
 const String _lockDirectoryName = '.locks';
-// Entry directory names end in `-<12 hex digits>`, so no entry lock file can
-// take this name.
+// Entry directory names end in `-<12 hex digits>`, so only a stray
+// `_strayRemovalDirectoryName` directory has an entry lock file by this name.
 const String _removalLockFileName = '.removal.lock';
+const String _strayRemovalDirectoryName = '.removal';
 const int _metadataSchemaVersion = 1;
 
 /// Native file-backed package-managed model download manager.
@@ -640,9 +641,14 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   /// an entry is in use: another isolate or process downloads or verifies it
   /// under its entry lock, or on Windows a process has its model file open or
   /// mapped. Removals from the same cache root take turns, so overlapping
-  /// [remove], [prune] and [clear] calls never report each other's entries.
-  /// A file the platform refuses to delete for good, such as a read-only one,
-  /// throws its [FileSystemException].
+  /// [remove], [prune] and [clear] calls do not report each other's entries,
+  /// except across processes on a file system without file locks.
+  ///
+  /// A file the platform refuses to delete for good throws its
+  /// [FileSystemException] and stops the call. On Windows that includes a
+  /// read-only model file, which is not unlinked as it is on other platforms:
+  /// clear its read-only attribute first. A [prune] that throws keeps the
+  /// entries it already removed, but does not return them.
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {
     final inUse = <String>[];
@@ -1585,8 +1591,11 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
 
     // noCache downloads take no entry lock, and a lock file per transient
-    // directory would never be deleted.
-    if (_transientDirectoryName.hasMatch(path.basename(directoryPath))) {
+    // directory would never be deleted. A stray `.removal` directory is no
+    // entry, and its entry lock would be the removal lock.
+    final name = path.basename(directoryPath);
+    if (_transientDirectoryName.hasMatch(name) ||
+        name == _strayRemovalDirectoryName) {
       await remove();
       return result;
     }
