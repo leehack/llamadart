@@ -380,7 +380,6 @@ class ChatCompletionStreamParser {
           isPartial: true,
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
-          thinkingForcedClosed: thinkingForcedClosed,
           parser: templateResult.parser,
           tools: tools,
         );

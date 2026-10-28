@@ -656,10 +656,7 @@ class ChatTemplateEngine {
     final resolved = _resolveHandlerForParse(formatIndex: formatIndex);
     final handler = resolved.handler;
     final format = resolved.format;
-    final thoughtTagsAreText =
-        thinkingForcedClosed &&
-        !thinkingForcedOpen &&
-        chatFormatRegistration(format).traits.closedThoughtKeepsTagsAsContent;
+    final thoughtTagsAreText = thinkingForcedClosed && !thinkingForcedOpen;
 
     final pegFormat = pegParseFormat(format, parser);
     final ChatParseResult result;

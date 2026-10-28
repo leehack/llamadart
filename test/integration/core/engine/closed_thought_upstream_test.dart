@@ -11,6 +11,8 @@ import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_format_registry.dart';
+import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
 
@@ -106,7 +108,13 @@ void main() {
           );
           expect(textParse.reasoningContent, isNull);
 
-          for (final withTools in [true, false]) {
+          // A thinking kwarg can turn thinking on for a prompt that closes
+          // the thought; the reply still has none.
+          for (final (withTools, enableThinking) in const [
+            (true, false),
+            (false, false),
+            (true, true),
+          ]) {
             for (final tokens in [
               [output],
               output.split(''),
@@ -115,13 +123,15 @@ void main() {
                 tokenStream: Stream.fromIterable(tokens),
                 templateResult: rendered,
                 parseToolCallsEnabled: withTools,
-                enableThinking: false,
+                enableThinking: enableThinking,
                 modelName: 'test-model',
                 completionId: 'closed-thought-upstream',
                 tools: withTools ? [_weatherTool] : null,
               ).toList();
               final deltas = chunks.map((chunk) => chunk.choices.single.delta);
-              final reason = '${tokens.length} tokens, tools: $withTools';
+              final reason =
+                  '${tokens.length} tokens, tools: $withTools, '
+                  'enableThinking: $enableThinking';
               expect(
                 deltas.map((delta) => delta.content ?? '').join(),
                 withTools ? parsed.content : textParse.content,
@@ -151,15 +161,37 @@ void main() {
     });
   }
 
-  test('other formats and a forced-open thought keep the reasoning', () {
-    expect(
-      ChatTemplateEngine.parse(
-        ChatFormat.deepseekR1.index,
-        '<think>Plan</think>Sunny.',
+  // The stream keeps thinking tags as content for exactly these formats.
+  test('only formats with the trait parse no thought after a closed one', () {
+    for (final registration in chatFormatRegistrations) {
+      final index = registration.format.index;
+      final tags = ChatTemplateEngine.thinkingTagsFor(index);
+      final output = '${tags.startTag}Plan${tags.endTag}Sunny.';
+      final keepsTags = registration.traits.closedThoughtKeepsTagsAsContent;
+      final ChatParseResult open;
+      try {
+        open = ChatTemplateEngine.parse(index, output, parseToolCalls: false);
+      } on StateError {
+        // PEG formats parse only with the parser their render returns.
+        expect(keepsTags, isFalse, reason: registration.format.name);
+        continue;
+      }
+      final closed = ChatTemplateEngine.parse(
+        index,
+        output,
+        parseToolCalls: false,
         thinkingForcedClosed: true,
-      ).reasoningContent,
-      'Plan',
-    );
+      );
+      expect(open.reasoningContent, keepsTags ? 'Plan' : anything);
+      expect(
+        closed.reasoningContent,
+        keepsTags ? isNull : open.reasoningContent,
+        reason: registration.format.name,
+      );
+    }
+  });
+
+  test('a forced-open thought keeps the reasoning', () {
     expect(
       ChatTemplateEngine.parse(
         ChatFormat.hermes.index,
