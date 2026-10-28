@@ -243,6 +243,127 @@ void main() {
       },
     );
 
+    test('every template gets the resolved enable_thinking', () {
+      const template =
+          '{{ enable_thinking | tojson }}{{ thinking | default("-") }}';
+      String render(bool enableThinking, [Map<String, dynamic>? kwargs]) =>
+          ChatTemplateEngine.render(
+            templateSource: template,
+            messages: messages,
+            metadata: const {},
+            enableThinking: enableThinking,
+            chatTemplateKwargs: kwargs,
+          ).prompt;
+
+      expect(render(true), 'true-');
+      expect(render(false), 'false-');
+      expect(render(true, {'enable_thinking': false}), 'false-');
+      expect(render(true, {'thinking': false}), 'falseFalse');
+      expect(render(false, {'enable_thinking': 'yes'}), 'false-');
+    });
+
+    group('a thought the template opens', () {
+      const template =
+          '{%- for message in messages -%}'
+          '{%- for part in message.content -%}{{ part.text }}{%- endfor -%}'
+          '{%- endfor -%}'
+          '<think>';
+      const schema = {
+        'type': 'json_schema',
+        'json_schema': {
+          'schema': {
+            'type': 'object',
+            'properties': {
+              'answer': {'type': 'integer'},
+            },
+            'required': ['answer'],
+          },
+        },
+      };
+      final tool = ToolDefinition(
+        name: 'get_weather',
+        description: 'Weather',
+        parameters: [ToolParam.string('location', required: true)],
+      );
+      List<LlamaChatMessage> request({required bool media}) => [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            if (media) const LlamaImageContent(path: '/tmp/photo.png'),
+            const LlamaTextContent('look'),
+          ],
+        ),
+      ];
+
+      for (final media in [false, true]) {
+        final kind = media ? 'media' : 'text';
+        for (final enableThinking in [true, false]) {
+          test('stays open and forced open in a $kind request with '
+              'enableThinking: $enableThinking', () {
+            final result = ChatTemplateEngine.render(
+              templateSource: template,
+              messages: request(media: media),
+              metadata: const {},
+              enableThinking: enableThinking,
+            );
+            expect(result.prompt, '${media ? '<__media__>' : ''}look<think>');
+            expect(result.thinkingForcedOpen, isTrue);
+          });
+        }
+
+        test('finishes before the response format in a $kind request', () {
+          final result = ChatTemplateEngine.render(
+            templateSource: template,
+            messages: request(media: media),
+            metadata: const {},
+            responseFormat: schema,
+          );
+          expect(result.thinkingForcedOpen, isTrue);
+          expect(result.grammarLazy, isFalse);
+          expect(
+            result.grammar,
+            startsWith('root ::= think-body "</think>" think-space ('),
+          );
+
+          final parsed = ChatTemplateEngine.parse(
+            result.format,
+            'plan</think>{"answer": 4}',
+            thinkingForcedOpen: result.thinkingForcedOpen,
+          );
+          expect(parsed.reasoningContent, 'plan');
+          expect(parsed.content, '{"answer": 4}');
+        });
+
+        test('finishes before a generic tool call in a $kind request', () {
+          final result = ChatTemplateEngine.render(
+            templateSource: template,
+            messages: request(media: media),
+            metadata: const {},
+            tools: [tool],
+          );
+          expect(result.format, ChatFormat.generic.index);
+          expect(result.thinkingForcedOpen, isTrue);
+          expect(result.grammarLazy, isFalse);
+          expect(
+            result.grammar,
+            startsWith('root ::= think-body "</think>" think-space ('),
+          );
+
+          final parsed = ChatTemplateEngine.parse(
+            result.format,
+            'plan</think>{"tool_call": {"name": "get_weather", '
+            '"arguments": {"location": "Paris"}}}',
+            thinkingForcedOpen: result.thinkingForcedOpen,
+            tools: [tool],
+          );
+          expect(parsed.reasoningContent, 'plan');
+          expect(parsed.toolCalls.map((call) => call.function?.name), [
+            'get_weather',
+          ]);
+        });
+      }
+    });
+
     test('multimodal thinking uses handler-specific reasoning tags', () {
       const template = '''
 {%- macro render_content(content) -%}

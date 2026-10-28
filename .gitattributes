@@ -6,6 +6,10 @@ packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json -text
 test/fixtures/flint/Flint.jinja -text
 test/fixtures/flint/render_upstream.json -text
 
+# llama-server parity fixtures hash these templates' exact bytes.
+test/fixtures/llama_cpp_templates/*.jinja -text
+test/fixtures/media_templates/*.jinja -text
+
 # Keep both sides' `## Unreleased` bullets in local merges and rebases. Union
 # keeps both sides of any conflicting edit too, so resolve release-prep edits
 # by hand (see website/docs/maintainers/release-workflow.md).
