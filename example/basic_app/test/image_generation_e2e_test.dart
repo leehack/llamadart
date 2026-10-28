@@ -864,17 +864,28 @@ void main() {
     expect(ample.pixels, base.pixels);
     expect(unfitted.pixels, base.pixels);
 
-    // The decode needs 1.6 GiB at 512x512, above the budget, so the runtime
-    // decodes in tiles, which shows at the seams.
-    expect(
-      budget.log.where((line) => line.contains('retrying with spatial tiling')),
-      isNotEmpty,
+    // The untiled decode buffer the default placement logs decides whether
+    // the 1 GiB budget makes the runtime decode in tiles, which shows at the
+    // seams: 1664 MB on an M4 Max with Metal, 704 MB on a T4 with Vulkan.
+    final decodeMiB = [
+      for (final line in base.log)
+        if (RegExp(r'vae compute buffer size: ([\d.]+) MB').firstMatch(line)
+            case final match?)
+          double.parse(match.group(1)!),
+    ].last;
+    final tiled = budget.log.any(
+      (line) => line.contains('retrying with spatial tiling'),
     );
-    // Measured on an M4 Max: max 40, mean 0.23 (text encoder); max 1, mean
-    // 0.03 (VAE); max 85, mean 2.5 (budget).
+    expect(tiled, decodeMiB > 1024, reason: 'decode buffer $decodeMiB MB');
+    if (!tiled) {
+      expect(budget.pixels, base.pixels);
+    }
+    // Measured: text encoder max 40, mean 0.23 (M4 Max, Metal) and max 47,
+    // mean 0.59 (T4, Vulkan); VAE max 1, mean 0.03 (Metal) and max 4, mean
+    // 0.11 (Vulkan); tiled budget max 85, mean 2.5 (Metal).
     for (final (name, placed, maxDelta, meanDelta) in [
       ('textEncoderOnCpu', textEncoder, 255, 1.0),
-      ('vaeOnCpu', vae, 2, 0.1),
+      ('vaeOnCpu', vae, 6, 0.2),
       ('maxGpuMemoryGiB: 1', budget, 255, 5.0),
     ]) {
       final delta = difference(base.pixels, placed.pixels);
