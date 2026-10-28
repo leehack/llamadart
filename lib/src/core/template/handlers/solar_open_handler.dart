@@ -75,9 +75,11 @@ class SolarOpenHandler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}$thinkingEndTag';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -96,7 +98,7 @@ class SolarOpenHandler extends ChatTemplateHandler {
       toolCallsRequired: toolChoiceRequired,
       parallelToolCalls: parallelToolCalls,
     );
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: buildGrammar(tools),
@@ -112,6 +114,7 @@ class SolarOpenHandler extends ChatTemplateHandler {
           : const [],
       parser: parser,
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   String _buildParser(

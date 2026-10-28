@@ -56,16 +56,18 @@ class MiniCpm5Handler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '$prompt</think>\n\n';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -84,6 +86,7 @@ class MiniCpm5Handler extends ChatTemplateHandler {
           ? [const GrammarTrigger(type: 0, value: '<function name="')]
           : const [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override

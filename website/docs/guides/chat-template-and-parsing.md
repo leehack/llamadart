@@ -117,6 +117,12 @@ thought in the prompt, and the reply is parsed as content, as in llama-server:
 a `<think>` block the model still writes stays in `chunk.text` and the
 message content.
 
+Templates such as StepFun3.5-Flash, DeepSeek R1 distills, MiniMax M2 and
+Nemotron Nano v2 open the thought even with thinking off. llamadart closes it
+in the prompt, but a thought the model still writes before `</think>` is
+reasoning, as in llama-server. So that it never streams as `chunk.text`, the
+reply's text is held until `</think>` or `<think>` arrives, or the reply ends.
+
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.
 

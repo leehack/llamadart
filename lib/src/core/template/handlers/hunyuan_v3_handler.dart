@@ -110,17 +110,19 @@ class HunyuanV3Handler extends ChatTemplateHandler
       defaults: {'reasoning_effort': enableThinking ? 'high' : 'no_think'},
     );
 
+    var thoughtClosed = false;
     var thinkingForcedOpen = isThinkingForcedOpen(
       prompt,
       startTag: thinkingStartTag,
     );
     if (thinkingForcedOpen && !enableThinking) {
       prompt = '${prompt.trimRight()}$thinkingEndTag';
+      thoughtClosed = true;
       thinkingForcedOpen = false;
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -136,6 +138,7 @@ class HunyuanV3Handler extends ChatTemplateHandler
           : const [],
       thinkingForcedOpen: thinkingForcedOpen,
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override

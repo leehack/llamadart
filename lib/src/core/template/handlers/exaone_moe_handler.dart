@@ -57,9 +57,11 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
@@ -70,7 +72,7 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
     final parallelToolCalls =
         metadata[internalParallelToolCallsMetadataKey] == 'true';
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -88,6 +90,7 @@ class ExaoneMoeHandler extends ChatTemplateHandler {
           ? [const GrammarTrigger(type: 0, value: '<tool_call>')]
           : [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override

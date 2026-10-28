@@ -143,7 +143,14 @@ sequenceDiagram
   parse thoughts; with thinking off, the stream drops that reasoning.
   StepFun3.5-Flash leaves it open even with thinking off: llamadart closes
   it in the prompt, but still parses a leading thought, as llama.cpp does
-  with the open one.
+  with the open one. The handler marks such a result (internal
+  `thoughtClosedForThinkingOffOf`), as do handlers that close an open
+  thought for other formats whose parse ends a leading thought at its end
+  tag, such as DeepSeek R1 distills, MiniMax M2 and Nemotron Nano v2, so the
+  stream holds the reply until a thinking tag or the end of the output
+  shows whether it begins with a thought. Command R7B, Cohere2 MoE and
+  Seed-OSS do not mark it yet
+  ([#1553](https://github.com/leehack/llamadart/issues/1553)).
 
 ## Tool-call parsing
 

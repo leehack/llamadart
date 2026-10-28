@@ -198,8 +198,16 @@ class ChatCompletionStreamParser {
     final endTag = thinkingTags.endTag;
     var isThinking = templateResult.thinkingForcedOpen;
     var pendingBuffer = '';
+    // The parse ends the thought a handler closed for thinking off at the
+    // first end tag, as llama.cpp ends the thought it keeps open, so text
+    // before a thinking tag may be reasoning.
+    final tokens =
+        thoughtClosedForThinkingOffOf(templateResult) &&
+            !templateResult.thinkingForcedOpen
+        ? _heldUntilThinkingTag(tokenStream, startTag, endTag)
+        : tokenStream;
 
-    await for (final token in tokenStream) {
+    await for (final token in tokens) {
       buffer.write(token);
 
       // GPT-OSS reasoning uses assistant channel frames, and the other formats
@@ -643,6 +651,30 @@ class ChatCompletionStreamParser {
   }
 
   static int _noOpening(String text, int from) => text.length;
+
+  /// [tokens] with their text held until it contains [startTag] or [endTag],
+  /// or [tokens] ends.
+  static Stream<String> _heldUntilThinkingTag(
+    Stream<String> tokens,
+    String startTag,
+    String endTag,
+  ) async* {
+    String? held = '';
+    await for (final token in tokens) {
+      if (held == null) {
+        yield token;
+        continue;
+      }
+      final scanFrom = held.length - endTag.length - startTag.length;
+      held += token;
+      final from = scanFrom < 0 ? 0 : scanFrom;
+      if (held.contains(startTag, from) || held.contains(endTag, from)) {
+        yield held;
+        held = null;
+      }
+    }
+    if (held != null && held.isNotEmpty) yield held;
+  }
 
   /// [text] without a trailing proper prefix of any of [tags].
   static int? _firstNonWhitespaceIndex(String value) {
