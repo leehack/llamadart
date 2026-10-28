@@ -48,6 +48,7 @@ For canonical full release notes, use:
 - A Cohere2 MoE thought that the prompt opens ends at a `<|START_TEXT|>` or `<|START_ACTION|>` the model writes without `<|END_THINKING|>`, as in llama-server, so its text and tool calls no longer land in the reasoning ([#1523](https://github.com/leehack/llamadart/issues/1523)).
 - Qwen3-Coder XML replies with parallel tool calls, as from Qwen3-Coder, Qwen3.5 and StepFun3.5, return one call per `<tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1530](https://github.com/leehack/llamadart/issues/1530)).
 - Seed-OSS replies with parallel tool calls return one call per `<seed:tool_call>` block instead of none, and the tool-call grammar admits those blocks, or only one call when parallel tool calls are off, as llama.cpp does ([#1540](https://github.com/leehack/llamadart/issues/1540)).
+- Keep an image model's text encoders or VAE on the CPU, cap the GPU memory stable-diffusion.cpp uses, or turn off its automatic fit with `ImageGenerationEngine.load(placement: ImageModelPlacement(...))` on Metal and Vulkan, validated with SD-Turbo on Metal (Vulkan has no hardware evidence yet); a placement on a CPU engine, Android, the CPU builds or the Web, and a GPU budget with the fit off, throw `LlamaUnsupportedException` ([#806](https://github.com/leehack/llamadart/issues/806)).
 
 ## 0.16.5
 

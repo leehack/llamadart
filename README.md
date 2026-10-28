@@ -552,6 +552,12 @@ turn off prompt-conditioning reuse, or a positive entry limit. Unset keeps
 the runtime default of four entries. This does not enable approximate
 sampling caches; see the guide's [conditioning cache](https://llamadart.leehack.com/docs/next/guides/image-generation#conditioning-cache).
 
+On a GPU, `ImageGenerationEngine.load(placement: ImageModelPlacement(...))`
+keeps the text encoders or the VAE on the CPU, caps the GPU memory the runtime
+uses (`maxGpuMemoryGiB`) or turns off its automatic fit; a placement on a CPU
+engine or the Web throws `LlamaUnsupportedException`. See the guide's
+[module placement](https://llamadart.leehack.com/docs/next/guides/image-generation#module-placement-and-gpu-memory).
+
 For repeatable textures, `SeamlessImageGenerationRequest(circularX: true,
 circularY: true, ...)` enables independent axes. The initial qualified recipe
 is SDXS with its embedded tiny decoder at 512×512 on CPU or Metal, with

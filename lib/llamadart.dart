@@ -67,6 +67,7 @@ export 'src/core/image/image_generation_engine.dart'
 export 'src/core/image/image_generation_events.dart';
 export 'src/core/image/image_generation_model.dart';
 export 'src/core/image/image_model_params.dart';
+export 'src/core/image/image_model_placement.dart';
 export 'src/core/image/image_editing_request.dart'
     show ImageEditingPixels, ImageEditingRequest;
 export 'src/core/image/image_control_net_request.dart'

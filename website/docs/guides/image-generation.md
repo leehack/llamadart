@@ -756,6 +756,48 @@ for this option; SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image were not run.
 Web image generation remains unavailable. Approximation-cache modes remain
 separate work in [#1233](https://github.com/leehack/llamadart/issues/1233).
 
+## Module placement and GPU memory
+
+`ImageModelPlacement`, the `placement:` of `ImageGenerationEngine.load`, sets
+where the modules of a model compute and how stable-diffusion.cpp fits their
+weights into GPU memory. It applies only to an engine on a GPU (Metal, or
+Vulkan on Linux and Windows); any setting but the default throws
+`LlamaUnsupportedException` before any file is resolved when the engine runs
+on the CPU (`ComputeDevice.cpu`, Android, the CPU builds, or a runtime that
+reports no GPU), and the Web has no image runtime.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  model,
+  placement: const ImageModelPlacement(
+    textEncoderOnCpu: true, // T5-XXL, CLIP or the Qwen3 encoder in RAM
+    maxGpuMemoryGiB: 10,
+  ),
+);
+```
+
+| Setting | Effect | Measured with SD-Turbo Q8_0, 512x512, one step, M4 Max Metal |
+| --- | --- | --- |
+| `textEncoderOnCpu` | Text encoders compute on the CPU, weights in system memory | 359 MB of weights left the GPU; pixels changed by at most 40, mean 0.23 of 255 |
+| `vaeOnCpu` | VAE or tiny autoencoder computes on the CPU, weights and decode memory in system memory | 160 MB of weights and the 1.6 GiB decode buffer left the GPU; image 8.9 s instead of 2.1 to 2.6 s; pixels at most 1 of 255 apart |
+| `maxGpuMemoryGiB` | Per-GPU budget for weights and compute buffers, in whole GiB; weights beyond it stay in system memory, on another GPU or on disk and stream in | 1 GiB: all 1.9 GB of weights in system memory, and the decode, above the budget, retried in tiles (at most 85, mean 2.5 of 255 apart); 8 GiB: identical pixels |
+| `autoFit: false` | No automatic fit: weights are allocated on the device their module computes on, and `ComputeDevice.auto` uses the first GPU; a load the device cannot allocate fails with `LlamaModelException` instead of spilling | Identical pixels |
+
+`maxGpuMemoryGiB` must be 1 to `ImageModelPlacement.largestGpuMemoryGiB`;
+other values throw `LlamaImageGenerationException`. It takes whole GiB
+because the runtime reads a fraction in the process's locale. Together with
+`autoFit: false` it throws `LlamaUnsupportedException`: the pinned runtime
+then keeps every weight on the GPU and aborts the process in `new_sd_ctx`
+when the budget is below them (SD-Turbo with 1 GiB).
+
+The `image-generation-smoke` check reads where the runtime put each module's
+weights (`total params memory size` in its debug log) and compares pixels
+with the default placement. A module moved to the CPU leaves the Metal-only
+FLUX.1 Kontext recipe unqualified (`supportsReferenceImageEditing` is
+`false`). The [memory check](#memory-check) counts every weight against the
+device whatever the placement. Vulkan, two-GPU hosts and the larger models
+the setting is for (FLUX, SD 3.5, Z-Image) have not been measured yet.
+
 ## Seamless textures
 
 `SeamlessImageGenerationRequest` opts into circular padding independently on

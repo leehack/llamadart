@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_worker.dart';
@@ -732,6 +733,157 @@ void main() {
           await engine.dispose();
         }
       }
+    }
+  });
+
+  test('module placement moves SD-Turbo\'s weights where the runtime logs '
+      'them, and pixels change only when a module leaves the GPU', () async {
+    // A skip: argument would not apply: the scenario passes --run-skipped.
+    if (sdTurboPath == null) {
+      markTestSkipped('Set LLAMADART_SD_TURBO_MODEL');
+      return;
+    }
+    final records = <LlamaLogRecord>[];
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.debug,
+      handler: records.add,
+    );
+    addTearDown(LlamaLogging.configure);
+
+    Future<({String backend, Uint8List pixels, List<String> log})> run(
+      ImageModelPlacement placement,
+    ) async {
+      final start = records.length;
+      final engine = await ImageGenerationEngine.load(
+        ImageGenerationModel(ModelSource.path(sdTurboPath)),
+        placement: placement,
+      );
+      try {
+        final result = await engine.generateImage(
+          const ImageGenerationRequest(
+            prompt: 'a lighthouse at dusk',
+            width: 512,
+            height: 512,
+            steps: 1,
+            guidanceScale: 1,
+            seed: 42,
+          ),
+        );
+        return (
+          backend: (await engine.capabilities).backendName!,
+          pixels: result.images.single.pixels,
+          log: [for (final record in records.skip(start)) record.message],
+        );
+      } finally {
+        await engine.dispose();
+      }
+    }
+
+    // `total params memory size = ...: text_encoders 358.79MB(VRAM),
+    // diffusion_model 1411.02MB(VRAM), vae 159.68MB(VRAM), ...`
+    Map<String, String> paramsMemory(List<String> log) {
+      final line = log.lastWhere(
+        (line) => line.contains('total params memory size'),
+      );
+      return {
+        for (final match in RegExp(
+          r'(text_encoders|diffusion_model|vae) [\d.]+MB\((VRAM|RAM)\)',
+        ).allMatches(line))
+          match.group(1)!: match.group(2)!,
+      };
+    }
+
+    String? computesOn(List<String> log, String runner) => [
+      for (final line in log)
+        ?RegExp(
+          '$runner compute buffer size: .* on (\\S+)',
+        ).firstMatch(line)?.group(1),
+    ].lastOrNull;
+
+    ({int max, double mean}) difference(Uint8List a, Uint8List b) {
+      var largest = 0;
+      var sum = 0;
+      for (var i = 0; i < a.length; i++) {
+        final delta = (a[i] - b[i]).abs();
+        sum += delta;
+        largest = max(largest, delta);
+      }
+      return (max: largest, mean: sum / a.length);
+    }
+
+    final base = await run(const ImageModelPlacement());
+    if (!base.backend.startsWith('MTL') && !base.backend.startsWith('Vulkan')) {
+      markTestSkipped('Placement needs a GPU engine; got ${base.backend}');
+      return;
+    }
+    final gpu = base.backend;
+    expect(paramsMemory(base.log), {
+      'text_encoders': 'VRAM',
+      'diffusion_model': 'VRAM',
+      'vae': 'VRAM',
+    });
+    expect(computesOn(base.log, 'clip'), gpu);
+    expect(computesOn(base.log, 'vae'), gpu);
+
+    final textEncoder = await run(
+      const ImageModelPlacement(textEncoderOnCpu: true),
+    );
+    expect(paramsMemory(textEncoder.log), {
+      'text_encoders': 'RAM',
+      'diffusion_model': 'VRAM',
+      'vae': 'VRAM',
+    });
+    expect(computesOn(textEncoder.log, 'clip'), 'CPU');
+    expect(computesOn(textEncoder.log, 'unet'), gpu);
+
+    final vae = await run(const ImageModelPlacement(vaeOnCpu: true));
+    expect(paramsMemory(vae.log), {
+      'text_encoders': 'VRAM',
+      'diffusion_model': 'VRAM',
+      'vae': 'RAM',
+    });
+    expect(computesOn(vae.log, 'vae'), 'CPU');
+    expect(computesOn(vae.log, 'unet'), gpu);
+
+    // 1 GiB is below SD-Turbo's 1.9 GB of weights: the fit keeps them in
+    // system memory and streams them to the GPU.
+    final budget = await run(const ImageModelPlacement(maxGpuMemoryGiB: 1));
+    expect(paramsMemory(budget.log), {
+      'text_encoders': 'RAM',
+      'diffusion_model': 'RAM',
+      'vae': 'RAM',
+    });
+    expect(computesOn(budget.log, 'unet'), gpu);
+
+    final ample = await run(const ImageModelPlacement(maxGpuMemoryGiB: 8));
+    final unfitted = await run(const ImageModelPlacement(autoFit: false));
+    expect(base.log.where((line) => line.contains('auto-fit:')), isNotEmpty);
+    expect(unfitted.log.where((line) => line.contains('auto-fit')), isEmpty);
+    expect(paramsMemory(ample.log), paramsMemory(base.log));
+    expect(paramsMemory(unfitted.log), paramsMemory(base.log));
+    expect(ample.pixels, base.pixels);
+    expect(unfitted.pixels, base.pixels);
+
+    // The decode needs 1.6 GiB at 512x512, above the budget, so the runtime
+    // decodes in tiles, which shows at the seams.
+    expect(
+      budget.log.where((line) => line.contains('retrying with spatial tiling')),
+      isNotEmpty,
+    );
+    // Measured on an M4 Max: max 40, mean 0.23 (text encoder); max 1, mean
+    // 0.03 (VAE); max 85, mean 2.5 (budget).
+    for (final (name, placed, maxDelta, meanDelta) in [
+      ('textEncoderOnCpu', textEncoder, 255, 1.0),
+      ('vaeOnCpu', vae, 2, 0.1),
+      ('maxGpuMemoryGiB: 1', budget, 255, 5.0),
+    ]) {
+      final delta = difference(base.pixels, placed.pixels);
+      print(
+        '$name on $gpu: max ${delta.max}, mean '
+        '${delta.mean.toStringAsFixed(3)} of 255 from the default placement',
+      );
+      expect(delta.max, lessThanOrEqualTo(maxDelta), reason: name);
+      expect(delta.mean, lessThan(meanDelta), reason: name);
     }
   });
 

@@ -45,18 +45,17 @@ description: >-
 - Flutter iOS and macOS apps should add the
   `llamadart_stable_diffusion_flutter` companion package. It links the
   runtime's XCFramework through Swift Package Manager and selects the runtime
-  on iOS and macOS without the entry above. Without it, `all` leaves the
-  image runtime out of a Flutter iOS/macOS app and `checkRuntime()` reports
-  it as not bundled; a list naming `stable_diffusion` bundles it through the
-  hook, and App Store Connect rejects that iOS framework's
-  `MinimumOSVersion`. `flutter build ios` output shows neither build warning;
-  Xcode and `xcodebuild` show both. Use companion `0.16.0` with core `0.16.x`,
-  or `0.15.2` with core `>=0.15.2 <0.16.0`; locked `0.15.0`/`0.15.1`
-  companions work with core `0.15.2` with an upgrade warning.
-  Pair `0.14.0` with core `0.14.x`, and `0.13.0` with core
-  `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and
-  `0.0.2` with core `0.11.1` and `0.11.0`. Adding it opts the app into the
-  runtime (about 37 MB per Apple target).
+  on iOS and macOS without the entry above. Without it, `all` leaves the image
+  runtime out of a Flutter iOS/macOS app and `checkRuntime()` reports it as not
+  bundled; a list naming `stable_diffusion` bundles it through the hook, and
+  App Store Connect rejects that iOS framework's `MinimumOSVersion`.
+  `flutter build ios` output shows neither build warning; Xcode and
+  `xcodebuild` show both. Use companion `0.16.0` with core `0.16.x`, or
+  `0.15.2` with core `>=0.15.2 <0.16.0`; locked `0.15.0`/`0.15.1` companions
+  work with core `0.15.2` with an upgrade warning. Pair `0.14.0` with core
+  `0.14.x`, and `0.13.0` with core `0.13.x`, `0.0.3` with core `0.12.2`,
+  `0.12.1` and `0.12.0`, and `0.0.2` with core `0.11.1` and `0.11.0`. Adding it
+  opts the app into the runtime (about 37 MB per Apple target).
 The core accepts only an Apple SD companion pinning its own runtime
 (`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
 `v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
@@ -244,13 +243,12 @@ core and `llamadart_stable_diffusion_flutter` together.
   RAIL++-M for SDXS and SDXL-Lightning, Apache 2.0 for FLUX.1-schnell and
   Z-Image-Turbo). Tell users to check the model card's license before
   shipping a model; the guide's Model licenses table links each one.
-- `ImageGenerationRequest` carries every generation setting: size, steps
-  and guidance fall back to 512x512, 20 and 7 (undistilled SD 1.x/2.x), so
-  always set the model's own. It also takes `sampler`
-  (`ImageGenerationSampler`), `scheduler` (`ImageGenerationScheduler`) and
-  `flowShift` (flow-matching models only, greater than 0, at most 100);
-  `null` keeps the runtime's default for the model. SDXL-Lightning wants
-  `euler` with `sgmUniform`.
+- `ImageGenerationRequest` carries every generation setting: size, steps and
+  guidance fall back to 512x512, 20 and 7 (undistilled SD 1.x/2.x), so always
+  set the model's own. It also takes `sampler` (`ImageGenerationSampler`),
+  `scheduler` (`ImageGenerationScheduler`) and `flowShift` (flow-matching
+  models only, greater than 0, at most 100); `null` keeps the runtime's default
+  for the model. SDXL-Lightning wants `euler` with `sgmUniform`.
 - `TiledImageGenerationRequest(vaeTiling: ImageVaeTiling(), prompt: ...)` decodes in overlapping tiles (output
   pixels, multiples of 64 from 64 to 2048, default 256; `overlap` 0 to 0.5,
   default 0.5) to cut the decoder's peak memory for large images or full
@@ -261,22 +259,21 @@ core and `llamadart_stable_diffusion_flutter` together.
   Unknown proof, other families/backends, external full VAE/component overrides
   and tiling combined with either circular axis throw `LlamaUnsupportedException`.
 - `load` checks every file exists and, unless
-  `ImageModelParams(checkMemory: false)`, refuses a model whose estimate
-  (file sizes plus a quarter plus 512 MiB, for the model's native size)
-  exceeds the device figure with `LlamaModelException`: on Android the larger
-  of `MemAvailable` and half of `MemTotal` less the app's own memory,
+  `ImageModelParams(checkMemory: false)`, refuses a model whose estimate (file
+  sizes plus a quarter plus 512 MiB, for the model's native size) exceeds the
+  device figure with `LlamaModelException`: on Android the larger of
+  `MemAvailable` and half of `MemTotal` less the app's own memory,
   `MemAvailable` on Linux CPU, the app's limit on iOS, physical memory on
-  macOS, capped on Metal by the GPU's recommended working set. On a Vulkan
-  GPU a model larger than the memory of the GPU that computes (with several
+  macOS, capped on Metal by the GPU's recommended working set. On a Vulkan GPU
+  a model larger than the memory of the GPU that computes (with several
   discrete GPUs, the one with the most free memory for `ComputeDevice.auto`)
   still loads, slower, with one `LlamaLogger` warning (the runtime keeps the
-  rest in system memory); on Linux it is refused only above the memory of
-  every discrete GPU plus `MemAvailable`, and on Windows never. An
-  integrated GPU on Linux gets `MemAvailable`. The
-  Windows CPU is not checked, and the Vulkan figures are not validated on a
-  physical GPU yet. SD-Turbo usually
-  loads on 8 GB Android phones when no chat model is loaded, and is usually
-  refused on 6 GB ones; offer SDXS there.
+  rest in system memory); on Linux it is refused only above the memory of every
+  discrete GPU plus `MemAvailable`, and on Windows never. An integrated GPU on
+  Linux gets `MemAvailable`. The Windows CPU is not checked, and the Vulkan
+  figures are not validated on a physical GPU yet. SD-Turbo usually loads on 8
+  GB Android phones when no chat model is loaded, and is usually refused on 6
+  GB ones; offer SDXS there.
 - `ImageModelParams(device: ComputeDevice.auto | cpu | gpu, threads: 0)`.
   `gpu` without a GPU (Android, CPU builds) and `npu` throw
   `LlamaUnsupportedException`.
@@ -299,13 +296,17 @@ core and `llamadart_stable_diffusion_flutter` together.
   It does not enable approximate sampling caches or promise a speed/memory
   improvement. The control is qualified with SDXS and SD-Turbo on macOS arm64
   CPU/Metal; other platforms and families remain unmeasured for this option.
-- `load` loads weights eagerly, but GPU shaders compile on first use: the
-  first runtime probe in a process (`checkRuntime()` or `load()`, both off
-  the calling isolate) compiles the Metal library on Apple (about 16 s on an
-  M4 Max with an empty shader cache), and the first GPU image compiles its
-  pipelines (12 s on Linux Vulkan, 45 s on Windows Vulkan, against under
-  0.6 s warm). The OS or driver caches them for later launches. Show
-  progress.
+- `load(placement: ImageModelPlacement(...))` on Metal or Vulkan sets
+  `textEncoderOnCpu`, `vaeOnCpu`, `maxGpuMemoryGiB` (whole GiB) and `autoFit`
+  (off: fail instead of spilling); moved modules and a budget that tiles the
+  decode change pixels slightly. CPU engines, the Web, and a budget with the
+  fit off throw `LlamaUnsupportedException`.
+- `load` loads weights eagerly, but GPU shaders compile on first use: the first
+  runtime probe in a process (`checkRuntime()` or `load()`, both off the
+  calling isolate) compiles the Metal library on Apple (about 16 s on an M4 Max
+  with an empty shader cache), and the first GPU image compiles its pipelines
+  (12 s on Linux Vulkan, 45 s on Windows Vulkan, against under 0.6 s warm). The
+  OS or driver caches them for later launches. Show progress.
 - `await engine.warmUp(width:, height:, guidanceScale:)` right after
   `load`, while the user writes the prompt, moves the pipeline compile off
   the first real image. Pass the size and guidance the app generates with,
@@ -314,15 +315,14 @@ core and `llamadart_stable_diffusion_flutter` together.
   with TAESDXL on an M4 Max). It runs one discarded single-step image,
   returns at once on the CPU, holds the one-operation slot (await it before
   `generate`), and completes normally when `dispose()` cancels it.
-- `await engine.generate(request)` returns the running
-  `ImageGenerationTask`; invalid requests throw
-  `LlamaImageGenerationException` first. Width and
+- `await engine.generate(request)` returns the running `ImageGenerationTask`;
+  invalid requests throw `LlamaImageGenerationException` first. Width and
   height are multiples of 8 from 64 to 2048; use the model's native size
-  (512x512 for SDXS and SD-Turbo, 1024x1024 for the desktop models). 256 is fine for SDXS and SD-Turbo; the runtime
-  rounds up to 64, so read the size from `GeneratedImage`. Steps are 1 to
-  150, guidance 0 to 30, count 1 to 16.
-  `seed: null` is random; `result.seed` reports it, image `i` used
-  `seed + i`, and the same seed reproduces the same pixels.
+  (512x512 for SDXS and SD-Turbo, 1024x1024 for the desktop models). 256 is
+  fine for SDXS and SD-Turbo; the runtime rounds up to 64, so read the size
+  from `GeneratedImage`. Steps are 1 to 150, guidance 0 to 30, count 1 to 16.
+  `seed: null` is random; `result.seed` reports it, image `i` used `seed + i`,
+  and the same seed reproduces the same pixels.
 - `task.events` (single subscription): `ImageGenerationProgressEvent`
   (`phase`: `encodingPrompt`, `sampling`, `decoding`, rarely `loading`;
   `step`, `steps`, `imageIndex`, `imageCount`), then one

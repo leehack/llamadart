@@ -71,6 +71,7 @@ void main() {
   Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
     ImageModelParams params = const ImageModelParams(),
+    ImageModelPlacement placement = const ImageModelPlacement(),
     ModelLoadOptions download = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
     ModelResolver? resolver,
@@ -78,6 +79,7 @@ void main() {
     final engine = await ImageGenerationEngine.load(
       model,
       params: params,
+      placement: placement,
       download: download,
       onProgress: onProgress,
       store: ModelFileStore(resolver: resolver, downloadManager: downloads),
@@ -1018,6 +1020,213 @@ void main() {
         ImageGenerationCompletionState.cancelled,
       );
       expect(driver.session.disposedAfterGenerate, isTrue);
+    });
+  });
+
+  group('module placement', () {
+    const metal = 'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n';
+    const vulkan = 'Vulkan0\tNVIDIA L4\nCPU\tHost\n';
+
+    Future<ImageGenerationSessionConfig> startedWith(
+      ImageModelPlacement placement, {
+      String devices = metal,
+      ComputeDevice device = ComputeDevice.auto,
+    }) async {
+      driver
+        ..status = _available(devices)
+        ..started.clear();
+      await load(
+        _sdxs(),
+        params: ImageModelParams(device: device),
+        placement: placement,
+      );
+      return driver.started.single;
+    }
+
+    test('the default placement leaves the backend, budget and fit to the '
+        'runtime', () async {
+      for (final (device, backend) in [
+        (ComputeDevice.auto, null),
+        (ComputeDevice.gpu, 'gpu'),
+        (ComputeDevice.cpu, 'cpu'),
+      ]) {
+        final config = await startedWith(
+          const ImageModelPlacement(),
+          device: device,
+        );
+        expect(config.backend, backend, reason: device.name);
+        expect(config.maxGpuMemoryGiB, isNull, reason: device.name);
+        expect(config.autoFit, isTrue, reason: device.name);
+      }
+    });
+
+    for (final (placement, auto, gpu) in [
+      (
+        const ImageModelPlacement(textEncoderOnCpu: true),
+        'te=cpu',
+        'gpu,te=cpu',
+      ),
+      (const ImageModelPlacement(vaeOnCpu: true), 'vae=cpu', 'gpu,vae=cpu'),
+      (
+        const ImageModelPlacement(textEncoderOnCpu: true, vaeOnCpu: true),
+        'te=cpu,vae=cpu',
+        'gpu,te=cpu,vae=cpu',
+      ),
+    ]) {
+      test('moves modules to the CPU as $auto on Metal and Vulkan', () async {
+        for (final devices in [metal, vulkan]) {
+          expect(
+            (await startedWith(placement, devices: devices)).backend,
+            auto,
+          );
+          expect(
+            (await startedWith(
+              placement,
+              devices: devices,
+              device: ComputeDevice.gpu,
+            )).backend,
+            gpu,
+          );
+        }
+      });
+    }
+
+    for (final gib in [1, 12, ImageModelPlacement.largestGpuMemoryGiB]) {
+      test('forwards a $gib GiB GPU budget with the fit on', () async {
+        final config = await startedWith(
+          ImageModelPlacement(maxGpuMemoryGiB: gib),
+          devices: vulkan,
+        );
+        expect(config.maxGpuMemoryGiB, gib);
+        expect(config.autoFit, isTrue);
+        expect(config.backend, isNull);
+      });
+    }
+
+    test('turns the fit off, and the memory check then expects the first '
+        'GPU', () async {
+      for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+        driver.runtimePicks.clear();
+        final config = await startedWith(
+          const ImageModelPlacement(autoFit: false),
+          devices: vulkan,
+          device: device,
+        );
+        expect(config.autoFit, isFalse);
+        expect(config.maxGpuMemoryGiB, isNull);
+        expect(driver.runtimePicks, [false], reason: device.name);
+      }
+      driver.runtimePicks.clear();
+      await startedWith(const ImageModelPlacement(), devices: vulkan);
+      expect(driver.runtimePicks, [true]);
+    });
+
+    for (final gib in [0, -1, ImageModelPlacement.largestGpuMemoryGiB + 1]) {
+      test('rejects a $gib GiB GPU budget before file resolution', () async {
+        await expectLater(
+          load(
+            _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+            placement: ImageModelPlacement(maxGpuMemoryGiB: gib),
+          ),
+          throwsA(
+            isA<LlamaImageGenerationException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('ImageModelPlacement.maxGpuMemoryGiB'),
+                )
+                .having((error) => error.details, 'details', gib),
+          ),
+        );
+        expect(downloads.calls, isEmpty);
+        expect(driver.started, isEmpty);
+      });
+    }
+
+    test('refuses a GPU budget with the fit off, which aborts the runtime, '
+        'before file resolution', () async {
+      await expectLater(
+        load(
+          _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+          placement: const ImageModelPlacement(
+            autoFit: false,
+            maxGpuMemoryGiB: 8,
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('maxGpuMemoryGiB'),
+              contains('autoFit: false'),
+              contains('autoFit'),
+            ),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+      expect(driver.started, isEmpty);
+    });
+
+    for (final (name, placement) in [
+      ('textEncoderOnCpu', const ImageModelPlacement(textEncoderOnCpu: true)),
+      ('vaeOnCpu', const ImageModelPlacement(vaeOnCpu: true)),
+      ('maxGpuMemoryGiB', const ImageModelPlacement(maxGpuMemoryGiB: 4)),
+      ('autoFit: false', const ImageModelPlacement(autoFit: false)),
+    ]) {
+      test('$name on a CPU engine throws before file resolution', () async {
+        for (final (devices, device, why) in [
+          (metal, ComputeDevice.cpu, 'ComputeDevice.cpu was requested'),
+          ('CPU\tCortex-A78\n', ComputeDevice.auto, 'reports no GPU, only CPU'),
+          (
+            'BLAS\tOpenBLAS\nCPU\tHost\n',
+            ComputeDevice.auto,
+            'reports no GPU, only BLAS, CPU',
+          ),
+        ]) {
+          driver.status = _available(devices);
+          await expectLater(
+            load(
+              _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+              params: ImageModelParams(device: device),
+              placement: placement,
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(contains(name), contains('GPU'), contains(why)),
+              ),
+            ),
+            reason: '$devices ${device.name}',
+          );
+        }
+        expect(downloads.calls, isEmpty);
+        expect(driver.started, isEmpty);
+      });
+    }
+
+    test('a module on the CPU leaves the Metal-only FLUX.1 Kontext recipe '
+        'unqualified; a GPU budget does not', () async {
+      driver.headers[_flux] = ImageModelHeaders.fluxKontextDiffusion;
+      driver.session.modelVersion = 'Flux';
+      for (final (placement, qualified) in [
+        (const ImageModelPlacement(), true),
+        (const ImageModelPlacement(maxGpuMemoryGiB: 12), true),
+        (const ImageModelPlacement(autoFit: false), true),
+        (const ImageModelPlacement(textEncoderOnCpu: true), false),
+        (const ImageModelPlacement(vaeOnCpu: true), false),
+      ]) {
+        driver.started.clear();
+        final engine = await load(_fluxModel(), placement: placement);
+        expect(
+          driver.started.single.referenceEditingRecipeVerified,
+          qualified,
+          reason: '$placement',
+        );
+        await engine.dispose();
+      }
     });
   });
 

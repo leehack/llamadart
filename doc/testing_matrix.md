@@ -432,7 +432,8 @@ dart run tool/testing/run_local_e2e.dart \
 # writes PNGs to build/image-generation-smoke. Export LLAMADART_SD_TURBO_MODEL
 # (and optionally LLAMADART_TAESD) first to add the SD-Turbo cases, including
 # its full VAE decoded untiled and with VAE tiling on the default device and
-# the CPU, LLAMADART_SDXL_LIGHTNING_MODEL (and optionally LLAMADART_TAESDXL) to
+# the CPU, and on a GPU where ImageModelPlacement puts each module's weights
+# and which placements change pixels, LLAMADART_SDXL_LIGHTNING_MODEL (and optionally LLAMADART_TAESDXL) to
 # add the SDXL-Lightning warm-up and 1024x1024 case, and LLAMADART_IMAGE_HF_CACHE
 # (a model cache directory) to load SDXS from its pinned Hugging Face file
 # through the resolver, 683 MB on the first run, and
