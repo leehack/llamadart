@@ -472,6 +472,9 @@ final class ExitTeardownApi {
 /// [failures] remembers the objects that call left free-only.
 final class LlamaCppObjectCalls {
   /// Copies reranker metadata while the model is owned by this service.
+  ///
+  /// [classifierOutputs] reads the classifier output count; tests replace it
+  /// to simulate a runtime without the symbol.
   ({
     bool encoder,
     bool decoder,
@@ -479,10 +482,14 @@ final class LlamaCppObjectCalls {
     List<String?> labels,
     String? template,
   })
-  rerankingModelInfo(Pointer<llama_model> model) {
+  rerankingModelInfo(
+    Pointer<llama_model> model, {
+    int Function(Pointer<llama_model>) classifierOutputs =
+        llama_model_n_cls_out,
+  }) {
     failures.ensureUsable(model, 'This reranker model');
     return requireRerankingSymbols(() {
-      final count = llama_model_n_cls_out(model);
+      final count = classifierOutputs(model);
       if (count <= 0) {
         throw LlamaUnsupportedException(
           'The reranker reports no classifier outputs.',
