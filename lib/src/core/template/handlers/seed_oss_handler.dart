@@ -6,6 +6,7 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../xml_tool_call_format.dart';
 
@@ -78,7 +79,12 @@ class SeedOssHandler extends ChatTemplateHandler {
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
-        buildGrammar(tools),
+        buildXmlToolCallGrammar(
+          tools,
+          XmlToolCallFormat.seedOss,
+          parallelToolCalls:
+              metadata[internalParallelToolCallsMetadataKey] == 'true',
+        ),
         metadata: metadata,
         thinkingForcedOpen: thinkingForcedOpen,
       ),
@@ -90,7 +96,7 @@ class SeedOssHandler extends ChatTemplateHandler {
       ),
       preservedTokens: hasTools ? preservedTokens : const [],
       grammarTriggers: hasTools
-          ? [const GrammarTrigger(type: 0, value: '<seed:tool_call><function=')]
+          ? [const GrammarTrigger(type: 0, value: '<seed:tool_call>\n')]
           : [],
     );
   }

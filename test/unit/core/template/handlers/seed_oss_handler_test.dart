@@ -6,6 +6,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/seed_oss_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -44,6 +45,58 @@ void main() {
     expect(
       jsonDecode(parsed.toolCalls.first.function!.arguments!),
       containsPair('city', 'Seoul'),
+    );
+  });
+
+  test('SeedOssHandler grammar repeats scopes only with parallel calls', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ];
+    for (final parallel in [true, false]) {
+      final rendered = SeedOssHandler().render(
+        templateSource: '{{ messages[0]["content"] }}',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        metadata: {internalParallelToolCallsMetadataKey: '$parallel'},
+        tools: tools,
+      );
+
+      expect(
+        rendered.grammar,
+        contains(
+          parallel
+              ? 'root ::= tool-call-scope+\n'
+              : 'root ::= tool-call-scope\n',
+        ),
+      );
+      expect(rendered.grammarTriggers.single.value, '<seed:tool_call>\n');
+    }
+  });
+
+  test('SeedOssHandler parses one call per <seed:tool_call> scope', () {
+    String call(String city) =>
+        '<seed:tool_call>\n<function=weather>\n'
+        '<parameter=city>\n$city\n</parameter>\n'
+        '</function>\n</seed:tool_call>';
+    final parsed = SeedOssHandler().parse(
+      '<seed:think>Plan</seed:think>\n${call('Paris')}\n${call('Rome')}'
+      '${call('Tokyo')}',
+    );
+
+    expect(parsed.reasoningContent, 'Plan');
+    expect(parsed.content, isEmpty);
+    expect(
+      [
+        for (final call in parsed.toolCalls)
+          (jsonDecode(call.function!.arguments!) as Map)['city'],
+      ],
+      ['\nParis\n', '\nRome\n', '\nTokyo\n'],
     );
   });
 

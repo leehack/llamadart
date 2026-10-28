@@ -192,7 +192,7 @@ void main() {
       ),
     ], XmlToolCallFormat.qwen3Coder);
 
-    expect(grammar, contains('qwen3-coder-value ::= raw-text | value'));
+    expect(grammar, contains('xml-value ::= raw-text | value'));
     expect(grammar, contains('root ::= tool-call-scope+'));
     expect(
       grammar,
@@ -204,7 +204,7 @@ void main() {
     expect(
       grammar,
       contains(
-        'param ::= "<parameter=" param-name ">" qwen3-coder-value "</parameter>" xml-space',
+        'param ::= "<parameter=" param-name ">" xml-value "</parameter>" xml-space',
       ),
     );
   });
@@ -331,7 +331,7 @@ void main() {
     expect(grammar, isNot(contains('arguments ::= (param (", " param)*)? ""')));
   });
 
-  test('parallelToolCalls only changes the qwen3Coder root', () {
+  test('parallelToolCalls only changes the root of repeated scopes', () {
     final tools = <ToolDefinition>[
       ToolDefinition(
         name: 'sample',
@@ -358,147 +358,160 @@ void main() {
       );
     }
 
-    final repeated = buildXmlToolCallGrammar(
-      tools,
+    for (final format in <XmlToolCallFormat>[
       XmlToolCallFormat.qwen3Coder,
-    );
-    expect(
-      buildXmlToolCallGrammar(
-        tools,
-        XmlToolCallFormat.qwen3Coder,
-        parallelToolCalls: true,
-      ),
-      equals(repeated),
-    );
-    expect(
-      buildXmlToolCallGrammar(
-        tools,
-        XmlToolCallFormat.qwen3Coder,
-        parallelToolCalls: false,
-      ),
-      equals(repeated!.replaceFirst('tool-call-scope+', 'tool-call-scope')),
-    );
+      XmlToolCallFormat.seedOss,
+    ]) {
+      final repeated = buildXmlToolCallGrammar(tools, format);
+      expect(repeated, contains('root ::= tool-call-scope+\n'));
+      expect(
+        repeated,
+        contains(
+          'tool-call-scope ::= "${format.scopeStart}" xml-space tool-call '
+          '"${format.scopeEnd}" xml-space',
+        ),
+      );
+      expect(
+        buildXmlToolCallGrammar(tools, format, parallelToolCalls: true),
+        equals(repeated),
+      );
+      expect(
+        buildXmlToolCallGrammar(tools, format, parallelToolCalls: false),
+        equals(repeated!.replaceFirst('tool-call-scope+', 'tool-call-scope')),
+      );
+    }
   });
 
-  group('consecutive Qwen3-Coder scopes', () {
-    String call(String city) =>
-        '<tool_call>\n'
-        '<function=weather>\n'
-        '<parameter=city>\n$city\n</parameter>\n'
-        '</function>\n'
-        '</tool_call>';
-    final schemas = {
-      'weather': {
-        'type': 'object',
-        'properties': {
-          'city': {'type': 'string'},
+  for (final (name, format, startThink, endThink) in [
+    ('Qwen3-Coder', XmlToolCallFormat.qwen3Coder, '<think>', '</think>'),
+    ('Seed-OSS', XmlToolCallFormat.seedOss, '<seed:think>', '</seed:think>'),
+  ]) {
+    group('consecutive $name scopes', () {
+      String call(String city) =>
+          '${format.scopeStart}\n'
+          '<function=weather>\n'
+          '<parameter=city>\n$city\n</parameter>\n'
+          '</function>\n'
+          '${format.scopeEnd}';
+      final schemas = {
+        'weather': {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+          },
+          'required': ['city'],
         },
-        'required': ['city'],
-      },
-    };
-    List<Object?> cities(List<LlamaCompletionChunkToolCall> calls) => [
-      for (final call in calls)
-        (jsonDecode(call.function!.arguments!) as Map)['city'],
-    ];
+      };
+      List<Object?> cities(List<LlamaCompletionChunkToolCall> calls) => [
+        for (final call in calls)
+          ((jsonDecode(call.function!.arguments!) as Map)['city'] as String)
+              .trim(),
+      ];
 
-    for (final separator in ['', '\n', '\n\n', ' ', '\t', '\n  ']) {
-      test('parse one call per scope with ${jsonEncode(separator)} between '
-          'them', () {
-        for (final names in [
-          ['Paris', 'Rome'],
-          ['Paris', 'Rome', 'Tokyo'],
+      for (final separator in ['', '\n', '\n\n', ' ', '\t', '\n  ']) {
+        test('parse one call per scope with ${jsonEncode(separator)} between '
+            'them', () {
+          for (final names in [
+            ['Paris', 'Rome'],
+            ['Paris', 'Rome', 'Tokyo'],
+          ]) {
+            final output = names.map(call).join(separator);
+            for (final withSchemas in [false, true]) {
+              final parsed = parseXmlToolCalls(
+                output,
+                format,
+                schemas: withSchemas ? schemas : null,
+              );
+
+              expect(cities(parsed.toolCalls), names, reason: output);
+              expect(
+                parsed.toolCalls.map((call) => call.index),
+                List.generate(names.length, (index) => index),
+              );
+              expect(parsed.content, isEmpty, reason: output);
+            }
+          }
+        });
+      }
+
+      test('parse after a thought and before trailing text', () {
+        final calls = '${call('Paris')}\n${call('Rome')}\nDone.';
+        for (final forcedOpen in [true, false]) {
+          final parsed = parseXmlToolCalls(
+            '${forcedOpen ? '' : startThink}Plan$endThink\nLet me check.\n'
+            '$calls',
+            format,
+            startThink: startThink,
+            endThink: endThink,
+            thinkingForcedOpen: forcedOpen,
+            verbatimForcedThought: forcedOpen,
+            schemas: schemas,
+          );
+
+          expect(parsed.reasoningContent, 'Plan', reason: '$forcedOpen');
+          expect(cities(parsed.toolCalls), ['Paris', 'Rome']);
+          expect(parsed.content, 'Let me check.\n\nDone.');
+        }
+      });
+
+      test('end at text between scopes, which stays content', () {
+        final rest = 'Then ${call('Rome')}';
+        final parsed = parseXmlToolCalls(
+          '${call('Paris')}\n$rest',
+          format,
+          schemas: schemas,
+        );
+
+        expect(cities(parsed.toolCalls), ['Paris']);
+        expect(parsed.content, rest);
+      });
+
+      test('keep a later scope without a valid call as content', () {
+        final unknownTool = call('Rome').replaceFirst('weather', 'unknown');
+        final unclosed = call(
+          'Rome',
+        ).substring(0, call('Rome').length - '\n${format.scopeEnd}'.length);
+        for (final later in [
+          unknownTool,
+          unclosed,
+          '${format.scopeStart}\noops ${call('Rome').substring('${format.scopeStart}\n'.length)}',
+          call('Rome').replaceFirst('</function>\n', '</function>\noops\n'),
+          '${format.scopeStart}\nRome\n${format.scopeEnd}',
+          '${format.scopeStart}\n<function=weather>\n<parameter=city>\nRo',
+          '${call('Rome')}\n$unclosed',
         ]) {
-          final output = names.map(call).join(separator);
-          for (final withSchemas in [false, true]) {
+          final output = '${call('Paris')}\n$later';
+          final kept = later.startsWith(call('Rome'))
+              ? ['Paris', 'Rome']
+              : ['Paris'];
+          // Without schemas, any tool name is valid.
+          for (final withSchemas in [true, if (later != unknownTool) false]) {
             final parsed = parseXmlToolCalls(
               output,
-              XmlToolCallFormat.qwen3Coder,
+              format,
               schemas: withSchemas ? schemas : null,
             );
 
-            expect(cities(parsed.toolCalls), names, reason: output);
+            expect(cities(parsed.toolCalls), kept, reason: later);
             expect(
-              parsed.toolCalls.map((call) => call.index),
-              List.generate(names.length, (index) => index),
+              parsed.content,
+              later.startsWith(call('Rome')) ? unclosed : later,
+              reason: later,
             );
-            expect(parsed.content, isEmpty, reason: output);
           }
         }
       });
-    }
 
-    test('parse after a thought and before trailing text', () {
-      final parsed = parseXmlToolCalls(
-        'Plan</think>\nLet me check.\n${call('Paris')}\n${call('Rome')}\n'
-        'Done.',
-        XmlToolCallFormat.qwen3Coder,
-        thinkingForcedOpen: true,
-        verbatimForcedThought: true,
-        schemas: schemas,
-      );
+      test('still reject an unclosed first scope', () {
+        final unclosed = call(
+          'Paris',
+        ).substring(0, call('Paris').length - format.scopeEnd.length);
+        final output = '$unclosed\n${call('Rome')}';
+        final parsed = parseXmlToolCalls(output, format);
 
-      expect(parsed.reasoningContent, 'Plan');
-      expect(cities(parsed.toolCalls), ['Paris', 'Rome']);
-      expect(parsed.content, 'Let me check.\n\nDone.');
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, output);
+      });
     });
-
-    test('end at text between scopes, which stays content', () {
-      final rest = 'Then ${call('Rome')}';
-      final parsed = parseXmlToolCalls(
-        '${call('Paris')}\n$rest',
-        XmlToolCallFormat.qwen3Coder,
-        schemas: schemas,
-      );
-
-      expect(cities(parsed.toolCalls), ['Paris']);
-      expect(parsed.content, rest);
-    });
-
-    test('keep a later scope without a valid call as content', () {
-      final unknownTool = call('Rome').replaceFirst('weather', 'unknown');
-      final unclosed = call(
-        'Rome',
-      ).substring(0, call('Rome').length - '\n</tool_call>'.length);
-      for (final later in [
-        unknownTool,
-        unclosed,
-        '<tool_call>\noops ${call('Rome').substring('<tool_call>\n'.length)}',
-        call('Rome').replaceFirst('</function>\n', '</function>\noops\n'),
-        '<tool_call>\nRome\n</tool_call>',
-        '<tool_call>\n<function=weather>\n<parameter=city>\nRo',
-        '${call('Rome')}\n$unclosed',
-      ]) {
-        final output = '${call('Paris')}\n$later';
-        final kept = later.startsWith(call('Rome'))
-            ? ['Paris', 'Rome']
-            : ['Paris'];
-        // Without schemas, any tool name is valid.
-        for (final withSchemas in [true, if (later != unknownTool) false]) {
-          final parsed = parseXmlToolCalls(
-            output,
-            XmlToolCallFormat.qwen3Coder,
-            schemas: withSchemas ? schemas : null,
-          );
-
-          expect(cities(parsed.toolCalls), kept, reason: later);
-          expect(
-            parsed.content,
-            later.startsWith(call('Rome')) ? unclosed : later,
-            reason: later,
-          );
-        }
-      }
-    });
-
-    test('still reject an unclosed first scope', () {
-      final unclosed = call(
-        'Paris',
-      ).substring(0, call('Paris').length - '</tool_call>'.length);
-      final output = '$unclosed\n${call('Rome')}';
-      final parsed = parseXmlToolCalls(output, XmlToolCallFormat.qwen3Coder);
-
-      expect(parsed.toolCalls, isEmpty);
-      expect(parsed.content, output);
-    });
-  });
+  }
 }

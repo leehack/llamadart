@@ -540,24 +540,34 @@ void main() {
   });
 
   test(
-    'Qwen3-Coder XML grammar repeats call scopes only with parallel calls',
+    'Qwen3-Coder XML and Seed-OSS grammars repeat call scopes only with parallel calls',
     () {
       final tool = ToolDefinition(
         name: 'get_weather',
         description: 'w',
         parameters: [ToolParam.string('location', required: true)],
       );
-      String call(String location, {String name = 'get_weather'}) =>
-          '<tool_call>\n<function=$name>\n'
-          '<parameter=location>\n$location\n</parameter>\n'
-          '</function>\n</tool_call>';
-      final two = '${call('Paris')}\n${call('Rome')}';
-      for (final template in [
-        'test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja',
-        'test/fixtures/templates/Qwen3_5-0_8B.jinja',
-        'test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja',
-        'test/fixtures/llama_cpp_templates/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
+      for (final (template, scope) in [
+        ('test/fixtures/llama_cpp_templates/Qwen3-Coder.jinja', 'tool_call'),
+        ('test/fixtures/templates/Qwen3_5-0_8B.jinja', 'tool_call'),
+        (
+          'test/fixtures/llama_cpp_templates/StepFun3.5-Flash.jinja',
+          'tool_call',
+        ),
+        (
+          'test/fixtures/llama_cpp_templates/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16.jinja',
+          'tool_call',
+        ),
+        (
+          'test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja',
+          'seed:tool_call',
+        ),
       ]) {
+        String call(String location, {String name = 'get_weather'}) =>
+            '<$scope>\n<function=$name>\n'
+            '<parameter=location>\n$location\n</parameter>\n'
+            '</function>\n</$scope>';
+        final two = '${call('Paris')}\n${call('Rome')}';
         for (final parallel in [true, false]) {
           final rendered = ChatTemplateEngine.render(
             templateSource: File(template).readAsStringSync(),
@@ -591,7 +601,7 @@ void main() {
               if (!parallel) ...repeated,
               '${call('Paris')}\nThen ${call('Rome')}',
               '${call('Paris')}\n${call('Rome', name: 'unknown')}',
-              two.replaceFirst('</tool_call>\n<tool_call>\n', ''),
+              two.replaceFirst('</$scope>\n<$scope>\n', ''),
             ],
           );
         }

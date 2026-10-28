@@ -59,6 +59,8 @@ class XmlToolCallFormat {
 
   /// Whether a scope may follow a closed one, separated only by whitespace,
   /// to hold the next tool call.
+  ///
+  /// The grammar of such a format holds one tool call per scope.
   final bool repeatsScope;
 
   /// Creates a [XmlToolCallFormat] definition.
@@ -155,6 +157,7 @@ class XmlToolCallFormat {
     valEnd: '</parameter>',
     toolEnd: '</function>',
     scopeEnd: '</seed:tool_call>',
+    repeatsScope: true,
   );
 
   /// Apriel 1.5 format.
@@ -201,9 +204,10 @@ class XmlToolCallFormat {
 
 /// Builds a simple XML-style tool-call grammar for [format].
 ///
-/// The [XmlToolCallFormat.qwen3Coder] root admits one tool call per scope, in
-/// consecutive scopes, as llama.cpp's grammar does; when [parallelToolCalls]
-/// is false, exactly one. Other formats ignore [parallelToolCalls].
+/// The root of a format that [XmlToolCallFormat.repeatsScope] admits one tool
+/// call per scope, in consecutive scopes, as llama.cpp's grammar does; when
+/// [parallelToolCalls] is false, exactly one. Other formats ignore
+/// [parallelToolCalls].
 String? buildXmlToolCallGrammar(
   List<ToolDefinition>? tools,
   XmlToolCallFormat format, {
@@ -247,8 +251,8 @@ arr ::= "[" space (value ("," space value)*)? space "]"
 obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? space "}"
 ''';
 
-  if (format == XmlToolCallFormat.qwen3Coder) {
-    // Qwen emits the XML envelope with line breaks between tags. Lazy grammar
+  if (format.repeatsScope) {
+    // Qwen and Seed-OSS emit the XML envelope with line breaks between tags. Lazy grammar
     // activation replays that exact trigger text, so whitespace must be valid
     // in the grammar rather than relying on eager constrained decoding to
     // remove it.
@@ -257,10 +261,10 @@ obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? 
 root ::= $scopes
 tool-call-scope ::= ${_literal(format.scopeStart)} xml-space tool-call ${_literal(format.scopeEnd)} xml-space
 tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
-param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} qwen3-coder-value ${_literal(format.valEnd)} xml-space
+param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} xml-value ${_literal(format.valEnd)} xml-space
 tool-name ::= $toolNameRule
 param-name ::= $paramNameRule
-qwen3-coder-value ::= raw-text | value
+xml-value ::= raw-text | value
 raw-text ::= ([^<])*
 xml-space ::= [ \\t\\n\\r]*
 $jsonValueRules
