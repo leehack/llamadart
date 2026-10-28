@@ -61,6 +61,56 @@ void main() {
       );
     }
 
+    test('keeps the runtime GPU budget and fit by default, and maps '
+        'placement over them', () {
+      using((arena) {
+        ImageGenerationSessionConfig config({
+          String? backend,
+          int? maxGpuMemoryGiB,
+          bool autoFit = true,
+        }) => ImageGenerationSessionConfig(
+          files: const {'model': '/m/sdxs.gguf'},
+          backend: backend,
+          threads: 0,
+          maxGpuMemoryGiB: maxGpuMemoryGiB,
+          autoFit: autoFit,
+        );
+        Pointer<sd.sd_ctx_params_t> initialized() {
+          final params = arena<sd.sd_ctx_params_t>();
+          params.ref
+            ..auto_fit = true
+            ..max_vram = nullptr;
+          return params;
+        }
+
+        final defaults = initialized();
+        applyStableDiffusionContextParams(defaults, config(), arena);
+        expect(defaults.ref.max_vram, nullptr);
+        expect(defaults.ref.auto_fit, isTrue);
+        expect(_text(defaults.ref.backend), isNull);
+
+        final placed = initialized();
+        applyStableDiffusionContextParams(
+          placed,
+          config(backend: 'gpu,te=cpu,vae=cpu', maxGpuMemoryGiB: 12),
+          arena,
+        );
+        expect(_text(placed.ref.max_vram), '12');
+        expect(placed.ref.auto_fit, isTrue);
+        expect(_text(placed.ref.backend), 'gpu,te=cpu,vae=cpu');
+        expect(placed.ref.params_backend, nullptr);
+
+        final unfitted = initialized();
+        applyStableDiffusionContextParams(
+          unfitted,
+          config(autoFit: false),
+          arena,
+        );
+        expect(unfitted.ref.auto_fit, isFalse);
+        expect(unfitted.ref.max_vram, nullptr);
+      });
+    });
+
     test('writes every file role to its own path field', () {
       using((arena) {
         final params = apply(

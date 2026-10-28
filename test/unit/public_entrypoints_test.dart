@@ -95,6 +95,7 @@ const _appNames = <String>{
   'ImageHiresUpscaler',
   'ImageModelComponent',
   'ImageModelParams',
+  'ImageModelPlacement',
   'ImageModelRole',
   'ImageReferenceEditingRecipe',
   'ImageVaeTiling',

@@ -27,6 +27,10 @@ void main() {
     expect(options.params.threads, 0);
     expect(options.request, isNot(isA<TiledImageGenerationRequest>()));
     expect(options.params, isNot(isA<ImageConditioningCacheParams>()));
+    expect(options.placement.textEncoderOnCpu, isFalse);
+    expect(options.placement.vaeOnCpu, isFalse);
+    expect(options.placement.maxGpuMemoryGiB, isNull);
+    expect(options.placement.autoFit, isTrue);
     expect(options.model.source, same(options.modelSource));
     expect(options.model.components, isEmpty);
   });
@@ -45,6 +49,22 @@ void main() {
       );
     });
   }
+
+  test('forwards the placement flags into load settings', () {
+    final options = _parse(const [
+      '-p',
+      'a fox',
+      '--text-encoder-on-cpu',
+      '--vae-on-cpu',
+      '--max-gpu-memory-gib',
+      '6',
+      '--no-auto-fit',
+    ]);
+    expect(options.placement.textEncoderOnCpu, isTrue);
+    expect(options.placement.vaeOnCpu, isTrue);
+    expect(options.placement.maxGpuMemoryGiB, 6);
+    expect(options.placement.autoFit, isFalse);
+  });
 
   test('reads every option for sd-turbo', () {
     final options = _parse(const [
@@ -134,6 +154,7 @@ void main() {
         '--conditioning-cache-size',
       ),
       (['-p', 'a', '--guidance', 'high'], '--guidance'),
+      (['-p', 'a', '--max-gpu-memory-gib', '1.5'], '--max-gpu-memory-gib'),
       (['-p', 'a', '--taesd', 'default'], '--taesd'),
       (['--preset', 'sd-turbo', '-p', 'a', '--vae', '/v'], '--vae'),
       (

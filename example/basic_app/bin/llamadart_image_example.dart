@@ -46,6 +46,7 @@ Future<void> main(List<String> arguments) async {
     engine = await ImageGenerationEngine.load(
       options.model,
       params: options.params,
+      placement: options.placement,
       download: ModelLoadOptions(cancelToken: cancelLoad),
       onProgress: _printProgress,
     );

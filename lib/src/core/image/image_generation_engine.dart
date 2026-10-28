@@ -28,6 +28,7 @@ import 'image_reference_editing_request.dart';
 import 'image_model_classifier.dart';
 import 'image_model_metal_preflight.dart';
 import 'image_model_params.dart';
+import 'image_model_placement.dart';
 import 'local_image_set_model.dart';
 import 'local_image_set_stub.dart'
     if (dart.library.io) '../../platform/io/local_image_set_io.dart';
@@ -379,6 +380,12 @@ class ImageGenerationEngine {
   /// memory and a load with the `SD_VK_DEVICE` environment variable set are
   /// never refused.
   ///
+  /// [placement] moves the text encoders or the VAE to the CPU, caps the GPU
+  /// memory the runtime uses and turns its automatic fit off; see
+  /// [ImageModelPlacement]. The default leaves all of it to the runtime.
+  /// The memory check above counts every weight against the device either
+  /// way.
+  ///
   /// [download]'s cancel token stops a download at once and is checked again
   /// after classification and after the native load; the native load itself
   /// cannot be interrupted, so a cancel during it takes effect when it
@@ -399,10 +406,17 @@ class ImageGenerationEngine {
   ///   classified by their headers, so [ModelSource.format] is otherwise
   ///   unused here. Also when
   ///   [ImageModelParams.vaeDirectConvolution] is `true` on iOS with the
-  ///   Metal backend, before any file is resolved or loaded.
+  ///   Metal backend, before any file is resolved or loaded. Also, before
+  ///   any file is resolved, for a [placement] other than the default on an
+  ///   engine that runs on the CPU, and for
+  ///   [ImageModelPlacement.maxGpuMemoryGiB] with
+  ///   [ImageModelPlacement.autoFit] off, or on a GPU other than Metal when
+  ///   the runtime reports no discrete GPU.
   /// - [LlamaImageGenerationException] for invalid [params], including a
   ///   conditioning-cache capacity outside 0 through the signed 32-bit limit,
-  ///   before resolving model files.
+  ///   and for [ImageModelPlacement.maxGpuMemoryGiB] outside 1 through
+  ///   [ImageModelPlacement.largestGpuMemoryGiB], before resolving model
+  ///   files.
   /// - [LlamaModelException] when a file is missing, is not an image-model
   ///   component (such as a LoRA), shares a role with another file, or does
   ///   not match the diffusion model; when no file holds diffusion weights
@@ -431,6 +445,7 @@ class ImageGenerationEngine {
   static Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
     ImageModelParams params = const ImageModelParams(),
+    ImageModelPlacement placement = const ImageModelPlacement(),
     ModelLoadOptions download = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
     ModelFileStore? store,
@@ -467,6 +482,24 @@ class ImageGenerationEngine {
       throw LlamaImageGenerationException(
         'ImageModelParams.threads must be 0 or greater.',
         params.threads,
+      );
+    }
+    _checkPlacement(placement, params.device, backendName, runtime.devices);
+    if (placement.maxGpuMemoryGiB != null &&
+        !_isMetal(backendName) &&
+        await driver.reportsDiscreteGpu() != true) {
+      // ggml-vulkan reports an integrated GPU as IGPU. With no backend named,
+      // the runtime's fit plans only for discrete GPUs, then computes on the
+      // integrated one under max_vram without a plan, which aborts like the
+      // fit-off case. Metal devices always report the GPU type.
+      throw LlamaUnsupportedException(
+        'ImageModelPlacement.maxGpuMemoryGiB needs a discrete GPU, and the '
+        'stable_diffusion runtime reports $backendName as an integrated GPU '
+        'with no discrete one, or does not report the GPU type (for example '
+        'with SD_VK_DEVICE set): stable-diffusion-native v0.3.0-1 can abort '
+        'the process when it computes there with a budget '
+        '(https://github.com/leehack/stable-diffusion-native/issues/34). '
+        'Drop maxGpuMemoryGiB.',
       );
     }
     final localSet = model is LocalImageSetModel ? model : null;
@@ -624,11 +657,15 @@ class ImageGenerationEngine {
     if (params.checkMemory) {
       _checkMemory(
         weightBytes,
-        await driver.memoryLimits(switch (backendName) {
-          _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
-          _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
-          _ => ImageGenerationComputeDevice.cpu,
-        }, runtimePicksGpu: params.device == ComputeDevice.auto),
+        await driver.memoryLimits(
+          switch (backendName) {
+            _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
+            _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
+            _ => ImageGenerationComputeDevice.cpu,
+          },
+          runtimePicksGpu:
+              params.device == ComputeDevice.auto && placement.autoFit,
+        ),
       );
     }
     final files = <String, String>{
@@ -640,16 +677,18 @@ class ImageGenerationEngine {
     try {
       final config = ImageGenerationSessionConfig(
         files: files,
-        backend: switch (params.device) {
+        backend: _backendAssignment(switch (params.device) {
           ComputeDevice.cpu => 'cpu',
           ComputeDevice.gpu => 'gpu',
           ComputeDevice.auto || ComputeDevice.npu =>
-            // Preserve the already selected CPU fallback at the worker boundary;
-            // FP8 inspection never changes device selection.
+            // Preserve the already selected CPU fallback at the worker
+            // boundary; FP8 inspection never changes device selection.
             backendName.toUpperCase() == 'CPU' ? 'cpu' : null,
-        },
+        }, placement),
         threads: params.threads,
         conditioningCacheSize: conditioningCacheSize,
+        maxGpuMemoryGiB: placement.maxGpuMemoryGiB,
+        autoFit: placement.autoFit,
         controlNetRecipeVerified: controlNetRecipeVerified,
         imageEditingRecipeVerified:
             driver.operatingSystem == 'macos' &&
@@ -681,6 +720,8 @@ class ImageGenerationEngine {
         referenceEditingRecipeVerified:
             driver.operatingSystem == 'macos' &&
             _isMetal(backendName) &&
+            !placement.textEncoderOnCpu &&
+            !placement.vaeOnCpu &&
             _isQualifiedRuntime(runtime) &&
             assignment.fluxKontextRecipeVerified,
         seamlessRecipeVerified:
@@ -1209,6 +1250,68 @@ class ImageGenerationEngine {
   static String _gib(int bytes) {
     final gib = bytes / (1 << 30);
     return gib.toStringAsFixed(gib < 10 ? 2 : 1);
+  }
+
+  static void _checkPlacement(
+    ImageModelPlacement placement,
+    ComputeDevice device,
+    String backendName,
+    List<StableDiffusionDevice> devices,
+  ) {
+    final gib = placement.maxGpuMemoryGiB;
+    if (gib != null &&
+        (gib < 1 || gib > ImageModelPlacement.largestGpuMemoryGiB)) {
+      throw LlamaImageGenerationException(
+        'ImageModelPlacement.maxGpuMemoryGiB must be from 1 to '
+        '${ImageModelPlacement.largestGpuMemoryGiB}.',
+        gib,
+      );
+    }
+    if (gib != null && !placement.autoFit) {
+      throw LlamaUnsupportedException(
+        'ImageModelPlacement.maxGpuMemoryGiB with autoFit: false is not '
+        'supported: stable-diffusion-native v0.3.0-1 then keeps every weight '
+        'on the GPU and aborts the process (GGML_ASSERT in new_sd_ctx) when '
+        'the budget is below them '
+        '(https://github.com/leehack/stable-diffusion-native/issues/34). '
+        'Leave autoFit on to keep the weights within the budget, or drop '
+        'maxGpuMemoryGiB.',
+      );
+    }
+    final moved = [
+      if (placement.textEncoderOnCpu) 'textEncoderOnCpu',
+      if (placement.vaeOnCpu) 'vaeOnCpu',
+      if (gib != null) 'maxGpuMemoryGiB',
+      if (!placement.autoFit) 'autoFit: false',
+    ];
+    if (moved.isEmpty || _isGpu(backendName)) {
+      return;
+    }
+    final why = device == ComputeDevice.cpu
+        ? 'ComputeDevice.cpu was requested'
+        : 'the stable_diffusion runtime reports no GPU, only '
+              '${devices.map((d) => d.name).join(', ')}';
+    throw LlamaUnsupportedException(
+      'ImageModelPlacement ${moved.join(', ')} needs an engine on a GPU '
+      '(Metal, or Vulkan on Linux and Windows), but it runs on $backendName: '
+      '$why. Android and the Linux and Windows CPU builds run on the CPU. '
+      'Load with the default ImageModelPlacement, or on a GPU.',
+    );
+  }
+
+  /// [device] (`cpu`, `gpu`, or `null` for the runtime's choice) with the
+  /// module assignments of [placement] appended, as stable-diffusion.cpp's
+  /// `--backend` takes them.
+  static String? _backendAssignment(
+    String? device,
+    ImageModelPlacement placement,
+  ) {
+    final parts = [
+      ?device,
+      if (placement.textEncoderOnCpu) 'te=cpu',
+      if (placement.vaeOnCpu) 'vae=cpu',
+    ];
+    return parts.isEmpty ? null : parts.join(',');
   }
 
   static String _backendNameFor(

@@ -214,6 +214,7 @@ final class ImageCliOptions {
     required this.device,
     required this.threads,
     this.conditioningCacheSize,
+    this.placement = const ImageModelPlacement(),
   });
 
   /// Model preset.
@@ -243,6 +244,9 @@ final class ImageCliOptions {
 
   /// Conditioning-cache entry limit; null preserves the runtime default.
   final int? conditioningCacheSize;
+
+  /// Module placement and GPU memory fitting.
+  final ImageModelPlacement placement;
 
   /// The engine model: [modelSource] and [fileSources], each assigned its
   /// role from its header when the engine loads it.
@@ -343,6 +347,29 @@ ArgParser createImageArgParser() {
       'conditioning-cache-size',
       help: 'Retained prompt-conditioning entries (0 disables; unset: 4).',
     )
+    ..addFlag(
+      'text-encoder-on-cpu',
+      help: 'Run the text encoders on the CPU (GPU devices only).',
+      negatable: false,
+    )
+    ..addFlag(
+      'vae-on-cpu',
+      help: 'Run the VAE or tiny autoencoder on the CPU (GPU devices only).',
+      negatable: false,
+    )
+    ..addOption(
+      'max-gpu-memory-gib',
+      help:
+          'Most GPU memory, in whole GiB, the runtime plans for on each GPU '
+          '(default: free memory less 512 MiB).',
+    )
+    ..addFlag(
+      'auto-fit',
+      help:
+          'Let the runtime move weights that do not fit the GPU to system '
+          'memory, another GPU or disk. --no-auto-fit fails such a load.',
+      defaultsTo: true,
+    )
     ..addFlag('help', abbr: 'h', help: 'Show this help.', negatable: false);
 }
 
@@ -430,6 +457,12 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
     device: ComputeDevice.values.byName(results['device'] as String),
     threads: _int(results, 'threads')!,
     conditioningCacheSize: _int(results, 'conditioning-cache-size'),
+    placement: ImageModelPlacement(
+      textEncoderOnCpu: results['text-encoder-on-cpu'] as bool,
+      vaeOnCpu: results['vae-on-cpu'] as bool,
+      maxGpuMemoryGiB: _int(results, 'max-gpu-memory-gib'),
+      autoFit: results['auto-fit'] as bool,
+    ),
   );
 }
 
