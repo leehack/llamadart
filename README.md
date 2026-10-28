@@ -554,8 +554,9 @@ sampling caches; see the guide's [conditioning cache](https://llamadart.leehack.
 
 On a GPU, `ImageGenerationEngine.load(placement: ImageModelPlacement(...))`
 keeps the text encoders or the VAE on the CPU, caps the GPU memory the runtime
-uses (`maxGpuMemoryGiB`) or turns off its automatic fit; a placement on a CPU
-engine or the Web throws `LlamaUnsupportedException`. See the guide's
+uses (`maxGpuMemoryGiB`, which outside Metal needs a discrete GPU) or turns
+off its automatic fit; a placement on a CPU engine or the Web throws
+`LlamaUnsupportedException`. See the guide's
 [module placement](https://llamadart.leehack.com/docs/next/guides/image-generation#module-placement-and-gpu-memory).
 
 For repeatable textures, `SeamlessImageGenerationRequest(circularX: true,

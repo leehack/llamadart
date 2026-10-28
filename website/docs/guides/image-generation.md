@@ -780,7 +780,7 @@ final engine = await ImageGenerationEngine.load(
 | --- | --- | --- |
 | `textEncoderOnCpu` | Text encoders compute on the CPU, weights in system memory | 359 MB of weights left the GPU; pixels changed by at most 40, mean 0.23 of 255 |
 | `vaeOnCpu` | VAE or tiny autoencoder computes on the CPU, weights and decode memory in system memory | 160 MB of weights and the 1.6 GiB decode buffer left the GPU; image 8.9 s instead of 2.1 to 2.6 s; pixels at most 1 of 255 apart |
-| `maxGpuMemoryGiB` | Per-GPU budget for weights and compute buffers, in whole GiB; weights beyond it stay in system memory, on another GPU or on disk and stream in | 1 GiB: all 1.9 GB of weights in system memory, and the decode, above the budget, retried in tiles (at most 85, mean 2.5 of 255 apart); 8 GiB: identical pixels |
+| `maxGpuMemoryGiB` | Per-GPU budget, in whole GiB, for weights plus the room the fit reserves to compute (2 GiB beside the diffusion model and the text encoders, 1 GiB beside the VAE), so weights can move to system memory, another GPU or disk even when they alone fit; moved weights stream in | 1 GiB: all 1.9 GB of weights in system memory, and the decode, above the budget, retried in tiles (at most 85, mean 2.5 of 255 apart); 8 GiB: identical pixels |
 | `autoFit: false` | No automatic fit: weights are allocated on the device their module computes on, and `ComputeDevice.auto` uses the first GPU; a load the device cannot allocate fails with `LlamaModelException` instead of spilling | Identical pixels |
 
 `maxGpuMemoryGiB` must be 1 to `ImageModelPlacement.largestGpuMemoryGiB`;
@@ -788,7 +788,20 @@ other values throw `LlamaImageGenerationException`. It takes whole GiB
 because the runtime reads a fraction in the process's locale. Together with
 `autoFit: false` it throws `LlamaUnsupportedException`: the pinned runtime
 then keeps every weight on the GPU and aborts the process in `new_sd_ctx`
-when the budget is below them (SD-Turbo with 1 GiB).
+when the budget is below them (SD-Turbo with 1 GiB,
+[stable-diffusion-native#34](https://github.com/leehack/stable-diffusion-native/issues/34)).
+Outside Metal it also needs a discrete GPU: when the runtime reports only
+integrated Vulkan GPUs, or no GPU type (`SD_VK_DEVICE` set), it throws
+`LlamaUnsupportedException`, because the runtime's fit plans only for
+discrete GPUs and would compute on the integrated one under the budget
+without a plan, which aborts the same way. Moving the text encoders or the
+VAE with an integrated GPU is allowed.
+
+On a host with a discrete and an integrated Vulkan GPU and
+`ComputeDevice.auto`, moving the text encoders or the VAE lets the fit also
+consider the integrated GPU, which can then compute the diffusion model when
+it reports more free memory. That is slower, not a failure;
+`ComputeDevice.gpu` keeps the first discrete GPU.
 
 The `image-generation-smoke` check reads where the runtime put each module's
 weights (`total params memory size` in its debug log) and compares pixels

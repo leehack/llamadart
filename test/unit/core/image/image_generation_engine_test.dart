@@ -1143,6 +1143,71 @@ void main() {
       });
     }
 
+    for (final (discrete, name) in [
+      (false, 'only integrated GPUs'),
+      (null, 'no GPU type'),
+    ]) {
+      test('refuses a GPU budget on Vulkan when the runtime reports $name, '
+          'before file resolution', () async {
+        driver
+          ..status = _available(vulkan)
+          ..discreteGpu = discrete;
+        for (final device in [ComputeDevice.auto, ComputeDevice.gpu]) {
+          await expectLater(
+            load(
+              _sdxs(ModelSource.parse('https://example.com/model.gguf')),
+              params: ImageModelParams(device: device),
+              placement: const ImageModelPlacement(maxGpuMemoryGiB: 4),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('maxGpuMemoryGiB'),
+                  contains('discrete GPU'),
+                  contains('Vulkan0'),
+                  contains('stable-diffusion-native/issues/34'),
+                ),
+              ),
+            ),
+            reason: device.name,
+          );
+        }
+        expect(downloads.calls, isEmpty);
+        expect(driver.started, isEmpty);
+      });
+    }
+
+    test('an integrated GPU still takes module moves and the fit, and Metal '
+        'takes a budget without asking for the GPU type', () async {
+      driver.discreteGpu = false;
+      for (final placement in [
+        const ImageModelPlacement(textEncoderOnCpu: true, vaeOnCpu: true),
+        const ImageModelPlacement(autoFit: false),
+      ]) {
+        await startedWith(placement, devices: vulkan);
+      }
+      expect(driver.discreteGpuQueries, 0);
+      final config = await startedWith(
+        const ImageModelPlacement(maxGpuMemoryGiB: 4),
+      );
+      expect(config.maxGpuMemoryGiB, 4);
+      expect(driver.discreteGpuQueries, 0);
+    });
+
+    test(
+      'a discrete Vulkan GPU takes a budget after one GPU type query',
+      () async {
+        final config = await startedWith(
+          const ImageModelPlacement(maxGpuMemoryGiB: 4),
+          devices: vulkan,
+        );
+        expect(config.maxGpuMemoryGiB, 4);
+        expect(driver.discreteGpuQueries, 1);
+      },
+    );
+
     test('refuses a GPU budget with the fit off, which aborts the runtime, '
         'before file resolution', () async {
       await expectLater(
@@ -3884,6 +3949,16 @@ final class _FakeDriver implements ImageGenerationDriver {
 
   final List<ImageGenerationComputeDevice> budgetDevices = [];
   final List<bool> runtimePicks = [];
+
+  /// What [reportsDiscreteGpu] answers.
+  bool? discreteGpu = true;
+  int discreteGpuQueries = 0;
+
+  @override
+  Future<bool?> reportsDiscreteGpu() async {
+    discreteGpuQueries++;
+    return discreteGpu;
+  }
 
   @override
   Future<ImageGenerationMemoryLimits> memoryLimits(

@@ -99,7 +99,8 @@ Image module placement (`ImageModelPlacement`: text encoders or VAE on the
 CPU, `maxGpuMemoryGiB`, `autoFit`) applies to Metal and Vulkan engines and is
 measured with SD-Turbo on macOS arm64 Metal only; Vulkan and multi-GPU hosts
 have no evidence yet. A CPU engine (Android, the CPU builds,
-`ComputeDevice.cpu`) and the Web throw `LlamaUnsupportedException`. See
+`ComputeDevice.cpu`) and the Web throw `LlamaUnsupportedException`, as does
+`maxGpuMemoryGiB` on Vulkan without a discrete GPU. See
 [Module placement](../guides/image-generation#module-placement-and-gpu-memory).
 
 Image editing uses `ImageEditingRequest` with copied decoded RGB and optional

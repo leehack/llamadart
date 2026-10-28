@@ -33,6 +33,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
   }) async => (refuse: null, slower: null);
 
   @override
+  Future<bool?> reportsDiscreteGpu() async => null;
+
+  @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>
       Future.error(probeStableDiffusionRuntime().unavailableReason!);
 }

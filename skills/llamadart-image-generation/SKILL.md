@@ -298,9 +298,9 @@ core and `llamadart_stable_diffusion_flutter` together.
   CPU/Metal; other platforms and families remain unmeasured for this option.
 - `load(placement: ImageModelPlacement(...))` on Metal or Vulkan sets
   `textEncoderOnCpu`, `vaeOnCpu`, `maxGpuMemoryGiB` (whole GiB) and `autoFit`
-  (off: fail instead of spilling); moved modules and a budget that tiles the
-  decode change pixels slightly. CPU engines, the Web, and a budget with the
-  fit off throw `LlamaUnsupportedException`.
+  (off: fail instead of spilling); moved modules and a tiled decode change
+  pixels slightly. CPU engines, the Web, and a budget with the fit off or on
+  Vulkan without a discrete GPU throw `LlamaUnsupportedException`.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the first
   runtime probe in a process (`checkRuntime()` or `load()`, both off the
   calling isolate) compiles the Metal library on Apple (about 16 s on an M4 Max

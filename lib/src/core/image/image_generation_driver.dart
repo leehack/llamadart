@@ -318,6 +318,12 @@ abstract interface class ImageGenerationDriver {
     required bool runtimePicksGpu,
   });
 
+  /// Whether a GPU other than Metal that the runtime lists is discrete:
+  /// `true` when one is, `false` when every GPU is integrated, and `null`
+  /// when the runtime does not say (see `readStableDiffusionGpuMemory`). Like
+  /// [memoryLimits], it asks off the calling isolate on native platforms.
+  Future<bool?> reportsDiscreteGpu();
+
   /// Loads a native context. On native platforms the runtime's messages
   /// reach `LlamaLogger` from then on, at the levels `LlamaLogging` has when
   /// this is called.

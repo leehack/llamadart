@@ -410,7 +410,8 @@ class ImageGenerationEngine {
   ///   any file is resolved, for a [placement] other than the default on an
   ///   engine that runs on the CPU, and for
   ///   [ImageModelPlacement.maxGpuMemoryGiB] with
-  ///   [ImageModelPlacement.autoFit] off.
+  ///   [ImageModelPlacement.autoFit] off, or on a GPU other than Metal when
+  ///   the runtime reports no discrete GPU.
   /// - [LlamaImageGenerationException] for invalid [params], including a
   ///   conditioning-cache capacity outside 0 through the signed 32-bit limit,
   ///   and for [ImageModelPlacement.maxGpuMemoryGiB] outside 1 through
@@ -484,6 +485,23 @@ class ImageGenerationEngine {
       );
     }
     _checkPlacement(placement, params.device, backendName, runtime.devices);
+    if (placement.maxGpuMemoryGiB != null &&
+        !_isMetal(backendName) &&
+        await driver.reportsDiscreteGpu() != true) {
+      // ggml-vulkan reports an integrated GPU as IGPU. With no backend named,
+      // the runtime's fit plans only for discrete GPUs, then computes on the
+      // integrated one under max_vram without a plan, which aborts like the
+      // fit-off case. Metal devices always report the GPU type.
+      throw LlamaUnsupportedException(
+        'ImageModelPlacement.maxGpuMemoryGiB needs a discrete GPU, and the '
+        'stable_diffusion runtime reports $backendName as an integrated GPU '
+        'with no discrete one, or does not report the GPU type (for example '
+        'with SD_VK_DEVICE set): stable-diffusion-native v0.3.0-1 can abort '
+        'the process when it computes there with a budget '
+        '(https://github.com/leehack/stable-diffusion-native/issues/34). '
+        'Drop maxGpuMemoryGiB.',
+      );
+    }
     final localSet = model is LocalImageSetModel ? model : null;
     ({String indexPath, int totalBytes, String layoutSha256})? snapshot;
     final effectiveStore = store ?? ModelFileStore();

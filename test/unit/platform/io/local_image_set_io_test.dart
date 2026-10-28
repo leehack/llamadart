@@ -685,6 +685,9 @@ class _RecordingSetDriver implements ImageGenerationDriver {
   }
 
   @override
+  Future<bool?> reportsDiscreteGpu() async => null;
+
+  @override
   Future<ImageGenerationSession> start(
     ImageGenerationSessionConfig config,
   ) async {

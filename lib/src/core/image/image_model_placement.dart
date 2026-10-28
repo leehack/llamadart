@@ -20,6 +20,12 @@ final class ImageModelPlacement {
   /// a CPU encode once per generation. The conditioning differs from the
   /// GPU's in rounding, which sampling carries into the image: SD-Turbo on an
   /// M4 Max changed by at most 40 and on average 0.23 of 255 per channel.
+  ///
+  /// With a discrete and an integrated Vulkan GPU and `ComputeDevice.auto`,
+  /// moving a module, here or with [vaeOnCpu], lets the runtime's fit also
+  /// consider the integrated GPU, which can then compute the diffusion model
+  /// when it reports more free memory: slower, not a failure.
+  /// `ComputeDevice.gpu` keeps the first discrete GPU.
   final bool textEncoderOnCpu;
 
   /// Whether the VAE or tiny autoencoder computes on the CPU, with its
@@ -35,9 +41,13 @@ final class ImageModelPlacement {
   /// weights and compute buffers, or `null` for the GPU's free memory less
   /// 512 MiB. It is never more than the GPU's free memory.
   ///
-  /// Weights beyond it stay in system memory, on another GPU or on disk, and
-  /// are streamed to the GPU when used, which is slower; compute buffers
-  /// beyond it are split into segments. A budget below the VAE decode's
+  /// The budget covers weights and the room the runtime's fit reserves for
+  /// computing (2 GiB beside the diffusion model and the text encoders, 1 GiB
+  /// beside the VAE, in the pinned runtime), so weights can move to system
+  /// memory, another GPU or disk even when they alone are below it. Moved
+  /// weights are streamed to the GPU when used, which is slower; compute
+  /// buffers above the budget are split into segments. A budget below the VAE
+  /// decode's
   /// working memory makes the runtime decode in tiles, which shows at their
   /// seams: SD-Turbo at 512x512 with 1 GiB changed by at most 85 and on
   /// average 2.5 of 255 per channel. A budget the model fits leaves pixels
@@ -45,7 +55,10 @@ final class ImageModelPlacement {
   ///
   /// From 1 to [largestGpuMemoryGiB], in whole GiB because the runtime parses
   /// a fraction in the process's locale, which may use a decimal comma.
-  /// Needs [autoFit].
+  /// Needs [autoFit] and, outside Metal, a discrete GPU: the load throws
+  /// `LlamaUnsupportedException` when the runtime reports only integrated
+  /// GPUs or no GPU type, because the pinned runtime can then compute on an
+  /// integrated GPU under the budget without its fit and abort.
   final int? maxGpuMemoryGiB;
 
   /// Whether stable-diffusion.cpp decides where weights go from the memory
