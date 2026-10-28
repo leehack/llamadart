@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
@@ -268,6 +270,134 @@ void main() {
               ),
         ),
       );
+    });
+  });
+
+  group('validate(): GPU devices and tensor split', () {
+    void rejects(ModelParams params, String name, String requirement) {
+      expect(
+        params.validate,
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', name)
+              .having((e) => e.message, 'message', contains(requirement)),
+        ),
+        reason: requirement,
+      );
+    }
+
+    test('rejects malformed device lists', () {
+      rejects(const ModelParams(gpuDevices: []), 'gpuDevices', 'at least one');
+      rejects(
+        const ModelParams(gpuDevices: [0, -1]),
+        'gpuDevices',
+        'non-negative',
+      );
+      rejects(const ModelParams(gpuDevices: [1, 1]), 'gpuDevices', 'repeat');
+    });
+
+    test('rejects splits that are not finite, non-negative proportions', () {
+      rejects(const ModelParams(tensorSplit: []), 'tensorSplit', 'at least');
+      for (final bad in [-1.0, double.nan, double.infinity]) {
+        rejects(
+          ModelParams(tensorSplit: [1, bad]),
+          'tensorSplit',
+          'finite, non-negative',
+        );
+      }
+      rejects(
+        const ModelParams(tensorSplit: [0, 0]),
+        'tensorSplit',
+        'positive sum',
+      );
+    });
+
+    test('rejects splits llama.cpp cannot hold as float32', () {
+      const float32Max = 3.4028234663852886e38;
+      for (final bad in [1e39, float32Max * 1.0000001]) {
+        rejects(ModelParams(tensorSplit: [1, bad]), 'tensorSplit', 'float32');
+      }
+      rejects(
+        const ModelParams(tensorSplit: [1, 1e-46]),
+        'tensorSplit',
+        'rounds to 0',
+      );
+      rejects(
+        const ModelParams(tensorSplit: [float32Max, float32Max]),
+        'tensorSplit',
+        'sum',
+      );
+      // Rounded to float32, as llama.cpp stores it, this value is 2^103: half
+      // an ulp of float32Max, so the float32 sum rounds to infinity.
+      final roundsToHalfUlp = math.pow(2.0, 103) - math.pow(2.0, 77);
+      rejects(
+        ModelParams(tensorSplit: [float32Max, roundsToHalfUlp.toDouble()]),
+        'tensorSplit',
+        'sum',
+      );
+      const ModelParams(tensorSplit: [float32Max, 0]).validate();
+      const ModelParams(tensorSplit: [1, 1.5e-45]).validate();
+    });
+
+    test('rejects a split of another length than the device list', () {
+      rejects(
+        const ModelParams(gpuDevices: [0, 1], tensorSplit: [1]),
+        'tensorSplit',
+        'one proportion per gpuDevices entry (2)',
+      );
+    });
+
+    test('rejects single-device and CPU loads', () {
+      rejects(
+        const ModelParams(gpuDevices: [0], splitMode: ModelSplitMode.none),
+        'gpuDevices',
+        'set mainGpu instead',
+      );
+      rejects(
+        const ModelParams(tensorSplit: [1], splitMode: ModelSplitMode.none),
+        'tensorSplit',
+        'set mainGpu instead',
+      );
+      for (final params in [
+        const ModelParams(gpuDevices: [0], gpuLayers: 0),
+        const ModelParams(gpuDevices: [0], device: ComputeDevice.cpu),
+        const ModelParams(gpuDevices: [0], preferredBackend: GpuBackend.cpu),
+        const ModelParams(tensorSplit: [1], preferredBackend: GpuBackend.blas),
+      ]) {
+        rejects(
+          params,
+          params.gpuDevices != null ? 'gpuDevices' : 'tensorSplit',
+          'offloads none',
+        );
+      }
+    });
+
+    test('copyWith clears both lists back to null', () {
+      const params = ModelParams(gpuDevices: [1], tensorSplit: [1]);
+      final cleared = params.copyWith(
+        clearGpuDevices: true,
+        clearTensorSplit: true,
+      );
+      expect(cleared.gpuDevices, isNull);
+      expect(cleared.tensorSplit, isNull);
+      final kept = params.copyWith(tensorSplit: [2]);
+      expect(kept.gpuDevices, [1]);
+      expect(kept.tensorSplit, [2]);
+    });
+
+    test('accepts lists for every multi-GPU split mode', () {
+      for (final mode in [
+        ModelSplitMode.layer,
+        ModelSplitMode.row,
+        ModelSplitMode.tensor,
+      ]) {
+        ModelParams(
+          splitMode: mode,
+          gpuDevices: const [2, 0],
+          tensorSplit: const [3, 0],
+        ).validate();
+      }
+      const ModelParams(tensorSplit: [1, 2, 0]).validate();
     });
   });
 
@@ -924,6 +1054,8 @@ void main() {
       'liteRtLmMaxProgramCacheBytes': p.liteRtLmMaxProgramCacheBytes,
       'splitMode': p.splitMode,
       'mainGpu': p.mainGpu,
+      'gpuDevices': p.gpuDevices,
+      'tensorSplit': p.tensorSplit,
       'loras': p.loras.map((lora) => lora.path).toList(),
       'chatTemplate': p.chatTemplate,
       'numberOfThreads': p.numberOfThreads,
@@ -954,6 +1086,8 @@ void main() {
       preferredBackend: GpuBackend.vulkan,
       splitMode: ModelSplitMode.row,
       mainGpu: 1,
+      gpuDevices: [1, 0],
+      tensorSplit: [0.75, 0.25],
       loras: [LoraAdapterConfig(path: '/a.gguf')],
       chatTemplate: 'template',
       numberOfThreads: 3,
@@ -1017,6 +1151,8 @@ void main() {
         preferredBackend: GpuBackend.cpu,
         splitMode: ModelSplitMode.layer,
         mainGpu: 0,
+        gpuDevices: const [2],
+        tensorSplit: const [1],
         loras: const [LoraAdapterConfig(path: '/b.gguf')],
         chatTemplate: 'other',
         numberOfThreads: 6,
@@ -1045,6 +1181,8 @@ void main() {
         'device': ComputeDevice.cpu,
         'gpuLayers': 0,
         'preferredBackend': GpuBackend.cpu,
+        'gpuDevices': [2],
+        'tensorSplit': [1.0],
         'loras': ['/b.gguf'],
         'chatTemplate': 'other',
         'numberOfThreads': 6,
@@ -1107,6 +1245,10 @@ void main() {
         #speculativeRollbackTokenMax: 0,
         #splitMode: ModelSplitMode.layer,
         #mainGpu: 0,
+        #gpuDevices: <int>[0],
+        #clearGpuDevices: true,
+        #tensorSplit: <double>[1],
+        #clearTensorSplit: true,
         #useMmap: true,
         #useMlock: false,
         #loadMtp: false,

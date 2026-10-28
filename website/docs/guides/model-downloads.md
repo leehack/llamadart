@@ -340,6 +340,8 @@ use.
   `ModelDownloadManager` in the app or a platform package: an Android
   foreground service or system `DownloadManager` with a notification, or iOS
   background `URLSession` tasks.
+- To share one copy of a model between apps that can open the same
+  directory, see the separate [shared model store](./model-store) package.
 - For device-level sharing, use `userSelected(...)` on Android only after the
   user grants every participating app the same directory (do not request All
   Files Access by default), and `appGroup(...)` on iOS only for apps in the

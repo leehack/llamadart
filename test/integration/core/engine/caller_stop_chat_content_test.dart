@@ -165,7 +165,7 @@ void main() {
           forcedOpen: true,
         );
         expect(_content(forced), isEmpty);
-        expect(_thinking(forced), 'alpha ');
+        expect(_thinking(forced), 'alpha');
       }
     });
 

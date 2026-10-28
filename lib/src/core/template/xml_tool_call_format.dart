@@ -86,7 +86,7 @@ class XmlToolCallFormat {
 
   /// Standard XML format (e.g. Qwen 2.5/3 Coder).
   static const qwen3Coder = XmlToolCallFormat(
-    scopeStart: '<tool_call>',
+    scopeStart: qwen3CoderScopeStart,
     toolStart: '<function=',
     toolSep: '>',
     keyStart: '<parameter=',
@@ -97,6 +97,9 @@ class XmlToolCallFormat {
     trimRawArgval: true,
     allowToolcallInThink: true,
   );
+
+  /// The tool-call scope opening of [qwen3Coder].
+  static const qwen3CoderScopeStart = '<tool_call>';
 
   /// Kimi K2 format.
   static const kimiK2 = XmlToolCallFormat(
@@ -318,7 +321,9 @@ String _literal(String value) {
 /// When [schemas] is supplied, only declared tools and schema-valid arguments
 /// are accepted. Omitting it preserves the legacy schema-free parser.
 /// Escaped `\n` and `\r` in reasoning are unescaped unless
-/// [unescapeReasoning] is false.
+/// [unescapeReasoning] is false. With [verbatimForcedThought], a forced-open
+/// thought is the text before the first [endThink] or tool-call scope, kept as
+/// generated, and the rest is content.
 ChatParseResult parseXmlToolCalls(
   String input,
   XmlToolCallFormat format, {
@@ -328,6 +333,7 @@ ChatParseResult parseXmlToolCalls(
   bool parseToolCalls = true,
   bool thinkingForcedOpen = false,
   bool unescapeReasoning = true,
+  bool verbatimForcedThought = false,
   Map<String, Map<String, dynamic>>? schemas,
 }) {
   String? reasoning;
@@ -347,7 +353,17 @@ ChatParseResult parseXmlToolCalls(
             ? content.indexOf(format.toolStart)
             : content.indexOf(format.scopeStart))
       : -1;
-  if (forcedOpenToolScopeIndex >= 0) {
+  if (verbatimForcedThought && thinkingForcedOpen) {
+    final thought = extractForcedOpenThoughtVerbatim(
+      content,
+      endTag: endThink,
+      contentOpenings: [
+        format.scopeStart.isEmpty ? format.toolStart : format.scopeStart,
+      ],
+    );
+    reasoning = thought.reasoning;
+    content = thought.content;
+  } else if (forcedOpenToolScopeIndex >= 0) {
     final leadingReasoning = content
         .substring(0, forcedOpenToolScopeIndex)
         .trim();

@@ -44,6 +44,8 @@ void main() {
     moeCacheBytes: 1 << 30,
     splitMode: ModelSplitMode.none,
     mainGpu: 1,
+    gpuDevices: [0, 1],
+    tensorSplit: [1, 1],
     gpuLayers: 12,
   );
 
@@ -93,11 +95,21 @@ void main() {
         liteRtLmFieldNames,
       );
       expect(unsupported(llamaCppFields, LlamaRuntime.llamaCpp, web: true), [
+        'gpuDevices',
+        'tensorSplit',
         'useMmap=false',
         'useMlock',
         'cpuMoeLayers',
         'moeCacheBytes',
       ]);
+      expect(
+        unsupported(
+          const ModelParams(tensorSplit: [1]),
+          LlamaRuntime.llamaCpp,
+          web: true,
+        ),
+        ['tensorSplit'],
+      );
       expect(
         unsupported(
           const ModelParams(cpuMoeLayers: 2),
@@ -126,6 +138,8 @@ void main() {
         'gpuLayers=12',
         'splitMode',
         'mainGpu',
+        'gpuDevices',
+        'tensorSplit',
         'numberOfThreadsBatch',
         'batchSize',
         'microBatchSize',

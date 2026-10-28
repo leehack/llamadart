@@ -211,6 +211,34 @@ Future<void> main() async {
 }
 ```
 
+Load a GGUF model on two of a host's GPUs, three quarters on the first
+(native llama.cpp only; the Web and LiteRT-LM throw
+`LlamaUnsupportedException`, as do indices the host lacks):
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<LlamaEngine> loadOnTwoGpus(String path) async {
+  final LlamaEngine engine = LlamaEngine(LlamaBackend());
+  // mainGpu counts the devices of one backend, so keep only CUDA devices.
+  final List<GpuDeviceInfo> gpus = [
+    for (final GpuDeviceInfo gpu in await engine.listGpuDevices(
+      probeBackends: const [GpuBackend.cuda],
+    ))
+      if (gpu.backend == GpuBackend.cuda) gpu,
+  ];
+  await engine.loadModel(
+    path,
+    modelParams: LlamaCppModelParams(
+      preferredBackend: GpuBackend.cuda,
+      gpuDevices: [gpus[0].mainGpu, gpus[1].mainGpu],
+      tensorSplit: const [3, 1],
+    ),
+  );
+  return engine;
+}
+```
+
 Check a model and device before downloading, then load it:
 
 ```dart
@@ -256,10 +284,11 @@ Future<void> switchToLiteRtLm(LlamaEngine engine, String bundlePath) async {
 ```
 
 Keep a Mixture-of-Experts GGUF's experts in host memory and cache the recently
-used ones on a CUDA or Metal GPU (native llama.cpp only; Vulkan, other
-backends, tensor split, the Web and LiteRT-LM throw
-`LlamaUnsupportedException`). It helps a discrete GPU that cannot hold every
-expert; Apple silicon gains nothing:
+used ones on a CUDA or Metal GPU (native llama.cpp only). A budget on Vulkan,
+other backends or tensor split throws `LlamaUnsupportedException`, as do both
+fields on the Web and LiteRT-LM; `cpuMoeLayers` alone runs on any backend.
+Validated on Metal only, where the cache only adds copies; CUDA has no
+hardware evidence yet:
 
 ```dart
 import 'package:llamadart/llamadart.dart';

@@ -71,6 +71,10 @@ class CommandR7BHandler extends ChatTemplateHandler {
   @override
   ChatFormat get format => ChatFormat.commandR7B;
 
+  /// The markers that, besides the end tag, end a forced-open thought kept as
+  /// generated, or null when the parse extracts thoughts by their tags.
+  List<String>? get verbatimForcedThoughtOpenings => null;
+
   @override
   TemplateToolCallSerialization get toolCallSerialization =>
       TemplateToolCallSerialization.normalizeOnly;
@@ -175,12 +179,19 @@ class CommandR7BHandler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    final thinking = extractThinking(
-      output,
-      thinkingForcedOpen: thinkingForcedOpen,
-      startTag: thinkingStartTag,
-      endTag: thinkingEndTag,
-    );
+    final openings = verbatimForcedThoughtOpenings;
+    final thinking = thinkingForcedOpen && openings != null
+        ? extractForcedOpenThoughtVerbatim(
+            output,
+            endTag: thinkingEndTag,
+            contentOpenings: openings,
+          )
+        : extractThinking(
+            output,
+            thinkingForcedOpen: thinkingForcedOpen,
+            startTag: thinkingStartTag,
+            endTag: thinkingEndTag,
+          );
     final text = thinking.content;
 
     const endAction = '<|END_ACTION|>';

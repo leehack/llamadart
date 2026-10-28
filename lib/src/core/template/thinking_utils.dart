@@ -37,18 +37,51 @@ ThinkingExtraction extractThinking(
 /// [endTag], as llama.cpp's PEG parser does.
 ///
 /// The reasoning before it keeps escapes and a repeated start tag, and the
-/// rest is content, where thinking tags are text. Without [endTag], all of
-/// [text] is reasoning. Only the ends of each part are trimmed.
+/// rest is content, where thinking tags are text. The first of
+/// [contentOpenings] also ends the thought when it comes first, and starts the
+/// content. Without either, all of [text] is reasoning, less a trailing prefix
+/// of [endTag] or of an opening. Only the ends of each part are trimmed.
 ThinkingExtraction extractForcedOpenThoughtVerbatim(
   String text, {
   String endTag = '</think>',
+  List<String> contentOpenings = const [],
 }) {
-  final endIdx = text.indexOf(endTag);
-  final reasoning = (endIdx == -1 ? text : text.substring(0, endIdx)).trim();
+  var thoughtEnd = text.indexOf(endTag);
+  var contentStart = thoughtEnd == -1 ? -1 : thoughtEnd + endTag.length;
+  for (final opening in contentOpenings) {
+    final at = text.indexOf(opening);
+    if (at != -1 && (thoughtEnd == -1 || at < thoughtEnd)) {
+      thoughtEnd = at;
+      contentStart = at;
+    }
+  }
+  final reasoning =
+      (thoughtEnd == -1
+              ? withoutTrailingTagPrefix(text, [endTag, ...contentOpenings])
+              : text.substring(0, thoughtEnd))
+          .trim();
   return (
-    content: endIdx == -1 ? '' : text.substring(endIdx + endTag.length).trim(),
+    content: contentStart == -1 ? '' : text.substring(contentStart).trim(),
     reasoning: reasoning.isEmpty ? null : reasoning,
   );
+}
+
+/// Returns [text] without its longest ending that starts one of [tags] but is
+/// not the whole tag.
+///
+/// llama.cpp's PEG parser drops such an ending from a thought that has not
+/// ended, as the start of the tag that would end it.
+String withoutTrailingTagPrefix(String text, Iterable<String> tags) {
+  var cut = 0;
+  for (final tag in tags) {
+    for (var length = tag.length - 1; length > cut; length--) {
+      if (text.endsWith(tag.substring(0, length))) {
+        cut = length;
+        break;
+      }
+    }
+  }
+  return text.substring(0, text.length - cut);
 }
 
 ThinkingExtraction _extractThinking(
