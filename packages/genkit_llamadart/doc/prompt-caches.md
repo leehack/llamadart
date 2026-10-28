@@ -114,8 +114,8 @@ Future<String> resumePrompt(
 ```
 
 The export is a versioned envelope: the native `LlamaStateIdentity` (runtime
-build, session format, context size and a digest of the state-layout context
-settings), the model file's SHA-256, the prompt tokens, the native state and its
+build, session format, context size and a digest of the context settings that
+shape the saved state, RoPE included), the model file's SHA-256, the prompt tokens, the native state and its
 SHA-256. It does not contain the prompt; the application stores the prompt and
 supplies it again. The tokens and state still reveal the prompt, so store and
 encrypt exports as you store prompts. The application owns paths and storage.
@@ -123,7 +123,7 @@ encrypt exports as you store prompts. The application owns paths and storage.
 Import refuses, with `LlamaDartPromptCacheImportException` and its `failure`,
 bytes that are altered or truncated (`corrupt`), of another format version
 (`unsupportedVersion`), from another model file (`modelMismatch`), from another
-runtime build or state-layout settings (`identityMismatch`), whose tokens differ
+runtime build or saved-state context settings (`identityMismatch`), whose tokens differ
 from the supplied prompt's (`tokenMismatch`), or beyond the pool's handle or
 byte limits (`overBudget`). Messages hold no path, prompt or token, and a
 refusal leaves the owner open. The checksum detects damage, not tampering:

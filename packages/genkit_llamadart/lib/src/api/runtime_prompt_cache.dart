@@ -154,7 +154,7 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
   /// Requires [LlamaDartRuntimePool.enablePromptCacheExport]. The export must
   /// be intact and of a supported version, come from the same model file
   /// (SHA-256), match this owner's native [llama.LlamaStateIdentity] (runtime
-  /// build, session format, context size and state-layout settings), hold
+  /// build, session format, context size and the context settings that shape the saved state), hold
   /// exactly the tokens [prompt] tokenizes to, and fit the pool's handle and
   /// byte limits. A refusal throws [LlamaDartPromptCacheImportException]
   /// naming the failed check, with no path, prompt or token in its message,
@@ -197,7 +197,7 @@ extension LlamaDartRuntimePromptCache on LlamaDartRuntimeOwner {
       throw LlamaDartPromptCacheImportException(
         LlamaDartPromptCacheImportFailure.identityMismatch,
         'The prompt cache export was saved by a different native runtime '
-        'build or with different state-layout context settings.',
+        'build or with different saved-state context settings.',
       );
     }
     if (!_sameTokens(envelope.tokens, local.tokens)) {

@@ -12,7 +12,7 @@ enum LlamaDartPromptCacheImportFailure {
   modelMismatch,
 
   /// The export was saved by a different native runtime build or with
-  /// different state-layout context settings.
+  /// different context settings that shape the saved state, RoPE included.
   identityMismatch,
 
   /// The supplied prompt does not tokenize to the exported prompt tokens.

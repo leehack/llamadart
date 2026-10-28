@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Export a raw-prompt cache with `LlamaDartPromptCache.exportBytes()` and import it in another process with `LlamaDartRuntimeOwner.importPromptCache`, on pools created with `enablePromptCacheExport: true`. Import refuses another model file, runtime build, state-layout context settings, prompt, format version, damaged bytes or an over-budget export with `LlamaDartPromptCacheImportException`. Requires llamadart 0.17.0 ([#1211](https://github.com/leehack/llamadart/issues/1211)).
+- Export a raw-prompt cache with `LlamaDartPromptCache.exportBytes()` and import it in another process with `LlamaDartRuntimeOwner.importPromptCache`, on pools created with `enablePromptCacheExport: true`. Import refuses another model file, runtime build, saved-state context settings (KV cache, flash attention, sequences, SWA, RoPE), prompt, format version, damaged bytes or an over-budget export with `LlamaDartPromptCacheImportException`. Requires llamadart 0.17.0 ([#1211](https://github.com/leehack/llamadart/issues/1211)).
 
 ## 3.5.0 - 2026-10-23
 
