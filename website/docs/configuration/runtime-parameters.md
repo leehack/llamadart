@@ -67,7 +67,9 @@ Important fields:
   several GPU backends under `auto`, and a load that would fall back to the
   CPU; the Web and LiteRT-LM reject both fields. After a load with either
   field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA2)`.
-  A speculative draft model loads on the same devices and split. Validated
+  A speculative draft model loads on the same devices and split, and
+  decision heads and multimodal projectors run on the listed GPU `mainGpu`
+  counts within the list, or the first one when it is out of range. Validated
   on one Metal GPU only: multi-GPU loads have no hardware evidence yet, and
   CUDA is not hardware-qualified.
 

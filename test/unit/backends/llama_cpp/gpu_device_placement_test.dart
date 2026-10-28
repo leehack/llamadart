@@ -1,12 +1,18 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/gpu_device_placement.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/load_device_selection.dart';
 import 'package:test/test.dart';
+
+import '../../../support/recording_allocator.dart';
 
 final int _gpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value;
 final int _igpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
@@ -200,6 +206,162 @@ void main() {
           registered: [_host],
         ),
         unsupported(contains('lists no GPU device')),
+      );
+    });
+  });
+
+  group('allocateTensorSplit', () {
+    List<double> allocate(List<double> split, {int maxDevices = 4}) {
+      final allocator = RecordingAllocator();
+      final array = allocateTensorSplit(
+        split,
+        maxDevices: maxDevices,
+        allocator: allocator,
+      );
+      try {
+        // llama.cpp copies llama_max_devices() floats from the array.
+        expect(allocator.byteCounts, [maxDevices * sizeOf<Float>()]);
+        return [for (var i = 0; i < maxDevices; i++) array[i]];
+      } finally {
+        allocator.free(array);
+        allocator.expectAllFreed();
+      }
+    }
+
+    test('holds llama_max_devices() floats, zero after the split', () {
+      expect(allocate(const [3, 1]), [3, 1, 0, 0]);
+      expect(allocate(const [2], maxDevices: 16), [2, ...List.filled(15, 0)]);
+    });
+
+    test('keeps a sum of at most 2^64 as given', () {
+      final limit = math.pow(2.0, 64).toDouble();
+      expect(allocate([limit / 2, limit / 2]), [limit / 2, limit / 2, 0, 0]);
+    });
+
+    test('scales a larger sum down by a power of two', () {
+      for (final split in <List<double>>[
+        const [1e35, 1.0],
+        const [3.4028234663852886e38, 5.070602400912918e30, 1.0],
+        List.filled(4, 2.1e37),
+      ]) {
+        final scaled = allocate(split).sublist(0, split.length);
+        final ratio = scaled.first / Float32List.fromList(split).first;
+        final scale = math
+            .pow(2.0, (math.log(ratio) / math.ln2).round())
+            .toDouble();
+        expect(ratio, scale, reason: 'a power of two keeps float32 ratios');
+        expect(scale, lessThan(1), reason: '$split');
+        expect(
+          scaled,
+          Float32List.fromList([for (final value in split) value * scale]),
+        );
+        expect(
+          scaled.fold<double>(0, (a, b) => a + b),
+          lessThanOrEqualTo(math.pow(2.0, 64)),
+        );
+      }
+    });
+
+    // Mirrors llama-model.cpp 620d2225 tensor split mode: every rotation of
+    // the float32 running sum, with `ne_s * scan[j] / scan.back()` in float32.
+    List<double>? tensorRows(List<double> stored, int rows) {
+      final n = stored.length;
+      final result = <double>[];
+      final f = Float32List(3);
+      for (var rotation = 0; rotation < n; rotation++) {
+        final scan = Float32List(n);
+        for (var j = 0; j < n; j++) {
+          scan[j] = stored[(j + rotation) % n];
+          if (j > 0) scan[j] = scan[j] + scan[j - 1];
+        }
+        for (var j = 0; j < n - 1; j++) {
+          f[0] = rows.toDouble();
+          f[1] = f[0] * scan[j];
+          f[2] = f[1] / scan[n - 1];
+          if (!f[2].isFinite) return null;
+          result.add(f[2]);
+        }
+      }
+      return result;
+    }
+
+    test('keeps tensor split mode row counts finite and unchanged', () {
+      for (final rows in [4096, 262144, 1 << 31]) {
+        for (final split in <List<double>>[
+          const [3.0, 1.0],
+          const [1.0, 1.0, 1.0],
+          const [5.0, 3.0, 2.0, 7.0],
+          const [0.3, 0.7],
+          const [1e34, 1.0],
+          const [1e35, 1.0],
+          const [3.4028234663852886e38, 5.070602400912918e30, 5.07e30],
+          List.filled(16, 2.1e37),
+        ]) {
+          final stored = Float32List.fromList(split);
+          final scaled = allocate(
+            split,
+            maxDevices: 16,
+          ).sublist(0, split.length);
+          final expected = tensorRows(stored, rows);
+          final actual = tensorRows(scaled, rows);
+          expect(actual, isNotNull, reason: '$split over $rows rows');
+          if (expected != null) {
+            expect(actual, expected, reason: '$split over $rows rows');
+          }
+        }
+      }
+      expect(
+        tensorRows(Float32List.fromList(const [1e35, 1.0]), 4096),
+        isNull,
+        reason: 'the unscaled split overflows, as the issue reports',
+      );
+    });
+  });
+
+  group('auxiliaryPlacementDevice', () {
+    GgmlDeviceEntry device(String name, int address, {int? type}) =>
+        GgmlDeviceEntry(
+          name: name,
+          registry: 'CUDA',
+          type: type ?? _gpu,
+          device: Pointer.fromAddress(address),
+        );
+    final cuda1 = device('CUDA1', 0x10);
+    final cuda3 = device('CUDA3', 0x20, type: _igpu);
+    final accel = device(
+      'ACCEL',
+      0x30,
+      type: ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
+    );
+
+    test('is the listed GPU mainGpu names, or the first listed', () {
+      final placement = GpuDevicePlacement(devices: [cuda3, cuda1]);
+      expect(auxiliaryPlacementDevice(placement, 0), cuda3);
+      expect(auxiliaryPlacementDevice(placement, 1), cuda1);
+      for (final outOfRange in [-1, 2, 99]) {
+        expect(auxiliaryPlacementDevice(placement, outOfRange), cuda3);
+      }
+    });
+
+    test('counts and picks GPUs and integrated GPUs only', () {
+      expect(
+        auxiliaryPlacementDevice(
+          GpuDevicePlacement(devices: [accel, cuda1, cuda3]),
+          1,
+        ),
+        cuda3,
+      );
+      expect(
+        auxiliaryPlacementDevice(GpuDevicePlacement(devices: [accel]), 0),
+        isNull,
+      );
+      expect(
+        auxiliaryPlacementDevice(
+          GpuDevicePlacement(devices: [_cuda0, cuda1]),
+          0,
+        ),
+        cuda1,
+        reason: 'a device without a ggml handle cannot run a component',
       );
     });
   });

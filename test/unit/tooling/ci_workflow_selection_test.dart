@@ -72,6 +72,20 @@ void expectGuardedUpload(Map<String, dynamic> job, String demo) {
 }
 
 void main() {
+  // This is the first suite in Test Native (windows-latest) to start Python,
+  // and that runner's first launch has taken up to 54 s (later ones well under
+  // 1 s). It runs here, outside the 30 s budget of whichever test would
+  // otherwise pay it.
+  setUpAll(() async {
+    final warmUp =
+        await Process.run(Platform.isWindows ? 'python' : 'python3', [
+          '-c',
+          'import sys; sys.path.insert(0, "tool/ci"); '
+              'import deploy_guard, select_jobs',
+        ]).timeout(const Duration(minutes: 2));
+    expect(warmUp.exitCode, 0, reason: '${warmUp.stderr}');
+  });
+
   test(
     'production deployment consumes the gated same-run artifact without rebuild',
     () {

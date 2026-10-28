@@ -273,7 +273,10 @@ class ModelParams {
   /// `null`, the default, keeps llama.cpp's own device choice. The list sets
   /// both the devices and their order, which [tensorSplit] follows. Under
   /// [GpuBackend.auto] the indices count the devices of the only GPU backend
-  /// with any; with several, set [preferredBackend]. [validate] rejects an
+  /// with any; with several, set [preferredBackend]. On native llama.cpp,
+  /// decision heads and multimodal projectors of the model run on the listed
+  /// GPU [mainGpu] counts within the list, or on the first one when [mainGpu]
+  /// is out of range. [validate] rejects an
   /// empty list, a negative or repeated index, and a list with
   /// [ModelSplitMode.none], which runs on the [mainGpu] device alone, with
   /// [gpuLayers] `0`, or with a CPU [device] or [preferredBackend]. Native
@@ -857,8 +860,8 @@ class ModelParams {
           throw _invalid(
             'tensorSplit',
             split,
-            'must not hold a nonzero proportion that float32 rounds to 0 '
-                '(below $_float32MinPositive)',
+            'must not hold a nonzero proportion of at most 2^-150 '
+                '($_float32RoundsToZeroMax), which float32 rounds to 0',
           );
         }
         float32[1] = float32[1] + float32[0];
@@ -901,7 +904,10 @@ class ModelParams {
   }
 
   static const double _float32Max = 3.4028234663852886e38;
-  static const double _float32MinPositive = 1.401298464324817e-45;
+
+  /// 2^-150, half the smallest float32 subnormal, which rounds to 0 (ties to
+  /// even), as every smaller value does.
+  static const double _float32RoundsToZeroMax = 7.006492321624085e-46;
 
   LlamaArgumentException _invalid(
     String name,

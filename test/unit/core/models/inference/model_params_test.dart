@@ -317,11 +317,19 @@ void main() {
       for (final bad in [1e39, float32Max * 1.0000001]) {
         rejects(ModelParams(tensorSplit: [1, bad]), 'tensorSplit', 'float32');
       }
-      rejects(
-        const ModelParams(tensorSplit: [1, 1e-46]),
-        'tensorSplit',
-        'rounds to 0',
-      );
+      // float32 rounds 2^-150, half the smallest subnormal, to 0 (ties to
+      // even) and anything above it to the smallest subnormal.
+      final halfSubnormal = math.pow(2.0, -150).toDouble();
+      for (final bad in [1e-46, halfSubnormal]) {
+        rejects(
+          ModelParams(tensorSplit: [1, bad]),
+          'tensorSplit',
+          'nonzero proportion of at most 2^-150 '
+              '(7.006492321624085e-46), which float32 rounds to 0',
+        );
+      }
+      ModelParams(tensorSplit: [1, halfSubnormal * (1 + 1e-15)]).validate();
+      const ModelParams(tensorSplit: [1, 1e-45]).validate();
       rejects(
         const ModelParams(tensorSplit: [float32Max, float32Max]),
         'tensorSplit',
@@ -336,6 +344,11 @@ void main() {
         'sum',
       );
       const ModelParams(tensorSplit: [float32Max, 0]).validate();
+      // The sum exceeds float32Max but rounds back to it in float32: below
+      // half an ulp (2^103), so llama.cpp's float32 sum stays finite.
+      ModelParams(
+        tensorSplit: [float32Max, math.pow(2.0, 102).toDouble()],
+      ).validate();
       const ModelParams(tensorSplit: [1, 1.5e-45]).validate();
     });
 

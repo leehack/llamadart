@@ -633,7 +633,8 @@ downloading or starting a runtime; see
 
 On native llama.cpp, `gpuDevices` loads a model on chosen GPUs of one backend,
 by their `LlamaEngine.listGpuDevices` index, and `tensorSplit` sets each
-GPU's share. Indices the host lacks, a split of another length and the Web or
+GPU's share. Decision heads and multimodal projectors of the model run on a
+listed GPU. Indices the host lacks, a split of another length and the Web or
 LiteRT-LM throw `LlamaUnsupportedException`. Validated on one Metal GPU only:
 multi-GPU loads have no hardware evidence yet, and CUDA is not
 hardware-qualified. See

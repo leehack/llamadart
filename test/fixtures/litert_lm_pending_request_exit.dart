@@ -7,6 +7,7 @@ import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 
 Future<void> main() async {
+  print('started');
   final port = ReceivePort();
   final received = Completer<void>();
   port.listen((message) {
@@ -26,6 +27,7 @@ Future<void> main() async {
         },
       );
   await received.future;
+  print('request received');
   try {
     await backend.dispose();
     throw StateError('Unverified cleanup unexpectedly succeeded');
@@ -34,5 +36,7 @@ Future<void> main() async {
   } finally {
     port.close();
   }
+  print('disposed');
   await pending;
+  print('done; the VM must now exit on its own');
 }

@@ -57,7 +57,12 @@ double _logprob(Map row) => (row['logprob'] as num).toDouble();
 
 /// A well-formed result: bounded, sorted, distinct top tokens and a prompt
 /// token count that matches the independently tokenized prompt.
-List<Map>? _top(Object? score, int expectedCount, int promptTokens) {
+List<Map>? _top(
+  Object? score,
+  int expectedCount,
+  int promptTokens,
+  num maxMass,
+) {
   if (score is! Map || score['prompt_tokens'] != promptTokens) return null;
   final top = _rows(score['top']);
   if (top == null || top.length != expectedCount) return null;
@@ -66,7 +71,7 @@ List<Map>? _top(Object? score, int expectedCount, int promptTokens) {
     if (i > 0 && _logprob(top[i]) > _logprob(top[i - 1])) return null;
     mass += math.exp(_logprob(top[i]));
   }
-  if (mass > 1.001 ||
+  if (mass > maxMass ||
       top.map((row) => row['token']).toSet().length != top.length) {
     return null;
   }
@@ -157,6 +162,7 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
   final prompts = (fixture['prompts'] as List).cast<String>();
   final tolerance = fixture['max_abs_logprob_delta'] as num;
   final ranks = (fixture['candidate_ranks'] as List).cast<int>();
+  final maxMass = fixture['max_probability_mass'] as num;
   bool tokens(Object? value, int limit) =>
       value is List &&
       value.length >= 8 &&
@@ -174,13 +180,14 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
           return false;
         }
         final count = (trial['tokens'] as List).length;
-        final first = _top(trial['first'], topK, count);
-        final repeat = _top(trial['repeat'], topK, count);
+        final first = _top(trial['first'], topK, count, maxMass);
+        final repeat = _top(trial['repeat'], topK, count, maxMass);
         if (first == null ||
             repeat == null ||
             !_same(_ids(first), _ids(repeat)) ||
             _delta(first, repeat) > tolerance ||
-            !_same((trial['first'] as Map)['candidates'], const [])) {
+            !_same((trial['first'] as Map)['candidates'], const []) ||
+            !_same((trial['repeat'] as Map)['candidates'], const [])) {
           return false;
         }
       }
@@ -191,7 +198,7 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
         return false;
       }
       final count = (record['tokens'] as List).length;
-      final base = _top(record['baseline'], topK, count);
+      final base = _top(record['baseline'], topK, count, maxMass);
       if (base == null) return false;
       final topIds = _ids(base);
       final ids = [
@@ -203,12 +210,15 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
       final combined = record['combined'];
       final onlyRows = _candidates(only, ids);
       final combinedRows = _candidates(combined, ids);
+      final combinedTop = _top(combined, topK, count, maxMass);
       if (onlyRows == null ||
           combinedRows == null ||
           only is! Map ||
           only['prompt_tokens'] != count ||
           !_same(only['top'], const []) ||
-          _top(combined, topK, count) == null) {
+          combinedTop == null ||
+          !_same(_ids(combinedTop), topIds) ||
+          _delta(combinedTop, base) > tolerance) {
         return false;
       }
       for (final rows in [onlyRows, combinedRows]) {
@@ -237,8 +247,9 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
         common++;
       }
       if (common < 8 || full.length - common < 2) return false;
-      final fresh = _top(record['fresh'], topK, full.length);
-      if (fresh == null || _top(record['prime'], topK, prefix.length) == null) {
+      final fresh = _top(record['fresh'], topK, full.length, maxMass);
+      if (fresh == null ||
+          _top(record['prime'], topK, prefix.length, maxMass) == null) {
         return false;
       }
       final reused = _candidates(record['reused'], _ids(fresh));
@@ -252,8 +263,8 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
         return false;
       }
       final length = (count as List).length;
-      final base = _top(record['baseline'], topK, length);
-      final recovery = _top(record['recovery'], topK, length);
+      final base = _top(record['baseline'], topK, length, maxMass);
+      final recovery = _top(record['recovery'], topK, length, maxMass);
       final rejections = record['rejections'];
       return base != null &&
           recovery != null &&
@@ -269,5 +280,46 @@ bool _valid(String id, Map<String, dynamic> record, ValidationProfile profile) {
             ])
               name: 'ArgumentError',
           });
+  }
+}
+
+/// Whether every passing case that scored the first fixture prompt fresh
+/// (N02 trial 0, the N03 and N05 baselines) saw the same tokens and scores.
+/// Each case is self-consistent alone, so this catches consistently permuted
+/// token IDs that no single case can.
+bool scoringFreshPromptsAgree(
+  Iterable<Map<String, dynamic>> passedRecords,
+  ValidationProfile profile,
+) {
+  try {
+    final fixture = profile.fixtures['next_token_scoring'] as Map;
+    final tolerance = fixture['max_abs_logprob_delta'] as num;
+    final views = <({List tokens, List<Map> top})>[];
+    for (final record in passedRecords) {
+      switch (record['case_id']) {
+        case 'N02.top_k':
+          final source = (record['trials'] as List).first as Map;
+          views.add((
+            tokens: source['tokens'] as List,
+            top: _rows((source['first'] as Map)['top'])!,
+          ));
+        case 'N03.candidates' || 'N05.guards':
+          views.add((
+            tokens: record['tokens'] as List,
+            top: _rows((record['baseline'] as Map)['top'])!,
+          ));
+      }
+    }
+    for (final view in views.skip(1)) {
+      final first = views.first;
+      if (!_same(view.tokens, first.tokens) ||
+          !_same(_ids(view.top), _ids(first.top)) ||
+          _delta(view.top, first.top) > tolerance) {
+        return false;
+      }
+    }
+    return true;
+  } on Object {
+    return false;
   }
 }
