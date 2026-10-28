@@ -2620,6 +2620,42 @@ void main() {
         }
       });
 
+      test('Cohere response markers without tools', () async {
+        const markers = [
+          '<|START_TEXT|>',
+          '<|END_TEXT|>',
+          '<|START_RESPONSE|>',
+          '<|END_RESPONSE|>',
+        ];
+        for (final format in const [
+          ChatFormat.commandR7B,
+          ChatFormat.cohere2Moe,
+        ]) {
+          for (final output in const [
+            '<|START_TEXT|>Hello, world!<|END_TEXT|>',
+            '<|START_RESPONSE|> Hello \n<|END_RESPONSE|>',
+            '<|START_THINKING|>Plan.<|END_THINKING|>'
+                '<|START_RESPONSE|>Hello<|END_RESPONSE|>',
+            '<|START_TEXT|>Hello<|END_TE',
+            '<|START_RESPONSE|>Hello',
+          ]) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              tools: false,
+              openings: markers,
+            );
+          }
+          // With tools the content gate holds a response at its opening, and
+          // a stray marker before it stays content.
+          await _expectStreamMatchesParse(
+            format,
+            'Hi<|END_TEXT|> there',
+            openings: markers,
+          );
+        }
+      });
+
       test('thoughts in formats whose tool-call streams are gated', () async {
         const thoughts = [
           '<think>\nPlan.\n</think>\n\nSure.',

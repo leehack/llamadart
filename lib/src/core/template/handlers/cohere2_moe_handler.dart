@@ -13,6 +13,24 @@ class Cohere2MoeHandler extends CommandR7BHandler {
   @override
   List<String> get additionalStops => ['<|END_TEXT|>'];
 
+  // Matches what llama.cpp 620d2225 common/parsers/cohere2moe.cpp preserves.
+  @override
+  List<String> get preservedTokens => const [
+    '<|START_OF_TURN_TOKEN|>',
+    '<|END_OF_TURN_TOKEN|>',
+    '<|CHATBOT_TOKEN|>',
+    '<|USER_TOKEN|>',
+    '<|SYSTEM_TOKEN|>',
+    '<|START_THINKING|>',
+    '<|END_THINKING|>',
+    '<|START_TEXT|>',
+    '<|END_TEXT|>',
+    '<|START_ACTION|>',
+    '<|END_ACTION|>',
+    '<|START_TOOL_RESULT|>',
+    '<|END_TOOL_RESULT|>',
+  ];
+
   @override
   List<String> getStops({bool hasTools = false, bool enableThinking = true}) {
     return [...additionalStops, if (hasTools) '<|END_ACTION|>'];

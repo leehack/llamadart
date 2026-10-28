@@ -238,5 +238,16 @@ void main() {
         'get_weather',
       ]);
     });
+
+    test('a required ${format.name} grammar in $template takes no thought '
+        'with thinking off', () {
+      final result = renderForcedOpenRequiredCall(
+        template,
+        enableThinking: false,
+      );
+      expect(result.format, format.index);
+      expect(result.thinkingForcedOpen, isFalse);
+      expect(result.grammar, isNot(contains('think-body')));
+    });
   }
 }
