@@ -107,7 +107,7 @@ as the model wrote it, escapes and repeated `<think>` included, and the rest is
 content, as in llama-server. A Qwen3.5 `<tool_call>` also ends the thought.
 A Cohere2 MoE thought ends at `<|END_THINKING|>`, or at a `<|START_TEXT|>` or
 `<|START_ACTION|>` that comes first.
-See [Template Engine Internals](./template-engine-internals) for the parse and
+See [Template engine internals](./template-engine-internals) for the parse and
 stream rules of each format.
 
 ### LiteRT-LM template registry
