@@ -57,6 +57,10 @@ class XmlToolCallFormat {
   /// Whether tool calls can appear inside thinking blocks.
   final bool allowToolcallInThink;
 
+  /// Whether a scope may follow a closed one, separated only by whitespace,
+  /// to hold the next tool call.
+  final bool repeatsScope;
+
   /// Creates a [XmlToolCallFormat] definition.
   const XmlToolCallFormat({
     required this.scopeStart,
@@ -72,6 +76,7 @@ class XmlToolCallFormat {
     this.lastValEnd,
     this.lastToolEnd,
     this.allowToolcallInThink = false,
+    this.repeatsScope = false,
   });
 
   /// Finds where [parseXmlToolCalls] may find a tool-call opening in [text].
@@ -96,6 +101,7 @@ class XmlToolCallFormat {
     scopeEnd: '</tool_call>',
     trimRawArgval: true,
     allowToolcallInThink: true,
+    repeatsScope: true,
   );
 
   /// The tool-call scope opening of [qwen3Coder].
@@ -195,8 +201,9 @@ class XmlToolCallFormat {
 
 /// Builds a simple XML-style tool-call grammar for [format].
 ///
-/// When [parallelToolCalls] is false, the [XmlToolCallFormat.qwen3Coder] root
-/// admits exactly one tool call. Other formats ignore [parallelToolCalls].
+/// The [XmlToolCallFormat.qwen3Coder] root admits one tool call per scope, in
+/// consecutive scopes, as llama.cpp's grammar does; when [parallelToolCalls]
+/// is false, exactly one. Other formats ignore [parallelToolCalls].
 String? buildXmlToolCallGrammar(
   List<ToolDefinition>? tools,
   XmlToolCallFormat format, {
@@ -245,9 +252,10 @@ obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? 
     // activation replays that exact trigger text, so whitespace must be valid
     // in the grammar rather than relying on eager constrained decoding to
     // remove it.
-    final toolCalls = parallelToolCalls ? 'tool-call+' : 'tool-call';
+    final scopes = parallelToolCalls ? 'tool-call-scope+' : 'tool-call-scope';
     return '''
-root ::= ${_literal(format.scopeStart)} xml-space $toolCalls ${_literal(format.scopeEnd)} xml-space
+root ::= $scopes
+tool-call-scope ::= ${_literal(format.scopeStart)} xml-space tool-call ${_literal(format.scopeEnd)} xml-space
 tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
 param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} qwen3-coder-value ${_literal(format.valEnd)} xml-space
 tool-name ::= $toolNameRule
@@ -428,37 +436,58 @@ ChatParseResult parseXmlToolCalls(
   // Parse individual tool calls
   var callIndex = 0;
   var pos = 0;
+  // The end of the scope closed before the latest repeated one, and the calls
+  // parsed before that one opened.
+  ({int scopeEnd, int calls})? repeatedScope;
 
   while (pos < content.length) {
-    final toolIdx = content.indexOf(format.toolStart, pos);
-    if (toolIdx == -1) {
-      if (format.scopeStart.isNotEmpty) {
-        final remaining = content.substring(pos).trimLeft();
-        if (remaining.isNotEmpty && !_startsWithScopeTail(remaining, format)) {
-          parseFailed = true;
+    final _ParsedXmlToolCall? toolCall;
+    // A call's end position already skips the whitespace after it.
+    if (format.repeatsScope &&
+        callIndex > 0 &&
+        content.startsWith(format.scopeEnd, pos)) {
+      // Only another whitespace-separated scope holding a valid call
+      // continues the calls; anything else after the closed scope is
+      // trailing content.
+      final toolIdx = _nextScopeToolStart(content, pos, format);
+      final nextCall = toolIdx == null
+          ? null
+          : _parseXmlToolCall(content, toolIdx, format, schemas);
+      if (nextCall == null) break;
+      repeatedScope = (scopeEnd: pos, calls: toolCalls.length);
+      toolCall = nextCall;
+    } else {
+      final toolIdx = content.indexOf(format.toolStart, pos);
+      if (toolIdx == -1) {
+        if (format.scopeStart.isNotEmpty) {
+          final remaining = content.substring(pos).trimLeft();
+          if (remaining.isNotEmpty &&
+              !_startsWithScopeTail(remaining, format)) {
+            parseFailed = true;
+          }
+        } else if (pos < content.length) {
+          parsedContent.write(content.substring(pos));
         }
-      } else if (pos < content.length) {
-        parsedContent.write(content.substring(pos));
+        break;
       }
-      break;
-    }
-    if (format.scopeStart.isNotEmpty &&
-        content.substring(pos, toolIdx).trim().isNotEmpty) {
-      parseFailed = true;
-      break;
-    }
-    if (format.scopeStart.isEmpty && toolIdx > pos) {
-      parsedContent.write(content.substring(pos, toolIdx));
-    }
-
-    final toolCall = _parseXmlToolCall(content, toolIdx, format, schemas);
-    if (toolCall == null) {
-      if (format.scopeStart.isNotEmpty) {
+      if (format.scopeStart.isNotEmpty &&
+          content.substring(pos, toolIdx).trim().isNotEmpty) {
         parseFailed = true;
-      } else {
-        parsedContent.write(content.substring(toolIdx));
+        break;
       }
-      break;
+      if (format.scopeStart.isEmpty && toolIdx > pos) {
+        parsedContent.write(content.substring(pos, toolIdx));
+      }
+
+      toolCall = _parseXmlToolCall(content, toolIdx, format, schemas);
+      if (toolCall == null) {
+        if (format.scopeStart.isNotEmpty) {
+          parseFailed = true;
+        } else {
+          parsedContent.write(content.substring(toolIdx));
+        }
+        break;
+      }
     }
     pos = toolCall.nextPos;
 
@@ -476,7 +505,14 @@ ChatParseResult parseXmlToolCalls(
   if (format.scopeStart.isEmpty) {
     remainingContent = parsedContent.toString();
   } else if (format.scopeEnd.isNotEmpty) {
-    final scopeEndIdx = content.indexOf(format.scopeEnd, pos);
+    var scopeEndIdx = parseFailed ? -1 : content.indexOf(format.scopeEnd, pos);
+    // A malformed or unclosed repeated scope stays content, after the calls
+    // of the scopes before it.
+    if (scopeEndIdx == -1 && repeatedScope != null) {
+      toolCalls.removeRange(repeatedScope.calls, toolCalls.length);
+      scopeEndIdx = repeatedScope.scopeEnd;
+      parseFailed = false;
+    }
     if (scopeEndIdx != -1) {
       final trailing = content.substring(scopeEndIdx + format.scopeEnd.length);
       if (trailing.trim().isNotEmpty) {
@@ -499,6 +535,21 @@ ChatParseResult parseXmlToolCalls(
     reasoningContent: reasoning,
     toolCalls: toolCalls,
   );
+}
+
+/// Returns where the tool call of a scope that follows the scope end at
+/// [scopeEnd] in [text] starts, when only whitespace separates them.
+int? _nextScopeToolStart(String text, int scopeEnd, XmlToolCallFormat format) {
+  final scopeStart = _consumeXmlWhitespace(
+    text,
+    scopeEnd + format.scopeEnd.length,
+  );
+  if (!text.startsWith(format.scopeStart, scopeStart)) return null;
+  final toolStart = _consumeXmlWhitespace(
+    text,
+    scopeStart + format.scopeStart.length,
+  );
+  return text.startsWith(format.toolStart, toolStart) ? toolStart : null;
 }
 
 int _trailingPrefixLength(String value, String prefix) {
