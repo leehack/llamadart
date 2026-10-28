@@ -235,6 +235,7 @@ class LlamaEngine {
   /// false, as it is when a model loads or unloads while the snapshot is
   /// read; [LlamaEngineCapabilities.unsupportedReason] says which. Read it
   /// again after loading or unloading a model or multimodal projector.
+  /// To check a model before loading it, use [checkLoad].
   Future<LlamaEngineCapabilities> get capabilities async {
     const disposed = LlamaEngineCapabilities(
       isSupported: false,
