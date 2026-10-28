@@ -125,7 +125,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   `(await engine.capabilities).supportsReferenceImageEditing`, and pass
   `ReferenceImageEditingRequest(prompt: 'Change the car to red.', recipe:
   ImageReferenceEditingRecipe.fluxKontext, references: [ImageEditingPixels.rgb(...)],
-  guidanceScale: 1)`. The output takes the reference's size: exactly one RGB
+  guidanceScale: 1)`; always pass `guidanceScale: 1`, because omitted it is 7. The output takes the reference's size: exactly one RGB
   reference, sides multiples of 64, at most 1024x1024; crop and resize it
   first. Headers cannot tell Kontext from FLUX.1 [dev]; other models,
   devices and platforms throw `LlamaUnsupportedException`.

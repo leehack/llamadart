@@ -5,7 +5,6 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
@@ -59,7 +58,7 @@ List<StableDiffusionGpuMemory>? _integratedOnly({
 
 List<StableDiffusionGpuMemory>? _integratedAndDiscrete({
   LlamaLogLevel logLevel = LlamaLogLevel.none,
-}) => [..._integratedOnly()!, ..._twoGpus()!.take(1)];
+}) => [..._integratedOnly(logLevel: logLevel)!, ..._twoGpus()!.take(1)];
 
 /// Answers only in an isolate the driver spawns.
 List<StableDiffusionGpuMemory>? _discreteInSpawnedIsolate({
@@ -143,6 +142,7 @@ void main() {
         (await driver.memoryLimits(
           ImageGenerationComputeDevice.otherGpu,
           runtimePicksGpu: true,
+          gpus: await driver.readGpuMemory(),
         )).slower?.source,
         contains('log level ${expected.name}'),
         reason: reason,
@@ -187,6 +187,7 @@ void main() {
     final limits = await driver.memoryLimits(
       ImageGenerationComputeDevice.otherGpu,
       runtimePicksGpu: true,
+      gpus: await driver.readGpuMemory(),
     );
     final host = (await driver.memoryLimits(
       ImageGenerationComputeDevice.cpu,
@@ -219,6 +220,7 @@ void main() {
     }) async => (await driver.memoryLimits(
       ImageGenerationComputeDevice.otherGpu,
       runtimePicksGpu: runtimePicksGpu,
+      gpus: await driver.readGpuMemory(),
     )).slower;
 
     expect((await slower(runtimePicksGpu: true))?.bytes, 20 << 30);
@@ -233,6 +235,7 @@ void main() {
       await driver.memoryLimits(
         ImageGenerationComputeDevice.otherGpu,
         runtimePicksGpu: true,
+        gpus: await driver.readGpuMemory(),
       ),
       (refuse: null, slower: null),
     );
@@ -254,20 +257,25 @@ void main() {
     }
   });
 
-  test('a discrete GPU is one any listed GPU is not integrated, asked in '
-      'another isolate; an unknown list is no answer', () async {
-    for (final (reader, expected) in [
-      (_discreteInSpawnedIsolate, true),
-      (_integratedAndDiscrete, true),
-      (_integratedOnly, false),
-      (_noGpuMemory, null),
-    ]) {
-      expect(
-        await createImageGenerationDriver(
-          readGpuMemory: reader,
-        ).reportsDiscreteGpu(),
-        expected,
-      );
-    }
+  test('reads the GPU memory in another isolate; an unknown list is no '
+      'answer', () async {
+    expect(
+      await createImageGenerationDriver(
+        readGpuMemory: _discreteInSpawnedIsolate,
+      ).readGpuMemory(),
+      hasLength(2),
+    );
+    expect(
+      (await createImageGenerationDriver(
+        readGpuMemory: _integratedAndDiscrete,
+      ).readGpuMemory())?.map((gpu) => gpu.integrated),
+      [true, false],
+    );
+    expect(
+      await createImageGenerationDriver(
+        readGpuMemory: _noGpuMemory,
+      ).readGpuMemory(),
+      isNull,
+    );
   });
 }

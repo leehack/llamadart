@@ -207,6 +207,16 @@ final class ImageGenerationSessionHiresFix {
 /// Memory the device can give an image model, and where the figure came from.
 typedef ImageGenerationMemoryBudget = ({int bytes, String source});
 
+/// The memory of a GPU as the stable_diffusion runtime reports it, in bytes.
+/// [name] is the device name with its description, such as
+/// `Vulkan0 (NVIDIA L4)`.
+typedef StableDiffusionGpuMemory = ({
+  String name,
+  int totalBytes,
+  int freeBytes,
+  bool integrated,
+});
+
 /// What the memory of a device means for a load: a model that needs more than
 /// [refuse] cannot load, and one that needs more than [slower] loads with
 /// part of it outside the device's own memory, which makes generation slower.
@@ -311,18 +321,20 @@ abstract interface class ImageGenerationDriver {
   /// The memory limits of a new model on [device]. [runtimePicksGpu] says
   /// that the load names no backend, so with several GPUs the runtime
   /// computes on the one with the most free memory, not on the first.
-  /// Asking GPUs other than Metal is a native call that can block, so on
-  /// native platforms it runs in a short-lived isolate.
+  /// [gpus] is what [readGpuMemory] returned; only a GPU other than Metal
+  /// reads it, and `null` means the runtime did not say.
   Future<ImageGenerationMemoryLimits> memoryLimits(
     ImageGenerationComputeDevice device, {
     required bool runtimePicksGpu,
+    List<StableDiffusionGpuMemory>? gpus,
   });
 
-  /// Whether a GPU other than Metal that the runtime lists is discrete:
-  /// `true` when one is, `false` when every GPU is integrated, and `null`
-  /// when the runtime does not say (see `readStableDiffusionGpuMemory`). Like
-  /// [memoryLimits], it asks off the calling isolate on native platforms.
-  Future<bool?> reportsDiscreteGpu();
+  /// The memory of every GPU other than Metal that the runtime lists, or
+  /// `null` when it does not say (see `readStableDiffusionGpuMemory`). A
+  /// native call that can block, so on native platforms it runs in a
+  /// short-lived isolate. One load reads it once and passes it to
+  /// [memoryLimits].
+  Future<List<StableDiffusionGpuMemory>?> readGpuMemory();
 
   /// Loads a native context. On native platforms the runtime's messages
   /// reach `LlamaLogger` from then on, at the levels `LlamaLogging` has when

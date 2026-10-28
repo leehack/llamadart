@@ -562,6 +562,7 @@ void main() {
           'has none', () async {
         runtime.modelVersion = 'Flux';
         final worker = await start(config: referenceConfig);
+        expect(worker, isA<ImageReferenceEditingSession>());
         expect(worker.supportsReferenceImageEditing, isTrue);
         final rgb = Uint8List.fromList(
           List.generate(64 * 128 * 3, (i) => i % 251),

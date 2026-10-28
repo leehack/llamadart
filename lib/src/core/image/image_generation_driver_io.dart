@@ -66,6 +66,7 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
   Future<ImageGenerationMemoryLimits> memoryLimits(
     ImageGenerationComputeDevice device, {
     required bool runtimePicksGpu,
+    List<StableDiffusionGpuMemory>? gpus,
   }) async {
     if (device != ImageGenerationComputeDevice.otherGpu) {
       return (
@@ -73,23 +74,19 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
         slower: null,
       );
     }
-    final readGpuMemory = _readGpuMemory;
-    final logLevel = imageRuntimeLogLevel();
     return stableDiffusionGpuMemoryLimits(
-      // The queries are native calls that can block: the first one in a
-      // process initializes the GPU backend.
-      await Isolate.run(() => readGpuMemory(logLevel: logLevel)),
+      gpus,
       runtimePicksGpu: runtimePicksGpu,
       hostBudget: readStableDiffusionMemoryBudget,
     );
   }
 
   @override
-  Future<bool?> reportsDiscreteGpu() async {
+  Future<List<StableDiffusionGpuMemory>?> readGpuMemory() {
     final readGpuMemory = _readGpuMemory;
     final logLevel = imageRuntimeLogLevel();
-    final gpus = await Isolate.run(() => readGpuMemory(logLevel: logLevel));
-    return gpus?.any((gpu) => !gpu.integrated);
+    // The first query in a process initializes the GPU backend.
+    return Isolate.run(() => readGpuMemory(logLevel: logLevel));
   }
 
   @override
