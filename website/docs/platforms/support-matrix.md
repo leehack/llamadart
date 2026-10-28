@@ -121,6 +121,14 @@ v0.3.0-1 runtime; SD 1.5 and SD-Turbo are measured. Other recipes report
 `supportsHiresFix: false` and throw on a hires-fix request. See
 [hires fix](../guides/image-generation#hires-fix).
 
+Reference image editing uses `ReferenceImageEditingRequest` with
+`ImageReferenceEditingRecipe.fluxKontext`: one RGB reference at the output
+size, at most 1024x1024. It is bounded to the FLUX.1 Kontext [dev]
+transformer with `ae`, CLIP-L and T5-XXL on macOS Metal with the pinned SD
+v0.3.0-1 runtime. Other models, components, devices, platforms and reference
+counts report `supportsReferenceImageEditing: false` or throw on the
+request. See [reference image editing](../guides/image-generation#reference-image-editing).
+
 Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
 flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
 512×512, flash attention and direct VAE convolutions disabled; CPU and actual

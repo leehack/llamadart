@@ -1123,3 +1123,13 @@ final size, size/scale agreement, one-pass reset, composition kept,
 second-pass cancellation/reuse and reload, with optional exact direct-C
 references. See [the fixture, gates and provenance](image_hires_fix.md). No
 other family, decoder, host, device or upscaler qualification is inferred.
+
+### Reference image editing
+
+`image-reference-editing` runs the maintained local-only FLUX.1 Kontext
+[dev] reference edit on macOS Metal: a visible requested edit with preserved
+content, a reference effect against ordinary text-to-image, cancellation,
+ordinary reset and reload, with optional exact direct-C references. See
+[the fixture, gates and provenance](image_reference_editing.md). No other
+family, component, host, device or reference-count qualification is
+inferred.

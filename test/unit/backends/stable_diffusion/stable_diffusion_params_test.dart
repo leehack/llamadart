@@ -15,6 +15,7 @@ import 'package:llamadart/src/core/image/image_editing_request.dart';
 import 'package:llamadart/src/core/image/image_generation_model.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
 import 'package:llamadart/src/core/image/image_hires_fix_request.dart';
+import 'package:llamadart/src/core/image/image_reference_editing_request.dart';
 import 'package:llamadart/src/core/image/image_model_params.dart';
 
 String? _text(Pointer<Char> value) =>
@@ -539,6 +540,84 @@ void main() {
       expect((hires.target_width, hires.target_height, hires.steps), (0, 0, 0));
       expect(hires.denoising_strength, closeTo(0.7, 0.000001));
     });
+  });
+
+  test('references are written in order with the recipe preset at the '
+      'runtime ABI offsets, and an ordinary request leaves none', () {
+    ImageEditingPixels rgb(int value) => ImageEditingPixels.rgb(
+      width: 64,
+      height: 128,
+      pixels: Uint8List(64 * 128 * 3)..fillRange(0, 3, value),
+    );
+    ImageGenerationSessionRequest request([
+      List<ImageEditingPixels>? references,
+    ]) => ImageGenerationSessionRequest(
+      prompt: 'make the fox blue',
+      negativePrompt: '',
+      width: 64,
+      height: 128,
+      steps: 4,
+      guidanceScale: 1,
+      seed: 42,
+      count: 1,
+      references: references,
+      referenceRecipe: references == null
+          ? null
+          : ImageReferenceEditingRecipe.fluxKontext,
+    );
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      applyStableDiffusionGenerationParams(
+        params,
+        request([rgb(3), rgb(9)]),
+        arena,
+      );
+      final references = params.ref.ref_images;
+      expect(params.ref.ref_images_count, 2);
+      expect(
+        [
+          for (var i = 0; i < 2; i++)
+            (
+              references[i].width,
+              references[i].height,
+              references[i].channel,
+              references[i].data[2],
+            ),
+        ],
+        [(64, 128, 3, 3), (64, 128, 3, 9)],
+      );
+      expect(_text(params.ref.ref_image_args), 'preset=flux_kontext');
+      expect(params.ref.init_image.data, nullptr);
+      // offsetof(sd_img_gen_params_t, ref_images / ref_images_count /
+      // ref_image_args) in the pinned v0.3.0-1 stable-diffusion.h on arm64
+      // and x86_64.
+      final words = ByteData.sublistView(
+        params.cast<Uint8>().asTypedList(sizeOf<sd.sd_img_gen_params_t>()),
+      );
+      expect(words.getUint64(64, Endian.host), references.address);
+      expect(words.getInt32(72, Endian.host), 2);
+      expect(
+        words.getUint64(80, Endian.host),
+        params.ref.ref_image_args.address,
+      );
+    });
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      applyStableDiffusionGenerationParams(params, request(), arena);
+      expect(params.ref.ref_images, nullptr);
+      expect(params.ref.ref_images_count, 0);
+      expect(params.ref.ref_image_args, nullptr);
+    });
+  });
+
+  test('every reference recipe maps to its runtime preset', () {
+    expect(
+      {
+        for (final recipe in ImageReferenceEditingRecipe.values)
+          recipe: stableDiffusionReferencePreset(recipe),
+      },
+      {ImageReferenceEditingRecipe.fluxKontext: 'preset=flux_kontext'},
+    );
   });
 
   test('every hires upscaler maps to its runtime value', () {

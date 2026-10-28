@@ -23,6 +23,7 @@ description: >-
   SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on macOS CPU.
   A bounded two-pass hires fix uses `HiresFixImageGenerationRequest` on
   macOS CPU or Metal with an SD 1.x or SD 2.x full-VAE checkpoint.
+  FLUX.1 Kontext reference editing uses `ReferenceImageEditingRequest`.
   LoRA has no public image-generation API.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
   included by default. In the app's `pubspec.yaml`:
@@ -120,6 +121,15 @@ core and `llamadart_stable_diffusion_flutter` together.
   `ImageHiresUpscaler.latent` (no model upscaler). Progress events carry
   `pass` 0 then 1; the second pass can run one step more than `steps`.
   A cancelled or failed second pass returns no images.
+- For reference editing, load the FLUX.1 Kontext [dev] transformer with
+  `ae`, CLIP-L and T5-XXL on `ComputeDevice.gpu` (macOS Metal), check
+  `(await engine.capabilities).supportsReferenceImageEditing`, and pass
+  `ReferenceImageEditingRequest(prompt: 'Change the car to red.', recipe:
+  ImageReferenceEditingRecipe.fluxKontext, references: [ImageEditingPixels.rgb(...)],
+  guidanceScale: 1)`. The output takes the reference's size: exactly one RGB
+  reference, sides multiples of 64, at most 1024x1024; crop and resize it
+  first. Headers cannot tell Kontext from FLUX.1 [dev]; other models,
+  devices and platforms throw `LlamaUnsupportedException`.
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.

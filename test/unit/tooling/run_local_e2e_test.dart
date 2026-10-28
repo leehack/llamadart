@@ -1831,6 +1831,59 @@ dev_dependencies:
       expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
     });
 
+    test('reference-editing qualification requires the transformer and '
+        'every component, and selects the maintained suite', () async {
+      const components = {
+        'LLAMADART_REFERENCE_EDIT_VAE': '/ae.safetensors',
+        'LLAMADART_REFERENCE_EDIT_CLIP_L': '/clip_l.gguf',
+        'LLAMADART_REFERENCE_EDIT_T5XXL': '/t5xxl.gguf',
+      };
+      const withModel = [
+        '--scenario',
+        'image-reference-editing',
+        '--model-path',
+        '/kontext.gguf',
+        '--dry-run',
+      ];
+      for (final (arguments, environment) in [
+        (
+          const ['--scenario', 'image-reference-editing', '--dry-run'],
+          components,
+        ),
+        for (final name in components.keys)
+          (withModel, {...components}..remove(name)),
+      ]) {
+        final missing = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: environment,
+        );
+        expect(missing.exitCode, 64);
+        expect(missing.stderr, contains('image-reference-editing'));
+        expect(missing.stderr, contains('LLAMADART_REFERENCE_EDIT_T5XXL'));
+      }
+      final ready = await runLocalE2e(
+        withModel,
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+        environment: components,
+      );
+      expect(ready.exitCode, 0);
+      expect(
+        ready.stdout,
+        contains('test/image_reference_editing_e2e_test.dart'),
+      );
+      expect(
+        ready.stdout,
+        contains('LLAMADART_REFERENCE_EDIT_DIFFUSION=/kontext.gguf'),
+      );
+      expect(
+        ready.stdout,
+        contains('LLAMADART_REFERENCE_EDIT_T5XXL=/t5xxl.gguf'),
+      );
+      expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
+    });
+
     test('hires-fix qualification requires a checkpoint and a known recipe '
         'and device, and selects the maintained suite', () async {
       for (final (arguments, environment) in [

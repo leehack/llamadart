@@ -289,6 +289,12 @@ ordinary generation does, and need no new native call. The model upscaler
 inside that call, a load no cancel reaches; llamadart offers only the latent
 upscaler.
 
+Reference images (`sd_img_gen_params_t.ref_images`) are also encoded inside
+`sd_dart_generate_image`, with the loaded autoencoder, before the first
+sampling step, like an image-editing input; their pixel arrays live in the
+generation's arena until the call returns. A cancel during the encode takes
+effect at the first step. No new native call or object is added.
+
 Every native call of an image worker goes through `StableDiffusionCalls`. A
 new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
 (`generate_video`, `sd_ctx_load_control_net`, an upscaler) needs an

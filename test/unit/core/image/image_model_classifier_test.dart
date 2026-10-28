@@ -619,6 +619,116 @@ void main() {
       },
     );
 
+    test('FLUX.1 Kontext admission requires a FLUX guidance transformer with '
+        'exactly the FLUX autoencoder, CLIP-L and T5-XXL', () async {
+      final kontext = ImageModelHeaders.fluxKontextDiffusion;
+      final ae = ImageModelHeaders.fluxVae;
+      final clipL = ImageModelHeaders.clipL;
+      final t5 = ImageModelHeaders.t5xxl;
+      for (final (name, headers, expected) in <(String, List<Object>, bool)>[
+        ('Kontext set', [kontext, ae, clipL, t5], true),
+        ('order', [t5, clipL, ae, kontext], true),
+        (
+          'explicit agreeing role',
+          [(kontext, ImageModelRole.diffusionModel), ae, clipL, t5],
+          true,
+        ),
+        (
+          'FLUX.1-schnell without a guidance embedder',
+          [ImageModelHeaders.fluxDiffusion, ae, clipL, t5],
+          false,
+        ),
+        (
+          'FLUX.1-Fill patch input',
+          [ImageModelHeaders.fluxFillDiffusion, ae, clipL, t5],
+          false,
+        ),
+        (
+          'explicit role without a header',
+          [(Uint8List(8), ImageModelRole.diffusionModel), ae, clipL, t5],
+          false,
+        ),
+        (
+          'explicit role over another layout',
+          [(t5, ImageModelRole.diffusionModel), ae, clipL],
+          false,
+        ),
+        (
+          'no FLUX double blocks',
+          [
+            ggufHeader(
+              tensors: [
+                ('transformer_blocks.0.attn.to_q.weight', [3072, 3072]),
+                ('guidance_in.in_layer.weight', [256, 3072]),
+                ('img_in.weight', [64, 3072]),
+                ('final_layer.linear.bias', [64]),
+              ],
+            ),
+            ae,
+            clipL,
+            t5,
+          ],
+          false,
+        ),
+        (
+          'unknown transformer latent channels',
+          [
+            ggufHeader(
+              tensors: [
+                ('double_blocks.0.img_attn.qkv.weight', [3072, 9216]),
+                ('guidance_in.in_layer.weight', [256, 3072]),
+                ('img_in.weight', [64, 3072]),
+                ('final_layer.linear.bias', [128]),
+              ],
+            ),
+            ae,
+            clipL,
+            t5,
+          ],
+          false,
+        ),
+        ('no autoencoder', [kontext, clipL, t5], false),
+        (
+          'explicit VAE role without a header',
+          [kontext, (Uint8List(8), ImageModelRole.vae), clipL, t5],
+          false,
+        ),
+        (
+          'CLIP-G in place of CLIP-L',
+          [kontext, ae, ImageModelHeaders.clipG, t5],
+          false,
+        ),
+        (
+          'CLIP-G in place of T5-XXL',
+          [kontext, ae, clipL, ImageModelHeaders.clipG],
+          false,
+        ),
+        ('no CLIP-L', [kontext, ae, t5], false),
+        ('no T5-XXL', [kontext, ae, clipL], false),
+        (
+          'tiny autoencoder in place of ae',
+          [kontext, ImageModelHeaders.taef1, clipL, t5],
+          false,
+        ),
+        (
+          'extra component',
+          [kontext, ae, clipL, t5, ImageModelHeaders.clipG],
+          false,
+        ),
+        (
+          'SD 3.5 transformer',
+          [ImageModelHeaders.sd35Diffusion, ae, clipL, t5],
+          false,
+        ),
+      ]) {
+        expect(
+          (await _assign(headers)).fluxKontextRecipeVerified,
+          expected,
+          reason: name,
+        );
+      }
+    });
+
     test('assigns roles whatever the order of the files', () async {
       final assignment = await _assign([
         ImageModelHeaders.t5xxl,

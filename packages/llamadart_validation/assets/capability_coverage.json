@@ -573,6 +573,16 @@
         "issue": "https://github.com/leehack/llamadart/issues/1228",
         "reason": "Hires-fix limits, load-time recipe admission, session probe, two-pass progress, output-size check and sd_hires_params_t mapping have maintained unit and worker tests plus the local-only image-hires-fix macOS CPU/Metal direct-C scenario (doc/image_hires_fix.md); a versioned validation-pack profile is not yet defined. Inventory presence is not platform/model qualification."
       }
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.supportsReferenceImageEditing"
+      ],
+      "exemption": {
+        "id": "bounded-image-reference-editing",
+        "issue": "https://github.com/leehack/llamadart/issues/1222",
+        "reason": "FLUX.1 Kontext header admission, load-time recipe gate, session probe, reference size/count validation and ref_images/ref_image_args mapping have maintained unit and worker tests plus the local-only image-reference-editing macOS Metal direct-C scenario (doc/image_reference_editing.md); a versioned validation-pack profile is not yet defined. Inventory presence is not platform/model qualification."
+      }
     }
   ]
 }
