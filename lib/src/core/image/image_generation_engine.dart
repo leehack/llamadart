@@ -1254,8 +1254,10 @@ class ImageGenerationEngine {
         'ImageModelPlacement.maxGpuMemoryGiB with autoFit: false is not '
         'supported: stable-diffusion-native v0.3.0-1 then keeps every weight '
         'on the GPU and aborts the process (GGML_ASSERT in new_sd_ctx) when '
-        'the budget is below them. Leave autoFit on to keep the weights '
-        'within the budget, or drop maxGpuMemoryGiB.',
+        'the budget is below them '
+        '(https://github.com/leehack/stable-diffusion-native/issues/34). '
+        'Leave autoFit on to keep the weights within the budget, or drop '
+        'maxGpuMemoryGiB.',
       );
     }
     final moved = [
