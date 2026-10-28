@@ -133,6 +133,11 @@ class ToolCallGrammarUtils {
   /// `gbnf_excluding_grammar` emits them. State `i` has matched the first `i`
   /// characters of [delimiter]; a character that would complete it has no
   /// transition.
+  ///
+  /// Unlike llama.cpp, where every state may end the text, a state may end it
+  /// only if the [delimiter] that follows first occurs there: when its prefix
+  /// is also its suffix, as in `abab`, text ending `ab` would let the
+  /// delimiter start inside it.
   static List<String> _excludingRules(String name, String delimiter) {
     String state(int i) => i == 0 ? name : '$name-$i';
     String chars(String value) =>
@@ -152,6 +157,14 @@ class ToolCallGrammarUtils {
       return delimiter[matched] == char ? matched + 1 : 0;
     }
 
+    bool mayEnd(int matched) {
+      for (var i = 0; i < delimiter.length - 1; i++) {
+        matched = next(matched, delimiter[i]);
+        if (matched == delimiter.length) return false;
+      }
+      return true;
+    }
+
     final alphabet = delimiter.split('').toSet();
     String rule(int matched) {
       final moves = [
@@ -162,10 +175,11 @@ class ToolCallGrammarUtils {
       final alternatives = [
         for (final move in moves)
           if (move.to < delimiter.length)
-            '| [${chars(move.char)}] ${state(move.to)} ',
-        '| [^${moves.map((move) => chars(move.char)).join()}] $name',
+            '[${chars(move.char)}] ${state(move.to)}',
+        '[^${moves.map((move) => chars(move.char)).join()}] $name',
       ];
-      return '${state(matched)} ::= ${alternatives.join()}';
+      return '${state(matched)} ::= ${mayEnd(matched) ? '| ' : ''}'
+          '${alternatives.join(' | ')}';
     }
 
     return [for (var i = 0; i < delimiter.length; i++) rule(i)];
