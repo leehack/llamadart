@@ -458,6 +458,10 @@ class LlamaEngine {
   /// [capabilities] keeps describing the loaded model only. A supported
   /// report is not proof the load succeeds: the file, its memory and the
   /// runtime's native library or browser assets are checked by the load.
+  /// [setModel]'s rejections of a `ModelLoadOptions`, such as
+  /// [ModelLoadOptions.sha256] with a projector, credentials sent to more
+  /// than one host, or download options a URL-loading backend does not
+  /// take, are not reported: this takes none.
   ///
   /// ```dart
   /// final engine = LlamaEngine(LlamaBackend());
@@ -733,11 +737,23 @@ class LlamaEngine {
     }
     if (source.format case final declared?) _checkBackendLoads(declared);
     final candidate = backend;
-    if (candidate is BackendLoadCheck) {
-      return (candidate as BackendLoadCheck).checkLoad(params, format);
+    final unchecked = candidate is BackendLoadCheck
+        ? (candidate as BackendLoadCheck).checkLoad(params, format)
+        : 'This backend does not check a load before it reads the model '
+              'file.';
+    if (format == null ||
+        source.format != null ||
+        candidate is BackendModelFormatRouting) {
+      return unchecked;
     }
-    return 'This backend does not check a load before it reads the model '
-        'file.';
+    final runtime = candidate is BackendRuntimeIdentity
+        ? (candidate as BackendRuntimeIdentity).runtime
+        : null;
+    if (runtime == format.runtime) return unchecked;
+    return 'The file name names ModelFormat.${format.name}, but this backend '
+        '${runtime == null ? 'cannot choose a runtime by model format' : 'runs only ${runtime.name}'}, '
+        'so it loads the file itself. Set ModelSource.format to have the '
+        'load reject it before any download.';
   }
 
   /// Where the backend loads each of [sources] from, in order, and [params]

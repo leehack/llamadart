@@ -18,6 +18,7 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -125,6 +126,28 @@ void main() {
         LlamaLoadCheckStatus.deferred,
         'Set ModelSource.format',
       ),
+      (
+        liteRtLm,
+        const ModelParams(device: ComputeDevice.npu),
+        LlamaLoadCheckStatus.unsupported,
+        'ComputeDevice.npu is not available for LiteRT-LM on the Web',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(liteRtLmEmbeddingEngine: true),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRT-LM WebGPU embeddings are unavailable',
+      ),
+      (
+        liteRtLm,
+        const ModelParams(
+          liteRtLmEmbeddingEngine: true,
+          device: ComputeDevice.cpu,
+        ),
+        LlamaLoadCheckStatus.unsupported,
+        'LiteRT-LM Web CPU embeddings are unavailable',
+      ),
+      (liteRtLm, const ModelParams(), LlamaLoadCheckStatus.supported, null),
     ];
     for (final (model, params, status, reason) in cases) {
       final report = await engine.checkLoad(model, params: params);

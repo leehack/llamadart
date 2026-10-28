@@ -10,9 +10,10 @@ import 'engine_observer.dart';
 enum LlamaLoadCheckStatus {
   /// Every check `LlamaEngine.setModel` runs before it resolves a file
   /// passed. Like `collectLlamaRuntimeSetupReport`, this is policy, not a
-  /// load: the runtime's native library or browser assets, the device an
-  /// [ComputeDevice.auto] load picks, the file and its memory are not
-  /// checked.
+  /// load. Not checked: the runtime's native library or browser assets, the
+  /// device an [ComputeDevice.auto] load picks, LoRA adapter limits (checked
+  /// once the model file resolves), the file and its memory, and
+  /// `ModelLoadOptions`, which `checkLoad` does not take.
   supported,
 
   /// `LlamaEngine.setModel` would throw [LlamaLoadCheckReport.error] before
@@ -26,8 +27,9 @@ enum LlamaLoadCheckStatus {
 
   /// The engine's own checks passed, but the backend cannot tell before the
   /// load whether this platform runs the model: it does not implement
-  /// `BackendLoadCheck`, or brings a runtime it does not know, such as a
-  /// custom LiteRT-LM factory. [LlamaLoadCheckReport.reason] says which.
+  /// `BackendLoadCheck`, as with `LlamaEngine(LiteRtLmBackend())`, or it runs
+  /// one runtime and the file name names another format, which it loads
+  /// anyway. [LlamaLoadCheckReport.reason] says which.
   unknown,
 }
 
@@ -47,8 +49,10 @@ final class LlamaLoadCheckReport {
   final LlamaLoadCheckStatus status;
 
   /// The format the checks used: `ModelSource.format`, otherwise the one the
-  /// file name's extension names. Null when the status is
-  /// [LlamaLoadCheckStatus.deferred].
+  /// file name's extension names. Null when neither names one: always for
+  /// [LlamaLoadCheckStatus.deferred], and for
+  /// [LlamaLoadCheckStatus.unsupported] when a backend rejects the load
+  /// without knowing the format.
   final ModelFormat? format;
 
   /// The runtime that would load the model, or null when the status is

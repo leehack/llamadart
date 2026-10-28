@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
@@ -135,6 +136,52 @@ void main() {
       expect(gpu.status, LlamaLoadCheckStatus.unsupported);
     });
 
+    test('rejects LiteRT-LM embeddings where they are not qualified, for '
+        'any runtime library', () async {
+      const embeddings = ModelParams(
+        liteRtLmEmbeddingEngine: true,
+        device: ComputeDevice.cpu,
+      );
+      for (final abi in [Abi.linuxX64, Abi.linuxArm64, Abi.windowsX64]) {
+        debugLiteRtLmAbiOverride = abi;
+        for (final customLiteRtLm in [false, true]) {
+          final report = await check(
+            liteRtLm,
+            params: embeddings,
+            customLiteRtLm: customLiteRtLm,
+          );
+          expect(report.status, LlamaLoadCheckStatus.unsupported);
+          expect(
+            report.reason,
+            contains('LiteRT-LM native embeddings are unsupported on $abi'),
+          );
+        }
+      }
+
+      debugLiteRtLmAbiOverride = Abi.macosArm64;
+      expect(
+        (await check(liteRtLm, params: embeddings)).status,
+        LlamaLoadCheckStatus.supported,
+      );
+    });
+
+    test('reports a direct LiteRtLmBackend as unknown, and a GGUF name as a '
+        'format it does not route', () async {
+      final engine = LlamaEngine(LiteRtLmBackend());
+      addTearDown(engine.dispose);
+
+      final report = await engine.checkLoad(liteRtLm);
+      expect(report.status, LlamaLoadCheckStatus.unknown);
+      expect(report.runtime, LlamaRuntime.liteRtLm);
+      expect(report.reason, contains('does not check a load'));
+
+      final gguf = await engine.checkLoad(
+        LlamaModel(ModelSource.parse('hf://owner/repo/model.gguf')),
+      );
+      expect(gguf.status, LlamaLoadCheckStatus.unknown);
+      expect(gguf.reason, contains('runs only liteRtLm'));
+    });
+
     test('defers a model whose format only the file can tell', () async {
       final report = await check(
         LlamaModel(ModelSource.path('/models/model.bin')),
@@ -173,6 +220,7 @@ void main() {
         ModelParams(loadMtp: true),
         ModelParams(liteRtLmCacheDir: '/cache'),
         ModelParams(liteRtLmEmbeddingEngine: true),
+        ModelParams(liteRtLmEmbeddingEngine: true, device: ComputeDevice.cpu),
       ];
       final seen = <LlamaLoadCheckStatus>{};
       for (final abi in [

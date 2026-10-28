@@ -184,6 +184,26 @@ void main() {
         LlamaModel(ModelSource.parse('https://example.com/download?id=7')),
       );
       expect(unnamed.status, LlamaLoadCheckStatus.deferred);
+
+      final resolver = SentinelResolver();
+      final named = LlamaModel(
+        ModelSource.parse('https://example.com/model.litertlm'),
+      );
+      final loading = LlamaEngine(_IdentityBackend(), modelResolver: resolver);
+      addTearDown(loading.dispose);
+      final mismatch = await loading.checkLoad(named);
+      expect(mismatch.status, LlamaLoadCheckStatus.unknown);
+      expect(mismatch.format, ModelFormat.liteRtLm);
+      expect(mismatch.runtime, LlamaRuntime.llamaCpp);
+      expect(mismatch.reason, contains('runs only llamaCpp'));
+      expect(mismatch.reason, contains('ModelSource.format'));
+      await expectSetModelAgrees(
+        loading,
+        resolver,
+        named,
+        const ModelParams(),
+        mismatch,
+      );
     });
 
     test('reports the reason a backend cannot check as unknown', () async {

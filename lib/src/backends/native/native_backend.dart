@@ -204,6 +204,9 @@ class NativeAutoBackend
       if (unsupported != null) throw unsupported;
     }
     liteRtLmEnsureDeviceAvailable(params.device);
+    if (params.liteRtLmEmbeddingEngine) {
+      liteRtLmEnsureNativeEmbeddingsQualified();
+    }
     return _defaultLiteRtLm
         ? null
         : 'A custom LiteRT-LM factory brings its own runtime, so whether it '

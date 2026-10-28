@@ -105,6 +105,7 @@ class WebAutoBackend
   String? checkLoad(ModelParams params, ModelFormat? format) {
     if (format == null) return null;
     checkModelParamsSupportedBy(params, format.runtime, web: true);
+    if (format.runtime == LlamaRuntime.liteRtLm) liteRtLmWebCheckLoad(params);
     return null;
   }
 

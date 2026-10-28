@@ -202,13 +202,16 @@ if (check.status == LlamaLoadCheckStatus.unsupported) {
 | `supported` | Every pre-load check passed. `format`, `runtime` and `device` say what the load would use; `ComputeDevice.auto` is resolved by the runtime at load. |
 | `unsupported` | `setModel` would throw `error`, a `LlamaUnsupportedException` naming the missing capability and the platform or runtime condition, before any download. |
 | `deferred` | Neither `ModelSource.format` nor the file name names the format, so the load checks the runtime once it reads the file. Set `ModelSource.format` to check earlier. |
-| `unknown` | The backend cannot tell before loading: a custom `LlamaBackend` without `BackendLoadCheck`, or a custom LiteRT-LM factory, which brings its own runtime. |
+| `unknown` | The backend cannot tell before loading: a backend without `BackendLoadCheck`, such as `LlamaEngine(LiteRtLmBackend())` or a custom `LlamaBackend`, or a single-runtime backend given a file name of another format, which it loads anyway. |
 
 `setModel` and `checkLoad` share one check, so a report is `unsupported`
 exactly when the load would fail before downloading. A `supported` report is
 not proof the load succeeds: like `dart run llamadart:doctor`, it reports
-policy, and the native library or browser assets, the file and its memory are
-checked by the load. `engine.capabilities` keeps describing the loaded model
+policy, and the native library or browser assets, LoRA adapter limits, the
+file and its memory are checked by the load. `checkLoad` takes no
+`ModelLoadOptions`, so `setModel`'s download-option rejections (a `sha256`
+with a projector, credentials across hosts, options a URL-loading backend does
+not take) are not reported. `engine.capabilities` keeps describing the loaded model
 only. A custom backend joins the check by implementing `BackendLoadCheck` from
 `package:llamadart/backend.dart`.
 
