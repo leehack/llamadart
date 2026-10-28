@@ -14,6 +14,7 @@ import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_editing_request.dart';
 import 'package:llamadart/src/core/image/image_generation_model.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
+import 'package:llamadart/src/core/image/image_hires_fix_request.dart';
 import 'package:llamadart/src/core/image/image_model_params.dart';
 
 String? _text(Pointer<Char> value) =>
@@ -456,6 +457,101 @@ void main() {
       expect(params.ref.control_image.data, nullptr);
       expect(params.ref.control_strength, closeTo(0.9, 0.000001));
     });
+  });
+
+  test('a hires fix writes its resolved final size, steps, strength and '
+      'latent upscaler at the runtime ABI offsets, and an ordinary request '
+      'leaves the initialized hires defaults', () {
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      params.ref.hires
+        ..scale = 2
+        ..denoising_strength = 0.7
+        ..upscale_tile_size = 128;
+      applyStableDiffusionGenerationParams(
+        params,
+        const ImageGenerationSessionRequest(
+          prompt: 'a fox',
+          negativePrompt: '',
+          width: 512,
+          height: 384,
+          steps: 20,
+          guidanceScale: 7,
+          seed: 42,
+          count: 1,
+          hiresFix: ImageGenerationSessionHiresFix(
+            width: 768,
+            height: 576,
+            steps: 12,
+            denoisingStrength: 0.45,
+            upscaler: ImageHiresUpscaler.latent,
+          ),
+        ),
+        arena,
+      );
+      final hires = params.ref.hires;
+      expect(hires.enabled, isTrue);
+      expect(hires.upscaler, sd.sd_hires_upscaler_t.SD_HIRES_UPSCALER_LATENT);
+      expect(hires.model_path, nullptr);
+      expect(hires.scale, 0);
+      expect((hires.target_width, hires.target_height), (768, 576));
+      expect(hires.steps, 12);
+      expect(hires.denoising_strength, closeTo(0.45, 0.000001));
+      expect(hires.upscale_tile_size, 128);
+      expect((hires.custom_sigmas, hires.custom_sigmas_count), (nullptr, 0));
+      expect((params.ref.width, params.ref.height), (512, 384));
+      expect(params.ref.sample_params.sample_steps, 20);
+      // offsetof(sd_img_gen_params_t, hires.*) in the pinned v0.3.0-1
+      // stable-diffusion.h on arm64 and x86_64.
+      final bytes = params.cast<Uint8>().asTypedList(
+        sizeOf<sd.sd_img_gen_params_t>(),
+      );
+      final words = ByteData.sublistView(bytes);
+      expect(bytes[480], 1);
+      expect(words.getUint32(484, Endian.host), 1);
+      expect(words.getInt32(500, Endian.host), 768);
+      expect(words.getInt32(504, Endian.host), 576);
+      expect(words.getInt32(508, Endian.host), 12);
+    });
+    using((arena) {
+      final params = arena<sd.sd_img_gen_params_t>();
+      params.ref.hires
+        ..upscaler = sd.sd_hires_upscaler_t.SD_HIRES_UPSCALER_LATENT
+        ..scale = 2
+        ..denoising_strength = 0.7;
+      applyStableDiffusionGenerationParams(
+        params,
+        const ImageGenerationSessionRequest(
+          prompt: 'a fox',
+          negativePrompt: '',
+          width: 512,
+          height: 512,
+          steps: 20,
+          guidanceScale: 7,
+          seed: 42,
+          count: 1,
+        ),
+        arena,
+      );
+      final hires = params.ref.hires;
+      expect(hires.enabled, isFalse);
+      expect(hires.scale, 2);
+      expect((hires.target_width, hires.target_height, hires.steps), (0, 0, 0));
+      expect(hires.denoising_strength, closeTo(0.7, 0.000001));
+    });
+  });
+
+  test('every hires upscaler maps to its runtime value', () {
+    expect(
+      {
+        for (final upscaler in ImageHiresUpscaler.values)
+          upscaler: stableDiffusionHiresUpscaler(upscaler),
+      },
+      {
+        ImageHiresUpscaler.latent:
+            sd.sd_hires_upscaler_t.SD_HIRES_UPSCALER_LATENT,
+      },
+    );
   });
 
   group('applyStableDiffusionGenerationParams', () {

@@ -82,4 +82,70 @@ void main() {
 
     expect(_feed(tracker, [(2, 4)]), ['decoding 2/4 #0/1']);
   });
+
+  test('a hires fix labels its second pass by the total it reports, then '
+      'decodes after the last image\'s second pass', () {
+    final tracker = ImageGenerationProgressTracker(
+      steps: 2,
+      imageCount: 2,
+      passCount: 2,
+    );
+    String label(ImageGenerationProgressEvent event) =>
+        '${_label(event)} pass ${event.pass}/${event.passCount}';
+
+    expect(label(tracker.start()), 'encodingPrompt 0/2 #0/2 pass 0/2');
+    expect(
+      [
+        for (final (step, total) in [
+          (0, 2),
+          (2, 2),
+          (0, 2),
+          (2, 2),
+          (0, 3),
+          (1, 3),
+          (3, 3),
+          (0, 3),
+          (3, 3),
+          (0, 4),
+        ])
+          ...tracker.onNativeProgress(step, total).map(label),
+      ],
+      [
+        'sampling 0/2 #0/2 pass 0/2',
+        'sampling 2/2 #0/2 pass 0/2',
+        'sampling 0/2 #1/2 pass 0/2',
+        'sampling 2/2 #1/2 pass 0/2',
+        'sampling 0/3 #0/2 pass 1/2',
+        'sampling 1/3 #0/2 pass 1/2',
+        'sampling 3/3 #0/2 pass 1/2',
+        'sampling 0/3 #1/2 pass 1/2',
+        'sampling 3/3 #1/2 pass 1/2',
+        'decoding 0/2 #1/2 pass 1/2',
+        'decoding 0/4 #1/2 pass 1/2',
+      ],
+    );
+  });
+
+  test('a second-pass callback with another total is not sampling', () {
+    final tracker = ImageGenerationProgressTracker(
+      steps: 1,
+      imageCount: 1,
+      passCount: 2,
+    );
+    _feed(tracker, [(0, 1), (1, 1), (0, 5)]);
+
+    expect(_feed(tracker, [(7, 196), (5, 5)]), [
+      'loading 7/196 #0/1',
+      'sampling 5/5 #0/1',
+      'decoding 0/1 #0/1',
+    ]);
+  });
+
+  test('one pass reports pass 0 of 1', () {
+    final events = ImageGenerationProgressTracker(
+      steps: 1,
+      imageCount: 1,
+    ).onNativeProgress(1, 1);
+    expect([for (final e in events) (e.pass, e.passCount)], [(0, 1), (0, 1)]);
+  });
 }

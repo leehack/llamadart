@@ -5,6 +5,7 @@ import 'package:ffi/ffi.dart';
 import '../../core/image/image_generation_driver.dart';
 import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_model.dart';
+import '../../core/image/image_hires_fix_request.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 
 /// Writes [config] into [params], which `sd_ctx_params_init` has filled with
@@ -134,6 +135,21 @@ void applyStableDiffusionGenerationParams(
     ..sample_method = stableDiffusionSampleMethod(request.sampler)
     ..scheduler = stableDiffusionScheduler(request.scheduler)
     ..flow_shift = stableDiffusionFlowShift(request.flowShift);
+  if (request.hiresFix case final hires?) {
+    params.ref.hires
+      ..enabled = true
+      ..upscaler = stableDiffusionHiresUpscaler(hires.upscaler)
+      ..model_path = nullptr
+      // The final size is resolved in Dart; a zero scale leaves the runtime
+      // nothing to derive it from.
+      ..scale = 0
+      ..target_width = hires.width
+      ..target_height = hires.height
+      ..steps = hires.steps
+      ..denoising_strength = hires.denoisingStrength
+      ..custom_sigmas = nullptr
+      ..custom_sigmas_count = 0;
+  }
   final tiling = request.vaeTiling;
   if (tiling != null) {
     params.ref.vae_tiling_params
@@ -158,6 +174,13 @@ sd.sample_method_t stableDiffusionSampleMethod(
     sd.sample_method_t.EULER_A_SAMPLE_METHOD,
   ImageGenerationSampler.dpmpp2m => sd.sample_method_t.DPMPP2M_SAMPLE_METHOD,
   ImageGenerationSampler.lcm => sd.sample_method_t.LCM_SAMPLE_METHOD,
+};
+
+/// The runtime's hires upscaler for [upscaler].
+sd.sd_hires_upscaler_t stableDiffusionHiresUpscaler(
+  ImageHiresUpscaler upscaler,
+) => switch (upscaler) {
+  ImageHiresUpscaler.latent => sd.sd_hires_upscaler_t.SD_HIRES_UPSCALER_LATENT,
 };
 
 /// The runtime's scheduler for [scheduler]. `null` maps to

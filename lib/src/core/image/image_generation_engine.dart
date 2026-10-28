@@ -23,6 +23,7 @@ import 'image_generation_events.dart';
 import 'image_generation_model.dart';
 import 'image_generation_progress.dart';
 import 'image_generation_request.dart';
+import 'image_hires_fix_request.dart';
 import 'image_model_classifier.dart';
 import 'image_model_metal_preflight.dart';
 import 'image_model_params.dart';
@@ -76,6 +77,11 @@ class ImageGenerationCapabilities implements EngineCapabilities {
   /// model without a ControlNet, and after disposal.
   final bool supportsControlNet;
 
+  /// Whether the loaded model and runtime support
+  /// `HiresFixImageGenerationRequest`. False before load, for unqualified
+  /// model, decoder, host or device recipes, and after disposal.
+  final bool supportsHiresFix;
+
   /// Maximum concurrent generations: one per process.
   final int maxConcurrentTasks;
 
@@ -91,6 +97,7 @@ class ImageGenerationCapabilities implements EngineCapabilities {
     this.supportsLocalSafetensorsSets = false,
     this.supportsImageEditing = false,
     this.supportsControlNet = false,
+    this.supportsHiresFix = false,
     this.maxConcurrentTasks = 0,
   });
 }
@@ -654,6 +661,14 @@ class ImageGenerationEngine {
                   role == ImageModelRole.taesd,
             ) &&
             (backendName == 'CPU' || _isMetal(backendName)),
+        hiresFixRecipeVerified:
+            driver.operatingSystem == 'macos' &&
+            (backendName == 'CPU' || _isMetal(backendName)) &&
+            _isQualifiedRuntime(runtime) &&
+            assignment.vaeTilingDecoderVerified &&
+            !assignment.decodesWithTinyAutoencoder &&
+            assignment.roles.length == 1 &&
+            assignment.roles.containsKey(ImageModelRole.checkpoint),
         seamlessRecipeVerified:
             assignment.decodesWithTinyAutoencoder &&
             assignment.roles.length == 1 &&
@@ -736,6 +751,10 @@ class ImageGenerationEngine {
           _config.controlNetRecipeVerified &&
           _session.modelVersion == 'SD 1.x' &&
           _supportsControlNet(_session),
+      supportsHiresFix:
+          _config.hiresFixRecipeVerified &&
+          imageHiresFixModelVersions.contains(_session.modelVersion) &&
+          _supportsHiresFix(_session),
       maxConcurrentTasks: 1,
     );
   }
@@ -761,23 +780,40 @@ class ImageGenerationEngine {
   /// so the task can run up to one more step before it reports
   /// [ImageGenerationCompletionState.cancelled]. [dispose] cancels the task.
   ///
+  /// A [HiresFixImageGenerationRequest] reports both sampling passes, with
+  /// [ImageGenerationProgressEvent.pass] 0 and then 1, before decoding.
+  ///
   /// Throws [LlamaImageGenerationException] for an invalid request, including
   /// a [ControlNetImageGenerationRequest] whose control image is not RGB at
-  /// the output size or whose strength is outside 0 through 2, and
+  /// the output size or whose strength is outside 0 through 2, and a
+  /// [HiresFixImageGenerationRequest] whose sizes, steps, strength or count
+  /// break the [ImageHiresFix] limits, and
   /// [LlamaUnsupportedException] for an unqualified
-  /// [SeamlessImageGenerationRequest] recipe, and for a
+  /// [SeamlessImageGenerationRequest] recipe, for a
   /// [ControlNetImageGenerationRequest] when no ControlNet is loaded or the
-  /// request combines it with image editing, VAE tiling or circular axes, and
+  /// request combines it with image editing, VAE tiling or circular axes,
+  /// and for a [HiresFixImageGenerationRequest] when
+  /// [ImageGenerationCapabilities.supportsHiresFix] is false, and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running; these checks run before the returned future completes,
   /// and the one-generation slot is taken when this is called. A runtime
   /// failure after the task starts, such as running out of memory, fails the
-  /// task with [LlamaInferenceException]; the engine stays usable. A failed
+  /// task with [LlamaInferenceException], as does a hires fix whose images do
+  /// not have the final size; the engine stays usable. A failed
   /// Metal command buffer leaves the backend in an error state instead: from
   /// then on every task fails with a [LlamaInferenceException] that says so,
   /// until the engine is disposed and the model loaded again.
   Future<ImageGenerationTask> generate(ImageGenerationRequest request) async {
     final effective = _resolve(request);
+    final hiresFix = request is HiresFixImageGenerationRequest
+        ? resolveImageHiresFix(
+            request.hiresFix,
+            width: effective.width!,
+            height: effective.height!,
+            steps: effective.steps!,
+            count: effective.count,
+          )
+        : null;
     final resolved = ImageGenerationSessionRequest(
       prompt: effective.prompt,
       negativePrompt: effective.negativePrompt,
@@ -804,6 +840,7 @@ class ImageGenerationEngine {
       controlStrength: request is ControlNetImageGenerationRequest
           ? request.control.strength
           : null,
+      hiresFix: hiresFix,
     );
     validateSeamlessImageGenerationRecipe(
       resolved,
@@ -813,6 +850,14 @@ class ImageGenerationEngine {
     validateImageVaeTilingRecipe(resolved, _config, _session.modelVersion);
     validateImageEditingRecipe(resolved, _config, _session.modelVersion);
     validateImageControlNetRecipe(resolved, _config, _session.modelVersion);
+    validateImageHiresFixRecipe(resolved, _config, _session.modelVersion);
+    if (resolved.hiresFix != null && !_supportsHiresFix(_session)) {
+      throw LlamaUnsupportedException(
+        'This image-generation backend does not report support for a hires '
+        'fix. Use the pinned stable_diffusion v0.3.0-1 runtime with the '
+        'supported macOS CPU or Metal SD 1.x or SD 2.x full-VAE recipe.',
+      );
+    }
     if (resolved.controlImage != null && !_supportsControlNet(_session)) {
       throw LlamaUnsupportedException(
         'This image-generation backend does not report a loaded ControlNet. '
@@ -952,9 +997,11 @@ class ImageGenerationEngine {
   ) async {
     late final ImageGenerationCompletion completion;
     try {
+      final hiresFix = request.hiresFix;
       final tracker = ImageGenerationProgressTracker(
         steps: request.steps,
         imageCount: request.count,
+        passCount: hiresFix == null ? 1 : 2,
       );
       task._add(tracker.start());
       final stopwatch = Stopwatch()..start();
@@ -978,6 +1025,21 @@ class ImageGenerationEngine {
           'reason; causes include running out of memory. If every request '
           'fails this way, dispose the ImageGenerationEngine and load the '
           'model again.',
+        );
+      }
+      if (hiresFix != null &&
+          (images.length != request.count ||
+              images.any(
+                (image) =>
+                    image.width != hiresFix.width ||
+                    image.height != hiresFix.height,
+              ))) {
+        // The runtime disables a hires fix it cannot apply with only a
+        // warning, and would return first-pass images as success.
+        throw LlamaInferenceException(
+          'stable-diffusion.cpp did not return ${request.count} hires-fix '
+          'images of ${hiresFix.width}x${hiresFix.height}; the images were '
+          'discarded.',
         );
       }
       final result = ImageGenerationResult(
@@ -1036,6 +1098,12 @@ class ImageGenerationEngine {
   static bool _isQualifiedRuntime(StableDiffusionRuntimeStatus status) =>
       status.commit == 'be48649' ||
       status.commit == 'be486498eadc29dc3cd234d944c2180ed42b1415';
+
+  static bool _supportsHiresFix(ImageGenerationSession session) =>
+      switch (session) {
+        ImageHiresFixSession hires => hires.supportsHiresFix,
+        _ => false,
+      };
 
   static bool _supportsControlNet(ImageGenerationSession session) =>
       switch (session) {

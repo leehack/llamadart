@@ -18,6 +18,12 @@ import 'image_generation_events.dart';
 ///   is sampled (tiled VAE decode) and [ImageGenerationPhase.loading] before
 ///   that (lazy tensor loading, which reports tensor counts).
 ///
+/// With a hires fix ([passCount] 2), the last first-pass step is followed by
+/// the refinement pass instead of decoding: every image reports its second
+/// pass with the step total of that pass's first callback, which the runtime
+/// derives from the hires steps and strength, and decoding follows the last
+/// image's second pass.
+///
 /// The engine loads weights eagerly, so loading callbacks do not occur in
 /// practice. A lazily loaded tensor group whose size equals the step count
 /// would be mislabelled as sampling.
@@ -28,12 +34,18 @@ final class ImageGenerationProgressTracker {
   /// Number of images requested.
   final int imageCount;
 
+  /// Sampling passes per image: 2 with a hires fix, otherwise 1.
+  final int passCount;
+
   int _completedImages = 0;
+  int _pass = 0;
+  int? _refineSteps;
 
   /// Creates a tracker for one generation.
   ImageGenerationProgressTracker({
     required this.steps,
     required this.imageCount,
+    this.passCount = 1,
   });
 
   /// The event emitted when generation starts.
@@ -42,7 +54,8 @@ final class ImageGenerationProgressTracker {
 
   /// The events one native `(step, total)` callback maps to.
   List<ImageGenerationProgressEvent> onNativeProgress(int step, int total) {
-    final allSampled = _completedImages >= imageCount;
+    final allSampled = _pass == passCount - 1 && _completedImages >= imageCount;
+    final steps = _pass == 0 ? this.steps : _refineSteps ??= total;
     if (total != steps || step < 0 || step > steps || allSampled) {
       return [
         _event(
@@ -58,7 +71,12 @@ final class ImageGenerationProgressTracker {
     if (step == steps) {
       _completedImages++;
       if (_completedImages == imageCount) {
-        events.add(_event(ImageGenerationPhase.decoding, 0, imageCount));
+        if (_pass < passCount - 1) {
+          _pass++;
+          _completedImages = 0;
+        } else {
+          events.add(_event(ImageGenerationPhase.decoding, 0, imageCount));
+        }
       }
     }
     return events;
@@ -76,5 +94,7 @@ final class ImageGenerationProgressTracker {
         ? _completedImages
         : imageCount - 1,
     imageCount: imageCount,
+    pass: _pass,
+    passCount: passCount,
   );
 }

@@ -541,6 +541,237 @@ void main() {
     );
   });
 
+  group('hires fix', () {
+    const hiresFix = HiresFixImageGenerationRequest(
+      prompt: 'a fox',
+      width: 512,
+      height: 384,
+      steps: 3,
+      count: 2,
+      seed: 9,
+      hiresFix: ImageHiresFix.scale(1.5, steps: 2, denoisingStrength: 0.4),
+    );
+
+    test('a full-VAE SD 1.x or SD 2.x checkpoint on macOS CPU or Metal maps '
+        'the resolved pass and reports both passes', () async {
+      for (final (path, family, device) in [
+        (_sd15, 'SD 1.x', ComputeDevice.cpu),
+        (_model, 'SD 2.x', ComputeDevice.auto),
+        (_model, 'SD 2.x', ComputeDevice.gpu),
+      ]) {
+        driver = _FakeDriver();
+        downloads = _FakeDownloads(driver);
+        debugImageGenerationDriverOverride = driver;
+        driver.session.modelVersion = family;
+        final engine = await load(
+          ImageGenerationModel(_local(path)),
+          params: ImageModelParams(device: device),
+        );
+        final reason = '$family ${device.name}';
+        expect(driver.started.single.hiresFixRecipeVerified, isTrue);
+        expect(
+          (await engine.capabilities).supportsHiresFix,
+          isTrue,
+          reason: reason,
+        );
+        final task = await engine.generate(hiresFix);
+        final events = await task.events.toList();
+        final result = (await task.done).result!;
+        final mapped = driver.session.requests.single.hiresFix!;
+        expect(
+          (mapped.width, mapped.height, mapped.steps),
+          (768, 576, 2),
+          reason: reason,
+        );
+        expect(mapped.denoisingStrength, 0.4);
+        expect(mapped.upscaler, ImageHiresUpscaler.latent);
+        expect(driver.session.requests.single.width, 512);
+        expect(result.seed, 9);
+        expect(
+          [for (final image in result.images) (image.width, image.height)],
+          [(768, 576), (768, 576)],
+        );
+        final progress = events.whereType<ImageGenerationProgressEvent>();
+        expect(
+          [
+            for (final event in progress)
+              if (event.phase == ImageGenerationPhase.sampling &&
+                  event.step == event.steps)
+                '${event.pass}/${event.passCount} #${event.imageIndex} '
+                    '${event.steps}',
+          ],
+          ['0/2 #0 3', '0/2 #1 3', '1/2 #0 2', '1/2 #1 2'],
+          reason: reason,
+        );
+        expect(progress.last.phase, ImageGenerationPhase.decoding);
+        expect(events.last, isA<ImageGenerationFinalEvent>());
+
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'plain'),
+        );
+        expect(driver.session.requests.last.hiresFix, isNull);
+        await engine.dispose();
+        expect((await engine.capabilities).supportsHiresFix, isFalse);
+      }
+    });
+
+    test('unqualified hosts, runtimes, devices and decoders load without the '
+        'capability and refuse a hires fix before the task starts', () async {
+      for (final kind in [
+        'host',
+        'runtime',
+        'vulkan',
+        'tiny decoder',
+        'taesd override',
+        'family',
+        'legacy session',
+        'session probe',
+      ]) {
+        driver = _FakeDriver();
+        downloads = _FakeDownloads(driver);
+        debugImageGenerationDriverOverride = driver;
+        if (kind == 'host') driver.operatingSystem = 'linux';
+        if (kind == 'runtime') {
+          driver.status = StableDiffusionRuntimeStatus.available(
+            version: 'master-929',
+            commit: '3f8527a',
+            devices: parseStableDiffusionDeviceList('CPU\tCPU\n'),
+          );
+        }
+        if (kind == 'vulkan') {
+          driver.status = _available('Vulkan0\tRTX\nCPU\tCPU\n');
+        }
+        if (kind == 'tiny decoder') {
+          driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
+        }
+        if (kind == 'family') driver.session.modelVersion = 'SDXL';
+        if (kind == 'legacy session') {
+          driver.sessionOverride = _LegacySession(driver.session);
+        }
+        if (kind == 'session probe') driver.session.supportsHiresFix = false;
+        final engine = await load(
+          _sdxs(null, kind == 'taesd override' ? _local(_taesd) : null),
+          params: ImageModelParams(
+            device: kind == 'vulkan' ? ComputeDevice.gpu : ComputeDevice.auto,
+          ),
+        );
+        expect(
+          driver.started.single.hiresFixRecipeVerified,
+          ['family', 'legacy session', 'session probe'].contains(kind),
+          reason: kind,
+        );
+        expect(
+          (await engine.capabilities).supportsHiresFix,
+          isFalse,
+          reason: kind,
+        );
+        await expectLater(
+          engine.generate(hiresFix),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('hires fix'), contains('v0.3.0-1')),
+            ),
+          ),
+          reason: kind,
+        );
+        expect(driver.session.requests, isEmpty, reason: kind);
+        await engine.generateImage(
+          const ImageGenerationRequest(prompt: 'plain'),
+        );
+        await engine.dispose();
+      }
+    });
+
+    test('invalid passes throw before the task starts and leave the slot '
+        'free', () async {
+      final engine = await load(_sdxs());
+      for (final request in [
+        const HiresFixImageGenerationRequest(
+          prompt: 'a fox',
+          hiresFix: ImageHiresFix.scale(3),
+        ),
+        const HiresFixImageGenerationRequest(
+          prompt: 'a fox',
+          width: 520,
+          hiresFix: ImageHiresFix.scale(1.5),
+        ),
+        const HiresFixImageGenerationRequest(
+          prompt: 'a fox',
+          count: 5,
+          hiresFix: ImageHiresFix.scale(1.5),
+        ),
+        const HiresFixImageGenerationRequest(
+          prompt: 'a fox',
+          hiresFix: ImageHiresFix.size(width: 1024, height: 1088),
+        ),
+      ]) {
+        await expectLater(
+          engine.generate(request),
+          throwsA(isA<LlamaImageGenerationException>()),
+        );
+      }
+      expect(driver.session.requests, isEmpty);
+      await engine.generateImage(
+        const HiresFixImageGenerationRequest(
+          prompt: 'a fox',
+          steps: 1,
+          hiresFix: ImageHiresFix.size(width: 640, height: 512),
+        ),
+      );
+      expect(driver.session.requests.single.hiresFix!.steps, 1);
+    });
+
+    test('first-pass images returned as success fail the task, and the engine '
+        'stays usable', () async {
+      final engine = await load(_sdxs());
+      driver.session.ignoreHires = true;
+      final completion = await (await engine.generate(hiresFix)).done;
+      expect(completion.state, ImageGenerationCompletionState.failed);
+      expect(
+        completion.error,
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          contains('768x576'),
+        ),
+      );
+      driver.session.ignoreHires = false;
+      final result = await engine.generateImage(hiresFix);
+      expect(result.images.first.width, 768);
+    });
+
+    test('a cancel during the second pass cancels the task with no images, '
+        'and dispose during it waits for the pass to stop', () async {
+      final engine = await load(_sdxs());
+      final task = await engine.generate(hiresFix);
+      await for (final event in task.events) {
+        if (event case ImageGenerationProgressEvent(
+          pass: 1,
+          :final step,
+        ) when step > 0) {
+          task.cancel();
+        }
+      }
+      expect((await task.done).state, ImageGenerationCompletionState.cancelled);
+      expect(driver.session.stepsRun, lessThan(3 * 2 + 2 * 2));
+      expect(driver.session.stepsRun, greaterThan(3 * 2));
+
+      final pending = await engine.generate(hiresFix);
+      final first = await pending.events.firstWhere(
+        (event) => event is ImageGenerationProgressEvent && event.pass == 1,
+      );
+      expect(first, isA<ImageGenerationProgressEvent>());
+      await engine.dispose();
+      expect(
+        (await pending.done).state,
+        ImageGenerationCompletionState.cancelled,
+      );
+      expect(driver.session.disposedAfterGenerate, isTrue);
+    });
+  });
+
   group('ControlNet', () {
     const params = ImageModelParams(
       device: ComputeDevice.cpu,
@@ -3234,9 +3465,16 @@ final class _FakeSession
         ImageGenerationSession,
         ImageVaeTilingSession,
         ImageEditingSession,
-        ImageControlNetSession {
+        ImageControlNetSession,
+        ImageHiresFixSession {
   @override
   bool supportsVaeTiling = true;
+  @override
+  bool supportsHiresFix = true;
+
+  /// Returns first-pass images for a hires fix, as a runtime that disabled
+  /// it would.
+  bool ignoreHires = false;
   @override
   bool supportsImageEditing = true;
   @override
@@ -3272,15 +3510,18 @@ final class _FakeSession
         error = null;
         throw failure;
       }
-      for (var image = 0; image < request.count; image++) {
-        onProgress(0, request.steps);
-        for (var step = 1; step <= request.steps; step++) {
-          await Future<void>.delayed(Duration.zero);
-          if (_cancelFlag) {
-            return null;
+      final hires = ignoreHires ? null : request.hiresFix;
+      for (final steps in [request.steps, ?hires?.steps]) {
+        for (var image = 0; image < request.count; image++) {
+          onProgress(0, steps);
+          for (var step = 1; step <= steps; step++) {
+            await Future<void>.delayed(Duration.zero);
+            if (_cancelFlag) {
+              return null;
+            }
+            stepsRun++;
+            onProgress(step, steps);
           }
-          stepsRun++;
-          onProgress(step, request.steps);
         }
       }
       await Future<void>.delayed(Duration.zero);
@@ -3288,13 +3529,15 @@ final class _FakeSession
         failNext = false;
         return null;
       }
+      final width = hires?.width ?? request.width;
+      final height = hires?.height ?? request.height;
       return [
         for (var i = 0; i < request.count; i++)
           GeneratedImage(
-            width: request.width,
-            height: request.height,
+            width: width,
+            height: height,
             channels: 3,
-            pixels: Uint8List(request.width * request.height * 3),
+            pixels: Uint8List(width * height * 3),
           ),
       ];
     } finally {
