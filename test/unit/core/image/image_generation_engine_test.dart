@@ -623,6 +623,8 @@ void main() {
         'vulkan',
         'tiny decoder',
         'taesd override',
+        'extra component',
+        'checkpoint without a VAE',
         'family',
         'legacy session',
         'session probe',
@@ -644,13 +646,26 @@ void main() {
         if (kind == 'tiny decoder') {
           driver.headers[_model] = ImageModelHeaders.sdxsCheckpoint;
         }
+        if (kind == 'checkpoint without a VAE') {
+          driver.headers[_model] = ggufHeader(
+            tensors: [
+              ('model.diffusion_model.input_blocks.0.0.weight', [3, 3, 4, 320]),
+              ('model.diffusion_model.out.2.weight', [3, 3, 320, 4]),
+              ('cond_stage_model.model.token_embedding.weight', [1024, 49408]),
+            ],
+          );
+        }
         if (kind == 'family') driver.session.modelVersion = 'SDXL';
         if (kind == 'legacy session') {
           driver.sessionOverride = _LegacySession(driver.session);
         }
         if (kind == 'session probe') driver.session.supportsHiresFix = false;
         final engine = await load(
-          _sdxs(null, kind == 'taesd override' ? _local(_taesd) : null),
+          _sdxs(null, switch (kind) {
+            'taesd override' => _local(_taesd),
+            'extra component' => _local(_clipL),
+            _ => null,
+          }),
           params: ImageModelParams(
             device: kind == 'vulkan' ? ComputeDevice.gpu : ComputeDevice.auto,
           ),
@@ -740,6 +755,21 @@ void main() {
       driver.session.ignoreHires = false;
       final result = await engine.generateImage(hiresFix);
       expect(result.images.first.width, 768);
+    });
+
+    test('fewer final-size images than requested fail the task', () async {
+      final engine = await load(_sdxs());
+      driver.session.returnedImageCount = 1;
+      final completion = await (await engine.generate(hiresFix)).done;
+      expect(completion.state, ImageGenerationCompletionState.failed);
+      expect(
+        completion.error,
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          contains('2 hires-fix images'),
+        ),
+      );
     });
 
     test('a cancel during the second pass cancels the task with no images, '
@@ -3475,6 +3505,10 @@ final class _FakeSession
   /// Returns first-pass images for a hires fix, as a runtime that disabled
   /// it would.
   bool ignoreHires = false;
+
+  /// Images to return in place of `request.count`, as a runtime that
+  /// dropped some would.
+  int? returnedImageCount;
   @override
   bool supportsImageEditing = true;
   @override
@@ -3532,7 +3566,7 @@ final class _FakeSession
       final width = hires?.width ?? request.width;
       final height = hires?.height ?? request.height;
       return [
-        for (var i = 0; i < request.count; i++)
+        for (var i = 0; i < (returnedImageCount ?? request.count); i++)
           GeneratedImage(
             width: width,
             height: height,

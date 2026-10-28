@@ -16,6 +16,11 @@ on the template, built a `common_chat_session` from one user message, the
 (format `peg-native`), and called `finish` on the whole output. Feeding the
 output one byte at a time before `finish` gave the same result for every case.
 
+The DeepSeek V3.1 cases from `escaped-newline-in-ended-thought` on were added
+for issue #750 with the same probe; `feed` and `finish` on the whole output
+gave the same result as one byte at a time. A forced-open thought is the text
+before the first `</think>`, kept as generated, and the rest is content.
+
 A thought that never closes is reasoning, including a tool-call envelope inside
 it. llamadart trims some of the whitespace llama.cpp keeps around reasoning and
 content, so the test compares trimmed text.
