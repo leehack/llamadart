@@ -3030,77 +3030,74 @@ class LlamaCppService {
     final assetCandidates = _libraryCandidates.backendAssetUris(backend);
     final recordAssetDiagnostics = backend == 'cpu' && Platform.isAndroid;
 
-    for (final assetUri in assetCandidates) {
-      try {
-        final DynamicLibrary library;
+    final registered = probeLibraryCandidates(
+      assetCandidates,
+      failures: failures,
+      open: DynamicLibrary.open,
+      accept: (assetUri, library) {
         try {
-          library = DynamicLibrary.open(assetUri);
-        } catch (error) {
-          failures.add(assetUri, describeLibraryProbeError(error, assetUri));
-          continue;
-        }
-        final score = _lookupBackendAssetScore(library);
-        if (!isBackendCandidateScoreSupported(score)) {
-          if (recordAssetDiagnostics && score != null) {
-            _recordStartupDiagnostic(
-              describeSkippedBackendAssetCandidate(assetUri, score),
-            );
-          }
-          failures.add(assetUri, '`ggml_backend_score` returned $score');
-          continue;
-        }
-
-        final _GgmlBackendInitDart init;
-        try {
-          init = library
-              .lookupFunction<_GgmlBackendInitNative, _GgmlBackendInitDart>(
-                'ggml_backend_init',
+          final score = _lookupBackendAssetScore(library);
+          if (!isBackendCandidateScoreSupported(score)) {
+            if (recordAssetDiagnostics && score != null) {
+              _recordStartupDiagnostic(
+                describeSkippedBackendAssetCandidate(assetUri, score),
               );
-        } catch (_) {
-          failures.add(assetUri, 'no `ggml_backend_init` export');
-          continue;
-        }
-        final reg = init();
-        if (reg == nullptr) {
+            }
+            failures.add(assetUri, '`ggml_backend_score` returned $score');
+            return null;
+          }
+
+          final _GgmlBackendInitDart init;
+          try {
+            init = library
+                .lookupFunction<_GgmlBackendInitNative, _GgmlBackendInitDart>(
+                  'ggml_backend_init',
+                );
+          } catch (_) {
+            failures.add(assetUri, 'no `ggml_backend_init` export');
+            return null;
+          }
+          final reg = init();
+          if (reg == nullptr) {
+            if (recordAssetDiagnostics) {
+              _recordStartupDiagnostic(
+                'Backend asset `$assetUri` returned null from '
+                '`ggml_backend_init`.',
+              );
+            }
+            failures.add(assetUri, '`ggml_backend_init` returned null');
+            return null;
+          }
+
+          // Asset init path mirrors ggml_backend_load() by honoring
+          // optional backend score gates before initialization, then
+          // explicitly registering the backend because asset loading
+          // bypasses the native dynamic-loader helper.
+          if (!_registerBackendRegBestEffort(reg)) {
+            if (recordAssetDiagnostics) {
+              _recordStartupDiagnostic(
+                'Backend asset `$assetUri` failed explicit backend '
+                'registration.',
+              );
+            }
+            failures.add(assetUri, '`ggml_backend_register` unavailable');
+            return null;
+          }
+          _loadedBackendLibraries[backend] = library;
+          _loadedBackendModules.add(backend);
           if (recordAssetDiagnostics) {
             _recordStartupDiagnostic(
-              'Backend asset `$assetUri` returned null from '
-              '`ggml_backend_init`.',
+              describeLoadedBackendAssetCandidate(assetUri, score),
             );
           }
-          failures.add(assetUri, '`ggml_backend_init` returned null');
-          continue;
+          return true;
+        } catch (error) {
+          failures.add(assetUri, 'probe threw ${error.runtimeType}');
+          return null;
         }
-
-        // Asset init path mirrors ggml_backend_load() by honoring optional
-        // backend score gates before initialization, then explicitly
-        // registering the backend because asset loading bypasses the native
-        // dynamic-loader helper.
-        if (!_registerBackendRegBestEffort(reg)) {
-          if (recordAssetDiagnostics) {
-            _recordStartupDiagnostic(
-              'Backend asset `$assetUri` failed explicit backend '
-              'registration.',
-            );
-          }
-          failures.add(assetUri, '`ggml_backend_register` unavailable');
-          continue;
-        }
-        _loadedBackendLibraries[backend] = library;
-        _loadedBackendModules.add(backend);
-        if (recordAssetDiagnostics) {
-          _recordStartupDiagnostic(
-            describeLoadedBackendAssetCandidate(assetUri, score),
-          );
-        }
-        return true;
-      } catch (error) {
-        failures.add(assetUri, 'probe threw ${error.runtimeType}');
-        continue;
-      }
-    }
-
-    return false;
+      },
+    );
+    return registered ?? false;
   }
 
   int? _lookupBackendAssetScore(DynamicLibrary library) {
@@ -3159,145 +3156,140 @@ class LlamaCppService {
 
     final failures = BackendProbeFailures();
     final opened = <String>{};
-    final seen = <String>{};
-    for (final candidate in candidates) {
-      if (!seen.add(candidate)) {
-        continue;
-      }
+    probeLibraryCandidates(
+      candidates,
+      failures: failures,
+      open: DynamicLibrary.open,
+      accept: (candidate, library) {
+        opened.add(probeCandidateIdentity(candidate));
 
-      DynamicLibrary library;
-      try {
-        library = DynamicLibrary.open(candidate);
-      } catch (error) {
-        failures.add(candidate, describeLibraryProbeError(error, candidate));
-        continue;
-      }
-      opened.add(probeCandidateIdentity(candidate));
+        _ggmlBackendLoadFallback ??= _tryBind(
+          () => library
+              .lookupFunction<_GgmlBackendLoadNative, _GgmlBackendLoadDart>(
+                'ggml_backend_load',
+              ),
+        );
+        _ggmlBackendLoadAllFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendLoadAllNative,
+                _GgmlBackendLoadAllDart
+              >('ggml_backend_load_all'),
+        );
+        _ggmlBackendLoadAllFromPathFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendLoadAllFromPathNative,
+                _GgmlBackendLoadAllFromPathDart
+              >('ggml_backend_load_all_from_path'),
+        );
+        _ggmlBackendRegisterFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegisterNative,
+                _GgmlBackendRegisterDart
+              >('ggml_backend_register'),
+        );
+        _ggmlBackendRegCountFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegCountNative,
+                _GgmlBackendRegCountDart
+              >('ggml_backend_reg_count'),
+        );
+        _ggmlBackendRegGetFallback ??= _tryBind(
+          () => library
+              .lookupFunction<_GgmlBackendRegGetNative, _GgmlBackendRegGetDart>(
+                'ggml_backend_reg_get',
+              ),
+        );
+        _ggmlBackendRegNameFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegNameNative,
+                _GgmlBackendRegNameDart
+              >('ggml_backend_reg_name'),
+        );
+        _ggmlBackendRegByNameFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegByNameNative,
+                _GgmlBackendRegByNameDart
+              >('ggml_backend_reg_by_name'),
+        );
+        _ggmlBackendRegDevCountFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegDevCountNative,
+                _GgmlBackendRegDevCountDart
+              >('ggml_backend_reg_dev_count'),
+        );
+        _ggmlBackendRegDevGetFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegDevGetNative,
+                _GgmlBackendRegDevGetDart
+              >('ggml_backend_reg_dev_get'),
+        );
+        _ggmlBackendDevCountFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevCountNative,
+                _GgmlBackendDevCountDart
+              >('ggml_backend_dev_count'),
+        );
+        _ggmlBackendDevGetFallback ??= _tryBind(
+          () => library
+              .lookupFunction<_GgmlBackendDevGetNative, _GgmlBackendDevGetDart>(
+                'ggml_backend_dev_get',
+              ),
+        );
+        _ggmlBackendDevNameFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevNameNative,
+                _GgmlBackendDevNameDart
+              >('ggml_backend_dev_name'),
+        );
+        _ggmlBackendDevBackendRegFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevBackendRegNative,
+                _GgmlBackendDevBackendRegDart
+              >('ggml_backend_dev_backend_reg'),
+        );
+        _ggmlBackendDevByTypeFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevByTypeNative,
+                _GgmlBackendDevByTypeDart
+              >('ggml_backend_dev_by_type'),
+        );
+        _ggmlBackendDevTypeFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevTypeNative,
+                _GgmlBackendDevTypeDart
+              >('ggml_backend_dev_type'),
+        );
+        _ggmlBackendDevGetPropsFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevGetPropsNative,
+                _GgmlBackendDevGetPropsDart
+              >('ggml_backend_dev_get_props'),
+        );
+        _ggmlBackendDevMemoryFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendDevMemoryNative,
+                _GgmlBackendDevMemoryDart
+              >('ggml_backend_dev_memory'),
+        );
 
-      _ggmlBackendLoadFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendLoadNative, _GgmlBackendLoadDart>(
-              'ggml_backend_load',
-            ),
-      );
-      _ggmlBackendLoadAllFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendLoadAllNative, _GgmlBackendLoadAllDart>(
-              'ggml_backend_load_all',
-            ),
-      );
-      _ggmlBackendLoadAllFromPathFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendLoadAllFromPathNative,
-              _GgmlBackendLoadAllFromPathDart
-            >('ggml_backend_load_all_from_path'),
-      );
-      _ggmlBackendRegisterFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendRegisterNative,
-              _GgmlBackendRegisterDart
-            >('ggml_backend_register'),
-      );
-      _ggmlBackendRegCountFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendRegCountNative,
-              _GgmlBackendRegCountDart
-            >('ggml_backend_reg_count'),
-      );
-      _ggmlBackendRegGetFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendRegGetNative, _GgmlBackendRegGetDart>(
-              'ggml_backend_reg_get',
-            ),
-      );
-      _ggmlBackendRegNameFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendRegNameNative, _GgmlBackendRegNameDart>(
-              'ggml_backend_reg_name',
-            ),
-      );
-      _ggmlBackendRegByNameFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendRegByNameNative,
-              _GgmlBackendRegByNameDart
-            >('ggml_backend_reg_by_name'),
-      );
-      _ggmlBackendRegDevCountFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendRegDevCountNative,
-              _GgmlBackendRegDevCountDart
-            >('ggml_backend_reg_dev_count'),
-      );
-      _ggmlBackendRegDevGetFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendRegDevGetNative,
-              _GgmlBackendRegDevGetDart
-            >('ggml_backend_reg_dev_get'),
-      );
-      _ggmlBackendDevCountFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendDevCountNative,
-              _GgmlBackendDevCountDart
-            >('ggml_backend_dev_count'),
-      );
-      _ggmlBackendDevGetFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendDevGetNative, _GgmlBackendDevGetDart>(
-              'ggml_backend_dev_get',
-            ),
-      );
-      _ggmlBackendDevNameFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendDevNameNative, _GgmlBackendDevNameDart>(
-              'ggml_backend_dev_name',
-            ),
-      );
-      _ggmlBackendDevBackendRegFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendDevBackendRegNative,
-              _GgmlBackendDevBackendRegDart
-            >('ggml_backend_dev_backend_reg'),
-      );
-      _ggmlBackendDevByTypeFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendDevByTypeNative,
-              _GgmlBackendDevByTypeDart
-            >('ggml_backend_dev_by_type'),
-      );
-      _ggmlBackendDevTypeFallback ??= _tryBind(
-        () => library
-            .lookupFunction<_GgmlBackendDevTypeNative, _GgmlBackendDevTypeDart>(
-              'ggml_backend_dev_type',
-            ),
-      );
-      _ggmlBackendDevGetPropsFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendDevGetPropsNative,
-              _GgmlBackendDevGetPropsDart
-            >('ggml_backend_dev_get_props'),
-      );
-      _ggmlBackendDevMemoryFallback ??= _tryBind(
-        () =>
-            library.lookupFunction<
-              _GgmlBackendDevMemoryNative,
-              _GgmlBackendDevMemoryDart
-            >('ggml_backend_dev_memory'),
-      );
-
-      if (_ggmlFallbacksFullyResolved) {
-        break;
-      }
-    }
+        return _ggmlFallbacksFullyResolved ? true : null;
+      },
+    );
     _ggmlRuntimeProbeOutcome = opened.isEmpty
         ? 'no ggml runtime candidate opened (${failures.describe()})'
         : 'the opened ggml runtime candidates (${opened.join(', ')}) do not '
@@ -3363,29 +3355,25 @@ class LlamaCppService {
     final candidates = _libraryCandidates.wrapperPaths(directories);
 
     final failures = BackendProbeFailures();
-    final seen = <String>{};
-    for (final candidate in candidates) {
-      if (!seen.add(candidate)) {
-        continue;
-      }
-      final DynamicLibrary library;
-      try {
-        library = _openWrapperLibrary(candidate);
-      } catch (error) {
-        failures.add(candidate, describeLibraryProbeError(error, candidate));
-        continue;
-      }
-      try {
-        _llamaDartSetLogLevelFallback = library
-            .lookupFunction<
-              _LlamaDartSetLogLevelNative,
-              _LlamaDartSetLogLevelDart
-            >('llama_dart_set_log_level');
-        return;
-      } catch (_) {
-        failures.add(candidate, 'no `llama_dart_set_log_level` export');
-        continue;
-      }
+    final setLogLevel = probeLibraryCandidates(
+      candidates,
+      failures: failures,
+      open: _openWrapperLibrary,
+      accept: (candidate, library) {
+        try {
+          return library.lookupFunction<
+            _LlamaDartSetLogLevelNative,
+            _LlamaDartSetLogLevelDart
+          >('llama_dart_set_log_level');
+        } catch (_) {
+          failures.add(candidate, 'no `llama_dart_set_log_level` export');
+          return null;
+        }
+      },
+    );
+    if (setLogLevel != null) {
+      _llamaDartSetLogLevelFallback = setLogLevel;
+      return;
     }
     _logLevelProbeOutcome = failures.describe();
   }
@@ -11147,6 +11135,39 @@ class BackendProbeFailures {
         .map((entry) => '${entry.key} (${entry.value.join(', ')})')
         .join('; ');
   }
+}
+
+/// Opens each of [candidates] in order, skipping repeats, until [accept]
+/// returns a non-null result for an opened library, and returns that result.
+///
+/// A candidate [open] throws for is recorded in [failures] under
+/// [describeLibraryProbeError]. [accept] records its own reason for rejecting
+/// an opened library before returning `null`. Returns `null` when no
+/// candidate is accepted.
+T? probeLibraryCandidates<T extends Object>(
+  Iterable<String> candidates, {
+  required BackendProbeFailures failures,
+  required DynamicLibrary Function(String candidate) open,
+  required T? Function(String candidate, DynamicLibrary library) accept,
+}) {
+  final seen = <String>{};
+  for (final candidate in candidates) {
+    if (!seen.add(candidate)) {
+      continue;
+    }
+    final DynamicLibrary library;
+    try {
+      library = open(candidate);
+    } catch (error) {
+      failures.add(candidate, describeLibraryProbeError(error, candidate));
+      continue;
+    }
+    final accepted = accept(candidate, library);
+    if (accepted != null) {
+      return accepted;
+    }
+  }
+  return null;
 }
 
 /// The identity a probe summary keeps for [candidate]: a `package:` asset URI
