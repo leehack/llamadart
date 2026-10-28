@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../exceptions.dart';
 import '../config/compute_device.dart';
 import '../config/flash_attention.dart';
@@ -287,9 +289,11 @@ class ModelParams {
   ///
   /// `null`, the default, lets llama.cpp split by free memory. llama.cpp
   /// normalizes the proportions, so `[3, 1]` puts three quarters of the
-  /// layers on the first device. [validate] rejects an empty list, a value
-  /// that is negative, infinite or NaN, a zero sum, a length other than that
-  /// of [gpuDevices], and a list with [ModelSplitMode.none] or a load that
+  /// layers on the first device. llama.cpp stores and sums the proportions
+  /// as float32. [validate] rejects an empty list, a value that is negative,
+  /// infinite, NaN, above float32 range or a nonzero value float32 rounds to
+  /// 0, a zero sum or one above float32 range, a length other than that of
+  /// [gpuDevices], and a list with [ModelSplitMode.none] or a load that
   /// offloads nothing. Native llama.cpp throws `LlamaUnsupportedException`
   /// before the model loads when the length differs from the number of
   /// devices the load uses; the Web and LiteRT-LM reject any list.
@@ -516,7 +520,8 @@ class ModelParams {
   /// context creation, and the `LlamaModelException` of the load names
   /// `moeCacheBytes` in its details. The Web and LiteRT-LM
   /// reject a nonzero value. GPUs that share system memory, such as Apple
-  /// silicon, gain nothing from it.
+  /// silicon, gain nothing from it. Validated on Metal only; CUDA and
+  /// multi-GPU hosts have no hardware evidence yet.
   final int moeCacheBytes;
 
   /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.
@@ -844,6 +849,27 @@ class ModelParams {
       if (split.fold<double>(0, (sum, value) => sum + value) <= 0) {
         throw _invalid('tensorSplit', split, 'must have a positive sum');
       }
+      // llama.cpp stores the split as float32 and sums it in float32.
+      final float32 = Float32List(2);
+      for (final value in split) {
+        float32[0] = value;
+        if (value > 0 && float32[0] == 0) {
+          throw _invalid(
+            'tensorSplit',
+            split,
+            'must not hold a nonzero proportion that float32 rounds to 0 '
+                '(below $_float32MinPositive)',
+          );
+        }
+        float32[1] = float32[1] + float32[0];
+      }
+      if (float32[1].isInfinite) {
+        throw _invalid(
+          'tensorSplit',
+          split,
+          'must hold proportions whose float32 sum is at most $_float32Max',
+        );
+      }
       if (devices != null && split.length != devices.length) {
         throw _invalid(
           'tensorSplit',
@@ -873,6 +899,9 @@ class ModelParams {
       );
     }
   }
+
+  static const double _float32Max = 3.4028234663852886e38;
+  static const double _float32MinPositive = 1.401298464324817e-45;
 
   LlamaArgumentException _invalid(
     String name,

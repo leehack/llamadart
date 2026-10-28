@@ -79,6 +79,25 @@ void main() {
     expect(recorder.loadTensorOverrides.last, isEmpty);
   });
 
+  test('a model whose expert_count is 0 is refused and freed', () {
+    start();
+    final dense = writeSyntheticLlamaGguf(
+      '${dir.path}/dense.gguf',
+      uint32Metadata: const {'llama.expert_count': 0},
+    ).path;
+    expect(
+      () => service.loadModel(dense, const ModelParams(cpuMoeLayers: -1)),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          contains('llama model has no experts'),
+        ),
+      ),
+    );
+    expect(recorder.freed, contains(recorder.owned.single));
+  });
+
   test('a cache budget on a Metal device loads without repacking', () {
     start(
       registeredDevices: () => [

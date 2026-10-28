@@ -151,6 +151,10 @@ void main() {
       () => resolve(const ModelParams(gpuDevices: [0, 1]), maxDevices: 1),
       unsupported(contains('at most 1')),
     );
+    expect(
+      resolve(const ModelParams(gpuDevices: [0, 1]), maxDevices: 2)!.devices,
+      [_cuda0, _cuda1],
+    );
   });
 
   group('preferredBackend auto', () {

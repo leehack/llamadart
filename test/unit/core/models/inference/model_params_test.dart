@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
@@ -308,6 +310,33 @@ void main() {
         'tensorSplit',
         'positive sum',
       );
+    });
+
+    test('rejects splits llama.cpp cannot hold as float32', () {
+      const float32Max = 3.4028234663852886e38;
+      for (final bad in [1e39, float32Max * 1.0000001]) {
+        rejects(ModelParams(tensorSplit: [1, bad]), 'tensorSplit', 'float32');
+      }
+      rejects(
+        const ModelParams(tensorSplit: [1, 1e-46]),
+        'tensorSplit',
+        'rounds to 0',
+      );
+      rejects(
+        const ModelParams(tensorSplit: [float32Max, float32Max]),
+        'tensorSplit',
+        'sum',
+      );
+      // Rounded to float32, as llama.cpp stores it, this value is 2^103: half
+      // an ulp of float32Max, so the float32 sum rounds to infinity.
+      final roundsToHalfUlp = math.pow(2.0, 103) - math.pow(2.0, 77);
+      rejects(
+        ModelParams(tensorSplit: [float32Max, roundsToHalfUlp.toDouble()]),
+        'tensorSplit',
+        'sum',
+      );
+      const ModelParams(tensorSplit: [float32Max, 0]).validate();
+      const ModelParams(tensorSplit: [1, 1.5e-45]).validate();
     });
 
     test('rejects a split of another length than the device list', () {

@@ -1476,7 +1476,7 @@ class LlamaCppService {
       }
       preferredDevices = _createDeviceList(usable);
     }
-    final Pointer<llama_model_tensor_buft_override>? cpuMoeOverrides;
+    final ggml_backend_buffer_type_t? cpuMoeBuffer;
     try {
       _checkMoeCacheSupported(
         modelParams,
@@ -1484,7 +1484,7 @@ class LlamaCppService {
         gpuLayers: gpuLayers,
         vulkan: vulkan,
       );
-      cpuMoeOverrides = _createCpuMoeOverrides(modelParams.cpuMoeLayers);
+      cpuMoeBuffer = _cpuMoeBufferType(modelParams.cpuMoeLayers);
     } catch (_) {
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
@@ -1518,10 +1518,18 @@ class LlamaCppService {
       }
       preferredDevices = _createDeviceList(placement.devices);
     }
+    // Allocated after every refusal above: those error paths free only
+    // preferredDevices.
     final tensorSplit = _createTensorSplit(placement);
     if (tensorSplit != null) {
       mparams.tensor_split = tensorSplit;
     }
+    final cpuMoeOverrides = cpuMoeBuffer == null
+        ? null
+        : allocateTensorBufferOverrides(
+            cpuMoeOverridePatterns(modelParams.cpuMoeLayers),
+            cpuMoeBuffer,
+          );
     mparams.n_gpu_layers = gpuLayers;
     mparams.split_modeAsInt = modelParams.splitMode.llamaCppValue;
     mparams.main_gpu = modelParams.mainGpu;
@@ -1696,11 +1704,9 @@ class LlamaCppService {
     );
   }
 
-  /// The tensor overrides that keep the experts of [cpuMoeLayers] layers in
+  /// The CPU buffer type that keeps the experts of [cpuMoeLayers] layers in
   /// host memory, or `null` for `0`.
-  Pointer<llama_model_tensor_buft_override>? _createCpuMoeOverrides(
-    int cpuMoeLayers,
-  ) {
+  ggml_backend_buffer_type_t? _cpuMoeBufferType(int cpuMoeLayers) {
     if (cpuMoeLayers == 0) return null;
     final cpu = _ggmlBackendDevByType(
       ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
@@ -1712,10 +1718,7 @@ class LlamaCppService {
         'this runtime does not register on ${Platform.operatingSystem}.',
       );
     }
-    return allocateTensorBufferOverrides(
-      cpuMoeOverridePatterns(cpuMoeLayers),
-      buft,
-    );
+    return buft;
   }
 
   /// Why the MoE fields of [params] do nothing for the loaded [model], or

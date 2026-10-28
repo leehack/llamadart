@@ -58,18 +58,28 @@ Important fields:
   `preferredBackend`. `ModelSplitMode.none` uses `mainGpu` instead.
 - `tensorSplit`: one proportion per device, in `gpuDevices` order or the
   backend's listing order (llama.cpp `--tensor-split`); llama.cpp
-  normalizes them. `validate()` rejects empty lists, negative, NaN or
-  infinite values, a zero sum, and a length other than that of `gpuDevices`.
+  normalizes them and stores them as float32. `validate()` rejects empty
+  lists, negative, NaN or infinite values, values above float32 range or
+  nonzero values float32 rounds to 0, a zero sum or one above float32 range,
+  and a length other than that of `gpuDevices`.
   Native llama.cpp throws `LlamaUnsupportedException` before the model loads
   for a device index the host lacks, a split for another number of devices,
   several GPU backends under `auto`, and a load that would fall back to the
   CPU; the Web and LiteRT-LM reject both fields. After a load with either
   field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA2)`.
-  A speculative draft model loads on the same devices and split.
+  A speculative draft model loads on the same devices and split. Validated
+  on one Metal GPU only: multi-GPU loads have no hardware evidence yet, and
+  CUDA is not hardware-qualified.
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());
-final gpus = await engine.listGpuDevices(probeBackends: [GpuBackend.cuda]);
+// mainGpu counts the devices of one backend, so keep only CUDA devices.
+final gpus = [
+  for (final gpu in await engine.listGpuDevices(
+    probeBackends: [GpuBackend.cuda],
+  ))
+    if (gpu.backend == GpuBackend.cuda) gpu,
+];
 await engine.loadModel(
   '/path/to/model.gguf',
   modelParams: LlamaCppModelParams(
@@ -99,14 +109,16 @@ await engine.loadModel(
   experimental GPU cache of those host experts (`--moe-cache-mib`, which
   takes MiB). `0` disables it; it needs a nonzero `cpuMoeLayers`, and the
   load then disables CPU weight repacking so the experts stay cacheable. It
-  runs on Metal and CUDA; a load that offloads nothing, `ModelSplitMode.tensor`,
-  Vulkan (llama.cpp aborts:
+  runs on Metal and CUDA; with a budget, a load that offloads nothing,
+  `ModelSplitMode.tensor`, Vulkan (llama.cpp aborts:
   [ggml-org/llama.cpp#30697](https://github.com/ggml-org/llama.cpp/issues/30697))
   and other backends throw `LlamaUnsupportedException` before the model
-  loads. A budget the GPU cannot allocate, or too small for one token's
-  experts, fails the load with `LlamaModelException` naming `moeCacheBytes`.
-  It helps discrete GPUs that cannot hold every expert; on Apple silicon,
-  whose GPU shares system memory, it only adds copies.
+  loads; `cpuMoeLayers` alone runs on any backend. A budget the GPU cannot
+  allocate, or too small for one token's experts, fails the load with
+  `LlamaModelException` naming `moeCacheBytes`. Validated on Metal only,
+  where the GPU shares system memory and the cache only adds copies; CUDA
+  and multi-GPU hosts have no hardware evidence yet, and no speed-up is
+  claimed.
 
 ```dart
 const params = LlamaCppModelParams(
