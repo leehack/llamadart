@@ -112,6 +112,7 @@ export 'src/core/engine/reranker.dart';
 export 'src/core/models/inference/reranking.dart';
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/next_token_scores.dart';
+export 'src/core/models/inference/state_identity.dart';
 export 'src/core/models/inference/generation_params.dart';
 export 'src/core/models/inference/generation_usage.dart';
 export 'src/core/models/inference/structured_output.dart';

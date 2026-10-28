@@ -5647,6 +5647,86 @@ void main() {
       );
     });
 
+    test('probing returns the first accepted candidate', () {
+      final library = DynamicLibrary.executable();
+      final opened = <String>[];
+      final accepted = <String>[];
+      final failures = BackendProbeFailures()
+        ..add('libearlier.so', 'file missing');
+
+      final result = probeLibraryCandidates<String>(
+        const <String>[
+          '/Users/secret/libmissing.so',
+          'librejected.so',
+          '/Users/secret/libmissing.so',
+          'libaccepted.so',
+          'liblater.so',
+        ],
+        failures: failures,
+        open: (candidate) {
+          opened.add(candidate);
+          if (candidate.contains('missing')) {
+            throw ArgumentError(
+              "Failed to load dynamic library '$candidate': $candidate: "
+              'cannot open shared object file: No such file or directory',
+            );
+          }
+          return library;
+        },
+        accept: (candidate, openedLibrary) {
+          expect(openedLibrary, same(library));
+          accepted.add(candidate);
+          if (candidate == 'librejected.so') {
+            failures.add(candidate, 'no `probe_symbol` export');
+            return null;
+          }
+          return 'bound from $candidate';
+        },
+      );
+
+      expect(result, 'bound from libaccepted.so');
+      expect(opened, <String>[
+        '/Users/secret/libmissing.so',
+        'librejected.so',
+        'libaccepted.so',
+      ]);
+      expect(accepted, <String>['librejected.so', 'libaccepted.so']);
+      expect(
+        failures.describe(),
+        'file missing (libearlier.so); not found (libmissing.so); '
+        'no `probe_symbol` export (librejected.so)',
+      );
+    });
+
+    test('probing returns null when no candidate is accepted', () {
+      final failures = BackendProbeFailures();
+      var accepts = 0;
+
+      final result = probeLibraryCandidates<bool>(
+        const <String>['liba.so', 'libb.so'],
+        failures: failures,
+        open: (_) => DynamicLibrary.executable(),
+        accept: (candidate, _) {
+          accepts++;
+          failures.add(candidate, 'rejected');
+          return null;
+        },
+      );
+
+      expect(result, isNull);
+      expect(accepts, 2);
+      expect(failures.describe(), 'rejected (liba.so, libb.so)');
+      expect(
+        probeLibraryCandidates<bool>(
+          const <String>[],
+          failures: failures,
+          open: (_) => fail('no candidate to open'),
+          accept: (_, _) => fail('no candidate to accept'),
+        ),
+        isNull,
+      );
+    });
+
     test('an empty module directory names the expected module file', () {
       final tempDir = Directory.systemTemp.createTempSync('empty_module_dir_');
       addTearDown(() => tempDir.deleteSync(recursive: true));

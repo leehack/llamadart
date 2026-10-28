@@ -64,6 +64,7 @@ export 'src/backends/backend.dart'
         BackendPromptSpeechToTextSupport,
         BackendRuntimeDiagnostics,
         BackendRuntimeIdentity,
+        BackendStateIdentity,
         BackendStatePersistence,
         BackendStatePersistenceSupport,
         BackendTextToSpeech,

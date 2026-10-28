@@ -166,6 +166,7 @@ void main() {
       () => service.stateLoadFile(context, '${dir.path}/state.bin', 8),
       throwsA(unusable),
     );
+    expect(() => service.stateIdentity(context), throwsA(unusable));
     expect(
       () => service.scoreNextToken(
         context,
