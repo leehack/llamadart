@@ -789,6 +789,25 @@ void main() {
       });
     }
 
+    test(
+      'overlapping clears of stray files neither throw nor leave any',
+      () async {
+        for (var i = 0; i < 6; i += 1) {
+          File(path.join(root.path, 'stray$i.txt')).writeAsStringSync('stray');
+        }
+
+        await Future.wait(<Future<void>>[
+          manager.clear(),
+          DefaultModelDownloadManager(defaultCacheDirectory: root.path).clear(),
+        ]);
+
+        expect(
+          root.listSync().map((entity) => path.basename(entity.path)),
+          <String>['.locks'],
+        );
+      },
+    );
+
     test('remove waits for another process removing the entry instead of '
         'reporting it in use', () async {
       await manager.ensureModel(source());

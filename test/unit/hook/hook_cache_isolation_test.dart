@@ -6,30 +6,97 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../../support/hook_project_root.dart';
 import '../../support/native_library_headers.dart';
+
+/// Whether [source] calls `testCodeBuildHook` other than through a
+/// `HookProjectRoot` receiver, or imports `code_assets` under a prefix that
+/// would hide the call from this check.
+bool escapesHookRoot(String source) {
+  final calls = RegExp(r'testCodeBuildHook\(').allMatches(source).length;
+  final onRoot = RegExp(
+    r'(?<![\w.])(?!code_assets\b)\w+\.testCodeBuildHook\(',
+  ).allMatches(source).length;
+  final prefixed = RegExp(
+    r"import 'package:code_assets/[^;]*\bas\b",
+  ).hasMatch(source);
+  return calls != onRoot || prefixed;
+}
 
 /// Every hook test builds in a `HookProjectRoot`. One that built in this
 /// checkout would leave its fake bundles in `.dart_tool/llamadart`, which the
 /// next build in the checkout reuses (#1558).
 void main() {
   test('hook tests build in a throwaway package root', () {
-    final bare = RegExp(r'(?<![\w.])testCodeBuildHook\(');
-    final inCoreVersionRoot = RegExp(
-      r'withHookCoreVersion\(\s*\w+,\s*\(\) => testCodeBuildHook\(',
-    );
-    final ownRoot = {'build_hook_backend_sidecar_test.dart'};
+    final ownRoot = {
+      'build_hook_backend_sidecar_test.dart',
+      'hook_cache_isolation_test.dart',
+    };
     final offenders = [
       for (final file in Directory('test/unit/hook').listSync())
         if (file is File &&
             file.path.endsWith('_test.dart') &&
-            !ownRoot.contains(path.basename(file.path)))
-          if (bare.hasMatch(
-            file.readAsStringSync().replaceAll(inCoreVersionRoot, ''),
-          ))
-            path.basename(file.path),
+            !ownRoot.contains(path.basename(file.path)) &&
+            escapesHookRoot(file.readAsStringSync()))
+          path.basename(file.path),
     ];
 
     expect(offenders, isEmpty);
+  });
+
+  group('escapesHookRoot', () {
+    test('accepts calls on a root', () {
+      expect(escapesHookRoot('await project.testCodeBuildHook(a);'), isFalse);
+      expect(escapesHookRoot('() => coreRoot.testCodeBuildHook(a)'), isFalse);
+    });
+
+    test('flags bare, prefixed and aliased calls', () {
+      expect(escapesHookRoot('await testCodeBuildHook(a);'), isTrue);
+      expect(escapesHookRoot('code_assets.testCodeBuildHook(a);'), isTrue);
+      expect(escapesHookRoot('a.b.testCodeBuildHook(a);'), isTrue);
+      expect(
+        escapesHookRoot("import 'package:code_assets/code_assets.dart' as ca;"),
+        isTrue,
+      );
+    });
+
+    test('flags a bare call in a file that also uses a root', () {
+      expect(
+        escapesHookRoot(
+          'project.testCodeBuildHook(a); withCore(v, () => testCodeBuildHook(b));',
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('HookProjectRoot', () {
+    test('creates nothing until the directory is used', () {
+      final temp = Directory.systemTemp.createTempSync('hook_root_probe_');
+      addTearDown(() => temp.deleteSync(recursive: true));
+
+      IOOverrides.runZoned(() {
+        final root = HookProjectRoot.create();
+        root.resolve('.dart_tool/llamadart');
+        expect(temp.listSync(), isEmpty);
+        root.delete();
+
+        final created = root.directory;
+        expect(created.existsSync(), isTrue);
+        root.delete();
+        expect(created.existsSync(), isFalse);
+      }, getSystemTempDirectory: () => temp);
+    });
+
+    test('declares the requested core version', () {
+      final root = HookProjectRoot.create(coreVersion: '0.16.1');
+      addTearDown(root.delete);
+
+      expect(
+        File(path.join(root.directory.path, 'pubspec.yaml')).readAsStringSync(),
+        'name: llamadart\nversion: 0.16.1\n',
+      );
+    });
   });
 
   test("the checkout's hook caches hold no stub libraries", () {

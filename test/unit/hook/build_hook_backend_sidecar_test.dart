@@ -569,6 +569,24 @@ void main() {
       expect(absentRecord().existsSync(), isFalse);
     });
 
+    test('ages by the hook clock, not the machine clock', () async {
+      final legacyRelease = {
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+      };
+      await runHook(RuntimeBundleHttpFixture(legacyRelease));
+      final recorded = DateTime.now().subtract(const Duration(days: 2));
+      absentRecord().setLastModifiedSync(recorded);
+      final fixture = RuntimeBundleHttpFixture(legacyRelease);
+
+      await build_hook.withClockForTesting(
+        () => recorded.add(const Duration(hours: 1)),
+        () => runHook(fixture, backends: ['cuda']),
+      );
+
+      expect(fixture.requests, isNot(contains(_manifestUrl)));
+    });
+
     test('is renewed when a re-check finds no assets.json again, and kept '
         'and renewed when the re-check fails', () async {
       final legacyRelease = {
