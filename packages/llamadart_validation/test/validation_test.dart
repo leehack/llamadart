@@ -464,7 +464,7 @@ class CountingFakeEngine extends FakeEngine
     List<int> candidates = const [],
     int topK = 0,
     required bool reuse,
-  }) => throw UnimplementedError();
+  }) async => throw LlamaUnsupportedException('LiteRT scoring unsupported');
   @override
   Future<bool> saveState(String path, List<int> tokens) async =>
       throw LlamaUnsupportedException('LiteRT state unsupported');
