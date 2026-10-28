@@ -452,6 +452,20 @@ List<String> _matchingLibraryPaths(Directory directory, RegExp regex) {
   }
 }
 
+/// The source of the library defined in [libraryPath], its parts included.
+String _librarySource(String libraryPath) {
+  final source = File(libraryPath).readAsStringSync();
+  final directory = File(libraryPath).parent.path;
+  return [
+    source,
+    for (final part in RegExp(
+      r"^part '([^']+)';$",
+      multiLine: true,
+    ).allMatches(source))
+      File('$directory/${part.group(1)}').readAsStringSync(),
+  ].join('\n');
+}
+
 String _sourceSection(String source, String startMarker, String endMarker) {
   final start = source.indexOf(startMarker);
   expect(start, isNot(-1), reason: startMarker);
@@ -1111,9 +1125,9 @@ void main() {
     });
 
     test('Verify mtmd fallback bitmap helper ABI mirrors bindings', () {
-      final serviceSource = File(
+      final serviceSource = _librarySource(
         'lib/src/backends/llama_cpp/llama_cpp_service.dart',
-      ).readAsStringSync();
+      );
 
       final fileNative = _sourceSection(
         serviceSource,
