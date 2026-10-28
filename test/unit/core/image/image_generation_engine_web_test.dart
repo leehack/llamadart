@@ -63,6 +63,34 @@ void main() {
       expect(downloads.requested, isEmpty);
     },
   );
+
+  test('no module placement enables the Web runtime', () async {
+    final downloads = _RecordingDownloads();
+    for (final placement in [
+      const ImageModelPlacement(textEncoderOnCpu: true),
+      const ImageModelPlacement(vaeOnCpu: true),
+      const ImageModelPlacement(maxGpuMemoryGiB: 4),
+      const ImageModelPlacement(autoFit: false),
+    ]) {
+      await expectLater(
+        ImageGenerationEngine.load(
+          ImageGenerationModel(
+            ModelSource.parse('https://example.com/sdxs.gguf'),
+          ),
+          placement: placement,
+          store: ModelFileStore(downloadManager: downloads),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('not available on the web'),
+          ),
+        ),
+      );
+    }
+    expect(downloads.requested, isEmpty);
+  });
 }
 
 final class _RecordingDownloads extends ThrowingModelDownloadManager {

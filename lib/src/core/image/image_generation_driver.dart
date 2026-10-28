@@ -15,9 +15,16 @@ final class ImageGenerationSessionConfig {
   /// `controlNet`.
   final Map<String, String> files;
 
-  /// stable-diffusion.cpp backend name (`cpu`, `gpu`), or `null` for the
-  /// runtime default.
+  /// stable-diffusion.cpp backend assignment: a device (`cpu`, `gpu`),
+  /// module assignments such as `gpu,te=cpu`, or `null` for the runtime
+  /// default.
   final String? backend;
+
+  /// Per-GPU memory budget in GiB, or `null` for the runtime default.
+  final int? maxGpuMemoryGiB;
+
+  /// Whether the runtime's automatic fit places the weights.
+  final bool autoFit;
 
   /// Conditioning-cache entry limit; `null` preserves the runtime default.
   final int? conditioningCacheSize;
@@ -61,6 +68,8 @@ final class ImageGenerationSessionConfig {
     required this.backend,
     required this.threads,
     this.conditioningCacheSize,
+    this.maxGpuMemoryGiB,
+    this.autoFit = true,
     this.seamlessRecipeVerified = false,
     this.vaeTilingRecipeVerified = false,
     this.imageEditingRecipeVerified = false,
@@ -308,6 +317,12 @@ abstract interface class ImageGenerationDriver {
     ImageGenerationComputeDevice device, {
     required bool runtimePicksGpu,
   });
+
+  /// Whether a GPU other than Metal that the runtime lists is discrete:
+  /// `true` when one is, `false` when every GPU is integrated, and `null`
+  /// when the runtime does not say (see `readStableDiffusionGpuMemory`). Like
+  /// [memoryLimits], it asks off the calling isolate on native platforms.
+  Future<bool?> reportsDiscreteGpu();
 
   /// Loads a native context. On native platforms the runtime's messages
   /// reach `LlamaLogger` from then on, at the levels `LlamaLogging` has when

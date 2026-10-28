@@ -85,6 +85,14 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
   }
 
   @override
+  Future<bool?> reportsDiscreteGpu() async {
+    final readGpuMemory = _readGpuMemory;
+    final logLevel = imageRuntimeLogLevel();
+    final gpus = await Isolate.run(() => readGpuMemory(logLevel: logLevel));
+    return gpus?.any((gpu) => !gpu.integrated);
+  }
+
+  @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>
       StableDiffusionImageWorker.start(
         config,

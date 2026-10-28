@@ -292,6 +292,9 @@ final class _RecordingDriver implements ImageGenerationDriver {
   }) async => (refuse: null, slower: null);
 
   @override
+  Future<bool?> reportsDiscreteGpu() async => null;
+
+  @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) {
     starts++;
     return StableDiffusionImageWorker.start(
