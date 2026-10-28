@@ -143,11 +143,23 @@ final class ModelStore implements ModelDownloadManager {
             onProgress: onProgress,
           ),
       ];
-    } catch (_) {
-      await _lock.run(() => _settleReference(id, succeeded: false));
-      rethrow;
+    } catch (error, stackTrace) {
+      var settling = false;
+      try {
+        await _lock.run(() {
+          settling = true;
+          return _settleFailure(id);
+        });
+      } on FileSystemException {
+        // The reference cannot be put back without the lock, so it stays
+        // until a release, and the call reports its own failure.
+        if (!settling) {
+          _endClaim(id, succeeded: false);
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
     }
-    await _settleReference(id, succeeded: true);
+    _endClaim(id, succeeded: true);
     return ModelStoreEntry(
       id: id,
       model: files.first,
@@ -451,33 +463,27 @@ final class ModelStore implements ModelDownloadManager {
       );
     }
     final file = _referenceFile(id);
-    var claims = _claims[file.path];
-    if (claims == null) {
-      String? baseline;
-      try {
-        baseline = await file.readAsString();
-      } on FileSystemException {
-        baseline = null;
-      }
-      claims = _claims[file.path] = _ReferenceClaims(baseline);
-    }
+    final current = await _readText(file);
     final token = _randomToken();
-    try {
-      await Directory(p.dirname(file.path)).create(recursive: true);
-      await _writeAtomically(
-        file,
-        jsonEncode(<String, Object?>{
-          'schema_version': _schemaVersion,
-          'app_id': appId,
-          'last_used_at': DateTime.now().toUtc().toIso8601String(),
-          'token': token,
-        }),
-      );
-    } catch (_) {
-      if (claims.inFlight == 0) {
-        _claims.remove(file.path);
-      }
-      rethrow;
+    await Directory(p.dirname(file.path)).create(recursive: true);
+    await _writeAtomically(
+      file,
+      jsonEncode(<String, Object?>{
+        'schema_version': _schemaVersion,
+        'app_id': appId,
+        'last_used_at': DateTime.now().toUtc().toIso8601String(),
+        'token': token,
+      }),
+    );
+    // Looked up only now: a call that succeeded meanwhile may have ended
+    // the record.
+    final claims = _claims[file.path] ??= _ReferenceClaims();
+    if (!claims.wrote(current)) {
+      // A release, or another process of this app, changed the reference
+      // since these calls wrote it: failing calls go back to that state.
+      claims
+        ..baseline = current
+        ..succeeded = false;
     }
     claims
       ..inFlight += 1
@@ -485,24 +491,31 @@ final class ModelStore implements ModelDownloadManager {
     return token;
   }
 
-  /// Records that an `ensure` of [id] finished, and when it is the last of
-  /// this isolate's overlapping calls, they all failed and the reference is
-  /// still one they wrote, puts back the reference from before the first.
-  Future<void> _settleReference(String id, {required bool succeeded}) async {
-    final file = _referenceFile(id);
-    final claims = _claims[file.path]!;
+  /// Ends one `ensure` of [id] in this isolate's record, returning the record
+  /// when it was the last of overlapping calls that all failed.
+  _ReferenceClaims? _endClaim(String id, {required bool succeeded}) {
+    final path = _referenceFile(id).path;
+    final claims = _claims[path]!;
     claims.inFlight -= 1;
     claims.succeeded = claims.succeeded || succeeded;
     if (claims.inFlight > 0) {
+      return null;
+    }
+    _claims.remove(path);
+    return claims.succeeded ? null : claims;
+  }
+
+  /// Ends one failed `ensure` of [id], and when it is the last of this
+  /// isolate's overlapping calls, they all failed and the reference is still
+  /// one they wrote, puts back the reference from before them.
+  Future<void> _settleFailure(String id) async {
+    final claims = _endClaim(id, succeeded: false);
+    if (claims == null) {
       return;
     }
-    _claims.remove(file.path);
-    if (claims.succeeded) {
-      return;
-    }
+    final file = _referenceFile(id);
     // Not rewritten since by this app in another process, or released.
-    final json = await _readJson(file);
-    if (json == null || !claims.tokens.contains(json['token'])) {
+    if (!claims.wrote(await _readText(file))) {
       return;
     }
     final baseline = claims.baseline;
@@ -513,15 +526,11 @@ final class ModelStore implements ModelDownloadManager {
     }
   }
 
-  /// Drops this app's reference to [id], so no overlapping failed `ensure`
-  /// puts back an earlier one.
+  /// Drops this app's reference to [id]. An overlapping `ensure` that writes
+  /// the reference again after this takes the drop as its baseline.
   Future<void> _dropReference(String id) async {
-    final file = _referenceFile(id);
-    _claims[file.path]
-      ?..baseline = null
-      ..succeeded = false;
     try {
-      await file.delete();
+      await _referenceFile(id).delete();
     } on PathNotFoundException {
       // Already released.
     }
@@ -683,6 +692,14 @@ final class ModelStore implements ModelDownloadManager {
     return cacheKeys.cast<String>();
   }
 
+  static Future<String?> _readText(File file) async {
+    try {
+      return await file.readAsString();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   static Future<Map<String, Object?>?> _readJson(File file) async {
     try {
       final decoded = jsonDecode(await file.readAsString());
@@ -715,10 +732,8 @@ final class ModelStore implements ModelDownloadManager {
 
 /// This isolate's `ensure` calls in flight for one reference file.
 final class _ReferenceClaims {
-  _ReferenceClaims(this.baseline);
-
-  /// The reference file before the first of these calls, or null when there
-  /// was none or it has been released since.
+  /// The reference file before the first of these calls or, when it changed
+  /// since their last write, before the next one; null when there was none.
   String? baseline;
 
   /// The calls still running.
@@ -729,6 +744,20 @@ final class _ReferenceClaims {
 
   /// The tokens these calls wrote.
   final Set<String> tokens = <String>{};
+
+  /// Whether [reference], the contents of the reference file, is one of
+  /// these calls' writes.
+  bool wrote(String? reference) {
+    if (reference == null) {
+      return false;
+    }
+    try {
+      final json = jsonDecode(reference);
+      return json is Map && tokens.contains(json['token']);
+    } on FormatException {
+      return false;
+    }
+  }
 }
 
 final class _EntryRecord {
