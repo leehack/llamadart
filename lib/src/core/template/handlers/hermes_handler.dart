@@ -258,10 +258,11 @@ class HermesHandler extends ChatTemplateHandler
     required bool thinkingForcedOpen,
     Set<String>? declaredNames,
   }) {
-    final thinking = extractThinking(
-      output,
-      thinkingForcedOpen: thinkingForcedOpen,
-    );
+    // As in llama.cpp (`620d2225`), a forced-open thought is the text before
+    // the first `</think>`, kept as generated, and the rest is content.
+    final thinking = thinkingForcedOpen
+        ? extractForcedOpenThoughtVerbatim(output)
+        : extractThinking(output);
     final text = thinking.content;
 
     if (!parseToolCalls) {

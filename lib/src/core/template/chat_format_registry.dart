@@ -316,6 +316,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
             s.contains('Function calls MUST follow the specified format')),
     traits: ChatFormatTraits(
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
     ),
   ),
   ChatFormatRegistration(
@@ -348,6 +349,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains('<tool_call>'),
     traits: ChatFormatTraits(
       toolCallOpening: HermesHandler.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
       // Qualified on Qwen3-VL against llama-server's rendering (#1008).
       rendersToolResultContent: true,

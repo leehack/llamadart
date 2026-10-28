@@ -114,6 +114,65 @@ void main() {
         content: 'Sure',
       ));
     });
+
+    test('drops the start of an end tag that ends an unended thought', () {
+      expect(extractForcedOpenThoughtVerbatim('Plan it </thi'), (
+        reasoning: 'Plan it',
+        content: '',
+      ));
+      expect(extractForcedOpenThoughtVerbatim('Plan.</think>Ans </thi'), (
+        reasoning: 'Plan.',
+        content: 'Ans </thi',
+      ));
+    });
+
+    test('ends the thought at a content opening that comes first', () {
+      const openings = ['<tool_call>'];
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan <tool_call>x</tool_call></think>A',
+          contentOpenings: openings,
+        ),
+        (reasoning: 'Plan', content: '<tool_call>x</tool_call></think>A'),
+      );
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan</think><tool_call>x</tool_call>',
+          contentOpenings: openings,
+        ),
+        (reasoning: 'Plan', content: '<tool_call>x</tool_call>'),
+      );
+      expect(
+        extractForcedOpenThoughtVerbatim(
+          'Plan <tool',
+          contentOpenings: openings,
+        ),
+        (reasoning: 'Plan', content: ''),
+      );
+    });
+  });
+
+  group('withoutTrailingTagPrefix', () {
+    test('drops the longest ending that starts one of the tags', () {
+      expect(withoutTrailingTagPrefix('a </thi', ['</think>']), 'a ');
+      expect(
+        withoutTrailingTagPrefix('a <', ['<tool_call>', '</think>']),
+        'a ',
+      );
+      expect(
+        withoutTrailingTagPrefix('a <tool', ['</think>', '<tool_call>']),
+        'a ',
+      );
+    });
+
+    test('keeps a whole tag and text that ends no tag', () {
+      expect(
+        withoutTrailingTagPrefix('a </think>', ['</think>']),
+        'a </think>',
+      );
+      expect(withoutTrailingTagPrefix('x < y', ['</think>']), 'x < y');
+      expect(withoutTrailingTagPrefix('', ['</think>']), '');
+    });
   });
 
   group('withTemplateOpenedThought', () {
