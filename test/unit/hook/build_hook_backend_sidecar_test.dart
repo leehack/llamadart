@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
+import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -79,6 +80,8 @@ void main() {
 
   final core = _archive('core', _coreLibraries);
   final sidecar = _archive('sidecar', _cudaLibraries);
+  File absentRecord() =>
+      File(path.join(releaseCacheDir.path, 'assets.json.absent'));
 
   Map<String, List<int>> release({
     Object? manifest,
@@ -268,6 +271,111 @@ void main() {
         ),
       );
     });
+
+    test('does not download again a cached sidecar that matches SHA256SUMS '
+        'but lacks the CUDA runtime', () async {
+      final noRuntime = _archive('sidecar', _cudaLibraries.sublist(0, 1));
+      Map<String, List<int>> incompleteRelease() => {
+        ...release(manifest: _manifest()),
+        _sumsUrl: sha256SumsFor({
+          _coreArchive: core,
+          _sidecarArchive: noRuntime,
+        }).codeUnits,
+        _sidecarUrl: noRuntime,
+      };
+      await expectLater(
+        runHook(
+          RuntimeBundleHttpFixture(incompleteRelease()),
+          backends: ['cuda'],
+        ),
+        throwsA(isA<NativeHookContractException>()),
+      );
+      final fixture = RuntimeBundleHttpFixture(incompleteRelease());
+
+      await expectLater(
+        runHook(fixture, backends: ['cuda']),
+        throwsA(
+          isA<NativeHookContractException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('missing runtime dependencies'),
+              contains('downloading it again would not help'),
+              contains('remove cuda for windows-x64 from hooks.user_defines'),
+            ),
+          ),
+        ),
+      );
+      // Only a fresh SHA256SUMS, which could list a republished archive.
+      expect(fixture.requests, [_sumsUrl]);
+    });
+
+    test('downloads again a cached sidecar that a republished SHA256SUMS no '
+        'longer lists', () async {
+      final noRuntime = _archive('sidecar', _cudaLibraries.sublist(0, 1));
+      await expectLater(
+        runHook(
+          RuntimeBundleHttpFixture({
+            ...release(manifest: _manifest()),
+            _sumsUrl: sha256SumsFor({
+              _coreArchive: core,
+              _sidecarArchive: noRuntime,
+            }).codeUnits,
+            _sidecarUrl: noRuntime,
+          }),
+          backends: ['cuda'],
+        ),
+        throwsA(isA<NativeHookContractException>()),
+      );
+      final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
+
+      final libraries = await runHook(fixture, backends: ['cuda']);
+
+      expect(fixture.requests, [_sumsUrl, _sidecarUrl]);
+      expect(
+        libraries,
+        containsPair('cudart64_12.dll', 'sidecar-cudart64_12.dll'),
+      );
+    });
+  });
+
+  test('a cached core archive that matches SHA256SUMS but lacks runtime '
+      'libraries is not downloaded again', () async {
+    final incompleteCore = _archive('core', [
+      ..._coreLibraries,
+      'ggml-cuda.dll',
+    ]);
+    Map<String, List<int>> incompleteRelease() => {
+      ...release(manifest: _manifest()),
+      _sumsUrl: sha256SumsFor({
+        _coreArchive: incompleteCore,
+        _sidecarArchive: sidecar,
+      }).codeUnits,
+      _coreUrl: incompleteCore,
+    };
+    await expectLater(
+      runHook(RuntimeBundleHttpFixture(incompleteRelease())),
+      throwsA(
+        isA<Exception>().having(
+          (error) => '$error',
+          'message',
+          contains('missing runtime deps'),
+        ),
+      ),
+    );
+    final fixture = RuntimeBundleHttpFixture(incompleteRelease());
+
+    await expectLater(
+      runHook(fixture),
+      throwsA(
+        isA<Exception>().having(
+          (error) => '$error',
+          'message',
+          contains('downloading it again would not help'),
+        ),
+      ),
+    );
+    expect(fixture.requests, [_sumsUrl]);
   });
 
   test('a sidecar may rely on CUDA runtime libraries the core ships', () async {
@@ -332,6 +440,7 @@ void main() {
         ),
       );
       expect(fixture.requests, [_sumsUrl, _manifestUrl]);
+      expect(absentRecord().existsSync(), isFalse);
     });
 
     test('fails a CUDA build over a cached core bundle', () async {
@@ -382,6 +491,93 @@ void main() {
       expect(await runHook(offline, backends: ['cuda']), libraries);
       expect(offline.requests, isEmpty);
     });
+
+    test('loses to an assets.json seeded after it was recorded', () async {
+      await runHook(
+        RuntimeBundleHttpFixture({
+          _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+          _coreUrl: core,
+        }),
+      );
+      expect(absentRecord().existsSync(), isTrue);
+      File(
+        path.join(releaseCacheDir.path, 'assets.json'),
+      ).writeAsStringSync(jsonEncode(_manifest()));
+      final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
+
+      final libraries = await runHook(fixture, backends: ['cuda']);
+
+      expect(fixture.requests, [_sumsUrl, _sidecarUrl]);
+      expect(libraries, containsPair('ggml-cuda.dll', 'sidecar-ggml-cuda.dll'));
+    });
+
+    test('is re-checked once a day old and dropped when the release '
+        'publishes assets.json', () async {
+      await runHook(
+        RuntimeBundleHttpFixture({
+          _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+          _coreUrl: core,
+        }),
+      );
+      absentRecord().setLastModifiedSync(
+        DateTime.now().subtract(const Duration(days: 1, minutes: 1)),
+      );
+      final fixture = RuntimeBundleHttpFixture(release(manifest: _manifest()));
+
+      final libraries = await runHook(fixture, backends: ['cuda']);
+
+      expect(fixture.requests, [_manifestUrl, _sumsUrl, _sidecarUrl]);
+      expect(libraries, containsPair('ggml-cuda.dll', 'sidecar-ggml-cuda.dll'));
+      expect(absentRecord().existsSync(), isFalse);
+    });
+
+    test('is renewed when a re-check finds no assets.json again, and kept '
+        'when the re-check fails', () async {
+      final legacyRelease = {
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+      };
+      await runHook(RuntimeBundleHttpFixture(legacyRelease));
+      final old = DateTime.now().subtract(const Duration(days: 2));
+      absentRecord().setLastModifiedSync(old);
+
+      final renewing = RuntimeBundleHttpFixture(legacyRelease);
+      await runHook(renewing, backends: ['cuda']);
+      expect(renewing.requests, [_manifestUrl]);
+      expect(absentRecord().lastModifiedSync().isAfter(old), isTrue);
+
+      absentRecord().setLastModifiedSync(old);
+      final offline = RuntimeBundleHttpFixture.offline();
+      final libraries = await runHook(offline, backends: ['cuda']);
+      expect(offline.requests, [_manifestUrl]);
+      expect(libraries, isNot(contains('ggml-cuda.dll')));
+      expect(absentRecord().lastModifiedSync(), old);
+    });
+
+    test('still lets a core download proceed when its re-check '
+        'fails', () async {
+      final legacyRelease = {
+        _sumsUrl: sha256SumsFor({_coreArchive: core}).codeUnits,
+        _coreUrl: core,
+      };
+      await runHook(RuntimeBundleHttpFixture(legacyRelease));
+      absentRecord().setLastModifiedSync(
+        DateTime.now().subtract(const Duration(days: 2)),
+      );
+      Directory(
+        path.join(releaseCacheDir.path, 'windows-x64'),
+      ).deleteSync(recursive: true);
+      final fixture = RuntimeBundleHttpFixture(
+        legacyRelease,
+        unreachable: {_manifestUrl},
+      );
+
+      final libraries = await runHook(fixture);
+
+      expect(fixture.requests, [_sumsUrl, _manifestUrl, _coreUrl]);
+      expect(libraries, containsPair('ggml-cpu.dll', 'core-ggml-cpu.dll'));
+      expect(absentRecord().existsSync(), isTrue);
+    });
   });
 
   test('a CUDA build over a cached core falls back when assets.json is '
@@ -394,12 +590,74 @@ void main() {
     );
     await File(path.join(releaseCacheDir.path, 'assets.json')).delete();
     final offline = RuntimeBundleHttpFixture.offline();
+    final warnings = _captureWarnings();
 
     final libraries = await runHook(offline, backends: ['cpu', 'cuda']);
 
     expect(offline.requests, [_manifestUrl]);
     expect(libraries, isNot(contains('ggml-cuda.dll')));
     expect(libraries, containsPair('ggml-cpu.dll', 'core-ggml-cpu.dll'));
+    expect(
+      warnings,
+      contains(
+        allOf(
+          contains('Could not download $_manifestUrl to find the cuda sidecar'),
+          contains('building windows-x64 without it'),
+        ),
+      ),
+    );
+    expect(absentRecord().existsSync(), isFalse);
+  });
+
+  group('a CUDA build whose assets.json is unreachable', () {
+    setUp(() async {
+      await runHook(
+        RuntimeBundleHttpFixture(release(manifest: _manifest())),
+        backends: ['cuda'],
+      );
+      await File(path.join(releaseCacheDir.path, 'assets.json')).delete();
+    });
+
+    test('uses the cached sidecar', () async {
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      final libraries = await runHook(offline, backends: ['cuda']);
+
+      expect(offline.requests, [_manifestUrl]);
+      expect(libraries, containsPair('ggml-cuda.dll', 'sidecar-ggml-cuda.dll'));
+    });
+
+    test('extracts a cached sidecar archive the cached SHA256SUMS '
+        'lists', () async {
+      Directory(
+        path.join(releaseCacheDir.path, _sidecarBundle, 'extracted'),
+      ).deleteSync(recursive: true);
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      final libraries = await runHook(offline, backends: ['cuda']);
+
+      expect(offline.requests, [_manifestUrl]);
+      expect(
+        libraries,
+        containsPair('cudart64_12.dll', 'sidecar-cudart64_12.dll'),
+      );
+    });
+
+    test('leaves out a cached sidecar it cannot complete offline', () async {
+      final sidecarCache = path.join(releaseCacheDir.path, _sidecarBundle);
+      File(
+        path.join(sidecarCache, 'extracted', 'cudart64_12.dll'),
+      ).deleteSync();
+      File(path.join(sidecarCache, _sidecarArchive)).deleteSync();
+      final offline = RuntimeBundleHttpFixture.offline();
+      final warnings = _captureWarnings();
+
+      final libraries = await runHook(offline, backends: ['cuda']);
+
+      expect(libraries, isNot(contains('ggml-cuda.dll')));
+      expect(libraries, containsPair('ggml-cpu.dll', 'core-ggml-cpu.dll'));
+      expect(warnings, contains(contains('building windows-x64 without it')));
+    });
   });
 
   group('the pinned release', () {
@@ -502,6 +760,16 @@ void main() {
     );
     expect(await build(_coreLibraries), isNot(contains('ggml-cuda.dll')));
   });
+}
+
+/// Messages the hook logs at warning level from now until the test ends.
+List<String> _captureWarnings() {
+  final warnings = <String>[];
+  final subscription = Logger.root.onRecord
+      .where((record) => record.level == Level.WARNING)
+      .listen((record) => warnings.add(record.message));
+  addTearDown(subscription.cancel);
+  return warnings;
 }
 
 Map<String, Object?> _manifest({int contract = 2, bool sidecars = true}) => {

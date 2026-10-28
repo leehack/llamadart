@@ -487,9 +487,14 @@ hooks:
   the directory the error names (`SHA256SUMS` as UTF-8 or ASCII text), or use
   `llamadart_native_path`. A `cuda` build of a contract 2 release also needs
   the release's `assets.json` and its CUDA archive, which the hook caches the
-  same way; it also remembers a release that publishes no `assets.json`. When
-  neither is cached and `assets.json` is unreachable, a build over a cached
-  core warns and leaves out the backends that core lacks.
+  same way. A release that publishes no `assets.json` is recorded as
+  `assets.json.absent` in that directory and re-checked once the record is a
+  day old; delete the file to re-check sooner. When `assets.json` is neither
+  cached nor reachable, a build over a cached core uses a CUDA sidecar cached
+  under the pinned release's archive name (`windows-x64-cuda12`), and
+  otherwise warns and leaves out the backends that core lacks. A cached
+  archive that matches its digest but lacks runtime libraries fails the build
+  instead of being downloaded again.
 - `llamadart_native_repository` takes an `owner/repo` slug or a
   `https://github.com/owner/repo` URL.
 - `llamadart_native_path` wins over downloads. It can point at an archive, an
