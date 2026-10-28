@@ -22,10 +22,16 @@ class HookProjectRoot {
   ///
   /// Only the path is chosen here. The directory appears on first use of
   /// [directory] or a build, so a test file whose tests are all filtered out
-  /// leaves nothing behind.
+  /// leaves nothing behind. Paths are handed out before the directory exists,
+  /// so creating it claims the name exclusively and fails on a collision
+  /// rather than sharing a root.
   factory HookProjectRoot.create({String? coreVersion}) {
     final temp = Directory.systemTemp.resolveSymbolicLinksSync();
-    final suffix = Random.secure().nextInt(1 << 32).toRadixString(36);
+    final random = Random.secure();
+    final suffix = List.generate(
+      4,
+      (_) => random.nextInt(1 << 32).toRadixString(36),
+    ).join();
     return HookProjectRoot._(
       coreVersion,
       Directory(path.join(temp, 'hook_project_$suffix')),
@@ -34,16 +40,18 @@ class HookProjectRoot {
 
   final String? _coreVersion;
   final Directory _root;
+  bool _created = false;
 
   /// The package root, and the working directory the hook sees.
   Directory get directory {
-    final pubspec = File(path.join(_root.path, 'pubspec.yaml'));
-    if (!pubspec.existsSync()) {
-      pubspec.parent.createSync(recursive: true);
-      pubspec.writeAsStringSync(
-        'name: llamadart\n'
-        'version: ${_coreVersion ?? readCheckoutCoreVersion()}\n',
-      );
+    if (!_created) {
+      File(path.join(_root.path, 'pubspec.yaml'))
+        ..createSync(recursive: true, exclusive: true)
+        ..writeAsStringSync(
+          'name: llamadart\n'
+          'version: ${_coreVersion ?? readCheckoutCoreVersion()}\n',
+        );
+      _created = true;
     }
     return _root;
   }
@@ -58,6 +66,7 @@ class HookProjectRoot {
   /// Removes the package root if it was ever created.
   void delete() {
     if (_root.existsSync()) _root.deleteSync(recursive: true);
+    _created = false;
   }
 
   /// [code_assets.testCodeBuildHook] with its package root at [directory].

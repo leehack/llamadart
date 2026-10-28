@@ -147,15 +147,15 @@ typedef HookRun = ({
   List<String> warnings,
 });
 
-/// Runs [hookMain] for one target, inside [layout] when given and with the
-/// package root at [project] when given.
+/// Runs [hookMain] for one target inside [layout] when given, with the package
+/// root at [project].
 Future<HookRun> runCodeBuildHook({
   required FutureOr<void> Function(List<String> arguments) hookMain,
   required OS targetOS,
   required Architecture targetArchitecture,
   IOSSdk? targetIOSSdk,
+  required HookProjectRoot project,
   HooksRunnerLayout? layout,
-  HookProjectRoot? project,
   PackageUserDefines? userDefines,
 }) async {
   final warnings = <String>[];
@@ -165,7 +165,7 @@ Future<HookRun> runCodeBuildHook({
   late final Map<String, String> assets;
   late final List<Uri> dependencies;
   try {
-    await (project?.testCodeBuildHook ?? testCodeBuildHook)(
+    await (project.testCodeBuildHook)(
       mainMethod: layout == null
           ? hookMain
           : (arguments) => layout.run(hookMain, arguments),
@@ -199,7 +199,7 @@ Future<void> expectOnlyLiteRtLmFollowsResolvedGraph({
   required OS targetOS,
   required Architecture targetArchitecture,
   required List<String> liteRtLmLibraries,
-  HookProjectRoot? project,
+  required HookProjectRoot project,
 }) async {
   final plain = await workspaceWithoutFlutterEdgeAi();
   addTearDown(plain.delete);
