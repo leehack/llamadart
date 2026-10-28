@@ -86,6 +86,7 @@ final class ChatFormatTraits {
     this.keepsThoughtTagsAsContent = false,
     this.parsesCallsInsideThoughts = false,
     this.keepsForcedThoughtVerbatim = false,
+    this.closedThoughtKeepsTagsAsContent = false,
     this.mayEmbedToolEnvelopeAfterContent = false,
     this.disabledByResponseSchema = false,
     this.requiredKeepsLazyGrammar = false,
@@ -115,6 +116,10 @@ final class ChatFormatTraits {
   /// first end tag, with escapes and a repeated start tag, and takes the rest
   /// as content in which thinking tags are text.
   final bool keepsForcedThoughtVerbatim;
+
+  /// Whether, after a prompt that ends with a closed thought, the parse
+  /// extracts no reasoning, so thinking tags are content.
+  final bool closedThoughtKeepsTagsAsContent;
 
   /// Whether a tool envelope may follow content, so a stream with tools
   /// parses from its first token instead of deciding from how output starts.
@@ -230,6 +235,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
       toolCallOpening: DeepseekV3Handler.toolCallOpening,
       keepsForcedThoughtVerbatim: true,
       disabledByResponseSchema: true,
+      closedThoughtKeepsTagsAsContent: true,
     ),
   ),
   ChatFormatRegistration(
@@ -316,6 +322,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
             s.contains('Function calls MUST follow the specified format')),
     traits: ChatFormatTraits(
       toolCallOpening: XmlToolCallFormat.qwen3Coder.toolCallOpening,
+      closedThoughtKeepsTagsAsContent: true,
     ),
   ),
   ChatFormatRegistration(
@@ -349,6 +356,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     traits: ChatFormatTraits(
       toolCallOpening: HermesHandler.toolCallOpening,
       disabledByResponseSchema: true,
+      closedThoughtKeepsTagsAsContent: true,
       // Qualified on Qwen3-VL against llama-server's rendering (#1008).
       rendersToolResultContent: true,
       leavesIncompleteToolCall: _hermesLeavesIncompleteToolCall,

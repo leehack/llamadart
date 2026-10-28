@@ -13,6 +13,7 @@ import '../template/chat_template_engine.dart';
 import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
+import '../template/thinking_utils.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -108,13 +109,26 @@ class ChatCompletionStreamParser {
     final isGptOss = templateResult.format == ChatFormat.gptOss.index;
     final isFunctionaryV32 =
         templateResult.format == ChatFormat.functionaryV32.index;
+    final thinkingTags = ChatTemplateEngine.thinkingTagsFor(
+      templateResult.format,
+    );
+    final startTag = thinkingTags.startTag;
+    final endTag = thinkingTags.endTag;
+    final thinkingForcedClosed =
+        !templateResult.thinkingForcedOpen &&
+        isThinkingForcedClosed(
+          templateResult.prompt,
+          startTag: startTag,
+          endTag: endTag,
+        );
     // Functionary v3.2 and MiniMax M1 stream through their partial parse
     // with tools.
     final keepsThoughtTagsAsContent =
         traits.keepsThoughtTagsAsContent ||
         ((isFunctionaryV32 ||
                 templateResult.format == ChatFormat.minimaxM1.index) &&
-            !parseToolCallsEnabled);
+            !parseToolCallsEnabled) ||
+        (traits.closedThoughtKeepsTagsAsContent && thinkingForcedClosed);
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -183,11 +197,6 @@ class ChatCompletionStreamParser {
         ? _ToolStreamingMode.parsed
         : _ToolStreamingMode.undecided;
     var undecidedPrefix = '';
-    final thinkingTags = ChatTemplateEngine.thinkingTagsFor(
-      templateResult.format,
-    );
-    final startTag = thinkingTags.startTag;
-    final endTag = thinkingTags.endTag;
     var isThinking = templateResult.thinkingForcedOpen;
     var pendingBuffer = '';
 
@@ -371,6 +380,7 @@ class ChatCompletionStreamParser {
           isPartial: true,
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thinkingForcedClosed: thinkingForcedClosed,
           parser: templateResult.parser,
           tools: tools,
         );
@@ -477,6 +487,7 @@ class ChatCompletionStreamParser {
           cancelled: wasCancelled,
           parseToolCalls: parseToolCallsEnabled,
           thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          thinkingForcedClosed: thinkingForcedClosed,
           parser: templateResult.parser,
           tools: tools,
         );

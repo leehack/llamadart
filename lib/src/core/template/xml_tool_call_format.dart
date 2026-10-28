@@ -318,7 +318,8 @@ String _literal(String value) {
 /// When [schemas] is supplied, only declared tools and schema-valid arguments
 /// are accepted. Omitting it preserves the legacy schema-free parser.
 /// Escaped `\n` and `\r` in reasoning are unescaped unless
-/// [unescapeReasoning] is false.
+/// [unescapeReasoning] is false. Without [extractsThought], all of [input] is
+/// content and tool calls.
 ChatParseResult parseXmlToolCalls(
   String input,
   XmlToolCallFormat format, {
@@ -328,6 +329,7 @@ ChatParseResult parseXmlToolCalls(
   bool parseToolCalls = true,
   bool thinkingForcedOpen = false,
   bool unescapeReasoning = true,
+  bool extractsThought = true,
   Map<String, Map<String, dynamic>>? schemas,
 }) {
   String? reasoning;
@@ -347,13 +349,13 @@ ChatParseResult parseXmlToolCalls(
             ? content.indexOf(format.toolStart)
             : content.indexOf(format.scopeStart))
       : -1;
-  if (forcedOpenToolScopeIndex >= 0) {
+  if (extractsThought && forcedOpenToolScopeIndex >= 0) {
     final leadingReasoning = content
         .substring(0, forcedOpenToolScopeIndex)
         .trim();
     reasoning = leadingReasoning.isEmpty ? null : leadingReasoning;
     content = content.substring(forcedOpenToolScopeIndex);
-  } else {
+  } else if (extractsThought) {
     // Extract thinking/reasoning first.
     // Keep an incomplete trailing XML tool-scope prefix out of streamed
     // reasoning. A tokenizer may split `<tool_call>` over multiple pieces;

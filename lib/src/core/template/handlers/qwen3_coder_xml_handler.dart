@@ -300,6 +300,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
 
   /// Parses Qwen XML using declared tool schemas when [tools] is supplied.
   /// Invalid calls remain content and cannot become executable tool deltas.
+  /// With [thoughtTagsAreText], all of [output] is content and tool calls.
   @override
   ChatParseResult parseWithTools(
     String output, {
@@ -307,6 +308,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+    bool thoughtTagsAreText = false,
   }) {
     final result = parseXmlToolCalls(
       output,
@@ -315,6 +317,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       isPartial: isPartial,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
+      extractsThought: !thoughtTagsAreText,
       // llama.cpp (`7fe450e1`) keeps escapes in Qwen3.5 reasoning.
       unescapeReasoning: false,
     );

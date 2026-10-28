@@ -130,17 +130,21 @@ class DeepseekV3Handler extends ChatTemplateHandler {
     );
   }
 
+  /// With [thoughtTagsAreText], all of [output] is content and tool calls.
   @override
   ChatParseResult parse(
     String output, {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+    bool thoughtTagsAreText = false,
   }) {
     // As in llama.cpp (`620d2225`), a forced-open thought is the text before
     // the first `</think>`, kept as generated, and the rest is content; a
     // thought that never closes is reasoning.
-    final thinking = thinkingForcedOpen
+    final ThinkingExtraction thinking = thoughtTagsAreText
+        ? (content: output.trim(), reasoning: null)
+        : thinkingForcedOpen
         ? extractForcedOpenThoughtVerbatim(output)
         : extractThinking(output);
     return _parseContentAndToolCalls(

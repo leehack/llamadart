@@ -153,6 +153,21 @@ bool isThinkingForcedOpen(String prompt, {String startTag = '<think>'}) {
   return trimmed.endsWith(startTag);
 }
 
+/// Checks if the prompt ends with an empty thought, allowing for whitespace
+/// around its end tag, as templates render one with thinking off.
+bool isThinkingForcedClosed(
+  String prompt, {
+  String startTag = '<think>',
+  String endTag = '</think>',
+}) {
+  final trimmed = prompt.trimRight();
+  return trimmed.endsWith(endTag) &&
+      trimmed
+          .substring(0, trimmed.length - endTag.length)
+          .trimRight()
+          .endsWith(startTag);
+}
+
 /// Returns the thinking flag a request renders, parses and streams with.
 ///
 /// A boolean `enable_thinking` in [chatTemplateKwargs] overrides

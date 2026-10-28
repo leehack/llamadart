@@ -17,7 +17,9 @@ import 'peg_chat_parser.dart';
 import 'chat_template_handler.dart';
 import 'media_placeholders.dart';
 import 'handlers/generic_handler.dart';
+import 'handlers/deepseek_v3_handler.dart';
 import 'handlers/hermes_handler.dart';
+import 'handlers/qwen3_coder_xml_handler.dart';
 import 'response_format.dart';
 import 'tool_call_grammar_utils.dart';
 import 'tool_schema_utils.dart';
@@ -578,6 +580,11 @@ class ChatTemplateEngine {
   /// A leading unterminated Ministral `[THINK]` block without `[TOOL_CALLS]`
   /// remains reasoning at EOF if the final parser accepts a reply without calls.
   ///
+  /// With [thinkingForcedClosed], for a prompt that ends with a closed
+  /// thought, as templates render with thinking off, DeepSeek V3, Hermes and
+  /// Qwen3-Coder XML output has no reasoning: its thinking tags are content,
+  /// as in llama.cpp. Other formats still return the reasoning.
+  ///
   /// Output that a PEG [parser] cannot parse, or that is nested too deeply to
   /// parse, throws [LlamaInferenceException].
   static ChatParseResult parse(
@@ -587,6 +594,7 @@ class ChatTemplateEngine {
     bool cancelled = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+    bool thinkingForcedClosed = false,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
@@ -599,6 +607,7 @@ class ChatTemplateEngine {
         cancelled: cancelled,
         parseToolCalls: parseToolCalls,
         thinkingForcedOpen: thinkingForcedOpen,
+        thinkingForcedClosed: thinkingForcedClosed,
         parser: parser,
         tools: tools,
       );
@@ -640,12 +649,17 @@ class ChatTemplateEngine {
     required bool cancelled,
     required bool parseToolCalls,
     required bool thinkingForcedOpen,
+    required bool thinkingForcedClosed,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
     final resolved = _resolveHandlerForParse(formatIndex: formatIndex);
     final handler = resolved.handler;
     final format = resolved.format;
+    final thoughtTagsAreText =
+        thinkingForcedClosed &&
+        !thinkingForcedOpen &&
+        chatFormatRegistration(format).traits.closedThoughtKeepsTagsAsContent;
 
     final pegFormat = pegParseFormat(format, parser);
     final ChatParseResult result;
@@ -681,6 +695,24 @@ class ChatTemplateEngine {
         cancelled: cancelled,
         parseToolCalls: parseToolCalls,
         thinkingForcedOpen: thinkingForcedOpen,
+        thoughtTagsAreText: thoughtTagsAreText,
+      );
+    } else if (handler is Qwen3CoderXmlHandler) {
+      result = handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+        thoughtTagsAreText: thoughtTagsAreText,
+      );
+    } else if (handler is DeepseekV3Handler) {
+      result = handler.parse(
+        output,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+        thoughtTagsAreText: thoughtTagsAreText,
       );
     } else if (handler is ToolSchemaAwareChatTemplateHandler) {
       result = (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
