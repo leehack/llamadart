@@ -230,6 +230,29 @@ void main() {
     );
   });
 
+  test('reranker metadata of a runtime without the symbols is unsupported, '
+      'naming the pinned runtime', () {
+    final calls = LlamaCppObjectCalls.upstream;
+    final model = load(calls);
+    addTearDown(() => calls.freeModel(model));
+
+    expect(
+      () => calls.rerankingModelInfo(
+        model,
+        classifierOutputs: (_) => throw ArgumentError(
+          "Couldn't resolve native function 'llama_model_n_cls_out'",
+        ),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('pinned llama.cpp runtime ($llamaCppTag)'),
+        ),
+      ),
+    );
+  });
+
   test('tracked calls use the exit API for every call', () {
     final exports = _RecordingExports();
     addTearDown(exports.close);
