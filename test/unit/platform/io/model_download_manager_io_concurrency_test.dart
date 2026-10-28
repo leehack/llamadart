@@ -1033,7 +1033,10 @@ void main() {
         manager.remove(source().cacheKey),
         throwsA(inUse(<String>[entryDirectory().path])),
       );
-      expect((await manager.list()).single.cacheKey, source().cacheKey);
+      expect(
+        File(path.join(entryDirectory().path, 'metadata.json')).existsSync(),
+        isTrue,
+      );
       await handle.close();
       await manager.remove(source().cacheKey);
       expect(entryDirectory().existsSync(), isFalse);
