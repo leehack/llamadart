@@ -402,6 +402,12 @@ void main() {
           'companion releases pinning leehack/llamadart-native@$llamaCppTag, '
           'in pubspec.yaml and rerun flutter pub get.',
   };
+  HookProjectRoot coreRoot(String? core) {
+    final root = HookProjectRoot.create(coreVersion: core);
+    addTearDown(root.delete);
+    return root;
+  }
+
   String coreLabel(String? core) => core ?? 'checkout $checkoutCore';
 
   for (final target in [OS.iOS, OS.macOS]) {
@@ -421,21 +427,19 @@ void main() {
             companionTag: tag,
             companionVersion: '0.0.22',
           );
+          final hookRoot = coreRoot(core);
           final stderrLines = await _capturingStderr(
-            () => withHookCoreVersion(
-              core,
-              () => testCodeBuildHook(
-                mainMethod: build_hook.main,
-                targetOS: target,
-                targetArchitecture: Architecture.arm64,
-                targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
-                userDefines: defines,
-                check: (_, output) {
-                  final asset = output.assets.encodedAssets.single.asCodeAsset;
-                  expect(asset.id, 'package:llamadart/llamadart');
-                  expect(asset.linkMode, isA<LookupInProcess>());
-                },
-              ),
+            () => hookRoot.testCodeBuildHook(
+              mainMethod: build_hook.main,
+              targetOS: target,
+              targetArchitecture: Architecture.arm64,
+              targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+              userDefines: defines,
+              check: (_, output) {
+                final asset = output.assets.encodedAssets.single.asCodeAsset;
+                expect(asset.id, 'package:llamadart/llamadart');
+                expect(asset.linkMode, isA<LookupInProcess>());
+              },
             ),
           );
           final warning =
@@ -564,18 +568,16 @@ void main() {
             companionTag: tag,
             companionVersion: '0.0.22',
           );
+          final hookRoot = coreRoot(core);
           var emitted = false;
           await expectLater(
-            withHookCoreVersion(
-              core,
-              () => testCodeBuildHook(
-                mainMethod: build_hook.main,
-                targetOS: target,
-                targetArchitecture: Architecture.arm64,
-                targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
-                userDefines: defines,
-                check: (_, _) => emitted = true,
-              ),
+            hookRoot.testCodeBuildHook(
+              mainMethod: build_hook.main,
+              targetOS: target,
+              targetArchitecture: Architecture.arm64,
+              targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+              userDefines: defines,
+              check: (_, _) => emitted = true,
             ),
             throwsA(
               predicate(

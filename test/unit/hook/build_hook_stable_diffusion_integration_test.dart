@@ -13,7 +13,6 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
-import '../../support/hook_core_version.dart';
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
 
@@ -876,17 +875,16 @@ dependencies:
           'let stableDiffusionTag = "v0.1.1"',
         ),
       );
+      final coreRoot = HookProjectRoot.create(coreVersion: core);
+      addTearDown(coreRoot.delete);
       await expectLater(
-        withHookCoreVersion(
-          core,
-          () => testCodeBuildHook(
-            mainMethod: build_hook.main,
-            targetOS: OS.iOS,
-            targetArchitecture: Architecture.arm64,
-            targetIOSSdk: IOSSdk.iPhoneOS,
-            userDefines: defines,
-            check: (_, _) => fail('Must not emit in-process assets'),
-          ),
+        coreRoot.testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, _) => fail('Must not emit in-process assets'),
         ),
         throwsA(predicate((error) => error.toString().contains(requirement))),
       );

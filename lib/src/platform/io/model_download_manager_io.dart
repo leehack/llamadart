@@ -678,7 +678,11 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         continue;
       }
       if (entity is! Directory) {
-        await _withRemovalLock(root, () => entity.delete(recursive: true));
+        await _withRemovalLock(root, () async {
+          if (await entity.exists()) {
+            await entity.delete(recursive: true);
+          }
+        });
         continue;
       }
       final result = await _removeCacheDirectory(

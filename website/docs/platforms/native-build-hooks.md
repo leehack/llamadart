@@ -492,7 +492,8 @@ hooks:
   `assets.json`, and re-checked once the record is a day old or dated in the
   future; a re-check that fails, or returns a page that does not start as JSON
   such as a network block page, keeps and renews the record. An empty,
-  truncated or non-UTF-8 body fails the build instead. Delete the file to
+  truncated or non-UTF-8 body, and JSON that is not a manifest (such as
+  `{"error":"blocked"}` or `[]`), fails the build instead. Delete the file to
   re-check sooner. When `assets.json` is neither
   cached nor reachable, a build over a cached core uses a CUDA sidecar cached
   under the pinned release's archive name (`windows-x64-cuda12`), and
