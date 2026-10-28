@@ -69,6 +69,7 @@ const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
 const _runtimeBundleDownloadTransferTimeout = Duration(minutes: 10);
 const _runtimeBundleDownloadRetryBaseDelay = Duration(seconds: 3);
+const _absentManifestRecheckInterval = Duration(days: 1);
 
 typedef RuntimeBundleDownloadFallbackForTesting =
     Future<bool> Function({
@@ -2283,6 +2284,38 @@ Future<Directory> _acquireBundleDirectory({
   final archivePath = path.join(cacheDir, archiveName);
   final archiveFile = File(archivePath);
 
+  Never throwIncomplete(
+    List<String> libraryPaths, {
+    String? cachedCopyMatches,
+  }) {
+    final String problem;
+    final String fix;
+    if (sidecar == null) {
+      problem = 'Downloaded bundle $archiveName is missing runtime deps.';
+      fix = 'use a release whose bundle is complete';
+    } else {
+      problem = holdsSidecarBackend(libraryPaths)
+          ? 'The $bundle sidecar archive of ${nativeConfig.sourceLabel} is '
+                'missing runtime dependencies of its ${sidecar.backend} '
+                'backend for ${sidecar.bundle}.'
+          : 'The $bundle sidecar archive of ${nativeConfig.sourceLabel} '
+                'holds no ggml-${sidecar.backend} module.';
+      fix =
+          'remove ${sidecar.backend} for ${sidecar.bundle} from '
+          'hooks.user_defines.$_packageName.$nativeBackendUserDefineKey, use '
+          'a release whose sidecar is complete';
+    }
+    final message = cachedCopyMatches == null
+        ? problem
+        : '$problem Its cached copy at $archivePath matches $cachedCopyMatches, so '
+              'downloading it again would not help: $fix, or set '
+              '$nativePathUserDefineKey to a local bundle you trust.';
+    if (sidecar != null) {
+      throw NativeHookContractException(message);
+    }
+    throw Exception(message);
+  }
+
   final localPath = nativeConfig.localPath;
   if (localPath != null) {
     return _acquireLocalBundleDirectory(
@@ -2352,6 +2385,22 @@ Future<Directory> _acquireBundleDirectory({
         log.info('Using cached native bundle archive: $archivePath');
         return extractedDir;
       }
+      if (expectedDigest.cached) {
+        expectedDigest = await _expectedNativeArchiveDigest(
+          nativeConfig: nativeConfig,
+          bundle: bundle,
+          archiveName: archiveName,
+          cacheDir: cacheDir,
+          cachedArchiveSha256: null,
+          log: log,
+        );
+      }
+      if (cachedArchiveSha256 == expectedDigest.sha256) {
+        throwIncomplete(
+          extractedLibraryPaths,
+          cachedCopyMatches: expectedDigest.source,
+        );
+      }
       log.warning(
         'Cached native bundle archive is stale; redownloading: $archivePath',
       );
@@ -2406,17 +2455,7 @@ Future<Directory> _acquireBundleDirectory({
     log: log,
   );
   if (!isComplete(extractedLibraryPaths)) {
-    if (sidecar != null) {
-      throw NativeHookContractException(
-        holdsSidecarBackend(extractedLibraryPaths)
-            ? 'The $bundle sidecar archive of ${nativeConfig.sourceLabel} is '
-                  'missing runtime dependencies of its ${sidecar.backend} '
-                  'backend for ${sidecar.bundle}.'
-            : 'The $bundle sidecar archive of ${nativeConfig.sourceLabel} '
-                  'holds no ggml-${sidecar.backend} module.',
-      );
-    }
-    throw Exception('Downloaded bundle $archiveName is missing runtime deps.');
+    throwIncomplete(extractedLibraryPaths);
   }
   return extractedDir;
 }
@@ -2443,9 +2482,9 @@ final _pinnedReleaseManifest = NativeReleaseManifest(
 /// A requested backend with no sidecar is left to [selectLibrariesForBundling],
 /// which warns and falls back to the defaults, unless the release publishes it
 /// only as a sidecar: that throws [NativeHookContractException]. An
-/// overridden release whose `assets.json` is neither cached nor reachable is
-/// treated as having no sidecars, as before that manifest existed, so an
-/// offline build over a cached core still succeeds. A local
+/// overridden release whose `assets.json` is neither cached nor reachable
+/// gets only the sidecars [_cachedSidecarLibraryPaths] finds, so an offline
+/// build over a cached core still succeeds. A local
 /// `llamadart_native_path` bundle must already hold every module it ships.
 Future<List<String>> _acquireBackendSidecarLibraryPaths({
   required String packageRoot,
@@ -2469,15 +2508,28 @@ Future<List<String>> _acquireBackendSidecarLibraryPaths({
     return const [];
   }
 
+  ({String failure, Object error, String remedy})? unreachable;
   final manifest = nativeConfig.usesOverride
       ? await _overrideReleaseManifest(
           packageRoot: packageRoot,
           nativeConfig: nativeConfig,
           bundle: bundle,
           log: log,
-          unreachableSkips: missing.join(', '),
+          onUnreachable: (failure, error, remedy) =>
+              unreachable = (failure: failure, error: error, remedy: remedy),
         )
       : _pinnedReleaseManifest;
+  if (unreachable case final unreachable?) {
+    return _cachedSidecarLibraryPaths(
+      packageRoot: packageRoot,
+      nativeConfig: nativeConfig,
+      bundle: bundle,
+      backends: missing,
+      coreLibraryPaths: coreLibraryPaths,
+      unreachable: unreachable,
+      log: log,
+    );
+  }
   final sidecarPaths = <String>[];
   for (final backend in missing) {
     final sidecar = manifest?.sidecarFor(bundle: bundle, backend: backend);
@@ -2511,22 +2563,89 @@ Future<List<String>> _acquireBackendSidecarLibraryPaths({
   return sidecarPaths;
 }
 
+/// Library paths of the cached sidecars that add [backends] to [bundle] of an
+/// overridden release whose `assets.json` is [unreachable]; the others are
+/// left out with a warning.
+///
+/// Without the manifest, a sidecar is looked for only under the archive name
+/// the pinned release gives it, and is used only from a cache
+/// [_acquireBundleDirectory] accepts: an extraction, or an archive the cached
+/// `SHA256SUMS` lists. Fetching anything else would need the manifest first.
+Future<List<String>> _cachedSidecarLibraryPaths({
+  required String packageRoot,
+  required _NativeBundleConfig nativeConfig,
+  required String bundle,
+  required Iterable<String> backends,
+  required List<String> coreLibraryPaths,
+  required ({String failure, Object error, String remedy}) unreachable,
+  required Logger log,
+}) async {
+  final paths = <String>[];
+  final skipped = <String>[];
+  for (final backend in backends) {
+    final archive = _pinnedReleaseManifest
+        .sidecarFor(bundle: bundle, backend: backend)
+        ?.archive;
+    if (archive != null &&
+        Directory(
+          _bundleCacheDirectory(
+            packageRoot: packageRoot,
+            nativeConfig: nativeConfig,
+            bundle: archive,
+          ),
+        ).existsSync()) {
+      try {
+        final directory = await _acquireBundleDirectory(
+          packageRoot: packageRoot,
+          nativeConfig: nativeConfig,
+          bundle: archive,
+          log: log,
+          sidecar: (
+            bundle: bundle,
+            backend: backend,
+            coreLibraryPaths: coreLibraryPaths,
+          ),
+        );
+        log.info(
+          '${unreachable.failure} (${unreachable.error}); using the cached '
+          '$backend backend sidecar: ${directory.path}',
+        );
+        paths.addAll(_collectDynamicLibraryPaths(directory));
+        continue;
+      } on Exception catch (error) {
+        log.warning('Not using the cached $archive sidecar ($error).');
+      }
+    }
+    skipped.add(backend);
+  }
+  if (skipped.isNotEmpty) {
+    log.warning(
+      '${unreachable.failure} to find the ${skipped.join(', ')} sidecar of '
+      '${nativeConfig.sourceLabel} (${unreachable.error}); building $bundle '
+      'without it. ${unreachable.remedy}',
+    );
+  }
+  return paths;
+}
+
 /// The `assets.json` of an overridden release, or `null` when the release
 /// publishes none, as releases from before that manifest did (contract 1).
 ///
 /// A copy cached beside the release's bundle caches is reused; otherwise the
-/// manifest is downloaded and cached there, and a release that publishes none
-/// is remembered there too, so later builds need no network. Throws
+/// manifest is downloaded and cached there. A release that publishes none is
+/// recorded there as `assets.json.absent`, so builds in the next day need no
+/// network; an older record is re-checked, and kept when the check fails.
+/// Throws
 /// [NativeHookContractException] when it requires an unsupported hook contract
-/// or cannot be read. When [unreachableSkips] names the backends a caller can
-/// do without, a manifest that cannot be downloaded instead warns and returns
-/// `null`.
+/// or cannot be read. When the caller can do without it, a manifest that
+/// cannot be downloaded instead passes the failure, its cause and the remedy
+/// to [onUnreachable] and returns `null`.
 Future<NativeReleaseManifest?> _overrideReleaseManifest({
   required String packageRoot,
   required _NativeBundleConfig nativeConfig,
   required String bundle,
   required Logger log,
-  String? unreachableSkips,
+  void Function(String failure, Object error, String remedy)? onUnreachable,
 }) async {
   final cached = File(
     path.join(
@@ -2542,9 +2661,14 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
   );
   final source = '${nativeConfig.sourceLabel} assets.json';
   final absent = File('${cached.path}.absent');
-  if (!cached.existsSync() && absent.existsSync()) {
+  final recordedAbsent = !cached.existsSync() && absent.existsSync();
+  // A release can publish assets.json after a build recorded it missing, so
+  // the record is re-checked once it is older than a day.
+  if (recordedAbsent &&
+      DateTime.now().difference(absent.statSync().modified) <
+          _absentManifestRecheckInterval) {
     log.info(
-      '${nativeConfig.sourceLabel} publishes no assets.json (cached at '
+      '${nativeConfig.sourceLabel} publishes no assets.json (recorded at '
       '${absent.path}); treating it as hook contract 1.',
     );
     return null;
@@ -2589,16 +2713,20 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
         }
         return null;
       }
+      if (recordedAbsent) {
+        log.info(
+          'Could not re-check $url ($error); still treating '
+          '${nativeConfig.sourceLabel} as hook contract 1, as recorded at '
+          '${absent.path}.',
+        );
+        return null;
+      }
       final remedy =
           'To build without network access, put that release\'s assets.json '
           'at ${cached.path}, or set $nativePathUserDefineKey to a local '
           'bundle you trust.';
-      if (unreachableSkips != null) {
-        log.warning(
-          'Could not download $url to find the $unreachableSkips sidecar of '
-          '${nativeConfig.sourceLabel} ($error); building $bundle without '
-          'it. $remedy',
-        );
+      if (onUnreachable != null) {
+        onUnreachable('Could not download $url', error, remedy);
         return null;
       }
       throw NativeHookContractException(
@@ -2622,6 +2750,9 @@ Future<NativeReleaseManifest?> _overrideReleaseManifest({
         await cached.delete();
       }
       await downloaded.rename(cached.path);
+      if (absent.existsSync()) {
+        await absent.delete();
+      }
     } on FileSystemException catch (error) {
       log.warning('Could not keep $source at ${cached.path} ($error).');
     }

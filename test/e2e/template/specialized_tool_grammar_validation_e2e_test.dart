@@ -32,6 +32,7 @@ import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
+import '../../support/forced_open_required_calls.dart';
 import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/llama_cpp_grammar_load.dart';
 import '../../support/pydantic_audit_schemas.dart';
@@ -396,8 +397,92 @@ void main() {
         'a <|end|> <|end|><|begin|>x $endTag ok',
         '<|end|><|end|><|begin|>assistant<|end|>${endTag}ok',
       ],
-      invalid: ['ok', 'a${endTag}b${endTag}ok', '<|end|>${endTag}x'],
+      invalid: [
+        'ok',
+        'a${endTag}b${endTag}ok',
+        '<|end|>${endTag}x',
+        '<|end|><|end|><|begin|>assistant<|content|>${endTag}ok',
+      ],
     );
+    const kimiEndTag = '<|close|>think<|sep|>';
+    _expectGrammar(
+      validator,
+      ToolCallGrammarUtils.afterForcedOpenThought(
+        'root ::= "ok"\n',
+        kimiEndTag,
+      ),
+      valid: ['<|close|>think<|close|>think$kimiEndTag ok'],
+      invalid: ['<|close|>think<|close|>think<|sep|>${kimiEndTag}ok'],
+    );
+  });
+
+  test('a thought end tag whose prefix is its suffix ends the thought where '
+      'the tag first occurs', () {
+    _expectGrammar(
+      validator,
+      ToolCallGrammarUtils.afterForcedOpenThought('root ::= "ok"\n', 'abab'),
+      valid: ['ababok', 'xabaababok', 'xaababok', 'ab ababok'],
+      invalid: ['xabababok', 'ababababok', 'abababok'],
+    );
+  });
+
+  test('a required call after a forced-open thought compiles and takes the '
+      'thought first', () {
+    for (final (:template, :format, :output) in forcedOpenRequiredCalls) {
+      final rendered = renderForcedOpenRequiredCall(template);
+      expect(rendered.thinkingForcedOpen, isTrue, reason: template);
+      final endTag = ChatTemplateEngine.handlerFor(format).thinkingEndTag;
+      final call = output.substring(output.indexOf(endTag) + endTag.length);
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [output, '$endTag$call', 'a <think> b $endTag\n$call'],
+        invalid: [call, 'plan$endTag', 'plan$endTag x $endTag$call'],
+      );
+    }
+  });
+
+  test('a response format after a forced-open thought ends the thought with '
+      'the template end tag', () {
+    for (final (template, format) in [
+      ('Kimi-K3.jinja', ChatFormat.kimiK3),
+      ('MiniMax-M3.jinja', ChatFormat.minimaxM3),
+      ('tencent-Hy3.jinja', ChatFormat.hunyuanV3),
+    ]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/$template',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What is 2+2?',
+          ),
+        ],
+        metadata: const {},
+        responseFormat: const {
+          'type': 'json_schema',
+          'json_schema': {
+            'schema': {
+              'type': 'object',
+              'properties': {
+                'answer': {'type': 'integer'},
+              },
+              'required': ['answer'],
+            },
+          },
+        },
+      );
+      expect(rendered.format, format.index, reason: template);
+      expect(rendered.thinkingForcedOpen, isTrue, reason: template);
+      final endTag = ChatTemplateEngine.handlerFor(format).thinkingEndTag;
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: ['plan$endTag{"answer": 4}'],
+        invalid: ['plan</think>{"answer": 4}', '{"answer": 4}'],
+      );
+    }
   });
 
   test('LiteRT Qwen normalized history preserves compiled JSON schema', () {

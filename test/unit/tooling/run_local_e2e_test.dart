@@ -1831,6 +1831,66 @@ dev_dependencies:
       expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
     });
 
+    test('hires-fix qualification requires a checkpoint and a known recipe '
+        'and device, and selects the maintained suite', () async {
+      for (final (arguments, environment) in [
+        (
+          const ['--scenario', 'image-hires-fix', '--dry-run'],
+          const <String, String>{},
+        ),
+        (
+          const [
+            '--scenario',
+            'image-hires-fix',
+            '--model-path',
+            '/sd15.safetensors',
+            '--dry-run',
+          ],
+          const {'LLAMADART_HIRES_RECIPE': 'sdxl'},
+        ),
+        (
+          const [
+            '--scenario',
+            'image-hires-fix',
+            '--model-path',
+            '/sd15.safetensors',
+            '--dry-run',
+          ],
+          const {'LLAMADART_HIRES_DEVICE': 'vulkan'},
+        ),
+      ]) {
+        final missing = await runLocalE2e(
+          arguments,
+          projectRoot: '/repo',
+          environment: environment,
+        );
+        expect(missing.exitCode, 64);
+        expect(missing.stderr, contains('image-hires-fix'));
+        expect(missing.stderr, contains('LLAMADART_HIRES_RECIPE'));
+      }
+      final ready = await runLocalE2e(
+        const [
+          '--scenario',
+          'image-hires-fix',
+          '--model-path',
+          '/sd-turbo.gguf',
+          '--dry-run',
+        ],
+        projectRoot: '/repo',
+        displayShell: LocalE2eDisplayShell.posix,
+        environment: const {
+          'LLAMADART_HIRES_RECIPE': 'turbo',
+          'LLAMADART_HIRES_DEVICE': 'gpu',
+        },
+      );
+      expect(ready.exitCode, 0);
+      expect(ready.stdout, contains('test/image_hires_fix_e2e_test.dart'));
+      expect(ready.stdout, contains('LLAMADART_HIRES_MODEL=/sd-turbo.gguf'));
+      expect(ready.stdout, contains('LLAMADART_HIRES_RECIPE=turbo'));
+      expect(ready.stdout, contains('LLAMADART_HIRES_DEVICE=gpu'));
+      expect(ready.stdout, contains('test/image_generation_smoke.yaml'));
+    });
+
     test(
       'container qualification requires both manifest and independent references',
       () async {

@@ -171,11 +171,15 @@ void main() {
     test('for the fixtures that read string and typed content', () {
       expect(mixedContent.map((file) => p.basename(file.path)), [
         'Apriel-1.6-15b-Thinker-fixed.jinja',
+        'Cohere2MoE.jinja',
         'GLM-4.6.jinja',
         'GLM-4.7-Flash.jinja',
+        'Kimi-K3.jinja',
         'MiniMax-M2.jinja',
+        'MiniMax-M3.jinja',
         'google-gemma-4-31B-it-interleaved.jinja',
         'moonshotai-Kimi-K2.jinja',
+        'tencent-Hy3.jinja',
         'unsloth-mistral-Devstral-Small-2507.jinja',
         'GLM-OCR.jinja',
         'LFM2-VL-450M.jinja',

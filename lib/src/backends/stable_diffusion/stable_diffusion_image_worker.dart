@@ -12,6 +12,7 @@ import '../../core/image/image_control_net_request.dart';
 import '../../core/image/image_editing_request.dart';
 import '../../core/image/image_generation_driver.dart';
 import '../../core/image/image_generation_request.dart';
+import '../../core/image/image_hires_fix_request.dart';
 import '../../core/image/image_model_metal_preflight.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/config/log_level.dart';
@@ -54,7 +55,8 @@ final class StableDiffusionImageWorker
         ImageGenerationSession,
         ImageVaeTilingSession,
         ImageEditingSession,
-        ImageControlNetSession {
+        ImageControlNetSession,
+        ImageHiresFixSession {
   /// How often a running [generate] reads the recorded progress. A cancel
   /// that arrived before the runtime started generating is applied again at
   /// the same rate.
@@ -115,6 +117,11 @@ final class StableDiffusionImageWorker
       !_config.flashAttention &&
       !_config.vaeDirectConvolution &&
       modelVersion == 'SD 1.x';
+
+  @override
+  bool get supportsHiresFix =>
+      _config.hiresFixRecipeVerified &&
+      imageHiresFixModelVersions.contains(modelVersion);
 
   final bool _controlNetLoaded;
 
@@ -250,6 +257,7 @@ final class StableDiffusionImageWorker
     validateImageVaeTilingRecipe(request, _config, modelVersion);
     validateImageEditingRecipe(request, _config, modelVersion);
     validateImageControlNetRecipe(request, _config, modelVersion);
+    validateImageHiresFixRecipe(request, _config, modelVersion);
     if (request.controlImage != null && !supportsControlNet) {
       throw LlamaUnsupportedException(
         'This image-generation worker cannot honor a ControlNet control image: '

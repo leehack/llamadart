@@ -623,11 +623,30 @@ void main() {
     }
 
     Matcher inUse(List<String> directories) =>
-        isA<ModelCacheEntryInUseException>().having(
-          (error) => error.entryDirectories,
-          'entryDirectories',
-          directories,
-        );
+        isA<ModelCacheEntryInUseException>()
+            .having(
+              (error) => error.entryDirectories,
+              'entryDirectories',
+              directories,
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              isNot(contains(root.path)),
+            );
+
+    /// Holds the cache root's removal lock as another process's remover
+    /// would.
+    Future<ModelCacheEntryLock> holdRemovalLock() async {
+      final locks = Directory(path.join(root.path, '.locks'))
+        ..createSync(recursive: true);
+      final lock = await acquireModelCacheEntryLock(
+        path.join(locks.path, '.removal.lock'),
+        throwIfCancelled: () {},
+      );
+      addTearDown(() => lock?.release());
+      return lock!;
+    }
 
     test('remove leaves an entry whose lock another caller holds and reports '
         'it in use', () async {
@@ -721,6 +740,7 @@ void main() {
       expect(File(lockPathOf(busy)).existsSync(), isTrue);
 
       await lock.release();
+      File(path.join(root.path, 'stray.txt')).writeAsStringSync('stray');
       await manager.clear();
       expect(await manager.list(), isEmpty);
       expect(
@@ -728,6 +748,148 @@ void main() {
         <String>['.locks'],
       );
     });
+
+    for (final lockable in <bool>[true, false]) {
+      test('overlapping clears report no entry the other is removing'
+          '${lockable ? '' : ', without file locks'}', () async {
+        for (var i = 0; i < 4; i += 1) {
+          await manager.ensureModel(named('model$i.gguf'));
+        }
+        if (!lockable) {
+          final previousLocker = modelCacheEntryLocker;
+          addTearDown(() => modelCacheEntryLocker = previousLocker);
+          modelCacheEntryLocker =
+              (lockPath, {required throwIfCancelled}) async => null;
+        }
+
+        await Future.wait(<Future<void>>[
+          manager.clear(),
+          DefaultModelDownloadManager(defaultCacheDirectory: root.path).clear(),
+          manager.remove(named('model2.gguf').cacheKey),
+        ]);
+
+        expect(await manager.list(), isEmpty);
+      });
+    }
+
+    test('remove waits for another process removing the entry instead of '
+        'reporting it in use', () async {
+      await manager.ensureModel(source());
+      final removalLock = await holdRemovalLock();
+      // Downloads and cache hits never wait for removers.
+      await manager.ensureModel(source()).timeout(const Duration(seconds: 10));
+      final entryLock = await holdLock(source());
+
+      var removed = false;
+      final removing = manager
+          .remove(source().cacheKey)
+          .then((_) => removed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(removed, isFalse);
+      entryDirectory().deleteSync(recursive: true);
+      await entryLock.release();
+      await removalLock.release();
+
+      await removing.timeout(const Duration(seconds: 10));
+      expect(await manager.list(), isEmpty);
+    });
+
+    test('a same-isolate download of an entry waits for its removal and then '
+        'runs', () async {
+      await manager.ensureModel(source());
+      final previousLocker = modelCacheEntryLocker;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      final removerLocking = Completer<void>();
+      final letRemoverLock = Completer<void>();
+      modelCacheEntryLocker = (requested, {required throwIfCancelled}) async {
+        if (requested == lockPath() && !removerLocking.isCompleted) {
+          removerLocking.complete();
+          await letRemoverLock.future;
+          // As on a file system without locks: only the isolate lock
+          // excludes the download.
+          return null;
+        }
+        return previousLocker(requested, throwIfCancelled: throwIfCancelled);
+      };
+
+      final removing = manager.remove(source().cacheKey);
+      await removerLocking.future;
+      var downloaded = false;
+      final downloading = manager
+          .ensureModel(source())
+          .whenComplete(() => downloaded = true);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(downloaded, isFalse);
+      letRemoverLock.complete();
+
+      await removing;
+      final entry = await downloading.timeout(const Duration(seconds: 10));
+      expect(server.requestCount, 2);
+      expect(await File(entry.filePath).readAsBytes(), server.payload);
+    });
+
+    test('prune keeps an entry whose metadata names another file after it '
+        'listed it', () async {
+      final entry = await manager.ensureModel(source());
+      final previousLocker = modelCacheEntryLocker;
+      addTearDown(() => modelCacheEntryLocker = previousLocker);
+      final metadataFile = File(
+        path.join(entryDirectory().path, 'metadata.json'),
+      );
+      final otherFile = File(path.join(entryDirectory().path, 'other.gguf'))
+        ..writeAsBytesSync(server.payload);
+      modelCacheEntryLocker = (lockPath, {required throwIfCancelled}) async {
+        modelCacheEntryLocker = previousLocker;
+        final metadata =
+            jsonDecode(metadataFile.readAsStringSync()) as Map<String, Object?>;
+        metadata['file_path'] = otherFile.path;
+        metadataFile.writeAsStringSync(jsonEncode(metadata));
+        return previousLocker(lockPath, throwIfCancelled: throwIfCancelled);
+      };
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+
+      expect(await manager.prune(maxAge: Duration.zero), isEmpty);
+      expect(File(entry.filePath).existsSync(), isTrue);
+    });
+
+    test('prune never removes the lock directory, even when it holds entry '
+        'metadata', () async {
+      final entry = await manager.ensureModel(source());
+      final metadata =
+          jsonDecode(
+                File(
+                  path.join(entryDirectory().path, 'metadata.json'),
+                ).readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      final locks = path.join(root.path, '.locks');
+      metadata['file_path'] = path.join(locks, entry.fileName);
+      File(
+        path.join(locks, 'metadata.json'),
+      ).writeAsStringSync(jsonEncode(metadata));
+
+      await manager.prune();
+
+      expect(File(lockPath()).existsSync(), isTrue);
+    });
+
+    test('remove reports a permission failure as that error, not in use, and '
+        'keeps the entry', () async {
+      await manager.ensureModel(source());
+      expect(
+        Process.runSync('chmod', ['a-w', entryDirectory().path]).exitCode,
+        0,
+      );
+      addTearDown(
+        () => Process.runSync('chmod', ['u+w', entryDirectory().path]),
+      );
+
+      await expectLater(
+        manager.remove(source().cacheKey),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect((await manager.list()).single.cacheKey, source().cacheKey);
+    }, testOn: '!windows');
 
     test('clear takes no lock for noCache entries', () async {
       await manager.ensureModel(

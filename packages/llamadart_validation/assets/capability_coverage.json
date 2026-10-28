@@ -404,6 +404,17 @@
     },
     {
       "surfaces": [
+        "api:LlamaEngine.stateIdentity",
+        "matrix:State identity (stateIdentity)"
+      ],
+      "exemption": {
+        "id": "state-identity",
+        "reason": "Catalog 11 state cases do not report the identity yet; a versioned state-pack case follows catalog 12. Default CI covers the native report, digest fields, unsupported and pre-v0.7.0-3 runtimes, and a cross-process save, identity match, load and resume against fresh evaluation on the CPU test model. It does not qualify other models, devices or a matching identity as exact resumed output (#1003).",
+        "issue": "https://github.com/leehack/llamadart/issues/1196"
+      }
+    },
+    {
+      "surfaces": [
         "api:LlamaEngine.detokenize",
         "api:LlamaEngine.getTokenCount",
         "api:LlamaEngine.tokenize"
@@ -551,6 +562,16 @@
         "id": "bounded-image-controlnet",
         "issue": "https://github.com/leehack/llamadart/issues/1224",
         "reason": "Load-time SD 1.x ControlNet admission, owned control input, worker probe/failure detection and native mapping have maintained unit tests plus the local-only image-controlnet macOS CPU direct-C scenario; real SD 1.5 plus canny ControlNet qualification passed on macOS CPU (doc/image_controlnet.md); a versioned validation-pack profile remains open in #1224. Inventory presence is not platform/model qualification."
+      }
+    },
+    {
+      "surfaces": [
+        "capability:ImageGenerationCapabilities.supportsHiresFix"
+      ],
+      "exemption": {
+        "id": "bounded-image-hires-fix",
+        "issue": "https://github.com/leehack/llamadart/issues/1228",
+        "reason": "Hires-fix limits, load-time recipe admission, session probe, two-pass progress, output-size check and sd_hires_params_t mapping have maintained unit and worker tests plus the local-only image-hires-fix macOS CPU/Metal direct-C scenario (doc/image_hires_fix.md); a versioned validation-pack profile is not yet defined. Inventory presence is not platform/model qualification."
       }
     }
   ]

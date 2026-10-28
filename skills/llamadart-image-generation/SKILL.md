@@ -21,6 +21,8 @@ description: >-
   Bounded image-to-image and binary-mask editing use `ImageEditingRequest`
   on macOS CPU with an SD 2.x checkpoint and embedded full VAE. A bounded
   SD 1.x ControlNet steers `ControlNetImageGenerationRequest` on macOS CPU.
+  A bounded two-pass hires fix uses `HiresFixImageGenerationRequest` on
+  macOS CPU or Metal with an SD 1.x or SD 2.x full-VAE checkpoint.
   LoRA has no public image-generation API.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
   included by default. In the app's `pubspec.yaml`:
@@ -105,6 +107,19 @@ core and `llamadart_stable_diffusion_flutter` together.
   is finite in [0, 2], default 0.9; 0 adds nothing. The ControlNet stays
   loaded until dispose; ordinary requests ignore it. A failed ControlNet pass
   fails the task with `LlamaInferenceException`.
+- For a hires fix, check `(await engine.capabilities).supportsHiresFix` and
+  pass `HiresFixImageGenerationRequest(prompt: ..., width: 512, height: 512,
+  hiresFix: ImageHiresFix.scale(1.5, steps: 10, denoisingStrength: 0.55))`.
+  The request's size is the first pass; give the final size as
+  `ImageHiresFix.scale` (above 1, at most 2) or `ImageHiresFix.size`, never
+  both. Every side is a multiple of 64 (nothing is rounded), each final side
+  is at most twice the first pass, the final image at most 1024x1024 and the
+  count at most 4; violations throw `LlamaImageGenerationException`. Only an
+  SD 1.x or SD 2.x single checkpoint with embedded full VAE on macOS CPU or
+  Metal qualifies; others throw `LlamaUnsupportedException`. The upscaler is
+  `ImageHiresUpscaler.latent` (no model upscaler). Progress events carry
+  `pass` 0 then 1; the second pass can run one step more than `steps`.
+  A cancelled or failed second pass returns no images.
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.

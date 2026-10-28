@@ -12,8 +12,11 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+
+import '../../../support/forced_open_required_calls.dart';
 
 const Map<String, dynamic> _schema = {
   'type': 'json_schema',
@@ -40,6 +43,13 @@ final ToolDefinition _tool = ToolDefinition(
 const Set<ChatFormat> _closesThoughtItself = {
   ChatFormat.deepseekR1,
   ChatFormat.qwen3CoderXml,
+};
+
+// Required-call grammars that take any text before the calls, so a thought and
+// its end tag as well.
+const Set<ChatFormat> _takesTextBeforeCalls = {
+  ChatFormat.kimiK3,
+  ChatFormat.minimaxM3,
 };
 
 // A grammar applies from the first token, so after a forced-open thought it
@@ -126,11 +136,11 @@ void main() {
             final root = grammar
                 .split('\n')
                 .firstWhere((line) => line.startsWith('root ::= '));
+            final format = ChatFormat.values[result.format];
             if (!root.startsWith('root ::= think-body ')) {
               if (!request.schema &&
-                  _closesThoughtItself.contains(
-                    ChatFormat.values[result.format],
-                  )) {
+                  (_closesThoughtItself.contains(format) ||
+                      _takesTextBeforeCalls.contains(format))) {
                 continue;
               }
               failures.add('$label: grammar forbids the thought');
@@ -139,10 +149,13 @@ void main() {
             if ('think-body '.allMatches(root).length != 1) {
               failures.add('$label: thought taken twice');
             }
+            final endTag = ChatTemplateEngine.handlerFor(format).thinkingEndTag;
+            if (!root.startsWith(
+              'root ::= think-body ${ToolCallGrammarUtils.literal(endTag)} ',
+            )) {
+              failures.add('$label: thought not ended by $endTag');
+            }
             if (request.schema && request.tools == null) {
-              final endTag = ChatTemplateEngine.handlerFor(
-                ChatFormat.values[result.format],
-              ).thinkingEndTag;
               final parsed = ChatTemplateEngine.parse(
                 result.format,
                 'plan$endTag{"answer": 4}',
@@ -197,4 +210,33 @@ void main() {
       'get_weather',
     ]);
   });
+  for (final (:template, :format, :output) in forcedOpenRequiredCalls) {
+    test('a required ${format.name} call after a forced-open thought in '
+        '$template parses as a tool call', () {
+      final result = renderForcedOpenRequiredCall(template);
+      final endTag = ChatTemplateEngine.handlerFor(format).thinkingEndTag;
+      expect(result.format, format.index);
+      expect(result.thinkingForcedOpen, isTrue);
+      expect(result.grammarLazy, isFalse);
+      expect(
+        result.grammar,
+        startsWith(
+          'root ::= think-body ${ToolCallGrammarUtils.literal(endTag)} '
+          'think-space (',
+        ),
+      );
+
+      final parsed = ChatTemplateEngine.parse(
+        result.format,
+        output,
+        thinkingForcedOpen: true,
+        tools: [forcedOpenRequiredTool],
+        parser: result.parser,
+      );
+      expect(parsed.reasoningContent?.trim(), 'plan');
+      expect(parsed.toolCalls.map((call) => call.function?.name), [
+        'get_weather',
+      ]);
+    });
+  }
 }

@@ -113,6 +113,14 @@ convolution off and no other components; other recipes throw at load. Qualified
 on SD 1.5 with `control_v11p_sd15_canny` (fp16 Safetensors), and no other platform, family or ControlNet
 layout is supported. See [ControlNet](../guides/image-generation#controlnet).
 
+A hires fix uses `HiresFixImageGenerationRequest` with an `ImageHiresFix`:
+a latent upscale to at most twice each side and 1024x1024, then a second
+sampling pass. It is bounded to an SD 1.x or SD 2.x checkpoint with embedded
+full VAE and no components on macOS CPU or Metal with the pinned SD
+v0.3.0-1 runtime; SD 1.5 and SD-Turbo are measured. Other recipes report
+`supportsHiresFix: false` and throw on a hires-fix request. See
+[hires fix](../guides/image-generation#hires-fix).
+
 Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
 flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
 512×512, flash attention and direct VAE convolutions disabled; CPU and actual
@@ -175,6 +183,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Repetition `penalty` | Yes | Yes | A value other than the default, at least `1.0`, without speculative decoding; counts only tokens of the current send | No: rejects a value other than the default |
 | Speculative decoding | Draft model, MTP, n-gram and DSpark strategies; external drafts require `draftModel`, in-file MTP requires an MTP head and `loadMtp`; `draftMicroBatchSize` sizes the draft context; recurrent/hybrid models reject nonzero rollback capacity | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, MTP uses the model's own layers, and `draftMicroBatchSize` is rejected; otherwise rejected | Runtime default or MTP, for bundles with a speculative drafter; `capabilities` reports the bundle's declaration | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
+| State identity (`stateIdentity`) | `llamadart-native` `v0.7.0-3+` | No: the bridge reports no build identity | No | No |
 | Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Bridge `v0.1.7+`; `v0.1.73+` rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64 and iOS arm64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; other platforms throw `LlamaUnsupportedException` at load ([#1367](https://github.com/leehack/llamadart/issues/1367)) | Unsupported (parity gate) |
 | Reranking | Rank-pooled GGUF only; explicit loaded-context probe, complete-pair limits and independent sequence batching | No | No | No |
 | Text task helpers and Matryoshka | Opt-in EG2 text profile; CPU BF16 retrieval reference | Same Dart helpers on an available embedding engine; no new Web qualification | Same Dart helpers on an available CPU embedding engine; bundle requires independent retrieval qualification | Unsupported with the underlying embedding engine |

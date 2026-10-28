@@ -96,8 +96,9 @@ class TemplateRenderContext {
   /// A tool result's `content` becomes text with [mediaMarker] at each
   /// media part, as [withToolResultMediaMarkers] describes. Text-only
   /// `content` stays a list of text parts, or, when [stringContentOnly] marks
-  /// a template that reads only string content, those parts joined by a
-  /// newline, as the same normalizer does.
+  /// a template that reads only string content, one string joined as the
+  /// same normalizer's `concat_content_parts` joins it: a newline goes before
+  /// a part only when the text so far is not empty.
   ///
   /// With [objectArguments], tool-call `arguments` that decode to a JSON
   /// object are passed as that object, as llama.cpp does for templates with

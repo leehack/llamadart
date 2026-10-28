@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dinja/dinja.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -111,6 +113,29 @@ void main() {
     expect(result.prompt, 'user:[Weather?];assistant:[];');
   });
 
+  test('templateMessages turns media in a tool result into the marker when '
+      'called directly', () {
+    // Public callers pass messages the engine has not converted.
+    final rendered = ChatTemplateEngine.handlerFor(ChatFormat.hermes)
+        .templateMessages([
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [
+              LlamaToolResultContent(
+                id: 'call_0',
+                name: 'screenshot',
+                result: 'ok',
+                content: [
+                  LlamaImageContent(bytes: Uint8List.fromList([1])),
+                ],
+              ),
+            ],
+          ),
+        ]);
+
+    expect(rendered.single['content'], 'ok<__media__>');
+  });
+
   group('required calls after a forced-open thought', () {
     final tools = [
       ToolDefinition(
@@ -127,6 +152,10 @@ void main() {
       ChatFormat.minimaxM2,
       ChatFormat.apriel15,
       ChatFormat.exaoneMoe,
+      ChatFormat.commandR7B,
+      ChatFormat.cohere2Moe,
+      ChatFormat.minicpm5,
+      ChatFormat.hunyuanV3,
     ]) {
       final handler = ChatTemplateEngine.handlerFor(format);
       LlamaChatTemplateResult render(

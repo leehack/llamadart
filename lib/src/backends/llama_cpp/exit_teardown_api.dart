@@ -481,7 +481,7 @@ final class LlamaCppObjectCalls {
   })
   rerankingModelInfo(Pointer<llama_model> model) {
     failures.ensureUsable(model, 'This reranker model');
-    try {
+    return requireRerankingSymbols(() {
       final count = llama_model_n_cls_out(model);
       if (count <= 0) {
         throw LlamaUnsupportedException(
@@ -508,11 +508,7 @@ final class LlamaCppObjectCalls {
         labels: labels,
         template: template,
       );
-    } on ArgumentError {
-      throw LlamaUnsupportedException(
-        'Native reranking requires classifier metadata and named-template symbols from the pinned llama.cpp runtime ($llamaCppTag).',
-      );
-    }
+    });
   }
 
   /// Vocabulary framing for the upstream rerank fallback; no text is inserted.
@@ -2088,3 +2084,16 @@ external int _wrapperMixedProcess(
   int type,
   Pointer<llama_batch_ext> batch,
 );
+
+/// Runs [read], which calls the reranker symbols, and turns the
+/// [ArgumentError] of a runtime that does not export them into a
+/// [LlamaUnsupportedException] naming the runtime that does.
+T requireRerankingSymbols<T>(T Function() read) {
+  try {
+    return read();
+  } on ArgumentError {
+    throw LlamaUnsupportedException(
+      'Native reranking requires classifier metadata and named-template symbols from the pinned llama.cpp runtime ($llamaCppTag).',
+    );
+  }
+}

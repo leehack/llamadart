@@ -897,6 +897,9 @@ the engine labels each report from the sequence:
 3. `decoding` with `0/count` after the last image's last step, then the final
    event. The runtime reports decoding progress only when it decodes in tiles.
 
+A [hires fix](#hires-fix) samples every image twice: the second pass's
+events have `pass` 1 and its own step total, and decoding follows it.
+
 `loading` appears only if the runtime loads weights lazily, which the engine
 avoids by loading them eagerly.
 
@@ -1354,3 +1357,68 @@ from the image. `strength` scales the ControlNet's residuals from 0 (none) to
 When the runtime reports that the ControlNet pass failed, the task fails with
 `LlamaInferenceException` instead of returning an image that ignored the
 control. Run `example/basic_app/bin/image_controlnet.dart` with local files.
+
+## Hires fix
+
+A hires fix generates at the model's native size, enlarges the result and
+samples it again at the larger size, which adds detail an enlarged image
+lacks while keeping the first pass's composition. Both passes run in one
+native generation.
+
+```dart
+final engine = await ImageGenerationEngine.load(
+  ImageGenerationModel(ModelSource.path('v1-5-pruned-emaonly.safetensors')),
+);
+if ((await engine.capabilities).supportsHiresFix) {
+  final result = await engine.generateImage(
+    const HiresFixImageGenerationRequest(
+      prompt: 'a red fox sitting in a snowy forest, photograph',
+      width: 512,
+      height: 512,
+      steps: 20,
+      seed: 42,
+      hiresFix: ImageHiresFix.scale(1.5, steps: 10, denoisingStrength: 0.55),
+    ),
+  );
+  // result.images.single is 768x768.
+}
+```
+
+The request's `width` and `height` are the first pass. Give the final size
+as a `scale` (`ImageHiresFix.scale`, above 1 and at most 2) or as a `width`
+and `height` (`ImageHiresFix.size`), never both:
+
+- Every first-pass and final side is a multiple of 64; nothing is rounded,
+  so a scale whose result is not a multiple of 64 is rejected.
+- Each final side is at least the first-pass side and at most twice it, and
+  the final image is larger than the first pass and at most 1024x1024.
+- A request makes at most 4 images. Image `i` uses seed `seed + i` in both
+  passes.
+- `steps` (1 to 150) defaults to the first pass's steps. As in
+  stable-diffusion.cpp, the second pass runs the last steps of a schedule of
+  `steps / denoisingStrength` steps, which can be one more than `steps`.
+- `denoisingStrength` (0.05 to 1, default 0.7) is how much noise the second
+  pass adds; lower values keep more of the first pass.
+- `upscaler` is `ImageHiresUpscaler.latent`: bilinear interpolation of the
+  latent before it is decoded, with no extra model. Model-based upscalers
+  are not offered.
+
+Out-of-range values throw `LlamaImageGenerationException` before the task
+starts. The bounded recipe requires stable-diffusion-native `v0.3.0-1`
+(upstream `be48649`) on macOS with `ComputeDevice.cpu` or Metal, and a
+native-detected SD 1.x or SD 2.x checkpoint with its embedded full VAE and no
+component overrides. Other families, decoders, hosts and devices report
+`supportsHiresFix: false`, and a hires-fix request throws
+`LlamaUnsupportedException`. The request type cannot carry image editing,
+ControlNet, VAE tiling or circular axes. Qualified on SD 1.5 and SD-Turbo;
+see [the measured qualification](https://github.com/leehack/llamadart/blob/main/doc/image_hires_fix.md).
+
+Progress reports both passes: `ImageGenerationProgressEvent.pass` is 0 for
+the first pass and 1 for the second, with `passCount` 2 and the second
+pass's own step total, then decoding follows. Cancelling stops the
+generation before the next step of either pass, or between them, and returns
+no images: a cancelled or failed second pass never returns first-pass images.
+The second pass needs the memory and time of an ordinary generation at the
+final size. When the runtime returns images that do not have the final size,
+the task fails with `LlamaInferenceException`. Run
+`example/basic_app/bin/image_hires_fix.dart` with a local checkpoint.

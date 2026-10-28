@@ -710,6 +710,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'ControlNetImageGenerationRequest, ImageModelRole.controlNet admission, supportsControlNet, worker ControlNet probe/failure detection or control_net_path/control_image/control_strength native mapping changes.',
   ),
   TestMatrixRow(
+    id: 'image-hires-fix',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Two-pass latent hires fix with an SD 1.x or SD 2.x full-VAE checkpoint on macOS CPU or Metal: final size, direct-C reference parity, one-pass reset, composition kept, second-pass cancellation/reuse and reload; other families, decoders, hosts and devices refused',
+    command:
+        'LLAMADART_HIRES_RECIPE=<sd15|turbo> LLAMADART_HIRES_DEVICE=<cpu|gpu> dart run tool/testing/run_local_e2e.dart --scenario image-hires-fix --model-path <checkpoint>',
+    useWhen:
+        'HiresFixImageGenerationRequest, ImageHiresFix limits, supportsHiresFix, two-pass progress or sd_hires_params_t native mapping changes.',
+  ),
+  TestMatrixRow(
     id: 'image-exit-teardown',
     tier: 'targeted',
     mode: 'local-only',

@@ -69,6 +69,10 @@ backend calls of the decision head). They are calls in flight for teardown
 like the others, and are resolved all or nothing in the same way. See
 "C++ exceptions".
 
+`llama_dart_build_identity` (`v0.7.0-3`) is called directly, outside both:
+it returns a constant of the library and touches no llama.cpp object, so
+teardown cannot free anything under it.
+
 One service uses one of the two for all of its calls.
 `IsolateShutdownReleases` still holds every object and frees it when its
 isolate shuts down; with exit teardown the hold's free function is
@@ -276,6 +280,14 @@ must not race exit teardown goes through `LlamaCppObjectCalls` or
 `ExitTeardownApi`. When libllamadart has no guarded function for it, add one
 in `llamadart-native` first; calling the upstream function leaves the call
 unprotected at a direct C `exit()`.
+
+A hires fix (`sd_img_gen_params_t.hires`) runs inside the one
+`sd_dart_generate_image` call: both sampling passes and the latent upscale
+use the generation's context and buffers, check the cancel flag as an
+ordinary generation does, and need no new native call. The model upscaler
+(`SD_HIRES_UPSCALER_MODEL`) would instead load an ESRGAN model from a path
+inside that call, a load no cancel reaches; llamadart offers only the latent
+upscaler.
 
 Every native call of an image worker goes through `StableDiffusionCalls`. A
 new call on an `sd_ctx_t` that can run longer than the 250 ms settle time

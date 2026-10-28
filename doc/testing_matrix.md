@@ -1114,3 +1114,13 @@ effects, strength-0 and ordinary reset equivalence, cancellation/reuse and
 reload, with optional exact direct-C references. See
 [the fixture, gates and provenance](image_controlnet.md). No GPU/device,
 SD 2.x/SDXL or Diffusers-layout ControlNet qualification is inferred.
+
+### Bounded hires fix
+
+`image-hires-fix` runs the maintained local-only two-pass latent hires fix
+with an SD 1.x (`LLAMADART_HIRES_RECIPE=sd15`) or SD 2.x (`turbo`) full-VAE
+checkpoint on macOS CPU or Metal (`LLAMADART_HIRES_DEVICE=cpu` or `gpu`):
+final size, size/scale agreement, one-pass reset, composition kept,
+second-pass cancellation/reuse and reload, with optional exact direct-C
+references. See [the fixture, gates and provenance](image_hires_fix.md). No
+other family, decoder, host, device or upscaler qualification is inferred.

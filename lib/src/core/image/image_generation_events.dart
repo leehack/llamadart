@@ -44,6 +44,13 @@ class ImageGenerationProgressEvent extends ImageGenerationEvent {
   /// Number of images requested.
   final int imageCount;
 
+  /// Zero-based sampling pass: `1` while a hires fix refines the images,
+  /// `0` otherwise. Decoding follows the last pass.
+  final int pass;
+
+  /// Number of sampling passes: `2` with a hires fix, otherwise `1`.
+  final int passCount;
+
   /// Creates a progress event.
   const ImageGenerationProgressEvent({
     required this.phase,
@@ -51,6 +58,8 @@ class ImageGenerationProgressEvent extends ImageGenerationEvent {
     required this.steps,
     required this.imageIndex,
     required this.imageCount,
+    this.pass = 0,
+    this.passCount = 1,
   });
 }
 

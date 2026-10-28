@@ -634,6 +634,13 @@ void runLlamaWorkerForTesting(
               message.tokenCapacity,
             );
             message.sendPort.send(StateLoadFileResponse(tokens));
+
+          case StateIdentityRequest():
+            message.sendPort.send(
+              StateIdentityResponse(
+                service.stateIdentity(message.contextHandle),
+              ),
+            );
         }
       } catch (error) {
         message.sendPort.send(_toErrorResponse(error));

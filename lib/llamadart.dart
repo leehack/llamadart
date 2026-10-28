@@ -69,6 +69,8 @@ export 'src/core/image/image_editing_request.dart'
     show ImageEditingPixels, ImageEditingRequest;
 export 'src/core/image/image_control_net_request.dart'
     show ControlNetImageGenerationRequest, ImageControlNetCondition;
+export 'src/core/image/image_hires_fix_request.dart'
+    show HiresFixImageGenerationRequest, ImageHiresFix, ImageHiresUpscaler;
 export 'src/core/image/image_generation_request.dart'
     show
         ImageGenerationRequest,
@@ -110,6 +112,7 @@ export 'src/core/engine/reranker.dart';
 export 'src/core/models/inference/reranking.dart';
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/next_token_scores.dart';
+export 'src/core/models/inference/state_identity.dart';
 export 'src/core/models/inference/generation_params.dart';
 export 'src/core/models/inference/generation_usage.dart';
 export 'src/core/models/inference/structured_output.dart';
