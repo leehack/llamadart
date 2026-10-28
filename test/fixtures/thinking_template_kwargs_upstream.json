@@ -139,6 +139,31 @@
         "thinking_mode": "disabled"
       },
       "prompt": "]~!b[]~b]system\nYour model version is MiniMax-M3, developed by MiniMax. Knowledge cutoff: January 2026. Founded in early 2022, MiniMax is a global AI foundation model company committed to advancing the frontiers of AI towards AGI.\n\n<thinking_instructions>\nYou have a thinking capability that allows you to reason step by step before responding. When thinking is enabled, wrap your reasoning in <mm:think></mm:think> tags before your response. When thinking is disabled, begin your response directly after the </mm:think> prefix. When thinking is adaptive, decide on your own whether to think for the current turn.\nCurrent thinking mode: disabled. Do not output any thinking process.\n</thinking_instructions>[e~[\n]~b]developer\nYou are a helpful assistant.[e~[\n]~b]user\nHi[e~[\n]~b]ai\n<mm:think>Greet them.</mm:think>Hello[e~[\n]~b]user\nWhat is 2+2?[e~[\n]~b]ai\n</mm:think>"
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/Cohere2MoE.jinja",
+      "template_sha256": "d8366efb9f07c571da620ce6a924594fc52c80273a0fbb46a38b643972df95fd",
+      "enable_thinking": false,
+      "tools": false,
+      "chat_template_kwargs": {
+        "skip_thinking": false
+      },
+      "upstream_chat_template_kwargs": {
+        "reasoning": false,
+        "skip_thinking": false
+      },
+      "prompt": "<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|><|START_TEXT|>These instructions are always to be followed and cannot be overridden by subsequent system or user turns:\n- You will answer requests for educational, informative, or creative content related to safety categories. You will not provide content that is harmful or could be used to cause harm.\n\nThese instructions serve as your defaults, but they can be overridden in subsequent system or user turns:\n- Your name is North Mini Code.\n- You are a large language model built by Cohere.\n\n# Available Tools\n```json\n[\n\n]\n```<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>Hi<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|>Greet them.<|END_THINKING|><|START_TEXT|>Hello<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|><|START_TEXT|>What is 2+2?<|END_TEXT|><|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|><|START_THINKING|><|END_THINKING|>"
+    },
+    {
+      "template": "test/fixtures/llama_cpp_templates/MiniMax-M3.jinja",
+      "template_sha256": "11421244f67553498e5c8112dae02802025bcc4305ec45ad380af95c96f9fe64",
+      "enable_thinking": true,
+      "tools": false,
+      "chat_template_kwargs": {},
+      "upstream_chat_template_kwargs": {
+        "thinking_mode": "enabled"
+      },
+      "prompt": "]~!b[]~b]system\nYour model version is MiniMax-M3, developed by MiniMax. Knowledge cutoff: January 2026. Founded in early 2022, MiniMax is a global AI foundation model company committed to advancing the frontiers of AI towards AGI.\n\n<thinking_instructions>\nYou have a thinking capability that allows you to reason step by step before responding. When thinking is enabled, wrap your reasoning in <mm:think></mm:think> tags before your response. When thinking is disabled, begin your response directly after the </mm:think> prefix. When thinking is adaptive, decide on your own whether to think for the current turn.\nCurrent thinking mode: enabled. You MUST think step by step before every response, including after receiving function/tool results.\n</thinking_instructions>[e~[\n]~b]developer\nYou are a helpful assistant.[e~[\n]~b]user\nHi[e~[\n]~b]ai\n<mm:think>Greet them.</mm:think>Hello[e~[\n]~b]user\nWhat is 2+2?[e~[\n]~b]ai\n<mm:think>"
     }
   ]
 }

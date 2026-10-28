@@ -5,9 +5,10 @@ for a conversation with an earlier assistant thought, when a chat template
 kwarg sets a template's own thinking switch, for issue #750: `reasoning_effort`
 or `reasoning` for Cohere2 MoE, `reasoning_effort` for Hy3, `thinking_mode` for
 MiniMax M3 and `thinking_effort` for Kimi K3. The cases with
-`enable_thinking: false` and no `chat_template_kwargs` pin that llamadart's
-`enableThinking: false` renders as llama.cpp does with
-`upstream_chat_template_kwargs`, the template's own off setting.
+`upstream_chat_template_kwargs` pin that llamadart renders as llama.cpp does
+with those kwargs: `enableThinking: false` as the template's own off setting,
+MiniMax M3's `enableThinking: true` as `thinking_mode: enabled`, and a Cohere2
+MoE `skip_thinking` kwarg over the one `enableThinking: false` sets.
 
 `prompt` comes from a probe built from unchanged llama.cpp
 `620d2225cc436ab0b001e3200e590e3b286ef9ab`. With no model loaded, it called
