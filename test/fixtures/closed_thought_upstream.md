@@ -27,3 +27,11 @@ probe parses its reply's leading thought as reasoning. Each case also records
 `upstream_without_tools`, the probe run without the tool. llamadart closes
 this thought in the prompt when thinking is off, but still parses the reply
 as llama.cpp does.
+
+`open_thought_templates` also holds the vendored Cohere2 MoE template. llama.cpp
+sets no `reasoning`, so its generation prompt ends with `<|START_THINKING|>`;
+llamadart sets `reasoning: false` with thinking off and the template closes the
+thought. The same probe, run without the tool too, parses the reply's leading
+thought as reasoning. Cases the probe rejects without the tool (`does not match
+the expected peg-native format`) have no `upstream_without_tools`. Each entry's
+`closed_prompt_suffix` is how llamadart's thinking-off prompt ends.

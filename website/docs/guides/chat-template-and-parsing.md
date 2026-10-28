@@ -122,6 +122,9 @@ Nemotron Nano v2 open the thought even with thinking off. llamadart closes it
 in the prompt, but a thought the model still writes before `</think>` is
 reasoning, as in llama-server. So that it never streams as `chunk.text`, the
 reply's text is held until `</think>` or `<think>` arrives, or the reply ends.
+Cohere2 MoE templates open it unless `reasoning` is false, which llamadart
+sets from `enableThinking`; their reply is held until a thinking tag,
+`<|START_TEXT|>` or `<|START_ACTION|>`, where llama-server ends the thought.
 
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.

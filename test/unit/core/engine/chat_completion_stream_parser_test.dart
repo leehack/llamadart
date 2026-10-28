@@ -2567,6 +2567,12 @@ void main() {
       const hermesCall =
           '<tool_call>\n{"name": "weather", "arguments": {"city": "Paris"}}\n'
           '</tool_call>';
+      const cohereCall =
+          '<|START_ACTION|>[{"tool_call_id": "0", "tool_name": "weather", '
+          '"parameters": {"city": "Paris"}}]<|END_ACTION|>';
+      const seedCall =
+          '<seed:tool_call>\n<function=weather>\n<parameter=city>\nParis\n'
+          '</parameter>\n</function>\n</seed:tool_call>';
       for (final (format, call) in const [
         (ChatFormat.qwen3CoderXml, qwenCall),
         (ChatFormat.hermes, hermesCall),
@@ -2574,6 +2580,9 @@ void main() {
         (ChatFormat.minimaxM2, ''),
         (ChatFormat.nemotronV2, ''),
         (ChatFormat.glm45, ''),
+        (ChatFormat.cohere2Moe, cohereCall),
+        (ChatFormat.commandR7B, cohereCall),
+        (ChatFormat.seedOss, seedCall),
       ]) {
         final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
         final s = tags.startTag;
@@ -2585,6 +2594,11 @@ void main() {
             'Sunny.',
             'Sunny, as ${s}planned$e it is.',
             '${s}Plan$e Sunny.',
+            if (format == ChatFormat.cohere2Moe) ...[
+              '<|START_TEXT|>Sunny.<|END_TEXT|>',
+              'Plan$e<|START_TEXT|>Sunny.<|END_TEXT|>',
+            ] else
+              'Plan <|START_TEXT|>x$e Sunny.',
             if (call.isNotEmpty) ...[
               'Plan\n$e\n\n$call',
               'Plan\n$e\n\nSunny.\n\n$call',
@@ -2628,6 +2642,30 @@ void main() {
           thoughtClosed: true,
           tools: false,
           const [('Hi', '', ''), (' <think>Plan', 'Plan', 'Hi')],
+        );
+      });
+
+      // llama.cpp ends the thought it keeps open where Cohere2 MoE text or
+      // an action starts.
+      test('Cohere2 MoE text streams as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.cohere2Moe,
+          thoughtClosed: true,
+          tools: false,
+          const [
+            ('<|START_TE', '', ''),
+            ('XT|>Sun', '', 'Sun'),
+            ('ny.', '', 'Sunny.'),
+          ],
+        );
+      });
+
+      test('Command R7B text waits for a thinking tag', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.commandR7B,
+          thoughtClosed: true,
+          tools: false,
+          const [('<|START_RESPONSE|>Sun', '', ''), ('ny.', '', '')],
         );
       });
 

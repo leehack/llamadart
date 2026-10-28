@@ -66,16 +66,18 @@ class SeedOssHandler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
+    var thoughtClosed = false;
     if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag)) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}$thinkingEndTag';
+        thoughtClosed = true;
       } else {
         thinkingForcedOpen = true;
       }
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
-    return LlamaChatTemplateResult(
+    final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: requiredGrammarAfterThought(
@@ -104,6 +106,7 @@ class SeedOssHandler extends ChatTemplateHandler {
             ]
           : const [],
     );
+    return withThoughtClosedForThinkingOff(rendered, closed: thoughtClosed);
   }
 
   @override

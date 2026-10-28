@@ -1,11 +1,13 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/engine/chat_template_renderer.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
@@ -228,6 +230,40 @@ void main() {
         });
       }
 
+      // The template closed the thought, so no reply text waits for a tag.
+      test('streams a reply as it arrives', () async {
+        for (final enableThinking in const [false, true]) {
+          final tokens = StreamController<String>();
+          final content = StringBuffer();
+          final subscription =
+              ChatCompletionStreamParser.parse(
+                tokenStream: tokens.stream,
+                templateResult: rendered,
+                parseToolCallsEnabled: false,
+                enableThinking: enableThinking,
+                modelName: 'test-model',
+                completionId: 'template-closed-latency',
+              ).listen(
+                (chunk) =>
+                    content.write(chunk.choices.single.delta.content ?? ''),
+              );
+          for (final (token, streamed) in const [
+            ('Sunny', 'Sunny'),
+            (' today.', 'Sunny today.'),
+          ]) {
+            tokens.add(token);
+            await pumpEventQueue();
+            expect(
+              content.toString(),
+              streamed,
+              reason: 'enableThinking: $enableThinking',
+            );
+          }
+          await tokens.close();
+          await subscription.asFuture<void>();
+        }
+      });
+
       // With thinking on, the same templates leave the thought open.
       test('streams each reply with thinking on as it parses', () async {
         final forcedOpen = ChatTemplateEngine.render(
@@ -308,6 +344,7 @@ void main() {
       in (_fixture['open_thought_templates'] as List)
           .cast<Map<String, dynamic>>()) {
     final templatePath = entry['template'] as String;
+    final closedSuffix = entry['closed_prompt_suffix'] as String;
     group(templatePath.split('/').last, () {
       late LlamaChatTemplateResult rendered;
 
@@ -333,7 +370,7 @@ void main() {
         );
         final generationPrompt = (entry['generation_prompt'] as String)
             .trimRight();
-        expect(rendered.prompt, endsWith('$generationPrompt</think>\n'));
+        expect(rendered.prompt, endsWith('$generationPrompt$closedSuffix'));
         expect(rendered.thinkingForcedOpen, isFalse);
         expect(thinkingForcedClosedOf(rendered), isFalse);
         expect(thoughtClosedForThinkingOffOf(rendered), isTrue);
@@ -376,7 +413,9 @@ void main() {
           ),
         ];
         for (final (index, result) in results.indexed) {
-          expect(result.prompt, endsWith('</think>\n'), reason: '$index');
+          // A response schema renders Cohere2 MoE templates as content-only.
+          if (result.format == ChatFormat.contentOnly.index) continue;
+          expect(result.prompt, endsWith(closedSuffix), reason: '$index');
           expect(
             thoughtClosedForThinkingOffOf(result),
             isTrue,
@@ -389,9 +428,11 @@ void main() {
         final output = c['output'] as String;
         test('${c['name']} parses and streams as llama.cpp parses', () async {
           for (final withTools in const [true, false]) {
+            // llama.cpp rejects some Cohere2 MoE replies without tools.
             final upstream =
                 c[withTools ? 'upstream' : 'upstream_without_tools']
-                    as Map<String, dynamic>;
+                    as Map<String, dynamic>?;
+            if (upstream == null) continue;
             final upstreamCalls = _calls([
               for (final call
                   in (upstream['tool_calls'] as List)
@@ -513,35 +554,32 @@ void main() {
   // stream then holds a reply's leading text where the parse may still end
   // that thought at an end tag.
   test('marks a thought a handler closes where the parse ends it', () {
-    // These handlers do not mark one yet (#1553).
-    const unmarked = {
-      ChatFormat.commandR7B,
-      ChatFormat.cohere2Moe,
-      ChatFormat.seedOss,
-    };
     for (final registration in chatFormatRegistrations) {
       final format = registration.format;
       final handler = registration.createHandler();
       final opened = '<|im_start|>assistant\n${handler.thinkingStartTag}';
-      LlamaChatTemplateResult render({required bool enableThinking}) =>
-          handler.render(
-            templateSource: '{{ ${jsonEncode(opened)} }}',
-            messages: const [
-              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
-            ],
-            metadata: const {},
-            enableThinking: enableThinking,
-          );
-      final closed = render(enableThinking: false);
+      LlamaChatTemplateResult render(
+        String prompt, {
+        required bool enableThinking,
+      }) => handler.render(
+        templateSource: '{{ ${jsonEncode(prompt)} }}',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ],
+        metadata: const {},
+        enableThinking: enableThinking,
+      );
+      final closed = render(opened, enableThinking: false);
       final handlerClosed =
           closed.prompt != opened && !closed.thinkingForcedOpen;
-      final bool parsesThought;
+      var parsesThought = false;
       try {
         parsesThought =
             ChatTemplateEngine.parse(
               format.index,
               'Plan${handler.thinkingEndTag}Sunny.',
               parseToolCalls: false,
+              parser: closed.parser,
             ).reasoningContent ==
             'Plan';
       } on StateError {
@@ -549,18 +587,82 @@ void main() {
         expect(handlerClosed, isFalse, reason: format.name);
         expect(thoughtClosedForThinkingOffOf(closed), isFalse);
         continue;
+      } on LlamaInferenceException {
+        // Solar Open's parse rejects a reply that opens with neither tag.
       }
       expect(
         thoughtClosedForThinkingOffOf(closed),
-        handlerClosed && parsesThought && !unmarked.contains(format),
+        handlerClosed && parsesThought,
         reason: format.name,
       );
       expect(
-        thoughtClosedForThinkingOffOf(render(enableThinking: true)),
+        thoughtClosedForThinkingOffOf(render(opened, enableThinking: true)),
         isFalse,
         reason: format.name,
       );
+      expect(
+        thoughtClosedForThinkingOffOf(
+          render('<|im_start|>assistant\n', enableThinking: false),
+        ),
+        isFalse,
+        reason: '${format.name} without an open thought',
+      );
+      expect(
+        thoughtClosedForThinkingOffOf(
+          render('$opened${handler.thinkingEndTag}', enableThinking: true),
+        ),
+        isFalse,
+        reason: '${format.name} with a closed thought and thinking on',
+      );
     }
+  });
+
+  // llama.cpp parses no leading thought when the caller's own `reasoning`
+  // setting closes the Cohere2 MoE thought; `reasoning: true` opens it.
+  test('marks a Cohere thought only where llamadart closes it', () {
+    for (final (kwargs, marked) in const [
+      (<String, Object>{'reasoning': false}, false),
+      (<String, Object>{'reasoning_effort': 'none'}, false),
+      (<String, Object>{'reasoning': true}, true),
+    ]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/Cohere2MoE.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ],
+        metadata: const {},
+        chatTemplateKwargs: kwargs,
+        enableThinking: false,
+      );
+      expect(
+        rendered.prompt,
+        endsWith('<|START_THINKING|><|END_THINKING|>'),
+        reason: '$kwargs',
+      );
+      expect(
+        thoughtClosedForThinkingOffOf(rendered),
+        marked,
+        reason: '$kwargs',
+      );
+    }
+
+    // Command R7B's template closes the thought with thinking off, as it
+    // does in llama.cpp.
+    final commandR7B = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/llama_cpp_templates/'
+        'CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ],
+      metadata: const {},
+      enableThinking: false,
+    );
+    expect(commandR7B.prompt, endsWith('<|START_THINKING|><|END_THINKING|>'));
+    expect(thoughtClosedForThinkingOffOf(commandR7B), isFalse);
   });
 
   test('a forced-open thought keeps the reasoning', () async {

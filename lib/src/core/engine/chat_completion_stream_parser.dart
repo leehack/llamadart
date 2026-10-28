@@ -10,6 +10,7 @@ import '../template/chat_format.dart';
 import '../template/chat_format_registry.dart';
 import '../template/chat_parse_result.dart';
 import '../template/chat_template_engine.dart';
+import '../template/handlers/cohere2_moe_handler.dart';
 import '../template/handlers/command_r7b_handler.dart';
 import '../template/handlers/llama3_handler.dart';
 import '../template/peg_chat_parser.dart';
@@ -200,11 +201,17 @@ class ChatCompletionStreamParser {
     var pendingBuffer = '';
     // The parse ends the thought a handler closed for thinking off at the
     // first end tag, as llama.cpp ends the thought it keeps open, so text
-    // before a thinking tag may be reasoning.
+    // before a thinking tag may be reasoning. llama.cpp also ends a Cohere2
+    // MoE thought where its text or action starts.
     final tokens =
         thoughtClosedForThinkingOffOf(templateResult) &&
             !templateResult.thinkingForcedOpen
-        ? _heldUntilThinkingTag(tokenStream, startTag, endTag)
+        ? _heldUntilAny(tokenStream, [
+            startTag,
+            endTag,
+            if (templateResult.format == ChatFormat.cohere2Moe.index)
+              ...Cohere2MoeHandler.forcedThoughtContentOpenings,
+          ])
         : tokenStream;
 
     await for (final token in tokens) {
@@ -652,25 +659,30 @@ class ChatCompletionStreamParser {
 
   static int _noOpening(String text, int from) => text.length;
 
-  /// [tokens] with their text held until it contains [startTag] or [endTag],
-  /// or [tokens] ends.
-  static Stream<String> _heldUntilThinkingTag(
+  /// [tokens] with their text held until it contains one of [markers], or
+  /// [tokens] ends.
+  static Stream<String> _heldUntilAny(
     Stream<String> tokens,
-    String startTag,
-    String endTag,
+    List<String> markers,
   ) async* {
+    final longest = markers.fold(
+      0,
+      (length, marker) => marker.length > length ? marker.length : length,
+    );
     String? held = '';
     await for (final token in tokens) {
       if (held == null) {
         yield token;
         continue;
       }
-      final scanFrom = held.length - endTag.length - startTag.length;
-      held += token;
+      final scanFrom = held.length - longest;
+      final text = held + token;
       final from = scanFrom < 0 ? 0 : scanFrom;
-      if (held.contains(startTag, from) || held.contains(endTag, from)) {
-        yield held;
+      if (markers.any((marker) => text.contains(marker, from))) {
+        yield text;
         held = null;
+      } else {
+        held = text;
       }
     }
     if (held != null && held.isNotEmpty) yield held;
