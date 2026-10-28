@@ -163,6 +163,8 @@ void main() {
         withoutTrailingTagPrefix('a <tool', ['</think>', '<tool_call>']),
         'a ',
       );
+      // Both `a` and `aba` start the tag.
+      expect(withoutTrailingTagPrefix('x aba', ['abab']), 'x ');
     });
 
     test('keeps a whole tag and text that ends no tag', () {
