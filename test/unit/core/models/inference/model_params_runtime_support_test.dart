@@ -42,6 +42,8 @@ void main() {
     ropeFrequencyScale: 1,
     splitMode: ModelSplitMode.none,
     mainGpu: 1,
+    gpuDevices: [0, 1],
+    tensorSplit: [1, 1],
     gpuLayers: 12,
   );
 
@@ -90,9 +92,19 @@ void main() {
         liteRtLmFieldNames,
       );
       expect(unsupported(llamaCppFields, LlamaRuntime.llamaCpp, web: true), [
+        'gpuDevices',
+        'tensorSplit',
         'useMmap=false',
         'useMlock',
       ]);
+      expect(
+        unsupported(
+          const ModelParams(tensorSplit: [1]),
+          LlamaRuntime.llamaCpp,
+          web: true,
+        ),
+        ['tensorSplit'],
+      );
     });
 
     test('applies the WebGPU memory hints', () {
@@ -113,6 +125,8 @@ void main() {
         'gpuLayers=12',
         'splitMode',
         'mainGpu',
+        'gpuDevices',
+        'tensorSplit',
         'numberOfThreadsBatch',
         'batchSize',
         'microBatchSize',

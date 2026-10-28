@@ -618,6 +618,12 @@ does not apply, before any download when the format is known. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 for the full list.
 
+On native llama.cpp, `gpuDevices` loads a model on chosen GPUs of one backend,
+by their `LlamaEngine.listGpuDevices` index, and `tensorSplit` sets each
+GPU's share. Indices the host lacks, a split of another length and the Web or
+LiteRT-LM throw `LlamaUnsupportedException`. See
+[Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
+
 Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
 and `mainGpu: -1` reports its CPU placement in backend diagnostics and zero resolved GPU layers.
 Decision heads follow this CPU placement and report `CPU` in

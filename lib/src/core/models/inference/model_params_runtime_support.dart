@@ -18,6 +18,7 @@ List<String> modelParamsUnsupportedBy(
   LlamaRuntime.llamaCpp => [
     ..._liteRtLmOnlyFields(params),
     if (web) ...[
+      ..._gpuDeviceFields(params),
       if (!params.useMmap) 'useMmap=false',
       if (params.useMlock) 'useMlock',
     ] else ...[
@@ -31,6 +32,7 @@ List<String> modelParamsUnsupportedBy(
       'gpuLayers=${params.gpuLayers}',
     if (params.splitMode != ModelSplitMode.layer) 'splitMode',
     if (params.mainGpu != 0) 'mainGpu',
+    ..._gpuDeviceFields(params),
     if (web) ...[
       if (params.loras.isNotEmpty) 'loras',
       ..._liteRtLmNativeOnlyFields(params),
@@ -169,4 +171,9 @@ List<String> _liteRtLmNativeOnlyFields(ModelParams params) => [
     ),
   ])
     if (isSet) liteRtLmOptionName(params, field),
+];
+
+List<String> _gpuDeviceFields(ModelParams params) => [
+  if (params.gpuDevices != null) 'gpuDevices',
+  if (params.tensorSplit != null) 'tensorSplit',
 ];

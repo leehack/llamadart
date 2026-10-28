@@ -151,6 +151,16 @@
   "mappings": [
     {
       "surfaces": [
+        "matrix:GPU device list and split (gpuDevices, tensorSplit)"
+      ],
+      "exemption": {
+        "id": "gpu-device-placement",
+        "reason": "ModelParams.gpuDevices and tensorSplit have maintained validation, runtime-rejection, listGpuDevices index mapping, refusal (missing index, split length, several backends, CPU fallback, unusable Vulkan device) and native devices/tensor_split/draft-load tests, plus the local-only LLAMADART_GPU_MODEL scenario that loads on every GPU of a backend with an even split and keeps greedy output. It ran on one Metal GPU; no multi-GPU host has qualified it, and no validation-pack profile covers device placement.",
+        "issue": "https://github.com/leehack/llamadart/issues/916"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Model-free setup report"
       ],
       "exemption": {

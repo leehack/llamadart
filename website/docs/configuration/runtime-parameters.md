@@ -51,6 +51,34 @@ Important fields:
   [When a requested backend is not bundled](../platforms/native-build-hooks#when-a-requested-backend-is-not-bundled).
 - `splitMode`: model tensor distribution mode passed through to llama.cpp
   `split_mode`. Defaults to upstream `layer` behavior.
+- `gpuDevices`: the GPUs to load on, as the `GpuDeviceInfo.mainGpu` indices
+  `LlamaEngine.listGpuDevices` reports for `preferredBackend`
+  (llama.cpp `--device`). The list order is the split order. Under
+  `GpuBackend.auto` it needs a host with one GPU backend; otherwise set
+  `preferredBackend`. `ModelSplitMode.none` uses `mainGpu` instead.
+- `tensorSplit`: one proportion per device, in `gpuDevices` order or the
+  backend's listing order (llama.cpp `--tensor-split`); llama.cpp
+  normalizes them. `validate()` rejects empty lists, negative, NaN or
+  infinite values, a zero sum, and a length other than that of `gpuDevices`.
+  Native llama.cpp throws `LlamaUnsupportedException` before the model loads
+  for a device index the host lacks, a split for another number of devices,
+  several GPU backends under `auto`, and a load that would fall back to the
+  CPU; the Web and LiteRT-LM reject both fields. After a load with either
+  field, `getBackendName()` names the devices, such as `CUDA (CUDA0, CUDA2)`.
+  A speculative draft model loads on the same devices and split.
+
+```dart
+final engine = LlamaEngine(LlamaBackend());
+final gpus = await engine.listGpuDevices(probeBackends: [GpuBackend.cuda]);
+await engine.loadModel(
+  '/path/to/model.gguf',
+  modelParams: LlamaCppModelParams(
+    preferredBackend: GpuBackend.cuda,
+    gpuDevices: [gpus[0].mainGpu, gpus[2].mainGpu],
+    tensorSplit: const [3, 1], // three quarters of the layers on the first
+  ),
+);
+```
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
   To select one GPU for the full model, use
   `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
@@ -173,7 +201,8 @@ deprecated until 1.0.
 `gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative
 value, which means all layers like `maxGpuLayers`. Native
 LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
-`numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
+`numberOfThreadsBatch`, `splitMode`, `mainGpu`, `gpuDevices`, `tensorSplit`
+or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. That includes `loadMtp`,
 `speculativeRollbackTokenMax`, `preferMemory64` and `modelBytesHint`.

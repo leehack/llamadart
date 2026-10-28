@@ -201,6 +201,30 @@ Future<void> main() async {
 }
 ```
 
+Load a GGUF model on two of a host's GPUs, three quarters on the first
+(native llama.cpp only; the Web and LiteRT-LM throw
+`LlamaUnsupportedException`, as do indices the host lacks):
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<LlamaEngine> loadOnTwoGpus(String path) async {
+  final LlamaEngine engine = LlamaEngine(LlamaBackend());
+  final List<GpuDeviceInfo> gpus = await engine.listGpuDevices(
+    probeBackends: const [GpuBackend.cuda],
+  );
+  await engine.loadModel(
+    path,
+    modelParams: LlamaCppModelParams(
+      preferredBackend: GpuBackend.cuda,
+      gpuDevices: [gpus[0].mainGpu, gpus[1].mainGpu],
+      tensorSplit: const [3, 1],
+    ),
+  );
+  return engine;
+}
+```
+
 Switch models on one engine, and load a LiteRT-LM bundle on GPU:
 
 ```dart

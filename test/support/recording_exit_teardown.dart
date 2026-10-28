@@ -61,6 +61,11 @@ final class RecordingExitTeardown {
   /// no devices.
   final List<List<int>?> loadDevices = <List<int>?>[];
 
+  /// The `llama_model_params.tensor_split` of each
+  /// `llama_dart_model_load_from_file` so far, one value per listed device;
+  /// `null` for a load without a split.
+  final List<List<double>?> loadTensorSplits = <List<double>?>[];
+
   /// The `llama_model_params.n_gpu_layers` of each
   /// `llama_dart_model_load_from_file` so far.
   final List<int> loadGpuLayers = <int>[];
@@ -159,6 +164,15 @@ final class RecordingExitTeardown {
         devices == nullptr
             ? null
             : [for (var i = 0; devices[i] != nullptr; i++) devices[i].address],
+      );
+      final split = params.tensor_split;
+      loadTensorSplits.add(
+        split == nullptr
+            ? null
+            : [
+                for (var i = 0; i < (loadDevices.last?.length ?? 0); i++)
+                  split[i],
+              ],
       );
       loadGpuLayers.add(params.n_gpu_layers);
       if (!_proceeds('llama_dart_model_load_from_file')) return nullptr;

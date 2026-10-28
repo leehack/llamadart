@@ -37,6 +37,7 @@ import 'build_identity.dart';
 import 'decision_head.dart';
 import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
+import 'gpu_device_placement.dart';
 import 'lazy_grammar_triggers.dart';
 import 'load_device_selection.dart';
 import 'reranking_classifier.dart';
@@ -1480,6 +1481,30 @@ class LlamaCppService {
       isAndroid: _isAndroid,
     );
 
+    final GpuDevicePlacement? placement;
+    try {
+      placement = _resolveGpuDevicePlacement(
+        modelParams,
+        backend: effectiveBackend,
+        gpuLayers: gpuLayers,
+        vulkan: vulkan,
+      );
+    } catch (_) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      rethrow;
+    }
+    if (placement != null) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      preferredDevices = _createDeviceList(placement.devices);
+    }
+    final tensorSplit = _createTensorSplit(placement);
+    if (tensorSplit != null) {
+      mparams.tensor_split = tensorSplit;
+    }
     mparams.n_gpu_layers = gpuLayers;
     mparams.split_modeAsInt = modelParams.splitMode.llamaCppValue;
     mparams.main_gpu = modelParams.mainGpu;
@@ -1504,6 +1529,9 @@ class LlamaCppService {
       );
     } finally {
       _modelPathAllocator.free(modelPathPtr);
+      if (tensorSplit != null) {
+        malloc.free(tensorSplit);
+      }
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
@@ -1529,7 +1557,9 @@ class LlamaCppService {
       resolvedGpuLayers: gpuLayers,
       forcedCpuFallback: forcedCpuFallback,
     );
-    _modelBackendNames[handle] = resolvedBackend;
+    _modelBackendNames[handle] = placement == null
+        ? resolvedBackend
+        : '$resolvedBackend (${placement.deviceNames})';
     _modelResolvedGpuLayers[handle] = gpuLayers;
     _modelLoadParams[handle] = modelParams;
     _activateModelReport(handle);
@@ -1648,6 +1678,63 @@ class LlamaCppService {
     }
     list[pointers.length] = nullptr;
     return list;
+  }
+
+  /// The devices and tensor split [params] place a load on [backend] with
+  /// [gpuLayers] on, or `null` when it sets neither
+  /// [ModelParams.gpuDevices] nor [ModelParams.tensorSplit].
+  ///
+  /// Throws [LlamaUnsupportedException] instead of loading on other devices:
+  /// when the load fell back to the CPU, and when a listed Vulkan device is
+  /// one ggml-vulkan cannot drive.
+  GpuDevicePlacement? _resolveGpuDevicePlacement(
+    ModelParams params, {
+    required GpuBackend backend,
+    required int gpuLayers,
+    required VulkanLoadDecision vulkan,
+  }) {
+    if (params.gpuDevices == null && params.tensorSplit == null) return null;
+    final field = params.gpuDevices != null ? 'gpuDevices' : 'tensorSplit';
+    final capability =
+        'ModelParams.$field, llama.cpp multi-GPU placement, is not available '
+        'on ${Platform.operatingSystem}';
+    if (gpuLayers == 0) {
+      throw LlamaUnsupportedException(
+        '$capability: the ${backend.name} backend has no usable GPU here'
+        '${vulkan.unsupported == null ? '' : ' (${vulkan.unsupported})'}, '
+        'so the load would run on the CPU.',
+      );
+    }
+    final placement = resolveGpuDevicePlacement(
+      params,
+      backend: backend,
+      registered: _registeredDevices(),
+      backendOf: gpuBackendFromRegName,
+      maxDevices: llama_max_devices(),
+      platform: Platform.operatingSystem,
+    )!;
+    if (vulkan.unsupported case final unsupported?) {
+      final usable = vulkan.devices ?? const <GgmlDeviceEntry>[];
+      for (final device in placement.devices) {
+        if (device.isVulkan &&
+            !usable.any((entry) => entry.device == device.device)) {
+          throw LlamaUnsupportedException('$capability: $unsupported.');
+        }
+      }
+    }
+    return placement;
+  }
+
+  /// The `llama_model_params.tensor_split` array of [placement], sized
+  /// `llama_max_devices()` as llama.cpp reads it, or `null` without a split.
+  Pointer<Float>? _createTensorSplit(GpuDevicePlacement? placement) {
+    final split = placement?.tensorSplit;
+    if (split == null) return null;
+    final array = malloc<Float>(llama_max_devices());
+    for (var index = 0; index < llama_max_devices(); index++) {
+      array[index] = index < split.length ? split[index] : 0;
+    }
+    return array;
   }
 
   /// Whether a GPU device of [backend], or any GPU device for
@@ -1805,12 +1892,36 @@ class LlamaCppService {
       }
       preferredDevices = _createDeviceList(usable);
     }
+    final GpuDevicePlacement? placement;
+    try {
+      placement = _resolveGpuDevicePlacement(
+        targetModelParams,
+        backend: draftBackend,
+        gpuLayers: draftGpuLayers,
+        vulkan: vulkan,
+      );
+    } catch (_) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      rethrow;
+    }
+    if (placement != null) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      preferredDevices = _createDeviceList(placement.devices);
+    }
     mparams.n_gpu_layers = draftGpuLayers;
     mparams.split_modeAsInt = targetModelParams.splitMode.llamaCppValue;
     mparams.main_gpu = targetModelParams.mainGpu;
     applyModelParams(mparams, targetModelParams.copyWith(loadMtp: loadMtp));
     if (preferredDevices != null) {
       mparams.devices = preferredDevices;
+    }
+    final tensorSplit = _createTensorSplit(placement);
+    if (tensorSplit != null) {
+      mparams.tensor_split = tensorSplit;
     }
 
     Pointer<llama_model> modelPtr = nullptr;
@@ -1828,6 +1939,9 @@ class LlamaCppService {
       _modelPathAllocator.free(modelPathPtr);
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
+      }
+      if (tensorSplit != null) {
+        malloc.free(tensorSplit);
       }
     }
 
