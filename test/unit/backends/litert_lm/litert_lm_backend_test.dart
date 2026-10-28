@@ -271,10 +271,23 @@ void main() {
             unsupported('LoRA adapters'),
           );
           await engine.removeLoraSource(api.ModelSource.path('adapter.bin'));
+          final noProjector = throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('A LiteRT-LM model takes no multimodal projector'),
+            ),
+          );
           await expectLater(
             // ignore: deprecated_member_use_from_same_package
             engine.loadMultimodalProjector('mmproj.bin'),
-            unsupported('Multimodal projectors'),
+            noProjector,
+          );
+          await expectLater(
+            engine.loadMultimodalProjectorSource(
+              api.ModelSource.path('mmproj.bin'),
+            ),
+            noProjector,
           );
           final capabilities = await engine.capabilities;
           expect(capabilities.supportsVision, isFalse);
