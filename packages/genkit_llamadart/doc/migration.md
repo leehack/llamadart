@@ -10,7 +10,9 @@ Structured output parses as llamadart's engine parses its final message, through
 `ChatTemplateEngine.parseRendered`. After a template that opens no thought,
 such as the stock Seed-OSS one, a reply has a thought only when it starts with
 `<seed:think>`, as in llama-server; a stray `</seed:think>` stays in the
-content, which then fails JSON validation.
+content, which then fails JSON validation. With thinking off, Qwen3.5 closes
+the thought in the prompt, so a reply of `<think>…</think>{...}` is content and
+fails JSON validation too, instead of returning reasoning and the JSON.
 
 ## Upgrading to llamadart 0.16
 

@@ -86,6 +86,37 @@ void main() {
     expect(reasoning(leading), 'Plan');
   });
 
+  test('parses no tool call from output when no tool is declared', () async {
+    for (final (field, output) in const [
+      ('response', '{"response":{"answer":"hi"}}'),
+      ('tool_call', '{"tool_call":{"name":"lookup","arguments":{"q":"x"}}}'),
+    ]) {
+      final runtime = FakeRuntime()..generatedTokens = [output];
+      final response = await testModelAction(runtime: runtime)(
+        genkit.ModelRequest(
+          messages: [
+            genkit.Message(
+              role: genkit.Role.user,
+              content: [genkit.TextPart(text: 'Respond with JSON')],
+            ),
+          ],
+          output: genkit.OutputConfig(
+            format: 'json',
+            schema: {
+              'type': 'object',
+              'properties': {
+                field: {'type': 'object'},
+              },
+              'required': [field],
+            },
+          ),
+        ),
+      );
+      expect(response.text, output);
+      expect(response.toolRequests, isEmpty);
+    }
+  });
+
   test('keeps an end tag the stock template never opened in the content', () {
     expect(
       generate(stock, 'Plan</seed:think>{"answer":"hi"}', enableThinking: true),
