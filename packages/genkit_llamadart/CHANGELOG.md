@@ -1,7 +1,7 @@
-## Unreleased
+## 3.6.0 - 2026-10-29
 
 - Upgrade to llamadart 0.17.0 and matching 0.17.x Apple companions.
-- Structured output parses through `ChatTemplateEngine.parseRendered`, as llamadart's engine parses its final message: after the stock Seed-OSS template, `Plan</seed:think>{...}` is content, as in llama-server, instead of reasoning `Plan` and the JSON.
+- Structured output parses through `ChatTemplateEngine.parseRendered`, as llamadart's engine parses its final message: after the stock Seed-OSS template, `Plan</seed:think>{...}` is content, as in llama-server, and so is `<think>…</think>{...}` from Qwen3.5 with thinking off, instead of reasoning and the JSON. On a runtime that does not enforce the JSON grammar, such a reply now fails JSON validation with `failedPrecondition` (see the migration guide).
 
 ## 3.5.0 - 2026-10-23
 
