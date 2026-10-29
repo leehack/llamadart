@@ -127,9 +127,13 @@ sets from `enableThinking`; their reply is held until a thinking tag,
 `<|START_TEXT|>` or `<|START_ACTION|>`, where llama-server ends the thought,
 and the text before it is reasoning. Seed-OSS templates open no thought: a
 reply has one only when it starts with `<seed:think>`, and other thinking tags
-are content, as in llama-server. `ChatTemplateEngine.parse`, which cannot tell
-whether a custom template opened the thought, also ends one at a
-`</seed:think>` in a reply that did not open it.
+are content, as in llama-server. To parse a reply as the engine does, pass
+the render to `ChatTemplateEngine.parseRendered(rendered, output)`, where
+`rendered` is the unchanged result of `ChatTemplateEngine.render` or
+`engine.chatTemplate`. `ChatTemplateEngine.parse`, which takes only the
+format and flags, cannot tell whether the template opened the thought or the
+render closed it, so it also ends a Seed-OSS thought at a `</seed:think>` in a
+reply that did not open it.
 
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.

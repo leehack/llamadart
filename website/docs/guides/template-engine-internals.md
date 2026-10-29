@@ -161,9 +161,11 @@ sequenceDiagram
   starts with `<seed:think>`, kept as generated up to the first
   `</seed:think>`, and the rest is content in which thinking tags are text, as
   llama.cpp (`620d2225`) parses it; only ASCII whitespace may precede the
-  start tag. The public `ChatTemplateEngine.parse` cannot see the mark, so it
-  also ends a thought at an end tag in a reply that does not start with the
-  start tag, as after a template that opens one. Outside a thought, a Cohere2 MoE
+  start tag. `ChatTemplateEngine.parseRendered` reads the marks from the
+  render it is given, so it parses as the engine does. The public
+  `ChatTemplateEngine.parse` cannot see them, so it also ends a thought at an
+  end tag in a reply that does not start with the start tag, as after a
+  template that opens one. Outside a thought, a Cohere2 MoE
   `<|START_TEXT|>` or `<|START_ACTION|>` starts content in which thinking tags
   are text.
 

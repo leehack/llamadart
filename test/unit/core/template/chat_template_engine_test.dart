@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
@@ -2124,6 +2125,140 @@ void main() {
           isPartial: true,
         ).content,
         'Hi there.',
+      );
+    });
+  });
+
+  group('ChatTemplateEngine.parseRendered', () {
+    final weatherTool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [ToolParam.string('city')],
+      handler: _noopHandler,
+    );
+    LlamaChatTemplateResult render(
+      String templateSource, {
+      bool enableThinking = true,
+      ToolChoice toolChoice = ToolChoice.auto,
+    }) => ChatTemplateEngine.render(
+      templateSource: templateSource,
+      messages: messages,
+      metadata: const {},
+      tools: [weatherTool],
+      toolChoice: toolChoice,
+      enableThinking: enableThinking,
+    );
+
+    // Values from llama.cpp 620d2225: a Seed-OSS end tag ends a thought only
+    // when the prompt opened one.
+    test('ends a Seed-OSS thought only where the render opened it', () {
+      const stock = '{#- <seed:think> -#}assistant\n';
+      const opened = 'assistant\n<seed:think>';
+      const output = 'Plan</seed:think>Sunny.';
+      for (final (source, enableThinking, reasoning, content) in [
+        (stock, true, null, output),
+        (stock, false, null, output),
+        (opened, true, 'Plan', 'Sunny.'),
+        (opened, false, 'Plan', 'Sunny.'),
+      ]) {
+        final rendered = render(source, enableThinking: enableThinking);
+        expect(rendered.format, ChatFormat.seedOss.index);
+        final parsed = ChatTemplateEngine.parseRendered(rendered, output);
+        final reason = '$source, thinking: $enableThinking';
+        expect(parsed.reasoningContent, reasoning, reason: reason);
+        expect(parsed.content, content, reason: reason);
+        // parse cannot tell the renders apart.
+        expect(
+          ChatTemplateEngine.parse(
+            rendered.format,
+            output,
+            thinkingForcedOpen: rendered.thinkingForcedOpen,
+          ).reasoningContent,
+          'Plan',
+          reason: reason,
+        );
+      }
+    });
+
+    test('passes isPartial, cancelled and parseToolCalls to the parse', () {
+      final hermes = render('<tool_call></tool_call>assistant\n');
+      expect(hermes.format, ChatFormat.hermes.index);
+      expect(
+        ChatTemplateEngine.parseRendered(hermes, 'Hi. \n').content,
+        'Hi. \n',
+      );
+      expect(
+        ChatTemplateEngine.parseRendered(
+          hermes,
+          'Hi. \n',
+          isPartial: true,
+        ).content,
+        'Hi.',
+      );
+
+      const unfinished = 'Checking. <tool_call>{"name":"get_weather","ar';
+      expect(
+        ChatTemplateEngine.parseRendered(hermes, unfinished).content,
+        unfinished,
+      );
+      expect(
+        ChatTemplateEngine.parseRendered(
+          hermes,
+          unfinished,
+          cancelled: true,
+        ).content,
+        'Checking.',
+      );
+
+      const call =
+          '<tool_call>{"name":"get_weather","arguments":{"city":"Paris"}}'
+          '</tool_call>';
+      expect(
+        ChatTemplateEngine.parseRendered(hermes, call).toolCalls,
+        hasLength(1),
+      );
+      final text = ChatTemplateEngine.parseRendered(
+        hermes,
+        call,
+        parseToolCalls: false,
+      );
+      expect(text.toolCalls, isEmpty);
+      expect(text.content, call);
+    });
+
+    test('types arguments from the tools passed', () {
+      final xml = render(
+        '{#- <tool_call> <function= <parameter= '
+        'Function calls MUST follow the specified format -#}assistant\n',
+      );
+      expect(xml.format, ChatFormat.qwen3CoderXml.index);
+      const call =
+          '<tool_call>\n<function=get_weather>\n<parameter=city>\n123\n'
+          '</parameter>\n</function>\n</tool_call>';
+      String arguments(List<ToolDefinition>? tools) =>
+          ChatTemplateEngine.parseRendered(
+            xml,
+            call,
+            tools: tools,
+          ).toolCalls.single.function!.arguments!;
+      expect(jsonDecode(arguments([weatherTool])), {'city': '123'});
+      expect(jsonDecode(arguments(null)), {'city': 123});
+    });
+
+    test("parses with the render's PEG parser", () {
+      final ministral = render(
+        '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT][TOOL_CALLS]get_weather[ARGS]{}',
+        toolChoice: ToolChoice.required,
+      );
+      expect(ministral.format, ChatFormat.ministral.index);
+      expect(ministral.parser, isNotNull);
+      expect(
+        ChatTemplateEngine.parse(ministral.format, 'Sure.').content,
+        'Sure.',
+      );
+      expect(
+        () => ChatTemplateEngine.parseRendered(ministral, 'Sure.'),
+        throwsA(isA<LlamaInferenceException>()),
       );
     });
   });
