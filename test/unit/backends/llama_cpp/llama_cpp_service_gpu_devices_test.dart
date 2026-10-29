@@ -385,6 +385,48 @@ void main() {
       expect(allocator.allocations, 0);
     });
 
+    test('on GPUs llama.cpp selects by itself probes all of them, whatever '
+        'the main GPU', () {
+      final probed = <String>[];
+      start(
+        registeredDevices: () => [
+          _fake('Vulkan0', 'Vulkan', 0x1000),
+          _fake('Vulkan1', 'Vulkan', 0x2000),
+        ],
+        splitBufferTypeProbe: (device) {
+          probed.add(device.name);
+          return device.name == 'Vulkan0';
+        },
+      );
+      expect(
+        () => service.loadModel(
+          model,
+          const ModelParams(splitMode: ModelSplitMode.row, mainGpu: 1),
+        ),
+        refusedRow('Vulkan1 (Vulkan)'),
+      );
+      expect(probed, ['Vulkan0', 'Vulkan1']);
+      expect(recorder.calls, isNot(contains(_load)));
+    });
+
+    test('leaves a device it cannot read to llama.cpp', () {
+      start();
+      for (final device in [null, nullptr]) {
+        expect(
+          _invokePrivate<bool>(service, '_hasSplitBufferType', [
+            GgmlDeviceEntry(
+              name: 'GPU0',
+              registry: 'Vulkan',
+              description: 'GPU0',
+              type: _gpu,
+              device: device,
+            ),
+          ]),
+          isTrue,
+        );
+      }
+    });
+
     test('on devices with split buffers goes on to the load', () {
       start(splitBufferTypeProbe: (_) => true);
       // llama.cpp's CPU backend has none, so its own check fails the load.
@@ -403,12 +445,20 @@ void main() {
     });
 
     test('is not probed in layer mode', () {
-      start(splitBufferTypeProbe: (_) => fail('probed'));
+      var listed = 0;
+      start(
+        registeredDevices: () {
+          listed++;
+          return const [];
+        },
+        splitBufferTypeProbe: (_) => fail('probed'),
+      );
       service.loadModel(
         model,
         const ModelParams(preferredBackend: GpuBackend.cpu),
       );
       expect(recorder.calls, contains(_load));
+      expect(listed, 0);
     });
   });
 
