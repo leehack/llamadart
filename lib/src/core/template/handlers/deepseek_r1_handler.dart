@@ -8,6 +8,7 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_call_grammar_utils.dart';
@@ -105,7 +106,11 @@ class DeepseekR1Handler extends ChatTemplateHandler {
     final rendered = LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: buildGrammar(tools),
+      grammar: _buildGrammarWithOptions(
+        tools,
+        parallelToolCalls:
+            metadata[internalParallelToolCallsMetadataKey] == 'true',
+      ),
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
@@ -197,6 +202,13 @@ class DeepseekR1Handler extends ChatTemplateHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
+    return _buildGrammarWithOptions(tools, parallelToolCalls: true);
+  }
+
+  String? _buildGrammarWithOptions(
+    List<ToolDefinition>? tools, {
+    required bool parallelToolCalls,
+  }) {
     if (tools == null || tools.isEmpty) {
       return null;
     }
@@ -212,7 +224,7 @@ class DeepseekR1Handler extends ChatTemplateHandler {
 
       final toolRuleName = 'tool-$i-call';
       final prefix = ToolCallGrammarUtils.literal(
-        'function<｜tool▁sep｜>${tool.name}\\n```json\\n',
+        'function<｜tool▁sep｜>${tool.name}\n```json\n',
       );
       final suffix = ToolCallGrammarUtils.literal('```<｜tool▁call▁end｜>');
       converter.rules[toolRuleName] =
@@ -221,8 +233,8 @@ class DeepseekR1Handler extends ChatTemplateHandler {
     }
 
     const rootRule = '( "</think>" space )? tool-calls';
-    const toolCallsRule =
-        '( "<｜tool▁calls▁begin｜>" | "<｜tool_calls_begin｜>" | "<｜tool calls begin｜>" | "<｜tool\\\\_calls\\\\_begin｜>" | "<｜tool▁calls｜>" ) space tool-call+ "<｜tool▁calls▁end｜>" space';
+    final toolCallsRule =
+        '( "<｜tool▁calls▁begin｜>" | "<｜tool_calls_begin｜>" | "<｜tool calls begin｜>" | "<｜tool\\\\_calls\\\\_begin｜>" | "<｜tool▁calls｜>" ) space tool-call${parallelToolCalls ? '+' : ''} "<｜tool▁calls▁end｜>" space';
     final toolCallRule = toolRuleNames.join(' | ');
 
     final buffer = StringBuffer()

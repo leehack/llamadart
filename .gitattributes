@@ -9,6 +9,7 @@ test/fixtures/flint/render_upstream.json -text
 # llama-server parity fixtures hash these templates' exact bytes.
 test/fixtures/llama_cpp_templates/*.jinja -text
 test/fixtures/media_templates/*.jinja -text
+test/fixtures/required_tool_emissions/*.jinja -text
 
 # Keep both sides' `## Unreleased` bullets in local merges and rebases. Union
 # keeps both sides of any conflicting edit too, so resolve release-prep edits

@@ -328,7 +328,7 @@ class FunctionaryV32Handler extends ChatTemplateHandler {
       final ruleName = 'tool-$i-call';
 
       converter.rules[ruleName] =
-          '${ToolCallGrammarUtils.literal('${tool.name}\\n')} $argsRule';
+          '${ToolCallGrammarUtils.literal('${tool.name}\n')} $argsRule';
       firstToolRules.add(ruleName);
 
       if (parallelToolCalls) {
