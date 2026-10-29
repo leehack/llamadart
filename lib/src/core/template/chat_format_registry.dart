@@ -485,7 +485,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     TranslateGemmaHandler.new,
     detect: (s) =>
         _hasAll(s, const ['[source_lang_code]', '[target_lang_code]']),
-    traits: ChatFormatTraits.none,
+    traits: ChatFormatTraits(keepsThoughtTagsAsContent: true),
   ),
   ChatFormatRegistration(
     ChatFormat.functionaryV32,

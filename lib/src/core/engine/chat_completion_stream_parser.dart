@@ -30,7 +30,7 @@ class _ThinkingSplitEmission {
   final bool endsThinking;
 }
 
-/// The thinking tags a gated stream has seen so far.
+/// The thinking tags a stream has seen so far.
 class _ThoughtTagState {
   var sawStartTag = false;
   var sawEndTag = false;
@@ -169,14 +169,19 @@ class ChatCompletionStreamParser {
     final thoughtClosedForThinkingOff = thoughtClosedForThinkingOffOf(
       templateResult,
     );
-    // Functionary v3.2 and MiniMax M1 stream through their partial parse
-    // with tools.
+    final pegParsedWithoutTools =
+        !parseToolCallsEnabled && _usesPegParser(templateResult);
+    // Functionary v3.2, MiniMax M1 and Muse Glimmer stream through their
+    // partial parse with tools. A PEG parse after a closed thought has no
+    // reasoning.
     final keepsThoughtTagsAsContent =
         traits.keepsThoughtTagsAsContent ||
         ((isFunctionaryV32 ||
-                templateResult.format == ChatFormat.minimaxM1.index) &&
+                templateResult.format == ChatFormat.minimaxM1.index ||
+                templateResult.format == ChatFormat.museGlimmer.index) &&
             !parseToolCallsEnabled) ||
-        (traits.closedThoughtKeepsTagsAsContent && thinkingForcedClosed);
+        ((traits.closedThoughtKeepsTagsAsContent || pegParsedWithoutTools) &&
+            thinkingForcedClosed);
     final isLlama3 =
         templateResult.format == ChatFormat.llama3.index ||
         templateResult.format == ChatFormat.llama3BuiltinTools.index;
@@ -194,10 +199,11 @@ class ChatCompletionStreamParser {
     final verbatimThoughtOpenings = verbatimForcedThought
         ? traits.forcedThoughtContentOpenings
         : const <String>[];
-    // After a prompt that opens no thought, a Seed-OSS reply has one only at
-    // its start, kept as generated, as the parse takes it.
+    // After a prompt that opens no thought, a Seed-OSS or PEG-parsed reply
+    // has one only at its start, kept as generated, as the parse takes it.
     final leadingThoughtOnly =
-        templateResult.format == ChatFormat.seedOss.index &&
+        (templateResult.format == ChatFormat.seedOss.index ||
+            pegParsedWithoutTools) &&
         !templateResult.thinkingForcedOpen &&
         !thoughtClosedForThinkingOff;
     final verbatimThought = verbatimForcedThought || leadingThoughtOnly;
@@ -207,8 +213,6 @@ class ChatCompletionStreamParser {
             !templateResult.thinkingForcedOpen
         ? Cohere2MoeHandler.forcedThoughtContentOpenings
         : const <String>[];
-    final pegParsedWithoutTools =
-        !parseToolCallsEnabled && _usesPegParser(templateResult);
     final contentGate = _ContentGate(
       toolCallOpening ?? builtinOpening ?? _noOpening,
       trimsLeading: !pegParsedWithoutTools,
@@ -226,7 +230,7 @@ class ChatCompletionStreamParser {
     final gptOssFrames = _GptOssFrameStream(
       parseToolCalls: parseToolCallsEnabled,
     );
-    final thoughtTags = gatedOpening != null ? _ThoughtTagState() : null;
+    final thoughtTags = _ThoughtTagState();
     // Without tools, Cohere2 MoE and Command R7B content streams raw, but
     // their parse drops the markers that wrap it.
     final responseMarkers =
@@ -236,7 +240,7 @@ class ChatCompletionStreamParser {
         ? _MarkerFilter(CommandR7BHandler.responseMarkers)
         : null;
     var atForcedThoughtStart =
-        thoughtTags != null &&
+        gatedOpening != null &&
         templateResult.thinkingForcedOpen &&
         !verbatimForcedThought;
     var verbatimThoughtEnded = false;
@@ -355,7 +359,7 @@ class ChatCompletionStreamParser {
           atForcedThoughtStart = false;
           if (rest.startsWith(startTag)) {
             pendingBuffer = rest.substring(startTag.length);
-            thoughtTags!.sawStartTag = true;
+            thoughtTags.sawStartTag = true;
             reasoningGate.leaveForcedThought();
           }
         }
@@ -543,8 +547,8 @@ class ChatCompletionStreamParser {
     }
 
     // A verbatim thought that has not ended holds only the start of a tag that
-    // would end it, which its parse drops.
-    if (verbatimThought && isThinking) {
+    // would end it, which its parse drops; a PEG parse keeps it.
+    if (verbatimThought && isThinking && !pegParsedWithoutTools) {
       pendingBuffer = '';
     }
 
@@ -1142,7 +1146,7 @@ class ChatCompletionStreamParser {
     required bool isThinking,
     required String startTag,
     required String endTag,
-    _ThoughtTagState? tagState,
+    required _ThoughtTagState tagState,
     bool endsAtFirstEndTag = false,
     List<String> thoughtContentOpenings = const [],
     List<String> bodyOpenings = const [],
@@ -1156,9 +1160,7 @@ class ChatCompletionStreamParser {
       if (!localIsThinking) {
         final startIdx = localPendingBuffer.indexOf(startTag);
         var endIdx = localPendingBuffer.indexOf(endTag);
-        if (endIdx != -1 &&
-            (tagState?.endTagIsContent ?? false) &&
-            !(startIdx > endIdx)) {
+        if (endIdx != -1 && tagState.endTagIsContent && !(startIdx > endIdx)) {
           endIdx = -1;
         }
         var bodyIdx = -1;
@@ -1185,7 +1187,7 @@ class ChatCompletionStreamParser {
             );
           }
           localIsThinking = true;
-          tagState?.sawStartTag = true;
+          tagState.sawStartTag = true;
           localPendingBuffer = localPendingBuffer.substring(
             startIdx + startTag.length,
           );
@@ -1199,7 +1201,7 @@ class ChatCompletionStreamParser {
             ),
           );
           localIsThinking = false;
-          tagState?.sawEndTag = true;
+          tagState.sawEndTag = true;
           localPendingBuffer = localPendingBuffer.substring(
             endIdx + endTag.length,
           );
@@ -1225,21 +1227,23 @@ class ChatCompletionStreamParser {
             break;
           }
         }
-        for (var i = startTag.length - 1; i >= 1; i--) {
-          if (localPendingBuffer.endsWith(startTag.substring(0, i))) {
-            final emitIdx = localPendingBuffer.length - i;
-            if (emitIdx > 0) {
-              emissions.add(
-                _ThinkingSplitEmission(
-                  text: localPendingBuffer.substring(0, emitIdx),
-                  isThinking: false,
-                ),
-              );
-              localPendingBuffer = localPendingBuffer.substring(emitIdx);
-            }
-            potentialMatch = true;
-            break;
+        // An end tag that ends a thought the prompt opened must not stream
+        // as content when it arrives split across tokens.
+        final emitIdx = withoutTrailingTagPrefix(localPendingBuffer, [
+          startTag,
+          if (!tagState.endTagIsContent) endTag,
+        ]).length;
+        if (emitIdx < localPendingBuffer.length) {
+          if (emitIdx > 0) {
+            emissions.add(
+              _ThinkingSplitEmission(
+                text: localPendingBuffer.substring(0, emitIdx),
+                isThinking: false,
+              ),
+            );
+            localPendingBuffer = localPendingBuffer.substring(emitIdx);
           }
+          potentialMatch = true;
         }
         if (!potentialMatch) {
           emissions.add(
@@ -1268,7 +1272,7 @@ class ChatCompletionStreamParser {
           ),
         );
         localIsThinking = false;
-        tagState?.sawEndTag = true;
+        tagState.sawEndTag = true;
         localPendingBuffer = localPendingBuffer.substring(contentIdx);
         if (endsAtFirstEndTag) {
           if (localPendingBuffer.isNotEmpty) {

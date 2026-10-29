@@ -332,7 +332,7 @@
     },
     "translateGemma": {
       "toolCallOpening": null,
-      "keepsThoughtTagsAsContent": false,
+      "keepsThoughtTagsAsContent": true,
       "parsesCallsInsideThoughts": false,
       "mayEmbedToolEnvelopeAfterContent": false,
       "disabledByResponseSchema": false,

@@ -2787,6 +2787,60 @@ void main() {
         );
       });
 
+      test('DeepSeek R1 ends a prompt-opened thought at an end tag split '
+          'across chunks (#1582)', () async {
+        const call =
+            '<｜tool calls begin｜> function<｜tool▁sep｜>weather\n```json\n'
+            '{"city": "Paris"}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>';
+        for (final (output, tools) in const [
+          ('</think>\n    $call', true),
+          ('\n</think>\n$call', true),
+          ('</think>Sunny.', true),
+          ('</think>Sunny.', false),
+          ('Sunny.</thi', true),
+          ('<think>Plan.</think></think>Sunny.', true),
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.deepseekR1,
+            output,
+            tools: tools,
+            everySplit: true,
+          );
+        }
+        // After the thought ends, an end tag is content, so the start of one
+        // streams at once.
+        await _expectStreamedAfterEachToken(ChatFormat.deepseekR1, const [
+          ('</think>', '', ''),
+          ('Sunny.', '', 'Sunny.'),
+          (' </', '', 'Sunny. </'),
+          ('think>', '', 'Sunny. </think>'),
+        ]);
+      });
+
+      test('every format streams a split end tag as its parse takes it '
+          '(#1582)', () async {
+        for (final format in ChatFormat.values) {
+          if (format.name.startsWith('peg')) {
+            continue;
+          }
+          final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+          final s = tags.startTag;
+          final e = tags.endTag;
+          for (final output in [
+            '${e}Sunny.',
+            '$e${e}Sunny.',
+            '${s}Plan.$e${e}Sunny.',
+          ]) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              tools: false,
+              everySplit: true,
+            );
+          }
+        }
+      });
+
       test('text in every format, with and without tools', () async {
         for (final format in ChatFormat.values) {
           if (format.name.startsWith('peg')) {

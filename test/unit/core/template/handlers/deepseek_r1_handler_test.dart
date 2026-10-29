@@ -194,7 +194,7 @@ void main() {
     expect(single, contains(' space tool-call "<｜tool▁calls▁end｜>"'));
     expect(
       grammar(parallel: true),
-      contains(' space tool-call+ "<｜tool▁calls▁end｜>"'),
+      contains(' space tool-call ( space tool-call )* "<｜tool▁calls▁end｜>"'),
     );
   });
 
@@ -223,7 +223,7 @@ void main() {
     expect(handler.buildGrammar(tools), parallel);
     expect(
       handler.buildGrammar(tools),
-      contains(' space tool-call+ "<｜tool▁calls▁end｜>"'),
+      contains(' space tool-call ( space tool-call )* "<｜tool▁calls▁end｜>"'),
     );
     expect(handler.buildGrammar(null), isNull);
     expect(handler.buildGrammar(const []), isNull);

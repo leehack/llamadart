@@ -1,5 +1,7 @@
 ## Unreleased
 
+- On DeepSeek R1 templates that support parallel tool calls, such as DeepSeek-R1-Distill-Qwen-32B, `parallelToolCalls: true` now lets the model put whitespace between calls, as llama.cpp does, so it can write the newline its template uses instead of stopping after one call. Templates without parallel calls, such as the stock 1.5B and 8B distills, still allow one call ([#1581](https://github.com/leehack/llamadart/issues/1581)).
+- Streamed thinking tags now match the final parse however a backend splits them: a `</think>` split across chunks no longer streams as content when the parse drops it, as in a DeepSeek R1 reply that starts with `</think>`, and TranslateGemma, Muse Glimmer without tools, and PEG-parsed templates without tools such as Ministral 3 Reasoning, Devstral and Nemotron 3 Nano stream thinking tags their parse keeps as text ([#1582](https://github.com/leehack/llamadart/issues/1582)).
 - `ModelSplitMode.row` on native llama.cpp devices without split buffers, which include every bundled GPU backend and an explicitly selected CPU, now throws `LlamaUnsupportedException` naming the device before the model loads, instead of a generic load failure; use `ModelSplitMode.layer` ([#1576](https://github.com/leehack/llamadart/issues/1576)).
 
 ## 0.17.0

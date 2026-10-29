@@ -5,8 +5,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/completion_chunk.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -81,6 +83,58 @@ void main() {
           expected['arguments'],
         );
       });
+
+      // #1582: the stream must agree with the parse however the reply is
+      // split, as a bridge or remote backend may split special tokens.
+      for (final toolChoice in [ToolChoice.required, ToolChoice.auto]) {
+        test('streams the emission as the parse with ${toolChoice.name} tool '
+            'choice at any chunk size', () async {
+          final rendered = ChatTemplateEngine.render(
+            templateSource: utf8.decode(templateBytes),
+            messages: messages,
+            metadata: const {},
+            tools: [tool],
+            toolChoice: toolChoice,
+            enableThinking: false,
+          );
+          final emission = fixtureCase['emission'] as String;
+          final parsed = ChatTemplateEngine.parseRendered(
+            rendered,
+            emission,
+            tools: [tool],
+          );
+          for (final size in [1, 2, 3, 7, emission.length]) {
+            final chunks = await ChatCompletionStreamParser.parse(
+              tokenStream: Stream.fromIterable([
+                for (var i = 0; i < emission.length; i += size)
+                  emission.substring(
+                    i,
+                    i + size < emission.length ? i + size : emission.length,
+                  ),
+              ]),
+              templateResult: rendered,
+              parseToolCallsEnabled: true,
+              enableThinking: false,
+              modelName: 'test-model',
+              completionId: 'required-emission',
+              tools: [tool],
+            ).toList();
+            final choices = [for (final chunk in chunks) chunk.choices.single];
+            expect(
+              choices.map((choice) => choice.delta.content ?? '').join(),
+              parsed.content,
+              reason: 'chunk size $size',
+            );
+            expect(
+              choices.expand((choice) => choice.delta.toolCalls ?? const []),
+              hasLength(parsed.toolCalls.length),
+              reason: 'chunk size $size',
+            );
+            expect(parsed.toolCalls, hasLength(1));
+            expect(chunks.last.finishReason, LlamaFinishReason.toolCalls);
+          }
+        });
+      }
     });
   }
 }
