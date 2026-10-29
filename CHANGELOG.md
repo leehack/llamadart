@@ -1,3 +1,5 @@
+## Unreleased
+
 ## 0.17.0
 
 - **Breaking (backend SPI):** LoRA and multimodal projector members move off `LlamaBackend` into the optional `BackendLoraSupport` and `BackendMultimodalSupport` interfaces. On a backend or routed runtime without one, `LlamaEngine` LoRA calls and projector loads throw `LlamaUnsupportedException`, before any download, and `removeLoraSource` of an adapter never applied does nothing. The built-in backends keep the same support and exception type; `LlamaEngine.loadMultimodalProjector` refuses a LiteRT-LM model with the same `LlamaUnsupportedException` message as `loadMultimodalProjectorSource` and `setModel`, including on a custom backend that reports the LiteRT-LM runtime and implements `BackendMultimodalSupport`, and through a router it no longer says the projector is unsupported by the active runtime ([#362](https://github.com/leehack/llamadart/issues/362), [#1541](https://github.com/leehack/llamadart/issues/1541)).
