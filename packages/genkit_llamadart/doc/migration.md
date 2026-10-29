@@ -1,5 +1,17 @@
 # Migration guide
 
+## Upgrading to llamadart 0.17
+
+The current plugin requires llamadart `^0.17.0`. Genkit 1.0, Schemantic 1.0
+and the Dart 3.12 minimum are unchanged. Flutter iOS and macOS apps must use
+matching `^0.17.0` runtime companions.
+
+Structured output parses as llamadart's engine parses its final message, through
+`ChatTemplateEngine.parseRendered`. After a template that opens no thought,
+such as the stock Seed-OSS one, a reply has a thought only when it starts with
+`<seed:think>`, as in llama-server; a stray `</seed:think>` stays in the
+content, which then fails JSON validation.
+
 ## Upgrading to llamadart 0.16
 
 The current plugin requires llamadart `^0.16.0`. Genkit 1.0, Schemantic 1.0

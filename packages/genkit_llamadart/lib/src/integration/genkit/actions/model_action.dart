@@ -383,13 +383,11 @@ Future<genkit.ModelResponse> _runStructuredModel({
 
   context.cancel?.throwIfCancelled();
   final generatedText = rawOutput.toString();
-  final parsed = llama.ChatTemplateEngine.parse(
-    template.format,
+  final parsed = llama.ChatTemplateEngine.parseRendered(
+    template,
     generatedText,
     parseToolCalls: activeTools,
     tools: activeTools ? tools : null,
-    thinkingForcedOpen: template.thinkingForcedOpen,
-    parser: template.parser,
   );
 
   final usage = Zone.current[operationUsageKey] as OperationUsage?;
@@ -398,12 +396,10 @@ Future<genkit.ModelResponse> _runStructuredModel({
   }
   var visibleText = parsed.content;
   if (envelopeSchema != null) {
-    final raw = llama.ChatTemplateEngine.parse(
-      template.format,
+    final raw = llama.ChatTemplateEngine.parseRendered(
+      template,
       generatedText,
       parseToolCalls: false,
-      thinkingForcedOpen: template.thinkingForcedOpen,
-      parser: template.parser,
     );
     final envelope = decodeConstrainedValue(raw.content);
     await validateConstrainedValue(envelope, envelopeSchema);

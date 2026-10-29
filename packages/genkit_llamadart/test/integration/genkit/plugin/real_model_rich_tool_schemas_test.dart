@@ -189,12 +189,10 @@ void main() {
               entry.value,
       };
       validateCompiledGrammar(path, template.grammar!, wrapped);
-      final parsed = llama.ChatTemplateEngine.parse(
-        template.format,
+      final parsed = llama.ChatTemplateEngine.parseRendered(
+        template,
         wrapped.keys.first,
         tools: [definition],
-        parser: template.parser,
-        thinkingForcedOpen: template.thinkingForcedOpen,
       );
       expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), good);
       final example = await Process.run(Platform.resolvedExecutable, [
