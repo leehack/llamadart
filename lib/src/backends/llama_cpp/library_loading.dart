@@ -1162,6 +1162,19 @@ extension _LlamaCppLibraryLoading on LlamaCppService {
     );
   }
 
+  /// `ggml_backend_reg_get_proc_address`, or `null` when neither the primary
+  /// asset nor the ggml runtime exports it.
+  Pointer<Void>? _ggmlBackendRegGetProcAddress(
+    ggml_backend_reg_t reg,
+    Pointer<Char> name,
+  ) {
+    return _ggmlRegistryFallbackOr<Pointer<Void>?>(
+      null,
+      () => ggml_backend_reg_get_proc_address(reg, name),
+      () => _ggmlBackendRegGetProcAddressFallback?.call(reg, name),
+    );
+  }
+
   ggml_backend_dev_t _ggmlBackendRegDevGet(ggml_backend_reg_t reg, int index) {
     return _ggmlRegistryFallbackOr<ggml_backend_dev_t>(
       nullptr,

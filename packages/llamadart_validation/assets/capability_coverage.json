@@ -176,6 +176,16 @@
     },
     {
       "surfaces": [
+        "matrix:Row split (ModelSplitMode.row)"
+      ],
+      "exemption": {
+        "id": "row-split-unsupported",
+        "reason": "No bundled llama.cpp backend provides the split buffer types row split needs, so the row is a refusal, not a capability: native tests cover the per-device ggml_backend_split_buffer_type probe on the CPU device and fake GPU devices with and without split buffers, and a local Metal run refuses before the load. No validation-pack profile can run row split.",
+        "issue": "https://github.com/leehack/llamadart/issues/1576"
+      }
+    },
+    {
+      "surfaces": [
         "matrix:Model-free setup report"
       ],
       "exemption": {

@@ -82,6 +82,10 @@ typedef _GgmlBackendRegGetNative = ggml_backend_reg_t Function(Size);
 typedef _GgmlBackendRegGetDart = ggml_backend_reg_t Function(int);
 typedef _GgmlBackendRegNameNative = Pointer<Char> Function(ggml_backend_reg_t);
 typedef _GgmlBackendRegNameDart = Pointer<Char> Function(ggml_backend_reg_t);
+typedef _GgmlBackendRegGetProcAddressNative =
+    Pointer<Void> Function(ggml_backend_reg_t, Pointer<Char>);
+typedef _GgmlBackendRegGetProcAddressDart =
+    Pointer<Void> Function(ggml_backend_reg_t, Pointer<Char>);
 typedef _GgmlBackendRegByNameNative =
     ggml_backend_reg_t Function(Pointer<Char>);
 typedef _GgmlBackendRegByNameDart = ggml_backend_reg_t Function(Pointer<Char>);

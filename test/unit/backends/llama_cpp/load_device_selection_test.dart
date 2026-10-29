@@ -13,6 +13,7 @@ final _igpuType = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
 
 const _none = 0;
 const _layer = 1;
+const _row = 2;
 const _tensor = 3;
 
 const _vulkan11 = 1 << 22 | 1 << 12;
@@ -57,6 +58,7 @@ void main() {
   test('split modes match the llama_split_mode values', () {
     expect(llama_split_mode.LLAMA_SPLIT_MODE_NONE.value, _none);
     expect(llama_split_mode.LLAMA_SPLIT_MODE_LAYER.value, _layer);
+    expect(llama_split_mode.LLAMA_SPLIT_MODE_ROW.value, _row);
     expect(llama_split_mode.LLAMA_SPLIT_MODE_TENSOR.value, _tensor);
   });
 
@@ -647,6 +649,64 @@ void main() {
           '"Mali-G52" (Vulkan0) reports driver API 1.3 with loader API 1.1',
         ),
       );
+    });
+  });
+
+  group('rowSplitUnsupportedReason', () {
+    final sycl0 = _device('SYCL0');
+    final sycl1 = _device('SYCL1');
+    final vulkan0 = _device('Vulkan0');
+
+    String? reason(
+      List<GgmlDeviceEntry> devices, {
+      int splitMode = _row,
+      Set<String> withSplitBuffers = const {'SYCL'},
+      List<String>? probed,
+    }) => rowSplitUnsupportedReason(
+      splitMode: splitMode,
+      devices: devices,
+      hasSplitBufferType: (device) {
+        probed?.add(device.name);
+        return withSplitBuffers.contains(device.registry);
+      },
+    );
+
+    test('is null when every model device has split buffers', () {
+      expect(reason([sycl0, sycl1]), isNull);
+    });
+
+    test('names the first model device whose backend has none', () {
+      final probed = <String>[];
+
+      expect(
+        reason([sycl0, vulkan0, _device('Vulkan1')], probed: probed),
+        allOf(contains('Vulkan0 (Vulkan)'), isNot(contains('Vulkan1'))),
+      );
+      expect(probed, ['SYCL0', 'Vulkan0']);
+    });
+
+    test('probes the CPU device of a list as llama.cpp does', () {
+      expect(reason([_cpu]), contains('CPU (CPU)'));
+    });
+
+    test('names a device without a registry name on its own', () {
+      expect(
+        reason([_device('GPU0', registry: '')]),
+        allOf(contains('GPU0'), isNot(contains('GPU0 ('))),
+      );
+    });
+
+    test('is null without model devices, which llama.cpp never probes', () {
+      expect(reason(const []), isNull);
+    });
+
+    test('probes nothing in another split mode', () {
+      for (final mode in [_none, _layer, _tensor]) {
+        final probed = <String>[];
+
+        expect(reason([vulkan0], splitMode: mode, probed: probed), isNull);
+        expect(probed, isEmpty);
+      }
     });
   });
 }

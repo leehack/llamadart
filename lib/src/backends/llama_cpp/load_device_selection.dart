@@ -47,6 +47,7 @@ final int _typeAccel =
 final int _typeGpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value;
 final int _typeIgpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
 final int _splitNone = llama_split_mode.LLAMA_SPLIT_MODE_NONE.value;
+final int _splitRow = llama_split_mode.LLAMA_SPLIT_MODE_ROW.value;
 final int _splitTensor = llama_split_mode.LLAMA_SPLIT_MODE_TENSOR.value;
 
 /// Whether llama.cpp clears the model's GPU device list for this placement.
@@ -108,6 +109,32 @@ List<GgmlDeviceEntry> selectModelDevices({
   return mainGpu >= 0 && mainGpu < devices.length
       ? [devices[mainGpu]]
       : const <GgmlDeviceEntry>[];
+}
+
+/// Why llama.cpp cannot load in [splitMode] row on the model [devices]
+/// (`selectModelDevices`, or the list the load passes), or `null` when it can
+/// or [splitMode] is not row.
+///
+/// Mirrors `make_gpu_buft_list` (`src/llama-model.cpp`): in row split mode
+/// llama.cpp fails the load of a model device, the CPU of a CPU list
+/// included, whose backend registry does not export
+/// `ggml_backend_split_buffer_type`. [hasSplitBufferType] probes that.
+String? rowSplitUnsupportedReason({
+  required int splitMode,
+  required List<GgmlDeviceEntry> devices,
+  required bool Function(GgmlDeviceEntry device) hasSplitBufferType,
+}) {
+  if (splitMode != _splitRow) return null;
+  for (final device in devices) {
+    if (hasSplitBufferType(device)) continue;
+    final named = device.registry.isEmpty
+        ? device.name
+        : '${device.name} (${device.registry})';
+    return 'it needs llama.cpp split buffer types '
+        '(ggml_backend_split_buffer_type) on every model device, and the '
+        'backend of $named provides none';
+  }
+  return null;
 }
 
 /// What a model load does about selected Vulkan devices ggml-vulkan cannot
