@@ -22,6 +22,7 @@ import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
+import 'package:llamadart/src/core/template/handlers/deepseek_r1_handler.dart';
 import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
 import 'package:llamadart/src/core/template/handlers/gpt_oss_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
@@ -1685,6 +1686,77 @@ void main() {
     );
   });
 
+  test('required tool grammars accept recorded model emissions', () {
+    final fixture =
+        jsonDecode(
+              File(
+                'test/fixtures/required_tool_emissions/'
+                'required_tool_emissions.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final tool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Returns current weather for a city.',
+      parameters: [ToolParam.string('location', description: 'City name')],
+      handler: (_) async => null,
+    );
+    for (final raw in fixture['cases'] as List<dynamic>) {
+      final fixtureCase = raw as Map<String, dynamic>;
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          fixtureCase['template'] as String,
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Call get_weather with location Seoul.',
+          ),
+        ],
+        metadata: const {},
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+        enableThinking: false,
+      );
+      final emission = fixtureCase['emission'] as String;
+      final escapedNewline = emission.replaceAll('\n{', r'\n{');
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [emission],
+        invalid: [
+          fixtureCase['base_emission'] as String,
+          if (escapedNewline != emission) escapedNewline,
+        ],
+      );
+    }
+  });
+
+  test('DeepSeek R1 grammar takes one call unless calls are parallel', () {
+    const call =
+        '<｜tool▁calls▁begin｜>function<｜tool▁sep｜>weather\n```json\n'
+        '{"city": "Seoul"}```<｜tool▁call▁end｜>';
+    const end = '<｜tool▁calls▁end｜>';
+    final twoCalls = '$call${call.substring(call.indexOf('function'))}$end';
+    for (final parallel in [false, true]) {
+      final rendered = DeepseekR1Handler().render(
+        templateSource: '{{ messages[0]["content"] }}',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: {internalParallelToolCallsMetadataKey: '$parallel'},
+        tools: [_weatherWithCityTool],
+        enableThinking: false,
+      );
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: ['$call$end', if (parallel) twoCalls],
+        invalid: [if (!parallel) twoCalls],
+      );
+    }
+  });
+
   test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {
     final rendered = ChatTemplateEngine.render(
       templateSource: File(
@@ -1705,12 +1777,13 @@ void main() {
     expect(rendered.grammarLazy, isFalse);
     const call =
         '<|tool_call_start|>[{"name": "weather", '
-        '"arguments": {"city": "Seoul"}, "id": "call_0"}]<|tool_call_end|>';
+        '"arguments": {"city": "Seoul"}}]<|tool_call_end|>';
     _expectGrammar(
       validator,
       rendered.grammar!,
       valid: [call],
       invalid: [
+        call.replaceFirst('}}]', '}, "id": "call_0"}]'),
         call.replaceFirst('"weather"', '"unknown"'),
         call.replaceFirst('"city"', '"town"'),
         call.replaceFirst('"Seoul"', '1'),
@@ -1720,6 +1793,45 @@ void main() {
       ],
     );
   });
+
+  test(
+    'Firefunction v2 required tool grammar leaves the call id undeclared',
+    () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/'
+          'fireworks-ai-llama-3-firefunction-v2.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Weather in Seoul?',
+          ),
+        ],
+        metadata: const {},
+        tools: [_weatherWithCityTool],
+        toolChoice: ToolChoice.required,
+      );
+
+      expect(rendered.format, ChatFormat.firefunctionV2.index);
+      expect(rendered.grammarLazy, isFalse);
+      // The call as llama.cpp's test-chat emits it and the template renders it.
+      const call =
+          ' functools[{"name": "weather", "arguments": {"city": "Seoul"}}]';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [call, call.substring(' functools'.length)],
+        invalid: [
+          call.replaceFirst('}}]', '}, "id": "call_0"}]'),
+          call.replaceFirst('"weather"', '"unknown"'),
+          call.replaceFirst('"city"', '"town"'),
+          call.substring(0, call.length - 1),
+          'No tool',
+        ],
+      );
+    },
+  );
   test(
     'canonical JSON schema grammar enforces nullable enums and containers',
     () {

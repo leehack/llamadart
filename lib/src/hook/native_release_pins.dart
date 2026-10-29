@@ -16,7 +16,7 @@ const llamaCppTag = 'v0.7.0-3';
 /// `MAJOR.MINOR`, and its own minor's first release otherwise. The native pin
 /// sync sets it to the companion's next release whenever it moves the
 /// companion pin.
-const llamaCppAppleCompanionVersion = '0.16.1';
+const llamaCppAppleCompanionVersion = '0.17.0';
 
 /// Earlier `leehack/llamadart-native` tags that a published Apple llama.cpp
 /// companion pins and the build still accepts, each mapped to what its
@@ -250,7 +250,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 const stableDiffusionReleaseTag = 'v0.3.0-1';
 
 /// First Apple companion release containing [stableDiffusionReleaseTag].
-const stableDiffusionAppleCompanionVersion = '0.16.1';
+const stableDiffusionAppleCompanionVersion = '0.17.0';
 
 /// Explicitly qualified older Apple SD pins that preserve existing app locks.
 ///

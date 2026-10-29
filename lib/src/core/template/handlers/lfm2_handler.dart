@@ -241,7 +241,6 @@ class Lfm2Handler extends ChatTemplateHandler {
       tools: tools,
       prefix: '<|tool_call_start|>',
       suffix: '<|tool_call_end|>',
-      idKey: 'id',
       allowParallelToolCalls: false,
     );
   }

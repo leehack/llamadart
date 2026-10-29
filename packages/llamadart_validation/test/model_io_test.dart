@@ -31,6 +31,7 @@ class SlowModelClient extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (closed) throw http.ClientException('Client is already closed');
     body.add([1, 2]);
     return http.StreamedResponse(body.stream, 200);
   }
@@ -237,9 +238,129 @@ void main() {
     final cancel = Timer(const Duration(milliseconds: 20), client.close);
     addTearDown(cancel.cancel);
     await expectLater(
-      prepareModel(profile, cache, client: client),
+      prepareModel(
+        profile,
+        cache,
+        client: client,
+        retryDelays: const [Duration.zero],
+      ),
       throwsA(isA<http.ClientException>()),
     );
     expect(cache.listSync(recursive: true).whereType<File>(), isEmpty);
+  });
+
+  group('dropped connections', () {
+    const noWait = [Duration.zero, Duration.zero];
+
+    MockClient serving(
+      List<http.BaseRequest> requests,
+      List<int> Function(int attempt, int? rangeStart) body, {
+      bool honorRange = true,
+      int dropAfter = 5,
+    }) => MockClient.streaming((request, _) async {
+      requests.add(request);
+      final attempt = requests.length;
+      final range = request.headers['Range'];
+      final start = range == null
+          ? null
+          : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+      final resumed = honorRange && start != null;
+      final chunk = body(attempt, resumed ? start : null);
+      Stream<List<int>> stream() async* {
+        if (attempt == 1) {
+          yield chunk.sublist(0, dropAfter);
+          throw http.ClientException('Connection closed while receiving data');
+        }
+        yield chunk;
+      }
+
+      return http.StreamedResponse(
+        stream(),
+        resumed ? 206 : 200,
+        headers: resumed
+            ? {
+                'content-range':
+                    'bytes $start-${bytes.length - 1}/${bytes.length}',
+              }
+            : const {},
+      );
+    });
+
+    test('resume with a Range request after the connection drops', () async {
+      final requests = <http.BaseRequest>[];
+      final client = serving(
+        requests,
+        (attempt, start) => start == null ? bytes : bytes.sublist(start),
+      );
+
+      final prepared = await prepareModel(
+        profile,
+        cache,
+        client: client,
+        retryDelays: noWait,
+      );
+
+      expect(prepared.evidence['verified'], isTrue);
+      expect(File(prepared.path).readAsBytesSync(), bytes);
+      expect(requests, hasLength(2));
+      expect(requests.first.headers.containsKey('Range'), isFalse);
+      expect(requests.last.headers['Range'], 'bytes=5-');
+    });
+
+    test('restart from zero when the server ignores Range', () async {
+      final requests = <http.BaseRequest>[];
+      final client = serving(
+        requests,
+        (attempt, start) => bytes,
+        honorRange: false,
+      );
+
+      final prepared = await prepareModel(
+        profile,
+        cache,
+        client: client,
+        retryDelays: noWait,
+      );
+
+      expect(File(prepared.path).readAsBytesSync(), bytes);
+      expect(requests.last.headers['Range'], 'bytes=5-');
+    });
+
+    test('give up after the bounded number of retries', () async {
+      var calls = 0;
+      final client = MockClient.streaming((request, _) async {
+        calls++;
+        return http.StreamedResponse(
+          Stream<List<int>>.error(
+            http.ClientException('Connection closed while receiving data'),
+          ),
+          200,
+        );
+      });
+
+      await expectLater(
+        prepareModel(profile, cache, client: client, retryDelays: noWait),
+        throwsA(isA<http.ClientException>()),
+      );
+      expect(calls, noWait.length + 1);
+      expect(cache.listSync(recursive: true).whereType<File>(), isEmpty);
+    });
+
+    test('retry a server error but not a missing model', () async {
+      for (final (status, expected) in [(503, 3), (404, 1)]) {
+        var calls = 0;
+        final client = MockClient((_) async {
+          calls++;
+          return http.Response('', status);
+        });
+
+        await expectLater(
+          prepareModel(profile, cache, client: client, retryDelays: noWait),
+          throwsA(isA<HttpException>()),
+          reason: '$status',
+        );
+        expect(calls, expected, reason: '$status');
+      }
+    });
   });
 }

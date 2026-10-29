@@ -104,7 +104,8 @@ selects Vulkan, which it does by default; set
 Flutter iOS and macOS apps should also add the companion package, which links
 the runtime's XCFramework through Swift Package Manager and selects the
 runtime on those platforms by itself, adding about 37 MB per Apple target.
-Pair `0.16.0` with core `0.16.x`, `0.15.2` with core `>=0.15.2 <0.16.0`,
+Pair `0.17.0` with core `0.17.x`, `0.16.0` with core `0.16.x`, `0.15.2` with
+core `>=0.15.2 <0.16.0`,
 `0.14.0` with core `0.14.x`, `0.13.0` with core
 `0.13.x`, `0.0.3` with core
 `0.12.2`, `0.12.1` and
@@ -112,7 +113,7 @@ Pair `0.16.0` with core `0.16.x`, `0.15.2` with core `>=0.15.2 <0.16.0`,
 
 ```yaml
 dependencies:
-  llamadart_stable_diffusion_flutter: ^0.16.0
+  llamadart_stable_diffusion_flutter: ^0.17.0
 ```
 
 Without it, `all` leaves the image runtime out of a Flutter iOS or macOS app
@@ -808,8 +809,9 @@ weights (`total params memory size` in its debug log) and compares pixels
 with the default placement. A module moved to the CPU leaves the Metal-only
 FLUX.1 Kontext recipe unqualified (`supportsReferenceImageEditing` is
 `false`). The [memory check](#memory-check) counts every weight against the
-device whatever the placement. Vulkan, two-GPU hosts and the larger models
-the setting is for (FLUX, SD 3.5, Z-Image) have not been measured yet.
+device whatever the placement. Placement was measured with SD-Turbo on one
+Linux x64 Vulkan Tesla T4 too; two-GPU hosts and the larger models the setting
+is for (FLUX, SD 3.5, Z-Image) have not been measured yet.
 
 ## Seamless textures
 

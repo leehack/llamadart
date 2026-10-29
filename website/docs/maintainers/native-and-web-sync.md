@@ -294,6 +294,13 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+Core `0.17.0` preparation pairs all three Apple companions at `0.17.0`, with
+SwiftPM pins `v0.7.0-3`, `v0.18.1-4` and `v0.3.0-1`, and constrains them to
+`llamadart: '>=0.17.0 <0.18.0'`. Core `0.17.0` lists no earlier llama.cpp or
+SD companion pins, so a git or path override that keeps a `0.16.0` llama.cpp
+or SD companion fails its build; the LiteRT-LM pin is unchanged from companion
+`0.16.2`.
+
 Core `0.16.2` preparation moves LiteRT-LM to `v0.18.1-4`, which ships the
 Visual C++ runtime in the Windows bundle and makes Linux and Windows CPU
 inference honour the thread count, and pairs it with

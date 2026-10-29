@@ -197,8 +197,8 @@ class ChatTemplateEngine {
         throw LlamaUnsupportedException(
           'LlamaToolResultContent.content is not qualified for '
           '$effectiveFormat chat templates. Only Hermes-style <tool_call> '
-          'templates, qualified on Qwen3-VL, render it; return a text or JSON '
-          'result without content for this template.',
+          'templates, smoke-tested with the Qwen3-VL template, render it; '
+          'return a text or JSON result without content for this template.',
         );
       }
     }

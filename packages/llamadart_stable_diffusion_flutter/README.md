@@ -13,15 +13,15 @@ writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
 The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
 show but plain `flutter build` and `flutter run` output does not.
 
-Pair companion `0.16.0` with core `0.16.x`, `0.15.2` with core `>=0.15.2 <0.16.0`, `0.14.0` with core `0.14.x`, `0.13.0` with
+Pair companion `0.17.0` with core `0.17.x`, `0.16.0` with core `0.16.x`, `0.15.2` with core `>=0.15.2 <0.16.0`, `0.14.0` with core `0.14.x`, `0.13.0` with
 core `0.13.x`, and `0.0.3` with core `0.12.2`,
 `0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core `0.10.0`; older cores,
 including `0.9.x`, ignore it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.5
-  llamadart_stable_diffusion_flutter: ^0.16.0
+  llamadart: ^0.17.0
+  llamadart_stable_diffusion_flutter: ^0.17.0
 ```
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
@@ -36,9 +36,11 @@ This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.3.0-1`.
-Its `sd_ctx_params_t` is larger than in earlier runtimes, so core `0.16.0`
-and later reject companions pinning an earlier runtime, and `0.15.x` cores
-reject this one: upgrade the core and this package together.
+Core `0.17.0` and later reject companions pinning an earlier runtime, such as
+`0.16.0` (`v0.3.0`), which aborts on FP8 weights on Metal that this core loads
+there. Since `v0.3.0`, `sd_ctx_params_t` is larger than in earlier runtimes, so
+`0.15.x` cores reject this one too: upgrade the core and this package
+together.
 
 Apps bound for the App Store should use this package: an Apple privacy
 manifest for the stable-diffusion.cpp runtime ships inside this XCFramework,

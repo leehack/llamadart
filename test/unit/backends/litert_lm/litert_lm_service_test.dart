@@ -105,34 +105,44 @@ void main() {
         expect(await stream, [utf8.encode('{}')]);
       },
     );
+    final hostHasGpu = liteRtLmAvailableNativeBackendsForCurrentPlatform()
+        .contains('gpu');
     for (final excluded in ['host', 'delegate', 'family', 'template']) {
-      test('rejects unqualified $excluded before native admission', () async {
-        service.dispose();
-        service = LiteRtLmService(
-          clientFactory: () => client,
-          jsonSchemaPlatformSupported: () => excluded != 'host',
-        );
-        final selected = excluded == 'delegate'
-            ? const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu)
-            : excluded == 'template'
-            ? const ModelParams(
-                liteRtLmBackend: LiteRtLmBackendPreference.cpu,
-                chatTemplate: '{{ messages }}',
-              )
-            : params;
-        await service.loadModel(
-          excluded == 'family'
-              ? modelFile.path
-              : '${tempDir.path}/Qwen3-0.6B.litertlm',
-          selected,
-        );
-        await expectLater(
-          service.prepareJsonSchemaChat(),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-        expect(client.createConversationCount, 0);
-        expect(client.generateCount, 0);
-      });
+      test(
+        'rejects unqualified $excluded before native admission',
+        skip: excluded == 'delegate' && !hostHasGpu
+            ? 'needs a host with a LiteRT-LM GPU backend to select the delegate'
+            : null,
+        () async {
+          service.dispose();
+          service = LiteRtLmService(
+            clientFactory: () => client,
+            jsonSchemaPlatformSupported: () => excluded != 'host',
+          );
+          final selected = excluded == 'delegate'
+              ? const ModelParams(
+                  liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+                )
+              : excluded == 'template'
+              ? const ModelParams(
+                  liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+                  chatTemplate: '{{ messages }}',
+                )
+              : params;
+          await service.loadModel(
+            excluded == 'family'
+                ? modelFile.path
+                : '${tempDir.path}/Qwen3-0.6B.litertlm',
+            selected,
+          );
+          await expectLater(
+            service.prepareJsonSchemaChat(),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(client.createConversationCount, 0);
+          expect(client.generateCount, 0);
+        },
+      );
     }
     test('missing optional API never admits or starts generation', () async {
       client.jsonSchemaSupport = false;

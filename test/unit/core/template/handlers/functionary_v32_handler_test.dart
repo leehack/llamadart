@@ -1,8 +1,23 @@
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/functionary_v32_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('FunctionaryV32Handler', () {
+    test('grammar ends the function name with a GBNF newline', () {
+      final grammar = FunctionaryV32Handler().buildGrammar([
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city', required: true)],
+          handler: (_) async => null,
+        ),
+      ]);
+
+      expect(grammar, contains(r'tool-0-call ::= "get_weather\n" tool-0-args'));
+    });
+
     test('parses JSON tool calls with >>>name markers', () {
       final handler = FunctionaryV32Handler();
       final parsed = handler.parse('>>>weather\n{"city":"Seoul"}');

@@ -7,6 +7,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/deepseek_r1_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -163,6 +164,69 @@ void main() {
     );
     expect(malformedBlock.toolCalls, isEmpty);
     expect(malformedBlock.content, contains('<｜tool▁calls▁begin｜>'));
+  });
+
+  test('DeepseekR1Handler grammar matches llama.cpp call framing', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ];
+    String grammar({required bool parallel}) => DeepseekR1Handler()
+        .render(
+          templateSource: '{{ messages[0]["content"] }}',
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ],
+          metadata: {internalParallelToolCallsMetadataKey: '$parallel'},
+          tools: tools,
+        )
+        .grammar!;
+
+    final single = grammar(parallel: false);
+    expect(
+      single,
+      contains(r'"function<｜tool▁sep｜>get_weather\n```json\n" tool-0-args'),
+    );
+    expect(single, contains(' space tool-call "<｜tool▁calls▁end｜>"'));
+    expect(
+      grammar(parallel: true),
+      contains(' space tool-call+ "<｜tool▁calls▁end｜>"'),
+    );
+  });
+
+  test('DeepseekR1Handler.buildGrammar takes parallel calls, like the other '
+      'context-free handler grammars', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ];
+    final handler = DeepseekR1Handler();
+    final parallel = handler
+        .render(
+          templateSource: '{{ messages[0]["content"] }}',
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ],
+          metadata: const {internalParallelToolCallsMetadataKey: 'true'},
+          tools: tools,
+        )
+        .grammar;
+
+    expect(handler.buildGrammar(tools), parallel);
+    expect(
+      handler.buildGrammar(tools),
+      contains(' space tool-call+ "<｜tool▁calls▁end｜>"'),
+    );
+    expect(handler.buildGrammar(null), isNull);
+    expect(handler.buildGrammar(const []), isNull);
   });
 }
 

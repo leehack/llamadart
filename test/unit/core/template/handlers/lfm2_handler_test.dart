@@ -68,6 +68,13 @@ void main() {
       renderedWithRequiredChoice.grammar,
       contains('"<|tool_call_start|>"'),
     );
+    expect(
+      renderedWithRequiredChoice.grammar,
+      contains(
+        'root-item ::= "{" space root-item-name-kv "," space '
+        'root-item-arguments-kv "}" space',
+      ),
+    );
     expect(renderedWithRequiredChoice.grammarLazy, isFalse);
     expect(renderedWithRequiredChoice.grammarTriggers, hasLength(1));
 
