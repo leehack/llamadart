@@ -2367,10 +2367,17 @@ Future<Directory> _acquireBundleDirectory({
   }
 
   if (cachedLibraryPaths.isNotEmpty) {
-    log.warning(
-      'Cached native bundle at ${extractedDir.path} is incomplete or does not '
-      'match its archive; refreshing: $bundle',
-    );
+    if (nativeExtractionMarkerFile(extractedDir).existsSync()) {
+      log.warning(
+        'Cached native bundle at ${extractedDir.path} is incomplete or does '
+        'not match its archive; refreshing: $bundle',
+      );
+    } else {
+      log.info(
+        'Cached native bundle at ${extractedDir.path} has no extraction '
+        'record, as an older hook cached it; refreshing: $bundle',
+      );
+    }
     if (extractedDir.existsSync()) {
       await extractedDir.delete(recursive: true);
     }

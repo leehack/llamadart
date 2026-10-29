@@ -42,7 +42,8 @@ Future<void> writeNativeExtractionMarker({
 ///
 /// An archive whose size and modification time match the marker is not
 /// hashed again; one whose modification time differs must hash to the
-/// recorded SHA-256.
+/// recorded SHA-256, and then the marker takes the new modification time so
+/// the next build does not hash it again.
 Future<bool> nativeExtractionMatchesArchive({
   required Directory extractedDir,
   required File archive,
@@ -72,7 +73,13 @@ Future<bool> nativeExtractionMatchesArchive({
     final stat = await archive.stat();
     if (stat.size != size) return false;
     if (stat.modified.millisecondsSinceEpoch == modified) return true;
-    return await fileSha256(archive) == sha256;
+    if (await fileSha256(archive) != sha256) return false;
+    await writeNativeExtractionMarker(
+      extractedDir: extractedDir,
+      archive: archive,
+      archiveSha256: sha256,
+    );
+    return true;
   }
   return false;
 }

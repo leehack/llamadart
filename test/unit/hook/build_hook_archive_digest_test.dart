@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -837,7 +838,44 @@ void main() {
       final libraries = await buildOffline(log: log);
 
       expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
-      expect(log, contains(contains('does not match its archive')));
+      expect(
+        log,
+        contains(
+          allOf(contains('WARNING'), contains('does not match its archive')),
+        ),
+      );
+    });
+
+    test('with a marker is not re-extracted unverified offline', () async {
+      await buildOnline();
+      await File(path.join(overrideCacheDir.path, 'SHA256SUMS')).delete();
+      File(
+        path.join(extractedDir.path, 'libllamadart.so'),
+      ).writeAsStringSync('fake-libllamadart.so');
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      await expectLater(
+        _runHook(project, offline, tag: _overrideTag),
+        throwsA(isA<NativeArchiveDigestException>()),
+      );
+      expect(offline.requests, [overrideSumsUrl]);
+    });
+
+    test('from before markers without its archive is downloaded again, '
+        'logging no warning', () async {
+      await seedLegacy(withSums: true);
+      await cachedArchive.delete();
+      final log = await _captureLog(buildOnline);
+
+      expect(
+        log,
+        contains(contains('has no extraction record, as an older hook')),
+      );
+      expect(
+        log,
+        isNot(contains(allOf(contains('WARNING'), contains('Cached native')))),
+      );
+      expect(marker, _exists);
     });
 
     test('with an added library is extracted again', () async {
@@ -892,12 +930,78 @@ void main() {
 
           expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
           expect(marker, _exists);
+          expect(
+            jsonDecode(marker.readAsStringSync()),
+            containsPair(
+              'archive',
+              containsPair('sha256', sha256.convert(archive).toString()),
+            ),
+          );
           final log = <String>[];
           await buildOffline(log: log);
           expect(log, contains(contains('Using cached native bundle:')));
         },
       );
     }
+
+    test('from before markers of the pinned release is not re-extracted '
+        'from an archive that differs from its pin', () async {
+      final pinnedCacheDir = Directory(
+        path.join(nativeBundlesDir, llamaCppTag, _bundle),
+      );
+      final pinnedExtracted = Directory(
+        path.join(pinnedCacheDir.path, 'extracted'),
+      );
+      await pinnedExtracted.create(recursive: true);
+      for (final library in _llamaLibraries) {
+        await File(
+          path.join(pinnedExtracted.path, library),
+        ).writeAsString('legacy-$library');
+      }
+      final pinnedArchive = File(
+        path.join(pinnedCacheDir.path, archiveName(llamaCppTag)),
+      );
+      await pinnedArchive.writeAsBytes(_archive('tampered'));
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      await expectLater(
+        _runHook(project, offline),
+        throwsA(isA<OfflineFixtureException>()),
+      );
+      expect(offline.requests, [defaultArchiveUrl]);
+      expect(pinnedArchive, isNot(_exists));
+    });
+
+    test('from before markers is not re-extracted from an archive that '
+        'extracts incomplete', () async {
+      final cacheDir = windowsOverrideCacheDir;
+      final windowsExtracted = Directory(path.join(cacheDir.path, 'extracted'));
+      await windowsExtracted.create(recursive: true);
+      for (final library in _windowsLibraries) {
+        await File(
+          path.join(windowsExtracted.path, library),
+        ).writeAsString('legacy-$library');
+      }
+      await File(
+        path.join(
+          cacheDir.path,
+          'llamadart-native-windows-x64-$_overrideTag.tar.gz',
+        ),
+      ).writeAsBytes(_archive('stale', libraries: _windowsCudaLibraries));
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      await expectLater(
+        _runHook(
+          project,
+          offline,
+          tag: _overrideTag,
+          targetOS: OS.windows,
+          targetArchitecture: Architecture.x64,
+        ),
+        throwsA(isA<NativeArchiveDigestException>()),
+      );
+      expect(offline.requests, [overrideSumsUrl]);
+    });
   });
 
   test(

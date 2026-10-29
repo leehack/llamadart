@@ -98,6 +98,17 @@ void main() {
     expect(await matches(), isTrue);
   });
 
+  test('the same archive with a new modification time is not hashed again '
+      'by the next build', () async {
+    final modified = DateTime(2001);
+    archive.setLastModifiedSync(modified);
+    expect(await matches(), isTrue);
+
+    archive.writeAsBytesSync([4, 3, 2, 1]);
+    archive.setLastModifiedSync(modified);
+    expect(await matches(), isTrue);
+  });
+
   test('a missing archive, marker or extraction does not match', () async {
     archive.renameSync('${archive.path}.moved');
     expect(await matches(), isFalse);
