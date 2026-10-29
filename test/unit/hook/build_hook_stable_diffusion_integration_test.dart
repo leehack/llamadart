@@ -867,12 +867,16 @@ dependencies:
     });
   }
 
-  for (final (core, constraint) in [
-    ('0.16.0', '^$stableDiffusionAppleCompanionVersion'),
-    ('0.16.1', '^$stableDiffusionAppleCompanionVersion'),
-  ]) {
-    final requirement =
-        'Depend on `llamadart_stable_diffusion_flutter: $constraint`';
+  // A core names the first pinning companion only within that companion's
+  // minor, and release prep moves both to a new minor together.
+  final companionMinor = stableDiffusionAppleCompanionVersion.substring(
+    0,
+    stableDiffusionAppleCompanionVersion.lastIndexOf('.'),
+  );
+  for (final core in ['$companionMinor.0', '$companionMinor.1']) {
+    const requirement =
+        'Depend on `llamadart_stable_diffusion_flutter: '
+        '^$stableDiffusionAppleCompanionVersion`';
     test('core $core: the stable_diffusion companion rejection names the '
         'first compatible companion release', () async {
       final defines = await _flutterAppleApp(

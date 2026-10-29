@@ -97,8 +97,8 @@ It adds no Web image runtime or approximate sampling cache. See
 
 Image module placement (`ImageModelPlacement`: text encoders or VAE on the
 CPU, `maxGpuMemoryGiB`, `autoFit`) applies to Metal and Vulkan engines and is
-measured with SD-Turbo on macOS arm64 Metal only; Vulkan and multi-GPU hosts
-have no evidence yet. A CPU engine (Android, the CPU builds,
+measured with SD-Turbo on macOS arm64 Metal and on one Linux x64 Vulkan Tesla
+T4; multi-GPU hosts have no evidence yet. A CPU engine (Android, the CPU builds,
 `ComputeDevice.cpu`) and the Web throw `LlamaUnsupportedException`, as does
 `maxGpuMemoryGiB` on Vulkan without a discrete GPU. See
 [Module placement](../guides/image-generation#module-placement-and-gpu-memory).
@@ -201,7 +201,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
 | Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings off macOS arm64, iOS arm64 and Android arm64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
-| GPU device list and split (`gpuDevices`, `tensorSplit`) | Devices of one backend by `listGpuDevices` index, with proportions; validated on one Metal GPU; multi-GPU hosts have no hardware evidence and CUDA is not hardware-qualified ([#916](https://github.com/leehack/llamadart/issues/916)) | No | No | No |
+| GPU device list and split (`gpuDevices`, `tensorSplit`) | Devices of one backend by `listGpuDevices` index, with proportions; validated on one Metal GPU and a Vulkan Tesla T4 (two-device paths with Mesa lavapipe as the second device); two-GPU hardware has no evidence and CUDA is not hardware-qualified ([#916](https://github.com/leehack/llamadart/issues/916)) | No | No | No |
 | Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.18.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
 | Strict `responseFormat` | Yes | Yes, without tools | macOS arm64 CPU, admitted canonical Qwen3 text model; scalar object schema subset, thinking disabled, no tools/media/speculation/caller stops | No |
@@ -228,7 +228,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes throw before generation | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
-| Tool-result media | Images with a vision projector and a Hermes-style template (qualified on Qwen3-VL) | No | No | No |
+| Tool-result media | Images with a vision projector and a Hermes-style template (smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template) | No | No | No |
 
 Tool-result media are `LlamaToolResultContent.content` parts;
 `LlamaEngineCapabilities.toolResultMedia` reports them. Other formats, audio,

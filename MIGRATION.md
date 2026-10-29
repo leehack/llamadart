@@ -2,9 +2,16 @@
 
 This document covers the major breaking upgrade paths.
 
-<a id="unreleased-optional-lora-multimodal-backend-capabilities"></a>
+<a id="016x-to-0170-upgrade-guide"></a>
 
-## Unreleased: optional LoRA and multimodal backend capabilities
+## `0.16.x` -> `0.17.0`: upgrade guide
+
+Upgrade core and every Apple companion used by the app to `0.17.x` together.
+Companions now constrain core to `'>=0.17.0 <0.18.0'`. The llama.cpp and
+stable_diffusion companions move to `v0.7.0-3` and `v0.3.0-1`; LiteRT-LM keeps
+`v0.18.1-4`.
+
+### Optional LoRA and multimodal backend capabilities
 
 Custom backends and backend test fakes only. `LlamaBackend` no longer
 declares `setLoraAdapter`, `removeLoraAdapter`, `clearLoraAdapters`,
@@ -34,9 +41,7 @@ When the selected runtime, such as LiteRT-LM, lacks one, they throw
 not supported by the active Web runtime."). `LiteRtLmBackend` implements
 neither.
 
-<a id="unreleased-image-model-role-controlnet"></a>
-
-## Unreleased: `ImageModelRole.controlNet`
+### `ImageModelRole.controlNet`
 
 `ImageModelRole` gains `controlNet`. A `switch` over `ImageModelRole` without
 a default case no longer compiles; add the case or a default. A file whose
@@ -46,12 +51,30 @@ failing classification: outside the bounded SD 1.x macOS CPU recipe,
 `LlamaModelException`. A ControlNet loaded with no file holding diffusion
 weights (for example, alone) still throws `LlamaModelException`.
 
-<a id="unreleased-stable-diffusion-v0-3-0-1"></a>
+### Thinking follows llama-server on more templates
 
-## Unreleased: stable_diffusion native runtime `v0.3.0-1`
+`enableThinking`, which defaults to `true`, now reaches every chat template as
+`enable_thinking`, including `responseFormat` and tool-call requests, so
+templates such as GLM-4.6, Apertus and DeepSeek-R1 distills render thinking
+as llama-server does: Apertus now deliberates and DeepSeek-R1 distills open a
+thought unless the request passes `enableThinking: false`. A boolean
+`enable_thinking` or `thinking` in `chatTemplateKwargs` now overrides
+`enableThinking`. With thinking off, `<think>` blocks that DeepSeek V3.1,
+Qwen3, QwQ and Qwen3.5 write stay in the content instead of being dropped.
+
+### llama.cpp native runtime `v0.7.0-3`
+
+The hook and the llama.cpp Apple companion source pin `v0.7.0-3`. A Flutter
+iOS or macOS build needs companion `0.17.0`, which pins it; a companion
+pinning `v0.7.0-2` or earlier fails with `Incompatible Apple llama.cpp
+companion`. Apps that depend on a published companion hit pub resolution
+first, because companions before `0.17.0` constrain `llamadart` below
+`0.17.0`.
+
+### stable_diffusion native runtime `v0.3.0-1`
 
 The hook and the stable_diffusion Apple companion source pin `v0.3.0-1`. A
-Flutter iOS or macOS build needs the companion release that pins it; a
+Flutter iOS or macOS build needs companion `0.17.0`, which pins it; a
 companion pinning `v0.3.0` fails with `Incompatible Apple stable_diffusion
 companion`, because that runtime aborts on FP8 weights on Metal, which this
 core now loads there. Upgrade core and companion together.

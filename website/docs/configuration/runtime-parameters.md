@@ -70,8 +70,9 @@ Important fields:
   A speculative draft model loads on the same devices and split, and
   decision heads and multimodal projectors run on the listed GPU `mainGpu`
   counts within the list, or the first one when it is out of range. Validated
-  on one Metal GPU only: multi-GPU loads have no hardware evidence yet, and
-  CUDA is not hardware-qualified.
+  on one Metal GPU and on a Vulkan Tesla T4, with Mesa lavapipe as the second
+  device for two-device lists and splits; two-GPU hardware has no evidence
+  yet, and CUDA is not hardware-qualified.
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());

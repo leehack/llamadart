@@ -99,7 +99,8 @@ description: >-
   `output` as `result` and its `content` as `content`, never the output
   itself as `result` (that throws `LlamaArgumentException`).
   Only native llama.cpp with a vision projector and a Hermes-style template
-  (qualified on Qwen3-VL) takes it; other formats, runtimes, audio, video and
+  (smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a
+  `qwen3vl_merger` projector and the Qwen3-VL template) takes it; other formats, runtimes, audio, video and
   URL-only images throw `LlamaUnsupportedException`.
 - With `ChatSession`, the assistant's tool calls are already in history; add
   the tool results with `session.addMessage(...)` and continue with

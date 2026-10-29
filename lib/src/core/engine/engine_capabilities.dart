@@ -165,7 +165,8 @@ class LlamaEngineCapabilities implements EngineCapabilities {
   /// loaded projector that reports vision, for a model whose chat template
   /// (`ModelParams.chatTemplate` or the model's own) is in a format
   /// qualified for tool-result content: Hermes-style `<tool_call>`
-  /// templates, qualified on Qwen3-VL. A request that renders through
+  /// templates, smoke-tested with the Qwen3-VL template and Qwen3.5-0.8B
+  /// weights. A request that renders through
   /// another format, such as a per-call `customTemplate` or a response
   /// schema with tools, still throws `LlamaUnsupportedException`, as does a
   /// template that does not render each media part once in the prompt.
