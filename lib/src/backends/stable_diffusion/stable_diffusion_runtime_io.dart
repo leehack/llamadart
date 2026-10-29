@@ -5,6 +5,7 @@ import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
 import '../../core/models/config/log_level.dart';
+import '../../platform/io/ios_simulator.dart';
 import '../windows_runtime_libraries.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 import 'stable_diffusion_calls.dart';
@@ -82,10 +83,13 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 /// of going to stderr, and the registration, which is not synchronized,
 /// never runs beside a device initialization.
 ///
-/// [abi], [readCpuInfo], [windowsHasAvx2], [missingWindowsLibraries] and
-/// [api] default to the host and the bundled library; tests replace them.
+/// [abi], [isIosSimulator], [readCpuInfo], [windowsHasAvx2],
+/// [missingWindowsLibraries] and [api] default to the host and the bundled
+/// library; tests replace them. [isIosSimulator] only labels messages:
+/// `Abi.iosArm64` is both the device and the arm64 simulator.
 StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   Abi? abi,
+  bool Function() isIosSimulator = isIosSimulatorProcess,
   String? Function() readCpuInfo = _readProcCpuInfo,
   bool Function() windowsHasAvx2 = _windowsHasAvx2,
   List<String> Function(List<String> names) missingWindowsLibraries =
@@ -94,7 +98,9 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   LlamaLogLevel logLevel = LlamaLogLevel.none,
 }) {
   final targetAbi = abi ?? Abi.current();
-  final platform = _abiLabel(targetAbi);
+  final platform = targetAbi == Abi.iosArm64 && isIosSimulator()
+      ? 'ios-arm64-sim'
+      : _abiLabel(targetAbi);
   if (!stableDiffusionPublishedAbis.contains(targetAbi)) {
     return StableDiffusionRuntimeStatus.unavailable(
       LlamaUnsupportedException(

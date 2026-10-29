@@ -59,6 +59,7 @@ For canonical full release notes, use:
 - A Seed-OSS reply to a prompt that opens the thought keeps a repeated `<seed:think>`, and any text before it, in the reasoning up to the first `</seed:think>`, as in llama.cpp, instead of dropping the tag, and a thinking tag inside a tool-call argument after that thought no longer drops the call.
 - Cohere2 MoE with `enableThinking: false` and a `reasoning: true` chat template kwarg ends its prompt with the template's own empty thought, without a trailing newline ([#1523](https://github.com/leehack/llamadart/issues/1523)).
 - Parse a reply as the engine does with `ChatTemplateEngine.parseRendered(rendered, output)`, which reads how its `render` or `engine.chatTemplate` result left the thought: after the stock Seed-OSS template, `Plan</seed:think>Sunny.` is content, as in llama-server, where `ChatTemplateEngine.parse` returns reasoning `Plan` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
+- The image runtime's "not bundled" and other load-failure reasons name `ios-arm64-sim` on the arm64 iOS simulator instead of the device target `ios-arm64` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
 - The installation guide and support matrix name `libCLiteRTLM_mac.dylib`, the library a sandboxed Flutter macOS app without the LiteRT-LM companion fails to load, instead of `libLiteRt.dylib` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
 
 ## 0.16.5

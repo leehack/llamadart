@@ -30,6 +30,33 @@ void main() {
       expect(status.loadsFp8AsF16OnMetal, isFalse);
     });
 
+    test('names the arm64 iOS simulator target, not the device, when the '
+        'runtime is not bundled', () {
+      String reasonOn({required bool simulator}) {
+        final status = probeStableDiffusionRuntime(
+          abi: Abi.iosArm64,
+          isIosSimulator: () => simulator,
+          api: _FakeApi(
+            error: ArgumentError(
+              "Couldn't resolve native function 'sd_version' in "
+              "'package:llamadart/stable_diffusion' : No asset with id "
+              "'package:llamadart/stable_diffusion' found.",
+            ),
+          ),
+        );
+        return status.unavailableReason!.message;
+      }
+
+      expect(
+        reasonOn(simulator: true),
+        contains('not bundled for ios-arm64-sim.'),
+      );
+      expect(
+        reasonOn(simulator: false),
+        contains('not bundled for ios-arm64.'),
+      );
+    });
+
     test('reports whether the runtime loads FP8 weights as F16 on Metal', () {
       for (final fp8Metal in [true, false]) {
         final status = probeStableDiffusionRuntime(
