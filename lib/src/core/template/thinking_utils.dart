@@ -12,13 +12,15 @@ typedef ThinkingExtraction = ({String content, String? reasoning});
 /// [startTag] is treated as reasoning (model may still be thinking).
 ///
 /// Escaped `\n` and `\r` in reasoning become a newline and a carriage return
-/// unless [unescape] is false.
+/// unless [unescape] is false. The content keeps the whitespace at its ends
+/// unless [trimContent] is true.
 ThinkingExtraction extractThinking(
   String text, {
   String startTag = '<think>',
   String endTag = '</think>',
   bool thinkingForcedOpen = false,
   bool unescape = true,
+  bool trimContent = true,
 }) {
   final result = _extractThinking(
     text,
@@ -30,7 +32,22 @@ ThinkingExtraction extractThinking(
   // Trim only the overall content ends here, once. The recursion keeps content
   // raw so whitespace between stripped thinking blocks (e.g. the space in
   // "Hello<think>x</think> world<think>y</think>!") is preserved.
-  return (content: result.content.trim(), reasoning: result.reasoning);
+  return (
+    content: trimContent ? result.content.trim() : result.content,
+    reasoning: result.reasoning,
+  );
+}
+
+/// [text] without the ASCII whitespace that starts it, which llama.cpp's
+/// parsers skip (`std::isspace`); other Unicode whitespace stays.
+String trimLeftAsciiSpace(String text) {
+  var start = 0;
+  while (start < text.length) {
+    final unit = text.codeUnitAt(start);
+    if (unit != 0x20 && (unit < 0x09 || unit > 0x0d)) break;
+    start++;
+  }
+  return text.substring(start);
 }
 
 /// Splits [text] that continues a thought the prompt opened at the first

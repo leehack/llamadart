@@ -195,19 +195,35 @@ class CommandR7BHandler extends ChatTemplateHandler {
     bool thinkingForcedOpen = false,
   }) {
     final openings = verbatimForcedThoughtOpenings;
-    final thinking = thinkingForcedOpen && openings != null
-        ? extractForcedOpenThoughtVerbatim(
-            output,
-            endTag: thinkingEndTag,
-            contentOpenings: openings,
-          )
-        : extractThinking(
-            output,
-            thinkingForcedOpen: thinkingForcedOpen,
-            startTag: thinkingStartTag,
-            endTag: thinkingEndTag,
-          );
-    final text = thinking.content;
+    final ThinkingExtraction thinking;
+    final String text;
+    if (openings == null) {
+      thinking = extractThinking(
+        output,
+        thinkingForcedOpen: thinkingForcedOpen,
+        startTag: thinkingStartTag,
+        endTag: thinkingEndTag,
+      );
+      text = thinking.content;
+    } else if (thinkingForcedOpen) {
+      thinking = extractForcedOpenThoughtVerbatim(
+        output,
+        endTag: thinkingEndTag,
+        contentOpenings: openings,
+      );
+      text = thinking.content;
+    } else {
+      // llama.cpp parses a text or action as the body, where thinking tags
+      // are text.
+      final body = _bodyStart(output, openings);
+      thinking = extractThinking(
+        output.substring(0, body),
+        startTag: thinkingStartTag,
+        endTag: thinkingEndTag,
+        trimContent: false,
+      );
+      text = '${thinking.content}${output.substring(body)}'.trim();
+    }
 
     const endAction = '<|END_ACTION|>';
     const endText = '<|END_TEXT|>';
@@ -309,6 +325,29 @@ class CommandR7BHandler extends ChatTemplateHandler {
     }
 
     return _parseResponse(text, thinking.reasoning);
+  }
+
+  /// The index of the first of [openings] in [output] outside a thought, or
+  /// `output.length`.
+  int _bodyStart(String output, List<String> openings) {
+    var from = 0;
+    while (true) {
+      int at(String marker) => output.indexOf(marker, from);
+      final start = at(thinkingStartTag);
+      final end = at(thinkingEndTag);
+      var opening = -1;
+      for (final marker in openings) {
+        final index = at(marker);
+        if (index != -1 && (opening == -1 || index < opening)) {
+          opening = index;
+        }
+      }
+      bool before(int index, int other) =>
+          index != -1 && (other == -1 || index < other);
+      if (before(opening, start) && before(opening, end)) return opening;
+      if (end == -1) return output.length;
+      from = end + thinkingEndTag.length;
+    }
   }
 
   ChatParseResult _parseResponse(String text, String? reasoning) {

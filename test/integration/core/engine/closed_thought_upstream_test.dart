@@ -11,6 +11,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -442,10 +443,13 @@ void main() {
                   arguments: call['arguments'] as String,
                 ),
             ]);
-            final parsed = ChatTemplateEngine.parse(
+            final parsed = parseRenderedOutput(
               rendered.format,
               output,
               parseToolCalls: withTools,
+              thoughtClosedForThinkingOff: thoughtClosedForThinkingOffOf(
+                rendered,
+              ),
               thinkingForcedClosed: thinkingForcedClosedOf(rendered),
               tools: withTools ? [_weatherTool] : null,
             );
@@ -520,6 +524,134 @@ void main() {
     });
   }
 
+  // These renders leave no thought open: Seed-OSS's template never opens one,
+  // and Cohere2 MoE's closes its own with `reasoning_effort: none`. llama.cpp
+  // then takes a Seed-OSS thought only from the start of the reply, and keeps
+  // thinking tags in a Cohere2 MoE text as text.
+  for (final entry
+      in (_fixture['no_thought_templates'] as List)
+          .cast<Map<String, dynamic>>()) {
+    final templatePath = entry['template'] as String;
+    final kwargs = (entry['chat_template_kwargs'] as Map)
+        .cast<String, dynamic>();
+    for (final enableThinking in const [false, true]) {
+      group('${templatePath.split('/').last}, thinking: $enableThinking', () {
+        late LlamaChatTemplateResult rendered;
+
+        setUpAll(
+          () => rendered = ChatTemplateEngine.render(
+            templateSource: File(templatePath).readAsStringSync(),
+            messages: [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: _fixture['user_prompt'] as String,
+              ),
+            ],
+            metadata: const {},
+            tools: [_weatherTool],
+            chatTemplateKwargs: kwargs,
+            enableThinking: enableThinking,
+          ),
+        );
+
+        test('leaves no thought open', () {
+          expect(
+            rendered.format,
+            ChatFormat.values.byName(entry['format'] as String).index,
+          );
+          expect(rendered.thinkingForcedOpen, isFalse);
+          expect(thoughtClosedForThinkingOffOf(rendered), isFalse);
+        });
+
+        for (final c in (entry['cases'] as List).cast<Map<String, dynamic>>()) {
+          final output = c['output'] as String;
+          test('${c['name']} parses and streams as llama.cpp parses', () async {
+            for (final withTools in const [true, false]) {
+              final upstream =
+                  c[withTools ? 'upstream' : 'upstream_without_tools']
+                      as Map<String, dynamic>;
+              final upstreamCalls = _calls([
+                for (final call
+                    in (upstream['tool_calls'] as List)
+                        .cast<Map<String, dynamic>>())
+                  (
+                    name: call['name'] as String,
+                    arguments: call['arguments'] as String,
+                  ),
+              ]);
+              final upstreamReasoning =
+                  (upstream['reasoning_content'] as String).trim();
+              final parsed = parseRenderedOutput(
+                rendered.format,
+                output,
+                parseToolCalls: withTools,
+                thoughtClosedForThinkingOff: false,
+                tools: withTools ? [_weatherTool] : null,
+              );
+              final reason = 'tools: $withTools';
+              expect(
+                parsed.content.trim(),
+                (upstream['content'] as String).trim(),
+                reason: reason,
+              );
+              expect(
+                parsed.reasoningContent?.trim() ?? '',
+                upstreamReasoning,
+                reason: reason,
+              );
+              expect(
+                _calls([
+                  for (final call in parsed.toolCalls)
+                    (
+                      name: call.function?.name,
+                      arguments: call.function?.arguments,
+                    ),
+                ]),
+                upstreamCalls,
+                reason: reason,
+              );
+
+              for (final tokens in _chunkings(output)) {
+                final deltas = (await ChatCompletionStreamParser.parse(
+                  tokenStream: Stream.fromIterable(tokens),
+                  templateResult: rendered,
+                  parseToolCallsEnabled: withTools,
+                  enableThinking: enableThinking,
+                  modelName: 'test-model',
+                  completionId: 'no-thought-upstream',
+                  tools: withTools ? [_weatherTool] : null,
+                ).toList()).map((chunk) => chunk.choices.single.delta);
+                final streamReason = '$tokens, $reason';
+                expect(
+                  deltas.map((delta) => delta.content ?? '').join().trim(),
+                  (upstream['content'] as String).trim(),
+                  reason: streamReason,
+                );
+                expect(
+                  deltas.map((delta) => delta.thinking ?? '').join(),
+                  enableThinking ? upstreamReasoning : isEmpty,
+                  reason: streamReason,
+                );
+                expect(
+                  _calls([
+                    for (final delta in deltas)
+                      for (final call in delta.toolCalls ?? const [])
+                        (
+                          name: call.function?.name,
+                          arguments: call.function?.arguments,
+                        ),
+                  ]),
+                  upstreamCalls,
+                  reason: streamReason,
+                );
+              }
+            }
+          });
+        }
+      });
+    }
+  }
+
   // The stream keeps thinking tags as content for exactly these formats.
   test('only formats with the trait parse no thought after a closed one', () {
     for (final registration in chatFormatRegistrations) {
@@ -575,10 +707,11 @@ void main() {
       var parsesThought = false;
       try {
         parsesThought =
-            ChatTemplateEngine.parse(
+            parseRenderedOutput(
               format.index,
               'Plan${handler.thinkingEndTag}Sunny.',
               parseToolCalls: false,
+              thoughtClosedForThinkingOff: true,
               parser: closed.parser,
             ).reasoningContent ==
             'Plan';
@@ -663,6 +796,161 @@ void main() {
     );
     expect(commandR7B.prompt, endsWith('<|START_THINKING|><|END_THINKING|>'));
     expect(thoughtClosedForThinkingOffOf(commandR7B), isFalse);
+  });
+
+  // A response schema renders Cohere2 MoE through another handler, which
+  // must close the thought for thinking off as the Cohere2 MoE handler does.
+  LlamaChatTemplateResult renderWithSchema(
+    String source, {
+    required bool withTools,
+    required bool withMedia,
+    required bool enableThinking,
+  }) => ChatTemplateEngine.render(
+    templateSource: source,
+    messages: [
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: [
+          if (withMedia) const LlamaImageContent(path: '/tmp/photo.png'),
+          const LlamaTextContent('Hi'),
+        ],
+      ),
+    ],
+    metadata: const {},
+    tools: withTools ? [_weatherTool] : null,
+    responseFormat: const {
+      'type': 'json_schema',
+      'json_schema': {
+        'schema': {'type': 'object'},
+      },
+    },
+    enableThinking: enableThinking,
+  );
+
+  test('closes a Cohere thought for a response schema with thinking off', () {
+    final source = File(
+      'test/fixtures/llama_cpp_templates/Cohere2MoE.jinja',
+    ).readAsStringSync();
+    for (final withTools in const [false, true]) {
+      for (final withMedia in const [false, true]) {
+        for (final enableThinking in const [false, true]) {
+          final rendered = renderWithSchema(
+            source,
+            withTools: withTools,
+            withMedia: withMedia,
+            enableThinking: enableThinking,
+          );
+          final reason =
+              'tools: $withTools, media: $withMedia, '
+              'thinking: $enableThinking';
+          expect(
+            rendered.format,
+            withTools ? ChatFormat.generic.index : ChatFormat.contentOnly.index,
+            reason: reason,
+          );
+          expect(
+            rendered.prompt,
+            endsWith(
+              enableThinking
+                  ? '<|CHATBOT_TOKEN|><|START_THINKING|>'
+                  : '<|CHATBOT_TOKEN|><|START_THINKING|><|END_THINKING|>',
+            ),
+            reason: reason,
+          );
+        }
+      }
+    }
+  });
+
+  test('leaves an R7B thought open for a response schema', () {
+    final source = File(
+      'test/fixtures/llama_cpp_templates/'
+      'CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja',
+    ).readAsStringSync();
+    const closedWhenOff =
+        '{%- if not enable_thinking -%}<|START_THINKING|><|END_THINKING|>'
+        '{%- endif %}';
+    expect(source, contains(closedWhenOff));
+    final opened = source.replaceFirst(closedWhenOff, '<|START_THINKING|>');
+    for (final withTools in const [false, true]) {
+      final rendered = renderWithSchema(
+        opened,
+        withTools: withTools,
+        withMedia: false,
+        enableThinking: false,
+      );
+      expect(
+        rendered.prompt,
+        endsWith('<|START_THINKING|>'),
+        reason: 'tools: $withTools',
+      );
+    }
+  });
+
+  // The caller of the public parse cannot see the mark, so a Seed-OSS reply
+  // that ends a thought it did not open parses as llama.cpp parses it after
+  // a template that opens the thought, and one that starts with a thought as
+  // after the stock template, which opens none.
+  test('a public Seed-OSS parse matches llama.cpp for either template', () {
+    final source = File(
+      'test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja',
+    ).readAsStringSync();
+    const prompt = '{{ bos_token+"assistant\\n" }}';
+    expect(source, contains(prompt));
+    LlamaChatTemplateResult render(String source) => ChatTemplateEngine.render(
+      templateSource: source,
+      messages: [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: _fixture['user_prompt'] as String,
+        ),
+      ],
+      metadata: const {},
+      tools: [_weatherTool],
+      enableThinking: false,
+    );
+    final opened = render(
+      source.replaceFirst(
+        prompt,
+        '{{ bos_token+"assistant\\n" + think_begin_token }}',
+      ),
+    );
+    final stock = render(source);
+    expect(thoughtClosedForThinkingOffOf(opened), isTrue);
+    expect(thoughtClosedForThinkingOffOf(stock), isFalse);
+    // Values from llama.cpp 620d2225.
+    for (final (rendered, output, reasoning, content) in [
+      (opened, 'Plan</seed:think>Sunny.', 'Plan', 'Sunny.'),
+      (opened, '</seed:think>Sunny.', null, 'Sunny.'),
+      (
+        opened,
+        'Plan.</seed:think>Use </seed:think> tag.',
+        'Plan.',
+        'Use </seed:think> tag.',
+      ),
+      (opened, 'Plan.</seed:think>\n', 'Plan.', ''),
+      (opened, 'Sunny.', null, 'Sunny.'),
+      (
+        stock,
+        '<seed:think>Plan</seed:think>A<seed:think>B</seed:think>C',
+        'Plan',
+        'A<seed:think>B</seed:think>C',
+      ),
+      (stock, '\n<seed:think>Plan</seed:think>Sunny.', 'Plan', 'Sunny.'),
+    ]) {
+      for (final withTools in const [false, true]) {
+        final parsed = ChatTemplateEngine.parse(
+          rendered.format,
+          output,
+          parseToolCalls: withTools,
+          thinkingForcedOpen: rendered.thinkingForcedOpen,
+          parser: rendered.parser,
+          tools: withTools ? [_weatherTool] : null,
+        );
+        expect(parsed.content.trim(), content, reason: output);
+        expect(parsed.reasoningContent, reasoning, reason: output);
+      }
+    }
   });
 
   test('a forced-open thought keeps the reasoning', () async {

@@ -124,7 +124,12 @@ reasoning, as in llama-server. So that it never streams as `chunk.text`, the
 reply's text is held until `</think>` or `<think>` arrives, or the reply ends.
 Cohere2 MoE templates open it unless `reasoning` is false, which llamadart
 sets from `enableThinking`; their reply is held until a thinking tag,
-`<|START_TEXT|>` or `<|START_ACTION|>`, where llama-server ends the thought.
+`<|START_TEXT|>` or `<|START_ACTION|>`, where llama-server ends the thought,
+and the text before it is reasoning. Seed-OSS templates open no thought: a
+reply has one only when it starts with `<seed:think>`, and other thinking tags
+are content, as in llama-server. `ChatTemplateEngine.parse`, which cannot tell
+whether a custom template opened the thought, also ends one at a
+`</seed:think>` in a reply that did not open it.
 
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.
@@ -134,7 +139,8 @@ thought in the prompt, the reasoning is the text before the first `</think>`
 as the model wrote it, escapes and repeated `<think>` included, and the rest is
 content, as in llama-server. A Qwen3.5 `<tool_call>` also ends the thought.
 A Cohere2 MoE thought ends at `<|END_THINKING|>`, or at a `<|START_TEXT|>` or
-`<|START_ACTION|>` that comes first.
+`<|START_ACTION|>` that comes first, and thinking tags inside a text or action
+are text.
 See [Template engine internals](./template-engine-internals) for the parse and
 stream rules of each format.
 

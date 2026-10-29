@@ -2660,6 +2660,54 @@ void main() {
         );
       });
 
+      test('a Cohere2 MoE action streams as it arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.cohere2Moe,
+          thoughtClosed: true,
+          tools: false,
+          const [('<|START_ACT', '', ''), ('ION|>x', '', '<|START_ACTION|>x')],
+        );
+      });
+
+      test('an empty reply streams nothing', () async {
+        for (final format in const [
+          ChatFormat.seedOss,
+          ChatFormat.cohere2Moe,
+          ChatFormat.qwen3CoderXml,
+        ]) {
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: const Stream.empty(),
+            templateResult: withThoughtClosedForThinkingOff(
+              LlamaChatTemplateResult(prompt: 'prompt', format: format.index),
+              closed: true,
+            ),
+            parseToolCallsEnabled: false,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: 'empty',
+          ).toList();
+          final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+          expect(
+            deltas
+                .map((delta) => '${delta.thinking ?? ''}${delta.content ?? ''}')
+                .join(),
+            isEmpty,
+            reason: format.name,
+          );
+        }
+      });
+
+      // The 18-character start tag split after 17 characters is the longest
+      // marker held across tokens.
+      test('text before a split start tag streams once it ends', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.commandR7B,
+          thoughtClosed: true,
+          tools: false,
+          const [('Hi <|START_THINKING|', '', ''), ('>Plan', 'Plan', 'Hi')],
+        );
+      });
+
       test('Command R7B text waits for a thinking tag', () async {
         await _expectStreamedAfterEachToken(
           ChatFormat.commandR7B,
@@ -2811,6 +2859,59 @@ void main() {
             for (final tools in const [true, false]) {
               await _expectStreamMatchesParse(format, output, tools: tools);
             }
+          }
+        }
+      });
+
+      // llama.cpp 620d2225 parses this reply after a Cohere2 MoE template
+      // that opens the thought; tokens split before the end tag still stream
+      // its first characters as content.
+      test('a Cohere2 MoE end tag before a body arriving whole streams as it '
+          'parses', () async {
+        const output =
+            'Plan<|END_THINKING|><|START_TEXT|>a<|END_THINKING|>b<|END_TEXT|>';
+        final parsed = parseRenderedOutput(
+          ChatFormat.cohere2Moe.index,
+          output,
+          parseToolCalls: false,
+          thoughtClosedForThinkingOff: false,
+        );
+        expect(parsed.reasoningContent, 'Plan');
+        expect(parsed.content, 'a<|END_THINKING|>b');
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.value(output),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.cohere2Moe.index,
+          ),
+          parseToolCallsEnabled: false,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'end-tag-before-body',
+        ).toList();
+        final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+        expect(deltas.map((delta) => delta.thinking ?? '').join(), 'Plan');
+        expect(
+          deltas.map((delta) => delta.content ?? '').join(),
+          'a<|END_THINKING|>b',
+        );
+      });
+
+      test('text between a Cohere2 MoE thought and its body streams as it '
+          'parses', () async {
+        for (final output in const [
+          '<|START_THINKING|>x<|END_THINKING|> Hi <|START_TEXT|>Sunny.'
+              '<|END_TEXT|>',
+          '<|START_THINKING|>x<|END_THINKING|> Hi <|START_ACTION|>[]'
+              '<|END_ACTION|>',
+        ]) {
+          for (final tools in const [true, false]) {
+            await _expectStreamMatchesParse(
+              ChatFormat.cohere2Moe,
+              output,
+              tools: tools,
+              everySplit: true,
+            );
           }
         }
       });
@@ -3663,11 +3764,12 @@ Future<void> _expectStreamMatchesParse(
   bool thoughtClosed = false,
   bool everySplit = false,
 }) async {
-  final parsed = ChatTemplateEngine.parse(
+  final parsed = parseRenderedOutput(
     format.index,
     output,
     parseToolCalls: tools,
     thinkingForcedOpen: forcedOpen,
+    thoughtClosedForThinkingOff: thoughtClosed,
     cancelled: cancelled,
     parser: parser,
     tools: tools ? [_weatherTool] : null,
