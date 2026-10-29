@@ -29,7 +29,7 @@ unchecked. See [scope and limits](./native-build-hooks#isolated-native-check).
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
-| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Not yet ([#780](https://github.com/leehack/llamadart/issues/780)) | Experimental |
+| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (unvalidated, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
 
 On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
 DLLs they need, so they need no Visual C++ Redistributable. The opt-in
@@ -79,8 +79,8 @@ FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
 GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
 converts them to F16 there: they need twice their file size in memory, which
 `ImageModelParams.checkMemory` counts. A runtime without that fix, told apart
-by its exports, aborts on them instead
-([#1446](https://github.com/leehack/llamadart/issues/1446)): with it, FP8
+by its exports, would abort on them instead
+([#1446](https://github.com/leehack/llamadart/issues/1446)), so llamadart refuses on such a runtime: FP8
 weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
 indexes are refused with `LlamaUnsupportedException` on Metal, including
 `ComputeDevice.auto` when it selects Metal, before native context creation;
@@ -201,7 +201,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Model-free setup report | Desktop IO only; publication policy, no native/model probe | Typed unsupported; no live browser check | Desktop IO only; publication policy, no native/model probe | Typed unsupported |
 | Pre-load check | `npu` and options llama.cpp ignores rejected; native library and GPU unchecked | Options the Web runtime ignores rejected; WebGPU and bridge assets unchecked | No runtime on macOS x86_64, Windows arm64 or the x86_64 iOS simulator, and explicit devices the ABI lacks (`gpu` on Linux arm64), and embeddings off macOS arm64, iOS arm64 and Android arm64, rejected; `LlamaEngine(LiteRtLmBackend())` reports `unknown` | Options the Web runtime ignores, `npu` and the embedding engine rejected; browser runtime unchecked |
 | LoRA | `ModelParams.loras` at load and `setLoraSource` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
-| GPU device list and split (`gpuDevices`, `tensorSplit`) | Devices of one backend by `listGpuDevices` index, with proportions; validated on one Metal GPU and a Vulkan Tesla T4 (two-device paths with Mesa lavapipe as the second device); two-GPU hardware has no evidence and CUDA is not hardware-qualified ([#916](https://github.com/leehack/llamadart/issues/916)) | No | No | No |
+| GPU device list and split (`gpuDevices`, `tensorSplit`) | Devices of one backend by `listGpuDevices` index, with proportions; validated on one Metal GPU and a Vulkan Tesla T4 (two-device paths with Mesa lavapipe as the second device); two-GPU hardware has no evidence ([#1528](https://github.com/leehack/llamadart/issues/1528)), row split on a backend without split buffers fails with a generic load error ([#1576](https://github.com/leehack/llamadart/issues/1576)) and CUDA is not hardware-qualified | No | No | No |
 | Renamed legacy Qwen3 thinking switch | N/A: GGUF metadata | N/A: GGUF metadata | `chatTemplate: liteRtLmQwen3ChatTemplate`; requires native template setter | Canonical override throws at load: no template setter in `@litert-lm/core@0.18.0` |
 | Thinking budget | Text-only, without speculative decoding, when the native reasoning-budget export resolves | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | Native chat, without speculative decoding, on bundles whose first response channel is a thinking channel (Gemma 4); bounds that channel only; `0` and `forcedMessage` rejected | No |
 | Strict `responseFormat` | Yes | Yes, without tools | macOS arm64 CPU, admitted canonical Qwen3 text model; scalar object schema subset, thinking disabled, no tools/media/speculation/caller stops | No |
@@ -261,12 +261,11 @@ output and grammars, sampling controls and speculative decoding. Guides:
   tool formatting remain available. Automatic tool loops and strict structured
   output remain unsupported.
 - Native LiteRT-LM on iOS: iOS 16.4 is the declared deployment floor, not a
-  tested one. The companion Swift package requires an iOS 16.4 app target and
-  the v0.18.0 frameworks declare `MinimumOSVersion` 15.0, but nothing has
-  been run on iOS 16.4. On a device, model load and generation have run only
+  tested one. The companion Swift package requires an iOS 16.4 app target, but
+  nothing has been run on iOS 16.4. On a device, model load and generation have run only
   on an iPhone 16 Pro with iOS 18.3.2 (CPU and GPU); simulator evidence is
   iOS 26.4, CPU only. No other iOS version is device-verified
-  ([#831](https://github.com/leehack/llamadart/issues/831)).
+  ([#514](https://github.com/leehack/llamadart/issues/514)).
 - Flutter macOS LiteRT-LM needs a `llamadart_litert_lm_flutter` that matches
   the core to put the runtime in the app bundle. With llamadart `0.12.0` and
   earlier, with companion `0.0.14` or earlier, or without the companion, an
@@ -332,9 +331,9 @@ output and grammars, sampling controls and speculative decoding. Guides:
   evaluated in one batch returns wrong text, and a request with a grammar or
   tool call can then abort the process, confirmed so far with one model
   (Qwen3.5-0.8B Q4_0) on that one device
-  ([#948](https://github.com/leehack/llamadart/issues/948)); a Galaxy A53
-  (Mali-G68) crashes while loading the model
-  ([#782](https://github.com/leehack/llamadart/issues/782)); a Galaxy S24
+  ([#948](https://github.com/leehack/llamadart/issues/948)); a Galaxy A35
+  (Mali-G68) is reported to time out in `llama_decode`
+  ([#1092](https://github.com/leehack/llamadart/issues/1092)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
   The first of these is a llama.cpp defect at a Vulkan subgroup size of 16
@@ -365,8 +364,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   takes that path. When other GPUs of the load are usable, such as a
   discrete GPU beside an old one, the load leaves the old one out and logs a
   warning; a GPU llama.cpp would not select, like an integrated GPU beside a
-  discrete one, changes nothing. Whether this is what crashes the Galaxy A53
-  is not confirmed.
+  discrete one, changes nothing.
   On Android, the exact Qualcomm vendor `0x5143`, `Adreno (TM) 750`
   driver `2150604839` has shader-compiler crashes and incorrect quantized
   results, including common `Q4_K_M` models. When this device is registered,
@@ -400,7 +398,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.7.0-3` and
-`litert-lm-native` release `v0.18.1-2` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
 Apps can override the llama.cpp release with `llamadart_native_tag`, which
 takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
 `bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading

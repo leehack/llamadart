@@ -85,7 +85,8 @@ llamadart applies LoRA adapters at inference time; it does not train them.
     the runtime calls throw `LlamaUnsupportedException`.
 - Do not catch and ignore `LlamaUnsupportedException` from LoRA calls; it means
   the adapter is not applied. If output looks unchanged, confirm the model runs
-  on llama.cpp (`engine.getBackendName()`) and not LiteRT-LM.
+  on llama.cpp (`engine.getBackendName()`), or on native LiteRT-LM with the single
+  default-scale adapter passed at load.
 
 ## Examples
 

@@ -62,7 +62,8 @@ dart run llamadart:doctor --help
 ```
 
 The JSON command writes one schema-versioned document to stdout. Exit 0 means
-a report was produced, **not** that a runtime works; invalid arguments exit 64.
+a report was produced, **not** that a runtime works; exit 1 means no report
+could be produced; invalid arguments exit 64.
 The collector itself performs bounded local package-metadata reads and no
 network, subprocess, native initialization, native-asset resolution, GPU probe
 or model load. `dart run` can run the package build hook **before main**: it may
@@ -103,9 +104,9 @@ Mobile/Web collection throws `LlamaUnsupportedException` with scope guidance.
 A Dart CLI report does not validate an already-built Flutter app, device or
 browser. `web_setup --check` remains a separate offline asset check, not a live
 browser diagnosis. Native bootstrap, mobile/browser diagnostics and broader
-doctor work remain in [#124](https://github.com/leehack/llamadart/issues/124);
-loaded-model capability semantics remain separate in
-[#861](https://github.com/leehack/llamadart/issues/861).
+doctor work remain in [#124](https://github.com/leehack/llamadart/issues/124).
+To check a load before it runs, see
+[Check a load before it runs](../guides/backend-selection#check-a-load-before-it-runs).
 
 ## Isolated native check
 
@@ -163,9 +164,8 @@ timeouts have separate fixed codes. A timeout or child failure has no hardware
 diagnosis. Exit 0 means a report was produced, including a failed check; exit 1
 means no report and exit 64 means invalid arguments. Use the codes for automation.
 The default `doctor` and `collectLlamaRuntimeSetupReport()` continue to load no
-native library and spawn no process. Broader diagnostics and pre-load capability
-semantics remain in [#124](https://github.com/leehack/llamadart/issues/124) and
-[#861](https://github.com/leehack/llamadart/issues/861).
+native library and spawn no process. Broader diagnostics remain in
+[#124](https://github.com/leehack/llamadart/issues/124).
 
 ## Choose runtime families
 
@@ -512,10 +512,10 @@ hooks:
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. Core `0.14.x` requires the v0.7.0 ABI, including its changed
+override is active. This core requires the v0.7.0 ABI, including its changed
 context-parameter and performance-data layouts. Native v0.6.0 and older
-bundles are incompatible even when they export the same symbol names. Stay on
-core `0.13.x` to use its v0.6.0 runtime and companions.
+bundles are incompatible even when they export the same symbol names. Use
+core `0.13.x` for its v0.6.0 runtime and companions.
 
 The following thresholds describe historical wrapper features; they do not
 make an older ABI compatible with this core. A runtime older than `v0.5.0-1`
@@ -600,7 +600,8 @@ LiteRT-LM release, such as `v0.18.1` before a `v0.18.1-2` core, still embeds
 the complete macOS runtime, which the app loads from its bundle, so the build
 only warns to upgrade the companion. A maintained manifest pinning any other
 LiteRT-LM release or a later build of the same release warns to upgrade the
-core and companion together. Core `0.16.0` and its companion `0.16.0` pin
+core and companion together. Core `0.17.x` pairs with companion `0.17.0`,
+which pins `v0.18.1-4`. Core `0.16.0` and its companion `0.16.0` pin
 `v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`; core
 `0.16.2` and companion `0.16.2` pin `v0.18.1-4`. Each core accepts the earlier
 `0.16.x` companions with the warning above. Companion `0.16.1` requires core

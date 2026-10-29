@@ -172,9 +172,8 @@ On WebGPU a cancel ends generation with a stream error; the loop still
 reports it as `cancelled`.
 
 To start a new chat while the loop runs, call `engine.cancelGeneration()`,
-await the loop, then call `session.reset()`: a reset while a reply is
-generating can leave that reply in the new chat
-([#888](https://github.com/leehack/llamadart/issues/888)).
+await the loop, then call `session.reset()`: a late reply from the
+cancelled turn is not added to the new chat.
 
 ### Run the calls yourself
 
@@ -488,8 +487,8 @@ results is appended to their user turn with a newline, so the template still
 receives alternating roles. For example, `user → assistant(tool call) →
 tool(result) → user("And Rome?")` becomes `user → assistant →
 user(result JSON + "\nAnd Rome?")`. Only the render input changes; the app's
-history stays intact. This follow-up case also fails in pinned upstream
-`b10549` ([#1118](https://github.com/leehack/llamadart/issues/1118)).
+history stays intact. This follow-up case also fails in llama.cpp's `b10549`
+template set ([#1118](https://github.com/leehack/llamadart/issues/1118)).
 A later assistant turn still separates tool rounds, and unrelated consecutive
 user messages retain the template's usual validation.
 

@@ -365,7 +365,7 @@ No local C++ toolchain setup is required for consumers.
 
 ## Customize native runtimes
 
-Native builds bundle every available runtime family. To ship only one model
+Native builds bundle llama.cpp and LiteRT-LM by default; image generation is opt-in. To ship only one model
 format, or to test another native build, set `hooks.user_defines` in your
 `pubspec.yaml`:
 

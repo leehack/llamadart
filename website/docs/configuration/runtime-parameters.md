@@ -72,7 +72,10 @@ Important fields:
   counts within the list, or the first one when it is out of range. Validated
   on one Metal GPU and on a Vulkan Tesla T4, with Mesa lavapipe as the second
   device for two-device lists and splits; two-GPU hardware has no evidence
-  yet, and CUDA is not hardware-qualified.
+  yet ([#1528](https://github.com/leehack/llamadart/issues/1528)), a row split
+  on a backend without split buffers fails with a generic load error
+  ([#1576](https://github.com/leehack/llamadart/issues/1576)), and CUDA is not
+  hardware-qualified.
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());
@@ -83,9 +86,9 @@ final gpus = [
   ))
     if (gpu.backend == GpuBackend.cuda) gpu,
 ];
-await engine.loadModel(
-  '/path/to/model.gguf',
-  modelParams: LlamaCppModelParams(
+await engine.setModel(
+  LlamaModel(ModelSource.path('/path/to/model.gguf')),
+  params: LlamaCppModelParams(
     preferredBackend: GpuBackend.cuda,
     gpuDevices: [gpus[0].mainGpu, gpus[2].mainGpu],
     tensorSplit: const [3, 1], // three quarters of the layers on the first
@@ -203,7 +206,8 @@ const params = LlamaCppModelParams(
 - `useMmap` / `useMlock` (native llama.cpp only): the WebGPU bridge rejects
   `useMmap: false` and `useMlock: true`.
 
-No runtime ignores a field you set. A load throws `LlamaUnsupportedException`
+Apart from `loadMtp` and `speculativeRollbackTokenMax` on bridge assets
+without speculative decoding, no runtime ignores a field you set. A load throws `LlamaUnsupportedException`
 naming each field set away from its default that the model's runtime does
 not apply. When `ModelSource.format` or the model's file name names the
 format, `LlamaBackend()` rejects them before any file resolves or downloads;
@@ -235,6 +239,7 @@ deprecated until 1.0.
 | `dispatchLibDir` | LiteRT dispatch library directory for Android NPU deployments. Must be non-empty. |
 | `cacheDir`, `maxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
 | `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
+| `embeddingEngine` | `true` selects the separate LiteRT-LM embedding engine, qualified on CPU on macOS, iOS and Android arm64; defaults to `false`, not `null`. See [Embeddings](../guides/embeddings). |
 | `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
 
 `gpuLayers` must be `0` (CPU), `ModelParams.maxGpuLayers` or a negative

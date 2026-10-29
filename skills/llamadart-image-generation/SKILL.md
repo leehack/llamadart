@@ -270,10 +270,10 @@ core and `llamadart_stable_diffusion_flutter` together.
   still loads, slower, with one `LlamaLogger` warning (the runtime keeps the
   rest in system memory); on Linux it is refused only above the memory of every
   discrete GPU plus `MemAvailable`, and on Windows never. An integrated GPU on
-  Linux gets `MemAvailable`. The Windows CPU is not checked, and the Vulkan
-  figures are not validated on a physical GPU yet. SD-Turbo usually loads on 8
-  GB Android phones when no chat model is loaded, and is usually refused on 6
-  GB ones; offer SDXS there.
+  Linux gets `MemAvailable`. The Windows CPU is not checked, and the warning,
+  refusal and two-GPU paths are unchecked on physical Vulkan hardware (#1024).
+  SD-Turbo usually loads on 8 GB Android phones when no chat model is loaded,
+  and is usually refused on 6 GB ones; offer SDXS there.
 - `ImageModelParams(device: ComputeDevice.auto | cpu | gpu, threads: 0)`.
   `gpu` without a GPU (Android, CPU builds) and `npu` throw
   `LlamaUnsupportedException`.
