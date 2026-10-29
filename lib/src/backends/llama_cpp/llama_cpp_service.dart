@@ -245,8 +245,8 @@ class LlamaCppService {
 
   /// Creates the service; tests replace the runtime's first native call, the
   /// host probes behind its Windows load diagnostics, the Android check behind
-  /// its backend and context policy, the iOS simulator check behind its
-  /// backend policy, the raw `ggml_backend_dev_type` values a
+  /// its backend and context policy, the iOS simulator and macOS x86_64
+  /// checks behind its backend policy, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
@@ -263,6 +263,7 @@ class LlamaCppService {
     bool? isWindows,
     bool? isAndroid,
     bool? isIosSimulator,
+    bool? isMacosX64,
     List<String> Function(List<String> names) missingWindowsLibraries =
         findMissingWindowsLibraries,
     List<int> Function(GpuBackend backend)? deviceTypes,
@@ -284,6 +285,7 @@ class LlamaCppService {
        _isWindows = isWindows ?? Platform.isWindows,
        _isAndroid = isAndroid ?? Platform.isAndroid,
        _isIosSimulator = isIosSimulator ?? isIosSimulatorProcess(),
+       _isMacosX64 = isMacosX64 ?? Abi.current() == Abi.macosX64,
        _missingWindowsLibraries = missingWindowsLibraries,
        _deviceTypesOverride = deviceTypes,
        _objectCallsOverride = objectCalls,
@@ -305,6 +307,7 @@ class LlamaCppService {
   final bool _isWindows;
   final bool _isAndroid;
   final bool _isIosSimulator;
+  final bool _isMacosX64;
   final List<String> Function(List<String> names) _missingWindowsLibraries;
   final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   final LlamaCppObjectCalls? _objectCallsOverride;
@@ -439,13 +442,14 @@ class LlamaCppService {
   ///
   /// [ComputeDevice.cpu] forces the CPU module (or BLAS when requested) and 0
   /// GPU layers. [ComputeDevice.gpu] keeps the requested backend, except that
-  /// Android resolves [GpuBackend.auto] to Vulkan and an iOS simulator
-  /// resolves it to Metal, since their `auto` means the CPU.
+  /// Android resolves [GpuBackend.auto] to Vulkan and an iOS simulator or
+  /// macOS x86_64 resolves it to Metal, since their `auto` means the CPU.
   /// [ComputeDevice.npu] has no llama.cpp backend.
   static ModelParams resolveComputeDeviceParams(
     ModelParams modelParams, {
     bool isAndroid = false,
     bool isIosSimulator = false,
+    bool isMacosX64 = false,
     String platform = 'this platform',
   }) {
     switch (modelParams.device) {
@@ -462,7 +466,8 @@ class LlamaCppService {
         if (isAndroid && modelParams.preferredBackend == GpuBackend.auto) {
           return modelParams.copyWith(preferredBackend: GpuBackend.vulkan);
         }
-        if (isIosSimulator && modelParams.preferredBackend == GpuBackend.auto) {
+        if ((isIosSimulator || isMacosX64) &&
+            modelParams.preferredBackend == GpuBackend.auto) {
           return modelParams.copyWith(preferredBackend: GpuBackend.metal);
         }
         return modelParams;
@@ -481,14 +486,18 @@ class LlamaCppService {
   /// initializing optional GPU backends by default on devices with unstable
   /// Vulkan stacks. An iOS simulator resolves `auto` to CPU as well: its
   /// Metal device returns incorrect output from llama.cpp
-  /// (https://github.com/leehack/llamadart/issues/950). An explicit backend
-  /// is returned as requested.
+  /// (https://github.com/leehack/llamadart/issues/950). So does macOS x86_64,
+  /// Rosetta included: Metal returns garbled output on Intel Macs with AMD
+  /// GPUs (https://github.com/leehack/llamadart/issues/1597), and an x86_64
+  /// process cannot tell an Intel Mac from Rosetta. An explicit backend is
+  /// returned as requested.
   static GpuBackend resolvePreferredBackendForLoad(
     ModelParams modelParams, {
     bool isAndroid = false,
     bool isIosSimulator = false,
+    bool isMacosX64 = false,
   }) {
-    if ((isAndroid || isIosSimulator) &&
+    if ((isAndroid || isIosSimulator || isMacosX64) &&
         modelParams.preferredBackend == GpuBackend.auto) {
       return GpuBackend.cpu;
     }
@@ -505,11 +514,13 @@ class LlamaCppService {
     ModelParams modelParams, {
     bool isAndroid = false,
     bool isIosSimulator = false,
+    bool isMacosX64 = false,
   }) {
     return resolvePreferredBackendForLoad(
               modelParams,
               isAndroid: isAndroid,
               isIosSimulator: isIosSimulator,
+              isMacosX64: isMacosX64,
             ) ==
             GpuBackend.cpu
         ? 0
@@ -531,6 +542,24 @@ class LlamaCppService {
         '(https://github.com/leehack/llamadart/issues/950), and this model '
         'was loaded with GPU layers there. Use ComputeDevice.auto with '
         'GpuBackend.auto, or ComputeDevice.cpu, to run it on the CPU.';
+  }
+
+  /// The warning for a model a macOS x86_64 process loaded with
+  /// [resolvedGpuLayers] GPU layers, or `null` when [isMacosX64] is false or
+  /// the model runs on the CPU.
+  static String? macosX64MetalWarning({
+    required bool isMacosX64,
+    required int resolvedGpuLayers,
+  }) {
+    if (!isMacosX64 || resolvedGpuLayers == 0) {
+      return null;
+    }
+    return "llama.cpp's Metal backend is known to return garbled output on "
+        'Intel Macs with AMD GPUs '
+        '(https://github.com/leehack/llamadart/issues/1597), and this model '
+        'was loaded with GPU layers in a macOS x86_64 process. Use '
+        'ComputeDevice.auto with GpuBackend.auto, or ComputeDevice.cpu, to '
+        'run it on the CPU.';
   }
 
   /// Returns whether context-time GPU offload should be disabled.
@@ -1416,6 +1445,7 @@ class LlamaCppService {
       modelParams,
       isAndroid: _isAndroid,
       isIosSimulator: _isIosSimulator,
+      isMacosX64: _isMacosX64,
       platform: Platform.operatingSystem,
     );
     final modelFileSize = _validateGgufModelFile(modelPath, 'Model');
@@ -1425,6 +1455,7 @@ class LlamaCppService {
       modelParams,
       isAndroid: _isAndroid,
       isIosSimulator: _isIosSimulator,
+      isMacosX64: _isMacosX64,
     );
 
     _prepareBackendsForModelLoad(effectiveBackend);
@@ -1435,6 +1466,7 @@ class LlamaCppService {
       modelParams,
       isAndroid: _isAndroid,
       isIosSimulator: _isIosSimulator,
+      isMacosX64: _isMacosX64,
     );
     var forcedCpuFallback = false;
 
@@ -1648,6 +1680,13 @@ class LlamaCppService {
     );
     if (simulatorWarning != null) {
       LlamaLogger.instance.warning(simulatorWarning);
+    }
+    final intelWarning = macosX64MetalWarning(
+      isMacosX64: _isMacosX64,
+      resolvedGpuLayers: _activeResolvedGpuLayers,
+    );
+    if (intelWarning != null) {
+      LlamaLogger.instance.warning(intelWarning);
     }
 
     return handle;
@@ -1922,10 +1961,16 @@ class LlamaCppService {
         'ModelParams.$field, llama.cpp multi-GPU placement, is not available '
         'on ${Platform.operatingSystem}';
     if (gpuLayers == 0) {
+      final autoHint =
+          backend == GpuBackend.cpu &&
+              params.preferredBackend == GpuBackend.auto
+          ? ' GpuBackend.auto loads on the CPU on this platform; set a GPU '
+                'preferredBackend or use ComputeDevice.gpu.'
+          : '';
       throw LlamaUnsupportedException(
         '$capability: the ${backend.name} backend has no usable GPU here'
         '${vulkan.unsupported == null ? '' : ' (${vulkan.unsupported})'}, '
-        'so the load would run on the CPU.',
+        'so the load would run on the CPU.$autoHint',
       );
     }
     final placement = resolveGpuDevicePlacement(
@@ -2075,6 +2120,7 @@ class LlamaCppService {
             targetModelParams,
             isAndroid: _isAndroid,
             isIosSimulator: _isIosSimulator,
+            isMacosX64: _isMacosX64,
           );
     final targetResolvedGpuLayers =
         _modelResolvedGpuLayers[targetModelHandle] ??
@@ -2082,6 +2128,7 @@ class LlamaCppService {
           targetModelParams,
           isAndroid: _isAndroid,
           isIosSimulator: _isIosSimulator,
+          isMacosX64: _isMacosX64,
         );
     final draftBackend = effectiveBackend;
     final draftGpuLayers = targetResolvedGpuLayers;
@@ -3515,6 +3562,7 @@ class LlamaCppService {
       params,
       isAndroid: _isAndroid,
       isIosSimulator: _isIosSimulator,
+      isMacosX64: _isMacosX64,
       platform: Platform.operatingSystem,
     );
     if (params.speculativeRollbackTokenMax > 0) {
@@ -8947,6 +8995,7 @@ class LlamaCppService {
             params,
             isAndroid: _isAndroid,
             isIosSimulator: _isIosSimulator,
+            isMacosX64: _isMacosX64,
           );
       final runsOnCpu = decisionHeadRunsOnCpu(
         params: params,

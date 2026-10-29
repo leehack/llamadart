@@ -116,7 +116,7 @@ the default, keeps each runtime's own default:
 
 | Runtime | `ComputeDevice.auto` |
 | --- | --- |
-| llama.cpp native | Every layer on the best GPU backend that loads; the CPU when no GPU module or device is present, on Android and on an iOS simulator. |
+| llama.cpp native | Every layer on the best GPU backend that loads; the CPU when no GPU module or device is present, on Android, on an iOS simulator and on macOS x86_64, Rosetta included ([#1597](https://github.com/leehack/llamadart/issues/1597)). |
 | llama.cpp Web | The bridge's default: WebGPU when the browser has it, otherwise the WebAssembly CPU runtime. |
 | LiteRT-LM native | GPU on Android, iOS and macOS; CPU on Linux and Windows. |
 | LiteRT-LM Web | WebGPU, without a probe. |
@@ -141,7 +141,8 @@ never falls back to another device:
   an iOS simulator it uses Metal, as `GpuBackend.metal` does, and Metal
   returns incorrect output there
   ([#950](https://github.com/leehack/llamadart/issues/950)); keep `auto` or
-  `cpu` on a simulator. On
+  `cpu` on a simulator. On macOS x86_64 it uses Metal too, which returns
+  garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)). On
   the Web it needs a WebGPU adapter and a bridge that loads GPU layers. On
   LiteRT-LM it needs the GPU backend: Linux arm64 has none, and macOS x64 has
   no LiteRT-LM runtime.

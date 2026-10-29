@@ -2909,6 +2909,29 @@ void main() {
       );
     });
 
+    test('gpu resolves auto to Metal on macOS x64 only', () {
+      const params = ModelParams(device: ComputeDevice.gpu);
+
+      final intel = LlamaCppService.resolveComputeDeviceParams(
+        params,
+        isMacosX64: true,
+      );
+      expect(intel.preferredBackend, GpuBackend.metal);
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(intel, isMacosX64: true),
+        ModelParams.maxGpuLayers,
+      );
+      expect(
+        LlamaCppService.resolveComputeDeviceParams(params, isMacosX64: false),
+        same(params),
+      );
+      const auto = ModelParams();
+      expect(
+        LlamaCppService.resolveComputeDeviceParams(auto, isMacosX64: true),
+        same(auto),
+      );
+    });
+
     test('npu throws LlamaUnsupportedException naming the platform', () {
       expect(
         () => LlamaCppService.resolveComputeDeviceParams(
@@ -3601,6 +3624,289 @@ void main() {
           greaterThan(0),
           reason: 'an encoder on Metal selects a GPU for its head',
         );
+      });
+    });
+  });
+
+  group('macOS x64', () {
+    const issue = 'https://github.com/leehack/llamadart/issues/1597';
+
+    test('warns only for a macOS x64 load that offloads GPU layers', () {
+      expect(
+        LlamaCppService.macosX64MetalWarning(
+          isMacosX64: true,
+          resolvedGpuLayers: 1,
+        ),
+        allOf(contains('Metal'), contains('Intel Mac'), contains(issue)),
+      );
+      expect(
+        LlamaCppService.macosX64MetalWarning(
+          isMacosX64: true,
+          resolvedGpuLayers: 0,
+        ),
+        isNull,
+      );
+      expect(
+        LlamaCppService.macosX64MetalWarning(
+          isMacosX64: false,
+          resolvedGpuLayers: ModelParams.maxGpuLayers,
+        ),
+        isNull,
+      );
+    });
+
+    group('loads', () {
+      late Directory tempDir;
+      late String modelPath;
+      late List<LlamaLogRecord> records;
+
+      Iterable<String> intelWarnings() => records
+          .where((record) => record.level == LlamaLogLevel.warn)
+          .map((record) => record.message)
+          .where((message) => message.contains(issue));
+
+      setUpAll(() => LlamaCppService().initializeBackend());
+
+      setUp(() {
+        tempDir = Directory.systemTemp.createTempSync('macos_x64_');
+        modelPath = path.join(tempDir.path, 'llama.gguf');
+        writeSyntheticLlamaGguf(modelPath);
+        records = <LlamaLogRecord>[];
+        LlamaLogger.instance
+          ..setLevel(LlamaLogLevel.warn)
+          ..setHandler(records.add);
+      });
+
+      tearDown(() {
+        LlamaLogger.instance
+          ..setLevel(LlamaLogLevel.none)
+          ..setHandler(null);
+        tempDir.deleteSync(recursive: true);
+      });
+
+      test('auto loads on the CPU device only, with 0 GPU layers, a CPU '
+          'projector and no context offload', () {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        final service = LlamaCppService(
+          isMacosX64: true,
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        );
+        addTearDown(service.dispose);
+        const params = ModelParams(contextSize: 512);
+
+        final handle = service.loadModel(modelPath, params);
+        final context = service.createContext(handle, params);
+
+        expect(service.getActiveBackendName(), 'CPU');
+        expect(service.getResolvedGpuLayers(), 0);
+        final cpuDevices = _invokePrivateForTesting<List<ggml_backend_dev_t>?>(
+          service,
+          '_resolvePreferredDevices',
+          [GpuBackend.cpu],
+        );
+        expect(recorder.loadGpuLayers, [0]);
+        expect(recorder.loadDevices, [
+          [cpuDevices!.single.address],
+        ]);
+        expect(
+          _readPrivateForTesting<Map<int, bool>>(
+            service,
+            '_modelToMtmdUseGpu',
+          )[handle],
+          isFalse,
+        );
+        final contextParams =
+            _readPrivateForTesting<Map<int, llama_context_params>>(
+              service,
+              '_contextParams',
+            )[context]!;
+        expect(contextParams.offload_kqv, isFalse);
+        expect(contextParams.op_offload, isFalse);
+        expect(intelWarnings(), isEmpty);
+      });
+
+      test('auto keeps its GPU layers on arm64 macOS', () {
+        final service = LlamaCppService(
+          isMacosX64: false,
+          registeredDevices: () => const <GgmlDeviceEntry>[],
+        );
+        addTearDown(service.dispose);
+
+        service.loadModel(modelPath, const ModelParams(contextSize: 512));
+
+        expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+        expect(intelWarnings(), isEmpty);
+      });
+
+      test('gpu with auto loads on Metal and warns', () {
+        final checked = <GpuBackend>[];
+        final service = LlamaCppService(
+          isMacosX64: true,
+          // Pins a Metal device, so a host without one still loads and warns.
+          deviceTypes: (backend) {
+            checked.add(backend);
+            return [ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value];
+          },
+          registeredDevices: () => const <GgmlDeviceEntry>[],
+        );
+        addTearDown(service.dispose);
+
+        service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
+        );
+
+        expect(checked, [GpuBackend.metal]);
+        expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+        expect(intelWarnings(), hasLength(1));
+      });
+
+      test('an explicit Metal request keeps its GPU layers and warns', () {
+        // An uninitialized service has no module directory, so no host forces
+        // the missing Metal module onto the CPU, and no registered device can
+        // refuse the load: every host keeps the layers.
+        final service = LlamaCppService(
+          isMacosX64: true,
+          registeredDevices: () => const <GgmlDeviceEntry>[],
+        );
+        addTearDown(service.dispose);
+
+        service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.metal,
+            gpuLayers: 42,
+          ),
+        );
+
+        expect(service.getResolvedGpuLayers(), 42);
+        expect(intelWarnings(), hasLength(1));
+      });
+
+      test('a draft model follows its auto target onto the CPU', () {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        final service = LlamaCppService(
+          isMacosX64: true,
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        );
+        addTearDown(service.dispose);
+
+        final target = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512),
+        );
+        // The target's recorded backend name would short-circuit the draft to
+        // the CPU; without it the draft must resolve auto itself.
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        ).remove(target);
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        ).remove(target);
+        _invokePrivateForTesting<Object?>(
+          service,
+          '_loadSpeculativeDraftModel',
+          [target, modelPath, 'Draft model'],
+          {#loadMtp: false},
+        );
+
+        expect(recorder.loadGpuLayers, [0, 0]);
+        expect(recorder.loadDevices[1], recorder.loadDevices[0]);
+      });
+
+      test('a decision head follows its auto encoder onto the CPU', () {
+        var registryReads = 0;
+        final service = LlamaCppService(
+          isMacosX64: true,
+          registeredDevices: () {
+            registryReads++;
+            return const <GgmlDeviceEntry>[];
+          },
+        );
+        addTearDown(service.dispose);
+        final encoderPath = path.join(tempDir.path, 'encoder.gguf');
+        final headPath = path.join(tempDir.path, 'head.safetensors');
+        final configPath = path.join(tempDir.path, 'config.json');
+        writeSyntheticModernBertGguf(encoderPath, decisionTokens: true);
+        SyntheticDecisionHead(d: 16, layers: 1, seed: 1).write(headPath);
+        File(configPath).writeAsStringSync('{"max_len": 64, "head_layers": 1}');
+
+        final encoder = service.loadModel(
+          encoderPath,
+          const ModelParams(contextSize: 512),
+        );
+        // Without the encoder's recorded placement the head must resolve auto
+        // itself.
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        ).remove(encoder);
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        ).remove(encoder);
+        registryReads = 0;
+        final head = service.loadDecisionHead(encoder, headPath, configPath);
+
+        expect(head.deviceName, 'CPU');
+        expect(registryReads, 0, reason: 'a CPU encoder skips GPU selection');
+      });
+
+      test('row split with auto is refused naming the CPU before the load', () {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        final service = LlamaCppService(
+          isMacosX64: true,
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        );
+        addTearDown(service.dispose);
+
+        expect(
+          () => service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 512, splitMode: ModelSplitMode.row),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('ModelSplitMode.row'), contains('CPU')),
+            ),
+          ),
+        );
+        expect(recorder.loadGpuLayers, isEmpty);
+      });
+
+      test('gpuDevices with auto is refused and names a GPU request', () {
+        final service = LlamaCppService(isMacosX64: true);
+        addTearDown(service.dispose);
+
+        expect(
+          () => service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 512, gpuDevices: [0]),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('ModelParams.gpuDevices'),
+                contains('GpuBackend.auto loads on the CPU'),
+                contains('ComputeDevice.gpu'),
+              ),
+            ),
+          ),
+        );
+        expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
       });
     });
   });
@@ -4934,6 +5240,70 @@ void main() {
       );
       expect(
         LlamaCppService.resolveGpuLayersForLoad(params, isIosSimulator: true),
+        42,
+      );
+    });
+
+    test('resolves auto to CPU and zero gpu layers on macOS x64', () {
+      const params = ModelParams(
+        gpuLayers: ModelParams.maxGpuLayers,
+        preferredBackend: GpuBackend.auto,
+      );
+
+      expect(
+        LlamaCppService.resolvePreferredBackendForLoad(
+          params,
+          isMacosX64: true,
+        ),
+        GpuBackend.cpu,
+      );
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(params, isMacosX64: true),
+        0,
+      );
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(
+          const ModelParams(gpuLayers: -1),
+          isMacosX64: true,
+        ),
+        0,
+      );
+    });
+
+    test('keeps auto and its gpu layers on arm64 macOS', () {
+      const params = ModelParams(
+        gpuLayers: ModelParams.maxGpuLayers,
+        preferredBackend: GpuBackend.auto,
+      );
+
+      expect(
+        LlamaCppService.resolvePreferredBackendForLoad(
+          params,
+          isMacosX64: false,
+        ),
+        GpuBackend.auto,
+      );
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(params, isMacosX64: false),
+        ModelParams.maxGpuLayers,
+      );
+    });
+
+    test('keeps an explicit Metal request on macOS x64', () {
+      const params = ModelParams(
+        gpuLayers: 42,
+        preferredBackend: GpuBackend.metal,
+      );
+
+      expect(
+        LlamaCppService.resolvePreferredBackendForLoad(
+          params,
+          isMacosX64: true,
+        ),
+        GpuBackend.metal,
+      );
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(params, isMacosX64: true),
         42,
       );
     });

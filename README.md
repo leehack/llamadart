@@ -16,6 +16,11 @@ Android deployments, NPU. See the
 [support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix)
 for each target.
 
+On macOS x86_64, Rosetta included, llama.cpp `GpuBackend.auto` runs on the
+CPU, because Metal returns garbled output on Intel Macs with AMD GPUs
+([#1597](https://github.com/leehack/llamadart/issues/1597)); an explicit
+`GpuBackend.metal` or `ComputeDevice.gpu` still loads on Metal, with a warning.
+
 Android llama.cpp excludes the known unsafe Adreno 750 driver `2150604839`:
 explicit GPU requests throw, while automatic selection with a Vulkan
 preference falls back to CPU with a warning. See the
