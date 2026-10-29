@@ -251,7 +251,8 @@ class LlamaCppService {
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
   /// embedding resources, the read of the Vulkan device facts, the registered
-  /// ggml devices a load selects from, the allocator of the model paths,
+  /// ggml devices a load selects from, the probe of whether a device's
+  /// backend has row split buffer types, the allocator of the model paths,
   /// tensor splits and tensor buffer overrides [loadModel] and draft model
   /// loads pass to llama.cpp, and the allocator
   /// of each context's token batch, whose blocks `malloc`'s free must be able
@@ -274,6 +275,7 @@ class LlamaCppService {
     void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
+    bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
     Allocator modelLoadAllocator = malloc,
     Allocator contextBatchAllocator = malloc,
     String? Function()? buildIdentity,
@@ -293,6 +295,7 @@ class LlamaCppService {
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices,
+       _splitBufferTypeProbeOverride = splitBufferTypeProbe,
        _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
        _readBuildIdentity = buildIdentity;
@@ -316,6 +319,7 @@ class LlamaCppService {
       _objectCallsOverride ?? _resolveObjectCalls();
 
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
+  final bool Function(GgmlDeviceEntry device)? _splitBufferTypeProbeOverride;
   final Allocator _modelLoadAllocator;
   final Allocator _contextBatchAllocator;
   final String? Function()? _readBuildIdentity;
@@ -357,6 +361,7 @@ class LlamaCppService {
   _GgmlBackendRegGetDart? _ggmlBackendRegGetFallback;
   _GgmlBackendRegNameDart? _ggmlBackendRegNameFallback;
   _GgmlBackendRegByNameDart? _ggmlBackendRegByNameFallback;
+  _GgmlBackendRegGetProcAddressDart? _ggmlBackendRegGetProcAddressFallback;
   _GgmlBackendRegDevCountDart? _ggmlBackendRegDevCountFallback;
   _GgmlBackendRegDevGetDart? _ggmlBackendRegDevGetFallback;
   _GgmlBackendDevCountDart? _ggmlBackendDevCountFallback;
@@ -1521,6 +1526,14 @@ class LlamaCppService {
       }
       preferredDevices = _createDeviceList(placement.devices);
     }
+    try {
+      _checkRowSplitSupported(modelParams, preferredDevices);
+    } catch (_) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      rethrow;
+    }
     // Allocated after every refusal above: those error paths free only
     // preferredDevices.
     final tensorSplit = _createTensorSplit(placement);
@@ -1712,6 +1725,70 @@ class LlamaCppService {
       'available for this load on ${Platform.operatingSystem}: $unsupported. '
       'Set moeCacheBytes to 0.',
     );
+  }
+
+  /// Throws [LlamaUnsupportedException] when [params] asks for row split and
+  /// a device the load passes in [listed], or llama.cpp selects without a
+  /// list, has no split buffer types, which llama.cpp would only find out
+  /// while it loads the model.
+  void _checkRowSplitSupported(
+    ModelParams params,
+    Pointer<ggml_backend_dev_t>? listed,
+  ) {
+    if (params.splitMode != ModelSplitMode.row) return;
+    final registered = _registeredDevices();
+    final List<GgmlDeviceEntry> devices;
+    if (listed == null) {
+      devices = selectModelDevices(
+        registered: registered,
+        listed: null,
+        splitMode: params.splitMode.llamaCppValue,
+        mainGpu: params.mainGpu,
+      );
+    } else {
+      final props = calloc<ggml_backend_dev_props>();
+      try {
+        devices = [
+          for (var i = 0; listed[i] != nullptr; i++)
+            registered.firstWhere(
+              (entry) => entry.device == listed[i],
+              orElse: () => _describeDevice(listed[i], props),
+            ),
+        ];
+      } finally {
+        calloc.free(props);
+      }
+    }
+    final unsupported = rowSplitUnsupportedReason(
+      splitMode: params.splitMode.llamaCppValue,
+      devices: devices,
+      hasSplitBufferType: _splitBufferTypeProbeOverride ?? _hasSplitBufferType,
+    );
+    if (unsupported == null) return;
+    throw LlamaUnsupportedException(
+      'ModelSplitMode.row, llama.cpp row split, is not available for this '
+      'load on ${Platform.operatingSystem}: $unsupported. Use '
+      'ModelSplitMode.layer, the default, to split the model by layers '
+      'instead.',
+    );
+  }
+
+  /// Whether the backend registry of [entry] exports
+  /// `ggml_backend_split_buffer_type`, as llama.cpp looks it up for row split.
+  /// A device or symbol that cannot be read counts as having it, which leaves
+  /// the decision to llama.cpp.
+  bool _hasSplitBufferType(GgmlDeviceEntry entry) {
+    final device = entry.device;
+    if (device == null || device == nullptr) return true;
+    final registry = _ggmlBackendDevBackendReg(device);
+    if (registry == nullptr) return true;
+    final name = 'ggml_backend_split_buffer_type'.toNativeUtf8();
+    try {
+      final proc = _ggmlBackendRegGetProcAddress(registry, name.cast());
+      return proc == null || proc != nullptr;
+    } finally {
+      malloc.free(name);
+    }
   }
 
   /// The CPU buffer type that keeps the experts of [cpuMoeLayers] layers in
@@ -2741,6 +2818,13 @@ class LlamaCppService {
                 _GgmlBackendRegByNameNative,
                 _GgmlBackendRegByNameDart
               >('ggml_backend_reg_by_name'),
+        );
+        _ggmlBackendRegGetProcAddressFallback ??= _tryBind(
+          () =>
+              library.lookupFunction<
+                _GgmlBackendRegGetProcAddressNative,
+                _GgmlBackendRegGetProcAddressDart
+              >('ggml_backend_reg_get_proc_address'),
         );
         _ggmlBackendRegDevCountFallback ??= _tryBind(
           () =>

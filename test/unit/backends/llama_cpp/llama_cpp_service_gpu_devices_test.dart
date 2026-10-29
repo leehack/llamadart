@@ -64,6 +64,7 @@ void main() {
   void start({
     List<GgmlDeviceEntry> Function()? registeredDevices,
     VulkanDeviceProbe probe = const VulkanDeviceProbe.unavailable('test'),
+    bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
   }) {
     allocator = RecordingAllocator();
     recorder = RecordingExitTeardown(
@@ -76,6 +77,7 @@ void main() {
       ),
       registeredDevices: registeredDevices,
       vulkanDeviceProbe: () => probe,
+      splitBufferTypeProbe: splitBufferTypeProbe,
       modelLoadAllocator: allocator,
     )..initializeBackend();
   }
@@ -298,6 +300,166 @@ void main() {
     // The model path, the override list and its pattern.
     expect(allocator.allocations, 3);
     allocator.expectAllFreed();
+  });
+
+  group('row split', () {
+    Matcher refusedRow(String device) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (e) => e.message,
+        'message',
+        allOf(
+          contains('ModelSplitMode.row'),
+          contains('split buffer'),
+          contains(device),
+          contains('ModelSplitMode.layer'),
+        ),
+      ),
+    );
+
+    test('on a device whose backend has no split buffers is refused before '
+        'the load', () {
+      start();
+      expect(
+        () => service.loadModel(
+          model,
+          const ModelParams(
+            preferredBackend: GpuBackend.cpu,
+            splitMode: ModelSplitMode.row,
+          ),
+        ),
+        refusedRow('CPU'),
+      );
+      expect(recorder.calls, isNot(contains(_load)));
+      allocator.expectAllFreed();
+    });
+
+    test('on GPUs llama.cpp selects by itself is refused before the load', () {
+      final probed = <String>[];
+      start(
+        registeredDevices: () => [
+          _fake('Vulkan0', 'Vulkan', 0x1000),
+          _fake('Vulkan1', 'Vulkan', 0x2000),
+        ],
+        splitBufferTypeProbe: (device) {
+          probed.add(device.name);
+          return false;
+        },
+      );
+      expect(
+        () => service.loadModel(
+          model,
+          const ModelParams(splitMode: ModelSplitMode.row),
+        ),
+        refusedRow('Vulkan0 (Vulkan)'),
+      );
+      expect(probed, ['Vulkan0']);
+      expect(recorder.calls, isNot(contains(_load)));
+    });
+
+    test('on listed GPUs probes the listed ones before the split is '
+        'allocated', () {
+      final probed = <String>[];
+      start(
+        registeredDevices: () => [
+          _fake('Vulkan0', 'Vulkan', 0x1000),
+          _fake('Vulkan1', 'Vulkan', 0x2000),
+        ],
+        splitBufferTypeProbe: (device) {
+          probed.add(device.name);
+          return device.name == 'Vulkan1';
+        },
+      );
+      expect(
+        () => service.loadModel(
+          model,
+          const ModelParams(
+            splitMode: ModelSplitMode.row,
+            gpuDevices: [1, 0],
+            tensorSplit: [1, 1],
+          ),
+        ),
+        refusedRow('Vulkan0 (Vulkan)'),
+      );
+      expect(probed, ['Vulkan1', 'Vulkan0']);
+      expect(recorder.calls, isNot(contains(_load)));
+      expect(allocator.allocations, 0);
+    });
+
+    test('on GPUs llama.cpp selects by itself probes all of them, whatever '
+        'the main GPU', () {
+      final probed = <String>[];
+      start(
+        registeredDevices: () => [
+          _fake('Vulkan0', 'Vulkan', 0x1000),
+          _fake('Vulkan1', 'Vulkan', 0x2000),
+        ],
+        splitBufferTypeProbe: (device) {
+          probed.add(device.name);
+          return device.name == 'Vulkan0';
+        },
+      );
+      expect(
+        () => service.loadModel(
+          model,
+          const ModelParams(splitMode: ModelSplitMode.row, mainGpu: 1),
+        ),
+        refusedRow('Vulkan1 (Vulkan)'),
+      );
+      expect(probed, ['Vulkan0', 'Vulkan1']);
+      expect(recorder.calls, isNot(contains(_load)));
+    });
+
+    test('leaves a device it cannot read to llama.cpp', () {
+      start();
+      for (final device in [null, nullptr]) {
+        expect(
+          _invokePrivate<bool>(service, '_hasSplitBufferType', [
+            GgmlDeviceEntry(
+              name: 'GPU0',
+              registry: 'Vulkan',
+              description: 'GPU0',
+              type: _gpu,
+              device: device,
+            ),
+          ]),
+          isTrue,
+        );
+      }
+    });
+
+    test('on devices with split buffers goes on to the load', () {
+      start(splitBufferTypeProbe: (_) => true);
+      // llama.cpp's CPU backend has none, so its own check fails the load.
+      expect(
+        () => service.loadModel(
+          model,
+          const ModelParams(
+            preferredBackend: GpuBackend.cpu,
+            splitMode: ModelSplitMode.row,
+          ),
+        ),
+        throwsA(isNot(isA<LlamaUnsupportedException>())),
+      );
+      expect(recorder.calls, contains(_load));
+      allocator.expectAllFreed();
+    });
+
+    test('is not probed in layer mode', () {
+      var listed = 0;
+      start(
+        registeredDevices: () {
+          listed++;
+          return const [];
+        },
+        splitBufferTypeProbe: (_) => fail('probed'),
+      );
+      service.loadModel(
+        model,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      expect(recorder.calls, contains(_load));
+      expect(listed, 0);
+    });
   });
 
   test('the tensor split holds llama_max_devices() floats', () {

@@ -51,6 +51,13 @@ Important fields:
   [When a requested backend is not bundled](../platforms/native-build-hooks#when-a-requested-backend-is-not-bundled).
 - `splitMode`: model tensor distribution mode passed through to llama.cpp
   `split_mode`. Defaults to upstream `layer` behavior.
+  `ModelSplitMode.row` needs llama.cpp split buffer types on every model
+  device, which llama.cpp `v0.7.0` provides only on backends llamadart does
+  not bundle (SYCL, Hexagon). On native llama.cpp a row split load whose
+  devices lack them, as on every bundled GPU backend and with
+  `GpuBackend.cpu`, throws
+  `LlamaUnsupportedException` naming the device before the model loads; use
+  `ModelSplitMode.layer`.
 - `gpuDevices`: the GPUs to load on, as the `GpuDeviceInfo.mainGpu` indices
   `LlamaEngine.listGpuDevices` reports for `preferredBackend`
   (llama.cpp `--device`). The list order is the split order. Under
@@ -72,9 +79,7 @@ Important fields:
   counts within the list, or the first one when it is out of range. Validated
   on one Metal GPU and on a Vulkan Tesla T4, with Mesa lavapipe as the second
   device for two-device lists and splits; two-GPU hardware has no evidence
-  yet ([#1528](https://github.com/leehack/llamadart/issues/1528)), a row split
-  on a backend without split buffers fails with a generic load error
-  ([#1576](https://github.com/leehack/llamadart/issues/1576)), and CUDA is not
+  yet ([#1528](https://github.com/leehack/llamadart/issues/1528)), and CUDA is not
   hardware-qualified.
 
 ```dart
