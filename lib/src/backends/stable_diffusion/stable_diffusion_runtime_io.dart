@@ -86,7 +86,9 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 /// [abi], [isIosSimulator], [readCpuInfo], [windowsHasAvx2],
 /// [missingWindowsLibraries] and [api] default to the host and the bundled
 /// library; tests replace them. [isIosSimulator] only labels messages:
-/// `Abi.iosArm64` is both the device and the arm64 simulator.
+/// `Abi.iosArm64` is both the device and the arm64 simulator. Messages name
+/// the targets as the build hook names their bundles: `ios-arm64`,
+/// `ios-arm64-sim` and `ios-x64-sim`.
 StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   Abi? abi,
   bool Function() isIosSimulator = isIosSimulatorProcess,
@@ -98,16 +100,17 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   LlamaLogLevel logLevel = LlamaLogLevel.none,
 }) {
   final targetAbi = abi ?? Abi.current();
-  final platform = targetAbi == Abi.iosArm64 && isIosSimulator()
-      ? 'ios-arm64-sim'
-      : _abiLabel(targetAbi);
+  final platform = switch (targetAbi) {
+    Abi.iosArm64 when isIosSimulator() => 'ios-arm64-sim',
+    Abi.iosX64 => 'ios-x64-sim',
+    _ => _abiLabel(targetAbi),
+  };
   if (!stableDiffusionPublishedAbis.contains(targetAbi)) {
     return StableDiffusionRuntimeStatus.unavailable(
       LlamaUnsupportedException(
         'stable_diffusion runtime is not published for $platform; it is '
-        'available on android-arm64, ios-arm64 (device and simulator), the '
-        'ios-x64 simulator, macos-arm64, macos-x64, linux-arm64, linux-x64 '
-        'and windows-x64.',
+        'available on android-arm64, ios-arm64, ios-arm64-sim, ios-x64-sim, '
+        'macos-arm64, macos-x64, linux-arm64, linux-x64 and windows-x64.',
       ),
     );
   }

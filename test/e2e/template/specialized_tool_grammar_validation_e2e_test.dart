@@ -1793,6 +1793,45 @@ void main() {
       ],
     );
   });
+
+  test(
+    'Firefunction v2 required tool grammar leaves the call id undeclared',
+    () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: File(
+          'test/fixtures/llama_cpp_templates/'
+          'fireworks-ai-llama-3-firefunction-v2.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Weather in Seoul?',
+          ),
+        ],
+        metadata: const {},
+        tools: [_weatherWithCityTool],
+        toolChoice: ToolChoice.required,
+      );
+
+      expect(rendered.format, ChatFormat.firefunctionV2.index);
+      expect(rendered.grammarLazy, isFalse);
+      // The call as llama.cpp's test-chat emits it and the template renders it.
+      const call =
+          ' functools[{"name": "weather", "arguments": {"city": "Seoul"}}]';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [call, call.substring(' functools'.length)],
+        invalid: [
+          call.replaceFirst('}}]', '}, "id": "call_0"}]'),
+          call.replaceFirst('"weather"', '"unknown"'),
+          call.replaceFirst('"city"', '"town"'),
+          call.substring(0, call.length - 1),
+          'No tool',
+        ],
+      );
+    },
+  );
   test(
     'canonical JSON schema grammar enforces nullable enums and containers',
     () {

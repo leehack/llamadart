@@ -146,6 +146,37 @@ void main() {
     expect(marker.readAsStringSync(), before);
   }, testOn: '!windows');
 
+  test(
+    'an archive or extraction that cannot be read fails the check',
+    () async {
+      archive.setLastModifiedSync(DateTime(2001));
+      await Process.run('chmod', ['a-r', archive.path]);
+      await expectLater(matches(), throwsA(isA<FileSystemException>()));
+      await Process.run('chmod', ['u+r', archive.path]);
+
+      final lib = Directory(path.join(extractedDir.path, 'lib'));
+      await Process.run('chmod', ['a-rx', lib.path]);
+      addTearDown(() => Process.run('chmod', ['u+rx', lib.path]));
+      await expectLater(matches(), throwsA(isA<FileSystemException>()));
+    },
+    testOn: '!windows',
+  );
+
+  test('a marker that cannot be renamed into place leaves no .tmp', () async {
+    final marker = nativeExtractionMarkerFile(extractedDir);
+    marker.deleteSync();
+    File(path.join(marker.path, 'occupied')).createSync(recursive: true);
+    await expectLater(
+      writeNativeExtractionMarker(
+        extractedDir: extractedDir,
+        archive: archive,
+        archiveSha256: archiveSha256,
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect(File('${marker.path}.tmp').existsSync(), isFalse);
+  });
+
   test('a missing archive, marker or extraction does not match', () async {
     archive.renameSync('${archive.path}.moved');
     expect(await matches(), isFalse);

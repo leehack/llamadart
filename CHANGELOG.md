@@ -52,6 +52,8 @@
 - Parse a reply as the engine does with `ChatTemplateEngine.parseRendered(rendered, output)`, which reads how its `render` or `engine.chatTemplate` result left the thought: after the stock Seed-OSS template, `Plan</seed:think>Sunny.` is content, as in llama-server, where `ChatTemplateEngine.parse` returns reasoning `Plan` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
 - `ToolChoice.required` now returns the tool call on DeepSeek-R1 distills, LFM2 and Functionary v3.2 instead of running to the length limit or returning the call as text: their tool-call grammars match llama.cpp's call framing, without a literal `\n` or a free-text LFM2 `id`, and DeepSeek-R1 takes one call unless `parallelToolCalls` is set ([#1577](https://github.com/leehack/llamadart/issues/1577)).
 - The image runtime's "not bundled" and other load-failure reasons name `ios-arm64-sim` on the arm64 iOS simulator instead of the device target `ios-arm64` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
+- `ToolChoice.required` on Firefunction v2 no longer makes the model write a free-text call `id`: its tool-call grammar, like llama.cpp's, takes only the call's `name` and `arguments` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
+- The image runtime's load-failure reasons name the x86_64 iOS simulator `ios-x64-sim`, the build hook's name for its bundle, instead of `ios-x64` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
 - The installation guide and support matrix name `libCLiteRTLM_mac.dylib`, the library a sandboxed Flutter macOS app without the LiteRT-LM companion fails to load, instead of `libLiteRt.dylib` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
 
 ## 0.16.5
