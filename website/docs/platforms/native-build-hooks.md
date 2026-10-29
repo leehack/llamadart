@@ -753,8 +753,17 @@ LiteRT-LM bundles from
 The hook checks every downloaded or cached llama.cpp, LiteRT-LM and
 stable-diffusion.cpp archive against its SHA-256 before extracting it, and
 downloads it again when a cached copy does not match; a fresh download that
-does not match fails the build with `NativeArchiveDigestException`. An
-already-extracted bundle in the cache is reused without hashing it again.
+does not match fails the build with `NativeArchiveDigestException`. Beside
+each llama.cpp bundle's `extracted/` directory the hook writes `extracted.json`,
+recording the archive's SHA-256, size and modification time and every extracted
+file's size. A later build reuses `extracted/` only while that record matches
+the cached archive and the directory's files, hashing the archive again only
+when its modification time changed; otherwise it extracts the cached archive
+again, verified as above, or downloads it when the archive is gone. A cache
+from before llamadart 0.17 has no record and is extracted again once from its
+cached archive, offline for the pinned release and for an override whose
+`SHA256SUMS` is cached; an override cached without `SHA256SUMS` is extracted
+again from the archive as it is, which that cache already trusted.
 The hook also checks each LiteRT-LM archive for its required libraries and
 downloads it again when a cached copy is incomplete. Which
 repository owns which change: [Runtime ownership](../maintainers/runtime-ownership).

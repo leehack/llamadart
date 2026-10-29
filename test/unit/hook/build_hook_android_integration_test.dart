@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
+import '../../support/native_bundle_cache.dart';
 
 void main() {
   final nativeTag = _readHookNativeTag();
@@ -32,6 +33,7 @@ void main() {
       await bundleDir.delete(recursive: true);
     }
     await _writeBundleLibraries(bundleDir, _androidArm64Libraries);
+    await markExtractedBundle(bundleDir);
     await _writeBundleLibraries(litertBundleDir, _androidLiteRtLibraries);
   });
 

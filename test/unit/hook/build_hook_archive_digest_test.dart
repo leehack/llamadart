@@ -760,6 +760,146 @@ void main() {
     });
   });
 
+  group('a cached extraction', () {
+    final cachedArchive = File(
+      path.join(overrideCacheDir.path, archiveName(_overrideTag)),
+    );
+    final extractedDir = Directory(
+      path.join(overrideCacheDir.path, 'extracted'),
+    );
+    final marker = File('${extractedDir.path}.json');
+    final archive = _archive('valid');
+    final sums = sha256SumsFor({archiveName(_overrideTag): archive});
+
+    Future<Map<String, String>> buildOffline({List<String>? log}) async {
+      final offline = RuntimeBundleHttpFixture.offline();
+      late Map<String, String> libraries;
+      final lines = await _captureLog(() async {
+        libraries = await _runHook(
+          project,
+          offline,
+          tag: _overrideTag,
+          check: () {},
+        );
+      });
+      log?.addAll(lines);
+      expect(offline.requests, isEmpty);
+      return libraries;
+    }
+
+    Future<void> buildOnline() => _runHook(
+      project,
+      RuntimeBundleHttpFixture({
+        overrideSumsUrl: sums.codeUnits,
+        overrideArchiveUrl: archive,
+      }),
+      tag: _overrideTag,
+      check: () {},
+    );
+
+    /// A cache an older hook left: the archive and an extraction of it,
+    /// here with other contents, and no marker.
+    Future<void> seedLegacy({required bool withSums}) async {
+      await overrideCacheDir.create(recursive: true);
+      await cachedArchive.writeAsBytes(archive);
+      if (withSums) {
+        await File(
+          path.join(overrideCacheDir.path, 'SHA256SUMS'),
+        ).writeAsString(sums);
+      }
+      await extractedDir.create();
+      for (final library in _llamaLibraries) {
+        await File(
+          path.join(extractedDir.path, library),
+        ).writeAsString('legacy-$library');
+      }
+    }
+
+    test('is reused by the next build without extracting again', () async {
+      await buildOnline();
+      expect(marker, _exists);
+
+      final log = <String>[];
+      final libraries = await buildOffline(log: log);
+
+      expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
+      expect(log, contains(contains('Using cached native bundle:')));
+      expect(log, isNot(contains(contains('Extracted native bundle'))));
+    });
+
+    test('whose library was replaced is extracted again', () async {
+      await buildOnline();
+      File(
+        path.join(extractedDir.path, 'libllamadart.so'),
+      ).writeAsStringSync('fake-libllamadart.so');
+
+      final log = <String>[];
+      final libraries = await buildOffline(log: log);
+
+      expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
+      expect(log, contains(contains('does not match its archive')));
+    });
+
+    test('with an added library is extracted again', () async {
+      await buildOnline();
+      File(
+        path.join(extractedDir.path, 'libggml-vulkan.so'),
+      ).writeAsStringSync('stub');
+
+      final libraries = await buildOffline();
+
+      expect(libraries, isNot(contains('libggml-vulkan.so')));
+      expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
+    });
+
+    test('without its archive is downloaded again', () async {
+      await buildOnline();
+      await cachedArchive.delete();
+      final fixture = RuntimeBundleHttpFixture({
+        overrideSumsUrl: sums.codeUnits,
+        overrideArchiveUrl: archive,
+      });
+
+      await _runHook(project, fixture, tag: _overrideTag, check: () {});
+
+      expect(fixture.requests, [overrideSumsUrl, overrideArchiveUrl]);
+    });
+
+    test('from before markers whose archive the cached SHA256SUMS does not '
+        'list is not used', () async {
+      await seedLegacy(withSums: false);
+      await File(path.join(overrideCacheDir.path, 'SHA256SUMS')).writeAsString(
+        sha256SumsFor({archiveName(_overrideTag): _archive('published')}),
+      );
+      final offline = RuntimeBundleHttpFixture.offline();
+
+      await expectLater(
+        _runHook(project, offline, tag: _overrideTag),
+        throwsA(isA<NativeArchiveDigestException>()),
+      );
+      expect(offline.requests, [overrideSumsUrl]);
+      expect(extractedDir, isNot(_exists));
+    });
+
+    for (final withSums in [true, false]) {
+      test(
+        'from before markers is re-extracted offline from its archive, '
+        '${withSums ? 'verified by' : 'without'} a cached SHA256SUMS',
+        () async {
+          await seedLegacy(withSums: withSums);
+
+          final libraries = await buildOffline();
+
+          expect(libraries['libllamadart.so'], 'valid-libllamadart.so');
+          expect(marker, _exists);
+          final log = <String>[];
+          await buildOffline(log: log);
+          expect(log, contains(contains('Using cached native bundle:')));
+        },
+      );
+    }
+  });
+
   test(
     'a repository override verifies against that release, not the pin',
     () async {

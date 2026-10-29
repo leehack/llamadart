@@ -953,6 +953,20 @@ void main() {
     }
   });
 
+  // llama.cpp 620d2225, after a template that opens the thought, keeps the
+  // NBSP and start tag in the reasoning; only the content is pinned here.
+  test('a public Seed-OSS parse skips only ASCII space before a thought', () {
+    for (final withTools in const [false, true]) {
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.seedOss.index,
+        ' <seed:think>Plan</seed:think>Sunny.',
+        parseToolCalls: withTools,
+        tools: withTools ? [_weatherTool] : null,
+      );
+      expect(parsed.content, 'Sunny.', reason: 'tools: $withTools');
+    }
+  });
+
   test('a forced-open thought keeps the reasoning', () async {
     expect(
       ChatTemplateEngine.parse(

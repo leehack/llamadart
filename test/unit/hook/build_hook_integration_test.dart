@@ -15,6 +15,7 @@ import 'package:test/test.dart';
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
+import '../../support/native_bundle_cache.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 import '../../support/windows_version_resource.dart';
 
@@ -28,11 +29,6 @@ void main() {
   final litertBundleDir = Directory(
     project.resolve(
       '.dart_tool/llamadart/litert_lm/$litertVersion/windows/x64',
-    ),
-  );
-  final archiveFile = File(
-    project.resolve(
-      '$cacheRelativeDir/llamadart-native-windows-x64-$nativeTag.tar.gz',
     ),
   );
 
@@ -52,11 +48,8 @@ void main() {
       'cublas64_12.dll',
       'cublaslt64_12.dll',
     ]);
+    await markExtractedBundle(bundleDir);
     await _writeBundleLibraries(litertBundleDir, _windowsLiteRtLibraries);
-
-    if (archiveFile.existsSync()) {
-      await archiveFile.delete();
-    }
   });
 
   tearDownAll(project.delete);
@@ -384,6 +377,7 @@ void main() {
           'ggml-cpu-windows-x64.dll',
           'ggml-opencl-windows-x64.dll',
         ]);
+        await markExtractedBundle(overrideBundleDir);
 
         final userDefines = PackageUserDefines(
           workspacePubspec: PackageUserDefinesSource(
@@ -463,6 +457,7 @@ void main() {
         'ggml-cpu-windows-x64.dll',
         'ggml-opencl-windows-x64.dll',
       ]);
+      await markExtractedBundle(overrideBundleDir);
 
       final userDefines = PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(
@@ -715,6 +710,7 @@ void main() {
       await writeDll(bundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
       await writeDll(bundleDir, 'vcruntime140.dll', (14, 51, 36247, 0));
       await writeDll(bundleDir, 'vcruntime140_1.dll', (14, 51, 36247, 0));
+      await markExtractedBundle(bundleDir);
       await writeDll(litertBundleDir, 'msvcp140.dll', (14, 52, 36300, 0));
       await writeDll(litertBundleDir, 'vcruntime140.dll', (14, 50, 35710, 0));
       await File(
@@ -771,6 +767,7 @@ void main() {
 
     test('equal file versions keep the llama.cpp copy', () async {
       await writeDll(bundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
+      await markExtractedBundle(bundleDir);
       await writeDll(litertBundleDir, 'msvcp140.dll', (14, 51, 36247, 0));
       final llamaCppBytes = await File(
         path.join(bundleDir.path, 'msvcp140.dll'),
@@ -803,6 +800,7 @@ void main() {
       await File(
         path.join(bundleDir.path, 'msvcp140.dll'),
       ).writeAsString('llama.cpp copy');
+      await markExtractedBundle(bundleDir);
       await File(
         path.join(litertBundleDir.path, 'msvcp140.dll'),
       ).writeAsString('LiteRT-LM copy');
