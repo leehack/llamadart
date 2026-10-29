@@ -15,6 +15,7 @@ import 'package:test/test.dart';
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_core_version.dart';
 import '../../support/hook_project_root.dart';
+import '../../support/native_bundle_cache.dart';
 
 void main() {
   final nativeTag = _readPinnedConst('llamaCppTag');
@@ -103,6 +104,16 @@ void main() {
         'libLegacySplitRuntime.dylib',
         'GemmaModelConstraintProvider',
       ]);
+    }
+    for (final directory in [
+      nativeBundleDir,
+      macosArm64NativeBundleDir,
+      macosX64NativeBundleDir,
+      iosDeviceNativeBundleDir,
+      iosArm64SimNativeBundleDir,
+      iosX64SimNativeBundleDir,
+    ]) {
+      await markExtractedBundle(directory);
     }
   });
 

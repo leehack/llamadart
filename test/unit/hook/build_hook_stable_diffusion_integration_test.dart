@@ -15,6 +15,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
+import '../../support/native_bundle_cache.dart';
 
 const _stableDiffusionAssetId = 'package:llamadart/stable_diffusion';
 const _primaryAssetId = 'package:llamadart/llamadart';
@@ -94,6 +95,7 @@ void main() {
       await _writeLibraries(nativeBundle(bundle), {
         for (final library in libraries) library: 'fake-$library',
       });
+      await markExtractedBundle(nativeBundle(bundle));
     }
     for (final MapEntry(key: bundle, value: library)
         in stableDiffusionBundles.entries) {

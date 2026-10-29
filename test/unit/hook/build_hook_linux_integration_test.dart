@@ -12,6 +12,7 @@ import 'package:test/test.dart';
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_project_root.dart';
 import '../../support/hooks_runner_layout.dart';
+import '../../support/native_bundle_cache.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 
 void main() {
@@ -31,11 +32,6 @@ void main() {
   final litertBundleDir = Directory(
     project.resolve('.dart_tool/llamadart/litert_lm/$litertVersion/linux/x64'),
   );
-  final archiveFile = File(
-    project.resolve(
-      '$cacheRelativeDir/llamadart-native-linux-x64-$nativeTag.tar.gz',
-    ),
-  );
 
   setUp(() async {
     if (bundleDir.existsSync()) {
@@ -51,6 +47,7 @@ void main() {
       'libggml-cpu.so',
       'libggml-vulkan.so',
     ]);
+    await markExtractedBundle(bundleDir);
     await _writeBundleLibraries(historicalBundleDir, const [
       'libllamadart.so',
       'libmtmd.so',
@@ -61,11 +58,8 @@ void main() {
       'libggml-cpu.so',
       'libggml-vulkan.so',
     ]);
+    await markExtractedBundle(historicalBundleDir);
     await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
-
-    if (archiveFile.existsSync()) {
-      await archiveFile.delete();
-    }
   });
 
   tearDownAll(project.delete);
