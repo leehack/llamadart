@@ -1,3 +1,8 @@
+## Unreleased
+
+- Upgrade to llamadart 0.17.0 and matching 0.17.x Apple companions.
+- Structured output parses through `ChatTemplateEngine.parseRendered`, as llamadart's engine parses its final message: after the stock Seed-OSS template, `Plan</seed:think>{...}` is content, as in llama-server, instead of reasoning `Plan` and the JSON.
+
 ## 3.5.0 - 2026-10-23
 
 - Upgrade to llamadart 0.16.0 and matching 0.16.x Apple companions. Core 0.16 throws `LlamaUnsupportedException` for `ModelParams` fields the selected runtime would ignore, including through `LlamaModelDefinition.modelParams`; see the llamadart migration guide.
