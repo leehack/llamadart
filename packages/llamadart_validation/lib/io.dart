@@ -12,13 +12,24 @@ import 'package:path/path.dart' as p;
 
 import 'llamadart_validation.dart';
 
+const _downloadRetryDelays = [
+  Duration(seconds: 2),
+  Duration(seconds: 5),
+  Duration(seconds: 15),
+];
+
 /// Verifies model bytes before reuse or load; download timing is separate.
+///
+/// A download that drops mid-transfer is retried after each of [retryDelays]
+/// within the one [timeout], resuming with a `Range` request when the server
+/// honors it and restarting otherwise.
 Future<({String path, Map<String, dynamic> evidence})> prepareModel(
   ValidationProfile profile,
   Directory cache, {
   String? suppliedPath,
   Duration timeout = const Duration(minutes: 5),
   http.Client? client,
+  List<Duration> retryDelays = _downloadRetryDelays,
   Future<void> Function(Map<String, dynamic>)? onProgress,
 }) async {
   profile.requireRunnable();
@@ -29,6 +40,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
     suppliedPath: suppliedPath,
     timeout: timeout,
     client: client,
+    retryDelays: retryDelays,
     onProgress: onProgress,
   );
 }
@@ -116,6 +128,7 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
   String? suppliedPath,
   required Duration timeout,
   http.Client? client,
+  List<Duration> retryDelays = _downloadRetryDelays,
   Future<void> Function(Map<String, dynamic>)? onProgress,
 }) async {
   final label = artifact.replaceAll('_', ' ');
@@ -196,31 +209,60 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
     final watch = Stopwatch()..start();
     try {
       await progress('download', 0, 'started');
-      await (() async {
-        final response = await transport.send(
-          http.Request('GET', Uri.parse(lock['url'] as String)),
-        );
-        if (response.statusCode != 200) {
-          throw HttpException('Model download HTTP ${response.statusCode}');
-        }
-        sink = temporary.openWrite();
-        await for (final chunk in response.stream) {
-          receivedBytes += chunk.length;
-          if (receivedBytes > size) {
-            throw const FormatException(
-              'Model download exceeded locked byte size',
-            );
+      var failures = 0;
+      while (true) {
+        try {
+          final resumeFrom = receivedBytes;
+          final request = http.Request('GET', Uri.parse(lock['url'] as String));
+          if (resumeFrom > 0) request.headers['Range'] = 'bytes=$resumeFrom-';
+          final response = await transport.send(request);
+          final resumed =
+              resumeFrom > 0 &&
+              response.statusCode == 206 &&
+              response.headers['content-range']?.startsWith(
+                    'bytes $resumeFrom-',
+                  ) ==
+                  true;
+          if (response.statusCode != 200 && !resumed) {
+            await response.stream.drain<void>().catchError((_) {});
+            throw HttpException('Model download HTTP ${response.statusCode}');
           }
-          sink!.add(chunk);
-          if (started.elapsedMilliseconds - lastReport >= 10000) {
-            await progress('download', receivedBytes, 'running');
-            lastReport = started.elapsedMilliseconds;
+          if (!resumed) receivedBytes = 0;
+          final out = temporary.openWrite(
+            mode: resumed ? FileMode.append : FileMode.write,
+          );
+          sink = out;
+          await for (final chunk in response.stream) {
+            receivedBytes += chunk.length;
+            if (receivedBytes > size) {
+              throw const FormatException(
+                'Model download exceeded locked byte size',
+              );
+            }
+            out.add(chunk);
+            if (started.elapsedMilliseconds - lastReport >= 10000) {
+              await progress('download', receivedBytes, 'running');
+              lastReport = started.elapsedMilliseconds;
+            }
           }
+          await out.flush();
+          await out.close();
+          sink = null;
+          break;
+        } catch (error) {
+          final dropped = sink;
+          sink = null;
+          await dropped?.close().catchError((_) {});
+          if (deadlineExpired ||
+              failures >= retryDelays.length ||
+              !_isTransientDownloadFailure(error)) {
+            rethrow;
+          }
+          await progress('download', receivedBytes, 'retrying');
+          await Future<void>.delayed(retryDelays[failures++]);
+          if (deadlineExpired) rethrow;
         }
-        await sink!.flush();
-        await sink!.close();
-        sink = null;
-      })();
+      }
       if (deadlineExpired) throw TimeoutException('Model download deadline');
       timer.cancel();
       downloadMs = watch.elapsedMilliseconds;
@@ -262,6 +304,13 @@ Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
     },
   );
 }
+
+bool _isTransientDownloadFailure(Object error) =>
+    (error is http.ClientException &&
+        !error.message.contains('already closed')) ||
+    error is SocketException ||
+    error is TlsException ||
+    (error is HttpException && RegExp(r'HTTP (5\d\d|429)').hasMatch('$error'));
 
 /// Writes incremental records synchronously enough to survive a native crash.
 class FileValidationJournal {

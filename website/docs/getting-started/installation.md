@@ -246,7 +246,7 @@ the build hook leaves the libraries in its cache inside the resolved
 the build machine, from inside the project. Under the App Sandbox, which
 `flutter create` turns on, and in any copied or distributed app, the first
 LiteRT-LM generation on CPU or GPU throws
-`Failed to load dynamic library 'libLiteRt.dylib'`, or
+`Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`, or
 `'libLiteRtMetalAccelerator.dylib'` with llamadart `0.12.0` and a newer
 companion
 ([#1029](https://github.com/leehack/llamadart/issues/1029)). llama.cpp is not
