@@ -647,9 +647,9 @@ On native llama.cpp, `gpuDevices` loads a model on chosen GPUs of one backend,
 by their `LlamaEngine.listGpuDevices` index, and `tensorSplit` sets each
 GPU's share. Decision heads and multimodal projectors of the model run on a
 listed GPU. Indices the host lacks, a split of another length and the Web or
-LiteRT-LM throw `LlamaUnsupportedException`. Validated on one Metal GPU only:
-multi-GPU loads have no hardware evidence yet, and CUDA is not
-hardware-qualified. See
+LiteRT-LM throw `LlamaUnsupportedException`. Validated on one Metal GPU and on a Vulkan Tesla T4, with Mesa lavapipe as
+the second device for two-device lists and splits; two-GPU hardware has no
+evidence yet, and CUDA is not hardware-qualified. See
 [Runtime Parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters).
 
 Native llama.cpp with `device: ComputeDevice.auto`, `splitMode: ModelSplitMode.none`
