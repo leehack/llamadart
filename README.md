@@ -256,7 +256,8 @@ fallback when model template metadata is empty. See
   stay unchanged ([tool-result rendering](https://llamadart.leehack.com/docs/guides/tool-calling#tool-results-on-templates-without-a-tool-role)).
 - Tool results can carry images in `LlamaToolResultContent.content` (or a
   handler's `LlamaToolOutput`) on native llama.cpp with a vision projector and a
-  Hermes-style template, qualified on Qwen3-VL; check
+  Hermes-style template (smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B
+  weights, a `qwen3vl_merger` projector and the Qwen3-VL template); check
   `LlamaEngineCapabilities.toolResultMedia`. Other runtimes, formats, audio and
   video throw `LlamaUnsupportedException`, as do image/audio parts beside
   `LlamaToolResultContent` or on the tool role

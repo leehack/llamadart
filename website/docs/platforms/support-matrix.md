@@ -228,7 +228,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes throw before generation | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
-| Tool-result media | Images with a vision projector and a Hermes-style template (qualified on Qwen3-VL) | No | No | No |
+| Tool-result media | Images with a vision projector and a Hermes-style template (smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template) | No | No | No |
 
 Tool-result media are `LlamaToolResultContent.content` parts;
 `LlamaEngineCapabilities.toolResultMedia` reports them. Other formats, audio,
