@@ -809,8 +809,9 @@ weights (`total params memory size` in its debug log) and compares pixels
 with the default placement. A module moved to the CPU leaves the Metal-only
 FLUX.1 Kontext recipe unqualified (`supportsReferenceImageEditing` is
 `false`). The [memory check](#memory-check) counts every weight against the
-device whatever the placement. Vulkan, two-GPU hosts and the larger models
-the setting is for (FLUX, SD 3.5, Z-Image) have not been measured yet.
+device whatever the placement. Placement was measured with SD-Turbo on one
+Linux x64 Vulkan Tesla T4 too; two-GPU hosts and the larger models the setting
+is for (FLUX, SD 3.5, Z-Image) have not been measured yet.
 
 ## Seamless textures
 
