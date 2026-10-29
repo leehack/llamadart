@@ -272,7 +272,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   earlier, with companion `0.0.14` or earlier, or without the companion, an
   unsandboxed app run on the build machine from the project loads the runtime
   from the hook cache, and a sandboxed (the `flutter create` default), copied
-  or distributed app throws `Failed to load dynamic library 'libLiteRt.dylib'`
+  or distributed app throws `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`
   (`'libLiteRtMetalAccelerator.dylib'` with llamadart `0.12.0` and a newer
   companion) on the first CPU or GPU generation. Add the companion, or the
   [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase)
