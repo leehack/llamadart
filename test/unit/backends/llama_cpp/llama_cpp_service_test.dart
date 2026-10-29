@@ -2730,6 +2730,7 @@ void main() {
         ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
       );
       final service = LlamaCppService(
+        isMacosX64: false,
         objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
       );
       addTearDown(service.dispose);
@@ -2990,7 +2991,7 @@ void main() {
       });
 
       test('freeing a model restores the remaining model placement report', () {
-        final service = LlamaCppService();
+        final service = LlamaCppService(isMacosX64: false);
         addTearDown(service.dispose);
         service.loadModel(
           modelPath,
@@ -3041,6 +3042,7 @@ void main() {
         final requested = <GpuBackend>[];
         final pathAllocator = RecordingAllocator();
         final service = LlamaCppService(
+          isMacosX64: false,
           deviceTypes: (backend) {
             requested.add(backend);
             return [
@@ -3205,6 +3207,7 @@ void main() {
         var registryFails = false;
         final pathAllocator = RecordingAllocator();
         final service = LlamaCppService(
+          isMacosX64: false,
           registeredDevices: () {
             if (registryFails) throw StateError('registry read failed');
             return const <GgmlDeviceEntry>[];
@@ -3446,6 +3449,7 @@ void main() {
       test('auto keeps its GPU layers off the simulator', () {
         final service = LlamaCppService(
           isIosSimulator: false,
+          isMacosX64: false,
           registeredDevices: () => const <GgmlDeviceEntry>[],
         );
         addTearDown(service.dispose);
@@ -6408,6 +6412,7 @@ void main() {
         reads = 0;
         final service = LlamaCppService(
           isAndroid: isAndroid,
+          isMacosX64: false,
           deviceTypes: (_) => [gpuType],
           objectCalls: objectCalls,
           registeredDevices: () => registered,
@@ -6739,6 +6744,7 @@ void main() {
         );
         var registered = <GgmlDeviceEntry>[];
         final service = LlamaCppService(
+          isMacosX64: false,
           deviceTypes: (_) => [gpuType],
           objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
           registeredDevices: () => registered,
@@ -7979,7 +7985,8 @@ class _EmbeddingMetadataService extends LlamaCppService {
 }
 
 class _MetalReportingService extends LlamaCppService {
-  _MetalReportingService({super.objectCalls, super.registeredDevices});
+  _MetalReportingService({super.objectCalls, super.registeredDevices})
+    : super(isMacosX64: false);
 
   @override
   List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];

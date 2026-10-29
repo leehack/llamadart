@@ -68,6 +68,7 @@ void main() {
           mtmd!.evalMedia(context, nPast, nBatch, newNPast),
     );
     service = LlamaCppService(
+      isMacosX64: false,
       objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
     )..initializeBackend();
     model = service.loadModel('${dir.path}/model.gguf', _params);
