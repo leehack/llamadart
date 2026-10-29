@@ -2375,7 +2375,7 @@ Future<Directory> _acquireBundleDirectory({
     } else {
       log.info(
         'Cached native bundle at ${extractedDir.path} has no extraction '
-        'record, as an older hook cached it; refreshing: $bundle',
+        'record; refreshing it: $bundle',
       );
     }
     if (extractedDir.existsSync()) {

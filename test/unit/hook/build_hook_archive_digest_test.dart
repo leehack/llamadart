@@ -867,10 +867,7 @@ void main() {
       await cachedArchive.delete();
       final log = await _captureLog(buildOnline);
 
-      expect(
-        log,
-        contains(contains('has no extraction record, as an older hook')),
-      );
+      expect(log, contains(contains('has no extraction record')));
       expect(
         log,
         isNot(contains(allOf(contains('WARNING'), contains('Cached native')))),

@@ -43,6 +43,7 @@ import 'thinking_utils.dart';
 ///   messages: messages,
 ///   metadata: metadata,
 ///   tools: tools,
+///   toolChoice: toolChoice,
 ///   enableThinking: true,
 /// );
 /// // Later, parse the output:
