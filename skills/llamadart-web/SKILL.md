@@ -76,8 +76,8 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   the native download manager (bearer tokens or headers, `sha256`,
   `cancelToken`, `cacheDirectory`, `resume: false`, or a cache policy other
   than `preferCached`) throw `LlamaUnsupportedException`. `onProgress`
-  reports only the model's fetch, as a fraction that ends at 0.5 when there
-  is a projector. The model URL must be fetchable from the page (CORS).
+  reports only the model's fetch; with a projector that fetch fills the first
+  half, and progress reaches 1 once the projector has loaded. The model URL must be fetchable from the page (CORS).
 - Models are cached in browser Cache Storage keyed by URL, subject to quota and
   private-mode policy. URLs with userinfo, a fragment, or credential-like query
   keys (`token`, `sig`, `key`, `X-Amz-*`, ...) are loaded without a persistent
@@ -93,8 +93,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     `supportsMinP`, `supportsThinkingBudget` and
     `speculativeDecodingStrategies` (bridge `v0.1.54+`; WebGPU rejects
     `SpeculativeDecodingConfig.draftMicroBatchSize`), and for what
-    LiteRT-LM web lacks: `supportsMultiTurnChat`, `supportsToolCalling`,
-    `supportsPenalty` and `supportsGrammar` are false there. Unreported
+    LiteRT-LM web lacks: `supportsToolCalling`, `supportsPenalty` and
+    `supportsGrammar` are false there, and `supportsMultiTurnChat` is false
+    unless `withTextHistory()` is used and the loaded runtime supports it. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
   - `engine.supportsNextTokenScoring` (bridge `v0.1.52+`) and
@@ -135,8 +136,12 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   loaded`. It needs a `.litertlm` URL and supports CPU or GPU (NPU is
   rejected); any other `ModelParams` field, such as `batchSize`, throws
   `LlamaUnsupportedException`.
-- LiteRT-LM web is single-turn text only: it sends only the last message's
-  text, so `ChatSession` history, system prompts and tools are not forwarded.
+- LiteRT-LM web is single-turn text by default: it sends only the last
+  message's text, so `ChatSession` history, system prompts and tools are not
+  forwarded. `LlamaBackend.withTextHistory()` (or
+  `LiteRtLmBackend.withTextHistory()`) opts into ordered system/user/assistant
+  text; tools are still rejected, and `supportsMultiTurnChat` reports whether
+  history is forwarded.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,
   `thinkingBudget` and speculative decoding; generation honors only
   `maxTokens`, `temp`, `topK`, `topP`, `seed` and `stopSequences`. It has no

@@ -188,7 +188,7 @@ fail the same way. The CPU on the same device answers correctly.
 `ComputeDevice.auto`, the default, selects the GPU for LiteRT-LM on Android,
 so a default load of that model on that GPU is affected. From 0.17.0, `auto`
 retries a GPU engine that fails to start on the CPU and logs a warning, which
-handles the pinned `v0.18.0` failure below. Load with
+handles the pinned runtime's failure below. Load with
 `ModelParams(device: ComputeDevice.cpu)` to skip the GPU attempt.
 
 What you see depends on the runtime:
@@ -197,7 +197,7 @@ What you see depends on the runtime:
   text, such as one token repeated up to the output limit, with no error. The
   native log has `Binding size (155582464) ... is larger than the maximum
   storage buffer binding size (134217728)`.
-- With the pinned `v0.18.0`, GPU engine creation fails instead, with the same
+- With the pinned runtime, GPU engine creation fails instead, with the same
   line in the native log. Observed with llamadart on a Galaxy S24:
   `loadModel` returns, because the engine is created at first use, and the
   first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was

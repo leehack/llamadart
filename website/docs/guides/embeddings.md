@@ -173,8 +173,8 @@ try {
 - On native and with Web bridge assets `v0.1.73+`, rank-pooled reranker
   GGUFs (such as Qwen3-Reranker) return classifier scores rather than
   embeddings, so `embed(...)` and `embedBatch(...)` throw
-  `LlamaUnsupportedException` for them. Reranking is
-  tracked in [#323](https://github.com/leehack/llamadart/issues/323).
+  `LlamaUnsupportedException` for them. Use `LlamaReranker`; see
+  [Cross-encoder reranking](#cross-encoder-reranking).
 - On native, encoder-decoder GGUFs (such as T5) throw
   `LlamaUnsupportedException`; use an encoder-only or decoder-only embedding
   model.
@@ -184,9 +184,10 @@ try {
   and `actualTokens`, including special tokens. With
   `kvUnified: false`, the context is split across `maxParallelSequences`.
 - On native, encoder-only models, models without a KV cache, non-causal
-  models and MEAN/CLS-pooled models embed each input in one pass. This also
-  applies when the model has a KV cache. An input longer than the context's
-  actual micro-batch capacity throws `LlamaInferenceException` before decoding;
+  models and MEAN/CLS-pooled models embed each input in one pass, even when
+  the model has a KV cache. An input longer than the context's actual
+  micro-batch capacity throws `LlamaEmbeddingInputTooLongException` before
+  decoding;
   shorten the input or raise `microBatchSize` and `batchSize` together.
   Causal models with a KV cache retain chunked LAST or unpooled embedding
   support. Batched one-pass inputs are grouped only within the micro-batch
@@ -430,8 +431,8 @@ settle.
 Embedding mode applies `numberOfThreads`, `cacheDir` and CPU selection;
 LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths,
 program cache limits, MTP/rollback and Web memory hints throw
-`LlamaUnsupportedException` before model I/O. Native CPU qualification is limited
-to macOS arm64; GPU/NPU and Web embeddings remain unavailable.
+`LlamaUnsupportedException` before model I/O. GPU/NPU and Web embeddings
+remain unavailable.
 
 ## Cross-encoder reranking
 

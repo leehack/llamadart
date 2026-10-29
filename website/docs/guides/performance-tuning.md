@@ -136,7 +136,8 @@ const generationParams = GenerationParams(
   recent window; one does not substitute for the other. WebGPU applies
   `presencePenalty` and `minP` only with bridge assets whose
   `getCompletionCapabilities()` reports them, and otherwise rejects a non-zero
-  value, as LiteRT-LM does.
+  value. Native LiteRT-LM applies `presencePenalty` and rejects `minP`;
+  LiteRT-LM Web rejects both.
 - `streamBatchTokenThreshold` / `streamBatchByteThreshold` (native): lower
   values give finer token-by-token UI updates; higher values raise throughput
   by reducing isolate message overhead.
