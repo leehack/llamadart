@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -97,6 +98,53 @@ void main() {
     archive.setLastModifiedSync(DateTime(2001));
     expect(await matches(), isTrue);
   });
+
+  test('the same archive with a new modification time is not hashed again '
+      'by the next build', () async {
+    final modified = DateTime(2001);
+    archive.setLastModifiedSync(modified);
+    expect(await matches(), isTrue);
+
+    archive.writeAsBytesSync([4, 3, 2, 1]);
+    archive.setLastModifiedSync(modified);
+    expect(await matches(), isTrue);
+  });
+
+  test(
+    'the marker takes the new modification time and keeps the digest',
+    () async {
+      final modified = DateTime(2001);
+      archive.setLastModifiedSync(modified);
+      expect(await matches(), isTrue);
+
+      expect(
+        jsonDecode(nativeExtractionMarkerFile(extractedDir).readAsStringSync()),
+        containsPair(
+          'archive',
+          allOf(
+            containsPair('sha256', archiveSha256),
+            containsPair('modified', modified.millisecondsSinceEpoch),
+          ),
+        ),
+      );
+      expect(
+        File(
+          '${nativeExtractionMarkerFile(extractedDir).path}.tmp',
+        ).existsSync(),
+        isFalse,
+      );
+    },
+  );
+
+  test('a marker that cannot be rewritten still matches', () async {
+    archive.setLastModifiedSync(DateTime(2001));
+    final marker = nativeExtractionMarkerFile(extractedDir);
+    final before = marker.readAsStringSync();
+    await Process.run('chmod', ['a-w', cacheDir.path]);
+    addTearDown(() => Process.run('chmod', ['u+w', cacheDir.path]));
+    expect(await matches(), isTrue);
+    expect(marker.readAsStringSync(), before);
+  }, testOn: '!windows');
 
   test('a missing archive, marker or extraction does not match', () async {
     archive.renameSync('${archive.path}.moved');
