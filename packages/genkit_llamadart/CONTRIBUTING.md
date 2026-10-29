@@ -133,7 +133,7 @@ verify the downloaded bytes reach native chat input. The HTTP fixture server
 and caller-owned client are closed in teardown. Native
 runtime setup follows llamadart's platform instructions. For a standalone Dart
 validation override, point `LLAMADART_LITERT_LM_LIB_DIR` to the verified pinned
-runtime bundle; llamadart 0.16.0 uses `litert-lm-native` v0.18.1.
+runtime bundle; llamadart 0.17.0 uses `litert-lm-native` v0.18.1-4.
 Without these three fixture paths this targeted test is explicitly skipped.
 Browser tests of the adapter guards use deterministic runtimes and can run with
 `dart test -p chrome test/integration/genkit/plugin/runtime_capabilities_test.dart`;
