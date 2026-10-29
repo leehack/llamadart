@@ -226,7 +226,6 @@ class FirefunctionV2Handler extends ChatTemplateHandler {
       suffix: '',
       nameKey: 'name',
       argumentsKey: 'arguments',
-      idKey: 'id',
       allowParallelToolCalls: parallelToolCalls,
     );
     if (base == null) {

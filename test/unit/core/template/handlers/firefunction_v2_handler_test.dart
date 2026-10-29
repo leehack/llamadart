@@ -6,6 +6,7 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -129,6 +130,38 @@ void main() {
       expect(result.format, equals(ChatFormat.firefunctionV2.index));
       expect(result.prompt, contains('functools'));
       expect(result.prompt, contains('Today is'));
+    });
+
+    test('required tool grammar leaves the call id undeclared', () {
+      final result = ChatTemplateEngine.render(
+        templateSource: File(
+          '${templatesDir.path}/fireworks-ai-llama-3-firefunction-v2.jinja',
+        ).readAsStringSync(),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: const {},
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: [ToolParam.string('city')],
+            handler: _noopHandler,
+          ),
+        ],
+        toolChoice: ToolChoice.required,
+      );
+
+      expect(result.format, equals(ChatFormat.firefunctionV2.index));
+      expect(result.grammarLazy, isFalse);
+      expect(
+        result.grammar,
+        contains(
+          'root-item ::= "{" space root-item-name-kv "," space '
+          'root-item-arguments-kv "}" space',
+        ),
+      );
+      expect(result.grammar, isNot(contains('"\\"id\\""')));
     });
   });
 

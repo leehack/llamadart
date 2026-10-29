@@ -4,12 +4,15 @@ library;
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:code_assets/code_assets.dart';
 import 'package:test/test.dart';
 
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_calls.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/platform/io/ios_simulator.dart';
 
 const _dotProductCpuInfo =
     'Features\t: fp asimd atomics fphp asimdhp asimddp\n';
@@ -30,11 +33,11 @@ void main() {
       expect(status.loadsFp8AsF16OnMetal, isFalse);
     });
 
-    test('names the arm64 iOS simulator target, not the device, when the '
+    test('names the iOS simulator target, not the device, when the '
         'runtime is not bundled', () {
-      String reasonOn({required bool simulator}) {
+      String reasonOn({Abi abi = Abi.iosArm64, required bool simulator}) {
         final status = probeStableDiffusionRuntime(
-          abi: Abi.iosArm64,
+          abi: abi,
           isIosSimulator: () => simulator,
           api: _FakeApi(
             error: ArgumentError(
@@ -53,6 +56,61 @@ void main() {
       );
       expect(
         reasonOn(simulator: false),
+        contains('not bundled for ios-arm64.'),
+      );
+      expect(
+        reasonOn(abi: Abi.iosX64, simulator: true),
+        contains('not bundled for ios-x64-sim.'),
+      );
+    });
+
+    test('iOS labels are the build hook stable_diffusion bundle keys', () {
+      for (final (abi, arch, simulator) in [
+        (Abi.iosArm64, Architecture.arm64, false),
+        (Abi.iosArm64, Architecture.arm64, true),
+        (Abi.iosX64, Architecture.x64, true),
+      ]) {
+        final bundle = stableDiffusionBundleForNativeBundle(
+          spec: resolveNativeBundleSpec(
+            os: OS.iOS,
+            arch: arch,
+            isIosSimulator: simulator,
+          )!,
+          rawBackendConfig: null,
+        );
+        final status = probeStableDiffusionRuntime(
+          abi: abi,
+          isIosSimulator: () => simulator,
+          api: _FakeApi(
+            error: ArgumentError(
+              "No asset with id 'package:llamadart/stable_diffusion' found.",
+            ),
+          ),
+        );
+        expect(
+          status.unavailableReason!.message,
+          contains('not bundled for $bundle.'),
+          reason: '$abi simulator: $simulator',
+        );
+      }
+    });
+
+    test('the default simulator check labels arm64 iOS as the device on a '
+        'host that is not a simulator', () {
+      final status = probeStableDiffusionRuntime(
+        abi: Abi.iosArm64,
+        api: _FakeApi(
+          error: ArgumentError(
+            "Couldn't resolve native function 'sd_version' in "
+            "'package:llamadart/stable_diffusion' : No asset with id "
+            "'package:llamadart/stable_diffusion' found.",
+          ),
+        ),
+      );
+
+      expect(isIosSimulatorProcess(), isFalse);
+      expect(
+        status.unavailableReason!.message,
         contains('not bundled for ios-arm64.'),
       );
     });

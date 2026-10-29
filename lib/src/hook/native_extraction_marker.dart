@@ -26,18 +26,25 @@ Future<void> writeNativeExtractionMarker({
   final stat = await archive.stat();
   final marker = nativeExtractionMarkerFile(extractedDir);
   final pending = File('${marker.path}.tmp');
-  await pending.writeAsString(
-    jsonEncode({
-      'archive': {
-        'sha256': archiveSha256,
-        'size': stat.size,
-        'modified': stat.modified.millisecondsSinceEpoch,
-      },
-      'files': _extractedFiles(extractedDir),
-    }),
-    flush: true,
-  );
-  await pending.rename(marker.path);
+  final record = jsonEncode({
+    'archive': {
+      'sha256': archiveSha256,
+      'size': stat.size,
+      'modified': stat.modified.millisecondsSinceEpoch,
+    },
+    'files': _extractedFiles(extractedDir),
+  });
+  try {
+    await pending.writeAsString(record, flush: true);
+    await pending.rename(marker.path);
+  } on FileSystemException {
+    try {
+      await pending.delete();
+    } on FileSystemException {
+      // Best effort: the next write replaces a leftover .tmp.
+    }
+    rethrow;
+  }
 }
 
 /// Whether the marker of [extractedDir] records an extraction of [archive]

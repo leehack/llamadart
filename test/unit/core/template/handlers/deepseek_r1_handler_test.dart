@@ -197,6 +197,37 @@ void main() {
       contains(' space tool-call+ "<｜tool▁calls▁end｜>"'),
     );
   });
+
+  test('DeepseekR1Handler.buildGrammar takes parallel calls, like the other '
+      'context-free handler grammars', () {
+    final tools = [
+      ToolDefinition(
+        name: 'get_weather',
+        description: 'Get weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ];
+    final handler = DeepseekR1Handler();
+    final parallel = handler
+        .render(
+          templateSource: '{{ messages[0]["content"] }}',
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ],
+          metadata: const {internalParallelToolCallsMetadataKey: 'true'},
+          tools: tools,
+        )
+        .grammar;
+
+    expect(handler.buildGrammar(tools), parallel);
+    expect(
+      handler.buildGrammar(tools),
+      contains(' space tool-call+ "<｜tool▁calls▁end｜>"'),
+    );
+    expect(handler.buildGrammar(null), isNull);
+    expect(handler.buildGrammar(const []), isNull);
+  });
 }
 
 Future<Object?> _noop(_) async {
