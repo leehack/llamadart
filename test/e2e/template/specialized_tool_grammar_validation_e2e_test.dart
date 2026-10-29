@@ -1757,6 +1757,72 @@ void main() {
     }
   });
 
+  test('DeepSeek R1 parallel grammar takes the calls its template renders '
+      '(#1581)', () {
+    final templateSource = File(
+      'test/fixtures/llama_cpp_templates/'
+      'deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja',
+    ).readAsStringSync();
+    String grammar({required bool parallel}) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: templateSource,
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ],
+        metadata: const {},
+        tools: [_weatherWithCityTool],
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: parallel,
+      );
+      expect(rendered.format, ChatFormat.deepseekR1.index);
+      return rendered.grammar!;
+    }
+
+    final history = ChatTemplateEngine.render(
+      templateSource: templateSource,
+      messages: [
+        const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            for (final city in ['Seoul', 'Busan'])
+              LlamaToolCallContent(
+                name: 'weather',
+                arguments: {'city': city},
+                rawJson: '{"city": "$city"}',
+              ),
+          ],
+        ),
+      ],
+      metadata: const {},
+      addAssistant: false,
+    ).prompt;
+    const begin = '<｜tool▁calls▁begin｜>';
+    const end = '<｜tool▁calls▁end｜>';
+    final twoCalls = history.substring(
+      history.indexOf(begin),
+      history.indexOf(end) + end.length,
+    );
+    expect(twoCalls, contains('<｜tool▁call▁end｜>\n<｜tool▁call▁begin｜>'));
+
+    _expectGrammar(
+      validator,
+      grammar(parallel: true),
+      valid: [
+        twoCalls,
+        twoCalls.replaceFirst('end｜>\n<', 'end｜><'),
+        twoCalls.replaceFirst('end｜>\n<', 'end｜>\n\n<'),
+      ],
+      invalid: [twoCalls.replaceFirst('end｜>\n<', 'end｜>x<')],
+    );
+    _expectGrammar(
+      validator,
+      grammar(parallel: false),
+      valid: const [],
+      invalid: [twoCalls],
+    );
+  });
+
   test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {
     final rendered = ChatTemplateEngine.render(
       templateSource: File(

@@ -233,8 +233,10 @@ class DeepseekR1Handler extends ChatTemplateHandler {
     }
 
     const rootRule = '( "</think>" space )? tool-calls';
+    // Templates put a newline before each later call; llama.cpp joins
+    // parallel calls with `space`.
     final toolCallsRule =
-        '( "<｜tool▁calls▁begin｜>" | "<｜tool_calls_begin｜>" | "<｜tool calls begin｜>" | "<｜tool\\\\_calls\\\\_begin｜>" | "<｜tool▁calls｜>" ) space tool-call${parallelToolCalls ? '+' : ''} "<｜tool▁calls▁end｜>" space';
+        '( "<｜tool▁calls▁begin｜>" | "<｜tool_calls_begin｜>" | "<｜tool calls begin｜>" | "<｜tool\\\\_calls\\\\_begin｜>" | "<｜tool▁calls｜>" ) space tool-call${parallelToolCalls ? ' ( space tool-call )*' : ''} "<｜tool▁calls▁end｜>" space';
     final toolCallRule = toolRuleNames.join(' | ');
 
     final buffer = StringBuffer()

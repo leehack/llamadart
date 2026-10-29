@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- With `parallelToolCalls: true`, the DeepSeek R1 tool-call grammar accepts the newline the template writes between calls, as llama.cpp does, so a DeepSeek-R1-Distill-Qwen model is no longer forced to drop it or stop after one call ([#1581](https://github.com/leehack/llamadart/issues/1581)).
+- A `</think>` that reaches the stream split across chunks no longer streams as content when the parse drops it, as in a DeepSeek R1 reply that starts with `</think>` ([#1582](https://github.com/leehack/llamadart/issues/1582)).
+
 ## 0.17.0
 
 - **Breaking (backend SPI):** LoRA and multimodal projector members move off `LlamaBackend` into the optional `BackendLoraSupport` and `BackendMultimodalSupport` interfaces. On a backend or routed runtime without one, `LlamaEngine` LoRA calls and projector loads throw `LlamaUnsupportedException`, before any download, and `removeLoraSource` of an adapter never applied does nothing. The built-in backends keep the same support and exception type; `LlamaEngine.loadMultimodalProjector` refuses a LiteRT-LM model with the same `LlamaUnsupportedException` message as `loadMultimodalProjectorSource` and `setModel`, including on a custom backend that reports the LiteRT-LM runtime and implements `BackendMultimodalSupport`, and through a router it no longer says the projector is unsupported by the active runtime ([#362](https://github.com/leehack/llamadart/issues/362), [#1541](https://github.com/leehack/llamadart/issues/1541)).

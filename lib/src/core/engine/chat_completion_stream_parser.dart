@@ -1225,21 +1225,23 @@ class ChatCompletionStreamParser {
             break;
           }
         }
-        for (var i = startTag.length - 1; i >= 1; i--) {
-          if (localPendingBuffer.endsWith(startTag.substring(0, i))) {
-            final emitIdx = localPendingBuffer.length - i;
-            if (emitIdx > 0) {
-              emissions.add(
-                _ThinkingSplitEmission(
-                  text: localPendingBuffer.substring(0, emitIdx),
-                  isThinking: false,
-                ),
-              );
-              localPendingBuffer = localPendingBuffer.substring(emitIdx);
-            }
-            potentialMatch = true;
-            break;
+        // An end tag that ends a thought the prompt opened must not stream
+        // as content when it arrives split across tokens.
+        final emitIdx = withoutTrailingTagPrefix(localPendingBuffer, [
+          startTag,
+          if (!(tagState?.endTagIsContent ?? false)) endTag,
+        ]).length;
+        if (emitIdx < localPendingBuffer.length) {
+          if (emitIdx > 0) {
+            emissions.add(
+              _ThinkingSplitEmission(
+                text: localPendingBuffer.substring(0, emitIdx),
+                isThinking: false,
+              ),
+            );
+            localPendingBuffer = localPendingBuffer.substring(emitIdx);
           }
+          potentialMatch = true;
         }
         if (!potentialMatch) {
           emissions.add(
