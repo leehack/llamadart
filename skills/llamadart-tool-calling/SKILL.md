@@ -38,7 +38,8 @@ description: >-
   ran. To resume, add them back, answer `pendingToolCalls` and call
   `completeWithTools(const [])`.
   A cancel during the answer keeps the partial answer, on WebGPU too; a
-  cancel before any reply content rolls back; empty terminal chunks are not
+  cancel before any reply content may keep an empty answer or roll back;
+  empty terminal chunks are not
   an answer. A cancel that also reports a generation limit rolls back and
   keeps `cancelled` as its stop reason. Check `result.rolledBack`. For a new chat, call
   `engine.cancelGeneration()` and `session.reset()`: a late reply from the
