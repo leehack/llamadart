@@ -385,6 +385,7 @@ chatFormatRegistrations = List.unmodifiable(<ChatFormatRegistration>[
     detect: (s) => s.contains('<seed:think>'),
     traits: ChatFormatTraits(
       toolCallOpening: XmlToolCallFormat.seedOss.toolCallOpening,
+      keepsForcedThoughtVerbatim: true,
     ),
   ),
   ChatFormatRegistration(

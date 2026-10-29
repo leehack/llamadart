@@ -17,6 +17,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import '../../../hook/build.dart' as build_hook;
 import '../../support/hook_core_version.dart';
+import '../../support/native_bundle_cache.dart';
 import '../../support/runtime_bundle_http_fixture.dart';
 
 const _tag = 'v9.9.8';
@@ -858,12 +859,12 @@ void main() {
         'https://github.com/leehack/llamadart-native/releases/download/'
         '$llamaCppTag/$sidecarArchive';
 
-    setUp(() {
+    setUp(() async {
       final bundlesDir = _bundlesDir(packageRoot, llamaCppTag);
       coreDir = Directory(path.join(bundlesDir, 'windows-x64'));
       sidecarDir = Directory(path.join(bundlesDir, sidecarSpec.archive));
       // The pinned core archive cannot be faked, so seed its extraction.
-      _seedExtracted(coreDir, 'pinned', _coreLibraries);
+      await _seedExtracted(coreDir, 'pinned', _coreLibraries);
     });
 
     test('downloads the CUDA sidecar only when cuda is selected', () async {
@@ -893,7 +894,7 @@ void main() {
     });
 
     test('reuses an extracted CUDA sidecar offline', () async {
-      _seedExtracted(sidecarDir, 'pinned', _cudaLibraries);
+      await _seedExtracted(sidecarDir, 'pinned', _cudaLibraries);
       final fixture = RuntimeBundleHttpFixture.offline();
 
       final libraries = await runHook(
@@ -908,7 +909,7 @@ void main() {
     });
 
     test('redownloads an extracted CUDA sidecar missing its runtime', () async {
-      _seedExtracted(sidecarDir, 'pinned', _cudaLibraries.sublist(0, 2));
+      await _seedExtracted(sidecarDir, 'pinned', _cudaLibraries.sublist(0, 2));
       final fixture = RuntimeBundleHttpFixture({
         sidecarUrl: _archive('tampered', _cudaLibraries),
       });
@@ -1035,8 +1036,12 @@ String _bundlesDir(Directory packageRoot, String tag) => path.join(
 );
 
 /// Seeds the `extracted/` cache of [bundleDir] with libraries holding
-/// `<label>-<library>`.
-void _seedExtracted(Directory bundleDir, String label, List<String> libraries) {
+/// `<label>-<library>`, beside the archive and marker the hook would leave.
+Future<void> _seedExtracted(
+  Directory bundleDir,
+  String label,
+  List<String> libraries,
+) async {
   final extracted = Directory(path.join(bundleDir.path, 'extracted'))
     ..createSync(recursive: true);
   for (final library in libraries) {
@@ -1044,6 +1049,7 @@ void _seedExtracted(Directory bundleDir, String label, List<String> libraries) {
       path.join(extracted.path, library),
     ).writeAsStringSync('$label-$library');
   }
+  await markExtractedBundle(extracted);
 }
 
 /// A `.tar.gz` bundle whose libraries hold `<label>-<library>`.

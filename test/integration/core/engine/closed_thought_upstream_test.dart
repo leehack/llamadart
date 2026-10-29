@@ -953,6 +953,101 @@ void main() {
     }
   });
 
+  // Values from llama.cpp 620d2225: after a template that opens the thought,
+  // the reasoning is the reply up to the first end tag as generated, so it
+  // keeps a start tag, and whatever precedes one, instead of dropping it.
+  test('a forced-open Seed-OSS thought keeps a repeated start tag', () async {
+    final source = File(
+      'test/fixtures/llama_cpp_templates/ByteDance-Seed-OSS.jinja',
+    ).readAsStringSync();
+    const prompt = '{{ bos_token+"assistant\\n" }}';
+    expect(source, contains(prompt));
+    for (final withTools in const [false, true]) {
+      final rendered = ChatTemplateEngine.render(
+        templateSource: source.replaceFirst(
+          prompt,
+          '{{ bos_token+"assistant\\n" + think_begin_token }}',
+        ),
+        messages: [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: _fixture['user_prompt'] as String,
+          ),
+        ],
+        metadata: const {},
+        tools: withTools ? [_weatherTool] : null,
+        enableThinking: true,
+      );
+      expect(rendered.thinkingForcedOpen, isTrue);
+      for (final (output, reasoning, content) in const [
+        ('\u00a0<seed:think>P</seed:think>S', '\u00a0<seed:think>P', 'S'),
+        ('<seed:think>P</seed:think>S', '<seed:think>P', 'S'),
+        (' \u000b\f\r\n\t<seed:think>P</seed:think>S', '<seed:think>P', 'S'),
+        ('x<seed:think>P</seed:think>S', 'x<seed:think>P', 'S'),
+        ('Plan<seed:think>Q</seed:think>R', 'Plan<seed:think>Q', 'R'),
+        (
+          '<seed:think>P</seed:think>S</seed:think>T',
+          '<seed:think>P',
+          'S</seed:think>T',
+        ),
+        ('\u00a0<seed:think>Plan', '\u00a0<seed:think>Plan', ''),
+      ]) {
+        final parsed = ChatTemplateEngine.parseRendered(
+          rendered,
+          output,
+          parseToolCalls: withTools,
+          tools: withTools ? [_weatherTool] : null,
+        );
+        // llama.cpp strips no leading space; llamadart trims the reasoning.
+        expect(parsed.reasoningContent, reasoning.trim(), reason: output);
+        expect(parsed.content, content, reason: output);
+
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(output.split('')),
+          templateResult: rendered,
+          parseToolCallsEnabled: withTools,
+          enableThinking: true,
+          tools: withTools ? [_weatherTool] : null,
+          modelName: 'test-model',
+          completionId: 'seed-forced-open',
+        ).toList();
+        final deltas = chunks.map((chunk) => chunk.choices.single.delta);
+        expect(
+          deltas.map((delta) => delta.thinking ?? '').join().trim(),
+          reasoning.trim(),
+          reason: output,
+        );
+        expect(
+          deltas.map((delta) => delta.content ?? '').join().trim(),
+          content,
+          reason: output,
+        );
+      }
+    }
+  });
+
+  // The public parse cannot see the template: ASCII space before a start tag
+  // leaves it a reply that starts with a thought, as the stock template
+  // renders, while NBSP does not and parses as after a template that opens one.
+  test('a public Seed-OSS parse skips only ASCII space before a thought', () {
+    for (final withTools in const [false, true]) {
+      for (final (output, reasoning) in const [
+        (' <seed:think>Plan</seed:think>Sunny.', 'Plan'),
+        ('\n\t <seed:think>Plan</seed:think>Sunny.', 'Plan'),
+        ('\u00a0<seed:think>Plan</seed:think>Sunny.', '<seed:think>Plan'),
+      ]) {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.seedOss.index,
+          output,
+          parseToolCalls: withTools,
+          tools: withTools ? [_weatherTool] : null,
+        );
+        expect(parsed.content, 'Sunny.', reason: 'tools: $withTools');
+        expect(parsed.reasoningContent, reasoning, reason: output);
+      }
+    }
+  });
+
   test('a forced-open thought keeps the reasoning', () async {
     expect(
       ChatTemplateEngine.parse(

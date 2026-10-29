@@ -22,6 +22,7 @@ import 'package:yaml/yaml.dart';
 import 'package:llamadart/src/hook/apple_companion_constraint.dart';
 import 'package:llamadart/src/hook/native_archive_digest.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/native_extraction_marker.dart';
 import 'package:llamadart/src/hook/native_release_manifest.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:llamadart/src/hook/native_runtime_coexistence.dart';
@@ -2331,12 +2332,52 @@ Future<Directory> _acquireBundleDirectory({
 
   final cachedLibraryPaths = _collectDynamicLibraryPaths(extractedDir);
   if (cachedLibraryPaths.isNotEmpty && isComplete(cachedLibraryPaths)) {
-    log.info('Using cached native bundle: ${extractedDir.path}');
-    return extractedDir;
+    if (await nativeExtractionMatchesArchive(
+      extractedDir: extractedDir,
+      archive: archiveFile,
+    )) {
+      log.info('Using cached native bundle: ${extractedDir.path}');
+      return extractedDir;
+    }
+    if (!nativeExtractionMarkerFile(extractedDir).existsSync() &&
+        archiveFile.existsSync() &&
+        !_hasOfflineArchiveDigest(
+          nativeConfig: nativeConfig,
+          cacheDir: cacheDir,
+        )) {
+      // An extraction from before markers, of an override cached before the
+      // hook kept SHA256SUMS: its archive cannot be verified offline, and was
+      // as trusted as the extraction reused before, so it is re-extracted.
+      try {
+        final paths = await _extractCachedArchive(
+          archivePath: archivePath,
+          extractedDir: extractedDir,
+          cacheDir: cacheDir,
+          archiveSha256: await fileSha256(archiveFile),
+          log: log,
+        );
+        if (isComplete(paths)) {
+          log.info('Re-extracted cached native bundle archive: $archivePath');
+          return extractedDir;
+        }
+      } on Exception catch (error) {
+        log.warning('Could not re-extract $archivePath ($error).');
+      }
+    }
   }
 
   if (cachedLibraryPaths.isNotEmpty) {
-    log.warning('Cached native bundle appears stale; refreshing: $bundle');
+    if (nativeExtractionMarkerFile(extractedDir).existsSync()) {
+      log.warning(
+        'Cached native bundle at ${extractedDir.path} is incomplete or does '
+        'not match its archive; refreshing: $bundle',
+      );
+    } else {
+      log.info(
+        'Cached native bundle at ${extractedDir.path} has no extraction '
+        'record; refreshing it: $bundle',
+      );
+    }
     if (extractedDir.existsSync()) {
       await extractedDir.delete(recursive: true);
     }
@@ -2379,6 +2420,7 @@ Future<Directory> _acquireBundleDirectory({
         archivePath: archivePath,
         extractedDir: extractedDir,
         cacheDir: cacheDir,
+        archiveSha256: cachedArchiveSha256,
         log: log,
       );
       if (isComplete(extractedLibraryPaths)) {
@@ -2453,6 +2495,7 @@ Future<Directory> _acquireBundleDirectory({
     archivePath: archivePath,
     extractedDir: extractedDir,
     cacheDir: cacheDir,
+    archiveSha256: expectedDigest.sha256,
     log: log,
   );
   if (!isComplete(extractedLibraryPaths)) {
@@ -2812,6 +2855,21 @@ bool _looksLikeBlockPage(String text) {
       !trimmed.startsWith('[');
 }
 
+/// Whether [_expectedNativeArchiveDigest] may check a cached archive without
+/// network access: the default release is pinned, and an override may have
+/// its `SHA256SUMS` cached.
+bool _hasOfflineArchiveDigest({
+  required _NativeBundleConfig nativeConfig,
+  required String cacheDir,
+}) =>
+    _isPinnedRelease(nativeConfig) ||
+    FileSystemEntity.typeSync(path.join(cacheDir, 'SHA256SUMS')) !=
+        FileSystemEntityType.notFound;
+
+bool _isPinnedRelease(_NativeBundleConfig nativeConfig) =>
+    nativeConfig.tag == llamaCppTag &&
+    nativeConfig.repository == _nativeRepoSlug;
+
 /// The SHA-256 a llama.cpp archive must have: the pin for the default release,
 /// or the release's own `SHA256SUMS` entry for a tag or repository override.
 ///
@@ -2820,7 +2878,7 @@ bool _looksLikeBlockPage(String text) {
 /// Otherwise the release's `SHA256SUMS` is fetched and kept beside the archive
 /// for later builds. Callers fetch a fresh list before downloading, so a
 /// download is never checked against the cached list. The cached list is no
-/// less trusted than the cached `extracted/` bundle, which is reused as is.
+/// less trusted than the cached archive it lists.
 /// [cachedListMatchedArchive] marks the fetch that follows an incomplete
 /// archive the cached list matched, whose failure must not ask for the list
 /// to be pre-seeded.
@@ -2834,8 +2892,7 @@ _expectedNativeArchiveDigest({
   required Logger log,
   bool cachedListMatchedArchive = false,
 }) async {
-  if (nativeConfig.tag == llamaCppTag &&
-      nativeConfig.repository == _nativeRepoSlug) {
+  if (_isPinnedRelease(nativeConfig)) {
     final pinned =
         llamaCppBundleSha256[bundle] ??
         _pinnedBackendSidecarSpecs[bundle]?.sha256;
@@ -3131,6 +3188,7 @@ Future<Directory> _extractLocalBundleArchive({
     archivePath: archivePath,
     extractedDir: extractedDir,
     cacheDir: cacheDir,
+    archiveSha256: null,
     log: log,
   );
   if (!_isBundleLayoutCompatible(
@@ -3331,10 +3389,14 @@ bool _hasWindowsBackendModule(Set<String> fileNames, String backend) {
   return false;
 }
 
+/// Extracts [archivePath] into [extractedDir] and, given the archive's
+/// [archiveSha256], writes the marker that lets a later build reuse the
+/// extraction beside that archive.
 Future<List<String>> _extractCachedArchive({
   required String archivePath,
   required Directory extractedDir,
   required String cacheDir,
+  required String? archiveSha256,
   required Logger log,
 }) async {
   final tmpExtractDir = Directory(path.join(cacheDir, 'extracting'));
@@ -3360,6 +3422,13 @@ Future<List<String>> _extractCachedArchive({
     await extractedDir.delete(recursive: true);
   }
   await tmpExtractDir.rename(extractedDir.path);
+  if (archiveSha256 != null) {
+    await writeNativeExtractionMarker(
+      extractedDir: extractedDir,
+      archive: File(archivePath),
+      archiveSha256: archiveSha256,
+    );
+  }
 
   log.info('Extracted native bundle to ${extractedDir.path}');
   return extractedLibraryPaths;
