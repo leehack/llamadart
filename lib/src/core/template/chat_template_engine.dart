@@ -38,8 +38,7 @@ import 'thinking_utils.dart';
 ///
 /// Usage:
 /// ```dart
-/// final engine = ChatTemplateEngine();
-/// final result = engine.render(
+/// final result = ChatTemplateEngine.render(
 ///   templateSource: metadata['tokenizer.chat_template'],
 ///   messages: messages,
 ///   metadata: metadata,
@@ -47,7 +46,11 @@ import 'thinking_utils.dart';
 ///   enableThinking: true,
 /// );
 /// // Later, parse the output:
-/// final parsed = engine.parse(result.format, rawOutput);
+/// final parsed = ChatTemplateEngine.parseRendered(
+///   result,
+///   rawOutput,
+///   tools: tools,
+/// );
 /// ```
 class ChatTemplateEngine {
   static const String _genericToolSystemInstruction =
@@ -662,6 +665,44 @@ class ChatTemplateEngine {
         thinkingForcedOpen || _endsUnopenedSeedOssThought(formatIndex, output),
     thinkingForcedClosed: thinkingForcedClosed,
     parser: parser,
+    tools: tools,
+  );
+
+  /// Parses raw LLM output generated from [rendered], as `LlamaEngine.create`
+  /// parses its final message.
+  ///
+  /// [rendered] must be the unchanged result of [render] or
+  /// `LlamaEngine.chatTemplate`: besides its format, parser and
+  /// [LlamaChatTemplateResult.thinkingForcedOpen], the parse uses how the
+  /// render left the prompt's thought, which a copy of the result loses.
+  /// The reply then parses as llama.cpp parses it after that prompt, which
+  /// [parse] cannot tell: thinking tags after the template's own empty thought
+  /// are content for DeepSeek V3, Hermes and Qwen3-Coder XML; a Seed-OSS reply
+  /// to a prompt that opens no thought has one only when it starts with
+  /// `<seed:think>`; and a Seed-OSS or Cohere2 MoE thought closed because
+  /// thinking is off still ends at a thinking tag or, for Cohere2 MoE, at the
+  /// start of a text or action.
+  ///
+  /// [isPartial], [cancelled], [parseToolCalls] and [tools] behave as in
+  /// [parse]. Output that a PEG parser cannot parse, or that is nested too
+  /// deeply to parse, throws [LlamaInferenceException].
+  static ChatParseResult parseRendered(
+    LlamaChatTemplateResult rendered,
+    String output, {
+    bool isPartial = false,
+    bool cancelled = false,
+    bool parseToolCalls = true,
+    List<ToolDefinition>? tools,
+  }) => parseRenderedOutput(
+    rendered.format,
+    output,
+    thoughtClosedForThinkingOff: thoughtClosedForThinkingOffOf(rendered),
+    isPartial: isPartial,
+    cancelled: cancelled,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: rendered.thinkingForcedOpen,
+    thinkingForcedClosed: thinkingForcedClosedOf(rendered),
+    parser: rendered.parser,
     tools: tools,
   );
 

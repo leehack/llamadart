@@ -56,6 +56,7 @@ For canonical full release notes, use:
 - With thinking off, a Cohere2 MoE thought that ends at `<|START_TEXT|>` or `<|START_ACTION|>` is reasoning instead of content, as in llama-server; thinking tags inside a Cohere2 MoE text or action stay text; and a response schema no longer leaves the thought open with thinking off ([#1566](https://github.com/leehack/llamadart/issues/1566)).
 - A Seed-OSS reply to a prompt that opens no thought, as the stock template renders, has one only when it starts with `<seed:think>`, kept as generated up to the first `</seed:think>`, as in llama-server; other thinking tags stay in the content ([#1561](https://github.com/leehack/llamadart/issues/1561)).
 - Cohere2 MoE with `enableThinking: false` and a `reasoning: true` chat template kwarg ends its prompt with the template's own empty thought, without a trailing newline ([#1523](https://github.com/leehack/llamadart/issues/1523)).
+- Parse a reply as the engine does with `ChatTemplateEngine.parseRendered(rendered, output)`, which reads how its `render` or `engine.chatTemplate` result left the thought: after the stock Seed-OSS template, `Plan</seed:think>Sunny.` is content, as in llama-server, where `ChatTemplateEngine.parse` returns reasoning `Plan` ([#1565](https://github.com/leehack/llamadart/issues/1565)).
 
 ## 0.16.5
 
