@@ -82,6 +82,11 @@ void main() {
         '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/android/x64',
       ),
     ),
+    'macos-arm64': Directory(
+      project.resolve(
+        '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/macos/arm64',
+      ),
+    ),
   };
   setUp(() async {
     for (final MapEntry(key: bundle, value: libraries)
