@@ -409,10 +409,17 @@ Future<void> main(List<String> args) async {
       expect(leaseFiles(cache), hasLength(2));
 
       // Killed without releasing: the OS drops its lock, so the lease is
-      // stale.
+      // stale. Windows releases the handles of an exited process a moment
+      // after exitCode completes, and the prune keeps files while the lock
+      // is still held.
       holder.kill(ProcessSignal.sigkill);
       await holder.exitCode;
-      pruneLiteRtLmProgramCaches(cache.path, 10);
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (true) {
+        pruneLiteRtLmProgramCaches(cache.path, 10);
+        if (!text.existsSync() || DateTime.now().isAfter(deadline)) break;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
       expect(text.existsSync(), isFalse);
       expect(leaseFiles(cache), isEmpty);
     }, timeout: const Timeout(Duration(minutes: 2)));
