@@ -43,6 +43,7 @@ import 'thinking_utils.dart';
 ///   messages: messages,
 ///   metadata: metadata,
 ///   tools: tools,
+///   toolChoice: toolChoice,
 ///   enableThinking: true,
 /// );
 /// // Later, parse the output:
@@ -50,6 +51,7 @@ import 'thinking_utils.dart';
 ///   result,
 ///   rawOutput,
 ///   tools: tools,
+///   parseToolCalls: tools.isNotEmpty && toolChoice != ToolChoice.none,
 /// );
 /// ```
 class ChatTemplateEngine {
@@ -686,6 +688,16 @@ class ChatTemplateEngine {
   /// [isPartial], [cancelled], [parseToolCalls] and [tools] behave as in
   /// [parse]. Output that a PEG parser cannot parse, or that is nested too
   /// deeply to parse, throws [LlamaInferenceException].
+  ///
+  /// To match the engine's message:
+  /// - Pass `parseToolCalls: false` unless [tools] is non-empty and the
+  ///   request's tool choice is not `none`; the default parses tool calls.
+  /// - After that exception on a cancelled or length-limited reply, the engine
+  ///   parses again with `isPartial: true`; do the same.
+  /// - The marks live on the instance, so a copy loses them: a new result built
+  ///   with the constructor or `fromJson`, and transfer to another isolate.
+  /// - With thinking off the engine drops reasoning chunks from the stream,
+  ///   while this still returns `reasoningContent`.
   static ChatParseResult parseRendered(
     LlamaChatTemplateResult rendered,
     String output, {

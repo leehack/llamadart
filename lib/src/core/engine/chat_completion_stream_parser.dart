@@ -105,9 +105,10 @@ class ChatCompletionStreamParser {
       final markers = closedThoughtMarkers(templateResult.format);
       final held = StreamIterator(_heldUntilAny(tokenStream, markers));
       if (await held.moveNext()) {
-        // A Cohere2 MoE reply that reaches a marker then parses as after the
-        // forced-open prompt llama.cpp renders.
-        if (templateResult.format == ChatFormat.cohere2Moe.index &&
+        // A Cohere2 MoE or Seed-OSS reply that reaches a marker then parses as
+        // after the forced-open prompt llama.cpp renders.
+        if ((templateResult.format == ChatFormat.cohere2Moe.index ||
+                templateResult.format == ChatFormat.seedOss.index) &&
             markers.any(held.current.contains)) {
           result = _withForcedOpenThought(templateResult);
         }
