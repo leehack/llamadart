@@ -2798,6 +2798,7 @@ void main() {
           ('</think>Sunny.', true),
           ('</think>Sunny.', false),
           ('Sunny.</thi', true),
+          ('<think>Plan.</think></think>Sunny.', true),
         ]) {
           await _expectStreamMatchesParse(
             ChatFormat.deepseekR1,
@@ -2814,6 +2815,30 @@ void main() {
           (' </', '', 'Sunny. </'),
           ('think>', '', 'Sunny. </think>'),
         ]);
+      });
+
+      test('every format streams a split end tag as its parse takes it '
+          '(#1582)', () async {
+        for (final format in ChatFormat.values) {
+          if (format.name.startsWith('peg')) {
+            continue;
+          }
+          final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+          final s = tags.startTag;
+          final e = tags.endTag;
+          for (final output in [
+            '${e}Sunny.',
+            '$e${e}Sunny.',
+            '${s}Plan.$e${e}Sunny.',
+          ]) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              tools: false,
+              everySplit: true,
+            );
+          }
+        }
       });
 
       test('text in every format, with and without tools', () async {

@@ -1778,48 +1778,66 @@ void main() {
       return rendered.grammar!;
     }
 
-    final history = ChatTemplateEngine.render(
-      templateSource: templateSource,
-      messages: [
-        const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
-        LlamaChatMessage.withContent(
-          role: LlamaChatRole.assistant,
-          content: [
-            for (final city in ['Seoul', 'Busan'])
-              LlamaToolCallContent(
-                name: 'weather',
-                arguments: {'city': city},
-                rawJson: '{"city": "$city"}',
-              ),
-          ],
-        ),
-      ],
-      metadata: const {},
-      addAssistant: false,
-    ).prompt;
-    const begin = '<｜tool▁calls▁begin｜>';
-    const end = '<｜tool▁calls▁end｜>';
-    final twoCalls = history.substring(
-      history.indexOf(begin),
-      history.indexOf(end) + end.length,
-    );
-    expect(twoCalls, contains('<｜tool▁call▁end｜>\n<｜tool▁call▁begin｜>'));
+    String renderedCalls(List<String> cities) {
+      final history = ChatTemplateEngine.render(
+        templateSource: templateSource,
+        messages: [
+          const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              for (final city in cities)
+                LlamaToolCallContent(
+                  name: 'weather',
+                  arguments: {'city': city},
+                  rawJson: '{"city": "$city"}',
+                ),
+            ],
+          ),
+        ],
+        metadata: const {},
+        addAssistant: false,
+      ).prompt;
+      const begin = '<｜tool▁calls▁begin｜>';
+      const end = '<｜tool▁calls▁end｜>';
+      return history.substring(
+        history.indexOf(begin),
+        history.indexOf(end) + end.length,
+      );
+    }
 
+    final twoCalls = renderedCalls(['Seoul', 'Busan']);
+    final threeCalls = renderedCalls(['Seoul', 'Busan', 'Jeju']);
+    expect(twoCalls, contains('<｜tool▁call▁end｜>\n<｜tool▁call▁begin｜>'));
+    expect('\n<｜tool▁call▁begin｜>'.allMatches(threeCalls), hasLength(2));
+    String separatedBy(String separator) =>
+        twoCalls.replaceFirst('end｜>\n<', 'end｜>$separator<');
+
+    // Separators are llama.cpp's `space` rule: one space, or one or two
+    // newlines followed by up to 20 spaces or tabs.
     _expectGrammar(
       validator,
       grammar(parallel: true),
       valid: [
         twoCalls,
-        twoCalls.replaceFirst('end｜>\n<', 'end｜><'),
-        twoCalls.replaceFirst('end｜>\n<', 'end｜>\n\n<'),
+        threeCalls,
+        separatedBy(''),
+        separatedBy(' '),
+        separatedBy('\n\t'),
+        separatedBy('\n\n'),
       ],
-      invalid: [twoCalls.replaceFirst('end｜>\n<', 'end｜>x<')],
+      invalid: [
+        separatedBy('x'),
+        separatedBy('  '),
+        separatedBy('\n\n\n'),
+        separatedBy('\n\n\n\n'),
+      ],
     );
     _expectGrammar(
       validator,
       grammar(parallel: false),
       valid: const [],
-      invalid: [twoCalls],
+      invalid: [twoCalls, threeCalls],
     );
   });
 
