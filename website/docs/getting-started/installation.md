@@ -23,7 +23,7 @@ For Genkit or Flutter Edge AI integration setup, see
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.5
+  llamadart: ^0.17.0
 ```
 
 Then resolve packages:
@@ -54,10 +54,10 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.5
-  llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.16.2 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in
+  llamadart: ^0.17.0
+  llamadart_llama_cpp_flutter: ^0.17.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.17.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.17.0 # Apple image generation, opt-in
 ```
 
 Companion versions released with core `0.13.0` and later share its
@@ -84,8 +84,9 @@ dependency_overrides:
     git: https://github.com/leehack/llamadart.git
 ```
 
-Use llama.cpp companion `0.16.0` with core `0.16.x`, or `0.15.2` with core
-`>=0.15.6 <0.16.0`, for native `v0.7.0-2`. Locked `0.15.0`/`0.15.1` companions
+Use llama.cpp companion `0.17.0` with core `0.17.x` for native `v0.7.0-3`.
+Use `0.16.0` with core `0.16.x`, or `0.15.2` with core `>=0.15.6 <0.16.0`, for
+native `v0.7.0-2`. Locked `0.15.0`/`0.15.1` companions
 keep `v0.7.0-1` and work with core `0.15.6` with an upgrade warning, or pair
 with core `0.15.0` to `0.15.5`.
 Pair `0.14.0` with core `0.14.x` for `v0.7.0`, `0.13.0` with core `0.13.x`, and `0.0.23` with
@@ -94,10 +95,11 @@ keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
 names the companion release of your core's minor to depend on, such as
-`^0.16.0` with core `0.16.0`. Core `0.16.0` requires a `v0.7.0-2` companion
-or a `v0.7.0-1` one with the warning above; earlier companion pins are
-rejected. The stable_diffusion check accepts only the core's own SD pin, so
-core `0.16.x` needs SD companion `0.16.0` (`v0.3.0`). On macOS,
+`^0.17.0` with core `0.17.0`. Core `0.17.0` requires a `v0.7.0-3` companion
+and rejects every earlier companion pin; core `0.16.x` requires a `v0.7.0-2`
+companion or a `v0.7.0-1` one with the warning above. The stable_diffusion
+check accepts only the core's own SD pin, so core `0.17.x` needs SD companion
+`0.17.0` (`v0.3.0-1`), and core `0.16.x` SD companion `0.16.0` (`v0.3.0`). On macOS,
 `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
 including the GPU accelerators. The build uses it only when the resolved
 companion's `Package.swift` is the one this core release expects; any other
@@ -105,8 +107,9 @@ companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
 app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
 A maintained companion pinning an earlier build of the core's LiteRT-LM
 release still embeds and loads its complete macOS arm64 runtime and needs no
-build phase; the build only warns to upgrade it. Companion `0.16.2` pins
-this core's `v0.18.1-4` and requires core `>=0.16.2`. Companion `0.16.1` pins
+build phase; the build only warns to upgrade it. Companion `0.17.0` pins
+this core's `v0.18.1-4` and requires core `0.17.x`; companion `0.16.2` pins the
+same runtime for core `>=0.16.2 <0.17.0`. Companion `0.16.1` pins
 `v0.18.1-2`, which fixes nondeterministic CPU output and slow Gemma 4 CPU
 decode on SME2 CPUs, and companion `0.16.0` pins `v0.18.1`. Both are earlier
 builds of `v0.18.1-4`, so they build with that warning. Companions `0.0.15` to `0.15.2` pin `v0.18.0` builds, a
@@ -124,8 +127,9 @@ universal `flutter build macos` prints
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
 
-Use `llamadart_stable_diffusion_flutter` `0.16.0` with core `0.16.x` for SD
-`v0.3.0`, or `0.15.2` with core `>=0.15.2 <0.16.0` for `v0.2.0-4`. Locked
+Use `llamadart_stable_diffusion_flutter` `0.17.0` with core `0.17.x` for SD
+`v0.3.0-1`, `0.16.0` with core `0.16.x` for `v0.3.0`, or `0.15.2` with core
+`>=0.15.2 <0.16.0` for `v0.2.0-4`. Locked
 `0.15.0`/`0.15.1` SD companions keep their older runtime and work with core
 `0.15.2` with an upgrade warning. Pair `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and

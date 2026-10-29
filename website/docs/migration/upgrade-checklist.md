@@ -42,6 +42,16 @@ Use this checklist when upgrading `llamadart` across minor or major versions.
 
 ## Version-specific notes
 
+### 0.17.x: optional backend capabilities and Apple companions
+
+For the 0.16-to-0.17 changes, follow the
+[0.17 migration guide](https://github.com/leehack/llamadart/blob/main/MIGRATION.md#016x-to-0170-upgrade-guide).
+Custom backends implement `BackendLoraSupport` and `BackendMultimodalSupport`
+for LoRA and projector members, which `LlamaBackend` no longer declares.
+Upgrade core and every Apple companion to `0.17.x` together: companions
+`0.17.0` require `>=0.17.0 <0.18.0`, and core `0.17.x` accepts no earlier
+llama.cpp or stable_diffusion companion.
+
 ### 0.16.x: runtime-specific parameters and Apple companions
 
 For the 0.15-to-0.16 changes, follow the

@@ -58,8 +58,8 @@ description: >-
     `source` and its tokenizer JSON as `tokenizer` (still required for a
     container, which uses its embedded tokenizer). Apple apps on LiteRT
     companion `0.15.0`/`0.15.1` (`v0.18.0-2`) reject containers until they
-    upgrade to companion `0.16.2` with core `0.16.2`, or `0.15.2` with core
-    `0.15.6`. Native only, CPU only
+    upgrade to companion `0.17.0` with core `0.17.x`, `0.16.2` with core
+    `0.16.2`, or `0.15.2` with core `0.15.6`. Native only, CPU only
     (`LiteRtLmAsrBackend.cpu`); runtime settings go on the adapter, and
     `params`/`backend` must be null. `load` throws
     `LlamaUnsupportedException` where the runtime is unavailable, including

@@ -1,3 +1,8 @@
+## 0.17.0
+
+- Pair with core `0.17.x`; Apple SwiftPM stays pinned to
+  `leehack/litert-lm-native@v0.18.1-4`.
+
 ## 0.16.2
 
 - Update Apple SwiftPM to `leehack/litert-lm-native@v0.18.1-4`, the LiteRT-LM

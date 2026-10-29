@@ -576,15 +576,17 @@ companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
 an earlier build is accepted only when the core explicitly lists it as
-ABI-compatible. Core `0.16.x` pairs with companion `0.16.0` and core `0.15.6`
-with companion `0.15.2`, both for native `v0.7.0-2`. Both cores list
+ABI-compatible. Core `0.17.x` pairs with companion `0.17.0` for native
+`v0.7.0-3` and lists no earlier pins. Core `0.16.x` pairs with companion
+`0.16.0` and core `0.15.6` with companion `0.15.2`, both for native
+`v0.7.0-2`. Both cores list
 `v0.7.0-1` (companions `0.15.0` and `0.15.1`), which builds with an upgrade
 warning. Cores `0.15.0` to `0.15.5` list no earlier
 companion pins: use companion `0.15.0` or `0.15.1` with native `v0.7.0-1`.
 Core `0.14.x` pairs with companion
 `0.14.0` and native `v0.7.0`. Earlier companion pins are rejected. The
-stable_diffusion check lists no earlier pins: core `0.16.x` requires companion
-`0.16.0` (`v0.3.0`). The tag,
+stable_diffusion check lists no earlier pins: core `0.17.x` requires companion
+`0.17.0` (`v0.3.0-1`), and core `0.16.x` companion `0.16.0` (`v0.3.0`). The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. On macOS the hook hands LiteRT-LM to the companion

@@ -33,7 +33,7 @@ Choose [direct llamadart, Genkit, or Flutter Edge AI](https://llamadart.leehack.
 | Build chat history | [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session) |
 | Check runtime support | [Platform & backend matrix](https://llamadart.leehack.com/docs/platforms/support-matrix) |
 | Read API reference | [pub.dev API docs](https://pub.dev/documentation/llamadart/latest/) |
-| Upgrade from 0.15.x | [0.16 migration guide](MIGRATION.md#015x-to-0160-upgrade-guide) |
+| Upgrade from 0.16.x | [0.17 migration guide](MIGRATION.md#016x-to-0170-upgrade-guide) |
 | Try the Flutter demo | [Hosted chat app](https://leehack-llamadart.static.hf.space) |
 | Generate images on device (Preview) | [Image generation](https://llamadart.leehack.com/docs/guides/image-generation) |
 
@@ -76,14 +76,15 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.5
+  llamadart: ^0.17.0
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Use companion `0.16.0` with core `0.16.x`, or `0.15.2` with core
-`>=0.15.6 <0.16.0`, for llama.cpp `v0.7.0-2`.
+Use companion `0.17.0` with core `0.17.x` for llama.cpp `v0.7.0-3`; core
+`0.17.x` rejects earlier llama.cpp companions. Use `0.16.0` with core `0.16.x`,
+or `0.15.2` with core `>=0.15.6 <0.16.0`, for llama.cpp `v0.7.0-2`.
 Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with core `0.15.6`
 with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
 Pair companion `0.14.0` with core `0.14.x` for llama.cpp `v0.7.0`.
@@ -107,15 +108,16 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.16.5
-  llamadart_llama_cpp_flutter: ^0.16.0 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.16.2 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.16.0 # Apple image generation, opt-in
+  llamadart: ^0.17.0
+  llamadart_llama_cpp_flutter: ^0.17.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.17.0 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.17.0 # Apple image generation, opt-in
 ```
 
-Use `llamadart_stable_diffusion_flutter` `0.16.0` with core `0.16.x` for SD
-`v0.3.0`; core `0.16.x` rejects earlier SD companions, and `0.15.x` cores
-reject `0.16.0`. Use `0.15.2` with core `>=0.15.2 <0.16.0` for `v0.2.0-4`.
+Use `llamadart_stable_diffusion_flutter` `0.17.0` with core `0.17.x` for SD
+`v0.3.0-1`; core `0.17.x` rejects earlier SD companions. Use `0.16.0` with core
+`0.16.x` for `v0.3.0`, which `0.15.x` cores reject, and `0.15.2` with core
+`>=0.15.2 <0.16.0` for `v0.2.0-4`.
 Locked `0.15.0`/`0.15.1` SD companions keep their older runtime and work with core
 `0.15.2` with an upgrade warning. Pair `0.14.0` with core `0.14.x`,
 `0.13.0` with core `0.13.x`, and
@@ -126,8 +128,9 @@ ignore it. Adding it opts iOS and macOS builds into the image generation
 runtime (about 37 MB per Apple target), so leave it out unless the app uses
 `ImageGenerationEngine`.
 
-Use LiteRT-LM companion `0.16.2` with core `>=0.16.2 <0.17.0` for native
-`v0.18.1-4`. Companion `0.16.1` pins `v0.18.1-2`, which fixes nondeterministic
+Use LiteRT-LM companion `0.17.0` with core `0.17.x` for native `v0.18.1-4`.
+Companion `0.16.2` pins the same runtime for core `>=0.16.2 <0.17.0`,
+`0.16.1` pins `v0.18.1-2`, which fixes nondeterministic
 CPU output and slow Gemma 4 CPU decode on SME2 CPUs, and `0.16.0` pins
 `v0.18.1`; core `0.16.2` builds both with a macOS upgrade warning. Use `0.15.2` with
 core `>=0.15.6 <0.16.0` for `v0.18.0-3`. All three load dedicated ASR
@@ -479,8 +482,9 @@ macOS arm64 CPU and Metal; arbitrary FP8 models are not qualified.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. Use companion `0.16.0` with core `0.16.x` for SD `v0.3.0`,
-  or `0.15.2` with core `>=0.15.2 <0.16.0` for SD `v0.2.0-4`. Pair `0.14.0`
+  the entry above. Use companion `0.17.0` with core `0.17.x` for SD
+  `v0.3.0-1`, `0.16.0` with core `0.16.x` for SD `v0.3.0`, or `0.15.2` with
+  core `>=0.15.2 <0.16.0` for SD `v0.2.0-4`. Pair `0.14.0`
   with core `0.14.x`, `0.13.0` with core
   `0.13.x`, `0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`, and `0.0.2`
   with core `0.11.1` and `0.11.0`.
