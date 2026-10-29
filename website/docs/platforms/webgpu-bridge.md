@@ -164,7 +164,8 @@ whose message contains
 or `Web bridge is unavailable: <load error>`.
 
 `example/chat_app/web/index.html` is a fuller bootstrap: CDN-first loading with
-local fallback and a readiness promise; see
+local fallback and a readiness promise. A cross-origin isolated page cannot
+start bridge workers from a CDN, so serve the assets from your app origin; see
 [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
 
 ## Check readiness

@@ -1,6 +1,6 @@
 ## Unreleased
 
-- `ModelSplitMode.row` on native llama.cpp devices without split buffers, which include every bundled backend (Metal, CUDA, Vulkan and the CPU), now throws `LlamaUnsupportedException` naming the device before the model loads, instead of a generic load failure; use `ModelSplitMode.layer` ([#1576](https://github.com/leehack/llamadart/issues/1576)).
+- `ModelSplitMode.row` on native llama.cpp devices without split buffers, which include every bundled GPU backend and an explicitly selected CPU, now throws `LlamaUnsupportedException` naming the device before the model loads, instead of a generic load failure; use `ModelSplitMode.layer` ([#1576](https://github.com/leehack/llamadart/issues/1576)).
 
 ## 0.17.0
 

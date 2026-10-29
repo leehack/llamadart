@@ -216,8 +216,7 @@ Custom native runtimes must export the aLoRA metadata functions; see
   `getLoraAdapterCapabilities()` reports support
   (bridge assets `v0.1.54+`, the default pin among them;
   [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)).
-  The adapter source is a remote URL or `hf://` file; the bridge downloads
-  each adapter once per model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
+  The bridge downloads each adapter once per model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
   adapter it cannot load, such as one for another base model, throws
   `LlamaModelException`. On older bridge assets every WebGPU LoRA call, and
   every load with `ModelParams.loras`, throws `LlamaUnsupportedException`.
@@ -231,4 +230,4 @@ Custom native runtimes must export the aLoRA metadata functions; see
 - Ensure adapter/base-model compatibility (architecture/family alignment).
 - When behavior seems unchanged, confirm you are testing on a llama.cpp/GGUF
   target, native or WebGPU with capable bridge assets, and not a LiteRT-LM
-  path.
+  path (native LiteRT-LM applies only one default-scale adapter passed at load).

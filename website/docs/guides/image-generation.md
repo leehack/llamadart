@@ -18,12 +18,10 @@ Image generation is a Preview.
   [desktop models](#desktop-models) are validated on macOS Metal only
   ([#802](https://github.com/leehack/llamadart/issues/802)).
 - Open limits: no web runtime yet
-  ([#780](https://github.com/leehack/llamadart/issues/780)); the
-  [memory check](#memory-check) of a Vulkan GPU has not run on a physical GPU
-  yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9));
-  the automatic attention and VAE settings were measured on an M4 Max and
-  still need re-measuring on Android phones and iPhone
-  ([#805](https://github.com/leehack/llamadart/issues/805)).
+  ([#969](https://github.com/leehack/llamadart/issues/969)); the
+  [memory check](#memory-check)'s warning, refusal and two-GPU paths have not
+  been checked on physical Vulkan hardware
+  ([#1024](https://github.com/leehack/llamadart/issues/1024)).
 - Model licenses differ, including on commercial use; see
   [Model licenses](#model-licenses).
 :::
@@ -657,8 +655,8 @@ and a 20 ms sampled `VmRSS` peak on Android, where Test Lab refused the
 SD-Turbo (about 2.9 GiB needed, 2.5 GiB available), so it has no SD-Turbo
 figures, and its SDXS figures come from a run that does not verify because
 of that refusal: they are an observation, not verified evidence. The iPhone
-full-VAE arm has not been measured yet
-([#1033](https://github.com/leehack/llamadart/issues/1033)).
+full-VAE arm has not been measured yet, because its decode trips the GPU
+watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 With a tiny autoencoder, direct convolutions cost time for little memory:
 on an M4 Max CPU they took 1.4 to 1.7 s per 512x512 SDXS image against 1.2
@@ -1203,7 +1201,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   validation results, including timings, are in
   [#779](https://github.com/leehack/llamadart/issues/779).
 - The web has no image runtime yet
-  ([#780](https://github.com/leehack/llamadart/issues/780)).
+  ([#969](https://github.com/leehack/llamadart/issues/969)).
 
 The [basic app](../examples/basic-app) has a command-line image example, and
 the [chat app](../examples/chat-app) has an image screen that downloads SDXS
