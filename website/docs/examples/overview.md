@@ -44,10 +44,8 @@ style.
 
 ## Global example requirements
 
-- Dart SDK `>= 3.10.7`
-- Flutter SDK `>= 3.38.0` for Flutter examples
-- Flutter Apple example builds that use SwiftPM companion packages require
-  deployment targets of iOS `16.4` or macOS `14.0` or newer
-- Internet on first run (runtime bundle resolution)
+SDK versions, Apple deployment targets and the first-run runtime download are
+in [Installation](../getting-started/installation#requirements).
+
 - The Chat App enables both native runtime families, llama.cpp and LiteRT-LM,
   because it demonstrates GGUF and `.litertlm` models.

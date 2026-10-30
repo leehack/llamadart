@@ -36,7 +36,7 @@ Work in this order:
 ## Model load tuning (`ModelParams`)
 
 ```dart
-const modelParams = ModelParams(
+const modelParams = LlamaCppModelParams(
   contextSize: 4096,
   gpuLayers: ModelParams.maxGpuLayers,
   preferredBackend: GpuBackend.vulkan,
@@ -252,15 +252,9 @@ Knobs:
 - `loadMtp` (`ModelParams`): keep it `false` unless bundled MTP tensors will
   be used, because loading them costs memory. An external MTP draft model
   loads as MTP automatically.
-- `speculativeRollbackTokenMax` (`ModelParams`): native llama.cpp rejects
-  nonzero reservations for recurrent/hybrid models, including LFM2 and Qwen3.5,
-  before creating a context. Its public API cannot establish a safe graph-node
-  budget for rollback snapshots, and excessive reservations can abort the
-  process. Keep the default `0` for ordinary generation. Speculative strategies
-  requiring recurrent rollback remain unsupported until a native runtime can
-  validate that budget; a small value measured on one model is not a safe bound
-  for other models. Nonrecurrent targets retain native handling. WebGPU retains
-  its separate bridge capability contract.
+- `speculativeRollbackTokenMax`: keep the default `0`; native llama.cpp
+  rejects nonzero values on recurrent or hybrid models. See
+  [Runtime parameters](../configuration/runtime-parameters.md).
 
 Draftless n-gram strategies depend on the workload. On prompts with little
 repetition they can produce no drafts and run slower than baseline. A
@@ -356,25 +350,5 @@ both formats on your target device, not as a ranking; on desktop, decide on
 model format, features and distribution constraints
 ([Choosing llama.cpp or LiteRT-LM](./backend-selection)).
 
-On native llama.cpp and LiteRT-LM, cancelling a queued generation before it starts makes
-`getPerformanceContext()` return `null` for that context. This includes
-LiteRT-LM requests already sent to the worker that are cancelled before they run. Previous request counters are
-unavailable for the cancelled request, LiteRT-LM validation failures,
-llama.cpp option-validation failures before its counter reset, and failed
-dispatches. Native llama.cpp resets native counters, saved timings and sampler
-counters before generation, embedding, next-token scoring or text-to-speech
-executes. An embedding batch accumulates all its inputs. Request validation
-failures in the native worker leave diagnostics unavailable, while argument
-checks that fail before dispatch leave them unchanged. Rejections during active
-text-to-speech preserve that request's counters. Token counters retain llama.cpp's native minimum of one
-for `evalTokens` and `promptEvalTokens`, even with no work in that category.
-Embedding and scoring report `0` ms timings because llama.cpp contexts
-disable native perf timing by default. LiteRT-LM still restores diagnostics on
-generation. After an early cancellation, pending or failed embedding, scoring
-and speech calls keep diagnostics unavailable, including calls started before
-cancellation. Generation dispatch restores availability immediately; embedding,
-scoring and speech restore it only on success, using the backend's counter
-semantics. Web backends always
-return `null` diagnostics.
-Requests finishing after unload do not change a reloaded context's counter
-availability, including when the native handle is reused.
+For when `getPerformanceContext()` returns `null`, see
+[Token usage and timings](./generation-and-streaming#token-usage-and-timings).

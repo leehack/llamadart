@@ -39,18 +39,16 @@ members: call them on an expression typed `LlamaEngine`. A call through
 
 ## High-Level API
 
-Use this by default. It handles model lifecycle, template routing, streaming, and
-chat history management.
+Use this by default. It handles model lifecycle, template routing, streaming,
+tool calling and chat history management.
 
 **Key Components:**
 - **`LlamaEngine`**: Loads/unloads models, runs generation, and can produce
   embeddings.
 - **`ChatSession`**: Keeps message history for multi-turn conversation flows.
 
-**Advantages:**
-- **Simplicity**: Work with message/content objects instead of low-level backend calls.
-- **Template-aware**: Uses model chat templates and parsing behavior automatically.
-- **Tool support**: Works with structured tool-call outputs.
+The engine also provides:
+
 - **Embedding APIs**: `embed(...)` and `embedBatch(...)` on the same engine.
 - **Next-token scores**: `scoreNextToken(...)` returns next-token
   log-probabilities; see

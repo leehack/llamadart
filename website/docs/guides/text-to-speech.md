@@ -198,8 +198,7 @@ Native llama.cpp rejects embeddings (including content and batch embeddings),
 next-token scoring, text generation, state save/load and LoRA changes on a
 context while text-to-speech is active with `LlamaStateException`. Await the
 synthesis task, including cancellation, before reusing that context. The
-reservation starts before speaker-reference loading; a rejected overlapping
-request leaves the active request's performance counters intact.
+reservation starts before speaker-reference loading.
 
 The current native and Web wrappers produce PCM only after all requested audio-codec
 frames have been generated. `supportsIncrementalAudio` and

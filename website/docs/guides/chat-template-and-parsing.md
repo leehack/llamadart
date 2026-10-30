@@ -10,12 +10,7 @@ and web. Templates run on [`dinja`](https://pub.dev/packages/dinja), a Dart
 Jinja runtime; the pipeline is described in
 [Template engine internals](./template-engine-internals).
 
-Jinja string literals in embedded and custom templates accept `\xHH`
-hexadecimal escapes, with exactly two hexadecimal digits. For example,
-`\x00` matches a NUL character and `\xE9` produces `é`;
-`\\x41` keeps the literal text `\x41`. A malformed escape raises
-`LlamaException` naming the template source. Model architectures must also be
-supported by the selected runtime.
+Model architectures must be supported by the selected runtime.
 
 ## Core API
 
@@ -239,6 +234,12 @@ the model's template; on LiteRT-LM, an empty string also replaces the built-in
 template. The value is Jinja source: unlike llama.cpp's `--chat-template`, a
 name such as `chatml` is not mapped to a built-in template.
 `engine.getMetadata()` still reports the GGUF `tokenizer.chat_template`.
+
+Jinja string literals in embedded and custom templates accept `\xHH`
+hexadecimal escapes, with exactly two hexadecimal digits. For example,
+`\x00` matches a NUL character and `\xE9` produces `é`;
+`\\x41` keeps the literal text `\x41`. A malformed escape raises
+`LlamaException` naming the template source.
 
 To preview a different template for one call, pass `customTemplate` to
 `engine.chatTemplate(...)`; it takes precedence over `ModelParams.chatTemplate`.

@@ -14,8 +14,8 @@ must be converted into a runtime-ready artifact first. For most open model
 workflows that means a quantized GGUF. For LiteRT-LM deployments, use a
 published `.litertlm` bundle that matches the LiteRT-LM runtime.
 
-Fortunately, thousands of pre-converted GGUF models are readily available.
-LiteRT-LM bundles are more specialized; use them when your target model is
+Thousands of pre-converted GGUF models are available. LiteRT-LM bundles are
+more specialized; use them when your target model is
 distributed for LiteRT-LM or when you are intentionally benchmarking that
 runtime path.
 
@@ -25,10 +25,10 @@ The best place to find GGUF models is
 **[Hugging Face](https://huggingface.co/models?search=gguf)**.
 
 You can search for any model name followed by `gguf` (e.g., `Llama-3-8B-Instruct-GGUF`).
-For a deeper dive into the GGUF ecosystem and how quantization works, check out these insightful resources:
-- [The GGUF format specification](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md)
+To learn more about the GGUF format and quantization:
+- [The GGUF format specification](https://github.com/ggml-org/ggml/blob/master/docs/gguf.md)
 - [Hugging Face's official GGUF documentation](https://huggingface.co/docs/hub/en/gguf)
-- [Quantization in llama.cpp](https://github.com/ggerganov/llama.cpp/wiki/Tensor-Encoding-and-Quantization)
+- [Quantization in llama.cpp](https://github.com/ggml-org/llama.cpp/wiki/Tensor-Encoding-and-Quantization)
 
 For LiteRT-LM, look for model repositories that publish `.litertlm` files and
 document LiteRT-LM compatibility. If both GGUF and `.litertlm` variants exist,

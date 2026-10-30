@@ -62,6 +62,11 @@ the model load before the head can be loaded.
 `decisions.info.deviceName` names that device, such as `CPU` or `MTL0`; on Web,
 the bridge reports its own device name.
 
+No trained head? With an instruction model, put lettered options in a chat
+prompt and read `engine.scoreNextToken(...)` over the letter tokens; check
+`engine.supportsNextTokenScoring` first. See
+[Next-token scores](./generation-and-streaming#next-token-scores).
+
 ## Load a decision model
 
 The reference assets are the community GGUF conversion
