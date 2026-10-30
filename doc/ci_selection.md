@@ -56,17 +56,26 @@ check runs with the full graph, which any change under `test/` or `tool/ci/`
 selects. Because Linux coverage can no longer stand in for
 `validation-integration` on a Markdown path, that job stays selected there.
 
-Linux VM tests run as parallel shards, `Test Linux VM (core)`, `(tooling)` and
-`(runtime)`, which split `test/` by directory. Together they run every root
-`*_test.dart` file exactly once, each with `-j 1 --exclude-tags local-only`
-and its own LiteRT-LM temp canary; `ci_workflow_selection_test.dart` fails when
-a test file belongs to no shard or to two, so a new top-level test directory
-needs a shard in `ci.yml`. Each shard uploads its raw VM coverage.
+Linux VM tests run as parallel shards (`core-template`, `engine`, `tooling`,
+`backends`), split by directory. Together they run every root `*_test.dart` file
+exactly once, each with `-j 1 --exclude-tags local-only` and its own LiteRT-LM
+temp canary; `ci_workflow_selection_test.dart` fails when a test file belongs to
+no shard or to two, so a new top-level test directory needs a shard in `ci.yml`.
+Each shard uploads its raw VM coverage.
 `Test Linux VM (with Coverage)` waits for every shard, formats their combined
 raw coverage with `format_lcov.dart` exactly as one full run would, then
 enforces the threshold and uploads to Codecov. The aggregate requires the
 shards (`SHARD_JOBS` in the selector) as well as that job whenever Linux
 coverage is selected.
+
+`Test Web (Chrome)` and the Windows leg of `Test Native` have two shards each,
+listed in their `ci.yml` matrices; macOS stays one job. A job's aggregate result
+is `failure` if any of its shards fails. `ci_workflow_selection_test.dart` fails
+when a test file belongs to no shard or to two in any of these lanes, so a new
+test directory needs a shard there. Shard by whole files: most of the Chrome
+lane is dart2js compiling each suite, so `dart test --total-shards` would repeat
+it in every shard. Sharding adds jobs against the 20-job cap, so it only pays
+while the lanes on the critical path shorten together.
 
 Checks share a job to stay under GitHub Free's limit of 5 concurrent macOS jobs
 across the owner's repositories, and each keeps its own selection on its step:

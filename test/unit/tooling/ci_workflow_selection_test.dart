@@ -72,7 +72,7 @@ void expectGuardedUpload(Map<String, dynamic> job, String demo) {
 }
 
 void main() {
-  // This is the first suite in Test Native (windows-latest) to start Python,
+  // This is the first suite in Test Native (windows-latest, tooling) to start Python,
   // and that runner's first launch has taken up to 54 s (later ones well under
   // 1 s). It runs here, outside the 30 s budget of whichever test would
   // otherwise pay it.
@@ -678,7 +678,7 @@ void main() {
     );
     expect(memory['run'], 'dart test test/process_memory_test.dart');
     const selected =
-        "\${{ !cancelled() && runner.os == 'Windows' && needs.changes.outputs.validation-harness == 'true' }}";
+        "\${{ !cancelled() && matrix.shard == 'tooling' && needs.changes.outputs.validation-harness == 'true' }}";
     expect(memory['if'], selected);
     // PowerShell keeps only the last command's exit code, so this is a step.
     final install = native[native.indexOf(memory) - 1];
@@ -990,7 +990,8 @@ void main() {
           (s) =>
               s['run'] ==
               'dart test -p vm -j 1 --exclude-tags local-only '
-                  '--file-reporter=json:.dart_tool/native_test_events.jsonl',
+                  '--file-reporter=json:.dart_tool/native_test_events.jsonl '
+                  r'${{ matrix.paths }}',
         ),
         isTrue,
       );
@@ -1072,42 +1073,131 @@ void main() {
     },
   );
 
-  test('Linux VM shards run every root test file exactly once', () {
-    final matrix =
-        readWorkflow('ci')['jobs']['test-linux-vm']['strategy']['matrix']
-            as Map;
-    final shards = {
-      for (final entry in (matrix['include'] as List).cast<Map>())
-        entry['shard'] as String: (entry['paths'] as String)
-            .split(RegExp(r'\s+'))
-            .where((path) => path.isNotEmpty)
-            .toList(),
-    };
-    expect(shards.keys, unorderedEquals(['core', 'tooling', 'runtime']));
+  group('test lane shards', () {
+    Map<String, List<String>> shardsOf(String job, {String? os}) {
+      final matrix =
+          readWorkflow('ci')['jobs'][job]['strategy']['matrix'] as Map;
+      return {
+        for (final entry in (matrix['include'] as List).cast<Map>())
+          if (os == null || entry['os'] == os)
+            entry['shard'] as String: (entry['paths'] as String)
+                .split(RegExp(r'\s+'))
+                .where((path) => path.isNotEmpty)
+                .toList(),
+      };
+    }
+
     final testFiles = Directory('test')
         .listSync(recursive: true)
         .whereType<File>()
         .map((file) => file.path.replaceAll(r'\', '/'))
         .where((path) => path.endsWith('_test.dart'))
         .toList();
-    expect(testFiles, isNotEmpty);
-    for (final paths in shards.values) {
-      for (final path in paths) {
-        expect(
-          FileSystemEntity.typeSync(path),
-          isNot(FileSystemEntityType.notFound),
-          reason: path,
-        );
+
+    // A path is a file, a directory, or a `dir/*_test.dart` the shell expands.
+    bool selects(String path, String file) => path.endsWith('/*_test.dart')
+        ? file.startsWith(path.replaceFirst('*_test.dart', '')) &&
+              !file.substring(path.length - '*_test.dart'.length).contains('/')
+        : file == path || file.startsWith('$path/');
+
+    void expectRunsEveryRootTestFileOnce(Map<String, List<String>> shards) {
+      expect(testFiles, isNotEmpty);
+      for (final paths in shards.values) {
+        for (final path in paths) {
+          expect(
+            FileSystemEntity.typeSync(path.replaceFirst('/*_test.dart', '')),
+            isNot(FileSystemEntityType.notFound),
+            reason: path,
+          );
+        }
+      }
+      for (final file in testFiles) {
+        final owners = [
+          for (final MapEntry(key: shard, value: paths) in shards.entries)
+            for (final path in paths)
+              if (selects(path, file)) '$shard:$path',
+        ];
+        expect(owners, hasLength(1), reason: file);
       }
     }
-    for (final file in testFiles) {
-      final owners = [
-        for (final MapEntry(key: shard, value: paths) in shards.entries)
-          for (final path in paths)
-            if (file == path || file.startsWith('$path/')) '$shard:$path',
-      ];
-      expect(owners, hasLength(1), reason: file);
-    }
+
+    test('Linux VM shards run every root test file exactly once', () {
+      final shards = shardsOf('test-linux-vm');
+      expect(
+        shards.keys,
+        unorderedEquals(['core-template', 'engine', 'tooling', 'backends']),
+      );
+      expectRunsEveryRootTestFileOnce(shards);
+    });
+
+    test('Chrome shards run every root test file exactly once', () {
+      final shards = shardsOf('test-web');
+      expect(shards.keys, unorderedEquals(['core-template', 'rest']));
+      expectRunsEveryRootTestFileOnce(shards);
+      final job = readWorkflow('ci')['jobs']['test-web'] as Map;
+      expect(job['strategy']['fail-fast'], isFalse);
+      expect(
+        (job['steps'] as List).map((s) => '${s['run']}'),
+        contains(
+          r'dart test -p chrome --exclude-tags local-only ${{ matrix.paths }}',
+        ),
+      );
+    });
+
+    test('Windows shards run every root test file exactly once, and macOS '
+        'runs all of them in one job', () {
+      final windows = shardsOf('test-other-os', os: 'windows-latest');
+      expect(windows.keys, unorderedEquals(['tooling', 'runtime']));
+      expectRunsEveryRootTestFileOnce(windows);
+      for (final paths in windows.values) {
+        expect(paths.where((path) => path.contains('*')), isEmpty);
+      }
+      expect(shardsOf('test-other-os', os: 'macos-latest'), {'all': isEmpty});
+      final job = readWorkflow('ci')['jobs']['test-other-os'] as Map;
+      expect(job['strategy']['fail-fast'], isFalse);
+      final matrix = (job['strategy']['matrix']['include'] as List).cast<Map>();
+      expect(
+        matrix.singleWhere((leg) => leg['os'] == 'macos-latest')['leg'],
+        'macos-latest',
+      );
+      // Two legs sharing an artifact name would fail the second upload.
+      expect(
+        (job['steps'] as List).cast<Map>().singleWhere(
+          (s) => s['name'] == 'Upload native test timing',
+        )['with']['name'],
+        r'native-test-timing-${{ matrix.os }}-${{ matrix.shard }}-${{ github.run_attempt }}',
+      );
+    });
+
+    test('the partition check rejects a lost or a doubled test file', () {
+      final shards = shardsOf('test-web');
+      final lost = {
+        ...shards,
+        'rest': shards['rest']!.where((p) => p != 'test/integration').toList(),
+      };
+      expect(
+        () => expectRunsEveryRootTestFileOnce(lost),
+        throwsA(isA<TestFailure>()),
+      );
+      final doubled = {
+        ...shards,
+        'core-template': [...shards['core-template']!, 'test/integration'],
+      };
+      expect(
+        () => expectRunsEveryRootTestFileOnce(doubled),
+        throwsA(isA<TestFailure>()),
+      );
+      final topLevelLost = {
+        ...shards,
+        'rest': shards['rest']!
+            .where((p) => p != 'test/unit/core/*_test.dart')
+            .toList(),
+      };
+      expect(
+        () => expectRunsEveryRootTestFileOnce(topLevelLost),
+        throwsA(isA<TestFailure>()),
+      );
+    });
   });
 
   test('VM test lanes run against a temp directory guarded by a LiteRT-LM '

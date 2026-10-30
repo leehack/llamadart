@@ -1026,7 +1026,7 @@ CPU only. The default `cpu,metal` requires an actual `MTL` backend for Metal.
 The macOS/Windows `Test Native` jobs retain their existing selection,
 single-suite concurrency and cache canary.
 The additional JSON file reporter records test intervals; the ordinary reporter
-and test exit status are unchanged. `native-test-timing-<os>-<attempt>` artifacts
+and test exit status are unchanged. `native-test-timing-<os>-<shard>-<attempt>` artifacts
 contain sanitized suite paths, source lines, test IDs, intervals, hidden/skip
 flags and results. Test names, printed messages and errors stay out of the
 uploaded summary. Hidden intervals include suite loading and group setup or
