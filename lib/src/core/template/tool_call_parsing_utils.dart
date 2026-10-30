@@ -374,7 +374,8 @@ class ToolCallParsingUtils {
       if (value is String && value.isNotEmpty) {
         return value;
       }
-      if (stringify && value != null) {
+      // toString recurses, and an overflow inside it cannot be caught reliably.
+      if (stringify && value != null && (jsonValueDepth(value) ?? 129) <= 128) {
         final stringValue = value.toString();
         if (stringValue.isNotEmpty) {
           return stringValue;

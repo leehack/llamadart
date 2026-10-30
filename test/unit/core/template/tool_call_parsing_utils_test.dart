@@ -37,6 +37,25 @@ void main() {
   });
 
   group('ToolCallParsingUtils', () {
+    test('stringifies an id up to the wire depth, and drops a deeper one', () {
+      Object? nested(int depth) {
+        Object? value = <Object?>[];
+        for (var i = 1; i < depth; i++) {
+          value = <Object?>[value];
+        }
+        return value;
+      }
+
+      String? id(Object? value) =>
+          ToolCallParsingUtils.parseToolCallArray(<Object?>[
+            <String, Object?>{'name': 'f', 'id': value},
+          ], assignFallbackIds: true)!.single.id;
+
+      expect(id(7), '7');
+      expect(id(nested(128)), nested(128).toString());
+      expect(id(nested(129)), 'call_0');
+    });
+
     test(
       'rejects duplicate object keys before JSON decoding collapses them',
       () {

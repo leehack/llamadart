@@ -150,6 +150,26 @@ void main() {
       expect(parsed.toolCalls, isEmpty);
     });
 
+    test('reads numbers inside a container and either quote', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          '''<|tool_call_start|>[f(a=[1e5, -1.5E2], b='say "hi"', c="it's")]'''
+          '<|tool_call_end|>',
+        ),
+        '',
+        [
+          (
+            'f',
+            jsonEncode({
+              'a': [100000.0, -150.0],
+              'b': 'say "hi"',
+              'c': "it's",
+            }),
+          ),
+        ],
+      );
+    });
+
     test('reads each literal inside a container', () {
       _expectCalls(
         Lfm2Handler().parse(
@@ -325,19 +345,23 @@ void main() {
       });
     }
 
-    for (final (name, call) in [
-      ('a deep list id', '{"name":"f","id":${nested('[', ']', 200000)}}'),
-      (
-        'a deep map id',
-        '{"name":"f","id":${'{"a":' * 200000}1${'}' * 200000}}',
-      ),
+    for (final (name, id) in [
+      ('a deep list id', nested('[', ']', 200000)),
+      ('a deep map id', '${'{"a":' * 200000}1${'}' * 200000}'),
     ]) {
-      test('$name takes no call', () {
-        final parsed = Lfm2Handler().parse(
-          'Before<|tool_call_start|>[$call]<|tool_call_end|>',
-        );
-        expect(parsed.toolCalls, isEmpty);
-        expect(parsed.content, 'Before');
+      test('$name falls back to a generated id', () {
+        for (var run = 0; run < 20; run++) {
+          final call = Lfm2Handler()
+              .parse(
+                '<|tool_call_start|>[{"name":"f","id":$id,"arguments":{"a":1}}]'
+                '<|tool_call_end|>',
+              )
+              .toolCalls
+              .single;
+          expect(call.id, 'call_0');
+          expect(call.function?.name, 'f');
+          expect(call.function?.arguments, '{"a":1}');
+        }
       });
     }
 

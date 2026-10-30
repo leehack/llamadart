@@ -265,9 +265,6 @@ class Lfm2Handler extends ChatTemplateHandler {
       // Arguments the wire format refuses (too deep, not finite) are model
       // text, not a caller error, so they must not throw out of parse.
       return null;
-    } on StackOverflowError {
-      // A deeply nested JSON `id` overflows when it is stringified.
-      return null;
     }
   }
 
