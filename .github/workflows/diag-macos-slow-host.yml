@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        replica: [1, 2]
+        replica: [1, 2, 3]
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -49,34 +49,22 @@ jobs:
             wait
             echo "DIAG_CPUBENCH procs=$n wall_s=$(python3 -c "import time;print(round(time.time()-$start,2))")"
           done
-      - name: Arms
+      - name: Host probe (default threads, isolation suite)
         shell: bash
         env:
+          GGML_METAL_DEVICES: "0"
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
-          SUITES: test/integration/backends/llama_cpp/prompt_state_isolation_test.dart test/integration/next_token_scoring_test.dart
         run: |
-          run_arm() {
-            local name="$1"; shift
-            local start=$(date +%s)
-            ( env "$@" dart test -p vm -j 1 --exclude-tags local-only $SUITES > "arm_$name.log" 2>&1 ) &
-            local pid=$!
-            sleep 25
-            top -l 2 -s 3 -n 4 -stats pid,cpu,th,command | tail -7 > "top_$name.txt" 2>&1 || true
-            if [ "${SAMPLED:-}" != "1" ] && [ "$name" = "t0_metal0_a" ]; then
-              for p in $(pgrep -f 'dart' ); do sample "$p" 4 -mayDie -file "sample_$p.txt" > /dev/null 2>&1 || true; done
-            fi
-            wait $pid; local rc=$?
-            echo "DIAG_ARM name=$name secs=$(( $(date +%s) - start )) rc=$rc $(tail -1 arm_$name.log | cut -c1-60)"
-            cat "top_$name.txt"
-          }
-          run_arm t0_metal0_a GGML_METAL_DEVICES=0
-          run_arm t2_metal0_a GGML_METAL_DEVICES=0 DIAG_THREADS=2
-          run_arm t1_metal0   GGML_METAL_DEVICES=0 DIAG_THREADS=1
-          run_arm t3_metal0   GGML_METAL_DEVICES=0 DIAG_THREADS=3
-          run_arm t4_metal0   GGML_METAL_DEVICES=0 DIAG_THREADS=4
-          run_arm t0_metalon  DIAG_NONE=1
-          run_arm t2_metalon  DIAG_THREADS=2
-          run_arm t0_metal0_b GGML_METAL_DEVICES=0
-          run_arm t2_metal0_b GGML_METAL_DEVICES=0 DIAG_THREADS=2
-          for f in sample_*.txt; do echo "--- $f"; grep -E "Thread_|ggml_|llama_|Physical footprint|MTL|Metal" "$f" | head -60 | cut -c1-130; done
-          grep -h "ggml_metal\|GPU name\|MTL" arm_t0_metalon.log | head -10 || true
+          start=$(date +%s)
+          dart test -p vm -j 1 test/integration/backends/llama_cpp/prompt_state_isolation_test.dart > probe.log 2>&1 || true
+          echo "DIAG_PROBE t0_isolation_secs=$(( $(date +%s) - start ))"
+      - name: Full lane with 2 threads
+        shell: bash
+        env:
+          GGML_METAL_DEVICES: "0"
+          DIAG_THREADS: "2"
+          LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
+        run: |
+          start=$(date +%s)
+          dart test -p vm -j 1 --exclude-tags local-only --reporter github
+          echo "DIAG_FULL secs=$(( $(date +%s) - start ))"
