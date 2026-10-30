@@ -801,7 +801,7 @@ void main() {
         expect(await enabled(path), {
           'docs-check',
           'docs-versions',
-          'test-linux-coverage',
+          'markdown-tests',
         }, reason: path);
       }
       expect(
@@ -1113,12 +1113,12 @@ void main() {
   test('VM test lanes run against a temp directory guarded by a LiteRT-LM '
       'cache canary', () {
     final jobs = readWorkflow('ci')['jobs'];
-    for (final job in ['test-linux-vm', 'test-other-os']) {
+    for (final job in ['test-linux-vm', 'test-other-os', 'markdown-tests']) {
       final steps = jobs[job]['steps'] as List;
       int index(String run) => steps.indexWhere((s) => s['run'] == run);
       final seed = index('bash tool/ci/litert_lm_temp_canary.sh seed');
       final tests = steps.indexWhere(
-        (s) => '${s['run']}'.startsWith('dart test -p vm -j 1 '),
+        (s) => '${s['run']}'.contains('dart test -p vm -j 1 '),
       );
       final check = index('bash tool/ci/litert_lm_temp_canary.sh check');
       expect(seed, greaterThanOrEqualTo(0), reason: job);
