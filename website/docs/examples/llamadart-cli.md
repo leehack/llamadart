@@ -57,9 +57,5 @@ cd example/llamadart_cli
 dart test
 ```
 
-The real-model parity gates are tagged `local-only` and need local llama.cpp
-builds and model files.
-
-Full options: parity harness setup, environment overrides and CLI notes are in
-the
+Full options, environment overrides and CLI notes are in the
 [example README](https://github.com/leehack/llamadart/tree/main/example/llamadart_cli).

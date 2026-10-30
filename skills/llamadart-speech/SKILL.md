@@ -46,30 +46,27 @@ description: >-
   audio support alone never makes a model ASR:
   - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the
     Qwen3-ASR GGUF as `source` and its mmproj as `projector`. Native
-    llama.cpp, or WebGPU with bridge assets `v0.1.30+`.
+    llama.cpp, or WebGPU (pinned bridge assets).
   - Another audio chat model on `LlamaEngine`: extend
     `SpeechToTextPromptAdapter` with `name`, `promptFor(request)` (the text
     sent before the audio) and `parseTranscript(output)` (returns a
     `SpeechToTextTranscript`); override `supportsLanguageHints`,
     `supportsContextPrompt` or `supportsLanguageDetection` as needed.
   - LiteRT-LM ASR (live partials, then a final transcript):
-    `LiteRtLmAsrAdapter(preset)` with the `.tflite` model, or from native
-    `v0.18.0-3` a dedicated ASR `.litertlm` container such as Whisper tiny, as
-    `source` and its tokenizer JSON as `tokenizer` (still required for a
-    container, which uses its embedded tokenizer). Apple apps on LiteRT
-    companion `0.15.0`/`0.15.1` (`v0.18.0-2`) reject containers until they
-    upgrade to companion `0.17.0` with core `0.17.x`, `0.16.2` with core
-    `0.16.2`, or `0.15.2` with core `0.15.6`. Native only, CPU only
+    `LiteRtLmAsrAdapter(preset)` with the `.tflite` model, or a dedicated ASR
+    `.litertlm` container such as Whisper tiny, as `source` and its tokenizer
+    JSON as `tokenizer` (still required for a container, which uses its
+    embedded tokenizer). Apple apps use the `llamadart_litert_lm_flutter`
+    companion with the core's `MAJOR.MINOR`. Native only, CPU only
     (`LiteRtLmAsrBackend.cpu`); runtime settings go on the adapter, and
     `params`/`backend` must be null. `load` throws
     `LlamaUnsupportedException` where the runtime is unavailable, including
     Web. Presets: `parakeetTdt0_6bV3`, `parakeetCtc0_6b`, `moonshineTiny`,
     `whisperTiny`, `qwen3Asr0_6b`; the files must match the preset.
-    Native `v0.18.0-2` reduces duplicated words at untimed window boundaries
-    with the default overlap; other boundary and recognition errors can remain.
+    Boundary and recognition errors can remain.
   - Qwen3-TTS: `Qwen3TtsAdapter` with the Qwen3-TTS GGUF and its
-    audio-generation mmproj. Native llama.cpp, or WebGPU with bridge assets
-    `v0.1.33+`. LiteRT-LM (native and Web) has no TTS. Synthesis is
+    audio-generation mmproj. Native llama.cpp, or WebGPU (pinned
+    bridge assets). LiteRT-LM (native and Web) has no TTS. Synthesis is
     runtime-native, so a custom `TextToSpeechAdapter` can target only a model
     the runtime reports as a `BackendTextToSpeechModel`.
 - After `attach`, `await recognizer.capabilities` /
@@ -116,7 +113,7 @@ description: >-
     `LlamaSpeechTranscriptTruncatedException`. Read `limit`
     (`LlamaSpeechTranscriptLimit.maxOutputTokens` or `.contextSize`) and
     `partialTranscript`. On Web, bridge assets with
-    `supportsCompletionUsage` (`v0.1.54+`) report truncation with `.runtime`:
+    `supportsCompletionUsage` report truncation with `.runtime`:
     the bridge combines output, context and media caps, so do not diagnose
     the exact cause from token counts. Older assets without a termination
     signal retain their existing completion behavior.

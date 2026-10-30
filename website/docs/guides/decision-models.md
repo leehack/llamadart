@@ -46,7 +46,7 @@ The API keeps the names of TypeSafe's
 | Runtime | `DecisionEngine` |
 | --- | --- |
 | Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
-| WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (apiVersion 1), which the default pin includes; checked only in headless Chromium on macOS. Older assets report unsupported. See [Web](#web) |
+| WebGPU / GGUF | Experimental, with pinned bridge assets (apiVersion 1); checked only in headless Chromium on macOS. See [Web](#web) |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 
@@ -480,8 +480,8 @@ final official = await DecisionEngine.load(
 ## Web
 
 On Web, `DecisionEngine` runs through the decision API (apiVersion 1) of the
-llama.cpp WebGPU bridge, which `llama-web-bridge-assets` `v0.1.47+` and the
-default pin include. With older assets, `capabilitiesFor` reports unsupported
+llama.cpp WebGPU bridge, which the pinned assets include. With assets that
+lack it, `capabilitiesFor` reports unsupported
 and `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`.
 LiteRT-LM Web models report unsupported too.
 
@@ -509,17 +509,15 @@ LiteRT-LM Web models report unsupported too.
 - On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` misses the parity
   tolerances on one of Laya's 24 fixture questions, with the same top option;
   the drift comes from the bridge's WASM CPU Q8_0 path. An F16 backbone, or GPU
-  layers with either backbone, stays within them. The design doc's
-  [Web check](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#web-check)
-  has the numbers.
+  layers with either backbone, stays within them.
 
 ## Accuracy and speed
 
 Use an F32 backbone, or F16 on Metal, when answers must match Laya:
 `laya-Q8_0.gguf` can change decisions, including clear ones. Timings and
-parity measured on an Apple M4 Max are in the design doc's
-[Measured](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#measured)
-section; other native platforms and GPU backends have not been measured.
+parity were measured on an Apple M4 Max; other native platforms and GPU
+backends have not been measured. Validation evidence:
+[Feature validation evidence](../maintainers/feature-validation#qualification-procedures).
 
 ## Known limits
 

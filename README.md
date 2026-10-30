@@ -55,7 +55,7 @@ dependencies:
 
 Pairing rules, the SwiftPM bootstrap and the privacy manifest are in
 [Installation](https://llamadart.leehack.com/docs/getting-started/installation) and
-[Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks).
+[Apple setup](https://llamadart.leehack.com/docs/platforms/apple-setup).
 Web apps run `dart run llamadart:web_setup` once; see the
 [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge).
 
@@ -67,7 +67,7 @@ dart run skills@ get
 ```
 
 To check a desktop setup without a model, run `dart run llamadart:doctor`; see
-[setup report scope](https://llamadart.leehack.com/docs/platforms/native-build-hooks#desktop-setup-report).
+[setup report scope](https://llamadart.leehack.com/docs/platforms/diagnose-setup#desktop-setup-report).
 
 ## First generation
 
@@ -126,7 +126,7 @@ is not available on the web. Per-target support, device limitations and
 runtime options:
 
 - [Platform and backend support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix), including
-  [known limitations](https://llamadart.leehack.com/docs/platforms/support-matrix#known-limitations)
+  [known limitations](https://llamadart.leehack.com/docs/platforms/known-platform-issues)
 - [Backend selection](https://llamadart.leehack.com/docs/guides/backend-selection)
 - [Runtime parameters](https://llamadart.leehack.com/docs/configuration/runtime-parameters)
 - [Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks)
@@ -167,7 +167,7 @@ and header/binding regeneration. The full override rules are in [Native runtime 
 | Trace and measure requests | [Observability](https://llamadart.leehack.com/docs/guides/observability) |
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |
 | Tune performance | [Performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning) |
-| Upgrade from 0.16.x | [0.17 migration guide](MIGRATION.md#016x-to-0170-upgrade-guide) |
+| Upgrade from 0.16.x | [0.17 migration guide](https://llamadart.leehack.com/docs/migration/upgrade-to-0-17) |
 
 ## Examples
 

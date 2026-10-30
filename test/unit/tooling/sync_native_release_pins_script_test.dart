@@ -1117,8 +1117,7 @@ paths=(
         'regeneration';
     for (final path in <String>[
       'README.md',
-      'website/docs/getting-started/installation.md',
-      'website/docs/platforms/support-matrix.md',
+      'website/docs/platforms/native-build-hooks.md',
     ]) {
       final normalized = (await File(
         path,

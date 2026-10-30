@@ -10,7 +10,7 @@ https://github.com/leehack/llamadart before following the setup commands.
 
 Runner already targets macOS 14.0. If a first SwiftPM build instead reports a
 generated 12.0 floor, run the
-[consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+[consumer bootstrap](https://llamadart.leehack.com/docs/platforms/apple-setup#fresh-macos-swiftpm-bootstrap)
 from this directory, including the `--no-pub` build. Repeat the sequence after
 cleaning or regenerating Flutter's ephemeral files.
 

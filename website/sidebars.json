@@ -38,7 +38,6 @@
         "guides/backend-selection",
         "guides/model-lifecycle",
         "guides/model-downloads",
-        "guides/model-store",
         "guides/generation-and-streaming",
         "guides/chat-template-and-parsing"
       ]
@@ -49,10 +48,14 @@
       "items": [
         "guides/tool-calling",
         "guides/embeddings",
+        "guides/reranking",
         "guides/multimodal",
         "guides/speech-to-text",
         "guides/text-to-speech",
         "guides/image-generation",
+        "guides/image-generation-settings",
+        "guides/image-generation-memory-and-limits",
+        "guides/image-generation-advanced",
         "guides/decision-models",
         "guides/lora-adapters"
       ]
@@ -62,7 +65,10 @@
       "label": "Platforms",
       "items": [
         "platforms/support-matrix",
+        "platforms/known-platform-issues",
         "platforms/native-build-hooks",
+        "platforms/apple-setup",
+        "platforms/diagnose-setup",
         "platforms/linux-prerequisites",
         "platforms/webgpu-bridge"
       ]
@@ -73,7 +79,6 @@
       "items": [
         "configuration/runtime-parameters",
         "guides/performance-tuning",
-        "guides/backend-benchmarks",
         "configuration/logging",
         "guides/observability"
       ]
@@ -98,8 +103,7 @@
       "items": [
         "troubleshooting/common-issues",
         "migration/upgrade-checklist",
-        "migration/0-5-to-0-6",
-        "migration/0-4-to-0-5",
+        "migration/upgrade-to-0-17",
         "changelog/recent-releases"
       ]
     }
@@ -112,14 +116,16 @@
         "maintainers/docs-site",
         "maintainers/runtime-ownership",
         "maintainers/native-and-web-sync",
-        "maintainers/release-workflow"
+        "maintainers/release-workflow",
+        "maintainers/feature-validation"
       ]
     },
     {
       "type": "category",
       "label": "Internals",
       "items": [
-        "guides/template-engine-internals"
+        "guides/template-engine-internals",
+        "guides/backend-benchmarks"
       ]
     },
     "maintainers/genkit-package",
