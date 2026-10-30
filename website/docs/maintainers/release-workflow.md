@@ -140,6 +140,14 @@ version alignment:
   remove the heading. `--release-prep` fails while either keeps
   `## Unreleased`; after the release, `docs_version_cut.yml` puts an empty one
   back on `main`, so the next change only adds a bullet.
+- In a release that opens a new minor, trim
+  `website/docs/changelog/recent-releases.md` to the new current and previous
+  minor by deleting the sections older than that, so `0.18.0` keeps `0.18.x`
+  and `0.17.x` and drops `0.16.x`. Patch releases trim nothing, and
+  `CHANGELOG.md` keeps every release. The trim is a manual step:
+  `verify_release_docs_versions.dart` fails, with or without `--release-prep`,
+  when the page keeps a release older than the previous minor of the
+  `pubspec.yaml` version, and names the headings to remove.
 - Each current core release section must state the pinned WebGPU bridge tag.
   If it is unchanged, use an explicit baseline instead of repeating the old
   release's fixes. In `CHANGELOG.md`, use:
@@ -381,6 +389,12 @@ error names the file and first differing line. Move the bullet back under
 `## Unreleased`. Release-prep PRs, detected by the same label and branch rules
 as `release_on_prep_merge.yml`, are exempt. CI reads labels from the event
 that started the run, so push again after adding the `release-prep` label.
+
+One change to a released section is allowed outside release prep: the docs
+changelog may lose its oldest sections. It passes when what remains is an
+exact prefix of the base's released sections and the first removed line is a
+`## <version>` heading, so a trim cannot cut a section in half or edit one
+that stays. `CHANGELOG.md` has no such allowance.
 
 Turn union off for release prep, which renames `## Unreleased` and rewrites
 its bullets, and for any rebase across a release-prep commit whose result you

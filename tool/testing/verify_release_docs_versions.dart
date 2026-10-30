@@ -929,6 +929,42 @@ List<String> unreleasedHeadingProblems(
   return ['$changelog must not keep `## Unreleased` when publishing.'];
 }
 
+/// Docs changelog whose releases stop at the previous minor; `CHANGELOG.md`
+/// keeps the rest.
+const _docsChangelog = 'website/docs/changelog/recent-releases.md';
+
+final RegExp _releaseHeading = RegExp(r'^##\s+(\d+)\.(\d+)\.\d+');
+
+/// Problems with releases older than [core]'s previous minor among
+/// [changelog]'s level-two [headings].
+///
+/// The page keeps the current and previous minor, so a release prep that opens
+/// a new minor drops the one before. Nothing is enforced for a `.0` minor,
+/// whose previous minor the version cannot name.
+List<String> docsChangelogRetentionProblems(
+  String changelog,
+  List<String> headings,
+  Version core,
+) {
+  if (core.minor == 0) return const [];
+  final stale = <String>[];
+  for (final heading in headings) {
+    final match = _releaseHeading.firstMatch(heading);
+    if (match == null) continue;
+    final major = int.parse(match.group(1)!);
+    final minor = int.parse(match.group(2)!);
+    if (major < core.major || (major == core.major && minor < core.minor - 1)) {
+      stale.add(heading.trim());
+    }
+  }
+  if (stale.isEmpty) return const [];
+  return [
+    '$changelog keeps only ${core.major}.${core.minor}.x and '
+        '${core.major}.${core.minor - 1}.x; remove ${stale.join(', ')} (older '
+        'releases stay in CHANGELOG.md).',
+  ];
+}
+
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
   final unknown = arguments.where((argument) => argument != '--release-prep');
@@ -1001,13 +1037,27 @@ void main(List<String> arguments) {
     for (final changelog in _releasePrepChangelogs) {
       final lines = _readLines(changelog, errors);
       if (lines != null) {
+        final headings = lines.where(RegExp(r'^##\s').hasMatch).toList();
         errors.addAll(
           unreleasedHeadingProblems(
             changelog,
-            lines.where(RegExp(r'^##\s').hasMatch).toList(),
+            headings,
             releasePrep: releasePrep,
           ),
         );
+        if (changelog == _docsChangelog) {
+          try {
+            errors.addAll(
+              docsChangelogRetentionProblems(
+                changelog,
+                headings,
+                Version.parse(versions['llamadart']!),
+              ),
+            );
+          } on FormatException {
+            // `_parseCoreVersion` below reports a version that is not semver.
+          }
+        }
       }
     }
     final coreVersion = _parseCoreVersion(versions['llamadart']!, errors);
