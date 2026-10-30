@@ -262,6 +262,12 @@ class Lfm2Handler extends ChatTemplateHandler {
       // Arguments the wire format refuses (too deep, not finite) are model
       // text, not a caller error, so they must not throw out of parse.
       return null;
+    } on StackOverflowError {
+      // dart2js converts a list recursively, and a list under a map key only
+      // when the key is read, past any catch in the JSON helpers. A depth limit
+      // would also refuse lists that decode, since the overflow depends on the
+      // stack, and the partial conversion is discarded here.
+      return null;
     }
   }
 

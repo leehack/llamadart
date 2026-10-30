@@ -70,49 +70,6 @@ void main() {
       }
     });
 
-    test('keeps brackets in a JSON string out of its depth', () {
-      final text = '"\\"${'[' * 20000}"';
-      expect(ToolCallParsingUtils.decodeJsonValue(text), '"${'[' * 20000}');
-    });
-
-    test('reads JSON at the depth JavaScript allows, on every runtime', () {
-      final value = '[' * 5000 + ']' * 5000;
-      expect(ToolCallParsingUtils.decodeJsonValue(value), isA<List<dynamic>>());
-      final siblings = '[${List.filled(6000, '[]').join(',')}]';
-      expect(ToolCallParsingUtils.decodeJsonValue(siblings), hasLength(6000));
-    });
-
-    test('reads deeper JSON on the VM, and refuses it on JavaScript', () {
-      final value = '[' * 5001 + ']' * 5001;
-      final object = '{"x":$value}';
-      const isJavaScript = identical(0, 0.0);
-      expect(
-        ToolCallParsingUtils.decodeJsonValue(value),
-        isJavaScript ? isNull : isNotNull,
-      );
-      expect(
-        ToolCallParsingUtils.decodeJsonObject(object),
-        isJavaScript ? isNull : isNotNull,
-      );
-      expect(
-        ToolCallParsingUtils.decodeJsonMapValue(object),
-        isJavaScript ? isNull : isNotNull,
-      );
-      expect(
-        ToolCallParsingUtils.extractFirstJsonObject(object),
-        isJavaScript ? isNull : isNotNull,
-      );
-      expect(
-        ToolCallParsingUtils.extractLeadingJsonValue(object, 0),
-        isJavaScript ? isNull : isNotNull,
-      );
-      expect(
-        ToolCallParsingUtils.decodeJsonValueOrString(value),
-        isJavaScript ? value : isList,
-      );
-      expect(ToolCallParsingUtils.normalizeJsonArguments(value), value);
-    });
-
     test(
       'rejects duplicate object keys before JSON decoding collapses them',
       () {

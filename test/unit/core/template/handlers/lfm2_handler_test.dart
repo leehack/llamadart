@@ -123,28 +123,40 @@ void main() {
         ),
         ('another field', '[{"name":"f","junk":$list,"arguments":{"a":1}}]'),
       ]) {
-        test('$name nested $depth levels does not lose the VM call', () {
+        test('$name nested $depth levels keeps the VM call', () {
           final calls = Lfm2Handler()
               .parse('<|tool_call_start|>$payload<|tool_call_end|>')
               .toolCalls;
-          if (isJavaScript) {
-            expect(calls, isEmpty);
-          } else {
-            expect(calls.single.function?.arguments, '{"a":1}');
-          }
+          // Where dart2js overflows depends on the stack, so a call may survive.
+          if (isJavaScript && calls.isEmpty) return;
+          expect(calls.single.function?.arguments, '{"a":1}');
         });
       }
     }
 
     test('a deep id stringifies as toString would', () {
-      final id = nested('[', ']', 20000);
-      final calls = Lfm2Handler()
-          .parse('<|tool_call_start|>[{"name":"f","id":$id}]<|tool_call_end|>')
-          .toolCalls;
-      expect(
-        isJavaScript ? calls : calls.single.id,
-        isJavaScript ? isEmpty : id,
-      );
+      for (final depth in [1000, if (!isJavaScript) 200000]) {
+        final id = nested('[', ']', depth);
+        final call = Lfm2Handler()
+            .parse(
+              '<|tool_call_start|>[{"name":"f","id":$id}]<|tool_call_end|>',
+            )
+            .toolCalls
+            .single;
+        expect(call.id, id);
+      }
+    });
+
+    test('keeps a call whose ignored field nests deeply but decodes', () {
+      final list = nested('[', ']', 1000);
+      final call = Lfm2Handler()
+          .parse(
+            '<|tool_call_start|>[{"name":"f","junk":$list,"arguments":{"a":1}}]'
+            '<|tool_call_end|>',
+          )
+          .toolCalls
+          .single;
+      expect(call.function?.arguments, '{"a":1}');
     });
 
     test('brackets in a string do not count as nesting', () {
@@ -158,13 +170,22 @@ void main() {
       expect(calls.single.function?.arguments, jsonEncode({'x': text}));
     });
 
-    test('keeps a call with nesting JavaScript still reads', () {
-      final id = nested('[', ']', 4000);
-      final call = Lfm2Handler()
-          .parse('<|tool_call_start|>[{"name":"f","id":$id}]<|tool_call_end|>')
-          .toolCalls
-          .single;
-      expect(call.id, id);
+    test('an overflow leaves the next parse working', () {
+      final list = nested('[', ']', 200000);
+      for (var run = 0; run < 20; run++) {
+        Lfm2Handler().parse(
+          '<|tool_call_start|>[{"name":"f","id":$list}]<|tool_call_end|>',
+        );
+        final call = Lfm2Handler()
+            .parse(
+              '<|tool_call_start|>[{"name":"f","id":[1],"arguments":{"a":1}}]'
+              '<|tool_call_end|>',
+            )
+            .toolCalls
+            .single;
+        expect(call.id, '[1]');
+        expect(call.function?.arguments, '{"a":1}');
+      }
     });
   });
 

@@ -25,42 +25,6 @@ class ParsedJsonValueSlice {
 
 /// Shared helpers for JSON-style tool-call parsing.
 class ToolCallParsingUtils {
-  /// The deepest JSON [_decodeModelJson] reads when compiled to JavaScript,
-  /// half of where dart2js overflows in Chrome from a shallow stack.
-  static const int _maxJavaScriptJsonDepth = 5000;
-
-  /// dart2js converts a list recursively, and a list under a map key only when
-  /// the key is read, so no catch around `jsonDecode` can contain a deep value.
-  /// The Dart VM decodes without recursing and keeps every depth.
-  static dynamic _decodeModelJson(String text) {
-    if (identical(0, 0.0) && _nestsPast(text, _maxJavaScriptJsonDepth)) {
-      throw const FormatException('JSON is nested too deeply.');
-    }
-    return jsonDecode(text);
-  }
-
-  static bool _nestsPast(String json, int limit) {
-    var depth = 0;
-    var inString = false;
-    for (var i = 0; i < json.length; i++) {
-      final unit = json.codeUnitAt(i);
-      if (inString) {
-        if (unit == 0x5C) {
-          i++;
-        } else if (unit == 0x22) {
-          inString = false;
-        }
-      } else if (unit == 0x22) {
-        inString = true;
-      } else if (unit == 0x5B || unit == 0x7B) {
-        if (++depth > limit) return true;
-      } else if (unit == 0x5D || unit == 0x7D) {
-        depth--;
-      }
-    }
-    return false;
-  }
-
   /// [value]'s `toString`, without the recursion that overflows on a deep
   /// list or map.
   static String _stringifyId(Object value) {
@@ -101,7 +65,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      final decoded = _decodeModelJson(text);
+      final decoded = jsonDecode(text);
       if (decoded is Map<String, dynamic>) {
         return decoded;
       }
@@ -250,7 +214,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      return _decodeModelJson(normalizedInput);
+      return jsonDecode(normalizedInput);
     } catch (_) {
       return null;
     }
@@ -267,7 +231,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      return _decodeModelJson(normalizedInput);
+      return jsonDecode(normalizedInput);
     } catch (_) {
       return normalizedInput;
     }
@@ -300,7 +264,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      final decoded = _decodeModelJson(normalizedInput);
+      final decoded = jsonDecode(normalizedInput);
       if (decoded is Map<String, dynamic>) {
         return jsonEncode(decoded);
       }
@@ -391,7 +355,7 @@ class ToolCallParsingUtils {
 
     Object? decoded;
     try {
-      decoded = _decodeModelJson(input.substring(offset, end));
+      decoded = jsonDecode(input.substring(offset, end));
     } catch (_) {
       return null;
     }
