@@ -100,10 +100,11 @@ the test command, `head_result: pass`, `control_result: fail`, `control_kind`
 observed results. The independent reviewer checks that the case really reaches
 the affected branch and that the failure is causal, not a setup error. Every
 changed production path under `lib/`, `tool/`, `hook/`,
-`packages/genkit_llamadart/lib/`, or `.github/workflows/` needs this coverage.
-Workflows count because the classifier treats each one as high-risk and the
-tooling tests that load them are their only durable proof; no other `.github/`
-or policy path is a production reference. The independent Genkit
+`packages/genkit_llamadart/lib/`, `.github/workflows/`, or `.github/actions/`
+needs this coverage. Workflows and composite actions count because the
+classifier treats each one as high-risk and the tooling tests that load them
+are their only durable proof; no other `.github/` or policy path is a
+production reference. The independent Genkit
 package may cite its own `packages/genkit_llamadart/test/**/*_test.dart` files;
 the same exact-blob, callsite, causal-control and structured-output obligations
 apply. The private validation harness additionally admits only
