@@ -7,9 +7,66 @@
         "intro",
         "getting-started/installation",
         "getting-started/quickstart",
+        "getting-started/first-chat-session",
         "getting-started/finding-models",
         "getting-started/model-families",
-        "getting-started/first-chat-session"
+        "tutorials/flutter-chat-app"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Guides",
+      "items": [
+        "guides/generation-and-streaming",
+        "guides/tool-calling",
+        "guides/embeddings",
+        "guides/reranking",
+        "tutorials/rag",
+        "guides/multimodal",
+        "guides/speech-to-text",
+        "guides/text-to-speech",
+        "guides/image-generation",
+        "guides/image-generation-settings",
+        "guides/image-generation-memory-and-limits",
+        "guides/image-generation-advanced",
+        "guides/decision-models",
+        "guides/lora-adapters",
+        "guides/model-downloads",
+        "guides/model-lifecycle",
+        "guides/observability",
+        "configuration/logging"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Concepts",
+      "items": [
+        "guides/architecture",
+        "guides/backend-selection",
+        "guides/api-levels",
+        "guides/chat-template-and-parsing",
+        "guides/glossary"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Platforms and deployment",
+      "items": [
+        "platforms/support-matrix",
+        "platforms/known-platform-issues",
+        "platforms/apple-setup",
+        "platforms/linux-prerequisites",
+        "platforms/webgpu-bridge",
+        "platforms/native-build-hooks",
+        "platforms/diagnose-setup"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Performance",
+      "items": [
+        "configuration/runtime-parameters",
+        "guides/performance-tuning"
       ]
     },
     {
@@ -19,68 +76,6 @@
         "integrations/choosing-an-api",
         "integrations/genkit",
         "integrations/flutter-edge-ai"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Tutorials",
-      "items": [
-        "tutorials/flutter-chat-app",
-        "tutorials/rag"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Concepts",
-      "items": [
-        "guides/architecture",
-        "guides/api-levels",
-        "guides/backend-selection",
-        "guides/model-lifecycle",
-        "guides/model-downloads",
-        "guides/generation-and-streaming",
-        "guides/chat-template-and-parsing"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Features",
-      "items": [
-        "guides/tool-calling",
-        "guides/embeddings",
-        "guides/reranking",
-        "guides/multimodal",
-        "guides/speech-to-text",
-        "guides/text-to-speech",
-        "guides/image-generation",
-        "guides/image-generation-settings",
-        "guides/image-generation-memory-and-limits",
-        "guides/image-generation-advanced",
-        "guides/decision-models",
-        "guides/lora-adapters"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Platforms",
-      "items": [
-        "platforms/support-matrix",
-        "platforms/known-platform-issues",
-        "platforms/native-build-hooks",
-        "platforms/apple-setup",
-        "platforms/diagnose-setup",
-        "platforms/linux-prerequisites",
-        "platforms/webgpu-bridge"
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Performance & configuration",
-      "items": [
-        "configuration/runtime-parameters",
-        "guides/performance-tuning",
-        "configuration/logging",
-        "guides/observability"
       ]
     },
     {
@@ -99,11 +94,11 @@
     },
     {
       "type": "category",
-      "label": "Help & upgrades",
+      "label": "Help",
       "items": [
         "troubleshooting/common-issues",
-        "migration/upgrade-checklist",
         "migration/upgrade-to-0-17",
+        "migration/upgrade-checklist",
         "changelog/recent-releases"
       ]
     }

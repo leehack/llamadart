@@ -360,7 +360,7 @@ the native runtime ships (upstream `v0.8.0`) rejects a repetition count above
 above 2000 so those constraints cannot be lost.
 
 The grammar for all tools in a request is checked again before generation on
-grammar-capable backends. It throws `LlamaUnsupportedException` when llama.cpp
+runtimes that support grammar constraints. It throws `LlamaUnsupportedException` when llama.cpp
 would refuse to load it: a repeated group whose symbols times its repetition
 count exceed 2000. Hermes, for example, puts every schema tool inside one
 repeated group, so about 2000 schema tools exceed it.

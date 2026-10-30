@@ -71,7 +71,7 @@ raise the levels again, and that a custom handler filters as intended.
 
 ## Native output outside llamadart's control
 
-On the native LiteRT-LM backend, a `nativeLevel` of `LlamaLogLevel.none` is
+On the native LiteRT-LM runtime, a `nativeLevel` of `LlamaLogLevel.none` is
 passed to the runtime as silent before each engine create and stops the
 runtime library's own absl, LiteRT and TFLite loggers. The prebuilt WebGPU
 accelerator (`libLiteRtWebGpuAccelerator`) links its own absl and exports no
