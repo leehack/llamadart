@@ -429,6 +429,8 @@ example `ggml-cuda.dll` without an NVIDIA driver) or finds no device, and no
 other GPU is registered, the model also loads on CPU with 0 GPU layers.
 `getResolvedGpuLayers()` returns 0, llamadart logs a warning, and
 `getAvailableBackends()` stops listing a backend whose module failed to load.
+Under `GpuBackend.auto`, `getResolvedGpuLayers()` also returns 0 when no GPU
+device is registered, without a warning, since no backend was requested.
 
 ### Android arm64 CPU variants
 

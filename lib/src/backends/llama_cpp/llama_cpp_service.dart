@@ -251,7 +251,8 @@ class LlamaCppService {
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
   /// embedding resources, the read of the Vulkan device facts, the registered
-  /// ggml devices a load selects from, the probe of whether a device's
+  /// ggml devices a load selects from, the devices the registry of an
+  /// explicit GPU backend lists, the probe of whether a device's
   /// backend has row split buffer types, the allocator of the model paths,
   /// tensor splits and tensor buffer overrides [loadModel] and draft model
   /// loads pass to llama.cpp, and the allocator
@@ -276,6 +277,7 @@ class LlamaCppService {
     void Function(Pointer<llama_batch_ext>)? embeddingBatchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
     List<GgmlDeviceEntry> Function()? registeredDevices,
+    List<ggml_backend_dev_t>? Function(GpuBackend backend)? backendDevices,
     bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
     Allocator modelLoadAllocator = malloc,
     Allocator contextBatchAllocator = malloc,
@@ -297,6 +299,7 @@ class LlamaCppService {
        _embeddingBatchFree = embeddingBatchFree,
        _vulkanDeviceProbeOverride = vulkanDeviceProbe,
        _registeredDevicesOverride = registeredDevices,
+       _backendDevicesOverride = backendDevices,
        _splitBufferTypeProbeOverride = splitBufferTypeProbe,
        _modelLoadAllocator = modelLoadAllocator,
        _contextBatchAllocator = contextBatchAllocator,
@@ -322,6 +325,8 @@ class LlamaCppService {
       _objectCallsOverride ?? _resolveObjectCalls();
 
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
+  final List<ggml_backend_dev_t>? Function(GpuBackend backend)?
+  _backendDevicesOverride;
   final bool Function(GgmlDeviceEntry device)? _splitBufferTypeProbeOverride;
   final Allocator _modelLoadAllocator;
   final Allocator _contextBatchAllocator;
@@ -417,6 +422,9 @@ class LlamaCppService {
   final Map<int, Map<String, double>> _activeLoras = {};
   final Map<int, String> _modelBackendNames = <int, String>{};
   final Map<int, int> _modelResolvedGpuLayers = <int, int>{};
+  // Their reported layers are 0, while _modelResolvedGpuLayers keeps what the
+  // load passed: context and draft settings on such a host stay as they were.
+  final Set<int> _modelsOnNoGpu = <int>{};
   final Map<int, ModelParams> _modelLoadParams = <int, ModelParams>{};
   final Map<int, GpuDevicePlacement> _modelPlacements =
       <int, GpuDevicePlacement>{};
@@ -1491,13 +1499,12 @@ class LlamaCppService {
         _noGpuMessage(effectiveBackend, forcedCpuFallback: forcedCpuFallback),
       );
     }
-    final unusableBackendModule =
-        explicitGpuBackend &&
-        !forcedCpuFallback &&
+    final loadsOnNoGpu =
         gpuLayers != 0 &&
         preferredDevices == null &&
-        _backendModuleDirectory != null &&
-        !_hasGpuDevice(GpuBackend.auto);
+        _registryShowsNoGpuDevice();
+    final unusableBackendModule =
+        loadsOnNoGpu && explicitGpuBackend && _backendModuleDirectory != null;
     if (unusableBackendModule) {
       gpuLayers = 0;
     }
@@ -1664,6 +1671,9 @@ class LlamaCppService {
     if (placement != null) {
       _modelPlacements[handle] = placement;
     }
+    if (loadsOnNoGpu) {
+      _modelsOnNoGpu.add(handle);
+    }
     _activateModelReport(handle);
     if (vulkan.unsupported case final unsupported?) {
       LlamaLogger.instance.warning(
@@ -1720,7 +1730,9 @@ class LlamaCppService {
     _activeBackendName = noGpu
         ? _backendDisplayName('cpu')
         : _modelBackendNames[handle]!;
-    _activeResolvedGpuLayers = noGpu ? 0 : _modelResolvedGpuLayers[handle]!;
+    _activeResolvedGpuLayers = noGpu || _modelsOnNoGpu.contains(handle)
+        ? 0
+        : _modelResolvedGpuLayers[handle]!;
   }
 
   /// What a load on [backend] with [gpuLayers] layers does about Vulkan
@@ -2032,6 +2044,13 @@ class LlamaCppService {
     });
   }
 
+  /// Whether llama.cpp, given no device list, has no GPU to place layers on.
+  ///
+  /// `false` when the runtime lacks the registry functions: they then read as
+  /// no devices, which says nothing about the GPUs llama.cpp itself sees.
+  bool _registryShowsNoGpuDevice() =>
+      !_hasGpuDevice(GpuBackend.auto) && !_backendRegistrySymbolUnavailable;
+
   List<int> _registeredDeviceTypes(GpuBackend backend) {
     final devices = backend == GpuBackend.auto
         ? [
@@ -2131,12 +2150,9 @@ class LlamaCppService {
     final targetModelParams =
         _modelLoadParams[targetModelHandle] ?? const ModelParams();
     final targetBackendName = _modelBackendNames[targetModelHandle];
-    // llama.cpp rejects the explicit CPU device list in row mode, and a row
-    // target that reports the CPU loaded without any list.
-    final effectiveBackend = targetBackendName == _backendDisplayName('cpu')
-        ? (targetModelParams.splitMode == ModelSplitMode.row
-              ? GpuBackend.auto
-              : GpuBackend.cpu)
+    final targetOnCpu = targetBackendName == _backendDisplayName('cpu');
+    final effectiveBackend = targetOnCpu
+        ? GpuBackend.cpu
         : resolvePreferredBackendForLoad(
             targetModelParams,
             isAndroid: _isAndroid,
@@ -2153,6 +2169,13 @@ class LlamaCppService {
         );
     final draftBackend = effectiveBackend;
     final draftGpuLayers = targetResolvedGpuLayers;
+    // llama.cpp rejects a CPU device list in row mode. Layer mode places the
+    // same on the CPU, and no-list row mode would fail on any GPU registered
+    // since the target loaded.
+    final draftSplitMode =
+        targetOnCpu && targetModelParams.splitMode == ModelSplitMode.row
+        ? ModelSplitMode.layer
+        : targetModelParams.splitMode;
     final cacheKey = _speculativeDraftModelCacheKey(
       targetModelHandle,
       draftModelPath,
@@ -2174,7 +2197,7 @@ class LlamaCppService {
     final vulkan = _resolveVulkanLoadDevices(
       draftBackend,
       gpuLayers: draftGpuLayers,
-      splitMode: targetModelParams.splitMode.llamaCppValue,
+      splitMode: draftSplitMode.llamaCppValue,
       mainGpu: targetModelParams.mainGpu,
     );
     if (vulkan.devices case final usable?) {
@@ -2204,7 +2227,7 @@ class LlamaCppService {
       preferredDevices = _createDeviceList(placement.devices);
     }
     mparams.n_gpu_layers = draftGpuLayers;
-    mparams.split_modeAsInt = targetModelParams.splitMode.llamaCppValue;
+    mparams.split_modeAsInt = draftSplitMode.llamaCppValue;
     mparams.main_gpu = targetModelParams.mainGpu;
     applyModelParams(mparams, targetModelParams.copyWith(loadMtp: loadMtp));
     if (preferredDevices != null) {
@@ -3451,7 +3474,8 @@ class LlamaCppService {
     final registryName = ggmlGpuRegistryName(backend);
     return registryName == null
         ? null
-        : _devicesForBackendRegName(registryName);
+        : _backendDevicesOverride?.call(backend) ??
+              _devicesForBackendRegName(registryName);
   }
 
   /// Returns the name of the ggml backend registry that lists the devices of
@@ -3528,6 +3552,7 @@ class LlamaCppService {
 
     _modelBackendNames.remove(modelHandle);
     _modelResolvedGpuLayers.remove(modelHandle);
+    _modelsOnNoGpu.remove(modelHandle);
     _modelLoadParams.remove(modelHandle);
     _modelPlacements.remove(modelHandle);
     final draftModelKeys = _modelToSpeculativeDraftModelKeys.remove(
@@ -7873,6 +7898,7 @@ class LlamaCppService {
     _modelToSpeculativeDraftModelKeys.clear();
     _modelBackendNames.clear();
     _modelResolvedGpuLayers.clear();
+    _modelsOnNoGpu.clear();
     _modelLoadParams.clear();
     _modelPlacements.clear();
     _activeBackendName = _backendDisplayName('cpu');

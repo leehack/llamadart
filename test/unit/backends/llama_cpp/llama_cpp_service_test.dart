@@ -2732,6 +2732,96 @@ void main() {
         expect(records, isEmpty);
       });
 
+      test('reports 0 GPU layers under auto without a warning or a change to '
+          'the load', () {
+        final handle = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, gpuLayers: 99),
+        );
+        expect(service.getResolvedGpuLayers(), 0);
+        expect(
+          _readPrivateForTesting<Map<int, int>>(
+            service,
+            '_modelResolvedGpuLayers',
+          )[handle],
+          99,
+        );
+        expect(records, isEmpty);
+
+        service.freeModel(handle);
+        expect(
+          _readPrivateForTesting<Set<int>>(service, '_modelsOnNoGpu'),
+          isEmpty,
+        );
+      });
+
+      test('keeps the requested layers under auto with a GPU device', () {
+        final other = LlamaCppService(
+          deviceTypes: (_) => [
+            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value,
+          ],
+        );
+        addTearDown(other.dispose);
+        other.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, gpuLayers: 99),
+        );
+        expect(other.getResolvedGpuLayers(), 99);
+      });
+
+      test('reports 0 GPU layers without blaming a module on a runtime with '
+          'none', () {
+        _writePrivateForTesting(service, '_backendModuleDirectory', null);
+        final handle = service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cuda,
+            gpuLayers: 99,
+          ),
+        );
+        expect(service.getResolvedGpuLayers(), 0);
+        expect(
+          _readPrivateForTesting<Map<int, int>>(
+            service,
+            '_modelResolvedGpuLayers',
+          )[handle],
+          99,
+        );
+        expect(records, isEmpty);
+      });
+
+      group('on a runtime without the device registry functions', () {
+        setUp(() {
+          _writePrivateForTesting(
+            service,
+            '_backendRegistrySymbolUnavailable',
+            true,
+          );
+        });
+
+        test('claims no module failure for an explicit backend', () {
+          service.loadModel(
+            modelPath,
+            const ModelParams(
+              contextSize: 512,
+              preferredBackend: GpuBackend.cuda,
+              gpuLayers: 99,
+            ),
+          );
+          expect(service.getResolvedGpuLayers(), 99);
+          expect(records, isEmpty);
+        });
+
+        test('keeps the requested layers under auto', () {
+          service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 512, gpuLayers: 99),
+          );
+          expect(service.getResolvedGpuLayers(), 99);
+        });
+      });
+
       test('no longer lists the backend as available once it failed to '
           'load', () {
         expect(service.getAvailableBackendInfo(), contains('CUDA'));
@@ -2838,6 +2928,7 @@ void main() {
       final service = LlamaCppService(
         isMacosX64: false,
         objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+        deviceTypes: _hostWithGpu,
       );
       addTearDown(service.dispose);
       final params = ModelParams(
@@ -3097,7 +3188,10 @@ void main() {
       });
 
       test('freeing a model restores the remaining model placement report', () {
-        final service = LlamaCppService(isMacosX64: false);
+        final service = LlamaCppService(
+          isMacosX64: false,
+          deviceTypes: _hostWithGpu,
+        );
         addTearDown(service.dispose);
         service.loadModel(
           modelPath,
@@ -3218,6 +3312,7 @@ void main() {
         final service = _MetalReportingService(
           objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
           registeredDevices: () => const <GgmlDeviceEntry>[],
+          deviceTypes: _hostWithGpu,
         );
         addTearDown(service.dispose);
 
@@ -3497,7 +3592,7 @@ void main() {
           const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
         );
 
-        expect(checked, [GpuBackend.metal]);
+        expect(checked.first, GpuBackend.metal);
         expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
         expect(simulatorWarnings(), hasLength(1));
       });
@@ -3557,6 +3652,7 @@ void main() {
           isIosSimulator: false,
           isMacosX64: false,
           registeredDevices: () => const <GgmlDeviceEntry>[],
+          deviceTypes: _hostWithGpu,
         );
         addTearDown(service.dispose);
 
@@ -3598,6 +3694,7 @@ void main() {
         final service = LlamaCppService(
           isIosSimulator: true,
           registeredDevices: () => const <GgmlDeviceEntry>[],
+          deviceTypes: _hostWithGpu,
         );
         addTearDown(service.dispose);
 
@@ -3841,6 +3938,7 @@ void main() {
         final service = LlamaCppService(
           isMacosX64: false,
           registeredDevices: () => const <GgmlDeviceEntry>[],
+          deviceTypes: _hostWithGpu,
         );
         addTearDown(service.dispose);
 
@@ -3868,7 +3966,7 @@ void main() {
           const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
         );
 
-        expect(checked, [GpuBackend.metal]);
+        expect(checked.first, GpuBackend.metal);
         expect(service.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
         expect(intelWarnings(), hasLength(1));
       });
@@ -3880,6 +3978,7 @@ void main() {
         final service = LlamaCppService(
           isMacosX64: true,
           registeredDevices: () => const <GgmlDeviceEntry>[],
+          deviceTypes: _hostWithGpu,
         );
         addTearDown(service.dispose);
 
@@ -8101,9 +8200,16 @@ class _EmbeddingMetadataService extends LlamaCppService {
   Map<String, String> getMetadata(int modelHandle) => metadata;
 }
 
+List<int> _hostWithGpu(GpuBackend backend) => [
+  ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
+];
+
 class _MetalReportingService extends LlamaCppService {
-  _MetalReportingService({super.objectCalls, super.registeredDevices})
-    : super(isMacosX64: false);
+  _MetalReportingService({
+    super.objectCalls,
+    super.registeredDevices,
+    super.deviceTypes,
+  }) : super(isMacosX64: false);
 
   @override
   List<String> getBackendInfo() => const ['CPU', 'Metal (fake GPU)'];
