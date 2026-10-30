@@ -54,7 +54,7 @@ image-generation API yet.
 | Windows x64 | CPU, or Vulkan with the Vulkan build | Not set by llamadart | Needs the latest Microsoft Visual C++ v14 Redistributable (x64) and AVX2; the Vulkan build needs a GPU driver that provides `vulkan-1.dll`; validated on Windows Server 2022 with CPU and an NVIDIA L4; no arm64 runtime |
 | Web | None | | `load` throws `LlamaUnsupportedException` |
 
-Measured with the prototype on the same runtime, 512x512, one step, warm:
+Measured on the same runtime, 512x512, one step, warm:
 
 | Device | SDXS Q8 (651 MB) | SD-Turbo Q8 + TAESD (1.9 GB) |
 | --- | --- | --- |
@@ -164,13 +164,12 @@ inputs; `controlNet` loads only in the [ControlNet recipe](#controlnet).
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
 GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
 converts them to F16 there: they need twice their file size in memory, which
-`ImageModelParams.checkMemory` counts. A runtime without that fix, told apart
-by its exports, aborts on them instead
-([#1446](https://github.com/leehack/llamadart/issues/1446)): with it, FP8
+`ImageModelParams.checkMemory` counts. FP8
 weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
 indexes are refused with `LlamaUnsupportedException` on Metal, including
-`ComputeDevice.auto` when it selects Metal, before native context creation;
-use `ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
+`ComputeDevice.auto` when it selects Metal, before native context creation
+([#1446](https://github.com/leehack/llamadart/issues/1446)); use
+`ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
 macOS arm64 CPU and Metal; arbitrary FP8 models are not qualified.
 
 For a trusted PyTorch checkpoint whose native layout is compatible:
@@ -211,14 +210,6 @@ variants preserve every tensor byte. All seven public loads generate the same
 128-square, one-step Euler/discrete image at seed 42, CFG 1 and four CPU
 threads, matching separate guarded direct-C controls. This is container and
 transport evidence, not an image-quality or speed benchmark.
-
-Earlier `v0.2.0-4` checks rejected the 2.6-GB legacy file and timed out on
-full ZIP inputs. The current legacy result verifies the published reader
-repair; ZIP's earlier timeout cause remains unresolved
-([owner #24](https://github.com/leehack/stable-diffusion-native/issues/24)).
-Passing these selected ZIP inputs is a later non-reproduction, not proof of a
-causal ZIP fix. Earlier small TAESD ZIP/nested/legacy and explicit local
-single-shard-index controls remain narrower component/layout evidence.
 
 Other architectures, dtypes, producer layouts, arbitrary serialized objects,
 accelerators, Windows/Linux and mobile full-checkpoint paths are unqualified
@@ -1073,9 +1064,8 @@ uses them: beside a discrete GPU an integrated one adds nothing to the sum,
 and with integrated GPUs only it compares with `MemAvailable` on Linux, as
 for the CPU.
 
-Nothing is checked or warned about when a GPU does not report its memory,
-when the `SD_VK_DEVICE` environment variable is set, or with a
-`stable_diffusion` runtime older than `stable-diffusion-native` `v0.2.0-2`.
+Nothing is checked or warned about when a GPU does not report its memory or
+when the `SD_VK_DEVICE` environment variable is set.
 
 The figures are the runtime's, which are ggml's, for every GPU it lists. The
 engine asks for them in a short-lived isolate, because the first such call in
@@ -1152,16 +1142,13 @@ final engine = await ImageGenerationEngine.load(model);
   generation records more, the oldest are lost and one warning says how
   many. On an M4 Max an SDXS load recorded 28 messages at `info` and 40 at
   `debug`, and reading them took about 0.1 ms.
-- The runtime no longer writes ggml's device messages to stderr, at any
+- The runtime does not write ggml's device messages to stderr, at any
   level, the default `none` included: its recorder is always registered,
   because the reason of a failed load comes from it. What a ggml backend
   writes to stderr itself still goes there.
-- A `stable_diffusion` runtime older than `stable-diffusion-native`
-  `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
 The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
-`v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
+(`v0.3.0-1`). Upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
 ## Errors
@@ -1186,9 +1173,7 @@ core and `llamadart_stable_diffusion_flutter` together.
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps). This leaves ggml's Metal backend in an error
   state: from then on every generation on that engine fails until you
-  dispose it and load the model again. A runtime older than
-  `stable-diffusion-native` `v0.2.0-2` has no log to detect this from, so
-  its failures read as recoverable.
+  dispose it and load the model again.
 - On Linux a model on a Vulkan GPU is refused only when it fits neither the
   GPU nor the GPU plus system memory; one larger than the GPU's memory loads
   with a warning and runs slower. On Windows such a model is warned about
@@ -1282,11 +1267,10 @@ reuse, cancellation cleanup and recovery. See
 [the provenance and procedure](https://github.com/leehack/llamadart/blob/main/doc/local_image_sets.md).
 
 
-The first slice requires complete contiguous numbered shard basenames,
+The loader requires complete contiguous numbered shard basenames,
 `model-00001-of-000NN.safetensors` through `model-000NN-of-000NN.safetensors`,
 for N in 1..16. Arbitrary names, gaps and count aliases fail before manager or
-native work. This keeps caller-chosen basenames out of the existing native
-log path; no shared worker/redactor expansion is needed. The strict index
+native work. The strict index
 mapping and tensor-layout fingerprint bind all native-visible tensor names;
 unsupported metadata/extra aliases use fixed error categories without
 quoting caller text.

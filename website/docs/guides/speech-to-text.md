@@ -17,7 +17,7 @@ adapter that drives it. The adapter picks the runtime.
 
 | Approach | API | Runtimes | Input | Output |
 | --- | --- | --- | --- | --- |
-| Qwen3-ASR, whole file | `SpeechToTextEngine.load` with `Qwen3AsrAdapter`, or `attach` | Native llama.cpp; WebGPU with bridge assets `v0.1.30+` | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
+| Qwen3-ASR, whole file | `SpeechToTextEngine.load` with `Qwen3AsrAdapter`, or `attach` | Native llama.cpp; WebGPU (pinned bridge assets) | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
 | Another audio chat model, whole file | `load` or `attach` with your own `SpeechToTextPromptAdapter` | As Qwen3-ASR | As Qwen3-ASR | One final transcript |
 | LiteRT-LM, live streaming | `SpeechToTextEngine.load` with `LiteRtLmAsrAdapter` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Replaceable partial text, then a final transcript |
 | Generic audio chat | `LlamaAudioContent` in `engine.create` | Audio-capable GGUF projectors; `.litertlm` bundles with audio | Audio as a chat content part | Ordinary chat output, no transcript contract |
@@ -219,7 +219,7 @@ model may not match the adapter.
 
 ## Stream live audio with LiteRT-LM
 
-LiteRT-LM's dedicated ASR engines (added in LiteRT-LM v0.16) consume PCM
+LiteRT-LM's dedicated ASR engines consume PCM
 windows instead of an audio part in normal chat. Load the model with its
 tokenizer and a `LiteRtLmAsrAdapter` for the model family's preset, start a
 stream, and await every input push so bounded native backpressure can
@@ -269,19 +269,14 @@ adapter carries the runtime settings (`backend`, `numberOfThreads`,
 so `params:` and `backend:` must be null. A `LiteRtLmAsrAdapter` model takes
 no projector, and a prompt adapter model no tokenizer.
 
-Native runtime `v0.18.0-2` reduces duplicated words at untimed ASR window
-boundaries with the default overlap. Other boundary and recognition errors can
-remain.
+The default overlap reduces duplicated words at untimed ASR window
+boundaries. Other boundary and recognition errors can remain.
 
-From native runtime `v0.18.0-3`, the model can also be a dedicated ASR
-`.litertlm` container, such as the published Whisper tiny container with the
-`whisperTiny` preset. The container uses its embedded tokenizer, but `load`
-still requires a `tokenizer` file. Earlier runtimes fail engine creation for
-such a container with `tf_lite_prefill_decode not found`. Flutter iOS and
-macOS apps run the runtime that `llamadart_litert_lm_flutter` links, so
-companions `0.15.0` and `0.15.1` (`v0.18.0-2`) keep that behavior until the
-app upgrades to companion `0.17.0` with core `0.17.x`, `0.16.2` with core
-`0.16.2`, or `0.15.2` with core `0.15.6`.
+The model can also be a dedicated ASR `.litertlm` container, such as the
+published Whisper tiny container with the `whisperTiny` preset. The container
+uses its embedded tokenizer, but `load` still requires a `tokenizer` file.
+Flutter iOS and macOS apps run the runtime that `llamadart_litert_lm_flutter`
+links, so use companion `0.17.x` with core `0.17.x`.
 
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
@@ -350,8 +345,7 @@ backends; prompt adapters return one untimed segment.
 
 ## Web
 
-Web runs prompt adapters, such as Qwen3-ASR, through WebGPU bridge assets
-`v0.1.30+`. The hosted chat app derives the capability from the immutable
+Web runs prompt adapters, such as Qwen3-ASR, through the WebGPU bridge. The hosted chat app derives the capability from the immutable
 `llama-web-bridge-assets` tag; custom hosts can set
 `window.__llamadartBridgeSpeechToTextSupported` before the backend is created.
 An older bridge, no loaded projector, a projector without audio support, or a
@@ -369,20 +363,19 @@ memory and pass `SpeechAudioBytesInput` with a `SpeechAudioFormat` whose
 `encoding` is `'wav'`, `'mp3'` or `'flac'`; local filesystem paths, other
 encodings, raw PCM, and bytes without that metadata are rejected. The bridge
 reports truncation through `onUsage` when its `supportsCompletionUsage`
-probe is true (`v0.1.54+`). A cut-off Web transcript then fails with
+probe is true. A cut-off Web transcript then fails with
 `LlamaSpeechTranscriptTruncatedException`, whose `limit` is
 `LlamaSpeechTranscriptLimit.runtime`: the bridge combines output-token,
 context and media caps, so the error cannot name the exact cause. Its
-`partialTranscript` holds the text produced before the limit. Older bridges
+`partialTranscript` holds the text produced before the limit. Bridges
 without this signal retain their existing completion behavior. The browser
 needs enough memory for the roughly 1.02 GB Qwen3-ASR
 0.6B Q8_0 model/projector pair.
 
 ## Known limits
 
-- Validated with Qwen3-ASR 0.6B Q8_0 on WAV up to 33 s, and on MP3 and FLAC
-  copies of the 11 s `jfk.wav` on native macOS and in headless Chromium. The
-  audio prompt grows with duration, about 13 tokens per second of audio.
+- The audio prompt grows with duration, about 13 tokens per second of audio.
+  Validated with Qwen3-ASR 0.6B Q8_0 on native macOS and in headless Chromium.
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker.
   `Qwen3AsrAdapter` strips that marker, but does not expose it as reliable
   detected-language metadata until language behavior has a dedicated

@@ -88,36 +88,36 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   Both are GGUF-on-Web only: native and LiteRT-LM loads throw
   `LlamaUnsupportedException` when either is set, so set them only under
   `kIsWeb` for a GGUF model.
-- Gate optional features on probes, not on the browser or the asset tag:
+- Gate optional features on probes, not on the browser or the asset tag
+  (the tag floors below are for diagnosing old assets only):
   - `await engine.capabilities` for `supportsPresencePenalty`,
     `supportsMinP`, `supportsThinkingBudget` and
-    `speculativeDecodingStrategies` (bridge `v0.1.54+`; WebGPU rejects
+    `speculativeDecodingStrategies` (WebGPU rejects
     `SpeculativeDecodingConfig.draftMicroBatchSize`), and for what
     LiteRT-LM web lacks: `supportsToolCalling`, `supportsPenalty` and
     `supportsGrammar` are false there, and `supportsMultiTurnChat` is false
     unless `withTextHistory()` is used and the loaded runtime supports it. Unreported
     controls throw `LlamaUnsupportedException`; `engine.runtime` names the
     runtime, so never sniff the `.litertlm` extension after loading.
-  - `engine.supportsNextTokenScoring` (bridge `v0.1.52+`) and
-    `engine.supportsStatePersistence` (bridge `v0.1.15+`).
+  - `engine.supportsNextTokenScoring` and
+    `engine.supportsStatePersistence`.
   - Runtime LoRA calls, and loads with `ModelParams.loras`, throw
-    `LlamaUnsupportedException` unless the assets report LoRA support
-    (`v0.1.54+`).
-  - Media embeddings need assets `v0.1.64+`, an API-version-1 embedding
+    `LlamaUnsupportedException` unless the assets report LoRA support.
+  - Media embeddings need assets with an API-version-1 embedding
     capability probe and a compatible embedding model/projector. Use encoded
     image/audio bytes or mono 16 kHz Float32 audio PCM; paths and image URLs
     throw `LlamaUnsupportedException`. EmbeddingGemma-2 is qualified on Chrome
     CPU wasm memory64 against native CPU/Metal; repeated media batches are
-    qualified only on memory64 (assets `v0.1.76+` remove the projector copy behind the wasm32 abort, unqualified). Hardware WebGPU is unqualified; default assets include
+    qualified only on memory64 (wasm32 is unqualified). Hardware WebGPU is unqualified; default assets include
     the API. Text content preserves legacy unpooled support. Image bytes are
     encoded; embedding calls ignore width/height. Cancelled content calls discard
     late successful bridge results with `LlamaInferenceException`; await the
     future before reuse because synchronous WASM cancellation is cooperative.
-  - Other floors: text embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
-    `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
-    `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS
-    `v0.1.33+` on memory64.
-- With the bridge's `supportsCompletionUsage` probe (`v0.1.54+`), a runtime
+  - Qwen3-ASR also needs `window.__llamadartBridgeSpeechToTextSupported =
+    true`; Qwen3-TTS needs memory64.
+  - For diagnosing old assets, the tag floors are listed once in the docs'
+    WebGPU bridge page, "Older bridge assets".
+- With the bridge's `supportsCompletionUsage` probe, a runtime
   `length` signal becomes `LlamaFinishReason.length`; `sendWithTools` returns
   `truncated` and rolls back the turn. Normal stop, cancellation and missing
   reasons do not imply a limit. A Web speech transcript that reaches a cap
@@ -126,7 +126,7 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   context and media caps. Older bridges cannot report this truncation.
 - WebGPU grammar applies from the first token at `root`: `grammarLazy` or
   another `grammarRoot` throws `LlamaUnsupportedException`. State files live in
-  the bridge's WASMFS and are lost on reload; with assets `v0.1.67+`, loading a
+  the bridge's WASMFS and are lost on reload; loading a
   missing one throws `LlamaStateException` and the runtime stays usable.
   `getPerformanceContext()` returns null.
 - LiteRT-LM on the web: preload `@litert-lm/core` and set
