@@ -20,7 +20,7 @@ Desktop source-CLI diagnostics can opt into
 process. It checks selected symbols/static ABI markers, without device or model
 initialization. This adds no runtime/platform/model capability: production loader
 behavior, loaded release identity, emitted app assets and GPU/inference remain
-unchecked. See [scope and limits](./native-build-hooks#isolated-native-check).
+unchecked. See [scope and limits](./diagnose-setup#isolated-native-check).
 
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -272,12 +272,12 @@ output and grammars, sampling controls and speculative decoding. Guides:
   `flutter create` default), copied or distributed app throws
   `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'` on the first CPU or
   GPU generation. Add the companion, or the
-  [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase).
+  [LiteRT-LM build phase](./apple-setup#flutter-macos-litert-lm-build-phase).
 - macOS x86_64: no LiteRT-LM runtime is published
   ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
   Universal apps launch on an Intel Mac and under Rosetta, and LiteRT-LM
   throws `LlamaUnsupportedException` there; llama.cpp still runs. See
-  [Intel Macs](../getting-started/installation#intel-macs).
+  [Intel Macs](./apple-setup#intel-macs).
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
   builds for it. LiteRT-LM throws `LlamaUnsupportedException` there.
@@ -402,13 +402,9 @@ output and grammars, sampling controls and speculative decoding. Guides:
 The native-assets hook currently pins `llamadart-native` tag
 `v0.8.0` and
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
-Apps can override the llama.cpp release with `llamadart_native_tag`, which
-takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
-`bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading
-zeros. Build-hook overrides must always name an explicit tag; `latest` is
-limited to maintainer synchronization and header/binding regeneration. Keys,
-backend modules and local bundles:
-[Native runtime configuration](./native-build-hooks).
+Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
+tag forms, keys, backend modules and local bundles:
+[Native runtime configuration](./native-build-hooks#override-the-llamacpp-release).
 
 Apps load the bridge assets themselves; see
 [Add the bridge to your app](./webgpu-bridge#add-the-bridge-to-your-app).

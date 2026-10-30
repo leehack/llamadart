@@ -465,14 +465,14 @@ void main() {
 }
 
 const _installationDocs = [
-  'website/docs/getting-started/installation.md',
+  'website/docs/platforms/apple-setup.md',
   'website/versioned_docs/version-0.12.0/getting-started/installation.md',
 ];
 
 /// The `bash` block of the Flutter macOS LiteRT-LM build phase section.
 String _documentedBuildPhase(String docsPath) {
   final docs = File(docsPath).readAsStringSync();
-  final section = docs.indexOf('### Flutter macOS LiteRT-LM build phase');
+  final section = docs.indexOf('## Flutter macOS LiteRT-LM build phase');
   expect(section, greaterThanOrEqualTo(0), reason: docsPath);
   final start = docs.indexOf('```bash\n', section) + '```bash\n'.length;
   return docs.substring(start, docs.indexOf('```', start));

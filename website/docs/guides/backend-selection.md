@@ -6,7 +6,7 @@ description: Decide when to use GGUF with llama.cpp or .litertlm bundles with Li
 
 For pre-load desktop setup information, run `dart run llamadart:doctor --json`
 or call `collectLlamaRuntimeSetupReport()`; see the
-[setup report contract](../platforms/native-build-hooks#desktop-setup-report).
+[setup report contract](../platforms/diagnose-setup#desktop-setup-report).
 It reports pinned publication policy and override presence. It does not choose
 or initialize a backend, validate GPU usability or replace loaded-model
 capabilities. Web/mobile require separate app/device/browser validation.

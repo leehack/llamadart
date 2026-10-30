@@ -121,10 +121,10 @@ framework that Flutter marks `MinimumOSVersion` 13.0 while the library needs
 iOS 16.4, so App Store Connect rejects the iOS upload. The iOS build reports
 this as an Xcode build warning, which Xcode and `xcodebuild` show but plain
 `flutter build` and `flutter run` output does not. See
-[Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
+[Flutter Apple apps](../platforms/apple-setup#companion-packages).
 The hook-bundled runtime also cannot carry an Apple privacy manifest; the
 companion's XCFramework does. See
-[Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest)
+[Apple privacy manifest](../platforms/apple-setup#apple-privacy-manifest)
 for the File Timestamp reasons (`C617.1`, `3B52.1`) an app declares itself
 when its `stable_diffusion.framework` has no manifest.
 

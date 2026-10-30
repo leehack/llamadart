@@ -62,6 +62,8 @@
       "items": [
         "platforms/support-matrix",
         "platforms/native-build-hooks",
+        "platforms/apple-setup",
+        "platforms/diagnose-setup",
         "platforms/linux-prerequisites",
         "platforms/webgpu-bridge"
       ]
