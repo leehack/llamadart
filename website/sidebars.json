@@ -48,6 +48,7 @@
       "items": [
         "guides/tool-calling",
         "guides/embeddings",
+        "guides/reranking",
         "guides/multimodal",
         "guides/speech-to-text",
         "guides/text-to-speech",
@@ -64,6 +65,7 @@
       "label": "Platforms",
       "items": [
         "platforms/support-matrix",
+        "platforms/known-platform-issues",
         "platforms/native-build-hooks",
         "platforms/linux-prerequisites",
         "platforms/webgpu-bridge"
