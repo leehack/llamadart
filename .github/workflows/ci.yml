@@ -395,16 +395,24 @@ jobs:
       # -j 1 and writes raw coverage that test-linux-coverage merges.
       matrix:
         include:
-          - shard: core
-            paths: test/unit/core
+          - shard: core-template
+            paths: >-
+              test/unit/core/template test/unit/core/models
+              test/unit/core/grammar test/unit/core/speech
+              test/unit/core/image
+          - shard: engine
+            paths: >-
+              test/unit/core/engine test/unit/core/decision
+              test/unit/core/diagnostics test/unit/core/*_test.dart
+              test/integration
           - shard: tooling
             paths: >-
               test/unit/tooling test/unit/hook test/unit/platform
               test/unit/test_structure test/unit/web_setup
               test/unit/public_entrypoints_test.dart
               test/unit/public_entrypoints_web_test.dart
-          - shard: runtime
-            paths: test/unit/backends test/integration test/e2e
+          - shard: backends
+            paths: test/unit/backends test/e2e
     steps:
       - uses: actions/checkout@v7
 
@@ -536,9 +544,29 @@ jobs:
   test-web:
     needs: changes
     if: needs.changes.outputs.test-web == 'true'
-    name: Test Web (Chrome)
+    name: Test Web (Chrome, ${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      # Whole files, not `--total-shards`: most of this lane is compiling each
+      # suite with dart2js, which test-level shards would all repeat.
+      matrix:
+        include:
+          - shard: core-template
+            paths: >-
+              test/unit/core/template test/unit/core/models
+              test/unit/core/grammar test/unit/core/speech
+              test/unit/core/decision
+          - shard: rest
+            paths: >-
+              test/unit/core/engine test/unit/core/image
+              test/unit/core/diagnostics test/unit/core/*_test.dart
+              test/unit/backends test/unit/tooling test/unit/hook
+              test/unit/platform test/unit/test_structure test/unit/web_setup
+              test/unit/public_entrypoints_test.dart
+              test/unit/public_entrypoints_web_test.dart
+              test/integration test/e2e
     steps:
       - uses: actions/checkout@v7
 
@@ -553,7 +581,7 @@ jobs:
         run: flutter pub get
 
       - name: Run Browser tests
-        run: dart test -p chrome --exclude-tags local-only
+        run: dart test -p chrome --exclude-tags local-only ${{ matrix.paths }}
 
   # chat_app's tests run in web-chat-contract. Model-backed tests are tagged
   # local-only, so this job needs no model.
@@ -847,13 +875,32 @@ jobs:
   test-other-os:
     needs: changes
     if: needs.changes.outputs.test-other-os == 'true'
-    name: Test Native (${{ matrix.os }})
+    name: Test Native (${{ matrix.leg }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      # Windows paths stay directories and plain files: PowerShell does not
+      # expand globs. Together its shards run every root test file exactly once.
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            leg: macos-latest
+            shard: all
+            paths: ''
+          - os: windows-latest
+            leg: windows-latest, tooling
+            shard: tooling
+            paths: >-
+              test/unit/tooling test/unit/hook test/unit/test_structure
+              test/unit/web_setup test/unit/public_entrypoints_test.dart
+              test/unit/public_entrypoints_web_test.dart
+          - os: windows-latest
+            leg: windows-latest, runtime
+            shard: runtime
+            paths: >-
+              test/unit/core test/unit/backends test/unit/platform
+              test/integration test/e2e
 
     steps:
       - uses: actions/checkout@v7
@@ -898,7 +945,7 @@ jobs:
         env:
           GGML_METAL_DEVICES: "0"
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
-        run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl
+        run: dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl ${{ matrix.paths }}
 
       - name: Check the LiteRT-LM cache canary
         if: ${{ !cancelled() }}
@@ -907,12 +954,12 @@ jobs:
 
       # Two steps: Windows PowerShell would ignore a failing first command.
       - name: Install validation harness dependencies
-        if: ${{ !cancelled() && runner.os == 'Windows' && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.shard == 'tooling' && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart pub get
 
       - name: Test validation process memory
-        if: ${{ !cancelled() && runner.os == 'Windows' && needs.changes.outputs.validation-harness == 'true' }}
+        if: ${{ !cancelled() && matrix.shard == 'tooling' && needs.changes.outputs.validation-harness == 'true' }}
         working-directory: packages/llamadart_validation
         run: dart test test/process_memory_test.dart
 
@@ -924,7 +971,7 @@ jobs:
         if: ${{ !cancelled() && hashFiles('.dart_tool/native_test_timing.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
-          name: native-test-timing-${{ matrix.os }}-${{ github.run_attempt }}
+          name: native-test-timing-${{ matrix.os }}-${{ matrix.shard }}-${{ github.run_attempt }}
           path: .dart_tool/native_test_timing.json
           if-no-files-found: error
           retention-days: 14

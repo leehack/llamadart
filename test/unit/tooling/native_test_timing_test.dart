@@ -142,12 +142,17 @@ void main() {
         loadYaml(File('.github/workflows/ci.yml').readAsStringSync())
             as YamlMap;
     final job = workflow['jobs']['test-other-os'];
-    expect(job['strategy']['matrix']['os'], ['macos-latest', 'windows-latest']);
+    expect(
+      (job['strategy']['matrix']['include'] as YamlList).map(
+        (leg) => leg['os'],
+      ),
+      unorderedEquals(['macos-latest', 'windows-latest', 'windows-latest']),
+    );
     final steps = job['steps'] as YamlList;
     final run = steps.singleWhere((step) => step['name'] == 'Run native tests');
     expect(
       run['run'],
-      'dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl',
+      r'dart test -p vm -j 1 --exclude-tags local-only --file-reporter=json:.dart_tool/native_test_events.jsonl ${{ matrix.paths }}',
     );
     expect(run['env']['GGML_METAL_DEVICES'], '0');
     expect(run.containsKey('continue-on-error'), isFalse);
