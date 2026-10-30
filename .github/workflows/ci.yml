@@ -399,13 +399,12 @@ jobs:
             paths: >-
               test/unit/core/template test/unit/core/models
               test/unit/core/grammar test/unit/core/speech
-              test/unit/core/image test/unit/hook test/unit/platform
-              test/integration/core
+              test/unit/core/image test/unit/platform
           - shard: engine
             paths: >-
               test/unit/core/engine test/unit/core/decision
               test/unit/core/diagnostics test/unit/core/*_test.dart
-              test/integration/backends test/integration/*_test.dart
+              test/unit/hook test/integration
           - shard: tooling
             paths: >-
               test/unit/tooling test/unit/test_structure test/unit/web_setup
