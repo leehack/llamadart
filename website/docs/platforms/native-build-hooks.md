@@ -523,8 +523,7 @@ and symbol-compatible with the pinned release; the hook logs a warning when an
 override is active. This core requires the v0.7.0 ABI, including its changed
 context-parameter and performance-data layouts; it calls nothing that
 `v0.7.0-3` lacks. Native v0.6.0 and older
-bundles are incompatible even when they export the same symbol names. Use
-core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
+bundles are incompatible even when they export the same symbol names. Do not point a core before
 `0.17.1` at native `v0.8.0` or later: its bindings give
 `mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 
@@ -569,45 +568,27 @@ choose the Apple `llama_cpp` and `litert_lm` families and the rest of
 decided on its own: its companion selects it, and otherwise the hook bundles it
 when `llamadart_native_runtimes` names it, not when `all` only implies it.
 Adding only the stable_diffusion
-companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
-resolved llama.cpp and stable_diffusion companions' pins against the core
-package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
-an earlier release is accepted only when the core explicitly lists it as
-ABI-compatible. Core `0.17.1` pairs with companion `0.17.1` for native `v0.8.0`
-and lists `v0.7.0-3` (companion `0.17.0`), which builds with an upgrade warning.
-Core `0.17.0` pairs with companion `0.17.0` for native `v0.7.0-3` and lists no
-earlier pins. Core `0.16.x` pairs with companion
-`0.16.0` and core `0.15.6` with companion `0.15.2`, both for native
-`v0.7.0-2`. Both cores list
-`v0.7.0-1` (companions `0.15.0` and `0.15.1`), which builds with an upgrade
-warning. Cores `0.15.0` to `0.15.5` list no earlier
-companion pins: use companion `0.15.0` or `0.15.1` with native `v0.7.0-1`.
-Core `0.14.x` pairs with companion
-`0.14.0` and native `v0.7.0`. Earlier companion pins are rejected. The
-stable_diffusion check lists no earlier pins: core `0.17.x` requires companion
-`0.17.0` (`v0.3.0-1`), and core `0.16.x` companion `0.16.0` (`v0.3.0`). The tag,
-repository, path and backend keys do not change SwiftPM binaries; their pins
-live in each companion's `Package.swift`, so use a path or git override or a
-fork of the companion. On macOS the hook hands LiteRT-LM to the companion
-only when the resolved companion's `Package.swift` is the maintained manifest
-pinning the core's LiteRT-LM release. Any other companion, including `0.0.14`
-and earlier, keeps macOS LiteRT-LM in the hook cache with a build warning; a
-sandboxed, copied or distributed app cannot read that cache and needs the
+companion leaves llama.cpp and LiteRT-LM on the hook. Use companions with the
+core's `MAJOR.MINOR`. The build checks the resolved llama.cpp and
+stable_diffusion companions' pins against the core package and rejects local
+`Artifacts` overrides. A llama.cpp companion pinning an earlier release is
+accepted, with an upgrade warning, only when the core explicitly lists that pin
+as ABI-compatible; any other earlier pin is rejected. The stable_diffusion
+check accepts only the core's own pin. The tag, repository, path and backend
+keys do not change SwiftPM binaries; their pins live in each companion's
+`Package.swift`, so use a path or git override or a fork of the companion.
+
+On macOS the hook hands LiteRT-LM to the companion only when the resolved
+companion's `Package.swift` is the maintained manifest pinning the core's
+LiteRT-LM release. Any other companion keeps macOS LiteRT-LM in the hook cache
+with a build warning; a sandboxed, copied or distributed app cannot read that
+cache and needs the
 [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase).
 A companion with the maintained manifest pinning an earlier build of the same
-LiteRT-LM release, such as `v0.18.1` before a `v0.18.1-2` core, still embeds
-the complete macOS runtime, which the app loads from its bundle, so the build
-only warns to upgrade the companion. A maintained manifest pinning any other
-LiteRT-LM release or a later build of the same release warns to upgrade the
-core and companion together. Core `0.17.x` pairs with companion `0.17.0`,
-which pins `v0.18.1-4`. Core `0.16.0` and its companion `0.16.0` pin
-`v0.18.1`; core `0.16.1` and companion `0.16.1` pin `v0.18.1-2`; core
-`0.16.2` and companion `0.16.2` pin `v0.18.1-4`. Each core accepts the earlier
-`0.16.x` companions with the warning above. Companion `0.16.1` requires core
-`>=0.16.1` and companion `0.16.2` core `>=0.16.2`, since an earlier core would
-keep LiteRT-LM in the hook cache. Companions
-`0.0.15` to `0.15.2` pin `v0.18.0` to `v0.18.0-3`, a different release from
-the `v0.18.1` core release line.
+LiteRT-LM release still embeds the complete macOS runtime, which the app loads
+from its bundle, so the build only warns to upgrade the companion. A maintained
+manifest pinning any other LiteRT-LM release or a later build of the same
+release warns to upgrade the core and companion together.
 Without a companion, and for non-Flutter or non-Apple builds, the hook
 path above applies.
 
@@ -649,15 +630,8 @@ Apple lists as File Timestamp
 A privacy manifest for that use reaches an app inside the XCFramework a
 companion package links. The hook path cannot carry one: it bundles bare
 dylibs, which Flutter wraps in frameworks it generates. An app bound for the
-App Store should use the companion for each runtime it ships.
-
-Runtime releases built before the manifest was added do not contain it:
-
-| Runtime | XCFramework with a manifest |
-| --- | --- |
-| llama.cpp | `llamadart-native` `v0.5.0-1` and later, which `llamadart_llama_cpp_flutter` releases after `0.0.20` link; `0.0.20` and earlier link `v0.5.0` or older, without one |
-| stable-diffusion.cpp | `stable-diffusion-native` `v0.2.0-1` and later, which `llamadart_stable_diffusion_flutter` releases after `0.0.1` link; `0.0.1` links `v0.2.0`, without one |
-| LiteRT-LM | `litert-lm-native` `v0.17.0-8` and later, which `llamadart_litert_lm_flutter` releases after `0.0.12` link; `0.0.12` and earlier link `v0.17.0-6` or older, without one |
+App Store should use the companion for each runtime it ships; its XCFramework
+carries the manifest.
 
 An app declares the use in its own `PrivacyInfo.xcprivacy` when it runs
 llama.cpp or stable_diffusion on the hook path, or when the built app has no
@@ -699,7 +673,7 @@ llamadart has not verified it with an App Store Connect upload.
 The LiteRT-LM iOS frameworks reference required-reason API in three
 categories: File Timestamp (`stat`, `fstat`, `lstat`), System Boot Time
 (`mach_absolute_time`) and User Defaults (`NSUserDefaults`, in the Metal
-accelerator and sampler). From `litert-lm-native` `v0.17.0-8`, each framework
+accelerator and sampler). Each framework
 the companion links on iOS carries a manifest for what that framework
 references:
 
