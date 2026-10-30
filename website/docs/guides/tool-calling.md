@@ -23,7 +23,7 @@ passing an empty tools list. Plain `ChatSession.create` and
 `LlamaEngine.create` remain available there for manually managed completion;
 their LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do
 not execute calls automatically based on that value or infer truncation from
-output length. See [LiteRT-LM termination reporting](../maintainers/runtime-ownership#litert-lm-termination-reporting).
+output length.
 
 GPT-OSS channel and assistant frames wait for final parsing, including headers
 continued from the model's prompt, with or without tools. Ordinary prose streams
@@ -262,7 +262,7 @@ Support is a chat-format property:
 | Requirement | Supported |
 | --- | --- |
 | Runtime | Native llama.cpp with a loaded projector that reports vision |
-| Chat format | Hermes-style `<tool_call>` templates, smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template |
+| Chat format | Hermes-style `<tool_call>` templates. Qualified on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template |
 | Media | Images with a `path` or `bytes` |
 
 `LlamaEngineCapabilities.toolResultMedia` reports `{image}` when the runtime,

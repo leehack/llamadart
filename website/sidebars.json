@@ -38,7 +38,6 @@
         "guides/backend-selection",
         "guides/model-lifecycle",
         "guides/model-downloads",
-        "guides/model-store",
         "guides/generation-and-streaming",
         "guides/chat-template-and-parsing"
       ]
@@ -73,7 +72,6 @@
       "items": [
         "configuration/runtime-parameters",
         "guides/performance-tuning",
-        "guides/backend-benchmarks",
         "configuration/logging",
         "guides/observability"
       ]
@@ -112,14 +110,16 @@
         "maintainers/docs-site",
         "maintainers/runtime-ownership",
         "maintainers/native-and-web-sync",
-        "maintainers/release-workflow"
+        "maintainers/release-workflow",
+        "maintainers/feature-validation"
       ]
     },
     {
       "type": "category",
       "label": "Internals",
       "items": [
-        "guides/template-engine-internals"
+        "guides/template-engine-internals",
+        "guides/backend-benchmarks"
       ]
     },
     "maintainers/genkit-package",

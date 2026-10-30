@@ -1,7 +1,8 @@
 ---
 title: Share models between apps
 sidebar_label: Shared model store
-description: The separate llamadart_model_store package keeps model and projector files in a directory several apps share, and deletes them only when no app references them. Platform boundaries, behavior and open design questions.
+description: The separate llamadart_model_store package keeps model and projector files in a directory several apps share, and deletes them only when no app references them. Platform boundaries, behavior and limits.
+unlisted: true
 ---
 
 `llamadart_model_store` is a separate, independently versioned Flutter
@@ -107,25 +108,3 @@ be created, written or locked, so an app can fall back to its own cache.
   (`0xdead10cc`).
 - References from an app that was uninstalled stay until another app with
   the user's consent clears them; the store has no policy for that yet.
-
-## Open design questions
-
-These need a maintainer decision before the platform executors land.
-
-1. **Stale references.** Whether a user-facing app may drop other apps'
-   references, for example after confirming with the user, or references
-   expire after a period without use.
-2. **Android file access.** Whether loading from a file descriptor is a
-   `llamadart-native` prerequisite, so a Storage Access Framework grant can be
-   shared without a file path.
-3. **Background transfer handoff.** Core gains
-   `DefaultModelDownloadManager.importDownloadedFile` to verify a file a
-   platform executor downloaded and move it into place atomically.
-4. **Desktop interop.** Whether the desktop store adopts content-addressed
-   blobs compatible with the Hugging Face hub cache.
-5. **Multi-file sets.** Whether shard sets, such as the Safetensors sets of
-   [#1219](https://github.com/leehack/llamadart/issues/1219), become
-   multi-file entries the same way.
-6. **Abandoned partial downloads.** Whether `prune` deletes partial downloads
-   no app references. Deleting one safely needs core's entry lock, which core
-   does not export, or a core `prune` option for partial files.
