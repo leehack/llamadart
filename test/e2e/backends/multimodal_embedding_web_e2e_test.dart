@@ -408,8 +408,8 @@ void main() {
           );
         }
       },
-      // The direct runtime blocks the page, so the test runner's heartbeat
-      // cannot extend the e2e tag's 15 minutes between stages.
+      // A real run takes up to 45 minutes on a loaded host; the e2e tag's 15
+      // minutes stopped a direct run that was still making progress.
       timeout: const Timeout(Duration(minutes: 60)),
     );
   }
