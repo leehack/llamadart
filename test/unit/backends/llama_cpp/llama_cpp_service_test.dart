@@ -3867,9 +3867,16 @@ void main() {
         final recorder = RecordingExitTeardown(
           ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
         );
+        final probed = <String>[];
+        // Windows hosts may not resolve the split-buffer symbol, which the
+        // real probe treats as supported; this test covers the CPU routing.
         final service = LlamaCppService(
           isMacosX64: true,
           objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+          splitBufferTypeProbe: (device) {
+            probed.add(device.name);
+            return false;
+          },
         );
         addTearDown(service.dispose);
 
@@ -3886,6 +3893,7 @@ void main() {
             ),
           ),
         );
+        expect(probed, ['CPU']);
         expect(recorder.loadGpuLayers, isEmpty);
       });
 
