@@ -236,5 +236,6 @@ constraint or trade-off), never what the code does.
 When a task reveals a durable rule that changes agent behavior and that no
 tool, test or linked doc covers, add it here. Point to docs instead of copying
 them, delete stale rules, and leave out incident history. Tests pin some
-phrases here; Markdown changes select the root VM tooling checks. After editing, run
+phrases here; Markdown changes select the root tests in
+`tool/ci/markdown_test_suites.txt`. After editing, run
 `dart test -p vm test/unit/tooling/`.

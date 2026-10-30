@@ -97,6 +97,7 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 /test/ci/test_genkit_release.py @leehack
 
 /tool/ci/check_genkit_package_score.py @leehack
+/tool/ci/markdown_test_suites.txt @leehack
 /test/ci/test_genkit_package_score.py @leehack
 
 # Public capability coverage and package-consumer release gates.
