@@ -37,11 +37,17 @@ experimental.
   without generating text.
 - Runtime [LoRA adapters](./guides/lora-adapters).
 
-## Core primitives
+## Engines
 
-- `LlamaEngine`: stateless generation API.
-- `ChatSession`: stateful chat wrapper over `LlamaEngine`.
-- `LlamaBackend`: platform backend abstraction used by the engine.
+- `LlamaEngine`: text generation, chat, embeddings and tool calling.
+  `ChatSession` is the stateful chat wrapper over it.
+- `ImageGenerationEngine`: image generation (Preview).
+- `SpeechToTextEngine` and `TextToSpeechEngine`: speech to text and text to
+  speech.
+- `DecisionEngine`: typed answers from decision models.
+
+An engine reaches its runtime through `LlamaBackend`. The
+[glossary](./guides/glossary) defines these terms.
 
 ## Where to go next
 

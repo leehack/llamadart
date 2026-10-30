@@ -6,7 +6,7 @@ description: How llamadart layers one Dart API over llama.cpp and LiteRT-LM, wit
 
 `llamadart` exposes one Dart API (`LlamaEngine`, `ChatSession` and the typed
 speech, decision and image generation engines) over three native inference
-runtimes and a web bridge:
+runtimes and a web bridge (see the [glossary](./glossary) for these terms):
 
 - **llama.cpp** runs GGUF models. It is built on **GGML**, a tensor library
   with CPU kernels (NEON, AVX) and GPU backends (Metal, Vulkan, CUDA and more).
