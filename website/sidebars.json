@@ -48,10 +48,14 @@
       "items": [
         "guides/tool-calling",
         "guides/embeddings",
+        "guides/reranking",
         "guides/multimodal",
         "guides/speech-to-text",
         "guides/text-to-speech",
         "guides/image-generation",
+        "guides/image-generation-settings",
+        "guides/image-generation-memory-and-limits",
+        "guides/image-generation-advanced",
         "guides/decision-models",
         "guides/lora-adapters"
       ]
@@ -61,6 +65,7 @@
       "label": "Platforms",
       "items": [
         "platforms/support-matrix",
+        "platforms/known-platform-issues",
         "platforms/native-build-hooks",
         "platforms/apple-setup",
         "platforms/diagnose-setup",

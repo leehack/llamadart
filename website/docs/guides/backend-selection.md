@@ -137,7 +137,7 @@ never falls back to another device:
   uses Vulkan on Android. Android Vulkan is experimental and fails on some
   devices; keep `auto` or `cpu` there unless you have validated your target
   devices
-  ([known limitations](../platforms/support-matrix#known-limitations)). On
+  ([known limitations](../platforms/known-platform-issues)). On
   an iOS simulator it uses Metal, as `GpuBackend.metal` does, and Metal
   returns incorrect output there
   ([#950](https://github.com/leehack/llamadart/issues/950)); keep `auto` or

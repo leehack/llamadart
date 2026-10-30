@@ -21,7 +21,7 @@ platform :ios, '16.4'
 
 The deployment target is a build requirement, not a tested floor for every
 runtime. LiteRT-LM has run on a device only on iOS 18.3.2; see
-[Known limitations](./support-matrix#known-limitations).
+[Known platform issues](./known-platform-issues).
 
 ## Companion packages
 

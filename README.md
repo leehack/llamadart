@@ -354,7 +354,7 @@ classifier head before selecting RANK for BERT/Jina files that omit that metadat
 call `reranker.rerank(query, documents)`: results retain original indices,
 all classifier scores and labels. Output zero matches llama-server; choose
 `scoreIndex` explicitly for another class. Native llama.cpp only; scores remain
-model-specific and are never normalized. See [reranking](website/docs/guides/embeddings.md#cross-encoder-reranking).
+model-specific and are never normalized. See [reranking](website/docs/guides/reranking.md).
 
 For ordered image/audio content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check
