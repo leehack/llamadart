@@ -3596,8 +3596,11 @@ class LlamaCppService {
     ctxParams.n_ubatch = resolvedBatchSizes.microBatchSize;
     ctxParams.n_seq_max = resolvedMaxParallelSequences;
     ctxParams.n_rs_seq = params.speculativeRollbackTokenMax;
-    ctxParams.n_threads = params.numberOfThreads;
-    ctxParams.n_threads_batch = params.numberOfThreadsBatch;
+    final diagThreads = int.tryParse(
+      Platform.environment['DIAG_THREADS'] ?? '',
+    );
+    ctxParams.n_threads = diagThreads ?? params.numberOfThreads;
+    ctxParams.n_threads_batch = diagThreads ?? params.numberOfThreadsBatch;
     if (resolvedMaxParallelSequences > 1) {
       // Keep per-sequence context at full n_ctx when multiple sequence slots
       // are enabled so regular generation behavior is unchanged.
