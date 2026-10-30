@@ -366,6 +366,11 @@ Before failing a load, the web backend retries with safer settings:
   memory; see the
   [bridge recovery contract](https://github.com/leehack/llama-web-bridge/blob/65622b297b83513db597a760fa067867755010b4/docs/api.md#synthesizespeechoptions).
 
+Worker requests have a two-minute budget by default. On assets `v0.1.79+`, an
+`embed` or `embedBatch` with image or audio parts gets 10 minutes per input
+instead, and `embedBatch` restarts the budget after each finished input.
+`workerRequestTimeoutMs` overrides both.
+
 When retries run out, the load throws an error with runtime hints such as
 `core`, `source`, `nThreads`, `nGpuLayers`, `cache` and bridge `notes`.
 
