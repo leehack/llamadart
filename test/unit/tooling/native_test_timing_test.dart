@@ -157,7 +157,7 @@ void main() {
     expect(check['if'], r'${{ !cancelled() }}');
     expect(check['run'], 'bash tool/ci/litert_lm_temp_canary.sh check');
     expect(
-      steps.singleWhere(
+      (workflow['jobs']['companion-packages']['steps'] as YamlList).singleWhere(
         (step) =>
             step['name'] == 'Verify Flutter Apple companion cache transitions',
       )['run'],

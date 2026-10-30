@@ -186,7 +186,8 @@ Apple companion hook changes also require
 macOS with the pinned Flutter SDK. This explicit `local-only` test runs in a
 temporary clone and exercises fresh/warm Flutter tests, rejects a newly added
 local `Artifacts` override, then verifies recovery after removal without
-clearing caches. The macOS CI native job runs it explicitly.
+clearing caches. The macOS `Companion Packages` CI job runs it explicitly, on the
+same selection as `Test Native`.
 
 The required `Web Chat Contract` check runs the chat app tests on VM and
 Chrome, validates the final Flutter Web artifact, exercises deterministic UI
@@ -1023,7 +1024,7 @@ CPU only. The default `cpu,metal` requires an actual `MTL` backend for Metal.
 ## Native test timing
 
 The macOS/Windows `Test Native` jobs retain their existing selection,
-single-suite concurrency, cache canary and separate Apple companion check.
+single-suite concurrency and cache canary.
 The additional JSON file reporter records test intervals; the ordinary reporter
 and test exit status are unchanged. `native-test-timing-<os>-<attempt>` artifacts
 contain sanitized suite paths, source lines, test IDs, intervals, hidden/skip

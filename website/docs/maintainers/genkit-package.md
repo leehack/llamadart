@@ -74,12 +74,12 @@ for shared/core changes. Genkit-only changes do not select core, companion or
 application build lanes. Both endpoints of renames/deletions count. Every
 selected lane participates in the existing truthful aggregate.
 
-The main adapter lane first resolves published dependencies and checks docs,
-tests and publication. It then creates an ignored `pubspec_overrides.yaml` to
+The adapter CI job first checks lower bounds: on Dart 3.12.0, before Flutter is
+set up, it uses exact runtime dependency minima, including published llamadart
+0.17.0, then restores the package. It then resolves published dependencies and
+checks docs, tests and publication. It then creates an ignored `pubspec_overrides.yaml` to
 test against checkout core, analyzes/tests again, and checks browser contracts.
-It deletes that override even on failure. The lower-bound lane uses Dart 3.12.0
-and exact runtime dependency minima, including published llamadart 0.17.0.
-Neither override nor package lockfile ships in either archive.
+It deletes that override even on failure. Neither override nor package lockfile ships in either archive.
 
 For model-backed qualification, reuse the adapter's existing real-model tests
 and local fixture environment variables described in its

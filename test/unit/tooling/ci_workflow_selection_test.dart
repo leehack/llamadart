@@ -321,7 +321,8 @@ void main() {
         'NEEDS': r'${{ toJSON(needs) }}',
       });
       final consumers = {for (final e in shards.entries) e.value: e.key};
-      for (final name in planned) {
+      // The companion job hosts other macOS steps; see the test of its wiring.
+      for (final name in planned.difference({'companion-packages'})) {
         final shard = consumers[name];
         // A consumer waits for its shards, so it is skipped when one fails.
         expect(
@@ -348,10 +349,6 @@ void main() {
         );
         expect(jobs[shard]['strategy']['fail-fast'], isFalse, reason: shard);
       }
-      expect(
-        jobs['companion-packages']['strategy']['matrix']['package'],
-        r'${{ fromJSON(needs.changes.outputs.companions) }}',
-      );
       final triggers = workflow['on'] as Map;
       expect(triggers.keys.toSet(), {
         'push',
@@ -367,6 +364,122 @@ void main() {
       }
     },
   );
+
+  test('one macOS job runs each selected companion and hosted check', () async {
+    final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
+    final job = jobs['companion-packages'] as Map;
+    expect(job['runs-on'], 'macos-latest');
+    expect(job['if'], "needs.changes.outputs.companion-job == 'true'");
+    expect(job.containsKey('strategy'), isFalse);
+    expect(
+      jobs['changes']['outputs']['companion-job'],
+      r'${{ steps.select.outputs.companion-job }}',
+    );
+    final steps = (job['steps'] as List).cast<Map>();
+    final companions = Directory('packages')
+        .listSync()
+        .whereType<Directory>()
+        .where(
+          (package) => File(
+            '${package.path}/darwin/${package.path.split(Platform.pathSeparator).last}/Package.swift',
+          ).existsSync(),
+        )
+        .map(
+          (package) =>
+              'packages/${package.path.split(Platform.pathSeparator).last}',
+        )
+        .toSet();
+    final packageSteps = steps
+        .where((s) => s['uses'] == './.github/actions/companion-package')
+        .toList();
+    expect(packageSteps.map((s) => s['with']['package']).toSet(), companions);
+    expect(packageSteps, hasLength(companions.length));
+    for (final step in packageSteps) {
+      final package = step['with']['package'];
+      expect(
+        step['if'],
+        "\${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), '$package') }}",
+      );
+      expect(step.containsKey('continue-on-error'), isFalse);
+    }
+    final memory = steps.singleWhere(
+      (s) => s['name'] == 'Test validation process memory',
+    );
+    expect(memory['working-directory'], 'packages/llamadart_validation');
+    expect(
+      '${memory['run']}',
+      contains('dart test test/process_memory_test.dart'),
+    );
+    expect(
+      memory['if'],
+      "\${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' }}",
+    );
+    final cache = steps.singleWhere(
+      (s) => s['name'] == 'Verify Flutter Apple companion cache transitions',
+    );
+    expect(
+      cache['if'],
+      "\${{ !cancelled() && needs.changes.outputs.test-other-os == 'true' }}",
+    );
+  });
+
+  test('Windows runs the validation process memory test in exactly one job', () {
+    final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
+    final harness = jobs['validation-harness'] as Map;
+    expect(
+      harness['strategy']['matrix']['os'],
+      r'${{ fromJSON(needs.changes.outputs.validation-harness-os) }}',
+    );
+    expect(harness['strategy']['fail-fast'], isFalse);
+    expect(
+      (harness['steps'] as List).map((s) => '${s['run']}'),
+      contains(
+        "dart test \${{ matrix.os == 'windows-latest' && 'test/process_memory_test.dart' || '' }}",
+      ),
+    );
+    final native = (jobs['test-other-os']['steps'] as List).cast<Map>();
+    final memory = native.singleWhere(
+      (s) => s['name'] == 'Test validation process memory',
+    );
+    expect(memory['run'], 'dart test test/process_memory_test.dart');
+    const selected =
+        "\${{ !cancelled() && runner.os == 'Windows' && needs.changes.outputs.validation-harness == 'true' }}";
+    expect(memory['if'], selected);
+    // PowerShell keeps only the last command's exit code, so this is a step.
+    final install = native[native.indexOf(memory) - 1];
+    expect(install['run'], 'dart pub get');
+    expect(install['if'], selected);
+  });
+
+  test('Genkit lower bounds run on a fresh tree before Flutter is set up', () {
+    final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
+    expect(jobs.containsKey('genkit-lower-bounds'), isFalse);
+    final steps = (jobs['genkit']['steps'] as List).cast<Map>();
+    int usesIndex(String action) =>
+        steps.indexWhere((s) => '${s['uses']}'.startsWith(action));
+    final dartSdk = usesIndex('dart-lang/setup-dart');
+    final flutterSdk = usesIndex('subosito/flutter-action');
+    final analyze = steps.indexWhere(
+      (s) => s['name'] == 'Analyze and test minimum dependencies',
+    );
+    final restore = steps.indexWhere(
+      (s) =>
+          s['name'] == 'Restore the package after the minimum dependency check',
+    );
+    expect(steps[dartSdk]['with']['sdk'], '3.12.0');
+    expect(dartSdk, lessThan(analyze));
+    expect(analyze, lessThan(restore));
+    expect(restore, lessThan(flutterSdk));
+    expect('${steps[restore]['run']}', contains('git clean -fdxq'));
+    // A lower-bound failure must not hide later checks, as in a separate job.
+    for (final step in steps.skip(restore)) {
+      expect(
+        step['if'],
+        anyOf(r'${{ !cancelled() }}', 'always()'),
+        reason: '$step',
+      );
+    }
+  });
 
   test(
     'bundles cover runtime inputs with target-aware matrices and final result',
@@ -647,7 +760,7 @@ void main() {
         isTrue,
       );
       expect(
-        nativeSteps.any(
+        (jobs['companion-packages']['steps'] as List).any(
           (s) => '${s['run']}'.contains(
             '--run-skipped test/integration/apple_companion_flutter_cache_test.dart',
           ),
