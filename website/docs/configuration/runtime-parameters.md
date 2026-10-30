@@ -149,14 +149,12 @@ const params = LlamaCppModelParams(
   logical batch so embedding inputs are not split incorrectly. WebGPU keeps
   full-context automatic batching because model architecture is not available
   before bridge context creation, though model-specific safety presets may be
-  smaller. The Qwen3.5-0.8B URL preset uses native decoder defaults on
-  CPU (`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`); other models
-  keep full-context defaults.
+  smaller; the presets are in
+  [Performance tuning](../guides/performance-tuning).
 - `microBatchSize`: context physical micro-batch size (`n_ubatch`). On native,
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
-  resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
-  CPU preset uses `min(n_batch, 512)`. On Android, a context that runs on
+  resolved logical batch unless a safety preset applies. On Android, a context that runs on
   Vulkan keeps that `n_ubatch` but can decode a text prompt in smaller micro-batches when this is `0`, and an
   explicit value above `32` can
   return wrong text on some GPUs
@@ -212,8 +210,9 @@ const params = LlamaCppModelParams(
 - `useMmap` / `useMlock` (native llama.cpp only): the WebGPU bridge rejects
   `useMmap: false` and `useMlock: true`.
 
-Apart from `loadMtp` and `speculativeRollbackTokenMax` on bridge assets
-without speculative decoding, no runtime ignores a field you set. A load throws `LlamaUnsupportedException`
+Apart from `gpuLayers` under `device: ComputeDevice.cpu` on llama.cpp, and
+`loadMtp` and `speculativeRollbackTokenMax` on bridge assets without
+speculative decoding, no runtime ignores a field you set. A load throws `LlamaUnsupportedException`
 naming each field set away from its default that the model's runtime does
 not apply. When `ModelSource.format` or the model's file name names the
 format, `LlamaBackend()` rejects them before any file resolves or downloads;

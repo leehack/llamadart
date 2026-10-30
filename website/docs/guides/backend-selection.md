@@ -243,20 +243,18 @@ JavaScript runtime.
 
 ## What each runtime supports
 
-| Capability | llama.cpp / GGUF | LiteRT-LM / `.litertlm` |
-| --- | --- | --- |
-| Native Android | CPU, experimental Vulkan, optional OpenCL modules | CPU, GPU, Android-only NPU selector |
-| Native iOS/macOS | Consolidated CPU + Metal runtime | CPU/GPU (macOS x64: none, [litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) |
-| Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU default; explicit GPU on Linux x64 (Vulkan) and Windows x64 (Direct3D 12), with compatible drivers. Linux arm64 remains CPU-only. |
-| Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
-| Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Native CPU embedding engine on macOS, iOS and Android arm64 (`embeddingEngine: true`); not on GPU or Web |
-| Next-token log-probabilities | Supported on native and on WebGPU (pinned assets) | Not exposed |
-| KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
-| LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU (pinned assets) | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
-| Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: ordered system/user/assistant text; tool declarations and tool messages are rejected. |
-| Grammar / constrained decoding | Supported by llama.cpp-backed paths | GBNF is unsupported and explicit grammar params are rejected; a separate native JSON Schema route supports canonical Qwen3 text on macOS arm64 CPU with thinking disabled and a bounded scalar-object subset; other strict combinations fail early |
-| Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |
-| Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
+The per-feature comparison (platforms, embeddings, LoRA, grammar, tool calling,
+multimodal, tokenization and more) is in
+[Features by runtime](../platforms/support-matrix#features-by-runtime). Rules
+of thumb:
+
+- Pick the runtime by model format first: GGUF runs on llama.cpp, `.litertlm`
+  bundles on LiteRT-LM. Only llama.cpp offers GBNF grammars, multi-adapter
+  LoRA and state persistence; LiteRT-LM web is text-only.
+- Tokenization APIs work on llama.cpp and native LiteRT-LM, not on LiteRT-LM
+  web.
+- On the web, GGUF URLs use the llama.cpp WebGPU/CPU bridge and web-compatible
+  `.litertlm` URLs use `@litert-lm/core`.
 
 Load-time controls differ by runtime:
 
@@ -298,8 +296,11 @@ Check `supportsMultiTurnChat` after loading. The adapter probes that
 and returns an array. An older/missing API reports false and rejects history or
 system prompts with `LlamaUnsupportedException`; one user text still works.
 The probe runs no inference and does not qualify a model's semantic behavior.
-Session trimming estimates the complete transcript from UTF-8 JSON bytes;
-exact JS tokenizer/template accounting is unavailable. `engine.chatTemplate`
+Session trimming estimates the complete transcript, system prompt and previous
+turns included, from UTF-8 JSON bytes (about one token per three bytes), so
+`session.lastRequestFitContext` describes that estimate, not an exact count;
+exact JS tokenizer/template accounting is unavailable, and the JS runtime still
+applies its own template and context limits. `engine.chatTemplate`
 returns this accounting serialization on the opted-in path. It does not replace
 the model's JS template or the original structured messages sent for generation.
 Stored assistant reasoning is omitted from replay/accounting; visible text,

@@ -54,4 +54,7 @@ for f in .dart_tool/lib/libggml-*.so; do
 done
 ```
 
-Any `not found` line names a missing system library for that module.
+Any `not found` line names a missing system library for that module. The check
+covers only the `libggml-*.so` libraries in `.dart_tool/lib`; it does not
+check `libllamadart.so`, an app bundle's library directory, LiteRT-LM or the
+stable-diffusion Vulkan build.

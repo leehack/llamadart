@@ -137,7 +137,7 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | `LlamaBackend.withTextHistory()` or `LiteRtLmBackend.withTextHistory()` (existing defaults retain single-user-text): system/user/assistant text when the loaded runtime consumes `preface` and exposes `getHistory()` (`@litert-lm/core@0.18.0`); final user message required; model/browser qualification is separate |
 | Deterministic session template time | `TemplateTimeChatSession`, Dart-rendered templates | Same Dart template path | Dart-side rendering only; runtime-owned template clock unchanged | No: runtime-owned clock; explicit template time rejected |
-| Tool calling | Yes | Yes | Yes | No: tool declarations and tool messages throw |
+| Tool calling | Yes | Yes | Yes, through the `LlamaEngine` parser; LiteRT-native constrained tool execution is not wired | No: tool declarations and tool messages throw |
 | Canonical JSON Schema tools | Supported subset and selected formats | Non-lazy grammars only; other combinations rejected | No | No |
 | Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
