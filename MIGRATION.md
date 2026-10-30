@@ -368,7 +368,7 @@ qualification covers macOS arm64 only.
 
 Upgrade the core and every Apple companion the app uses to `0.14.x` together.
 If a fresh macOS SwiftPM build reports a generated 12.0 floor, use the
-[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap);
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/platforms/apple-setup#fresh-macos-swiftpm-bootstrap);
 keep Runner and the companion requirements at macOS 14.0 or newer.
 The llama.cpp companion now pins native `v0.7.0` and the LiteRT-LM companion
 pins `v0.18.0-2`; the image companion keeps its native pin. LiteRT-LM reduces
@@ -615,7 +615,7 @@ dependencies:
 Core `0.12.1` embeds the macOS LiteRT-LM runtime only through companion
 `0.0.15`; with an older companion the build warns and the runtime stays in the
 hook cache. A Flutter macOS app that added the
-[LiteRT-LM build phase](https://llamadart.leehack.com/docs/getting-started/installation#flutter-macos-litert-lm-build-phase)
+[LiteRT-LM build phase](https://llamadart.leehack.com/docs/platforms/apple-setup#flutter-macos-litert-lm-build-phase)
 for 0.12.0 can remove it after upgrading both: the script detects the
 embedded runtime and copies nothing, so leaving it in place is harmless.
 Other platforms and companions are unchanged.

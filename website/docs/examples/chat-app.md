@@ -46,9 +46,6 @@ flutter run --dart-define=HF_TOKEN=<your_token>
 ./scripts/build_chat_app_web.sh
 python3 tool/testing/serve_static_with_headers.py \
   --directory example/chat_app/build/web --port 8080
-
-# Web smoke test with a mock bridge and no model download
-dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 ```
 
 ## What it demonstrates

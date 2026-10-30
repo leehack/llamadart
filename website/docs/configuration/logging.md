@@ -58,7 +58,7 @@ The opt-in `stable_diffusion` runtime logs through the same handler.
 records from the stricter of `level` and `nativeLevel`, so a later
 `configure` call applies to the next load. Its messages arrive after each
 load and generation, not while one runs, and are not printed to stderr at
-any level; see [Runtime logs](../guides/image-generation#runtime-logs).
+any level; see [Runtime logs](../guides/image-generation-memory-and-limits#runtime-logs).
 
 ## Recommended profiles
 
@@ -76,8 +76,7 @@ passed to the runtime as silent before each engine create and stops the
 runtime library's own absl, LiteRT and TFLite loggers. The prebuilt WebGPU
 accelerator (`libLiteRtWebGpuAccelerator`) links its own absl and exports no
 logging control, so a GPU engine create still writes `I0000` info lines to
-stderr. A CPU-only load writes nothing. Observed on macOS arm64 with
-Qwen3-0.6B at `none`; source line numbers and the adapter string
+stderr. A CPU-only load writes nothing. Source line numbers and the adapter string
 vary by release and GPU:
 
 ```text

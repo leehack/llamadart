@@ -1,11 +1,14 @@
 ---
 title: Backend benchmarks
-description: Measured llama.cpp/GGUF and LiteRT-LM results for Gemma 4 on Android, macOS and web, llama.cpp speculative decoding results, and the scripts that reproduce them.
+description: Maintainer reference with historical llama.cpp/GGUF and LiteRT-LM measurements for Gemma 4 on Android, macOS and web, llama.cpp speculative decoding results, and the scripts that reproduce them.
 ---
 
-This page records app-level benchmark results for choosing between
-`llama.cpp` / GGUF and LiteRT-LM / `.litertlm` in `llamadart`. Scripts that
-reproduce them are under [Reproducing](#reproducing).
+This page records app-level benchmark results comparing `llama.cpp` / GGUF
+and LiteRT-LM / `.litertlm` in `llamadart`. They are historical measurements, not refreshed per release. The Gemma 4
+E2B tables did not record runtime pins, so re-run the scripts under
+[Reproducing](#reproducing) on the current pins before relying on a number.
+The llama.cpp parity check records its date and pin below. User guidance is in
+[Performance tuning](./performance-tuning#compare-fairly).
 
 These are deployment benchmarks, not pure kernel benchmarks. The artifacts are
 different runtime formats:
@@ -34,23 +37,17 @@ requests for large local model artifacts.
 | --- | --- | --- | --- | ---: | ---: | --- |
 | Pixel 9 Pro, Android 16 | LiteRT-LM | `gemma-4-E2B-it.litertlm` | GPU | 15.18 | 15.51 | `loadMilliseconds=261`, backend init about 8.6s |
 | Pixel 9 Pro, Android 16 | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | Vulkan | 1.66 | 1.82 | `loadMilliseconds=8831`; process reached about 7.4 GB RSS |
-| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM | `gemma-4-E2B-it.litertlm` | Metal | 130.08 | 131.90 | `loadMilliseconds=86`, backend init about 4.6s |
+| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM | `gemma-4-E2B-it.litertlm` | GPU (WebGPU accelerator) | 130.08 | 131.90 | `loadMilliseconds=86`, backend init about 4.6s |
 | Mac, Apple M4 Max, macOS 26.5 | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | Metal | 136.15 | 140.48 including sampling | `loadMilliseconds=1883`; backend eval-only counter was much higher |
 | Web, Chromium on Apple M4 Max | LiteRT-LM | `gemma-4-E2B-it-web.litertlm` | WebGPU | 48.70 | 49.80 | `loadMilliseconds=7727`; first token 107-114ms |
 | Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | 23.90 | 24.40 | `loadMilliseconds=58641`; WebGPU worker, wasm64, 99 GPU layers |
-
-Earlier Gemma 4 GGUF web failures were benchmark-harness artifacts, not a chat
-app support failure. The current web benchmark uses the same mem64 bootstrap
-path as the chat app, selects `GpuBackend.auto`, serves local GGUF files with
-byte-range support, and falls back from the fetch-backed loader to streamed
-loading when the bridge reports a generic `core_abort`.
 
 The Pixel 9 Pro Vulkan row is a speed measurement, not a recommendation.
 Android llama.cpp Vulkan is experimental and device-dependent, and on this
 device (Mali-G715) a prompt longer than about 32 tokens evaluated in one batch
 returns wrong text, confirmed so far with one model (Qwen3.5-0.8B Q4_0)
 ([#948](https://github.com/leehack/llamadart/issues/948),
-[known limitations](../platforms/support-matrix#known-limitations)).
+[known limitations](../platforms/known-platform-issues)).
 As a workaround, llamadart decodes text prompts on an Android Vulkan GPU with
 this defect (subgroup size 16 or below 8, or one it cannot read) in
 micro-batches of at most 8 tokens by default, so the wrong text needs an
@@ -73,8 +70,8 @@ both devices.
 | --- | --- | ---: | ---: | ---: | --- |
 | Pixel 9 Pro, Android 16 | LiteRT-LM GPU | `false` | 15.50 | 15.70 | baseline |
 | Pixel 9 Pro, Android 16 | LiteRT-LM GPU | `true` | 9.06 | 9.13 | about 42% slower |
-| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM Metal | `false` | 135.02 | 136.70 | baseline |
-| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM Metal | `true` | 118.96 | 120.25 | about 12% slower |
+| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM GPU (WebGPU accelerator) | `false` | 135.02 | 136.70 | baseline |
+| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM GPU (WebGPU accelerator) | `true` | 118.96 | 120.25 | about 12% slower |
 
 The Pixel NPU path was also attempted for `gemma-4-E2B-it.litertlm`, but native
 LiteRT-LM failed engine creation for backend `npu` on this device/model bundle
@@ -112,18 +109,13 @@ the draftless n-gram strategies can produce no drafts, so the extra speculative
 loop work is slower than baseline. Knob semantics per strategy are in
 [Speculative decoding](./performance-tuning#speculative-decoding).
 
-Remaining actionable work was split out instead of being folded into this
-benchmark documentation. [llamadart-native#26](https://github.com/leehack/llamadart-native/issues/26)
-tracks exact native tool artifacts for future same-tag upstream comparisons;
-the earlier n-gram rollback and native sampler fixes have landed.
-
 ## Interpretation
 
 On Pixel 9 Pro, LiteRT-LM GPU was about 9x faster than llama.cpp Vulkan for this
 Gemma 4 E2B deployment comparison. The GGUF/Vulkan path also consumed much more
 memory and pushed the device into light thermal pressure by the end of the run.
 
-On the M4 Max, llama.cpp Metal and LiteRT-LM Metal were close for wall-clock
+On the M4 Max, llama.cpp Metal and LiteRT-LM GPU were close for wall-clock
 throughput. Use model format, feature needs, and distribution constraints as
 the deciding factors on macOS rather than assuming LiteRT-LM is faster.
 
@@ -239,6 +231,12 @@ dart run tool/testing/llama_cpp_speculative_benchmark.dart \
   --warmups 1 \
   --include-output
 ```
+
+The speculative benchmark reserves the maximum effective draft length among
+the selected cases. Draft-model cases do not inherit the default n-gram window
+of 48, and an n-gram window does not inherit an unused draft or `ngramTokenMax`
+setting. Selecting only `baseline` reserves no rollback snapshots. This removes
+unrelated reservations; it does not make recurrent/hybrid reservations safe.
 
 External draft-model cases need `--draft-model`. Bundled MTP omits it and
 loads the target's MTP tensors automatically. The `ngram-cache` case needs

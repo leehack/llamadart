@@ -53,7 +53,7 @@ pinned publication policy and override presence; native loading, selected
 backend/GPU, emitted assets and model capabilities remain unchecked. Exit 0
 means a report was produced. The collector uses no native initialization or
 network; `dart run` can prepare/download assets through its build hook or fail
-before main. See [setup report scope](https://llamadart.leehack.com/docs/platforms/native-build-hooks#desktop-setup-report).
+before main. See [setup report scope](https://llamadart.leehack.com/docs/platforms/diagnose-setup#desktop-setup-report).
 
 To opt into a separate native check, run
 `dart run llamadart:doctor_native --runtime llama_cpp --json` (or name
@@ -61,7 +61,7 @@ To opt into a separate native check, run
 process and checks selected symbols/static ABI markers, without a model or
 device probe. Exit 0 still means a report was produced. It does not establish
 emitted app assets, loaded release identity, production loader behavior or
-inference readiness; see [native check scope](https://llamadart.leehack.com/docs/platforms/native-build-hooks#isolated-native-check).
+inference readiness; see [native check scope](https://llamadart.leehack.com/docs/platforms/diagnose-setup#isolated-native-check).
 
 - Dart SDK `>=3.10.7`
 - Flutter SDK `>=3.38.0` for Flutter apps
@@ -107,7 +107,7 @@ core `0.8.23` with companion `0.0.18`, and core `0.8.22` with companion
 
 A fresh macOS SwiftPM build that reports a generated 12.0 floor beside the
 companions' 14.0 requirement needs the
-[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap).
+[Flutter 3.47.1 bootstrap](https://llamadart.leehack.com/docs/platforms/apple-setup#fresh-macos-swiftpm-bootstrap).
 Keep Runner at 14.0+; the procedure preserves companion artifact verification.
 
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
@@ -153,7 +153,7 @@ The LiteRT-LM companion manifest links the complete iOS and macOS SwiftPM
 runtime, including the macOS WebGPU accelerator, so a sandboxed or distributed
 Flutter macOS app loads LiteRT-LM from its own bundle. A Flutter macOS app
 without the companion, or with companion `0.0.14` or earlier, needs the
-[LiteRT-LM build phase](https://llamadart.leehack.com/docs/getting-started/installation#flutter-macos-litert-lm-build-phase).
+[LiteRT-LM build phase](https://llamadart.leehack.com/docs/platforms/apple-setup#flutter-macos-litert-lm-build-phase).
 
 The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
 Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
@@ -176,7 +176,7 @@ An app that runs LiteRT-LM on the hook path, or whose embedded LiteRT-LM
 frameworks have no `PrivacyInfo.xcprivacy`, declares File Timestamp
 (`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
 (`CA92.1`) itself. See
-[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks#apple-privacy-manifest).
+[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/apple-setup#apple-privacy-manifest).
 
 Then run:
 
@@ -354,7 +354,7 @@ classifier head before selecting RANK for BERT/Jina files that omit that metadat
 call `reranker.rerank(query, documents)`: results retain original indices,
 all classifier scores and labels. Output zero matches llama-server; choose
 `scoreIndex` explicitly for another class. Native llama.cpp only; scores remain
-model-specific and are never normalized. See [reranking](website/docs/guides/embeddings.md#cross-encoder-reranking).
+model-specific and are never normalized. See [reranking](website/docs/guides/reranking.md).
 
 For ordered image/audio content, use `LlamaEmbeddingInput` with
 `engine.embedContent` / `embedContentBatch` and check

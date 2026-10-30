@@ -79,8 +79,8 @@ not a reliable per-request tokens-per-second measurement.
 | Path | Observed operations | Per-request generation usage |
 | --- | --- | --- |
 | Native llama.cpp | Yes | When the backend reports it on the final `create` chunk |
-| WebGPU bridge `v0.1.54+` | Yes | When the bridge reports it on the final `create` chunk |
-| Older WebGPU bridges | Yes | Unavailable |
+| WebGPU bridge with `supportsCompletionUsage` | Yes | When the bridge reports it on the final `create` chunk |
+| WebGPU bridges without it | Yes | Unavailable |
 | LiteRT-LM, native or Web | Yes | Unavailable |
 | Raw `generate`, embeddings, model load | Yes | No final chat usage object |
 
@@ -116,8 +116,8 @@ plus a chat span under `demo-request`. The adapter sends the alias
 `local-demo-model`, never the model path. Prompts and generated text are omitted
 from telemetry; the CLI still prints the answer locally.
 
-The CLI uses `dart:io` and is a native Dart example. VM tests exercise the
-adapter and OTLP/HTTP export; they do not qualify Flutter mobile or browser
+The CLI uses `dart:io` and is a native Dart example. The adapter and OTLP/HTTP
+export are qualified on the Dart VM only, not on Flutter mobile or browser
 export. Core observers also work on Web. For a browser integration, qualify
 your chosen SDK and HTTP transport, configure CORS on your own authenticated
 ingestion service, and keep provider secrets on the server. A Flutter app

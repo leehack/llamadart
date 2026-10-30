@@ -24,7 +24,7 @@ void main() {
 
   Future<ProcessResult> bootstrap() {
     final docs = File(
-      'website/docs/getting-started/installation.md',
+      'website/docs/platforms/apple-setup.md',
     ).readAsStringSync();
     final script = RegExp(
       "python3 - <<'PY'\n(.*?)\nPY",
@@ -90,7 +90,7 @@ echo "\$*" >> flutter-calls
 ''');
       expect((await Process.run('chmod', ['+x', flutter.path])).exitCode, 0);
       final docs = File(
-        'website/docs/getting-started/installation.md',
+        'website/docs/platforms/apple-setup.md',
       ).readAsStringSync();
       final recipe = RegExp(
         r'```bash\n(\(\n.*?flutter pub get\npython3.*?)\n```',
