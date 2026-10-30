@@ -220,6 +220,8 @@ void main() {
       final release = testMatrixRows.singleWhere(
         (row) => row.id == 'genkit-release',
       );
+      expect(contracts.command, contains('CI job genkit in '));
+      expect(contracts.command, isNot(contains('genkit-lower-bounds')));
       expect(contracts.covers, contains('lower bounds'));
       expect(contracts.covers, contains('published/local-core'));
       expect(native.command, contains('LLAMADART_INTEGRATION_MODEL_PATH'));
