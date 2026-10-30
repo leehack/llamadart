@@ -405,14 +405,15 @@ first model load, for diagnosis or controlled deployments:
 The example currently pins bridge assets to `v0.1.76`, with local vendored assets
 identified as `v0.1.76-local-v0.7.0`.
 
-- The pinned `v0.1.76` bridge assets embed llama.cpp `v0.7.0`, matching the native runtime
-  (`v0.7.0-3`, both built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+- The pinned `v0.1.76` bridge assets embed llama.cpp `v0.7.0`, behind the native runtime
+  (`v0.8.0`; the bridge is built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
   even though the bridge asset tag `v0.1.76` differs from the native runtime tag
-  `v0.7.0-3`. Pinned artifact provenance: release `426014694`, tag commit
+  `v0.8.0`. Pinned artifact provenance: release `426014694`, tag commit
   `7ce0ad051c63f11ebb1d5ca0cf395f2a17c37dc3`, bridge source
   `883376ddfae4f8d70b1970fa7d180217475aab58`, manifest SHA-256
   `90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`. The
-  bridge manifest records native `v0.7.0-2`. They include the API-version-1 media embedding contract.
+  bridge manifest records native `v0.7.0-2`. Fixes and model families new in
+  llama.cpp `v0.8.0` reach Web only with a later bridge repin. They include the API-version-1 media embedding contract.
   Extraction and state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:

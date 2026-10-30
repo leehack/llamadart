@@ -9,7 +9,7 @@ LoRA/projector input; dispose frees owned engines and leaves borrowed ones alive
 wrapper and optional `BackendReranking` SPI are additive: `LlamaEngine`, its
 exported extensions and existing backend interfaces gain no members.
 
-The runtime pin stays `llamadart-native v0.7.0-3`, upstream
+Qualified on `llamadart-native v0.7.0-3`, upstream
 `620d2225cc436ab0b001e3200e590e3b286ef9ab`. Pair framing matches that upstream's
 `tools/server/server-common.cpp:format_prompt_rerank`; this is placeholder
 substitution, not ordinary Jinja chat rendering. Output zero matches `/rerank`.

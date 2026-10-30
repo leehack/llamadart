@@ -374,6 +374,14 @@ bounded image recipes gate on the upstream commit
 (`ImageGenerationEngine._isQualifiedRuntime`): a repin that moves it reruns
 their `run_local_e2e.dart` scenarios before moving that gate.
 
+Core `0.17.1` moves the llama.cpp pin to `v0.8.0`, a new upstream release, inside
+the `0.17` minor. It keeps companion `0.17.0` (`v0.7.0-3`) through
+`llamaCppCompatibleAppleCompanionTags` because the core calls no symbol that
+framework lacks; `test/fixtures/native/llama_cpp_apple_compatibility.json` records
+the per-slice check and a test keeps the core off the listed v0.8.0-only names. The
+reverse pair is unsafe (`mtmd_helper_init_opt` grows to 32 bytes), so companion
+`0.17.1` needs `llamadart: '>=0.17.1 <0.18.0'`.
+
 Native sync PRs can leave the repository in a state where the companion package
 source under `packages/` is ready, but the corresponding pub.dev package version
 does not exist yet. That is expected before merge, but it must be resolved by

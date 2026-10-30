@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
+import '../../../support/gbnf_recognizer.dart';
 import '../../../support/llama_cpp_grammar_load.dart';
 
 const _maxCount = 1024;
@@ -899,6 +900,113 @@ void main() {
           'additionalProperties': false,
         });
         expect(grammar, isNot(contains('additional')));
+      });
+    });
+  });
+
+  group('long optional-property lists', () {
+    Map<String, dynamic> objectWith(int count) => <String, dynamic>{
+      'type': 'object',
+      'properties': {
+        for (var i = 0; i < count; i++) 'p$i': {'type': 'integer'},
+      },
+      'additionalProperties': false,
+    };
+
+    // Each -rest or -tail rule starts with something that can be empty, so
+    // llama.cpp's left-recursion check descends through them.
+    int chainDepth(String grammar) {
+      final next = <String, String>{};
+      final rule = RegExp(
+        r'^(\S+-(?:rest|tail)\d*) ::= (.*)$',
+        multiLine: true,
+      );
+      final reference = RegExp(r'\S+-(?:rest|tail)\d*$');
+      for (final match in rule.allMatches(grammar)) {
+        final ref = reference.stringMatch(match[2]!);
+        if (ref != null) next[match[1]!] = ref;
+      }
+      var deepest = 0;
+      for (final start in next.keys) {
+        var depth = 1;
+        for (var at = start; next[at] != null; at = next[at]!) {
+          depth++;
+        }
+        deepest = depth > deepest ? depth : deepest;
+      }
+      return deepest;
+    }
+
+    test('keep the upstream rule shape up to 128 properties', () {
+      final grammar = JsonSchemaConverter.convert(objectWith(128));
+      expect(grammar, isNot(contains('-tail')));
+      expect(chainDepth(grammar), 127);
+    });
+
+    test('stay under the llama.cpp chain limit past 128 properties', () {
+      final grammar = JsonSchemaConverter.convert(objectWith(1023));
+      expect(grammar, contains('-tail'));
+      expect(chainDepth(grammar), lessThan(100));
+    });
+
+    test('still offer every later property as optional', () {
+      final grammar = JsonSchemaConverter.convert(objectWith(129));
+      for (var i = 1; i < 129; i++) {
+        expect(
+          RegExp('\\( "," space root-p$i-kv \\)\\?').allMatches(grammar),
+          isNotEmpty,
+          reason: 'p$i',
+        );
+      }
+    });
+
+    group('accept and reject objects', () {
+      String object(
+        Iterable<int> indexes, {
+        Iterable<String> extras = const [],
+      }) =>
+          '{${[for (final i in indexes) '"p$i":1', for (final k in extras) '"$k":2'].join(',')}}';
+
+      late GbnfRecognizer long;
+      late GbnfRecognizer withExtras;
+
+      setUpAll(() {
+        long = GbnfRecognizer(JsonSchemaConverter.convert(objectWith(200)));
+        withExtras = GbnfRecognizer(
+          JsonSchemaConverter.convert(<String, dynamic>{
+            ...objectWith(200),
+            'additionalProperties': {'type': 'integer'},
+          }),
+        );
+      });
+
+      test('take any ascending subset across block boundaries', () {
+        expect(long.accepts('{}'), isTrue);
+        expect(long.accepts(object([0])), isTrue);
+        expect(long.accepts(object([199])), isTrue);
+        expect(long.accepts(object([5, 40, 100, 150, 199])), isTrue);
+        expect(long.accepts(object(Iterable.generate(200))), isTrue);
+      });
+
+      test('keep property order inside a block', () {
+        expect(long.accepts(object([33, 34])), isTrue);
+        expect(long.accepts(object([34, 33])), isFalse);
+        expect(long.accepts(object([100, 130, 129])), isFalse);
+      });
+
+      test('refuse a repeated or unknown property', () {
+        expect(long.accepts(object([70, 70])), isFalse);
+        expect(long.accepts(object([3], extras: ['x'])), isFalse);
+      });
+
+      test('allow any number of extra properties after the last block', () {
+        expect(withExtras.accepts(object([150], extras: ['x'])), isTrue);
+        expect(withExtras.accepts(object([150], extras: ['x', 'y'])), isTrue);
+        expect(
+          withExtras.accepts(object([199], extras: ['x', 'y', 'z'])),
+          isTrue,
+        );
+        expect(withExtras.accepts(object([], extras: ['x', 'y'])), isTrue);
       });
     });
   });
