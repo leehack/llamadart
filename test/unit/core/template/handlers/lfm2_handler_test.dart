@@ -2,15 +2,294 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
+  // Outputs and values of llama.cpp 620d2225 tests/test-chat.cpp
+  // test_lfm2_parser, whose <think> cases are out of scope here because this
+  // format deliberately parses calls inside thoughts.
+  group('parses a call list as llama.cpp does', () {
+    for (final (output, content, calls) in <(String, String, List<_Call>)>[
+      ('[special_function(arg1=1)]', '', [('special_function', '{"arg1": 1}')]),
+      ('[get_time(city="XYZCITY")]', '', [('get_time', '{"city":"XYZCITY"}')]),
+      ('[toggle(enabled=True)]', '', [('toggle', '{"enabled": true}')]),
+      ('[set_nullable(value=None)]', '', [('set_nullable', '{"value": null}')]),
+      (
+        '[set_config(config={"enabled": True, "count": 3})]',
+        '',
+        [('set_config', '{"config": {"enabled": true, "count": 3}}')],
+      ),
+      (
+        '[set_config(config={"enabled": true, "note": null})]',
+        '',
+        [('set_config', '{"config": {"enabled": true, "note": null}}')],
+      ),
+      (
+        '[Calendar.create_event(title="demo", '
+            'participants=["Alice", "Bob"], '
+            'metadata={"priority": "high", "reminder": true})]',
+        '',
+        [
+          (
+            'Calendar.create_event',
+            '{"title": "demo", "participants": ["Alice", "Bob"], '
+                '"metadata": {"priority": "high", "reminder": true}}',
+          ),
+        ],
+      ),
+      (
+        r'''[python(code="def hello():\n    print('hey')")]''',
+        '',
+        [('python', r'''{"code": "def hello():\n    print('hey')"}''')],
+      ),
+      (
+        r'[python(code="First line\nSecond line\tindented")]',
+        '',
+        [('python', r'{"code": "First line\nSecond line\tindented"}')],
+      ),
+      (
+        r'[python(code="print(\"hi\")")]',
+        '',
+        [('python', r'{"code": "print(\"hi\")"}')],
+      ),
+      (
+        '[special_function(arg1=1), special_function_with_opt(arg1=1, arg2=2)]',
+        '',
+        [
+          ('special_function', '{"arg1": 1}'),
+          ('special_function_with_opt', '{"arg1": 1, "arg2": 2}'),
+        ],
+      ),
+      ('[empty_args()]', '', [('empty_args', '{}')]),
+    ]) {
+      test(output, () {
+        _expectCalls(
+          Lfm2Handler().parse('<|tool_call_start|>$output<|tool_call_end|>'),
+          content,
+          calls,
+        );
+      });
+    }
+
+    test('after content', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          'Let me check the time.'
+          '<|tool_call_start|>[get_time(city="Paris")]<|tool_call_end|>',
+        ),
+        'Let me check the time.',
+        [('get_time', '{"city":"Paris"}')],
+      );
+    });
+
+    test('with the escapes normalize_quotes_to_json handles', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          r'''<|tool_call_start|>[save(a='it\'s "ok"', b="\u00e9\/", '''
+          r'''c={'k': ['v', False, -1.5e2]})]<|tool_call_end|>''',
+        ),
+        '',
+        [
+          (
+            'save',
+            jsonEncode({
+              'a': 'it\'s "ok"',
+              'b': 'é/',
+              'c': {
+                'k': ['v', false, -150.0],
+              },
+            }),
+          ),
+        ],
+      );
+    });
+
+    test('keeps a string that reads like a call or a separator', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          r'<|tool_call_start|>[save(a="{\"name\": \"other\"}; x", '
+          r'b="f(c=1), g()", d="key=value")]<|tool_call_end|>',
+        ),
+        '',
+        [
+          (
+            'save',
+            jsonEncode({
+              'a': '{"name": "other"}; x',
+              'b': 'f(c=1), g()',
+              'd': 'key=value',
+            }),
+          ),
+        ],
+      );
+    });
+
+    test('with space around every token', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          '<|tool_call_start|>[ save ( a = [ 1 , 2 ] , b = { "k" : 1 } ) , '
+          'load ( ) ]<|tool_call_end|>',
+        ),
+        '',
+        [
+          (
+            'save',
+            jsonEncode({
+              'a': [1, 2],
+              'b': {'k': 1},
+            }),
+          ),
+          ('load', '{}'),
+        ],
+      );
+    });
+
+    test('numbers calls across lists', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          '<|tool_call_start|>[a()]<|tool_call_end|>'
+          '<|tool_call_start|>[b(), c()]<|tool_call_end|>',
+        ),
+        '',
+        [('a', '{}'), ('b', '{}'), ('c', '{}')],
+      );
+    });
+
+    test('leaves text it cannot read as Python to the loose parser', () {
+      for (final (arguments, expected) in [
+        ('x={kk: 1}', {'x': '{kk: 1}'}),
+        (r'y="\q"', {'y': r'\q'}),
+      ]) {
+        _expectCalls(
+          Lfm2Handler().parse(
+            '<|tool_call_start|>[f($arguments)]<|tool_call_end|>',
+          ),
+          '',
+          [('f', jsonEncode(expected))],
+        );
+      }
+    });
+
+    test('takes no call from a list with trailing text', () {
+      final parsed = Lfm2Handler().parse(
+        '<|tool_call_start|>[a(b=1)] junk<|tool_call_end|>',
+      );
+      expect(parsed.toolCalls, isEmpty);
+    });
+
+    test('leaves a nested object in its own argument', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          '<|tool_call_start|>[save(input={"a": 1}, n=2)]<|tool_call_end|>',
+        ),
+        '',
+        [
+          (
+            'save',
+            jsonEncode({
+              'input': {'a': 1},
+              'n': 2,
+            }),
+          ),
+        ],
+      );
+    });
+  });
+
+  test('still reads a list only the loose parser understands', () {
+    _expectCalls(
+      Lfm2Handler().parse(
+        '<|tool_call_start|>[search(query=llama)]<|tool_call_end|>',
+      ),
+      '',
+      [('search', '{"query":"llama"}')],
+    );
+    _expectCalls(
+      Lfm2Handler().parse(
+        '<|tool_call_start|>search(query="llama")<|tool_call_end|>',
+      ),
+      '',
+      [('search', '{"query":"llama"}')],
+    );
+  });
+
+  group('required tool choice grammar', () {
+    LlamaChatTemplateResult render(
+      List<ToolDefinition> tools, {
+      bool parallel = false,
+      String system = '',
+      ToolChoice toolChoice = ToolChoice.required,
+    }) => Lfm2Handler().render(
+      templateSource: '{{ messages[0]["content"] }}',
+      messages: [
+        if (system.isNotEmpty)
+          LlamaChatMessage.fromText(role: LlamaChatRole.system, text: system),
+        const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ],
+      metadata: {
+        internalToolChoiceMetadataKey: toolChoice.name,
+        internalParallelToolCallsMetadataKey: parallel.toString(),
+      },
+      tools: tools,
+    );
+
+    final search = ToolDefinition(
+      name: 'search',
+      description: 'Search',
+      parameters: [ToolParam.string('query', required: true)],
+      handler: _noop,
+    );
+
+    test('takes a second call only when the request allows it', () {
+      expect(render([search]).grammar, isNot(contains('lfm2-tool)*')));
+      expect(render([search], parallel: true).grammar, contains('lfm2-tool)*'));
+    });
+
+    test('falls back to the JSON list for a name a call cannot write', () {
+      for (final tool in [
+        ToolDefinition(
+          name: 'search web',
+          description: 'Search',
+          parameters: [ToolParam.string('query', required: true)],
+          handler: _noop,
+        ),
+        ToolDefinition(
+          name: 'search',
+          description: 'Search',
+          parameters: [ToolParam.string('the query', required: true)],
+          handler: _noop,
+        ),
+      ]) {
+        final grammar = render([tool]).grammar;
+        expect(grammar, contains('root-item'), reason: tool.name);
+        expect(grammar, isNot(contains('lfm2-tool')), reason: tool.name);
+      }
+    });
+
+    test('force-json-schema keeps the JSON list and its parallel flag', () {
+      final single = render([search], system: 'Force JSON schema.\nSystem');
+      expect(single.grammar, contains('root-item'));
+      final parallel = render(
+        [search],
+        system: 'Force JSON schema.\nSystem',
+        parallel: true,
+      );
+      expect(parallel.grammar, isNot(single.grammar));
+    });
+
+    test('buildGrammar is the single-call list', () {
+      expect(Lfm2Handler().buildGrammar([search]), render([search]).grammar);
+    });
+  });
+
   test('Lfm2Handler matches llama.cpp force-json-schema semantics', () {
     final handler = Lfm2Handler();
     final tools = [
@@ -66,15 +345,9 @@ void main() {
     expect(renderedWithRequiredChoice.grammar, isNotNull);
     expect(
       renderedWithRequiredChoice.grammar,
-      contains('"<|tool_call_start|>"'),
+      contains('"<|tool_call_start|>['),
     );
-    expect(
-      renderedWithRequiredChoice.grammar,
-      contains(
-        'root-item ::= "{" space root-item-name-kv "," space '
-        'root-item-arguments-kv "}" space',
-      ),
-    );
+    expect(renderedWithRequiredChoice.grammar, contains('"search("'));
     expect(renderedWithRequiredChoice.grammarLazy, isFalse);
     expect(renderedWithRequiredChoice.grammarTriggers, hasLength(1));
 
@@ -131,4 +404,20 @@ void main() {
 
 Future<Object?> _noop(_) async {
   return 'ok';
+}
+
+typedef _Call = (String name, String arguments);
+
+void _expectCalls(ChatParseResult parsed, String content, List<_Call> calls) {
+  expect(parsed.content, content);
+  expect(parsed.toolCalls.map((call) => call.function?.name), [
+    for (final (name, _) in calls) name,
+  ]);
+  expect(
+    parsed.toolCalls.map((call) => jsonDecode(call.function!.arguments!)),
+    [for (final (_, arguments) in calls) jsonDecode(arguments)],
+  );
+  expect(parsed.toolCalls.map((call) => call.index), [
+    for (var i = 0; i < calls.length; i++) i,
+  ]);
 }

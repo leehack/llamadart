@@ -17,8 +17,10 @@ Functionary file renders no tool definitions and a literal `{role}` header.
 - `base_emission`: the grammar at `0bddcde0d`, which wrote `\n` as a literal
   backslash-n (DeepSeek R1, Functionary v3.2), took any number of DeepSeek
   calls, and required a free-text LFM2 `id` the model filled with prose.
-- `emission`: the grammar after the fix; each parses to `tool_call`.
+- `emission`: the grammar after the fix; each parses to `tool_call`. LFM2's is
+  from the `[name(arg=value)]` grammar that replaced its JSON list.
 
 For the same request, llama-server at llama.cpp `5ecbe1ac1` (`v0.7.0` plus a
 sampling-only commit) returns the LFM2 call, a Functionary call with empty
-arguments, and a DeepSeek thought that runs to the length limit.
+arguments, and a DeepSeek thought that runs to the length limit. llama-server
+at `620d2225c` writes the same LFM2 `emission`.
