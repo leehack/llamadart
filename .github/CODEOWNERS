@@ -3,6 +3,7 @@
 .github/dependabot.yml @leehack
 .github/pull_request_template.md @leehack
 .github/workflows/ @leehack
+.github/actions/ @leehack
 AGENTS.md @leehack
 CONTRIBUTING.md @leehack
 scripts/build_chat_app_web.sh @leehack

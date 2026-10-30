@@ -855,9 +855,26 @@ List<String> _companionPublishProblems(String workflow) {
 /// The CI jobs whose publish dry-run resolves llamadart from the checkout,
 /// with the working directory each must start in.
 const _ciDryRunJobs = <String, String>{
-  'companion-packages': r'${{ matrix.package }}',
+  'companion-packages': r'${{ inputs.package }}',
   'model-store': 'packages/llamadart_model_store',
 };
+
+/// The composite action holding the steps of the `companion-packages` job.
+const _companionAction = '.github/actions/companion-package/action.yml';
+
+/// The source holding [job]'s dry-run: the action for companions, else the job.
+String _ciDryRunSource(String job) =>
+    job == 'companion-packages' ? _read(_companionAction) : _read(_ciWorkflow);
+
+/// [source] with [edit] applied only to [job]'s dry-run.
+String _editCiDryRun(String source, String job, String Function(String) edit) =>
+    job == 'companion-packages' ? edit(source) : _editJob(source, job, edit);
+
+YamlMap _ciDryRunStep(String source, String job) => job == 'companion-packages'
+    ? ((loadYaml(source) as YamlMap)['runs']['steps'] as YamlList)
+          .cast<YamlMap>()
+          .singleWhere((step) => step['name'] == 'Publish dry-run')
+    : _step(source, job, 'Publish dry-run');
 
 /// [workflow] with [edit] applied only to [job]'s block.
 String _editJob(String workflow, String job, String Function(String) edit) {
@@ -869,13 +886,6 @@ String _editJob(String workflow, String job, String Function(String) edit) {
   return workflow.substring(0, start) +
       edit(workflow.substring(start, end)) +
       workflow.substring(end);
-}
-
-/// [job]'s block of [workflow].
-String _jobBlock(String workflow, String job) {
-  var block = '';
-  _editJob(workflow, job, (text) => block = text);
-  return block;
 }
 
 List<String> _ciDryRunProblems(
@@ -895,7 +905,7 @@ List<String> _ciDryRunProblems(
   final runnerTemp = '${sandbox.root}/runner';
   Directory(runnerTemp).createSync();
 
-  final step = _step(workflow, job, 'Publish dry-run');
+  final step = _ciDryRunStep(workflow, job);
   if (step['working-directory'] != _ciDryRunJobs[job]) {
     problems.add('the dry-run must start in the package');
   }
@@ -1153,39 +1163,28 @@ void main() {
   }, skip: Platform.isWindows ? _posixOnly : false);
 
   group('ci.yml publish dry-runs', () {
-    final workflow = _read(_ciWorkflow);
-
     for (final job in _ciDryRunJobs.keys) {
+      final workflow = _ciDryRunSource(job);
+
       test('$job resolves llamadart from this checkout', () {
         expect(_ciDryRunProblems(workflow, job: job), isEmpty);
       });
 
       test('$job rejects a dry-run without the checkout override', () {
         final override = RegExp(
-          r"          printf 'dependency_overrides:.*\n"
+          r" *printf 'dependency_overrides:.*\n"
           r'.*/pubspec_overrides\.yaml"\n',
         );
-        const exclude = "            --exclude='pubspec_overrides.yaml' \\\n";
+        final exclude = RegExp(r" *--exclude='pubspec_overrides\.yaml' \\\n");
         final mutations = <String, String Function(String)>{
           'W6 drops the override': (source) =>
               source.replaceFirst(override, ''),
-          'W7 keeps the checkout override in the copy': (source) => source
-              .replaceFirst(override, '')
-              .replaceFirst(
-                "            --exclude='pubspec.lock' \\\n$exclude",
-                "            --exclude='pubspec.lock' \\\n",
-              ),
+          'W7 keeps the checkout override in the copy': (source) =>
+              source.replaceFirst(override, '').replaceFirst(exclude, ''),
         };
         for (final mutation in mutations.entries) {
-          final mutated = _editJob(workflow, job, mutation.value);
+          final mutated = _editCiDryRun(workflow, job, mutation.value);
           expect(mutated, isNot(workflow), reason: mutation.key);
-          if (mutation.key.startsWith('W7')) {
-            expect(
-              _jobBlock(mutated, job),
-              isNot(contains(exclude)),
-              reason: '${mutation.key} must drop $job\'s exclude',
-            );
-          }
           expect(
             _ciDryRunProblems(mutated, job: job),
             isNotEmpty,

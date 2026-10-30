@@ -23,11 +23,14 @@ CORE_JOBS = (
     'validation-integration', 'companion-packages', 'test-linux-coverage',
     'test-web', 'web-chat-contract', 'test-other-os',
     'native-prompt-reuse-parity', 'artifact-contract',
-    'genkit', 'genkit-lower-bounds', 'example-packages', 'model-store',
+    'genkit', 'example-packages', 'model-store',
 )
 # Jobs outside the plan that run exactly when the planned job they feed runs:
 # the Linux VM test shards whose raw coverage test-linux-coverage merges.
 SHARD_JOBS = {'test-linux-vm': 'test-linux-coverage'}
+# The companion-packages job also hosts macOS steps selected apart from the
+# packages, so it runs, and must succeed, when any of these checks is selected.
+COMPANION_JOB_CHECKS = ('companion-packages', 'test-other-os', 'validation-harness')
 DESKTOPS = ('ubuntu-24.04', 'windows-2022', 'macos-15')
 APPS = ('android', 'web', 'ios-inputs')
 # Imported by tool/testing/validation/image_profile.dart, whose root tests run
@@ -85,9 +88,9 @@ def select(paths, force_full=False):
             full('workflow or selector change')
             jobs.add('artifact-contract')
         elif path == 'website/docs/integrations/genkit.md':
-            jobs.update(('docs-check', 'docs-versions', 'genkit', 'genkit-lower-bounds'))
+            jobs.update(('docs-check', 'docs-versions', 'genkit'))
         elif path.startswith('packages/genkit_llamadart/'):
-            jobs.update(('genkit', 'genkit-lower-bounds'))
+            jobs.add('genkit')
         elif path == 'website/docs/guides/model-store.md':
             jobs.update(('docs-check', 'docs-versions', 'model-store'))
         elif path.startswith('packages/llamadart_model_store/'):
@@ -185,7 +188,20 @@ def expected_jobs(plan, bundle=False):
     """Whether each job the aggregate needs, other than `changes`, is selected."""
     if bundle:
         return {'desktop': bool(plan['desktops']), 'app': bool(plan['apps'])}
-    return {**plan['jobs'], **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()}}
+    return {
+        **plan['jobs'],
+        **{job: plan['jobs'][fed] for job, fed in SHARD_JOBS.items()},
+        'companion-packages': companion_job_selected(plan),
+    }
+
+
+def companion_job_selected(plan):
+    return any(plan['jobs'][check] for check in COMPANION_JOB_CHECKS)
+
+
+def validation_harness_oses(plan):
+    """Windows runs the harness test in Test Native whenever that job is selected."""
+    return ['ubuntu-latest'] + ([] if plan['jobs']['test-other-os'] else ['windows-latest'])
 
 
 def aggregate(plan, needs, bundle=False):
@@ -246,6 +262,8 @@ def main():
         out.write('plan=' + encoded + '\n')
         for name, selected in plan['jobs'].items():
             out.write(f'{name}={str(selected).lower()}\n')
+        out.write(f'companion-job={str(companion_job_selected(plan)).lower()}\n')
+        out.write('validation-harness-os=' + json.dumps(validation_harness_oses(plan), separators=(',', ':')) + '\n')
         for name in ('companions', 'desktops', 'apps'):
             out.write(name + '=' + json.dumps(plan[name], separators=(',', ':')) + '\n')
             out.write(name + '-enabled=' + str(bool(plan[name])).lower() + '\n')

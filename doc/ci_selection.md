@@ -57,6 +57,17 @@ enforces the threshold and uploads to Codecov. The aggregate requires the
 shards (`SHARD_JOBS` in the selector) as well as that job whenever Linux
 coverage is selected.
 
+Checks share a job to stay under GitHub Free's limit of 5 concurrent macOS jobs
+across the owner's repositories, and each keeps its own selection on its step:
+`Companion Packages (macOS)` runs when companion packages, `Test Native` or the
+validation harness is selected, then runs the selected companion packages, the
+validation process memory test and the Apple companion cache-transition test,
+each even if an earlier one failed. On Windows the process memory test runs in
+`Test Native` when that job is selected, and otherwise in a
+`Validation harness` matrix leg, so a validation-only change starts no native
+tests. The Genkit job runs Dart 3.12.0 lower bounds on a fresh tree before it
+sets up Flutter, so `FLUTTER_ROOT` and Flutter's Dart cannot affect them.
+
 `Example Package Tests` runs the model-free tests (`--exclude-tags
 local-only`) of every example package except the chat app, which Web Chat
 covers, as one Ubuntu job in the full graph. `ci_workflow_selection_test.dart`

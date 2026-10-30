@@ -25,8 +25,9 @@ jobs:
       docs-check: ${{ steps.select.outputs.docs-check }}
       docs-versions: ${{ steps.select.outputs.docs-versions }}
       validation-harness: ${{ steps.select.outputs.validation-harness }}
+      validation-harness-os: ${{ steps.select.outputs.validation-harness-os }}
       validation-integration: ${{ steps.select.outputs.validation-integration }}
-      companion-packages: ${{ steps.select.outputs.companion-packages }}
+      companion-job: ${{ steps.select.outputs.companion-job }}
       test-linux-coverage: ${{ steps.select.outputs.test-linux-coverage }}
       test-web: ${{ steps.select.outputs.test-web }}
       web-chat-contract: ${{ steps.select.outputs.web-chat-contract }}
@@ -34,7 +35,6 @@ jobs:
       native-prompt-reuse-parity: ${{ steps.select.outputs.native-prompt-reuse-parity }}
       artifact-contract: ${{ steps.select.outputs.artifact-contract }}
       genkit: ${{ steps.select.outputs.genkit }}
-      genkit-lower-bounds: ${{ steps.select.outputs.genkit-lower-bounds }}
       example-packages: ${{ steps.select.outputs.example-packages }}
       model-store: ${{ steps.select.outputs.model-store }}
     steps:
@@ -50,22 +50,45 @@ jobs:
   genkit:
     needs: changes
     if: needs.changes.outputs.genkit == 'true'
-    name: Genkit (published and local core)
+    name: Genkit (lower bounds, published and local core)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Before Flutter on purpose: flutter-action puts its own dart first on PATH
+      # and sets FLUTTER_ROOT, which would let a Flutter-only dependency resolve.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.12.0
+      - name: Resolve independent minimum dependencies
+        working-directory: packages/genkit_llamadart
+        run: |
+          dart --version
+          dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.17.0 schemantic@1.0.0
+      - name: Analyze and test minimum dependencies
+        working-directory: packages/genkit_llamadart
+        run: |
+          dart analyze --fatal-infos
+          TMPDIR="$(mktemp -d)" dart test -x real-model
+      - name: Restore the package after the minimum dependency check
+        if: ${{ !cancelled() }}
+        run: |
+          git restore -- packages/genkit_llamadart
+          git clean -fdxq -- packages/genkit_llamadart
       - uses: subosito/flutter-action@v2
+        if: ${{ !cancelled() }}
         with:
           flutter-version: 3.47.1
           channel: stable
           cache: true
       - name: Verify published dependencies, docs and archive
+        if: ${{ !cancelled() }}
         working-directory: packages/genkit_llamadart
         run: |
+          dart --version
           dart pub upgrade
           dart format --output=none --set-exit-if-changed .
           dart analyze --fatal-infos
@@ -73,12 +96,14 @@ jobs:
           python3 .github/check_docs.py
           TMPDIR="$(mktemp -d)" dart test -x real-model
       - name: Verify standalone adapter archive and score
+        if: ${{ !cancelled() }}
         run: |
           python3 tool/release/stage_genkit_package.py "$RUNNER_TEMP/genkit-package"
           (cd "$RUNNER_TEMP/genkit-package" && dart pub get && dart pub publish --dry-run)
           dart pub global activate pana
           python3 tool/ci/check_genkit_package_score.py "$RUNNER_TEMP/genkit-package"
       - name: Test adapter against checkout core
+        if: ${{ !cancelled() }}
         working-directory: packages/genkit_llamadart
         run: |
           printf 'dependency_overrides:\n  llamadart:\n    path: ../..\n' > pubspec_overrides.yaml
@@ -86,16 +111,19 @@ jobs:
           dart analyze --fatal-infos
           TMPDIR="$(mktemp -d)" dart test -x real-model
       - name: Cache existing real-model fixtures
+        if: ${{ !cancelled() }}
         uses: actions/cache@v6
         with:
           path: packages/genkit_llamadart/.dart_tool/llamadart_test_models
           key: ${{ runner.os }}-genkit-models-${{ hashFiles('packages/genkit_llamadart/test/integration/genkit/test_support/real_model_test_support.dart') }}
       - name: Run existing native real-model contracts
+        if: ${{ !cancelled() }}
         working-directory: packages/genkit_llamadart
         env:
           LLAMADART_AUTO_DOWNLOAD_TEST_MODELS: '1'
         run: TMPDIR="$(mktemp -d)" dart test -t real-model -j 1
       - name: Verify browser contracts against checkout core
+        if: ${{ !cancelled() }}
         working-directory: packages/genkit_llamadart
         run: >-
           dart test -p chrome
@@ -118,26 +146,6 @@ jobs:
         if: always()
         working-directory: packages/genkit_llamadart
         run: rm -f pubspec_overrides.yaml
-
-  genkit-lower-bounds:
-    needs: changes
-    if: needs.changes.outputs.genkit-lower-bounds == 'true'
-    name: Genkit (minimum Dart and lower bounds)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: 3.12.0
-      - name: Resolve independent minimum dependencies
-        working-directory: packages/genkit_llamadart
-        run: dart pub add crypto@3.0.7 genkit@1.0.0 http@1.6.0 llamadart@0.17.0 schemantic@1.0.0
-      - name: Analyze and test
-        working-directory: packages/genkit_llamadart
-        run: |
-          dart analyze --fatal-infos
-          TMPDIR="$(mktemp -d)" dart test -x real-model
 
   model-store:
     needs: changes
@@ -263,6 +271,8 @@ jobs:
       - name: Check Pana Score
         run: flutter pub global run pana . --exit-code-threshold 0
 
+  # macOS runs process_memory_test in companion-packages. Windows runs it in
+  # Test Native when that job is selected, and in this matrix otherwise.
   validation-harness:
     needs: changes
     if: needs.changes.outputs.validation-harness == 'true'
@@ -272,13 +282,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            tests: ''
-          - os: macos-latest
-            tests: test/process_memory_test.dart
-          - os: windows-latest
-            tests: test/process_memory_test.dart
+        os: ${{ fromJSON(needs.changes.outputs.validation-harness-os) }}
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -291,19 +295,18 @@ jobs:
       - if: matrix.os == 'ubuntu-latest'
         run: dart analyze --fatal-infos
         working-directory: packages/llamadart_validation
-      - run: dart test ${{ matrix.tests }}
+      - run: dart test ${{ matrix.os == 'windows-latest' && 'test/process_memory_test.dart' || '' }}
         working-directory: packages/llamadart_validation
 
+  # One macOS job holds every macOS check that does not need Test Native:
+  # GitHub Free allows 5 concurrent macOS jobs across all of the owner's repos.
+  # Every step runs even if an earlier one failed, as separate jobs would.
   companion-packages:
     needs: changes
-    if: needs.changes.outputs.companion-packages == 'true'
-    name: Companion Package (${{ matrix.package }})
+    if: needs.changes.outputs.companion-job == 'true'
+    name: Companion Packages (macOS)
     runs-on: macos-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.changes.outputs.companions) }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
@@ -314,65 +317,38 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
-        working-directory: ${{ matrix.package }}
+      - name: Check llamadart_llama_cpp_flutter
+        if: ${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), 'packages/llamadart_llama_cpp_flutter') }}
+        uses: ./.github/actions/companion-package
+        with:
+          package: packages/llamadart_llama_cpp_flutter
+
+      - name: Check llamadart_litert_lm_flutter
+        if: ${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), 'packages/llamadart_litert_lm_flutter') }}
+        uses: ./.github/actions/companion-package
+        with:
+          package: packages/llamadart_litert_lm_flutter
+
+      - name: Check llamadart_stable_diffusion_flutter
+        if: ${{ !cancelled() && contains(fromJSON(needs.changes.outputs.companions), 'packages/llamadart_stable_diffusion_flutter') }}
+        uses: ./.github/actions/companion-package
+        with:
+          package: packages/llamadart_stable_diffusion_flutter
+
+      - name: Test validation process memory
+        if: ${{ !cancelled() && needs.changes.outputs.validation-harness == 'true' }}
+        working-directory: packages/llamadart_validation
+        run: |
+          dart pub get
+          dart test test/process_memory_test.dart
+
+      - name: Install root dependencies for the Apple companion cache check
+        if: ${{ !cancelled() && needs.changes.outputs.test-other-os == 'true' }}
         run: flutter pub get
 
-      - name: Check formatting
-        working-directory: ${{ matrix.package }}
-        run: dart format --output=none --set-exit-if-changed .
-
-      - name: Analyze
-        working-directory: ${{ matrix.package }}
-        run: flutter analyze
-
-      - name: Test
-        working-directory: ${{ matrix.package }}
-        run: flutter test
-
-      - name: Validate SwiftPM manifest
-        working-directory: ${{ matrix.package }}
-        run: |
-          package_name="$(basename "$PWD")"
-          swift package --package-path "darwin/$package_name" dump-package >/dev/null
-
-      # dump-package never downloads binary targets; resolving fetches each
-      # pinned XCFramework and fails if its checksum does not match.
-      - name: Resolve SwiftPM binary targets
-        working-directory: ${{ matrix.package }}
-        run: |
-          package_name="$(basename "$PWD")"
-          swift package --package-path "darwin/$package_name" \
-            --scratch-path "$RUNNER_TEMP/$package_name-spm" resolve
-
-      - name: Check the lane leaves the package unchanged
-        working-directory: ${{ matrix.package }}
-        run: |
-          changes="$(git status --porcelain --untracked-files=all -- .)"
-          if [ -n "$changes" ]; then
-            printf '%s\n' "$changes"
-            echo "::error::The companion lane modified tracked or untracked files; commit the migration or ignore the output."
-            exit 1
-          fi
-
-      # A release-prep PR constrains companions to a core version that is not
-      # on pub.dev until after merge, so resolve llamadart from this checkout.
-      # The real publish resolves it from pub.dev, after the core publishes.
-      - name: Publish dry-run
-        working-directory: ${{ matrix.package }}
-        run: |
-          tmp_package="$RUNNER_TEMP/$(basename "$PWD")-publish"
-          rm -rf "$tmp_package"
-          mkdir -p "$tmp_package"
-          rsync -a --delete \
-            --exclude='.dart_tool' \
-            --exclude='build' \
-            --exclude='pubspec.lock' \
-            --exclude='pubspec_overrides.yaml' \
-            ./ "$tmp_package/"
-          printf 'dependency_overrides:\n  llamadart:\n    path: %s\n' \
-            "$GITHUB_WORKSPACE" > "$tmp_package/pubspec_overrides.yaml"
-          (cd "$tmp_package" && flutter pub publish --dry-run)
+      - name: Verify Flutter Apple companion cache transitions
+        if: ${{ !cancelled() && needs.changes.outputs.test-other-os == 'true' }}
+        run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
 
   docs-check:
     needs: changes
@@ -856,7 +832,6 @@ jobs:
       - native-prompt-reuse-parity
       - artifact-contract
       - genkit
-      - genkit-lower-bounds
       - example-packages
       - model-store
     steps:
@@ -930,9 +905,16 @@ jobs:
         shell: bash
         run: bash tool/ci/litert_lm_temp_canary.sh check
 
-      - name: Verify Flutter Apple companion cache transitions
-        if: runner.os == 'macOS'
-        run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
+      # Two steps: Windows PowerShell would ignore a failing first command.
+      - name: Install validation harness dependencies
+        if: ${{ !cancelled() && runner.os == 'Windows' && needs.changes.outputs.validation-harness == 'true' }}
+        working-directory: packages/llamadart_validation
+        run: dart pub get
+
+      - name: Test validation process memory
+        if: ${{ !cancelled() && runner.os == 'Windows' && needs.changes.outputs.validation-harness == 'true' }}
+        working-directory: packages/llamadart_validation
+        run: dart test test/process_memory_test.dart
 
       - name: Summarize native test timing
         if: ${{ !cancelled() && hashFiles('.dart_tool/native_test_events.jsonl') != '' }}

@@ -393,6 +393,15 @@ void main() {
       );
     });
 
+    test('classifies composite actions like the workflows that call them', () {
+      expect(
+        assessHighRiskFiles([
+          '.github/actions/companion-package/action.yml',
+        ]).surfaces,
+        {HighRiskSurface.regressionPolicy},
+      );
+    });
+
     test('normalizes blank input and prints deterministic surfaces', () {
       final assessment = assessHighRiskFiles([
         '',
