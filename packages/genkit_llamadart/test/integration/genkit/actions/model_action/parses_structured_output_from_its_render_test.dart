@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:genkit/genkit.dart' as genkit;
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:test/test.dart';
@@ -15,6 +17,7 @@ void main() {
     String templateSource,
     String output, {
     required bool enableThinking,
+    llama.ChatFormat format = llama.ChatFormat.seedOss,
   }) {
     final runtime = FakeRuntime()
       ..templateResult = llama.ChatTemplateEngine.render(
@@ -35,7 +38,7 @@ void main() {
         enableThinking: enableThinking,
       )
       ..generatedTokens = [output];
-    expect(runtime.templateResult.format, llama.ChatFormat.seedOss.index);
+    expect(runtime.templateResult.format, format.index);
     return testModelAction(runtime: runtime)(
       genkit.ModelRequest(
         messages: [
@@ -84,6 +87,58 @@ void main() {
     );
     expect(leading.text, '{"answer":"hi"}');
     expect(reasoning(leading), 'Plan');
+  });
+
+  group('Qwen3.5', () {
+    final qwen35 = File(
+      '../../test/fixtures/templates/Qwen3_5-0_8B.jinja',
+    ).readAsStringSync();
+
+    Future<genkit.ModelResponse> generateQwen35(
+      String output, {
+      required bool enableThinking,
+    }) => generate(
+      qwen35,
+      output,
+      enableThinking: enableThinking,
+      format: llama.ChatFormat.qwen3CoderXml,
+    );
+
+    // llama.cpp 620d2225 keeps these tags as content after the empty thought
+    // this template closes in the prompt: closed_thought_upstream.json.
+    test('with thinking off, keeps a thought in the content', () {
+      expect(
+        generateQwen35(
+          '<think>Plan</think>{"answer":"hi"}',
+          enableThinking: false,
+        ),
+        throwsA(
+          isA<genkit.GenkitException>().having(
+            (error) => error.status,
+            'status',
+            genkit.StatusCode.failedPrecondition,
+          ),
+        ),
+      );
+    });
+
+    test('with thinking off, returns plain JSON', () async {
+      final response = await generateQwen35(
+        '{"answer":"hi"}',
+        enableThinking: false,
+      );
+      expect(response.text, '{"answer":"hi"}');
+      expect(reasoning(response), isNull);
+    });
+
+    test('with thinking on, separates the thought from the JSON', () async {
+      final response = await generateQwen35(
+        'Plan\n</think>\n\n{"answer":"hi"}',
+        enableThinking: true,
+      );
+      expect(response.text, '{"answer":"hi"}');
+      expect(reasoning(response), 'Plan');
+    });
   });
 
   test('parses no tool call from output when no tool is declared', () async {

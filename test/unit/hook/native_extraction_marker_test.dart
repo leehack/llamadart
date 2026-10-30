@@ -177,6 +177,43 @@ void main() {
     expect(File('${marker.path}.tmp').existsSync(), isFalse);
   });
 
+  test(
+    'a marker write that fails leaves no .tmp and surfaces its error',
+    () async {
+      final failure = const FileSystemException('disk full');
+      final marker = nativeExtractionMarkerFile(extractedDir);
+      final before = marker.readAsStringSync();
+      await expectLater(
+        IOOverrides.runWithIOOverrides(
+          () => writeNativeExtractionMarker(
+            extractedDir: extractedDir,
+            archive: archive,
+            archiveSha256: archiveSha256,
+          ),
+          _FailingPendingWrite(failure),
+        ),
+        throwsA(same(failure)),
+      );
+      expect(File('${marker.path}.tmp').existsSync(), isFalse);
+      expect(marker.readAsStringSync(), before);
+    },
+  );
+
+  test('a .tmp that cannot be deleted does not hide the write error', () async {
+    final failure = const FileSystemException('disk full');
+    await expectLater(
+      IOOverrides.runWithIOOverrides(
+        () => writeNativeExtractionMarker(
+          extractedDir: extractedDir,
+          archive: archive,
+          archiveSha256: archiveSha256,
+        ),
+        _FailingPendingWrite(failure, deleteFailure: true),
+      ),
+      throwsA(same(failure)),
+    );
+  });
+
   test('a missing archive, marker or extraction does not match', () async {
     archive.renameSync('${archive.path}.moved');
     expect(await matches(), isFalse);
@@ -211,4 +248,48 @@ void main() {
     );
     expect(await matches(), isTrue);
   });
+}
+
+/// Makes the marker's `.tmp` fail its write after creating the file, as a full
+/// disk does, which no permission on a real directory can reproduce.
+final class _FailingPendingWrite extends IOOverrides {
+  _FailingPendingWrite(this.failure, {this.deleteFailure = false});
+
+  final FileSystemException failure;
+  final bool deleteFailure;
+
+  @override
+  File createFile(String path) {
+    final file = super.createFile(path);
+    return path.endsWith('.tmp') ? _FailingPendingFile(file, this) : file;
+  }
+}
+
+class _FailingPendingFile implements File {
+  _FailingPendingFile(this._file, this._overrides);
+
+  final File _file;
+  final _FailingPendingWrite _overrides;
+
+  @override
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async {
+    _file.writeAsStringSync(contents.substring(0, 1));
+    throw _overrides.failure;
+  }
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) {
+    if (_overrides.deleteFailure) {
+      throw const FileSystemException('delete denied');
+    }
+    return _file.delete(recursive: recursive);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
