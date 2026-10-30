@@ -240,7 +240,8 @@ CPU threads: `llama_encode` uses the private context's `n_threads_batch` for
 every sequence of more than one token, and the head passes the same count
 (`llama_n_threads_batch`) to the CPU registry's `ggml_backend_set_n_threads`.
 So `ModelParams.numberOfThreadsBatch` sets the CPU threads of both, and
-llama.cpp's default (4) applies when it is 0. `numberOfThreads` only reaches
+`resolveCpuThreads` picks 4, or the host's core count when lower, when it is 0.
+`numberOfThreads` only reaches
 one-token encoder passes, which `DecisionEngine` never builds.
 
 Load-time checks, each failing with a typed exception and each decided by a

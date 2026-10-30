@@ -246,7 +246,8 @@ class LlamaCppService {
   /// Creates the service; tests replace the runtime's first native call, the
   /// host probes behind its Windows load diagnostics, the Android check behind
   /// its backend and context policy, the iOS simulator and macOS x86_64
-  /// checks behind its backend policy, the raw `ggml_backend_dev_type` values a
+  /// checks behind its backend policy, the core count behind its default CPU
+  /// thread counts, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the ggml calls of decision heads, the
   /// calls that allocate and free per-request token batches and prepared
@@ -265,6 +266,7 @@ class LlamaCppService {
     bool? isAndroid,
     bool? isIosSimulator,
     bool? isMacosX64,
+    int? availableCores,
     List<String> Function(List<String> names) missingWindowsLibraries =
         findMissingWindowsLibraries,
     List<int> Function(GpuBackend backend)? deviceTypes,
@@ -288,6 +290,7 @@ class LlamaCppService {
        _isAndroid = isAndroid ?? Platform.isAndroid,
        _isIosSimulator = isIosSimulator ?? isIosSimulatorProcess(),
        _isMacosX64 = isMacosX64 ?? Abi.current() == Abi.macosX64,
+       _availableCores = availableCores ?? Platform.numberOfProcessors,
        _missingWindowsLibraries = missingWindowsLibraries,
        _deviceTypesOverride = deviceTypes,
        _objectCallsOverride = objectCalls,
@@ -311,6 +314,7 @@ class LlamaCppService {
   final bool _isAndroid;
   final bool _isIosSimulator;
   final bool _isMacosX64;
+  final int _availableCores;
   final List<String> Function(List<String> names) _missingWindowsLibraries;
   final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   final LlamaCppObjectCalls? _objectCallsOverride;
@@ -3642,8 +3646,7 @@ class LlamaCppService {
     ctxParams.n_ubatch = resolvedBatchSizes.microBatchSize;
     ctxParams.n_seq_max = resolvedMaxParallelSequences;
     ctxParams.n_rs_seq = params.speculativeRollbackTokenMax;
-    ctxParams.n_threads = params.numberOfThreads;
-    ctxParams.n_threads_batch = params.numberOfThreadsBatch;
+    applyContextThreads(ctxParams, params, availableCores: _availableCores);
     if (resolvedMaxParallelSequences > 1) {
       // Keep per-sequence context at full n_ctx when multiple sequence slots
       // are enabled so regular generation behavior is unchanged.
@@ -7959,6 +7962,8 @@ class LlamaCppService {
       }
     }
     ctxParams.cb_eval = _ttsEvalCallback();
+    // ModelParams thread counts never reached mtmd, which defaults to 4.
+    ctxParams.n_threads = resolveCpuThreads(0, availableCores: _availableCores);
     return ctxParams;
   }
 
@@ -9057,6 +9062,7 @@ class LlamaCppService {
         params,
         maxTokens: maxTokens,
         runsOnCpu: runsOnCpu,
+        availableCores: _availableCores,
       );
       if (!runsOnCpu &&
           shouldUseConservativeAndroidVulkanContextConfig(
