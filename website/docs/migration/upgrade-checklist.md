@@ -58,7 +58,7 @@ For the breaking 0.14-to-0.15 changes, follow the
 Use `embeddingCapabilities` for ordered media embeddings; chat media support
 does not establish embedding support. Check the
 [embedding guide](../guides/embeddings) for qualified model/backend pairs, and
-[Image generation](../guides/image-generation) for the physical-device limits.
+[Image generation memory and limits](../guides/image-generation-memory-and-limits) for the physical-device limits.
 
 ### 0.14: unsupported options and structured output
 
