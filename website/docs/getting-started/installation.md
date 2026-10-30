@@ -84,44 +84,23 @@ dependency_overrides:
     git: https://github.com/leehack/llamadart.git
 ```
 
-Use llama.cpp companion `0.17.1` with core `>=0.17.1 <0.18.0` for native
-`v0.8.0`. A locked companion `0.17.0` keeps `v0.7.0-3` and works with those
-cores with an upgrade warning; core `0.17.0` needs it. Use `0.16.0` with core `0.16.x`, or `0.15.2` with core `>=0.15.6 <0.16.0`, for
-native `v0.7.0-2`. Locked `0.15.0`/`0.15.1` companions
-keep `v0.7.0-1` and work with core `0.15.6` with an upgrade warning, or pair
-with core `0.15.0` to `0.15.5`.
-Pair `0.14.0` with core `0.14.x` for `v0.7.0`, `0.13.0` with core `0.13.x`, and `0.0.23` with
-core `0.12.2`;
-keep `0.0.22` with core `0.12.1`
-and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
-a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
-names the companion release of your core's minor to depend on, such as
-`^0.17.1` with core `0.17.1`. Core `0.17.1` requires a `v0.8.0` companion or a
-`v0.7.0-3` one with the warning above, and core `0.17.0` a `v0.7.0-3` one; both
-reject every earlier companion pin. Core `0.16.x` requires a `v0.7.0-2`
-companion or a `v0.7.0-1` one with the warning above. The stable_diffusion
-check accepts only the core's own SD pin, so core `0.17.x` needs SD companion
-`0.17.0` (`v0.3.0-1`), and core `0.16.x` SD companion `0.16.0` (`v0.3.0`). On macOS,
-`llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM runtime,
-including the GPU accelerators. The build uses it only when the resolved
-companion's `Package.swift` is the one this core release expects; any other
-companion keeps macOS LiteRT-LM in the hook cache with a build warning, and the
-app then needs the [build phase below](#flutter-macos-litert-lm-build-phase).
-A maintained companion pinning an earlier build of the core's LiteRT-LM
-release still embeds and loads its complete macOS arm64 runtime and needs no
-build phase; the build only warns to upgrade it. Companion `0.17.0` pins
-this core's `v0.18.1-4` and requires core `0.17.x`; companion `0.16.2` pins the
-same runtime for core `>=0.16.2 <0.17.0`. Companion `0.16.1` pins
-`v0.18.1-2`, which fixes nondeterministic CPU output and slow Gemma 4 CPU
-decode on SME2 CPUs, and companion `0.16.0` pins `v0.18.1`. Both are earlier
-builds of `v0.18.1-4`, so they build with that warning. Companions `0.0.15` to `0.15.2` pin `v0.18.0` builds, a
-different release from this core's `v0.18.1-4`, so they keep macOS LiteRT-LM in the hook
-cache with a warning to upgrade the companion and core together.
-On iOS the build does not check the LiteRT-LM companion pin. `v0.18.1-4`
-keeps the arm64-only macOS XCFrameworks introduced in `v0.18.0-1`, the
-`v0.18.0-2` reduction of duplicated words at untimed ASR window boundaries
-with the default overlap, and the `v0.18.0-3` loading of dedicated ASR
-`.litertlm` containers; other boundary and recognition errors can remain.
+Use companions with the core's `MAJOR.MINOR`; pub enforces it. The build also
+checks the resolved companions' runtime pins and fails on a mismatch or on an
+unverified local `Artifacts` override. The llama.cpp error names the companion
+release to depend on, such as `^0.17.1` with core `0.17.1`. A companion that pins
+a compatible earlier llama.cpp build is accepted with an upgrade warning; the
+stable_diffusion check accepts only the core's own pin.
+
+On macOS, `llamadart_litert_lm_flutter` links and embeds the complete LiteRT-LM
+runtime, including the GPU accelerators. The build uses it only when the
+resolved companion's `Package.swift` is the one this core release expects; any
+other companion keeps macOS LiteRT-LM in the hook cache with a build warning,
+and the app then needs the
+[build phase below](#flutter-macos-litert-lm-build-phase). A maintained
+companion pinning an earlier build of the core's LiteRT-LM release still embeds
+and loads its complete macOS arm64 runtime and needs no build phase; the build
+only warns to upgrade it. On iOS the build does not check the LiteRT-LM
+companion pin.
 
 The companion's macOS XCFrameworks are published for arm64 only, so a
 universal `flutter build macos` prints
@@ -129,14 +108,7 @@ universal `flutter build macos` prints
 architecture 'x86_64'` for each of them. The arm64-only build that
 [Intel Macs](#intel-macs) describes removes those warnings.
 
-Use `llamadart_stable_diffusion_flutter` `0.17.0` with core `0.17.x` for SD
-`v0.3.0-1`, `0.16.0` with core `0.16.x` for `v0.3.0`, or `0.15.2` with core
-`>=0.15.2 <0.16.0` for `v0.2.0-4`. Locked
-`0.15.0`/`0.15.1` SD companions keep their older runtime and work with core
-`0.15.2` with an upgrade warning. Pair `0.14.0` with core `0.14.x`,
-`0.13.0` with core `0.13.x`, and
-`0.0.3` with core `0.12.2`, `0.12.1` and `0.12.0`. Keep `0.0.2` with core `0.11.1` and `0.11.0`, and `0.0.1` with core
-`0.10.0`; older cores, including `0.9.x`, ignore it. Adding it opts iOS and
+Add `llamadart_stable_diffusion_flutter` at the core's `MAJOR.MINOR` for Apple image generation. Adding it opts iOS and
 macOS builds into the image generation runtime (about 37 MB per Apple
 target) on its own and leaves the other
 runtimes on their current path, so leave it out unless the app uses
@@ -145,23 +117,17 @@ hook-bundled runtime, whose iOS framework `MinimumOSVersion` App Store Connect
 rejects; only Xcode and `xcodebuild` show the build warning about it.
 
 An app bound for the App Store should use the companion for each runtime it
-ships, because an Apple privacy manifest reaches an app inside a companion's
-XCFramework and never through the hook path. The llama.cpp XCFramework has one
-from `llamadart-native` `v0.5.0-1`, and the stable_diffusion one from
-`stable-diffusion-native` `v0.2.0-1`.
-An app that runs llama.cpp or stable_diffusion on the hook path, or whose
-embedded `llama.framework` or `stable_diffusion.framework` has no
-`PrivacyInfo.xcprivacy`, declares the runtime's required-reason API use in its
-own `PrivacyInfo.xcprivacy`. The LiteRT-LM iOS frameworks have their own
-manifests from `litert-lm-native` `v0.17.0-8`; an app that runs LiteRT-LM on
-the hook path, or whose embedded LiteRT-LM frameworks have none, declares that
-runtime's three categories itself. Copy the categories and codes from
+ships: a companion's XCFramework carries the Apple privacy manifest, and the
+hook path does not. An app that runs llama.cpp, stable_diffusion or LiteRT-LM on
+the hook path, or whose embedded framework has no `PrivacyInfo.xcprivacy`,
+declares that runtime's required-reason API use in its own
+`PrivacyInfo.xcprivacy`. Copy the categories and codes from
 [Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest).
 
 ### Intel Macs
 
 LiteRT-LM is not available on x86_64 macOS, on an Intel Mac or under Rosetta.
-From `v0.18.0-1`, `litert-lm-native` publishes macOS runtimes for arm64 only
+`litert-lm-native` publishes macOS runtimes for arm64 only
 ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
 llama.cpp runs on both architectures. On x86_64, Rosetta included,
 llama.cpp `GpuBackend.auto` runs on the CPU, because Metal returns garbled
@@ -238,31 +204,21 @@ a consumer bootstrap, not a Flutter SDK fix; the upstream defect is tracked in
 [flutter/flutter#186804](https://github.com/flutter/flutter/issues/186804) and
 [flutter/flutter#162196](https://github.com/flutter/flutter/issues/162196).
 
-A fresh ordinary `flutter build macos --debug` succeeds on our Xcode 27.1 host
-with Flutter 3.47.1. The original first-build failure was reported with Xcode
-27; the bootstrap is for affected toolchains and direct Xcode builds before
-Flutter has updated the generated floor. iOS still requires Runner's 16.4 floor;
-no iOS manifest workaround is needed for the verified fresh
-`flutter build ios --simulator`. Direct Xcode iOS builds are unverified.
+iOS still requires Runner's 16.4 floor; no iOS manifest workaround is needed.
 
 ### Flutter macOS LiteRT-LM build phase
 
-A Flutter macOS app gets the LiteRT-LM runtime in its bundle only from a
-`llamadart_litert_lm_flutter` that matches the core. With llamadart `0.12.0`
-and earlier, with companion `0.0.14` or earlier, or without the companion,
-the build hook leaves the libraries in its cache inside the resolved
-`llamadart` package, and the app loads them from there only when it runs unsandboxed, on
-the build machine, from inside the project. Under the App Sandbox, which
-`flutter create` turns on, and in any copied or distributed app, the first
-LiteRT-LM generation on CPU or GPU throws
-`Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`, or
-`'libLiteRtMetalAccelerator.dylib'` with llamadart `0.12.0` and a newer
-companion
+Skip this section if the app depends on `llamadart_litert_lm_flutter`; it
+embeds the runtime. Only without that companion, the build hook leaves the
+LiteRT-LM libraries in its cache inside the resolved `llamadart` package, and
+the app loads them from there only when it runs unsandboxed, on the build
+machine, from inside the project. Under the App Sandbox, which `flutter create`
+turns on, and in any copied or distributed app, the first LiteRT-LM generation
+on CPU or GPU throws `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`
 ([#1029](https://github.com/leehack/llamadart/issues/1029)). llama.cpp is not
 affected.
 
-Upgrade the core and the companion together. Until then, add a build phase
-that copies the runtime into the app:
+Add a build phase that copies the runtime into the app:
 
 1. Open `macos/Runner.xcworkspace` in Xcode and select the **Runner** target.
 2. In **Build Phases**, add a **New Run Script Phase** and drag it to the end

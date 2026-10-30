@@ -102,12 +102,7 @@ selects Vulkan, which it does by default; set
 Flutter iOS and macOS apps should also add the companion package, which links
 the runtime's XCFramework through Swift Package Manager and selects the
 runtime on those platforms by itself, adding about 37 MB per Apple target.
-Pair `0.17.0` with core `0.17.x`, `0.16.0` with core `0.16.x`, `0.15.2` with
-core `>=0.15.2 <0.16.0`,
-`0.14.0` with core `0.14.x`, `0.13.0` with core
-`0.13.x`, `0.0.3` with core
-`0.12.2`, `0.12.1` and
-`0.12.0`, and `0.0.2` with core `0.11.1` and `0.11.0`. Cores older than `0.10.0` ignore it:
+Use the companion with the core's `MAJOR.MINOR`:
 
 ```yaml
 dependencies:
@@ -124,9 +119,8 @@ iOS 16.4, so App Store Connect rejects the iOS upload. The iOS build reports
 this as an Xcode build warning, which Xcode and `xcodebuild` show but plain
 `flutter build` and `flutter run` output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
-The hook-bundled runtime also cannot carry an Apple privacy manifest. The
-companion's XCFramework carries one from `stable-diffusion-native` `v0.2.0-1`,
-which `llamadart_stable_diffusion_flutter` releases after `0.0.1` link; see
+The hook-bundled runtime also cannot carry an Apple privacy manifest; the
+companion's XCFramework does. See
 [Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest)
 for the File Timestamp reasons (`C617.1`, `3B52.1`) an app declares itself
 when its `stable_diffusion.framework` has no manifest.
@@ -1159,9 +1153,7 @@ final engine = await ImageGenerationEngine.load(model);
 - A `stable_diffusion` runtime older than `stable-diffusion-native`
   `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
-The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
-`v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
+The core accepts only an Apple SD companion pinning its own runtime; upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
 ## Errors

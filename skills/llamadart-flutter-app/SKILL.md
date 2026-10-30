@@ -145,21 +145,14 @@ or shipping runtimes the app does not use.
 - LiteRT-LM on iOS: 16.4 is the declared deployment floor, not a tested one.
   On a device it has run only on an iPhone 16 Pro with iOS 18.3.2, so test
   older iOS versions before supporting them.
-- App Store builds should use the companion for each runtime they ship: an
-  Apple privacy manifest reaches an app inside a companion's XCFramework,
-  never in hook-bundled dylibs. The llama.cpp XCFramework has one from
-  `llamadart-native` `v0.5.0-1` (`llamadart_llama_cpp_flutter` releases after
-  `0.0.20`), and the stable_diffusion one from `stable-diffusion-native`
-  `v0.2.0-1` (`llamadart_stable_diffusion_flutter` releases after `0.0.1`).
-  When llama.cpp or
-  stable_diffusion runs on the hook path, or the embedded `llama.framework` or
-  `stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, add
-  `NSPrivacyAccessedAPICategoryFileTimestamp` to the app's own
-  `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1` only when it
-  ships stable_diffusion. The LiteRT-LM iOS frameworks carry their own
-  manifests from `litert-lm-native` `v0.17.0-8` (`llamadart_litert_lm_flutter`
-  releases after `0.0.12`). When LiteRT-LM runs on the hook path, or its
-  embedded frameworks have no `PrivacyInfo.xcprivacy`, add File Timestamp
+- App Store builds should use the companion for each runtime they ship: a
+  companion's XCFramework carries the Apple privacy manifest, and hook-bundled
+  dylibs do not. When llama.cpp or stable_diffusion runs on the hook path, or
+  the embedded `llama.framework` or `stable_diffusion.framework` has no
+  `PrivacyInfo.xcprivacy`, add `NSPrivacyAccessedAPICategoryFileTimestamp` to
+  the app's own `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1`
+  only when it ships stable_diffusion. When LiteRT-LM runs on the hook path, or
+  its embedded frameworks have no `PrivacyInfo.xcprivacy`, add File Timestamp
   (`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
   (`CA92.1`) to the app's own manifest.
 - When the llama.cpp or LiteRT-LM companion is present, the installed
