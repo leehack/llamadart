@@ -13,8 +13,7 @@ across apps, without one app deleting a model another still uses.
 - `ModelStore` implements `ModelDownloadManager`, so it plugs into
   `ModelDownloadController` and `ModelFileStore(downloadManager: store)`.
 
-This package is versioned independently of core and is not yet published. It
-requires `llamadart` 0.17.
+This package is versioned independently of core. It requires `llamadart` 0.17.
 
 ## Use the store when the app has one, else the app cache
 
