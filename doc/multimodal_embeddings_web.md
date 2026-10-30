@@ -39,17 +39,12 @@ Bridge source contract inspected read-only at
 restore and structured-clone ownership; those are bridge responsibilities.
 
 Qualification target: EmbeddingGemma-2 BF16 with its matching
-mmproj and pinned assets `v0.1.76` on Chrome CPU wasm memory64
-(`gpuLayers: 0`). The latest rerun, exact-artifact provenance and lifecycle
-results, on `v0.1.66`, are tracked in
-[PR 1205](https://github.com/leehack/llamadart/pull/1205); the table below
-retains its original artifact identity. The current pin adds URL
-resolution, teardown, state-file, truncated-snapshot, UTF-8 decoding,
-string-embedding rejection, download-progress, draft-allocation and
-projector-memory fixes, and (since `v0.1.75`) lazy-grammar options that
-llamadart does not use yet ([llama-web-bridge#199](https://github.com/leehack/llama-web-bridge/pull/199)), on the same llama.cpp, passed the
-bridge's hosted multimodal gate, and has not been rerun against these reference
-vectors.
+mmproj and pinned assets `v0.1.79` on Chrome CPU wasm memory64
+(`gpuLayers: 0`). The scenario below passes on that pin with the bridge's
+production worker budget, against references from the matching native `v0.8.0`.
+The table below retains the original `v0.1.66` lineage
+([PR 1205](https://github.com/leehack/llamadart/pull/1205)); the current pin
+stayed within its gates (minimum cosine 0.99997, maximum component difference 8.9e-4).
 
 The independent PR audit qualified the same model and projector with the
 then-pinned `v0.1.65` assets on Chrome CPU wasm memory64 (`gpuLayers: 0`).
@@ -134,14 +129,13 @@ scenario maps these to the bridge constructor's `coreModuleUrlMem64` and
 `wasmUrlMem64` and sets `preferMemory64: true`; the wasm32 `core`/`wasm` keys
 alone do not select memory64. It reports `llamadart.webgpu.core_variant` from
 runtime metadata and requires `wasm64`, so a wasm32 fallback fails qualification.
-The qualification constructor also sets `workerRequestTimeoutMs: 1200000`
-(20 minutes): real CPU media batches can exceed the bridge's two-minute
-default. It asserts the effective worker timeout and checks worker presence
-after each stage, so successful direct-runtime fallback cannot count as a
-worker pass. This is a qualification timeout, not a change to production defaults.
-The default budget can move slow CPU media batches to the direct runtime while
-still returning valid vectors; budget selection and fallback visibility are
-tracked in [bridge issue 165](https://github.com/leehack/llama-web-bridge/issues/165).
+The constructor sets no `workerRequestTimeoutMs`, so the scenario runs on the
+bridge's production budget, on the pinned assets 10 minutes per input for a
+media request ([llama-web-bridge#165](https://github.com/leehack/llama-web-bridge/issues/165)).
+It asserts that budget and checks worker presence after each stage, so a
+successful direct-runtime fallback cannot count as a worker pass. Earlier assets
+moved a batch that took over two minutes to the direct runtime while still
+returning valid vectors.
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario web-multimodal-embeddings --dry-run

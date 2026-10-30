@@ -71,10 +71,7 @@ void main() {
       'wasmMem64',
     );
     expect(config.getProperty<JSBoolean>('preferMemory64'.toJS).toDart, isTrue);
-    expect(
-      config.getProperty<JSNumber>('workerRequestTimeoutMs'.toJS).toDartDouble,
-      1200000,
-    );
+    expect(config.has('workerRequestTimeoutMs'), isFalse);
   });
   for (final isPending in [true, false]) {
     test(
@@ -181,14 +178,20 @@ void main() {
         );
         if (worker) {
           final proxy = _expectWorkerState(bridge, true, 'initialization')!;
+          final mediaBatch = [
+            [
+              {'type': 'image'},
+            ],
+          ].jsify();
           expect(
             proxy
                 .callMethod<JSNumber>(
                   '_resolveRequestTimeoutMs'.toJS,
                   'embedBatch'.toJS,
+                  [mediaBatch].jsify(),
                 )
                 .toDartDouble,
-            1200000,
+            const Duration(minutes: 10).inMilliseconds,
           );
         }
         final caps = await engine.embeddingCapabilities;
@@ -405,6 +408,9 @@ void main() {
           );
         }
       },
+      // The direct runtime blocks the page, so the test runner's heartbeat
+      // cannot extend the e2e tag's 15 minutes between stages.
+      timeout: const Timeout(Duration(minutes: 60)),
     );
   }
 }
@@ -437,6 +443,9 @@ JSObject? _expectWorkerState(
   bool worker,
   String stage,
 ) {
+  print(
+    'EMBEDDING_STAGE ${worker ? 'worker' : 'direct'} $stage ${DateTime.now()}',
+  );
   final proxy = (bridge as JSObject).getProperty<JSObject?>(
     '_workerProxy'.toJS,
   );
@@ -495,8 +504,6 @@ Future<void> _interruptWorkerEmbedding(
 JSObject _bridgeConfig(bool worker, String Function(String) url) {
   return JSObject()
     ..setProperty('disableWorker'.toJS, (!worker).toJS)
-    // Real media batches can exceed the bridge's two-minute default on CPU.
-    ..setProperty('workerRequestTimeoutMs'.toJS, 1200000.toJS)
     ..setProperty('workerUrl'.toJS, url('worker').toJS)
     ..setProperty('coreModuleUrl'.toJS, url('core').toJS)
     ..setProperty('wasmUrl'.toJS, url('wasm').toJS)

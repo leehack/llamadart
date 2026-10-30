@@ -19,7 +19,15 @@
 ///   `LlamaUnsupportedException`, and an encoder input over the micro-batch
 ///   throws `LlamaEmbeddingInputTooLongException`, instead of returning
 ///   an invalid vector built from classifier scores or a vector of part of the input (`v0.1.73+`,
-///   [#121](https://github.com/leehack/llama-web-bridge/issues/121)).
+///   [#121](https://github.com/leehack/llama-web-bridge/issues/121));
+/// - llama.cpp `v0.8.0` refuses a grammar chained past 256 levels with a typed
+///   error and keeps the runtime, and generated schema grammars with more than
+///   128 optional properties stay below that limit;
+/// - `GenerationParams.grammarLazy` stays rejected even though the bridge
+///   reports `lazyGrammar`
+///   ([#1480](https://github.com/leehack/llamadart/issues/1480));
+/// - a llama.cpp `v0.8.0` Soprano or LFM3 Audio projector is not reported as
+///   text-to-speech.
 ///
 /// The test runner serves the package root, so the files must sit under
 /// `build/webgpu_bridge_fixes_e2e/` (gitignored), hard-linked or copied there
@@ -35,6 +43,10 @@
 ///   "image": "media/red_square.png",
 ///   "rerankerModel": "models/qwen3-reranker-0.6b-q8_0.gguf",
 ///   "encoderModel": "models/modernbert-mean-pooled.gguf",
+///   "sopranoModel": "models/Soprano-1.1-80M-F16.gguf",
+///   "sopranoProjector": "models/mmproj-Soprano-1.1-80M-F16.gguf",
+///   "lfm3AudioModel": "models/LFM3-Audio-2B-Q4_K_M.gguf",
+///   "lfm3AudioProjector": "models/mmproj-LFM3-Audio-2B-Q8_0.gguf",
 ///   "gpuLayers": 0
 /// }
 /// ```
@@ -69,7 +81,9 @@ import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, document, window;
 
@@ -329,6 +343,100 @@ void main() {
         },
       );
 
+      test(
+        'a grammar chained past 256 levels throws and keeps the runtime',
+        () async {
+          await load('model');
+          const shallow = GenerationParams(maxTokens: 2, seed: 7);
+          await expectLater(
+            engine
+                .generate(
+                  'Once',
+                  params: shallow.copyWith(grammar: _chainedGrammar(400)),
+                )
+                .join(),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+          expect(await generate(), isNotEmpty);
+          expect(
+            await engine
+                .generate(
+                  'Once',
+                  params: shallow.copyWith(grammar: _chainedGrammar(100)),
+                )
+                .join(),
+            isNotEmpty,
+          );
+          expectRuntime('grammar depth rejection');
+        },
+      );
+
+      for (final count in [129, 300, 1023]) {
+        test('a schema with $count optional properties generates', () async {
+          await load('model');
+          final grammar = JsonSchemaConverter.convert(<String, dynamic>{
+            'type': 'object',
+            'properties': {
+              for (var i = 0; i < count; i++) 'p$i': {'type': 'integer'},
+            },
+            'additionalProperties': false,
+          });
+          final text = await engine
+              .generate(
+                'Once',
+                params: GenerationParams(
+                  maxTokens: 8,
+                  seed: 7,
+                  grammar: grammar,
+                ),
+              )
+              .join();
+          expect(text, startsWith('{'));
+          expectRuntime('long optional-property grammar');
+        });
+      }
+
+      test(
+        'a lazy grammar stays rejected while the bridge reports it',
+        () async {
+          await load('model');
+          final probe = await bridge.getCompletionCapabilities()!.toDart;
+          expect((probe! as JSObject)['lazyGrammar'].dartify(), isTrue);
+          await expectLater(
+            engine
+                .generate(
+                  'Once',
+                  params: const GenerationParams(
+                    maxTokens: 2,
+                    grammar: 'root ::= "a"',
+                    grammarLazy: true,
+                  ),
+                )
+                .join(),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        },
+      );
+
+      for (final (name, model, projector) in const [
+        ('Soprano', 'sopranoModel', 'sopranoProjector'),
+        ('LFM3 Audio', 'lfm3AudioModel', 'lfm3AudioProjector'),
+      ]) {
+        test('$name is not reported as text-to-speech', () async {
+          await load(model);
+          await engine.loadMultimodalProjector(
+            _relativeToDocument(fixture(projector)),
+          );
+          final capabilities = await engine.backendTextToSpeechCapabilities;
+          print(
+            '[bridge-fixes] $runtime $name TTS: '
+            '${capabilities.unsupportedReason}',
+          );
+          expect(capabilities.isSupported, isFalse);
+          expectRuntime('$name capability probe');
+        });
+      }
+
       test('an image URL relative to the document resolves', () async {
         final image = fixture('image');
         final relative = _relativeToDocument(image);
@@ -365,6 +473,17 @@ void main() {
       });
     });
   }
+}
+
+/// A chain where each rule starts with something that can be empty, so
+/// llama.cpp's left-recursion check descends one level per rule.
+String _chainedGrammar(int depth) {
+  final rules = StringBuffer('root ::= r0\n');
+  for (var i = 0; i < depth; i++) {
+    rules.writeln('r$i ::= "a"? r${i + 1}');
+  }
+  rules.writeln('r$depth ::= "a"');
+  return rules.toString();
 }
 
 Future<Response> _fetch(Uri url) => window.fetch(url.toString().toJS).toDart;

@@ -370,8 +370,7 @@ repeated group, so about 2000 schema tools exceed it.
 The llama.cpp `v0.8.0` grammar parser also refuses a grammar nested or chained
 more than 256 levels deep. Generated schema grammars stay below that, including
 objects with 1023 optional properties. A hand-written `grammar` above it makes
-generation throw `LlamaInferenceException`; the Web bridge's older llama.cpp does
-not apply the check.
+generation throw `LlamaInferenceException`, on Web as on native.
 
 | Selected tool format | Canonical schema support |
 | --- | --- |
