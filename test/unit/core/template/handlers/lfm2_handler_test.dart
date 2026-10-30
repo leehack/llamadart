@@ -14,8 +14,9 @@ import 'package:test/test.dart';
 
 void main() {
   // Outputs and values of llama.cpp 620d2225 tests/test-chat.cpp
-  // test_lfm2_parser, whose <think> cases are out of scope here because this
-  // format deliberately parses calls inside thoughts.
+  // test_lfm2_parser. Its <think> cases are out of scope because this format
+  // deliberately parses calls inside thoughts, and its \n and \t cases because
+  // decoding those corrupts unescaped Windows paths.
   group('parses a call list as llama.cpp does', () {
     for (final (output, content, calls) in <(String, String, List<_Call>)>[
       ('[special_function(arg1=1)]', '', [('special_function', '{"arg1": 1}')]),
@@ -44,16 +45,6 @@ void main() {
                 '"metadata": {"priority": "high", "reminder": true}}',
           ),
         ],
-      ),
-      (
-        r'''[python(code="def hello():\n    print('hey')")]''',
-        '',
-        [('python', r'''{"code": "def hello():\n    print('hey')"}''')],
-      ),
-      (
-        r'[python(code="First line\nSecond line\tindented")]',
-        '',
-        [('python', r'{"code": "First line\nSecond line\tindented"}')],
       ),
       (
         r'[python(code="print(\"hi\")")]',
@@ -108,6 +99,18 @@ void main() {
               },
             }),
           ),
+        ],
+      );
+    });
+
+    test('with an escaped backslash', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          r'<|tool_call_start|>[save(a="C:\\new\\table")]<|tool_call_end|>',
+        ),
+        '',
+        [
+          ('save', jsonEncode({'a': r'C:\new\table'})),
         ],
       );
     });
@@ -167,6 +170,12 @@ void main() {
       for (final (arguments, expected) in [
         ('x={kk: 1}', {'x': '{kk: 1}'}),
         (r'y="\q"', {'y': r'\q'}),
+        (r'z="\frac{a}{b}"', {'z': r'\frac{a}{b}'}),
+        (r'z="C:\back"', {'z': r'C:\back'}),
+        (r'z="C:\repo"', {'z': r'C:\repo'}),
+        (r'z="C:\new"', {'z': r'C:\new'}),
+        (r'z="C:\table"', {'z': r'C:\table'}),
+        (r'z="a\nb", n=True', {'z': r'a\nb', 'n': 'True'}),
       ]) {
         _expectCalls(
           Lfm2Handler().parse(
@@ -225,6 +234,18 @@ void main() {
         );
       });
     }
+
+    test('counts depth along a value, not across its siblings', () {
+      final lists = List.filled(200, '[]').join(',');
+      final maps = List.filled(200, '{}').join(',');
+      final parsed = Lfm2Handler().parse(
+        '<|tool_call_start|>[f(x=[$lists], y=[$maps])]<|tool_call_end|>',
+      );
+      final arguments =
+          jsonDecode(parsed.toolCalls.single.function!.arguments!) as Map;
+      expect(arguments['x'], hasLength(200));
+      expect(arguments['y'], hasLength(200));
+    });
 
     test('keeps a value at the depth the wire format allows', () {
       final value = nested('[', ']', 127);

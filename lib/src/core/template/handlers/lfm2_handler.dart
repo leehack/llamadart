@@ -357,7 +357,8 @@ class Lfm2Handler extends ChatTemplateHandler {
 
 /// Reads the `[name(arg=value), ...]` list LFM2 writes, as llama.cpp's
 /// `python_style_tool_calls` and `normalize_quotes_to_json` do: values are
-/// Python or JSON literals, and strings decode their escapes.
+/// Python or JSON literals, and strings decode their quote and backslash
+/// escapes.
 class _PythonCallList {
   _PythonCallList(this._source);
 
@@ -377,16 +378,14 @@ class _PythonCallList {
     'false': false,
     'null': null,
   };
+  // Unlike llama.cpp, without \b, \f, \n, \r and \t: models write `\frac` and
+  // `C:\new\table` unescaped, and decoding them corrupts the value silently.
+  // Such text reads as the loose parser always read it, backslashes kept.
   static const Map<String, String> _escapes = {
     '"': '"',
     "'": "'",
     r'\': r'\',
     '/': '/',
-    'b': '\b',
-    'f': '\f',
-    'n': '\n',
-    'r': '\r',
-    't': '\t',
   };
 
   final String _source;
