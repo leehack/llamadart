@@ -3869,7 +3869,8 @@ void main() {
         );
         final probed = <String>[];
         // Windows hosts may not resolve the split-buffer symbol, which the
-        // real probe treats as supported; this test covers the CPU routing.
+        // real probe treats as supported, or read device names; this test
+        // covers the CPU routing, which named hosts check exactly.
         final service = LlamaCppService(
           isMacosX64: true,
           objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
@@ -3889,11 +3890,13 @@ void main() {
             isA<LlamaUnsupportedException>().having(
               (e) => e.message,
               'message',
-              allOf(contains('ModelSplitMode.row'), contains('CPU')),
+              contains('ModelSplitMode.row'),
             ),
           ),
         );
-        expect(probed, ['CPU']);
+        expect(probed, hasLength(1));
+        expect(probed.single, isNot(startsWith('MTL')));
+        if (!Platform.isWindows) expect(probed.single, 'CPU');
         expect(recorder.loadGpuLayers, isEmpty);
       });
 
