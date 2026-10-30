@@ -8,7 +8,7 @@ jobs:
   arms:
     name: arms (replica ${{ matrix.replica }})
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -36,22 +36,19 @@ jobs:
             "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M.gguf" \
             --output .dart_tool/test_models/stories15M.gguf
       - name: Host
+        timeout-minutes: 3
         shell: bash
         run: |
           sysctl hw.ncpu hw.physicalcpu hw.logicalcpu hw.perflevel0.logicalcpu hw.perflevel1.logicalcpu hw.memsize machdep.cpu.brand_string kern.hv_vmm_present || true
           system_profiler SPHardwareDataType SPDisplaysDataType | sed -n 1,40p || true
           uptime
-          python3 - <<'PY'
-          import multiprocessing as m, time
-          def w(_):
-              t = time.perf_counter(); x = 0
-              for i in range(20_000_000): x += i
-              return time.perf_counter() - t
-          for n in (1, 2, 3, 4, 6):
-              with m.Pool(n) as p:
-                  r = p.map(w, range(n))
-              print(f"DIAG_CPUBENCH procs={n} per_proc_s={sum(r)/n:.2f}")
-          PY
+          for n in 1 3 4 6; do
+            start=$(python3 -c 'import time;print(time.time())')
+            for i in $(seq $n); do python3 -c 'x=0
+          for i in range(20000000): x+=i' & done
+            wait
+            echo "DIAG_CPUBENCH procs=$n wall_s=$(python3 -c "import time;print(round(time.time()-$start,2))")"
+          done
       - name: Arms
         shell: bash
         env:
