@@ -280,9 +280,7 @@ history budgeting:
 
 Nested tool calls, tool results or thinking parts throw
 `LlamaArgumentException`. Image/audio parts beside `LlamaToolResultContent`,
-or on a tool-role message, still throw
-([#1445](https://github.com/leehack/llamadart/issues/1445)); put them in
-`content` instead.
+or on a tool-role message, throw; put them in `content` instead.
 
 For an OpenAI-compatible reference, see
 [OpenAI-compatible server](../examples/llamadart-server).

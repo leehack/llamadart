@@ -39,8 +39,7 @@ Server lacks, and its load error names the DLLs that failed to load.
 
 With the pinned bridge assets, Web speech-to-text and text-to-speech
 cancellation is request-scoped, including queued STT generation and TTS startup
-awaiting a capability probe. The local `web-speech-task-cancel` validation row
-keeps direct/worker and CPU/Wasm versus hardware WebGPU evidence separate.
+awaiting a capability probe.
 
 Speech to text, text to speech and decision models are experimental. Image
 generation is a Preview: its API is experimental and may change, and it needs

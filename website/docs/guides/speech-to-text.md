@@ -382,8 +382,7 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
 
 - Validated with Qwen3-ASR 0.6B Q8_0 on WAV up to 33 s, and on MP3 and FLAC
   copies of the 11 s `jfk.wav` on native macOS and in headless Chromium. The
-  audio prompt grows with duration (3,890 tokens for 297 s in
-  [#636](https://github.com/leehack/llamadart/issues/636)).
+  audio prompt grows with duration, about 13 tokens per second of audio.
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker.
   `Qwen3AsrAdapter` strips that marker, but does not expose it as reliable
   detected-language metadata until language behavior has a dedicated
