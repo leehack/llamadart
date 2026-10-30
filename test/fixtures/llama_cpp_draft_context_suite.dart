@@ -95,6 +95,45 @@ void main() {
       }
     }
 
+    test('runs the draft context on the capped default threads', () async {
+      final capped = LlamaCppService(
+        objectCalls: LlamaCppObjectCalls.upstream,
+        availableCores: 2,
+      )..initializeBackend();
+      addTearDown(capped.dispose);
+      final threads = <List<int>>[];
+      capped.debugOnSpeculativeDraftContextForTesting = (draft) =>
+          threads.add([llama_n_threads(draft), llama_n_threads_batch(draft)]);
+      final handle = capped.loadModel(
+        '${dir.path}/model.gguf',
+        _contextParams(),
+      );
+      final cancel = calloc<Int8>();
+      addTearDown(() => calloc.free(cancel));
+      await capped
+          .generate(
+            capped.createContext(handle, _contextParams()),
+            'abab',
+            GenerationParams(
+              maxTokens: 2,
+              temp: 0,
+              topK: 1,
+              seed: 1,
+              penalty: 1,
+              speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
+                draftModel: ModelSource.path('${dir.path}/model.gguf'),
+                draftTokenMax: 2,
+              ),
+            ),
+            cancel.address,
+          )
+          .drain<void>();
+
+      expect(threads, [
+        [2, 2],
+      ]);
+    });
+
     String liliCorrDraft(Map<String, int> metadata) {
       final path = '${dir.path}/lilicorr_${metadata.length}.gguf';
       writeSyntheticLlamaGguf(path, uint32Metadata: metadata);

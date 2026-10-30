@@ -379,12 +379,14 @@ class ModelParams {
 
   /// Number of threads to use for generation (n_threads).
   ///
-  /// Set to 0 for automatic detection.
+  /// Set to 0 for automatic selection. On native llama.cpp that is 4, or the
+  /// `Platform.numberOfProcessors` count when lower. That count ignores
+  /// container CPU limits and CPU affinity, so set this explicitly under them.
   final int numberOfThreads;
 
   /// Number of threads to use for batch processing (n_threads_batch).
   ///
-  /// Set to 0 for automatic detection.
+  /// Set to 0 for automatic selection, as for [numberOfThreads].
   final int numberOfThreadsBatch;
 
   /// Maximum prompt/eval tokens per decode call (n_batch).
