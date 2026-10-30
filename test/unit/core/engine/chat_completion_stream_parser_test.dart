@@ -2193,6 +2193,31 @@ void main() {
           }
         });
 
+        test('a PEG parse with tools and a closed thought streams its call, '
+            'not the envelope', () async {
+          final withoutThinking = parser(
+            Qwen3CoderXmlHandler(),
+            templateSource: nemotronV3Template,
+            enableThinking: false,
+          );
+          for (final output in [
+            'Let me check.\n$qwenXmlCall',
+            ' \n Let me check.\n$qwenXmlCall',
+            '<think>Plan.</think>Let me check.\n$qwenXmlCall',
+            qwenXmlCall,
+          ]) {
+            await _expectStreamMatchesParse(
+              ChatFormat.pegConstructed,
+              output,
+              parser: withoutThinking,
+              enableThinking: false,
+              thinkingForcedClosed: true,
+              openings: const ['<tool_call>', '<think>', '</think>'],
+              everySplit: true,
+            );
+          }
+        });
+
         test('Ministral', () async {
           final ministral = parser(MinistralHandler());
           const call = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
@@ -3816,6 +3841,7 @@ Future<void> _expectStreamMatchesParse(
   bool atLimit = false,
   bool cancelled = false,
   bool thoughtClosed = false,
+  bool thinkingForcedClosed = false,
   bool everySplit = false,
 }) async {
   final parsed = parseRenderedOutput(
@@ -3824,6 +3850,7 @@ Future<void> _expectStreamMatchesParse(
     parseToolCalls: tools,
     thinkingForcedOpen: forcedOpen,
     thoughtClosedForThinkingOff: thoughtClosed,
+    thinkingForcedClosed: thinkingForcedClosed,
     cancelled: cancelled,
     parser: parser,
     tools: tools ? [_weatherTool] : null,
@@ -3837,11 +3864,14 @@ Future<void> _expectStreamMatchesParse(
     final chunks = await ChatCompletionStreamParser.parse(
       tokenStream: Stream.fromIterable(tokens),
       templateResult: withThoughtClosedForThinkingOff(
-        LlamaChatTemplateResult(
-          prompt: 'prompt',
-          format: format.index,
-          thinkingForcedOpen: forcedOpen,
-          parser: parser,
+        withThinkingForcedClosed(
+          LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: format.index,
+            thinkingForcedOpen: forcedOpen,
+            parser: parser,
+          ),
+          closed: thinkingForcedClosed,
         ),
         closed: thoughtClosed,
       ),

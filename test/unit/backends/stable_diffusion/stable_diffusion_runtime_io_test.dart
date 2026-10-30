@@ -206,6 +206,45 @@ void main() {
       }
     });
 
+    test('an unpublished ABI is told the targets the hook has bundles for', () {
+      const hostTargets = [
+        (OS.android, Architecture.arm64, false),
+        (OS.android, Architecture.x64, false),
+        (OS.iOS, Architecture.arm64, false),
+        (OS.iOS, Architecture.arm64, true),
+        (OS.iOS, Architecture.x64, true),
+        (OS.linux, Architecture.arm64, false),
+        (OS.linux, Architecture.x64, false),
+        (OS.macOS, Architecture.arm64, false),
+        (OS.macOS, Architecture.x64, false),
+        (OS.windows, Architecture.arm64, false),
+        (OS.windows, Architecture.x64, false),
+      ];
+      final hookBundles = {
+        for (final (os, arch, simulator) in hostTargets)
+          stableDiffusionBundleForNativeBundle(
+            spec: resolveNativeBundleSpec(
+              os: os,
+              arch: arch,
+              isIosSimulator: simulator,
+            )!,
+            rawBackendConfig: null,
+            rawStableDiffusionBackendConfig: 'cpu',
+          ),
+      }..remove(null);
+
+      final message = probeStableDiffusionRuntime(
+        abi: Abi.androidX64,
+        api: _FakeApi(),
+      ).unavailableReason!.message;
+      final named = message
+          .substring(message.indexOf('available on ') + 13, message.length - 1)
+          .split(RegExp(r', | and '))
+          .toSet();
+
+      expect(named, hookBundles);
+    });
+
     test('Android arm64 without asimddp never loads the library', () {
       for (final cpuInfo in [
         'Features\t: fp asimd atomics\n',
