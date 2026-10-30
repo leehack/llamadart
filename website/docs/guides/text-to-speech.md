@@ -9,7 +9,7 @@ description: Generate complete PCM and WAV audio with the experimental typed lla
 progress, cancellation, and output buffering are not chat-token semantics.
 
 Text to speech is experimental and deliberately narrow. It supports
-Qwen3-TTS through native llama.cpp or WebGPU bridge assets `v0.1.33+` with the
+Qwen3-TTS through native llama.cpp or WebGPU (pinned bridge assets) with the
 matching audio-generation projector. It reports prompt/frame progress, then
 returns one complete 24 kHz mono float32 PCM buffer. It does not stream playable
 audio chunks yet.
@@ -19,7 +19,7 @@ audio chunks yet.
 | Runtime | Typed `TextToSpeechEngine` | Output |
 | --- | --- | --- |
 | Native llama.cpp / GGUF | Experimental Qwen3-TTS adapter | Complete float32 PCM; WAV helper |
-| WebGPU / GGUF | Experimental Qwen3-TTS adapter with bridge assets `v0.1.33+` | Complete float32 PCM; WAV helper |
+| WebGPU / GGUF | Experimental Qwen3-TTS adapter (pinned bridge assets) | Complete float32 PCM; WAV helper |
 | Native LiteRT-LM / `.litertlm` | Unsupported by the pinned native artifact | None |
 | LiteRT-LM Web | Unsupported | None |
 
@@ -215,10 +215,11 @@ The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 - Qwen3-TTS and llama.cpp audio generation are experimental. Voice quality,
   latency, supported reference formats, and accelerator behavior remain
   model/device dependent.
-- Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
-  pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
-  memory. Older bridge assets fail capability discovery clearly.
-- The chat example pins `v0.1.79`, whose bridge retries a synthesis once on
+- Web requires the pinned bridge assets, WebAssembly memory64 for the
+  roughly 1.48 GB model/projector pair, and a browser/device with enough
+  memory. Older assets fail capability discovery clearly
+  ([Older bridge assets](../platforms/webgpu-bridge#older-bridge-assets)).
+- The pinned bridge retries a synthesis once on
   the main thread, more slowly, after eligible WebGPU errors and worker
   timeouts; see
   [WebGPU bridge fallback behavior](../platforms/webgpu-bridge#fallback-behavior).

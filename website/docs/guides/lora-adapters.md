@@ -213,8 +213,7 @@ Custom native runtimes must export the aLoRA metadata functions; see
   remain unsupported there.
 - WebGPU applies `ModelParams.loras` and runtime LoRA adapters with bridge
   assets whose
-  `getLoraAdapterCapabilities()` reports support
-  (bridge assets `v0.1.54+`, the default pin among them).
+  `getLoraAdapterCapabilities()` reports support.
   The bridge downloads each adapter once per model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
   adapter it cannot load, such as one for another base model, throws
   `LlamaModelException`. On older bridge assets every WebGPU LoRA call, and

@@ -70,8 +70,7 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   - Native llama.cpp (GGUF): `ModelParams.loras` and the full runtime API,
     multiple adapters, custom scales, local or downloaded adapter files.
   - WebGPU (GGUF on web): needs bridge assets whose
-    `getLoraAdapterCapabilities()` reports support (bridge `v0.1.54+`, which
-    includes the default pin), for `ModelParams.loras` and the runtime API.
+    `getLoraAdapterCapabilities()` reports support (the pinned assets do), for `ModelParams.loras` and the runtime API.
     The bridge fetches the source's URL once per model load; a
     `ModelSource.path` is a URL relative to the document, or a `blob:` URL. Older bridge assets throw
     `LlamaUnsupportedException` on every LoRA call and on a load with

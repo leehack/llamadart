@@ -60,10 +60,10 @@ description: >-
   embeddings with its matching projector (BF16 qualified on CPU on macOS,
   Linux x64, Windows x64, Android and iOS, plus macOS Metal), and reports text
   only without one. Web llama.cpp probes image/audio embeddings
-  with bridge assets v0.1.64+ and a compatible model/projector. The default
-  pinned assets include the media API. EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
+  through the bridge's embedding API (pinned assets include it) and a
+  compatible model/projector. EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
   native CPU/Metal; repeated media batches are qualified only on memory64
-  (assets `v0.1.76+` remove the projector copy behind the wasm32 abort, unqualified). Hardware WebGPU is unqualified. Image bytes are encoded; width/height are ignored. LiteRT-LM
+  (wasm32 is unqualified). Hardware WebGPU is unqualified. Image bytes are encoded; width/height are ignored. LiteRT-LM
   embedding engines probe text/image/audio on native CPU. Native llama.cpp
   expanded inputs must fit one context/batch/micro-batch; no chunking or implicit
   task prefixes. M-RoPE projectors and image URLs are unsupported. Use exactly
@@ -117,10 +117,10 @@ description: >-
 - Rank-pooled reranker GGUFs (such as Qwen3-Reranker) produce classifier
   scores, not embeddings; `embed`/`embedBatch` throw
   `LlamaUnsupportedException` for them, as do encoder-decoder models such as
-  T5. On Web, rerankers throw it with bridge assets `v0.1.73+`.
-- Web embeddings need llama.cpp bridge assets `v0.1.7` or newer. When
-  older assets lack the embedding API, calls throw `LlamaUnsupportedException`
-  naming that floor. Bridge assets `v0.1.73+` throw
+  T5. On Web, rerankers throw it too.
+- Web embeddings need llama.cpp bridge assets with the embedding API (the
+  pinned ones have it). When older assets lack it, calls throw
+  `LlamaUnsupportedException`. Web throws
   `LlamaEmbeddingInputTooLongException` for input over the one-pass limit;
   other web embedding failures surface as `LlamaInferenceException`.
 - Nothing is truncated for you. Native encoder-only, no-memory and
@@ -354,8 +354,7 @@ Future<List<String>> chunkByTokens(
 ```
 
 A single paragraph longer than `maxTokens` still needs splitting (for example
-by sentence) before `embed`, or native llama.cpp (and Web bridge assets
-`v0.1.73+` for one-pass models) throws
+by sentence) before `embed`, or native llama.cpp (and Web for one-pass models) throws
 `LlamaEmbeddingInputTooLongException`. Other runtimes may report
 `LlamaInferenceException` without structured counts.
 

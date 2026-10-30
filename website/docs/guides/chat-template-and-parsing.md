@@ -15,9 +15,7 @@ hexadecimal escapes, with exactly two hexadecimal digits. For example,
 `\x00` matches a NUL character and `\xE9` produces `é`;
 `\\x41` keeps the literal text `\x41`. A malformed escape raises
 `LlamaException` naming the template source. Model architectures must also be
-supported by the selected runtime; this syntax repair does not qualify Flint
-for the pinned native runtime
-([native #112](https://github.com/leehack/llamadart-native/issues/112)).
+supported by the selected runtime.
 
 ## Core API
 
@@ -183,8 +181,7 @@ still produce empty content. Keep `Qwen3` in the filename, or set
 `ModelParams.chatTemplate` to `liteRtLmQwen3ChatTemplate`, exported by
 `package:llamadart/llamadart.dart`. Obtain it when constructing the parameters;
 it follows the installed template across upgrades, so copied Jinja is unnecessary.
-Native text conversations honor `enableThinking: false`; older runtimes without
-the template setter throw `LlamaUnsupportedException`.
+Native text conversations honor `enableThinking: false`.
 
 Web `@litert-lm/core@0.18.0` has no conversation-template setter and rejects this
 canonical Qwen3 override at model load with `LlamaUnsupportedException`.
@@ -193,15 +190,12 @@ an override retain their existing behavior.
 
 Other families keep their native bundle
 template and content-shape adapter; an override still drives Dart-side metadata
-and parsing. The maintained registry coverage, smoke commands, and contribution
-notes live in
-[`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md).
+and parsing.
 
 On a filename-matched or positively identified Qwen 3 text bundle the native
-conversation renders a `ModelParams.chatTemplate` itself, and from LiteRT-LM
-`v0.18.0` it passes each
+conversation renders a `ModelParams.chatTemplate` itself and passes each
 message's `content` to the template as a list of parts,
-`[{"type": "text", "text": ...}]`, where `v0.17.0-8` passed the string. A
+`[{"type": "text", "text": ...}]`. A
 template that concatenates `message['content']` as a string fails the
 generation with `LlamaInferenceException`, and one that interpolates it
 renders the list into the prompt without an error. Read both shapes:
@@ -220,15 +214,14 @@ renders the list into the prompt without an error. Read both shapes:
 rendered.
 
 The template embedded in a bundle receives the same list. Bundles built for
-LiteRT-LM before `v0.18.0` often read `message.content` as a string, which the
-older runtime allowed for a single text part. With `v0.18.0` such a template
-writes the serialized list into the prompt when it interpolates the content,
-fails the request when it concatenates it, and renders empty messages when it
-only handles `content is string`.
+older LiteRT-LM runtimes often read `message.content` as a string. Such a
+template writes the serialized list into the prompt when it interpolates the
+content, fails the request when it concatenates it, and renders empty messages
+when it only handles `content is string`.
 
 On native platforms `llamadart` checks this once per loaded model, on its
 first use, and gives a template of any of those three shapes the string again,
-so the bundle answers as it did with `v0.17.0-8`. A template that already
+so the bundle answers as it was built to. A template that already
 reads parts is left alone. If `llamadart` cannot adapt a template it logs one
 warning, and a request that then fails names the template. That is the case
 for a template written in the runtime's single-turn `is_appending_to_prefill`
