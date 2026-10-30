@@ -68,7 +68,7 @@ the fallback, declare those three categories and reasons in the app's own
 `PrivacyInfo.xcprivacy`. The reasons come from the runtime owner's audit
 ([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65))
 and have not been verified with an App Store Connect upload. See
-[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks).
+[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/apple-setup#apple-privacy-manifest).
 
 Source for this package lives in
 `packages/llamadart_litert_lm_flutter` in the
@@ -78,7 +78,7 @@ Source for this package lives in
 
 Keep Runner's deployment target at macOS 14.0 or newer. If SwiftPM reports
 that `FlutterGeneratedPluginSwiftPackage` supports only 12.0, follow the
-[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/platforms/apple-setup#fresh-macos-swiftpm-bootstrap)
 before the first build. It updates only the ignored generated manifest and
 builds with `--no-pub`; keep this package's platform requirements, native
 URLs and checksums intact.

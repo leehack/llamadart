@@ -29,7 +29,7 @@ dylibs the core package's native-assets fallback bundles. It declares
 embedded `llama.framework` in the built app has no `PrivacyInfo.xcprivacy`, or
 the app uses the fallback, declare that category and reason in the app's own
 `PrivacyInfo.xcprivacy`. See
-[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks).
+[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/apple-setup#apple-privacy-manifest).
 
 Source for this package lives in
 `packages/llamadart_llama_cpp_flutter` in the
@@ -39,7 +39,7 @@ Source for this package lives in
 
 Keep Runner's deployment target at macOS 14.0 or newer. If SwiftPM reports
 that `FlutterGeneratedPluginSwiftPackage` supports only 12.0, follow the
-[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/getting-started/installation#fresh-macos-swiftpm-bootstrap)
+[Flutter 3.47.1 consumer bootstrap](https://llamadart.leehack.com/docs/platforms/apple-setup#fresh-macos-swiftpm-bootstrap)
 before the first build. It updates only the ignored generated manifest and
 builds with `--no-pub`; keep this package's platform requirements, native
 URLs and checksums intact.
