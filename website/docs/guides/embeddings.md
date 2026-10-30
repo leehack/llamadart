@@ -192,7 +192,7 @@ try {
   Causal models with a KV cache retain chunked LAST or unpooled embedding
   support. Batched one-pass inputs are grouped only within the micro-batch
   capacity, and every input is validated before any group is decoded.
-- Native causal-attention detection follows the pinned llama.cpp `v0.7.0`
+- Native causal-attention detection follows the pinned llama.cpp `v0.8.0`
   contract: the runtime's diffusion-model probe and EmbeddingGemma's forced
   non-causal attention take precedence over metadata. Other loaded models
   use their boolean `<architecture>.attention.causal` value, defaulting to

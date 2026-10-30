@@ -370,7 +370,7 @@ Selection rules:
   and verifies only when `cuda` is selected for `windows-x64`. If such a
   release lists no CUDA archive, selecting `cuda` fails the build with
   `NativeHookContractException` instead of falling back. The pinned
-  `v0.7.0-3` is a contract 2 release: its `windows-x64` archive is about
+  `v0.8.0` is a contract 2 release: its `windows-x64` archive is about
   15 MiB, and the CUDA archive adds about 688 MiB. Contract 1 releases ship
   CUDA inside a `windows-x64` archive of about 700 MiB, which the hook
   downloads even when `cuda` is not selected.
@@ -521,9 +521,12 @@ hooks:
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
 override is active. This core requires the v0.7.0 ABI, including its changed
-context-parameter and performance-data layouts. Native v0.6.0 and older
+context-parameter and performance-data layouts; it calls nothing that
+`v0.7.0-3` lacks. Native v0.6.0 and older
 bundles are incompatible even when they export the same symbol names. Use
-core `0.13.x` for its v0.6.0 runtime and companions.
+core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
+`0.17.1` at native `v0.8.0` or later: its bindings give
+`mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 
 The following thresholds describe historical wrapper features; they do not
 make an older ABI compatible with this core. A runtime older than `v0.5.0-1`
@@ -583,9 +586,11 @@ Adding only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. A llama.cpp companion pinning
-an earlier build is accepted only when the core explicitly lists it as
-ABI-compatible. Core `0.17.x` pairs with companion `0.17.0` for native
-`v0.7.0-3` and lists no earlier pins. Core `0.16.x` pairs with companion
+an earlier release is accepted only when the core explicitly lists it as
+ABI-compatible. Core `0.17.1` pairs with companion `0.17.1` for native `v0.8.0`
+and lists `v0.7.0-3` (companion `0.17.0`), which builds with an upgrade warning.
+Core `0.17.0` pairs with companion `0.17.0` for native `v0.7.0-3` and lists no
+earlier pins. Core `0.16.x` pairs with companion
 `0.16.0` and core `0.15.6` with companion `0.15.2`, both for native
 `v0.7.0-2`. Both cores list
 `v0.7.0-1` (companions `0.15.0` and `0.15.1`), which builds with an upgrade

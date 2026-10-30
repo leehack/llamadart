@@ -7,8 +7,10 @@ Add this package to a Flutter iOS/macOS app when the app should link the
 prebuilt llama.cpp Apple XCFramework through SwiftPM instead of relying on the
 core package's native-assets fallback.
 
-Use companion `0.17.0` with core `0.17.x` for llama.cpp `v0.7.0-3`; core
-`0.17.x` rejects earlier llama.cpp companions. Use `0.16.0` with core `0.16.x`,
+Use companion `0.17.1` with core `>=0.17.1 <0.18.0` for llama.cpp `v0.8.0`.
+A locked companion `0.17.0` keeps `v0.7.0-3` and works with those cores with an
+upgrade warning; core `0.17.0` needs it. Core `0.17.x` rejects earlier llama.cpp
+companions. Use `0.16.0` with core `0.16.x`,
 or `0.15.2` with core `>=0.15.6 <0.16.0`, for llama.cpp `v0.7.0-2`.
 Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with core `0.15.6`
 with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
@@ -30,7 +32,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/llamadart-native@v0.7.0-3`.
+The Apple SwiftPM manifest pins `leehack/llamadart-native@v0.8.0`.
 
 Apps bound for the App Store should use this package: an Apple privacy
 manifest for the llama.cpp runtime ships inside this XCFramework, never in the

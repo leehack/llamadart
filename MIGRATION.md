@@ -4,6 +4,14 @@ This document covers the major breaking upgrade paths.
 
 <a id="016x-to-0170-upgrade-guide"></a>
 
+## `0.17.0` -> `0.17.1`: llama.cpp native runtime `v0.8.0`
+
+The hook and the llama.cpp Apple companion source pin `v0.8.0`. Flutter iOS and
+macOS apps get it with `llamadart_llama_cpp_flutter` `0.17.1`, which requires
+core `0.17.1`. A locked companion `0.17.0` keeps `v0.7.0-3` and builds with an
+upgrade warning. Web keeps llama.cpp `v0.7.0` until a later bridge release. No
+Dart API changes.
+
 ## `0.16.x` -> `0.17.0`: upgrade guide
 
 Upgrade core and every Apple companion used by the app to `0.17.x` together.

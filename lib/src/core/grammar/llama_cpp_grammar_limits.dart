@@ -35,8 +35,8 @@ void checkTemplateGrammarLimits(String grammar) {
 /// check does not model.
 ///
 /// Mirrors the symbol accounting of `llama_grammar_parser::parse_sequence` in
-/// the llama.cpp release the native runtime ships (upstream `v0.7.0`,
-/// 620d2225c, for native pin `v0.7.0-1`): a repeated item counts every symbol
+/// the llama.cpp release the native runtime ships (upstream `v0.8.0`,
+/// 8642541b2, for native pin `v0.8.0`): a repeated item counts every symbol
 /// created while it was parsed (synthesized groups, repetition rules and
 /// first references to rule names), and the product with the repetition count
 /// must not exceed `MAX_REPETITION_THRESHOLD`. Releases before upstream

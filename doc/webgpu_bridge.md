@@ -94,14 +94,16 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 </script>
 ```
 
-That release embeds llama.cpp `v0.7.0`, matching the `hook/build.dart` native pin
-(`v0.7.0-3`, both built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
+That release embeds llama.cpp `v0.7.0`, behind the `hook/build.dart` native pin
+(`v0.8.0`; the bridge is built from upstream llama.cpp `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
 even though the bridge asset tag `v0.1.76` differs from the native runtime tag
-`v0.7.0-3`. Provenance for this immutable consumer artifact: release `426014694`,
+`v0.8.0`. Provenance for this immutable consumer artifact: release `426014694`,
 tag commit `7ce0ad051c63f11ebb1d5ca0cf395f2a17c37dc3`, bridge source
 `883376ddfae4f8d70b1970fa7d180217475aab58`, and manifest SHA-256
 `90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`. The bridge
-manifest records native `v0.7.0-2`.
+manifest records native `v0.7.0-2`. Web and native share no ABI, so this skew
+is supported, but fixes and model families new in llama.cpp `v0.8.0` reach Web
+only with a later bridge repin.
 They expose the API-version-1 media embedding contract. State and extraction
 qualification covers wasm32 and memory64 through direct and worker runtimes. Existing decision,
 scoring, sampling, LoRA, speculative decoding and speech APIs remain available.
