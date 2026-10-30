@@ -202,6 +202,8 @@ final class _Session {
     LlamaCppObjectCalls? calls,
   }) {
     final params = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       contextSize: contextSize,
       batchSize: 8,
       microBatchSize: 8,

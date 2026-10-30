@@ -104,6 +104,9 @@ dart test -p chrome --exclude-tags local-only
 - Generated files that should not count toward coverage carry
   `// coverage:ignore-file`.
 - Tests close the ports, streams and controllers they open.
+- Tests that decode on a real model set `numberOfThreads` and
+  `numberOfThreadsBatch` (usually 2): ggml's default of 4 spin-waiting threads
+  makes decoding tens of times slower on 3-vCPU macOS runners.
 - A public capability or platform-support change updates README, website
   docs/support matrix, examples and changelog in the same PR.
 - Map public capability changes to a validation pack or a reasoned, issue-linked

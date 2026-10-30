@@ -59,6 +59,8 @@ void main() {
         worker.send(WorkerHandshake(LlamaLogLevel.warn, port.sendPort));
         expect(await next(), isA<DoneResponse>());
         const params = ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           gpuLayers: 0,
           preferredBackend: GpuBackend.cpu,
           contextSize: 128,
