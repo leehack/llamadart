@@ -310,8 +310,9 @@ abstract class BackendRuntimeDiagnostics {
   /// Returns resolved GPU layers used for the active model load.
   ///
   /// This value reflects the final layer count passed to native model load
-  /// after backend policy/fallback decisions, or 0 when no GPU can take them,
-  /// as on a host with no GPU device.
+  /// after backend policy/fallback decisions, or 0 when no GPU can take them:
+  /// the registry holds no GPU device and the load lists none. A load that
+  /// lists a device, such as BLAS, keeps its layers.
   Future<int?> getResolvedGpuLayers();
 }
 

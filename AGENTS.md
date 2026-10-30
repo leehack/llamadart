@@ -105,8 +105,11 @@ dart test -p chrome --exclude-tags local-only
   `// coverage:ignore-file`.
 - Tests close the ports, streams and controllers they open.
 - Tests that decode on a real model set `numberOfThreads` and
-  `numberOfThreadsBatch` (usually 2): ggml's default of 4 spin-waiting threads
-  makes decoding tens of times slower on 3-vCPU macOS runners.
+  `numberOfThreadsBatch` (usually 2): the default is up to 4 spin-waiting
+  threads, and Dart counts the host's cores, not a container limit or a busy
+  shared runner's, so decoding can be tens of times slower. Tests of the
+  default path keep it and inject `availableCores`
+  (`llama_cpp_service_default_threads_test.dart`).
 - A public capability or platform-support change updates README, website
   docs/support matrix, examples and changelog in the same PR.
 - Map public capability changes to a validation pack or a reasoned, issue-linked

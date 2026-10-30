@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_format_registry.dart';
+import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
 
@@ -106,6 +107,22 @@ void main() {
     );
     expect(
       _formatTables(
+        'const byFormat = {ChatFormat.gemma: 1, ChatFormat.lfm2: 2};',
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _formatTables('switch (format) { case ChatFormat.hermes: return true; }'),
+      isNotEmpty,
+    );
+    expect(
+      _formatTables(
+        'final chosen = pegOnly ? ChatFormat.hermes : ChatFormat.generic;',
+      ),
+      isEmpty,
+    );
+    expect(
+      _formatTables(
         'f == ChatFormat.gemma.index || f == ChatFormat.lfm2.index || '
         'f == ChatFormat.kimiK2.index;',
       ),
@@ -117,6 +134,22 @@ void main() {
         'f == ChatFormat.llama3BuiltinTools.index;',
       ),
       isEmpty,
+    );
+  });
+
+  test('generic reads an incomplete call outside a forced-open thinking '
+      'block only', () {
+    final leavesIncomplete = chatFormatRegistration(
+      ChatFormat.generic,
+    ).traits.leavesIncompleteToolCall!;
+    const call = '{"tool_calls": [{"name": "f"';
+    const parsed = ChatParseResult();
+
+    expect(leavesIncomplete(parsed, call, thinkingForcedOpen: false), isTrue);
+    expect(leavesIncomplete(parsed, call, thinkingForcedOpen: true), isFalse);
+    expect(
+      leavesIncomplete(parsed, 'plan</think>$call', thinkingForcedOpen: true),
+      isTrue,
     );
   });
 
@@ -137,8 +170,8 @@ void main() {
   });
 }
 
-/// Per-format tables in [source]: a `ChatFormat` set or collection literal,
-/// a switch arm on a format, or one statement naming three or more formats.
+/// Per-format tables in [source]: a `ChatFormat` set, collection or map
+/// literal, a switch or `case` arm on a format, or one statement naming three or more formats.
 List<String> _formatTables(String source) => [
   if (source.contains('Set<ChatFormat>')) 'Set<ChatFormat>',
   for (final match in RegExp(
@@ -147,6 +180,14 @@ List<String> _formatTables(String source) => [
     'literal: ${match[0]}',
   for (final match in RegExp(r'ChatFormat\.\w+\s*=>').allMatches(source))
     'switch arm: ${match[0]}',
+  for (final match in RegExp(
+    r'[\[{,]\s*ChatFormat\.\w+\s*:',
+  ).allMatches(source))
+    'map key: ${match[0]}',
+  for (final match in RegExp(
+    r'\bcase\s+ChatFormat\.\w+\s*:',
+  ).allMatches(source))
+    'case arm: ${match[0]}',
   for (final statement in source.split(';'))
     if ({
           for (final match in RegExp(
