@@ -372,8 +372,7 @@ more than 256 levels deep. Generated schema grammars keep a list of up to 1023
 optional properties under that, but a `$ref` alias chain of 255 or more
 levels, or an object with more than about 7000 optional properties, still
 exceeds it and fails to load. A grammar above it makes generation throw
-`LlamaInferenceException`; the Web bridge's older llama.cpp does not apply the
-check.
+`LlamaInferenceException`, on Web as on native.
 
 | Selected tool format | Canonical schema support |
 | --- | --- |

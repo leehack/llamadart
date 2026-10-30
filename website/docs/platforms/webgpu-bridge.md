@@ -402,24 +402,23 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.76`, with local vendored assets
-identified as `v0.1.76-local-v0.7.0`.
+The example currently pins bridge assets to `v0.1.79`, with local vendored assets
+identified as `v0.1.79-local-v0.8.0`.
 
-- The pinned `v0.1.76` bridge assets embed llama.cpp `v0.7.0`, behind the native runtime
-  (`v0.8.0`; the bridge is built from upstream `v0.7.0@620d2225cc436ab0b001e3200e590e3b286ef9ab`)
-  even though the bridge asset tag `v0.1.76` differs from the native runtime tag
-  `v0.8.0`. Pinned artifact provenance: release `426014694`, tag commit
-  `7ce0ad051c63f11ebb1d5ca0cf395f2a17c37dc3`, bridge source
-  `883376ddfae4f8d70b1970fa7d180217475aab58`, manifest SHA-256
-  `90822656cef6eaf43a47eafc7fe32f2ef9c2ed56a74c6b3cae29115ba61f818a`. The
-  bridge manifest records native `v0.7.0-2`. Fixes and model families new in
-  llama.cpp `v0.8.0` reach Web only with a later bridge repin. They include the API-version-1 media embedding contract.
+- The pinned `v0.1.79` bridge assets embed llama.cpp `v0.8.0`, matching the native runtime
+  (`v0.8.0`, both built from upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`)
+  even though the bridge asset tag `v0.1.79` differs from the native runtime tag
+  `v0.8.0`. Pinned artifact provenance: release `429085685`, tag commit
+  `79b32dfb4ff13c4ce33e8ba3c848e8b5c2ba35e2`, bridge source
+  `fe1b70c86eb96f2932a50606e50583dff1222128`, manifest SHA-256
+  `66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c`.
+  They include the API-version-1 media embedding contract.
   Extraction and state smokes pass through direct and worker paths in both memory modes.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.76 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.79 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -427,7 +426,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.76';
+  window.__llamadartBridgeAssetsTag = 'v0.1.79';
 </script>
 ```
 
