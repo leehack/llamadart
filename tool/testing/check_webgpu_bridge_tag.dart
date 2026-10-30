@@ -439,8 +439,8 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
 /// The provenance values the docs restate for the pinned immutable release.
 ///
 /// Each pattern matches one passage; every named group is checked against
-/// [bridgeProvenanceValues]. The same seven values are written out in two docs,
-/// so without this a partial bump leaves half the tree describing the previous
+/// [bridgeProvenanceValues]. The same seven values are written out in one doc,
+/// so without this a partial bump leaves it describing the previous
 /// release with nothing failing.
 final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
   BridgeTagPin(

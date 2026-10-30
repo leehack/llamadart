@@ -122,6 +122,8 @@ the accepted forms are in
 [Override the llama.cpp release](../platforms/native-build-hooks#override-the-llamacpp-release).
 An override does not regenerate the Dart bindings, so its binary must stay
 ABI-compatible with the default `leehack/llamadart-native@v0.8.0` runtime.
+Do not point a core before `0.17.1` at native `v0.8.0` or later: its bindings
+give `mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 
 Every key, per-target backend and Android CPU variant selection, local bundle
 paths, and fallback rules:

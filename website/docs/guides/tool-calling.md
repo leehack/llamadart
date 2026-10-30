@@ -225,7 +225,7 @@ Support is a chat-format property:
 | Requirement | Supported |
 | --- | --- |
 | Runtime | Native llama.cpp with a loaded projector that reports vision |
-| Chat format | Hermes-style `<tool_call>` templates. Qualified on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template |
+| Chat format | Hermes-style `<tool_call>` templates, smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template |
 | Media | Images with a `path` or `bytes` |
 
 `LlamaEngineCapabilities.toolResultMedia` reports `{image}` when the runtime,

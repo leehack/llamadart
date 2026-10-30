@@ -10,7 +10,9 @@ and web. Templates run on [`dinja`](https://pub.dev/packages/dinja), a Dart
 Jinja runtime; the pipeline is described in
 [Template engine internals](./template-engine-internals).
 
-Model architectures must be supported by the selected runtime.
+Model architectures must be supported by the selected runtime; this syntax repair does not qualify Flint
+for the pinned native runtime
+([native #112](https://github.com/leehack/llamadart-native/issues/112)).
 
 ## Core API
 
@@ -162,8 +164,9 @@ For native CPU Qwen3-0.6B, use the updated
 The older `8414150f` bundle can emit literal byte-level token spellings such
 as `ĠðŁĺĬ` instead of an emoji. A runtime upgrade alone does not repair its
 tokenizer; replace the model artifact. Preserve literal user text rather than
-rewriting these characters. Qualified on macOS, Linux and Windows CPU; GPU, iOS, Android and Web
-adoption still need separate validation.
+rewriting these characters. The updated bundle is verified on macOS CPU;
+Linux/Windows CPU qualification runs in the maintained smoke workflow.
+GPU, iOS, Android and Web adoption still need separate validation.
 
 Native LiteRT-LM recognizes renamed Qwen 3 bundles only with a Qwen 3
 model-type declaration (metadata field 6), or the complete canonical Qwen 3
