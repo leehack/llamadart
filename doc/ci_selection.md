@@ -9,6 +9,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 | Changed inputs | Core checks | Portable builds |
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
+| Any `*.md` path | Adds `Markdown Tests`, unless full Linux coverage is selected | None |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, root Linux coverage and full macOS/Windows VM checks, Web Chat consumer | Android, Web, iOS inputs |
 | Validation package tests/schemas or unbundled assets | Root static checks, private suite and provider/workspace/Flutter consumer contracts | None |
 | Validation assets the chat app bundles (`flutter.assets`, such as profiles) | Same validation checks and Web Chat | None |
@@ -45,10 +46,22 @@ missing or unexpectedly skipped selected jobs. Only deliberately unselected
 jobs may be skipped. The bundle result applies the same rule to target matrices.
 This is executable job accounting, not a new repository protection setting.
 
+`Markdown Tests` runs only the root suites listed in
+`tool/ci/markdown_test_suites.txt`, for a change that selects no full Linux
+coverage. It carries no coverage, so a Markdown-only commit uploads none to
+Codecov. `markdown_test_suites_test.dart` fails when a root test names Markdown,
+directly or through a local helper or tool, and is neither listed nor explained
+in that test: list a suite that reads a tracked `.md`, or a tool that does. That
+check runs with the full graph, which any change under `test/` or `tool/ci/`
+selects. Because Linux coverage can no longer stand in for
+`validation-integration` on a Markdown path, that job stays selected there.
+
 Linux VM tests run as parallel shards (`core-template`, `engine`, `tooling`,
 `backends`), split by directory. Together they run every root `*_test.dart` file
 exactly once, each with `-j 1 --exclude-tags local-only` and its own LiteRT-LM
-temp canary. Each shard uploads its raw VM coverage.
+temp canary; `ci_workflow_selection_test.dart` fails when a test file belongs to
+no shard or to two, so a new top-level test directory needs a shard in `ci.yml`.
+Each shard uploads its raw VM coverage.
 `Test Linux VM (with Coverage)` waits for every shard, formats their combined
 raw coverage with `format_lcov.dart` exactly as one full run would, then
 enforces the threshold and uploads to Codecov. The aggregate requires the

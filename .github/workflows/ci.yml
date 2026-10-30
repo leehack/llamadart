@@ -37,6 +37,7 @@ jobs:
       genkit: ${{ steps.select.outputs.genkit }}
       example-packages: ${{ steps.select.outputs.example-packages }}
       model-store: ${{ steps.select.outputs.model-store }}
+      markdown-tests: ${{ steps.select.outputs.markdown-tests }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -382,6 +383,39 @@ jobs:
 
       - name: Build documentation site
         run: ./tool/docs/build_site.sh
+
+  # The root tests that read Markdown, for a change that selects no full Linux
+  # coverage. test/unit/tooling/markdown_test_suites_test.dart keeps the list whole.
+  markdown-tests:
+    needs: changes
+    if: needs.changes.outputs.markdown-tests == 'true'
+    name: Markdown Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Isolate system temp with a LiteRT-LM cache canary
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh seed
+
+      - name: Run Markdown tests
+        run: xargs dart test -p vm -j 1 --exclude-tags local-only < tool/ci/markdown_test_suites.txt
+
+      - name: Check the LiteRT-LM cache canary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: bash tool/ci/litert_lm_temp_canary.sh check
 
   test-linux-vm:
     needs: changes
@@ -861,6 +895,7 @@ jobs:
       - genkit
       - example-packages
       - model-store
+      - markdown-tests
     steps:
       - uses: actions/checkout@v7
         with:

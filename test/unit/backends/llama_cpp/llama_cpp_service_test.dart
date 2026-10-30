@@ -2755,6 +2755,71 @@ void main() {
         );
       });
 
+      test('keeps the layers of an explicit backend when only a GPU of '
+          'another backend is registered', () {
+        final other = LlamaCppService(
+          deviceTypes: (backend) => [
+            backend == GpuBackend.auto
+                ? ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value
+                : ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+          ],
+        );
+        addTearDown(other.dispose);
+        _writePrivateForTesting(
+          other,
+          '_backendModuleDirectory',
+          path.join(tempDir.path, 'modules'),
+        );
+        other.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cuda,
+            gpuLayers: 99,
+          ),
+        );
+        expect(other.getResolvedGpuLayers(), 99);
+        expect(records, isEmpty);
+      });
+
+      test('reads the registry symbol flag after the device probe sets it', () {
+        late final LlamaCppService probing;
+        probing = LlamaCppService(
+          deviceTypes: (_) {
+            _writePrivateForTesting(
+              probing,
+              '_backendRegistrySymbolUnavailable',
+              true,
+            );
+            return [ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value];
+          },
+        );
+        addTearDown(probing.dispose);
+        probing.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, gpuLayers: 99),
+        );
+        expect(probing.getResolvedGpuLayers(), 99);
+      });
+
+      test('creates the context with the layers the load resolved', () {
+        const params = ModelParams(
+          contextSize: 64,
+          preferredBackend: GpuBackend.cuda,
+          gpuLayers: 99,
+        );
+        final handle = service.loadModel(modelPath, params);
+        final context = service.createContext(handle, params);
+
+        final contextParams =
+            _readPrivateForTesting<Map<int, llama_context_params>>(
+              service,
+              '_contextParams',
+            )[context]!;
+        expect(contextParams.offload_kqv, isFalse);
+        expect(contextParams.op_offload, isFalse);
+      });
+
       test('keeps the requested layers under auto with a GPU device', () {
         final other = LlamaCppService(
           deviceTypes: (_) => [

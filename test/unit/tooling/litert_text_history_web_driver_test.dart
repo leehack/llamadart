@@ -8,9 +8,14 @@ import 'package:test/test.dart';
 import 'support/bounded_process.dart';
 
 // Windows subprocess initialization has stalled in CI (#1295). This is the
-// total child budget; the Python HTTP contract keeps its own 20-second limit.
+// total child budget. The HTTP contract watchdog is shorter, but a cold
+// Windows host spent over 15 seconds importing the standard library before the
+// contract ran, and the request-time imports of http.server then outran 20.
 final _processTimeout = Platform.isWindows
     ? const Duration(seconds: 120)
+    : const Duration(seconds: 20);
+final _contractTimeout = Platform.isWindows
+    ? const Duration(seconds: 90)
     : const Duration(seconds: 20);
 
 void main() {
@@ -19,7 +24,7 @@ void main() {
     () async {
       final result = await runBoundedProcess(
         Platform.isWindows ? 'python' : 'python3',
-        ['-B', '-c', _exerciseDriver],
+        ['-B', '-c', _exerciseDriver(_contractTimeout)],
         timeout: _processTimeout,
       );
       expect(result.exitCode, 37, reason: '${result.stdout}\n${result.stderr}');
@@ -30,7 +35,12 @@ void main() {
   );
 }
 
-const _exerciseDriver = r'''
+String _exerciseDriver(Duration contractTimeout) => _driverSource.replaceAll(
+  '__CONTRACT_SECONDS__',
+  '${contractTimeout.inSeconds}',
+);
+
+const _driverSource = r'''
 print('DRIVER_PHASE child-entry', flush=True)
 import faulthandler
 faulthandler.dump_traceback_later(15)
@@ -73,7 +83,7 @@ def contract_timed_out():
 def child(command):
     global contract_watchdog
     print('DRIVER_PHASE http-contract-entry', flush=True)
-    contract_watchdog = threading.Timer(20, contract_timed_out)
+    contract_watchdog = threading.Timer(__CONTRACT_SECONDS__, contract_timed_out)
     contract_watchdog.daemon = True
     contract_watchdog.start()
     check.assertEqual(command, [

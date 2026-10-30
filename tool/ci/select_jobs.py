@@ -23,7 +23,7 @@ CORE_JOBS = (
     'validation-integration', 'companion-packages', 'test-linux-coverage',
     'test-web', 'web-chat-contract', 'test-other-os',
     'native-prompt-reuse-parity', 'artifact-contract',
-    'genkit', 'example-packages', 'model-store',
+    'genkit', 'example-packages', 'model-store', 'markdown-tests',
 )
 # Jobs outside the plan that run exactly when the planned job they feed runs:
 # the Linux VM test shards whose raw coverage test-linux-coverage merges.
@@ -143,13 +143,15 @@ def select(paths, force_full=False):
             jobs.update(('analyze', 'test-linux-coverage', 'test-web', 'test-other-os'))
         else:
             full('shared/runtime or unclassified path: ' + path)
-        # Root tooling scans all maintained Markdown, including independent
-        # package docs and the Genkit gateway handled above. Keep this additive
-        # so a specialized path cannot bypass those repository-wide contracts.
+        # Root tests scan all maintained Markdown, including independent package
+        # docs and the Genkit gateway handled above. Keep this additive so a
+        # specialized path cannot bypass those repository-wide contracts.
         if path.endswith('.md'):
-            jobs.add('test-linux-coverage')
+            jobs.add('markdown-tests')
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.
+    if 'test-linux-coverage' in jobs:
+        jobs.discard('markdown-tests')  # Linux coverage runs every root test.
     if 'test-linux-coverage' in jobs and 'web-chat-contract' in jobs:
         # Both root provider tests and all Flutter consumer tests are covered.
         jobs.discard('validation-integration')
