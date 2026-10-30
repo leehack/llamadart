@@ -51,6 +51,22 @@ T _invokePrivate<T>(
       as T;
 }
 
+void _setPrivate(LlamaCppService service, String field, Object? value) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  reflect(service).setField(MirrorSystem.getSymbol(field, owner), value);
+}
+
+Object? _loadDraft(LlamaCppService service, int target, String model) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(service)
+      .invoke(
+        MirrorSystem.getSymbol('_loadSpeculativeDraftModel', owner),
+        [target, model, 'Draft model'],
+        {#loadMtp: false},
+      )
+      .reflectee;
+}
+
 // Fake devices must never reach llama.cpp: each such test is refused before
 // the load. The real-device test loads the synthetic model on this host's
 // first GPU.
@@ -65,6 +81,8 @@ void main() {
     List<GgmlDeviceEntry> Function()? registeredDevices,
     VulkanDeviceProbe probe = const VulkanDeviceProbe.unavailable('test'),
     bool Function(GgmlDeviceEntry device)? splitBufferTypeProbe,
+    List<ggml_backend_dev_t>? Function(GpuBackend backend)? backendDevices,
+    List<int> Function(GpuBackend backend)? deviceTypes,
   }) {
     allocator = RecordingAllocator();
     recorder = RecordingExitTeardown(
@@ -79,6 +97,8 @@ void main() {
       registeredDevices: registeredDevices,
       vulkanDeviceProbe: () => probe,
       splitBufferTypeProbe: splitBufferTypeProbe,
+      backendDevices: backendDevices,
+      deviceTypes: deviceTypes,
       modelLoadAllocator: allocator,
     )..initializeBackend();
   }
@@ -275,6 +295,224 @@ void main() {
     },
   );
 
+  test('a draft of a row-split target on the CPU loads on the CPU in layer '
+      'mode, the only one llama.cpp allows a CPU list in', () {
+    start();
+    const target = 7;
+    // A host with no GPU backend loads such a target with no device list and
+    // reports the CPU; the draft load is all that is under test. A host with a
+    // GPU stands in for one that registered it after the target loaded.
+    (_private(service, '_modelLoadParams') as Map<int, ModelParams>)[target] =
+        const ModelParams(gpuLayers: 0, splitMode: ModelSplitMode.row);
+    (_private(service, '_modelBackendNames') as Map<int, String>)[target] =
+        'CPU';
+    _loadDraft(service, target, model);
+    final cpu = _invokePrivate<List<ggml_backend_dev_t>>(
+      service,
+      '_resolvePreferredDevices',
+      [GpuBackend.cpu],
+    ).single;
+    expect(recorder.loadDevices, [
+      [cpu.address],
+    ]);
+    expect(recorder.loadSplitModes, [ModelSplitMode.layer.llamaCppValue]);
+    allocator.expectAllFreed();
+  });
+
+  test('on a host with no GPU, a row-split target reports 0 GPU layers and its '
+      'draft loads', () {
+    start();
+    if (!_invokePrivate<bool>(service, '_registryShowsNoGpuDevice', const [])) {
+      markTestSkipped('This host has a GPU, and row split is refused on it.');
+      return;
+    }
+    final target = service.loadModel(
+      model,
+      const ModelParams(contextSize: 256, splitMode: ModelSplitMode.row),
+    );
+    expect(service.getResolvedGpuLayers(), 0);
+    expect(_loadDraft(service, target, model), isNotNull);
+    allocator.expectAllFreed();
+  });
+
+  group('the device list of an explicit backend is freed', () {
+    const vulkan11 = 1 << 22 | 1 << 12;
+    const target = 7;
+    final v0 = _fake('Vulkan0', 'Vulkan', 0x1000);
+    final v1 = _fake('Vulkan1', 'Vulkan', 0x2000);
+    const tooOld = VulkanDeviceFacts(
+      name: 'Vulkan0',
+      deviceType: 2,
+      instanceApiVersion: VulkanDeviceFacts.vulkan12,
+      apiVersion: vulkan11,
+      subgroupSize: 32,
+    );
+    const usable = VulkanDeviceFacts(
+      name: 'Vulkan1',
+      deviceType: 2,
+      instanceApiVersion: VulkanDeviceFacts.vulkan12,
+      apiVersion: VulkanDeviceFacts.vulkan12,
+      subgroupSize: 32,
+    );
+    const vulkanLoad = ModelParams(
+      contextSize: 256,
+      preferredBackend: GpuBackend.vulkan,
+      gpuLayers: 99,
+    );
+
+    void startOnVulkan(
+      List<GgmlDeviceEntry> devices, {
+      VulkanDeviceProbe probe = const VulkanDeviceProbe.unavailable('test'),
+      List<int> Function(GpuBackend backend)? deviceTypes,
+    }) {
+      start(
+        registeredDevices: () => devices,
+        backendDevices: (backend) => backend == GpuBackend.vulkan
+            ? [for (final device in devices) device.device!]
+            : null,
+        probe: probe,
+        deviceTypes: deviceTypes,
+      );
+    }
+
+    void seedVulkanTarget(ModelParams params) {
+      (_private(service, '_modelLoadParams') as Map<int, ModelParams>)[target] =
+          params;
+      (_private(service, '_modelBackendNames') as Map<int, String>)[target] =
+          'Vulkan';
+      (_private(service, '_modelResolvedGpuLayers') as Map<int, int>)[target] =
+          99;
+    }
+
+    tearDown(() => allocator.expectAllFreed());
+
+    test('when ComputeDevice.gpu finds no GPU', () {
+      startOnVulkan(
+        [v0],
+        deviceTypes: (_) => [
+          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+        ],
+      );
+      expect(
+        () => service.loadModel(
+          model,
+          vulkanLoad.copyWith(device: ComputeDevice.gpu),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(allocator.allocations, 1);
+    });
+
+    test('when Vulkan is refused and the load falls back to the CPU', () {
+      startOnVulkan([v0], probe: const VulkanDeviceProbe.devices([tooOld]));
+      service.loadModel(model, vulkanLoad);
+      expect(recorder.loadGpuLayers, [0]);
+    });
+
+    test('when the usable Vulkan devices replace it', () {
+      startOnVulkan([
+        v0,
+        v1,
+      ], probe: const VulkanDeviceProbe.devices([tooOld, usable]));
+      recorder.fail = (name) => name == _load;
+      expect(() => service.loadModel(model, vulkanLoad), throwsException);
+      expect(recorder.loadDevices, [
+        [v1.device!.address],
+      ]);
+    });
+
+    test('when the MoE cache is refused', () {
+      startOnVulkan([v0]);
+      expect(
+        () => service.loadModel(
+          model,
+          vulkanLoad.copyWith(moeCacheBytes: 1 << 30),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('moeCacheBytes'),
+          ),
+        ),
+      );
+    });
+
+    test('when placement is refused', () {
+      startOnVulkan([v0]);
+      expect(
+        () => service.loadModel(
+          model,
+          vulkanLoad.copyWith(gpuDevices: const [5]),
+        ),
+        refused(contains('this host has 1')),
+      );
+    });
+
+    test('when the usable Vulkan devices replace it for a draft', () {
+      startOnVulkan([
+        v0,
+        v1,
+      ], probe: const VulkanDeviceProbe.devices([tooOld, usable]));
+      seedVulkanTarget(vulkanLoad);
+      recorder.fail = (name) => name == _load;
+      expect(() => _loadDraft(service, target, model), throwsException);
+      expect(recorder.loadDevices, [
+        [v1.device!.address],
+      ]);
+    });
+
+    test('and a draft of a row-split target on a GPU stays in row mode', () {
+      startOnVulkan([v1]);
+      seedVulkanTarget(vulkanLoad.copyWith(splitMode: ModelSplitMode.row));
+      recorder.fail = (name) => name == _load;
+      expect(() => _loadDraft(service, target, model), throwsException);
+      expect(recorder.loadSplitModes, [ModelSplitMode.row.llamaCppValue]);
+    });
+
+    test('when placement is refused for a draft', () {
+      startOnVulkan([v0]);
+      seedVulkanTarget(vulkanLoad.copyWith(gpuDevices: const [5]));
+      expect(
+        () => _loadDraft(service, target, model),
+        refused(contains('this host has 1')),
+      );
+      expect(recorder.calls, isNot(contains(_load)));
+    });
+  });
+
+  test('a listed explicit backend keeps its layers on a host with no GPU, as '
+      'BLAS does', () {
+    final blas = _fake('BLAS', 'BLAS', 0x1000);
+    start(
+      registeredDevices: () => [blas],
+      backendDevices: (backend) =>
+          backend == GpuBackend.blas ? [blas.device!] : null,
+      deviceTypes: (_) => [
+        ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
+      ],
+    );
+    final modules = Directory('${dir.path}/modules')..createSync();
+    _setPrivate(service, '_backendModuleDirectory', modules.path);
+    recorder.fail = (name) => name == _load;
+    expect(
+      () => service.loadModel(
+        model,
+        const ModelParams(
+          contextSize: 256,
+          preferredBackend: GpuBackend.blas,
+          gpuLayers: 99,
+        ),
+      ),
+      throwsException,
+    );
+    expect(recorder.loadGpuLayers, [99]);
+    expect(recorder.loadDevices, [
+      [blas.device!.address],
+    ]);
+    allocator.expectAllFreed();
+  });
+
   test('a load refused at placement allocates no tensor overrides', () {
     start(registeredDevices: () => [_fake('CUDA0', 'CUDA', 0x1000)]);
     expect(
@@ -383,7 +621,9 @@ void main() {
       );
       expect(probed, ['Vulkan1', 'Vulkan0']);
       expect(recorder.calls, isNot(contains(_load)));
-      expect(allocator.allocations, 0);
+      // Only the device list, freed on the refusal: no split, no model path.
+      expect(allocator.allocations, 1);
+      allocator.expectAllFreed();
     });
 
     test('on GPUs llama.cpp selects by itself probes all of them, whatever '

@@ -71,6 +71,10 @@ final class RecordingExitTeardown {
   /// `llama_dart_model_load_from_file` so far.
   final List<int> loadGpuLayers = <int>[];
 
+  /// The `llama_model_params.split_mode` of each
+  /// `llama_dart_model_load_from_file` so far.
+  final List<int> loadSplitModes = <int>[];
+
   /// The `llama_model_params.tensor_buft_overrides` patterns of each
   /// `llama_dart_model_load_from_file` so far.
   final List<List<String>> loadTensorOverrides = <List<String>>[];
@@ -188,6 +192,7 @@ final class RecordingExitTeardown {
               ],
       );
       loadGpuLayers.add(params.n_gpu_layers);
+      loadSplitModes.add(params.split_modeAsInt);
       final overrides = params.tensor_buft_overrides;
       loadTensorOverrides.add([
         if (overrides != nullptr)
