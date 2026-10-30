@@ -321,8 +321,8 @@ active task per `SpeechToTextEngine` instance.
 
 Qwen3-ASR recognition is validated up to 30 seconds per input. Longer inputs
 can drop or repeat sentences without reaching any limit, so split longer
-recordings into windows of at most 30 seconds. Built-in windowing is tracked in
-[#327](https://github.com/leehack/llamadart/issues/327).
+recordings into windows of at most 30 seconds. Built-in windowing is not
+available yet.
 
 A Qwen3-ASR prompt grows by about 13 tokens per second of audio, and the
 transcript shares the same context. On native llama.cpp, a prompt-adapter task
