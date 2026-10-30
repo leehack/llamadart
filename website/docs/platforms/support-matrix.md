@@ -318,19 +318,15 @@ output and grammars, sampling controls and speculative decoding. Guides:
   default, runs LiteRT-LM on the GPU, which cannot run Qwen3 0.6B. The
   adapter's 128 MiB storage-buffer binding limit is smaller than one of the
   model's weight buffers, so expect the same from any model and adapter with
-  that mismatch. `v0.17.0-8` and earlier generated wrong text there. With the
-  native `v0.18.0` GPU engine creation fails instead: on a Galaxy S24 the
+  that mismatch. GPU engine creation fails: on a Galaxy S24 the
   first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
-  requested; from 0.17.0 `auto` retries on the CPU with a warning instead of
-  throwing `LlamaModelException`
+  requested; `auto` retries on the CPU with a warning
   ([#1034](https://github.com/leehack/llamadart/issues/1034)). Gemma 4 E2B
   runs on that GPU. `ModelParams(device: ComputeDevice.cpu)` skips the GPU
-  attempt and answers correctly on the same device
-  ([#553](https://github.com/leehack/llamadart/issues/553), upstream
+  attempt and answers correctly on the same device (upstream
   [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
-- Windows x64 LiteRT-LM GPU needs `litert-lm-native` `v0.17.0-6` or later,
-  which bundles `dxil.dll` and `dxcompiler.dll`. The pinned runtime includes
-  them. The `v0.18.0` GPU accelerator and sampler load
+- Windows x64 LiteRT-LM GPU needs `dxil.dll` and `dxcompiler.dll`, which the
+  pinned runtime bundles. Its GPU accelerator and sampler load
   `webgpu_dawn.dll`, which the hook bundles. Qwen3 0.6B ran on an NVIDIA L4
   (Direct3D 12) through `dart run` and a `dart build cli` bundle; a Flutter
   Windows app has not been run with it.

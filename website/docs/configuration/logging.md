@@ -76,8 +76,8 @@ passed to the runtime as silent before each engine create and stops the
 runtime library's own absl, LiteRT and TFLite loggers. The prebuilt WebGPU
 accelerator (`libLiteRtWebGpuAccelerator`) links its own absl and exports no
 logging control, so a GPU engine create still writes `I0000` info lines to
-stderr. A CPU-only load writes nothing. Verified on macOS arm64 with LiteRT-LM
-0.17.0-6 and Qwen3-0.6B at `none`; source line numbers and the adapter string
+stderr. A CPU-only load writes nothing. Observed on macOS arm64 with
+Qwen3-0.6B at `none`; source line numbers and the adapter string
 vary by release and GPU:
 
 ```text
@@ -89,5 +89,5 @@ I0000 ... delegate_kernel.cc:...] Initializing WebGPU-based API from serialized 
 ```
 
 `llamadart` cannot filter or redirect these lines; an app that must hide them
-has to capture the process stderr itself. Tracked in
-[#568](https://github.com/leehack/llamadart/issues/568).
+has to capture the process stderr itself. Tracked upstream in
+[litert-lm-native#58](https://github.com/leehack/litert-lm-native/issues/58).

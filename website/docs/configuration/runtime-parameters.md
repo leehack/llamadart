@@ -203,7 +203,7 @@ const params = LlamaCppModelParams(
   built-in template (an empty string included); see
   [Chat templates](../guides/chat-template-and-parsing#litert-lm-template-registry)
   for when native LiteRT-LM uses it and for the list-of-parts `content` it
-  passes from `v0.18.0`. A per-call `customTemplate` wins. The value is Jinja
+  passes. A per-call `customTemplate` wins. The value is Jinja
   source: names such as `chatml` are not mapped to llama.cpp's built-in
   templates. `engine.getMetadata()` still reports the GGUF template.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
@@ -343,8 +343,7 @@ restarts with the same PID. That lease never expires, so its model's program
 caches stay unpruned until its two lease files are deleted while no engine of
 that model is running.
 
-The cap mitigates a known runtime issue
-([#552](https://github.com/leehack/llamadart/issues/552)): with Qwen3.5-0.8B
+The cap guards against runtime cache growth: with Qwen3.5-0.8B
 on the macOS GPU backend, every engine create appended about 0.5 GB to
 `*_mldrift_program_cache.bin`, later creates logged
 `Deserialization failed: DATA_LOSS`, and deleting the file did not slow engine
@@ -353,25 +352,22 @@ first generation, tokenization or detokenization after each context create,
 and again when speculative decoding, vision, audio or image-count settings
 change.
 
-Measured with `v0.18.0` on the macOS GPU backend, the program cache of
-Qwen3 0.6B (4 MB) and Gemma 4 E2B (11 MB) no longer grows after the first
-engine create, where `v0.17.0-8` doubled Qwen3 0.6B's on the second. The
-Qwen3.5 0.8B VL int8 bundle still appends about 270 MB per create, as it did
-on `v0.17.0-8`; the default cap keeps it from filling the disk.
+On the macOS GPU backend, the program cache of Qwen3 0.6B (4 MB) and
+Gemma 4 E2B (11 MB) no longer grows after the first engine create. The
+Qwen3.5 0.8B VL int8 bundle still appends about 270 MB per create; the default
+cap keeps it from filling the disk.
 
 The cache file names carry the model file's name, modification time and size,
 not the runtime version, so an app that updates llamadart keeps the files the
-previous runtime wrote. Over a `v0.17.0-8` cache, `v0.18.0` leaves the weight
-cache at its size and appends its own programs to the program cache, which
-keeps the bytes the older runtime wrote. To reclaim them, delete the
+previous runtime wrote, and the new runtime appends its own programs to the
+program cache. To reclaim the old bytes, delete the
 `*_mldrift_program_cache.bin` files once after updating, or run once with
 `maxProgramCacheBytes: 0`; the runtime rebuilds the file. In a
 directory llamadart prunes, the default cap deletes them once their total
 exceeds 1 GiB.
 
-From `v0.18.0` the runtime fails engine creation when it cannot write the
-cache directory, on the CPU backend too: `v0.17.0-8` ran the CPU backend
-uncached there. A missing `cacheDir` is created, so this affects a
+The runtime fails engine creation when it cannot write the cache directory,
+on the CPU backend too. A missing `cacheDir` is created, so this affects a
 directory that exists and is read-only. The first generation then throws
 `LlamaModelException`, or `LlamaUnsupportedException` when
 `ComputeDevice.gpu` or `ComputeDevice.npu` was requested.

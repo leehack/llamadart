@@ -98,13 +98,12 @@ library load error and confirm the platform prerequisites.
 Requests, generation streams, and speech synthesis fail with
 `LlamaStateException` if the backend's worker isolate exits after startup.
 Dispose the affected engine/backend and create a fresh one before loading the
-model again; handles from the old worker are invalid. Disposal no longer waits
+model again; handles from the old worker are invalid. Disposal does not wait
 for a reply from that dead worker. Native allocations abandoned by the worker
 cannot be reclaimed through its old handles.
 
-The regression tests cover external isolate termination and uncaught Dart
-worker errors. A native crash can terminate the entire application process;
-isolate exit handling does not make that crash recoverable.
+A native crash can terminate the entire application process; isolate exit
+handling does not make that crash recoverable.
 
 ## GPU crash or device loss
 
@@ -122,9 +121,8 @@ module, use a browser with WebGPU, or load with `ComputeDevice.auto` to accept
 the runtime's default device. Native LiteRT-LM reports a GPU or NPU delegate
 that fails to start from the first generation or `tokenize`; a corrupt or
 truncated `.litertlm` file fails the same way, so if `ComputeDevice.cpu` also
-fails, replace the file. With a native runtime from `v0.18.0`, the message
-also carries the runtime's own reason, such as
-`LiteRT-LM reported NOT_FOUND (5): ...`; older runtimes report none. The
+fails, replace the file. The message also carries the runtime's own reason,
+such as `LiteRT-LM reported NOT_FOUND (5): ...`. The
 deprecated
 `liteRtLmBackend` still throws `LlamaModelException` for an unavailable
 backend; catch `LlamaException` to handle both.
@@ -186,38 +184,18 @@ bytes and the adapter's storage buffer binding limit is 134217728 (128 MiB).
 Any adapter with that limit and any model with a larger weight buffer should
 fail the same way. The CPU on the same device answers correctly.
 `ComputeDevice.auto`, the default, selects the GPU for LiteRT-LM on Android,
-so a default load of that model on that GPU is affected. From 0.17.0, `auto`
-retries a GPU engine that fails to start on the CPU and logs a warning, which
-handles the pinned runtime's failure below. Load with
+so a default load of that model on that GPU is affected. `auto` retries a
+GPU engine that fails to start on the CPU and logs a warning. Load with
 `ModelParams(device: ComputeDevice.cpu)` to skip the GPU attempt.
 
-What you see depends on the runtime:
-
-- `v0.17.0-6` through `v0.17.0-8` created the engine and generated wrong
-  text, such as one token repeated up to the output limit, with no error. The
-  native log has `Binding size (155582464) ... is larger than the maximum
-  storage buffer binding size (134217728)`.
-- With the pinned runtime, GPU engine creation fails instead, with the same
-  line in the native log. Observed with llamadart on a Galaxy S24:
-  `loadModel` returns, because the engine is created at first use, and the
-  first use throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
-  requested. Before 0.17.0 it threw `LlamaModelException` under `auto`; from
-  0.17.0 `auto` runs on the CPU instead and `getBackendName()` reports
-  `LiteRT-LM cpu`. Gemma 4 E2B runs on the same GPU.
-
-Tracked in [#553](https://github.com/leehack/llamadart/issues/553) and
-upstream
+GPU engine creation fails with `Binding size (155582464) ... is larger than the
+maximum storage buffer binding size (134217728)` in the native log. Observed
+with llamadart on a Galaxy S24: `loadModel` returns, because the engine is
+created at first use, and the first use throws `LlamaUnsupportedException` when
+`ComputeDevice.gpu` was requested. Under `auto` the load runs on the CPU
+instead and `getBackendName()` reports `LiteRT-LM cpu`. Gemma 4 E2B runs on the
+same GPU. Upstream:
 [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866).
-
-### Android app is killed after reloading a LiteRT-LM GPU model
-
-With `litert-lm-native` `v0.17.0-7` and earlier, deleting a LiteRT-LM GPU
-engine on Android kept its graphics memory, about 2 GB for Qwen3 0.6B on a
-Galaxy S24, so the low-memory killer ended the app at the second or third
-model load. From `v0.17.0-8` the runtime releases that memory when the engine
-is deleted, as measured on a Galaxy S24; update llamadart to a release that
-pins it or later
-([litert-lm-native#59](https://github.com/leehack/litert-lm-native/issues/59)).
 
 ## Web
 
@@ -263,8 +241,7 @@ See [Performance tuning](../guides/performance-tuning).
 ### LiteRT-LM GPU program cache grows with every load
 
 With some models on the LiteRT-LM GPU backend, each engine create appends to
-`*_mldrift_program_cache.bin`
-([#552](https://github.com/leehack/llamadart/issues/552)). Before each create,
+`*_mldrift_program_cache.bin`. Before each create,
 llamadart prunes the program cache files of the cache directory to
 `LiteRtLmModelParams.maxProgramCacheBytes`, 1 GiB by default. Without a cache
 directory, as on Linux, Windows and iOS when `cacheDir` is unset, the
