@@ -20,7 +20,7 @@ Desktop source-CLI diagnostics can opt into
 process. It checks selected symbols/static ABI markers, without device or model
 initialization. This adds no runtime/platform/model capability: production loader
 behavior, loaded release identity, emitted app assets and GPU/inference remain
-unchecked. See [scope and limits](./native-build-hooks#isolated-native-check).
+unchecked. See [scope and limits](./diagnose-setup#isolated-native-check).
 
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -184,13 +184,9 @@ web are on [Known platform issues](./known-platform-issues).
 The native-assets hook currently pins `llamadart-native` tag
 `v0.8.0` and
 `litert-lm-native` release `v0.18.1-4` (`lib/src/hook/native_release_pins.dart`).
-Apps can override the llama.cpp release with `llamadart_native_tag`, which
-takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
-`bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading
-zeros. Build-hook overrides must always name an explicit tag; `latest` is
-limited to maintainer synchronization and header/binding regeneration. Keys,
-backend modules and local bundles:
-[Native runtime configuration](./native-build-hooks).
+Apps can override the llama.cpp release with `llamadart_native_tag`; accepted
+tag forms, keys, backend modules and local bundles:
+[Native runtime configuration](./native-build-hooks#override-the-llamacpp-release).
 
 Apps load the bridge assets themselves; see
 [Add the bridge to your app](./webgpu-bridge#add-the-bridge-to-your-app).
