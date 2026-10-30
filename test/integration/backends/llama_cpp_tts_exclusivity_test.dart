@@ -16,6 +16,8 @@ import 'package:test/test.dart';
 import '../../support/synthetic_embedding_gguf.dart';
 
 const _params = ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
   device: ComputeDevice.cpu,
   gpuLayers: 0,
   contextSize: 64,

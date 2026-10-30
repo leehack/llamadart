@@ -25,7 +25,12 @@ import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
-const _params = ModelParams(gpuLayers: 0, contextSize: 64);
+const _params = ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
+  gpuLayers: 0,
+  contextSize: 64,
+);
 const _greedy = GenerationParams(maxTokens: 4, temp: 0, topK: 1, seed: 1);
 
 const _load = 'llama_dart_model_load_from_file';
