@@ -2641,6 +2641,112 @@ void main() {
       );
     });
 
+    group('whose module is bundled but offers no device', () {
+      late LlamaCppService service;
+      late String modelPath;
+
+      setUp(() {
+        service = LlamaCppService(
+          deviceTypes: (_) => [
+            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+          ],
+        );
+        addTearDown(service.dispose);
+        final moduleDir = Directory(path.join(tempDir.path, 'modules'))
+          ..createSync();
+        final moduleName = Platform.isWindows
+            ? 'ggml-cuda.dll'
+            : Platform.isMacOS
+            ? 'libggml-cuda.dylib'
+            : 'libggml-cuda.so';
+        File(path.join(moduleDir.path, moduleName)).writeAsStringSync('junk');
+        _writePrivateForTesting(
+          service,
+          '_backendModuleDirectory',
+          moduleDir.path,
+        );
+        modelPath = path.join(tempDir.path, 'llama.gguf');
+        writeSyntheticLlamaGguf(modelPath);
+      });
+
+      test('reports the CPU, 0 GPU layers and warns why', () {
+        final handle = service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cuda,
+            gpuLayers: 99,
+          ),
+        );
+
+        expect(
+          _readPrivateForTesting<Map<int, String>>(
+            service,
+            '_modelBackendNames',
+          )[handle],
+          'CPU',
+        );
+        expect(service.getResolvedGpuLayers(), 0);
+        expect(records.map((record) => record.level), [LlamaLogLevel.warn]);
+        expect(
+          records.single.message,
+          'preferredBackend cuda was requested, but its backend module '
+          'failed to load or found no usable device, so the model loaded on '
+          'CPU with 0 GPU layers.',
+        );
+      });
+
+      test('does not warn when no layer was requested on the GPU', () {
+        service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cuda,
+            gpuLayers: 0,
+          ),
+        );
+        expect(records, isEmpty);
+      });
+
+      test('leaves the load alone while another GPU device is registered', () {
+        final other = LlamaCppService(
+          deviceTypes: (_) => [
+            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value,
+          ],
+        );
+        addTearDown(other.dispose);
+        _writePrivateForTesting(
+          other,
+          '_backendModuleDirectory',
+          path.join(tempDir.path, 'modules'),
+        );
+        other.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cuda,
+            gpuLayers: 99,
+          ),
+        );
+        expect(other.getResolvedGpuLayers(), 99);
+        expect(records, isEmpty);
+      });
+
+      test('no longer lists the backend as available once it failed to '
+          'load', () {
+        expect(service.getAvailableBackendInfo(), contains('CUDA'));
+        service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cuda,
+            gpuLayers: 99,
+          ),
+        );
+        expect(service.getAvailableBackendInfo(), isNot(contains('CUDA')));
+      });
+    });
+
     test('throws for ComputeDevice.gpu instead of loading on CPU', () {
       final service = LlamaCppService();
       addTearDown(service.dispose);

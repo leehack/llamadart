@@ -424,6 +424,12 @@ hooks:
   `hip` included on x64, so there CUDA loads without the user-define when its
   [system libraries](./linux-prerequisites) are installed.
 
+When the module is bundled but cannot be used, because it fails to load (for
+example `ggml-cuda.dll` without an NVIDIA driver) or finds no device, and no
+other GPU is registered, the model also loads on CPU with 0 GPU layers.
+`getResolvedGpuLayers()` returns 0, llamadart logs a warning, and
+`getAvailableBackends()` stops listing a backend whose module failed to load.
+
 ### Android arm64 CPU variants
 
 The `android-arm64` map form also takes `cpu_profile` and `cpu_variants`:

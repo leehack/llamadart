@@ -275,6 +275,31 @@ void main() {
     },
   );
 
+  test('a draft model follows a row-split target onto the CPU without a '
+      'device list', () {
+    start(splitBufferTypeProbe: (_) => true);
+    const target = 7;
+    // A host with no GPU backend loads such a target with no device list and
+    // reports the CPU; the draft load is all that is under test.
+    (_private(service, '_modelLoadParams') as Map<int, ModelParams>)[target] =
+        const ModelParams(gpuLayers: 0, splitMode: ModelSplitMode.row);
+    (_private(service, '_modelBackendNames') as Map<int, String>)[target] =
+        'CPU';
+    final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+    try {
+      reflect(service).invoke(
+        MirrorSystem.getSymbol('_loadSpeculativeDraftModel', owner),
+        [target, model, 'Draft model'],
+        {#loadMtp: false},
+      );
+    } on Object {
+      // Metal or another GPU may reject row split on this host; the device
+      // list passed to the load is what matters.
+    }
+    expect(recorder.loadDevices, [null]);
+    allocator.expectAllFreed();
+  });
+
   test('a load refused at placement allocates no tensor overrides', () {
     start(registeredDevices: () => [_fake('CUDA0', 'CUDA', 0x1000)]);
     expect(
@@ -383,7 +408,9 @@ void main() {
       );
       expect(probed, ['Vulkan1', 'Vulkan0']);
       expect(recorder.calls, isNot(contains(_load)));
-      expect(allocator.allocations, 0);
+      // Only the device list, freed on the refusal: no split, no model path.
+      expect(allocator.allocations, 1);
+      allocator.expectAllFreed();
     });
 
     test('on GPUs llama.cpp selects by itself probes all of them, whatever '

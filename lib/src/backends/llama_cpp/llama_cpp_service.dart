@@ -1485,11 +1485,21 @@ class LlamaCppService {
     if (modelParams.device == ComputeDevice.gpu &&
         (forcedCpuFallback || !_hasGpuDevice(effectiveBackend))) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       throw LlamaUnsupportedException(
         _noGpuMessage(effectiveBackend, forcedCpuFallback: forcedCpuFallback),
       );
+    }
+    final unusableBackendModule =
+        explicitGpuBackend &&
+        !forcedCpuFallback &&
+        gpuLayers != 0 &&
+        preferredDevices == null &&
+        _backendModuleDirectory != null &&
+        !_hasGpuDevice(GpuBackend.auto);
+    if (unusableBackendModule) {
+      gpuLayers = 0;
     }
     final vulkan = _resolveVulkanLoadDevices(
       effectiveBackend,
@@ -1499,7 +1509,7 @@ class LlamaCppService {
     );
     if (vulkan.refused) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       if (modelParams.device == ComputeDevice.gpu) {
         throw LlamaUnsupportedException(
@@ -1512,7 +1522,7 @@ class LlamaCppService {
       gpuLayers = 0;
     } else if (vulkan.devices case final usable?) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       preferredDevices = _createDeviceList(usable);
     }
@@ -1527,7 +1537,7 @@ class LlamaCppService {
       cpuMoeBuffer = _cpuMoeBufferType(modelParams.cpuMoeLayers);
     } catch (_) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       rethrow;
     }
@@ -1548,13 +1558,13 @@ class LlamaCppService {
       );
     } catch (_) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       rethrow;
     }
     if (placement != null) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       preferredDevices = _createDeviceList(placement.devices);
     }
@@ -1562,7 +1572,7 @@ class LlamaCppService {
       _checkRowSplitSupported(modelParams, preferredDevices);
     } catch (_) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       rethrow;
     }
@@ -1611,7 +1621,7 @@ class LlamaCppService {
         _modelLoadAllocator.free(tensorSplit);
       }
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       if (cpuMoeOverrides != null) {
         freeTensorBufferOverrides(
@@ -1672,6 +1682,13 @@ class LlamaCppService {
         '$resolvedBackend with 0 GPU layers. To bundle it, add $requested to '
         'the llamadart_native_backends hook user-define in your app '
         'pubspec.yaml.',
+      );
+    }
+    if (unusableBackendModule) {
+      LlamaLogger.instance.warning(
+        'preferredBackend ${effectiveBackend.name} was requested, but its '
+        'backend module failed to load or found no usable device, so the '
+        'model loaded on $resolvedBackend with 0 GPU layers.',
       );
     }
     final simulatorWarning = iosSimulatorMetalWarning(
@@ -1934,7 +1951,7 @@ class LlamaCppService {
       for (final entry in devices)
         if (entry.device case final device? when device != nullptr) device,
     ];
-    final list = malloc<ggml_backend_dev_t>(pointers.length + 1);
+    final list = _modelLoadAllocator<ggml_backend_dev_t>(pointers.length + 1);
     for (final (index, device) in pointers.indexed) {
       list[index] = device;
     }
@@ -2114,8 +2131,12 @@ class LlamaCppService {
     final targetModelParams =
         _modelLoadParams[targetModelHandle] ?? const ModelParams();
     final targetBackendName = _modelBackendNames[targetModelHandle];
+    // llama.cpp rejects the explicit CPU device list in row mode, and a row
+    // target that reports the CPU loaded without any list.
     final effectiveBackend = targetBackendName == _backendDisplayName('cpu')
-        ? GpuBackend.cpu
+        ? (targetModelParams.splitMode == ModelSplitMode.row
+              ? GpuBackend.auto
+              : GpuBackend.cpu)
         : resolvePreferredBackendForLoad(
             targetModelParams,
             isAndroid: _isAndroid,
@@ -2158,7 +2179,7 @@ class LlamaCppService {
     );
     if (vulkan.devices case final usable?) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       preferredDevices = _createDeviceList(usable);
     }
@@ -2172,13 +2193,13 @@ class LlamaCppService {
       );
     } catch (_) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       rethrow;
     }
     if (placement != null) {
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       preferredDevices = _createDeviceList(placement.devices);
     }
@@ -2208,7 +2229,7 @@ class LlamaCppService {
     } finally {
       _modelLoadAllocator.free(modelPathPtr);
       if (preferredDevices != null) {
-        malloc.free(preferredDevices);
+        _modelLoadAllocator.free(preferredDevices);
       }
       if (tensorSplit != null) {
         _modelLoadAllocator.free(tensorSplit);
@@ -3409,7 +3430,7 @@ class LlamaCppService {
       return null;
     }
 
-    final ptr = malloc<ggml_backend_dev_t>(devices.length + 1);
+    final ptr = _modelLoadAllocator<ggml_backend_dev_t>(devices.length + 1);
     for (var i = 0; i < devices.length; i++) {
       ptr[i] = devices[i];
     }
@@ -7710,7 +7731,8 @@ class LlamaCppService {
       ];
 
       for (final backend in backendCandidates) {
-        if (_isBackendModuleBundled(backend)) {
+        if (_isBackendModuleBundled(backend) &&
+            !_failedBackendModules.contains(backend)) {
           available.add(_backendDisplayName(backend));
         }
       }
