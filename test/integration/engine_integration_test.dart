@@ -29,7 +29,11 @@ void main() async {
       // 1. Load Model
       await engine.loadModel(
         modelFile.path,
-        modelParams: const ModelParams(contextSize: 256),
+        modelParams: const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          contextSize: 256,
+        ),
       );
       expect(engine.isReady, isTrue);
       expect(engine.modelHandle, isNotNull);
@@ -93,7 +97,11 @@ void main() async {
       if (!engine.isReady) {
         await engine.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 256),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+          ),
         );
       }
 
@@ -112,7 +120,11 @@ void main() async {
       if (!engine.isReady) {
         await engine.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 256),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+          ),
         );
       }
 
@@ -197,7 +209,11 @@ void main() async {
       try {
         await tempEngine.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 512),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 512,
+          ),
         );
         final size = await tempEngine.getContextSize();
         expect(size, 512);

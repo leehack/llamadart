@@ -4269,6 +4269,8 @@ void main() {
 
   group('prompt evaluation cancel', () {
     const params = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       contextSize: 512,
       batchSize: 100,
       microBatchSize: 64,
@@ -4722,6 +4724,8 @@ void main() {
         poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_LAST.value,
       );
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         contextSize: 1024,
         preferredBackend: GpuBackend.cpu,
         gpuLayers: 0,
@@ -4740,6 +4744,8 @@ void main() {
       int poolingType = 3,
       bool? causalAttention,
       ModelParams params = const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         contextSize: 1024,
         batchSize: 1024,
         microBatchSize: 64,
@@ -4817,6 +4823,8 @@ void main() {
           final handle = decoderContext(
             poolingType: pooling.value,
             params: const ModelParams(
+              numberOfThreads: 2,
+              numberOfThreadsBatch: 2,
               contextSize: 1024,
               batchSize: 1024,
               microBatchSize: 1024,
@@ -4896,6 +4904,8 @@ void main() {
       final handle = decoderContext(
         causalAttention: false,
         params: const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           contextSize: 1024,
           batchSize: 1024,
           microBatchSize: 1024,
@@ -4962,6 +4972,8 @@ void main() {
       final handle = decoderContext(
         poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
         params: const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           contextSize: 1024,
           batchSize: 64,
           microBatchSize: 128,
@@ -4997,6 +5009,8 @@ void main() {
           poolingType: pooling.value,
           causalAttention: false,
           params: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
             contextSize: 1024,
             batchSize: 1024,
             microBatchSize: 64,
@@ -5101,6 +5115,8 @@ void main() {
         poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
       );
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         contextSize: 1024,
         batchSize: 1024,
         microBatchSize: 64,
@@ -5125,7 +5141,12 @@ void main() {
 
     test('embed and embedBatch reject a rank-pooled model', () {
       final handle = context(
-        const ModelParams(contextSize: 64, maxParallelSequences: 2),
+        const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          contextSize: 64,
+          maxParallelSequences: 2,
+        ),
         poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_RANK.value,
         classifierLabels: const ['yes', 'no'],
       );
@@ -5145,6 +5166,8 @@ void main() {
       final modelPath = path.join(tempDir.path, 't5.gguf');
       writeSyntheticT5Gguf(modelPath);
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         contextSize: 64,
         maxParallelSequences: 2,
         preferredBackend: GpuBackend.cpu,
@@ -5174,6 +5197,8 @@ void main() {
         poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_LAST.value,
       );
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         contextSize: 256,
         maxParallelSequences: 1,
         preferredBackend: GpuBackend.cpu,
@@ -5202,7 +5227,13 @@ void main() {
     });
 
     test('default micro-batch rejects input above 512 tokens', () {
-      final handle = context(const ModelParams(contextSize: 1024));
+      final handle = context(
+        const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          contextSize: 1024,
+        ),
+      );
 
       expect(service.embed(handle, textOfTokens(512)), hasLength(16));
       expect(
@@ -5223,6 +5254,8 @@ void main() {
     test('a raised micro-batch embeds input above 512 tokens', () {
       final handle = context(
         const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           contextSize: 1024,
           batchSize: 1024,
           microBatchSize: 1024,
@@ -5238,6 +5271,8 @@ void main() {
     test('embed rejects input above an explicit micro-batch', () {
       final handle = context(
         const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           contextSize: 1024,
           batchSize: 1024,
           microBatchSize: 64,
@@ -5263,6 +5298,8 @@ void main() {
     test('embedBatch keeps grouped input within the micro-batch', () {
       final handle = context(
         const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           contextSize: 1024,
           batchSize: 1024,
           microBatchSize: 64,
@@ -6128,10 +6165,14 @@ void main() {
 
   group('Android Vulkan prompt micro-batch', () {
     const vulkan = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       contextSize: 256,
       preferredBackend: GpuBackend.vulkan,
     );
     const cpu = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       contextSize: 256,
       preferredBackend: GpuBackend.cpu,
       gpuLayers: 0,
@@ -6247,7 +6288,12 @@ void main() {
       );
       expect(
         await ingest(
-          const ModelParams(contextSize: 256, device: ComputeDevice.gpu),
+          const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+            device: ComputeDevice.gpu,
+          ),
           loadedGpuLayers: 1,
         ),
         decodes([8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4]),
@@ -6422,7 +6468,11 @@ void main() {
     });
 
     test('keeps the default when Android auto loads on the CPU', () async {
-      const auto = ModelParams(contextSize: 256);
+      const auto = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
+        contextSize: 256,
+      );
 
       expect(await ingest(auto, loadParams: auto), decodes([100]));
     });

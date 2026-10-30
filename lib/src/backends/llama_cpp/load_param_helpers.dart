@@ -180,10 +180,37 @@ llama_context_params speculativeDraftContextParams(
   return scratch.ref..n_ubatch = draftMicroBatchSize;
 }
 
+/// The CPU thread count to pass to llama.cpp for a [requested] count.
+///
+/// A positive [requested] is returned unchanged. Otherwise returns ggml's
+/// default of 4 (`GGML_DEFAULT_N_THREADS`), capped at [availableCores]:
+/// `ggml_barrier` spin-waits, so more threads than cores stall each other and
+/// inference runs tens of times slower.
+int resolveCpuThreads(int requested, {required int availableCores}) =>
+    requested > 0 ? requested : availableCores.clamp(1, 4);
+
+/// Sets the generation and batch thread counts of [ctxParams] from [params],
+/// through [resolveCpuThreads].
+void applyContextThreads(
+  llama_context_params ctxParams,
+  ModelParams params, {
+  required int availableCores,
+}) {
+  ctxParams.n_threads = resolveCpuThreads(
+    params.numberOfThreads,
+    availableCores: availableCores,
+  );
+  ctxParams.n_threads_batch = resolveCpuThreads(
+    params.numberOfThreadsBatch,
+    availableCores: availableCores,
+  );
+}
+
 /// Configures a decision head's private encoder context.
 ///
 /// One sequence of up to [maxTokens] tokens runs in one ubatch, with
-/// per-token embeddings and no pooling. Thread counts come from [params].
+/// per-token embeddings and no pooling. Thread counts come from [params] and
+/// [availableCores], through [applyContextThreads].
 /// When [runsOnCpu], KQV and op offload and flash attention are disabled so no
 /// work reaches a GPU backend.
 void applyDecisionContextParams(
@@ -191,6 +218,7 @@ void applyDecisionContextParams(
   ModelParams params, {
   required int maxTokens,
   required bool runsOnCpu,
+  required int availableCores,
 }) {
   ctxParams.n_ctx = maxTokens;
   ctxParams.n_batch = maxTokens;
@@ -198,12 +226,7 @@ void applyDecisionContextParams(
   ctxParams.n_seq_max = 1;
   ctxParams.embeddings = true;
   ctxParams.pooling_type = llama_pooling_type.LLAMA_POOLING_TYPE_NONE;
-  if (params.numberOfThreads > 0) {
-    ctxParams.n_threads = params.numberOfThreads;
-  }
-  if (params.numberOfThreadsBatch > 0) {
-    ctxParams.n_threads_batch = params.numberOfThreadsBatch;
-  }
+  applyContextThreads(ctxParams, params, availableCores: availableCores);
   if (runsOnCpu) {
     ctxParams.offload_kqv = false;
     ctxParams.op_offload = false;
