@@ -90,20 +90,13 @@
         "without leading zeros",
         "start at 1"
       ],
-      "website/docs/getting-started/installation.md": [
+      "website/docs/platforms/native-build-hooks.md": [
         "vMAJOR.MINOR.PATCH",
         "bNNNN",
         "bNNNN-N",
         "bNNNN-llamadart.N",
         "without leading zeros",
         "start at 1"
-      ],
-      "website/docs/platforms/support-matrix.md": [
-        "vMAJOR.MINOR.PATCH",
-        "bNNNN",
-        "bNNNN-N",
-        "bNNNN-llamadart.N",
-        "reject leading zeros"
       ],
       "website/docs/maintainers/native-and-web-sync.md": [
         "`vMAJOR.MINOR.PATCH`",

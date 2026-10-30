@@ -1,6 +1,5 @@
 ---
 title: Native runtime configuration
-sidebar_label: Runtime configuration
 description: Configure which prebuilt llama.cpp and LiteRT-LM runtimes and backend modules the llamadart build hook bundles, and how to override the native release.
 ---
 
@@ -11,14 +10,17 @@ code assets, and the Flutter or Dart build bundles them into the APK, IPA or
 desktop app. On Linux and Windows, LiteRT-LM loads from the app bundle (beside
 the executable, in its `lib/` directory, or in `../lib/` for a `dart build cli`
 executable in `bin/`), and from the hook cache under `dart run` and
-`dart test`; `LLAMADART_LITERT_LM_LIB_DIR` overrides both. On macOS, the hook does not report LiteRT-LM libraries: they stay
+`dart test`; `LLAMADART_LITERT_LM_LIB_DIR` overrides both. On macOS, the hook
+does not report LiteRT-LM libraries: they stay
 in the hook cache inside the resolved `llamadart` package. `dart run` loads
 them from there and a `dart build cli` bundle needs
 `LLAMADART_LITERT_LM_LIB_DIR`. A Flutter macOS app gets them from the
 `llamadart_litert_lm_flutter` companion instead
-([Flutter Apple apps](#flutter-apple-apps)); without it, the app needs the
-[LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase)
-to copy them into the app bundle.
+([Apple setup](./apple-setup#macos-litert-lm)); without it, the app needs the
+[LiteRT-LM build phase](./apple-setup#flutter-macos-litert-lm-build-phase)
+to copy them into the app bundle. Flutter iOS and macOS apps link runtimes
+through SwiftPM companion packages: see [Apple setup](./apple-setup). To check a
+setup before loading a model, see [Diagnose setup](./diagnose-setup).
 
 Configure the hook under `hooks.user_defines.llamadart` in the app's
 `pubspec.yaml`. Every key is optional:
@@ -49,123 +51,6 @@ hooks:
 After changing any of these keys, or after a native release tag is republished
 with new assets, run `flutter clean` once so stale native assets are not
 reused.
-
-## Desktop setup report
-
-On macOS, Linux or Windows, collect a bounded setup snapshot before loading a
-model:
-
-```bash
-dart run llamadart:doctor
-dart run llamadart:doctor --json
-dart run llamadart:doctor --help
-```
-
-The JSON command writes one schema-versioned document to stdout. Exit 0 means
-a report was produced, **not** that a runtime works; exit 1 means no report
-could be produced; invalid arguments exit 64.
-The collector itself performs bounded local package-metadata reads and no
-network, subprocess, native initialization, native-asset resolution, GPU probe
-or model load. `dart run` can run the package build hook **before main**: it may
-prepare/download native assets, print build output, or fail before a report is
-produced. Capture/parse the CLI's report stdout only after a successful launch.
-
-The public API is usable from a desktop Dart IO process, including a desktop
-Flutter process:
-
-```dart
-import 'package:llamadart/llamadart.dart';
-
-Future<void> main() async {
-  final LlamaRuntimeSetupReport report =
-      await collectLlamaRuntimeSetupReport();
-  print(report.toText());
-}
-```
-
-Schema 1 contains normalized OS/version/ABI architecture, Dart version,
-llamadart's **own** package version (unknown if source metadata is unavailable),
-and expected native release tags with published-bundle policy from the hook's
-selectors. Unrecognized metadata becomes `unknown`; Flutter version is unknown
-and is not inferred from the Dart CLI. macOS x64 LiteRT-LM and Windows arm64
-LiteRT-LM/stable_diffusion are marked unavailable under current publication
-policy. Unknown OS/ABI combinations stay unknown. Policy is separate from
-observed native loading: custom bundles, hook settings and Apple companions can
-differ. No report field proves which assets were emitted or loaded. Actual
-loaded versions/backend/GPU, model capabilities and inference remain
-`unknown`/`not_checked`.
-
-Only the names `LLAMADART_NATIVE_LIB_DIR`, `LLAMADART_BACKEND_MODULE_DIR`, and
-`LLAMADART_LITERT_LM_LIB_DIR` are reported as `set`/`unset` (an empty value counts
-as set). Values, paths, arbitrary environment variables, exception text and
-logs are excluded. Remediation uses fixed codes and hints.
-
-Mobile/Web collection throws `LlamaUnsupportedException` with scope guidance.
-A Dart CLI report does not validate an already-built Flutter app, device or
-browser. `web_setup --check` remains a separate offline asset check, not a live
-browser diagnosis. Native bootstrap, mobile/browser diagnostics and broader
-doctor work remain in [#124](https://github.com/leehack/llamadart/issues/124).
-To check a load before it runs, see
-[Check a load before it runs](../guides/backend-selection#check-a-load-before-it-runs).
-
-## Isolated native check
-
-Opt into a separate model-free Dart desktop command for one runtime:
-
-```bash
-dart run llamadart:doctor_native --runtime llama_cpp --json
-dart run llamadart:doctor_native --runtime litert_lm
-dart run llamadart:doctor_native --runtime stable_diffusion
-```
-
-The command preserves the setup snapshot under `setup` and reports a separate
-`native_probe`. It reads only the current ABI's supported absolute-file entries
-from the local native-assets descriptor next to the active package config.
-Those are local declarations, which can be stale; they do not prove the assets
-compiled into a consuming app. It never guesses a release from file paths,
-hashes or expected publication policy, or searches neighboring caches after a
-declared target fails. Overrides are reported only as set/unset and can differ
-from the checked declaration.
-
-Each invocation starts one bounded child process, opens declared files, resolves
-a small fixed symbol group, and reads compile-time llama.cpp/LiteRT ABI markers.
-Stable Diffusion checks symbols only. No engine, model, device enumeration, GPU
-probe or inference is started; native constructors can still run when a library
-opens. Raw child output and loader errors are discarded. Only fixed result codes
-and remediation text reach either renderer. The child runs no hook, network or
-shell command; the outer `dart run` build hook can still prepare assets before
-main. The source helper ships with the package; compiled executables, Flutter
-SPM/in-process assets and app/device/browser validation are outside this check.
-
-The coordinator starts one 30-second budget at entry, covering metadata,
-manifest processing, child startup/work, pipe drains and IPC results. Forced
-termination, reaping and cleanup have one additional three-second reserve.
-Manifest content is read inside the timed child, so a concurrent replacement
-cannot strand a parent file open. Non-regular files and manifest/IPC symlinks
-are refused before opening. Parent IPC reads happen only after confirmed child
-exit, using its small private files with no other writer. This assumes responsive
-local filesystem operations; it does not promise interruption of arbitrary
-kernel/network-filesystem stalls or protection against hostile same-user path
-replacement. This is not a sandbox for malicious native code.
-
-`SURFACE_OBSERVED` means the declared files opened and the selected symbols/ABI
-markers were observed in that child. It does not prove all bindings, production
-loader resolution, a loaded owner release, usable hardware or model execution.
-Windows direct file loading can differ from production's sibling-DLL search;
-its failure is not proof the backend is unavailable. `production_loader`,
-`emitted_app_libraries`, GPU, model and inference remain unchecked, and
-`loaded_release` remains unknown. Native Windows/Linux execution is not
-qualified by the macOS artifact checks.
-
-`ASSET_NOT_DECLARED` means this local descriptor has no selected runtime; check
-the intended build selection. Missing/invalid descriptors, missing files,
-loader failures, missing symbols, unknown ABI markers, child failures and
-timeouts have separate fixed codes. A timeout or child failure has no hardware
-diagnosis. Exit 0 means a report was produced, including a failed check; exit 1
-means no report and exit 64 means invalid arguments. Use the codes for automation.
-The default `doctor` and `collectLlamaRuntimeSetupReport()` continue to load no
-native library and spawn no process. Broader diagnostics remain in
-[#124](https://github.com/leehack/llamadart/issues/124).
 
 ## Choose runtime families
 
@@ -285,7 +170,7 @@ hooks:
   bundled. `flutter build macos`, Xcode and `xcodebuild` show the warning;
   `flutter build ios` output does not. Naming `stable_diffusion` still bundles
   it through the hook there. A pub workspace follows the app member described
-  under [Flutter Apple apps](#flutter-apple-apps).
+  under [Apple setup](./apple-setup#pub-workspaces-and-host-tests).
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
   and `windows-x64`, built for iOS
@@ -326,7 +211,7 @@ hooks:
   warning. Naming it for that exact bundle key, for example
   `android-x64: [stable_diffusion]`, fails the build instead.
 - Flutter iOS and macOS apps should add the `llamadart_stable_diffusion_flutter`
-  companion instead; see [Flutter Apple apps](#flutter-apple-apps). Without it
+  companion instead; see [Apple setup](./apple-setup#companion-packages). Without it
   a list naming `stable_diffusion` makes the hook bundle the runtime, and App
   Store Connect rejects that iOS framework: Flutter writes `MinimumOSVersion`
   13.0 into it, while the library needs iOS 16.4. The hook reports this as an
@@ -476,8 +361,11 @@ hooks:
 
 - `llamadart_native_tag` names a `llamadart-native` release tag, not a
   `llamadart` package version. The hook accepts `vMAJOR.MINOR.PATCH`,
-  `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` and `bNNNN-llamadart.N`, never
-  `latest`. List releases with
+  `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` and `bNNNN-llamadart.N`.
+  Build-hook overrides must always name an explicit tag; `latest` is limited
+  to maintainer synchronization and header/binding regeneration. Nightly
+  cores are written without leading zeros, and rebuild counters start at 1.
+  List releases with
   `gh release list --repo leehack/llamadart-native --limit 20`.
 - The release must contain `llamadart-native-<bundle>-<tag>.tar.gz` for the
   target and a `SHA256SUMS` that lists it; otherwise the build fails before
@@ -538,163 +426,6 @@ One check fails closed:
 LiteRT-LM has no override keys; the hook always downloads the pinned
 `litert-lm-native` release and verifies its checksum. Tag grammar for
 maintainers: [Native and web sync](../maintainers/native-and-web-sync).
-
-## Flutter Apple apps
-
-Flutter iOS and macOS apps link runtimes through Swift Package Manager when a
-companion package is a dependency:
-
-- `llamadart_llama_cpp_flutter` links the llama.cpp XCFrameworks.
-- `llamadart_litert_lm_flutter` links the LiteRT-LM iOS and macOS
-  XCFrameworks, including the macOS WebGPU accelerator, sampler and Dawn. The
-  Metal accelerator and sampler stay iOS-only; the macOS GPU path uses
-  WebGPU.
-- `llamadart_stable_diffusion_flutter` links the stable-diffusion.cpp
-  XCFramework for [image generation](../guides/image-generation).
-
-A companion counts when the app's `dependencies` reach it, directly or
-through another package such as a shared app package, because Flutter links
-it either way. One reached only through `dev_dependencies` does not count, and
-without a readable `.dart_tool/package_graph.json` only direct dependencies
-do.
-
-When the llama.cpp or LiteRT-LM companion is present, the installed companions
-choose the Apple `llama_cpp` and `litert_lm` families and the rest of
-`llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
-decided on its own: its companion selects it, and otherwise the hook bundles it
-when `llamadart_native_runtimes` names it, not when `all` only implies it.
-Adding only the stable_diffusion
-companion leaves llama.cpp and LiteRT-LM on the hook. Use companions with the
-core's `MAJOR.MINOR`. The build checks the resolved llama.cpp and
-stable_diffusion companions' pins against the core package and rejects local
-`Artifacts` overrides. A llama.cpp companion pinning an earlier release is
-accepted, with an upgrade warning, only when the core explicitly lists that pin
-as ABI-compatible; any other earlier pin is rejected. The stable_diffusion
-check accepts only the core's own pin. The tag, repository, path and backend
-keys do not change SwiftPM binaries; their pins live in each companion's
-`Package.swift`, so use a path or git override or a fork of the companion.
-
-On macOS the hook hands LiteRT-LM to the companion only when the resolved
-companion's `Package.swift` is the maintained manifest pinning the core's
-LiteRT-LM release. Any other companion keeps macOS LiteRT-LM in the hook cache
-with a build warning; a sandboxed, copied or distributed app cannot read that
-cache and needs the
-[LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase).
-A companion with the maintained manifest pinning an earlier build of the same
-LiteRT-LM release still embeds the complete macOS runtime, which the app loads
-from its bundle, so the build only warns to upgrade the companion. A maintained
-manifest pinning any other LiteRT-LM release or a later build of the same
-release warns to upgrade the core and companion together.
-Without a companion, and for non-Flutter or non-Apple builds, the hook
-path above applies.
-
-In a pub workspace, pub passes the hook the root `pubspec.yaml`. A root that
-is itself a Flutter app is the app: its companions are the ones its
-`dependencies` reach, as above, including through members it depends on, and
-other members are not consulted. Otherwise the hook reads the companions from the member
-app: the member that reaches llamadart through its dependencies or dev
-dependencies and that no other member lists under `dependencies`, found
-through the root `.dart_tool/package_graph.json`. A `dev_dependencies` entry
-on another member does not make a member a library. Debug and profile builds
-include the app's dev dependencies, so those count on every target; only
-Flutter builds target iOS, so for iOS the hook ignores non-Flutter members.
-The app's companions are the ones its `dependencies` reach, as above,
-including through other members. Every member shares the hook's output, so
-when several such members exist they must be Flutter apps reaching the same
-companions. Otherwise, or when the graph cannot be read, the build writes a
-`warning: llamadart:` line and bundles the hook's Apple assets without
-checking or linking any companion; give the apps the same companions or move
-them into separate workspaces. `flutter build ios` does not show hook
-warnings; Xcode and `xcodebuild` do. A workspace with no Flutter member that
-uses llamadart bundles the hook's assets.
-
-Host `flutter test` on macOS runs in `flutter_tester`, which links no
-companion. A test that loads llama.cpp or stable_diffusion where a companion
-provides it cannot resolve the runtime's symbols; macOS LiteRT-LM falls back to
-the hook cache. In a pub workspace this covers the host tests of every member,
-library members included, because they share the app's hook output.
-
-Standalone Dart on macOS keeps LiteRT-LM libraries in the hook cache. A custom
-launcher can set `LLAMADART_LITERT_LM_LIB_DIR` to the extracted LiteRT-LM
-directory.
-
-### Apple privacy manifest
-
-The llama.cpp and stable-diffusion.cpp runtimes call `stat` and `fstat`, which
-Apple lists as File Timestamp
-[required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
-A privacy manifest for that use reaches an app inside the XCFramework a
-companion package links. The hook path cannot carry one: it bundles bare
-dylibs, which Flutter wraps in frameworks it generates. An app bound for the
-App Store should use the companion for each runtime it ships; its XCFramework
-carries the manifest.
-
-An app declares the use in its own `PrivacyInfo.xcprivacy` when it runs
-llama.cpp or stable_diffusion on the hook path, or when the built app has no
-`PrivacyInfo.xcprivacy` inside the embedded `llama.framework` or
-`stable_diffusion.framework`:
-
-| Runtime | Category | Reasons |
-| --- | --- | --- |
-| llama.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` |
-| stable-diffusion.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
-
-Put the entry inside the top-level `<dict>` of a `PrivacyInfo.xcprivacy` in
-the app (Runner) target, merged with the reasons the rest of the app needs. An
-app that also runs LiteRT-LM on the hook path adds that runtime's categories,
-listed below.
-For an app that ships llama.cpp without stable_diffusion:
-
-```xml
-<key>NSPrivacyAccessedAPITypes</key>
-<array>
-  <dict>
-    <key>NSPrivacyAccessedAPIType</key>
-    <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
-    <key>NSPrivacyAccessedAPITypeReasons</key>
-    <array>
-      <string>C617.1</string>
-    </array>
-  </dict>
-</array>
-```
-
-Only an app that ships stable_diffusion adds `<string>3B52.1</string>` to the
-reasons array.
-
-Apple's requirement covers iOS, iPadOS, tvOS, visionOS and watchOS apps. The
-app-level declaration is a workaround for a runtime without its own manifest;
-llamadart has not verified it with an App Store Connect upload.
-
-The LiteRT-LM iOS frameworks reference required-reason API in three
-categories: File Timestamp (`stat`, `fstat`, `lstat`), System Boot Time
-(`mach_absolute_time`) and User Defaults (`NSUserDefaults`, in the Metal
-accelerator and sampler). Each framework
-the companion links on iOS carries a manifest for what that framework
-references:
-
-| Framework | Category | Reasons |
-| --- | --- | --- |
-| `LiteRtLm` | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
-| `LiteRtLm` | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` |
-| `LiteRtMetalAccelerator` | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
-| `LiteRtMetalAccelerator` | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` |
-| `LiteRtTopKMetalSampler` | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` |
-| `CLiteRTLM` | None: its manifest declares no API | |
-
-An app declares those three categories, with the same reasons, in its own
-`PrivacyInfo.xcprivacy` when it runs LiteRT-LM on the hook path, or when the
-built app has no `PrivacyInfo.xcprivacy` inside the embedded LiteRT-LM
-frameworks. On macOS, which Apple's requirement does not cover, the
-companion's `LiteRtLm.framework` carries a File Timestamp manifest, while its
-flat dylibs
-(`libCLiteRTLM_mac`, `libLiteRt`, the WebGPU accelerator and sampler, and
-`libwebgpu_dawn`) and the hook-managed runtime dylibs are bare libraries
-without one. The reasons come from the runtime owner's
-[audit of the binaries](https://github.com/leehack/litert-lm-native/blob/v0.17.0-8/docs/apple_privacy_manifest.md)
-([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65));
-llamadart has not verified them, or an app-level declaration, with an App
-Store Connect upload.
 
 ## How the hook resolves a build
 

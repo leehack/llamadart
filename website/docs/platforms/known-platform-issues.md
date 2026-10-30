@@ -26,12 +26,12 @@ feature. For which runtime supports which feature, see the
   `flutter create` default), copied or distributed app throws
   `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'` on the first CPU or
   GPU generation. Add the companion, or the
-  [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase).
+  [LiteRT-LM build phase](./apple-setup#flutter-macos-litert-lm-build-phase).
 - macOS x86_64: no LiteRT-LM runtime is published
   ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
   Universal apps launch on an Intel Mac and under Rosetta, and LiteRT-LM
   throws `LlamaUnsupportedException` there; llama.cpp still runs. See
-  [Intel Macs](../getting-started/installation#intel-macs).
+  [Intel Macs](./apple-setup#intel-macs).
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
   builds for it. LiteRT-LM throws `LlamaUnsupportedException` there.

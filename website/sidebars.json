@@ -67,6 +67,8 @@
         "platforms/support-matrix",
         "platforms/known-platform-issues",
         "platforms/native-build-hooks",
+        "platforms/apple-setup",
+        "platforms/diagnose-setup",
         "platforms/linux-prerequisites",
         "platforms/webgpu-bridge"
       ]
