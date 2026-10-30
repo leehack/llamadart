@@ -37,7 +37,7 @@ void main() {
   });
 
   group('ToolCallParsingUtils', () {
-    test('stringifies an id up to the wire depth, and drops a deeper one', () {
+    test('stringifies a non-string id exactly as toString does', () {
       Object? nested(int depth) {
         Object? value = <Object?>[];
         for (var i = 1; i < depth; i++) {
@@ -46,14 +46,71 @@ void main() {
         return value;
       }
 
-      String? id(Object? value) =>
-          ToolCallParsingUtils.parseToolCallArray(<Object?>[
-            <String, Object?>{'name': 'f', 'id': value},
-          ], assignFallbackIds: true)!.single.id;
+      for (final value in <Object>[
+        7,
+        1.5,
+        true,
+        double.infinity,
+        <Object?>[],
+        <String, Object?>{},
+        <Object?>[1, 'a', null, true, 2.5],
+        <String, Object?>{'a': 1, 'b': 'c', 'd': null},
+        <Object?>[
+          <String, Object?>{
+            'a': <Object?>[<Object?>[], <String, Object?>{}],
+          },
+          <Object?>[1],
+        ],
+        nested(500)!,
+      ]) {
+        final call = ToolCallParsingUtils.parseToolCallArray(<Object?>[
+          <String, Object?>{'name': 'f', 'id': value},
+        ], assignFallbackIds: true)!.single;
+        expect(call.id, value.toString());
+      }
+    });
 
-      expect(id(7), '7');
-      expect(id(nested(128)), nested(128).toString());
-      expect(id(nested(129)), 'call_0');
+    test('keeps brackets in a JSON string out of its depth', () {
+      final text = '"\\"${'[' * 20000}"';
+      expect(ToolCallParsingUtils.decodeJsonValue(text), '"${'[' * 20000}');
+    });
+
+    test('reads JSON at the depth JavaScript allows, on every runtime', () {
+      final value = '[' * 5000 + ']' * 5000;
+      expect(ToolCallParsingUtils.decodeJsonValue(value), isA<List<dynamic>>());
+      final siblings = '[${List.filled(6000, '[]').join(',')}]';
+      expect(ToolCallParsingUtils.decodeJsonValue(siblings), hasLength(6000));
+    });
+
+    test('reads deeper JSON on the VM, and refuses it on JavaScript', () {
+      final value = '[' * 5001 + ']' * 5001;
+      final object = '{"x":$value}';
+      const isJavaScript = identical(0, 0.0);
+      expect(
+        ToolCallParsingUtils.decodeJsonValue(value),
+        isJavaScript ? isNull : isNotNull,
+      );
+      expect(
+        ToolCallParsingUtils.decodeJsonObject(object),
+        isJavaScript ? isNull : isNotNull,
+      );
+      expect(
+        ToolCallParsingUtils.decodeJsonMapValue(object),
+        isJavaScript ? isNull : isNotNull,
+      );
+      expect(
+        ToolCallParsingUtils.extractFirstJsonObject(object),
+        isJavaScript ? isNull : isNotNull,
+      );
+      expect(
+        ToolCallParsingUtils.extractLeadingJsonValue(object, 0),
+        isJavaScript ? isNull : isNotNull,
+      );
+      expect(
+        ToolCallParsingUtils.decodeJsonValueOrString(value),
+        isJavaScript ? value : isList,
+      );
+      expect(ToolCallParsingUtils.normalizeJsonArguments(value), value);
     });
 
     test(

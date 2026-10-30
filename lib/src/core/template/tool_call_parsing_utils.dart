@@ -4,6 +4,13 @@ import '../exceptions.dart';
 import '../grammar/json_value_depth.dart';
 import '../models/chat/completion_chunk.dart';
 
+/// Literal text in [ToolCallParsingUtils]'s id stringifier.
+class _IdText {
+  const _IdText(this.text);
+
+  final String text;
+}
+
 /// A parsed JSON value and the exclusive end offset where it stopped.
 class ParsedJsonValueSlice {
   /// The decoded JSON value.
@@ -18,6 +25,75 @@ class ParsedJsonValueSlice {
 
 /// Shared helpers for JSON-style tool-call parsing.
 class ToolCallParsingUtils {
+  /// The deepest JSON [_decodeModelJson] reads when compiled to JavaScript,
+  /// half of where dart2js overflows in Chrome from a shallow stack.
+  static const int _maxJavaScriptJsonDepth = 5000;
+
+  /// dart2js converts a list recursively, and a list under a map key only when
+  /// the key is read, so no catch around `jsonDecode` can contain a deep value.
+  /// The Dart VM decodes without recursing and keeps every depth.
+  static dynamic _decodeModelJson(String text) {
+    if (identical(0, 0.0) && _nestsPast(text, _maxJavaScriptJsonDepth)) {
+      throw const FormatException('JSON is nested too deeply.');
+    }
+    return jsonDecode(text);
+  }
+
+  static bool _nestsPast(String json, int limit) {
+    var depth = 0;
+    var inString = false;
+    for (var i = 0; i < json.length; i++) {
+      final unit = json.codeUnitAt(i);
+      if (inString) {
+        if (unit == 0x5C) {
+          i++;
+        } else if (unit == 0x22) {
+          inString = false;
+        }
+      } else if (unit == 0x22) {
+        inString = true;
+      } else if (unit == 0x5B || unit == 0x7B) {
+        if (++depth > limit) return true;
+      } else if (unit == 0x5D || unit == 0x7D) {
+        depth--;
+      }
+    }
+    return false;
+  }
+
+  /// [value]'s `toString`, without the recursion that overflows on a deep
+  /// list or map.
+  static String _stringifyId(Object value) {
+    final out = StringBuffer();
+    final pending = <Object?>[value];
+    while (pending.isNotEmpty) {
+      final item = pending.removeLast();
+      if (item is _IdText) {
+        out.write(item.text);
+      } else if (item is List) {
+        out.write('[');
+        pending.add(const _IdText(']'));
+        for (var i = item.length - 1; i >= 0; i--) {
+          pending.add(item[i]);
+          if (i > 0) pending.add(const _IdText(', '));
+        }
+      } else if (item is Map) {
+        out.write('{');
+        pending.add(const _IdText('}'));
+        final entries = item.entries.toList(growable: false);
+        for (var i = entries.length - 1; i >= 0; i--) {
+          pending
+            ..add(entries[i].value)
+            ..add(_IdText('${entries[i].key}: '));
+          if (i > 0) pending.add(const _IdText(', '));
+        }
+      } else {
+        out.write(item);
+      }
+    }
+    return out.toString();
+  }
+
   /// Attempts to decode [text] into a JSON object.
   static Map<String, dynamic>? decodeJsonObject(String text) {
     if (text.isEmpty) {
@@ -25,7 +101,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      final decoded = jsonDecode(text);
+      final decoded = _decodeModelJson(text);
       if (decoded is Map<String, dynamic>) {
         return decoded;
       }
@@ -174,7 +250,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      return jsonDecode(normalizedInput);
+      return _decodeModelJson(normalizedInput);
     } catch (_) {
       return null;
     }
@@ -191,7 +267,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      return jsonDecode(normalizedInput);
+      return _decodeModelJson(normalizedInput);
     } catch (_) {
       return normalizedInput;
     }
@@ -224,7 +300,7 @@ class ToolCallParsingUtils {
     }
 
     try {
-      final decoded = jsonDecode(normalizedInput);
+      final decoded = _decodeModelJson(normalizedInput);
       if (decoded is Map<String, dynamic>) {
         return jsonEncode(decoded);
       }
@@ -315,7 +391,7 @@ class ToolCallParsingUtils {
 
     Object? decoded;
     try {
-      decoded = jsonDecode(input.substring(offset, end));
+      decoded = _decodeModelJson(input.substring(offset, end));
     } catch (_) {
       return null;
     }
@@ -374,9 +450,8 @@ class ToolCallParsingUtils {
       if (value is String && value.isNotEmpty) {
         return value;
       }
-      // toString recurses, and an overflow inside it cannot be caught reliably.
-      if (stringify && value != null && (jsonValueDepth(value) ?? 129) <= 128) {
-        final stringValue = value.toString();
+      if (stringify && value != null) {
+        final stringValue = _stringifyId(value);
         if (stringValue.isNotEmpty) {
           return stringValue;
         }

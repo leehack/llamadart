@@ -8,7 +8,7 @@
 - `ModelSplitMode.row` on native llama.cpp devices without split buffers, which include every bundled GPU backend, BLAS and an explicitly selected or fallback CPU, now throws `LlamaUnsupportedException` naming the device before the model loads, instead of a generic load failure; use `ModelSplitMode.layer` ([#1576](https://github.com/leehack/llamadart/issues/1576)).
 - On macOS x86_64, including Rosetta on Apple silicon (an x86_64 process cannot tell the two apart), llama.cpp `GpuBackend.auto` now runs on the CPU with 0 GPU layers, because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)). An explicit `GpuBackend.metal` or `ComputeDevice.gpu` still uses Metal and logs a warning; arm64 macOS is unchanged.
 - `ToolChoice.required` on LFM2 and LFM2.5 with `parallelToolCalls: true` now returns every call instead of only the first.
-- LFM2 and LFM2.5 `[name(arg=value)]` tool calls now read `True` and `None` as JSON values instead of strings, keep a nested object in its own argument, and treat `name()` as a call instead of dropping it. String values keep backslash sequences as written, unlike llama.cpp, so copied paths and code stay intact. A number too large to represent or a value nested too deeply no longer throws from the parse.
+- LFM2 and LFM2.5 tool-call parsing no longer throws on malformed model output: a number too large to represent, a value nested too deeply or a lone quote.
 
 ## 0.17.0
 

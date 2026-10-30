@@ -91,21 +91,14 @@ Map<String, dynamic> normalizeFallbackToolArguments(
   return normalized;
 }
 
-/// Keys whose lone value [normalizeFallbackToolArguments] unwraps.
-const Set<String> fallbackArgumentContainerKeys = <String>{
-  'arguments',
-  'parameters',
-  'params',
-  'input',
-};
-
 Map<String, dynamic>? _unwrapArgumentContainer(Map<String, dynamic> arguments) {
+  const wrapperKeys = <String>{'arguments', 'parameters', 'params', 'input'};
   if (arguments.length != 1) {
     return null;
   }
 
   final entry = arguments.entries.first;
-  if (!fallbackArgumentContainerKeys.contains(entry.key)) {
+  if (!wrapperKeys.contains(entry.key)) {
     return null;
   }
 
