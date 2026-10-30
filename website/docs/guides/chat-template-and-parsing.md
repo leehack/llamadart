@@ -10,10 +10,6 @@ and web. Templates run on [`dinja`](https://pub.dev/packages/dinja), a Dart
 Jinja runtime; the pipeline is described in
 [Template engine internals](./template-engine-internals).
 
-Model architectures must be supported by the selected runtime; this syntax repair does not qualify Flint
-for the pinned native runtime
-([native #112](https://github.com/leehack/llamadart-native/issues/112)).
-
 ## Core API
 
 Use `engine.chatTemplate(...)` when you need:
@@ -242,7 +238,10 @@ Jinja string literals in embedded and custom templates accept `\xHH`
 hexadecimal escapes, with exactly two hexadecimal digits. For example,
 `\x00` matches a NUL character and `\xE9` produces `é`;
 `\\x41` keeps the literal text `\x41`. A malformed escape raises
-`LlamaException` naming the template source.
+`LlamaException` naming the template source. Model architectures must also be
+supported by the selected runtime; this syntax repair does not qualify Flint
+for the pinned native runtime
+([native #112](https://github.com/leehack/llamadart-native/issues/112)).
 
 To preview a different template for one call, pass `customTemplate` to
 `engine.chatTemplate(...)`; it takes precedence over `ModelParams.chatTemplate`.

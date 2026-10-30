@@ -410,10 +410,10 @@ and symbol-compatible with the pinned release; the hook logs a warning when an
 override is active. This core requires the v0.7.0 ABI, including its changed
 context-parameter and performance-data layouts; it calls nothing that
 `v0.7.0-3` lacks. Native v0.6.0 and older
-bundles are incompatible even when they export the same symbol names. Do not
-point a core before `0.17.1` at native `v0.8.0` or later: its bindings give
-`mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them. Use
-core `0.13.x` for its v0.6.0 runtime and companions.
+bundles are incompatible even when they export the same symbol names. Use
+core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
+`0.17.1` at native `v0.8.0` or later: its bindings give
+`mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 
 State files are tied to the llama.cpp release of the runtime that wrote them
 ([Save and restore prompt state](../guides/model-lifecycle#save-and-restore-prompt-state)).
