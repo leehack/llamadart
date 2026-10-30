@@ -40,7 +40,12 @@ void main() {
     engine = LlamaEngine(LlamaBackend());
     await engine.loadModel(
       modelFile.path,
-      modelParams: const ModelParams(contextSize: 256, gpuLayers: 0),
+      modelParams: const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
+        contextSize: 256,
+        gpuLayers: 0,
+      ),
     );
     final path = modelFile.path.toNativeUtf8();
     try {

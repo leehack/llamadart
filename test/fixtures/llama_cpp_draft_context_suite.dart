@@ -25,6 +25,8 @@ Matcher _argumentError(String message, {String name = 'draftMicroBatchSize'}) =>
     );
 
 ModelParams _contextParams({int microBatchSize = 32}) => ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
   gpuLayers: 0,
   contextSize: 64,
   batchSize: 64,

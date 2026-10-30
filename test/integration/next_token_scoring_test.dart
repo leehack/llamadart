@@ -20,7 +20,11 @@ void main() {
     engine = LlamaEngine(LlamaBackend());
     await engine.loadModel(
       modelFile.path,
-      modelParams: const ModelParams(contextSize: 256),
+      modelParams: const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
+        contextSize: 256,
+      ),
     );
   });
 

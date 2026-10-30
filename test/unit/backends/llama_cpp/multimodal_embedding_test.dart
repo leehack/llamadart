@@ -637,6 +637,8 @@ void main() {
       final service = LlamaCppService()..initializeBackend();
       addTearDown(service.dispose);
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         gpuLayers: 0,
         preferredBackend: GpuBackend.cpu,
         contextSize: 64,
@@ -699,6 +701,8 @@ void main() {
       final service = LlamaCppService()..initializeBackend();
       addTearDown(service.dispose);
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         gpuLayers: 0,
         preferredBackend: GpuBackend.cpu,
         contextSize: 64,
@@ -865,6 +869,8 @@ void main() {
     final service = LlamaCppService()..initializeBackend();
     addTearDown(service.dispose);
     const params = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       gpuLayers: 0,
       preferredBackend: GpuBackend.cpu,
       contextSize: 64,
@@ -926,6 +932,8 @@ void main() {
         causalAttention: gate == 'causal',
       );
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         gpuLayers: 0,
         preferredBackend: GpuBackend.cpu,
         contextSize: 64,
@@ -988,6 +996,8 @@ void main() {
       final service = LlamaCppService()..initializeBackend();
       addTearDown(service.dispose);
       const params = ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         gpuLayers: 0,
         preferredBackend: GpuBackend.cpu,
         contextSize: 64,
@@ -1352,6 +1362,8 @@ final class _MixedEmbeddingHarness {
       eosTokenId: 1,
     );
     const params = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       gpuLayers: 0,
       preferredBackend: GpuBackend.cpu,
       contextSize: 64,

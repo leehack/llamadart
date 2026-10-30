@@ -27,7 +27,11 @@ void main() async {
     engine = LlamaEngine(backend);
     await engine.loadModel(
       modelFile.path,
-      modelParams: const ModelParams(contextSize: 256),
+      modelParams: const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
+        contextSize: 256,
+      ),
     );
     tmpDir = Directory.systemTemp.createTempSync('llamadart_state_test_');
   });
@@ -129,7 +133,11 @@ void main() async {
       addTearDown(large.dispose);
       await large.loadModel(
         modelFile.path,
-        modelParams: const ModelParams(contextSize: 1024),
+        modelParams: const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          contextSize: 1024,
+        ),
       );
       // More cells than the 256-token context holds: llama.cpp accepts the
       // empty token list, clears the KV cache, then rejects the file.
@@ -185,6 +193,8 @@ void main() async {
       final guarded = await LlamaEngine.load(
         LlamaModel(ModelSource.path(modelFile.path)),
         params: const LlamaCppModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           contextSize: 256,
           batchSize: 8,
           microBatchSize: 8,
@@ -263,7 +273,11 @@ void main() async {
       try {
         await engineA.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 256),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+          ),
         );
 
         final tokens = await engineA.tokenize(prompt);
@@ -296,7 +310,11 @@ void main() async {
         engineB = LlamaEngine(LlamaBackend());
         await engineB.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 256),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+          ),
         );
 
         final loadResult = await engineB.stateLoadFile(
@@ -361,7 +379,11 @@ void main() async {
       try {
         await engineA.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 256),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+          ),
         );
 
         final tokens = await engineA.tokenize(prompt);
@@ -383,7 +405,11 @@ void main() async {
         engineB = LlamaEngine(LlamaBackend());
         await engineB.loadModel(
           modelFile.path,
-          modelParams: const ModelParams(contextSize: 256),
+          modelParams: const ModelParams(
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 2,
+            contextSize: 256,
+          ),
         );
 
         await engineB.stateLoadFile(savePath, tokenCapacity: 256);
