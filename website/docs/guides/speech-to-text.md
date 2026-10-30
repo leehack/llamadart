@@ -265,7 +265,8 @@ remote ones into the model cache as described under
 [Load or attach](#load-or-attach); each `transcribe` or `startStream` starts its
 own native session on them. The
 adapter carries the runtime settings (`backend`, `numberOfThreads`,
-`maxBufferedAudio`, `overlapRatio`, and `libraryPath` for local validation),
+`maxBufferedAudio`, `overlapRatio`, and `libraryPath` to use a custom runtime
+library),
 so `params:` and `backend:` must be null. A `LiteRtLmAsrAdapter` model takes
 no projector, and a prompt adapter model no tokenizer.
 

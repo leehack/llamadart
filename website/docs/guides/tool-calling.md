@@ -8,30 +8,8 @@ Pass `ToolDefinition`s to `engine.create` or `ChatSession.create`. The model's
 chat template renders them, and the parser returns the model's calls as
 `chunk.toolCalls`. `session.sendWithTools` runs the calls with each tool's
 `handler` until the model answers; `create` and `engine.create` only return
-the calls, and your code runs them.
-
-Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
-runtime termination reporting, so that a reply cut off at `maxTokens` or the
-context stops the loop as `truncated` without running its calls. Native
-LiteRT-LM reports why a reply ended on runtimes whose
-`stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
-`v0.18.0-3` and later, including the default pin. Older native runtimes, and
-Web `@litert-lm/core@0.18.0`, which reports no cause
-([#919](https://github.com/leehack/llamadart/issues/919)), throw
-`LlamaUnsupportedException` before starting the loop or modifying its history, including when resuming a turn or
-passing an empty tools list. Plain `ChatSession.create` and
-`LlamaEngine.create` remain available there for manually managed completion;
-their LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do
-not execute calls automatically based on that value or infer truncation from
-output length.
-
-GPT-OSS channel and assistant frames wait for final parsing, including headers
-continued from the model's prompt, with or without tools. Ordinary prose streams
-normally, and `ToolChoice.auto` allows text without a call.
-Its reasoning comes from channel frames; literal `<think>`/`</think>`
-text stays literal, including in tool arguments. Gemma 4 preserves visible text
-after a tool envelope, including its whitespace, across split token delivery.
-Calls still arrive complete in the final chunk.
+the calls, and your code runs them. Runtime-specific limits are under
+[Runtime notes](#runtime-notes).
 
 ## Define a tool
 
@@ -135,28 +113,13 @@ A rolled-back turn would otherwise end with unanswered calls or tool results,
 which some templates, such as Ministral 3's and Mistral Small 3.2's, cannot
 render before a new user turn. `completeWithTools(const [], ...)` continues
 the open turn, so its rollback also removes that turn's earlier messages,
-including the tool results you added. Messages that other code added during
-the loop stay. Every message an `addMessage` override stores while the loop
-adds a message (including a copy of that message, and messages a listener
-adds from inside the override) belongs to the turn: the rollback removes it,
-and it is neither in `result.messages` nor reported to `onMessageAdded`. The
-one exception is a message the override places before the turn in place of a
-message from before the turn that it removed, such as a summary of earlier
-turns. Messages from before the turn that the override kept stay, even if it
-moved them; those it removed stay removed, as after `create`. A rollback
-edits the history without calling `addMessage` or `reset`, so a `ChatSession`
-subclass that mirrors the history should check `result.rolledBack`.
-
-A class that `implements ChatSession` is rolled back through `reset` and
-`addMessage` instead. If two consecutive `history` reads return different
-instances for the same message, the turn's messages are matched by role and
-content rather than identity, so an equal message that other code added during
-the loop can be removed in place of the turn's own, and a message from before
-the turn that an `addMessage` override moves after the message it stores counts
-as one it stored, so the rollback removes it; one moved only past earlier
-messages of the turn stays. A `history` that returns
-copies cached until the next mutation gives the same instances on both reads,
-so identity matching applies and the turn is not rolled back.
+including the tool results you added. Messages that other code added during the loop stay, while messages an
+`addMessage` override stores for the turn go with it. A rollback edits the
+history without calling `addMessage` or `reset`, so a `ChatSession` subclass
+that mirrors the history should check `result.rolledBack`; a class that only
+`implements ChatSession` is rolled back through `reset` and `addMessage`.
+The matching rules are in the
+[`completeWithTools` API docs](https://pub.dev/documentation/llamadart/latest/llamadart/ChatSessionToolLoopExtension/completeWithTools.html).
 
 `result.rolledBack` tells whether the turn was removed. Tools that ran keep
 their side effects: `result.messages` holds every message of the turn,
@@ -382,11 +345,10 @@ that.
 | Other formats | Rejected before generation |
 
 Active schema tools require grammar-constrained decoding. Native llama.cpp
-supports it; WebGPU works only when the selected grammar starts at the first
-token (usually `ToolChoice.required`). Lazy auto grammars and LiteRT-LM are
-rejected. `ToolChoice.none` can retain declarations for replay without enabling
-calls. Final parsed calls and direct `invoke` arguments are validated before
-handlers run. A schema constrains the input shape; the app still controls
+supports it. LiteRT-LM is rejected, and WebGPU is limited as described under
+[WebGPU](#webgpu). `ToolChoice.none` can retain declarations for replay
+without enabling calls. Final parsed calls and direct `invoke` arguments are
+validated before handlers run. A schema constrains the input shape; the app still controls
 tool permissions and side effects.
 
 Active schema tools cannot be combined with `responseFormat`, which would
@@ -419,11 +381,6 @@ JSON value when it is `true`). In a closed object (`additionalProperties:
 false`) such a name throws `LlamaArgumentException`, because no object can
 satisfy it. Response schemas still require `required` to name declared
 properties.
-
-On WebGPU, an automatic tool loop changes to `auto` after its first tool round.
-Hermes and Mistral then need lazy grammars, so their schema-backed automatic
-loops cannot finish on WebGPU. Use the generic non-lazy JSON format there, or
-manage a single required-tool request and its follow-up explicitly.
 
 ## Generic JSON fallback
 
@@ -506,12 +463,47 @@ user messages retain the template's usual validation.
 - `ToolChoice.auto`: model decides whether to call tools.
 - `ToolChoice.required`: model must emit tool calls.
 
+### WebGPU
+
 On Web with WebGPU (llama.cpp), the bridge applies a grammar from the first
-token and cannot wait for a tool-call trigger. `ToolChoice.auto` therefore skips
-a lazy tool-call grammar, and tool calls are parsed from the output
-best-effort. `ToolChoice.required` keeps a grammar that starts at the first
-token and fails early with `LlamaUnsupportedException` when the chat format's
-required-tool grammar is lazy.
+token and cannot wait for a tool-call trigger, so schema tools work only when
+the selected grammar starts at the first token (usually `ToolChoice.required`);
+lazy auto grammars are rejected.
+
+- `ToolChoice.auto` skips a lazy tool-call grammar, and tool calls are parsed
+  from the output best-effort.
+- `ToolChoice.required` keeps a grammar that starts at the first token and
+  fails early with `LlamaUnsupportedException` when the chat format's
+  required-tool grammar is lazy.
+- An automatic tool loop changes to `auto` after its first tool round. Hermes
+  and Mistral then need lazy grammars, so their schema-backed automatic loops
+  cannot finish on WebGPU. Use the generic non-lazy JSON format there, or
+  manage a single required-tool request and its follow-up explicitly.
 
 Parser details, such as call validation against the supplied tools, are in
 [Template engine internals](./template-engine-internals#tool-call-parsing).
+
+## Runtime notes
+
+Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
+runtime termination reporting, so that a reply cut off at `maxTokens` or the
+context stops the loop as `truncated` without running its calls. Native
+LiteRT-LM reports why a reply ended on runtimes whose
+`stream_proxy_finish_reason_abi_version` export returns 1: litert-lm-native
+`v0.18.0-3` and later, including the default pin. Older native runtimes, and
+Web `@litert-lm/core@0.18.0`, which reports no cause
+([#919](https://github.com/leehack/llamadart/issues/919)), throw
+`LlamaUnsupportedException` before starting the loop or modifying its history, including when resuming a turn or
+passing an empty tools list. Plain `ChatSession.create` and
+`LlamaEngine.create` remain available there for manually managed completion;
+their LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do
+not execute calls automatically based on that value or infer truncation from
+output length.
+
+GPT-OSS channel and assistant frames wait for final parsing, including headers
+continued from the model's prompt, with or without tools. Ordinary prose streams
+normally, and `ToolChoice.auto` allows text without a call.
+Its reasoning comes from channel frames; literal `<think>`/`</think>`
+text stays literal, including in tool arguments. Gemma 4 preserves visible text
+after a tool envelope, including its whitespace, across split token delivery.
+Calls still arrive complete in the final chunk.

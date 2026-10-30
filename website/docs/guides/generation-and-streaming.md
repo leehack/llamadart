@@ -170,6 +170,31 @@ The backend times `timeToFirstToken` and `duration` from when it starts the
 request. They exclude template rendering and time spent queued behind another
 request, and `timeToFirstToken` excludes stream batching.
 
+### Performance counters
+
+On native llama.cpp and LiteRT-LM, cancelling a queued generation before it
+starts makes `getPerformanceContext()` return `null` for that context. This
+includes LiteRT-LM requests already sent to the worker that are cancelled
+before they run. Previous request counters are unavailable for the cancelled
+request, LiteRT-LM validation failures, llama.cpp option-validation failures
+before its counter reset, and failed dispatches. Native llama.cpp resets native
+counters, saved timings and sampler counters before generation, embedding,
+next-token scoring or text-to-speech executes. An embedding batch accumulates
+all its inputs. Request validation failures in the native worker leave
+diagnostics unavailable, while argument checks that fail before dispatch leave
+them unchanged. Rejections during active text-to-speech preserve that request's
+counters. Token counters retain llama.cpp's native minimum of one for
+`evalTokens` and `promptEvalTokens`, even with no work in that category.
+Embedding and scoring report `0` ms timings because llama.cpp contexts disable
+native perf timing by default. LiteRT-LM still restores diagnostics on
+generation. After an early cancellation, pending or failed embedding, scoring
+and speech calls keep diagnostics unavailable, including calls started before
+cancellation. Generation dispatch restores availability immediately; embedding,
+scoring and speech restore it only on success, using the backend's counter
+semantics. Web backends always return `null` diagnostics. Requests finishing
+after unload do not change a reloaded context's counter availability, including
+when the native handle is reused.
+
 ## Observing operations
 
 Pass observers to `LlamaEngine` to trace, measure or log its work. An observer

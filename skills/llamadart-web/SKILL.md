@@ -194,6 +194,9 @@ Without the tool, load the bridge (and optionally LiteRT-LM) in
 <script src="flutter_bootstrap.js" async></script>
 ```
 
+The snippet covers text generation. Qwen3-ASR also needs
+`window.__llamadartBridgeSpeechToTextSupported = true`.
+
 Load a GGUF by URL and pick sampling options from the capability probe:
 
 ```dart

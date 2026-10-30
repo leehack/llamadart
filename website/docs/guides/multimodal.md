@@ -159,11 +159,8 @@ does not by itself provide a transcript contract. For typed transcription, see
 ## Web notes
 
 - Web uses bridge runtime paths.
-- Multimodal projector loading on web is URL-based.
-- A projector on a URL-loading web backend is a remote unauthenticated URL, or
-  a `ModelSource.path` that is a URL relative to the document or a `blob:`
-  URL; download options that require the native download/cache manager are
-  unsupported there.
+- Projector loading on web is URL-based; the accepted sources and rejected
+  download options are listed under [GGUF projector flow](#gguf-projector-flow).
 - Local file path media inputs are native-first; web flows use browser file
   bytes/URLs. `LlamaImageContent.url` is read only by the web bridge: native
   `llama.cpp` throws `LlamaUnsupportedException` for it, so download the image

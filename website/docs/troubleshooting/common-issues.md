@@ -63,7 +63,7 @@ before treating it as a backend failure.
 The build hook downloads precompiled runtime binaries from GitHub Releases.
 Give the build machine access to GitHub release downloads. If backend
 configuration changed recently, run `flutter clean` once. How the hook
-resolves binaries: [Native build hooks](../platforms/native-build-hooks).
+resolves binaries: [Native runtime configuration](../platforms/native-build-hooks).
 
 ### `llama.cpp runtime could not be loaded on windows-x64`
 
@@ -78,6 +78,23 @@ Redistributable for the app's architecture
 [`vc_redist.arm64.exe`](https://aka.ms/vc14/vc_redist.arm64.exe) on Windows
 arm64) on that machine; an installed copy must be at least as new as the build
 tools of the bundled DLLs.
+
+### Image generation fails to load on Windows
+
+The opt-in `stable_diffusion` runtime does not ship the Visual C++ runtime
+DLLs, and its load error names the DLLs that failed to load. Install the latest
+Microsoft Visual C++ v14 Redistributable (x64), which stock Windows Server
+lacks ([`vc_redist.x64.exe`](https://aka.ms/vc14/vc_redist.x64.exe)); see the
+[support matrix](../platforms/support-matrix#at-a-glance).
+
+### `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`
+
+Flutter macOS only: the first LiteRT-LM generation on CPU or GPU of a sandboxed
+(the `flutter create` default), copied or distributed app throws it, because
+the runtime is not in the app bundle. Add `llamadart_litert_lm_flutter`, or the
+[LiteRT-LM build phase](../platforms/apple-setup#flutter-macos-litert-lm-build-phase).
+llama.cpp is not affected
+([#1029](https://github.com/leehack/llamadart/issues/1029)).
 
 ### `libgomp.so.1: cannot open shared object file`
 
@@ -172,7 +189,7 @@ vendor ICD must use `device: ComputeDevice.cpu`
 
 ## Wrong or garbled GPU output
 
-Compare the GPU output with a CPU run (`gpuLayers: 0`) using the same prompt,
+Compare the GPU output with a CPU run (`device: ComputeDevice.cpu`) using the same prompt,
 `seed` and `temp: 0`. If only the GPU output is wrong, the failure is in the
 GPU backend or driver.
 
@@ -355,13 +372,10 @@ process there.
 
 ### Recurrent speculative rollback is unsupported
 
-Native llama.cpp rejects a nonzero `ModelParams.speculativeRollbackTokenMax`
-on recurrent or hybrid models with `LlamaUnsupportedException`. The pinned
-runtime cannot establish a safe graph budget for the requested rollback slots,
-and an oversized reservation can terminate the process. Leave the value at `0`
-for ordinary generation. Speculative strategies that require those snapshots
-remain unsupported on these models until a qualified runtime supplies a safe
-budget; use a non-recurrent target for those strategies.
+Native llama.cpp rejects a nonzero `speculativeRollbackTokenMax` on recurrent or
+hybrid models with `LlamaUnsupportedException`. Leave it at `0` and use a
+non-recurrent target for strategies that need rollback snapshots; see
+[Runtime parameters](../configuration/runtime-parameters.md).
 
 ### Prompt does not fit the context
 
