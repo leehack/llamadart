@@ -142,7 +142,10 @@ never falls back to another device:
   returns incorrect output there
   ([#950](https://github.com/leehack/llamadart/issues/950)); keep `auto` or
   `cpu` on a simulator. On macOS x86_64 it uses Metal too, which returns
-  garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)). On
+  garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)).
+  On both, an explicit GPU `preferredBackend` other than Metal, such as
+  `GpuBackend.vulkan`, under `ComputeDevice.auto` also loads its GPU layers on
+  Metal and logs a warning. On
   the Web it needs a WebGPU adapter and a bridge that loads GPU layers. On
   LiteRT-LM it needs the GPU backend: Linux arm64 has none, and macOS x64 has
   no LiteRT-LM runtime.
