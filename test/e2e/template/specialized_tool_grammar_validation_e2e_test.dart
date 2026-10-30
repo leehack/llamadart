@@ -11,7 +11,6 @@ import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/grammar/llama_cpp_grammar_limits.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
-import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/template/response_format.dart';
@@ -1842,214 +1841,84 @@ void main() {
     );
   });
 
-  group('LFM2 required tool choice grammar', () {
-    const start = '<|tool_call_start|>';
-    const end = '<|tool_call_end|>';
-    final templateSource = File(
-      'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
-    ).readAsStringSync();
-    final booking = ToolDefinition(
-      name: 'book_table',
-      description: 'Books a table',
-      parameters: [
-        ToolParam.string('restaurant', required: true),
-        ToolParam.integer('guests', required: true),
-        ToolParam.boolean('outdoor'),
-        ToolParam.enumType('time', values: ['18:00', '19:00']),
+  test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {
+    final rendered = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather in Seoul?',
+        ),
       ],
-      handler: (_) async => null,
-    );
-    final alarms = ToolDefinition(
-      name: 'list_alarms',
-      description: 'Lists alarms',
-      parameters: [ToolParam.string('label'), ToolParam.integer('limit')],
-      handler: (_) async => null,
+      metadata: const {},
+      tools: [_weatherWithCityTool],
+      toolChoice: ToolChoice.required,
     );
 
-    LlamaChatTemplateResult render(
-      List<ToolDefinition> tools, {
-      bool parallelToolCalls = false,
-    }) {
-      final rendered = ChatTemplateEngine.render(
-        templateSource: templateSource,
-        messages: const [
-          LlamaChatMessage.fromText(
-            role: LlamaChatRole.user,
-            text: 'Weather in Seoul?',
-          ),
-        ],
-        metadata: const {},
-        tools: tools,
-        toolChoice: ToolChoice.required,
-        parallelToolCalls: parallelToolCalls,
-      );
-      expect(rendered.format, ChatFormat.lfm2.index);
-      expect(rendered.grammarLazy, isFalse);
-      return rendered;
-    }
-
-    String call(String body) => '$start[$body]$end';
-
-    test('takes the list a model writes and refuses anything else', () {
-      _expectGrammar(
-        validator,
-        render([_weatherWithCityTool]).grammar!,
-        valid: [
-          call('weather(city="Seoul")'),
-          call(r'weather(city="She said \"hi\"")'),
-          call(r'''weather(city='it\'s "ok" \u00e9')'''),
-          call("weather(city='She said \"hi\"')"),
-          call(' weather(city="Seoul") '),
-        ],
-        invalid: [
-          'No tool',
-          'Prose first ${call('weather(city="Seoul")')}',
-          '${call('weather(city="Seoul")')} and prose',
-          '$start[weather(city="Seoul")]',
-          call('other(city="Seoul")'),
-          call('weather(town="Seoul")'),
-          call('weather(city=1)'),
-          call('weather()'),
-          call('weather(city="Seoul", city="Paris")'),
-          call('weather(city="Seoul"), weather(city="Paris")'),
-          '$start[{"name": "weather", "arguments": {"city": "Seoul"}}]$end',
-        ],
-      );
-    });
-
-    test('takes a second call only when the request allows it', () {
-      _expectGrammar(
-        validator,
-        render([_weatherWithCityTool], parallelToolCalls: true).grammar!,
-        valid: [
-          call('weather(city="Seoul")'),
-          call('weather(city="Seoul"), weather(city="Paris")'),
-          call('weather(city="Seoul"),weather(city="Paris")'),
-        ],
-        invalid: [call(''), call('weather(city="Seoul"),')],
-      );
-    });
-
-    test('keeps every parameter to its schema', () {
-      _expectGrammar(
-        validator,
-        render([booking]).grammar!,
-        valid: [
-          call('book_table(restaurant="Luigi", guests=4)'),
-          call('book_table(restaurant="Luigi", guests=4, outdoor=True)'),
-          call('book_table(restaurant="Luigi", guests=4, outdoor=false)'),
-          call('book_table(restaurant="Luigi", guests=4, time="19:00")'),
-          call(
-            'book_table(restaurant="Luigi", guests=4, outdoor=False, '
-            'time="18:00")',
-          ),
-        ],
-        invalid: [
-          call('book_table(restaurant="Luigi")'),
-          call('book_table(guests=4)'),
-          call('book_table(restaurant="Luigi", guests="4")'),
-          call('book_table(restaurant="Luigi", guests=4.5)'),
-          call('book_table(restaurant="Luigi", guests=True)'),
-          call('book_table(restaurant="Luigi", guests=4, outdoor="yes")'),
-          call('book_table(restaurant="Luigi", guests=4, time="20:00")'),
-          call("book_table(restaurant=\"Luigi\", guests=4, time='19:00')"),
-          call('book_table(guests=4, restaurant="Luigi")'),
-          call('book_table(restaurant="Luigi", guests=4, extra=1)'),
-        ],
-      );
-    });
-
-    test('lets a tool with only optional parameters take any of them', () {
-      _expectGrammar(
-        validator,
-        render([alarms]).grammar!,
-        valid: [
-          call('list_alarms()'),
-          call('list_alarms(label="a")'),
-          call('list_alarms(limit=1)'),
-          call('list_alarms(label="a", limit=1)'),
-        ],
-        invalid: [
-          call('list_alarms(,limit=1)'),
-          call('list_alarms(limit=1, label="a")'),
-          call('list_alarms(label="a",)'),
-        ],
-      );
-    });
-
-    test('chooses among tools', () {
-      _expectGrammar(
-        validator,
-        render([_weatherWithCityTool, alarms]).grammar!,
-        valid: [call('weather(city="Seoul")'), call('list_alarms(limit=2)')],
-        invalid: [call('weather(limit=2)'), call('list_alarms(city="Seoul")')],
-      );
-    });
-
-    test('every list it takes parses to the arguments it spells', () {
-      final rendered = render([booking], parallelToolCalls: true);
-      final output = call(
-        r'book_table(restaurant="She said \"hi\"", guests=4, outdoor=True), '
-        r"book_table(restaurant='it\'s', guests=2, time="
-        '"18:00")',
-      );
-      _expectGrammar(
-        validator,
-        rendered.grammar!,
-        valid: [output],
-        invalid: [],
-      );
-      final parsed = ChatTemplateEngine.parseRendered(
-        rendered,
-        output,
-        tools: [booking],
-      );
-      expect(parsed.content, isEmpty);
-      expect(parsed.toolCalls.map((c) => jsonDecode(c.function!.arguments!)), [
-        {'restaurant': 'She said "hi"', 'guests': 4, 'outdoor': true},
-        {'restaurant': "it's", 'guests': 2, 'time': '18:00'},
-      ]);
-    });
+    expect(rendered.format, ChatFormat.lfm2.index);
+    expect(rendered.grammarLazy, isFalse);
+    const call =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul"}}]<|tool_call_end|>';
+    _expectGrammar(
+      validator,
+      rendered.grammar!,
+      valid: [call],
+      invalid: [
+        call.replaceFirst('}}]', '}, "id": "call_0"}]'),
+        call.replaceFirst('"weather"', '"unknown"'),
+        call.replaceFirst('"city"', '"town"'),
+        call.replaceFirst('"Seoul"', '1'),
+        call.replaceFirst('<|tool_call_end|>', ''),
+        '{"tool_call": {"name": "weather", "arguments": {"city": "Seoul"}}}',
+        'No tool',
+      ],
+    );
   });
 
-  test(
-    'a required tool with a name a call cannot write keeps the JSON list',
-    () {
-      final rendered = ChatTemplateEngine.render(
-        templateSource: File(
-          'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
-        ).readAsStringSync(),
-        messages: const [
-          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
-        ],
-        metadata: const {},
-        tools: [
-          ToolDefinition(
-            name: 'weather',
-            description: 'Weather',
-            parameters: [ToolParam.string('the city', required: true)],
-            handler: (_) async => null,
-          ),
-        ],
-        toolChoice: ToolChoice.required,
-      );
-      const call =
-          '<|tool_call_start|>[{"name": "weather", '
-          '"arguments": {"the city": "Seoul"}}]<|tool_call_end|>';
-      _expectGrammar(
-        validator,
-        rendered.grammar!,
-        valid: [call],
-        invalid: [
-          call.replaceFirst('}}]', '}, "id": "call_0"}]'),
-          call.replaceFirst('"weather"', '"unknown"'),
-          call.replaceFirst('"Seoul"', '1'),
-          call.replaceFirst('<|tool_call_end|>', ''),
-          'No tool',
-        ],
-      );
-    },
-  );
+  test('LFM2 required tool choice takes every call only under parallel', () {
+    String grammar({required bool parallel}) => ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather in Seoul and Paris?',
+        ),
+      ],
+      metadata: const {},
+      tools: [_weatherWithCityTool],
+      toolChoice: ToolChoice.required,
+      parallelToolCalls: parallel,
+    ).grammar!;
+
+    const one =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul"}}]<|tool_call_end|>';
+    const two =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul"}}, {"name": "weather", '
+        '"arguments": {"city": "Paris"}}]<|tool_call_end|>';
+    final three = two.replaceFirst(
+      '}}]',
+      '}}, {"name": "weather", "arguments": {"city": "Rome"}}]',
+    );
+    _expectGrammar(
+      validator,
+      grammar(parallel: true),
+      valid: [one, two, three],
+      invalid: ['<|tool_call_start|>[]<|tool_call_end|>'],
+    );
+    _expectGrammar(
+      validator,
+      grammar(parallel: false),
+      valid: const [one],
+      invalid: [two, three],
+    );
+  });
 
   test(
     'Firefunction v2 required tool grammar leaves the call id undeclared',

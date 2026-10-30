@@ -1411,8 +1411,7 @@ void main() {
         parallelToolCalls: parallel,
       ).grammar;
 
-      expect(grammar(parallel: false), isNot(contains('lfm2-tool)*')));
-      expect(grammar(parallel: true), contains('lfm2-tool)*'));
+      expect(grammar(parallel: true), isNot(grammar(parallel: false)));
     });
 
     test('still ignores parallelToolCalls on another format the caps deny', () {

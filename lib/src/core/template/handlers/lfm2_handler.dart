@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:dinja/dinja.dart';
 
-import '../../grammar/json_schema_converter.dart';
+import '../../exceptions.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_role.dart';
 import '../../models/chat/chat_template_result.dart';
@@ -17,8 +17,6 @@ import '../thinking_utils.dart';
 import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_call_grammar_utils.dart';
-import '../tool_schema_utils.dart';
-import 'specialized_handler_utils.dart';
 
 /// Handler for LFM2 and LFM2.5 (Liquid Foundation Model) formats.
 ///
@@ -31,9 +29,6 @@ class Lfm2Handler extends ChatTemplateHandler {
       ToolCallParsingUtils.literalOpening(text, const [
         '<|tool_call_start|>',
       ], from);
-
-  static const String _singleQuotedRule = r'''
-lfm2-single-quoted ::= "'" ([^'\\] | "\\" (['\\/ bfnrt] | "u" [0-9a-fA-F]{4}))* "'"''';
 
   static final RegExp _forceJsonSchemaLineMarker = RegExp(
     r'force json schema\.\n',
@@ -106,11 +101,9 @@ lfm2-single-quoted ::= "'" ([^'\\] | "\\" (['\\/ bfnrt] | "u" [0-9a-fA-F]{4}))* 
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: !shouldConstrainWithJsonTools
-          ? null
-          : hasForceJsonMarker
+      grammar: shouldConstrainWithJsonTools
           ? _jsonGrammar(tools, parallelToolCalls: parallelToolCalls)
-          : _callGrammar(tools, parallelToolCalls: parallelToolCalls),
+          : null,
       grammarLazy: shouldConstrainWithJsonTools && !toolChoiceRequired,
       additionalStops: getStops(
         hasTools: hasTools,
@@ -222,16 +215,7 @@ lfm2-single-quoted ::= "'" ([^'\\] | "\\" (['\\/ bfnrt] | "u" [0-9a-fA-F]{4}))* 
     for (var i = 0; i < matches.length; i++) {
       final match = matches.elementAt(i);
       final payload = match.group(1)!;
-      final decoded = ToolCallParsingUtils.decodeJsonValue(payload);
-      final parsedCalls =
-          ToolCallParsingUtils.parseToolCallArray(
-            decoded,
-            startIndex: toolCalls.length,
-            failOnInvalidItem: false,
-            assignFallbackIds: true,
-          ) ??
-          _PythonCallList(payload).parse(startIndex: toolCalls.length) ??
-          _parsePythonStyleToolCallList(payload, startIndex: toolCalls.length);
+      final parsedCalls = _parseCallList(payload, startIndex: toolCalls.length);
       if (parsedCalls != null) {
         toolCalls.addAll(parsedCalls);
       }
@@ -252,7 +236,7 @@ lfm2-single-quoted ::= "'" ([^'\\] | "\\" (['\\/ bfnrt] | "u" [0-9a-fA-F]{4}))* 
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) =>
-      _callGrammar(tools, parallelToolCalls: false);
+      _jsonGrammar(tools, parallelToolCalls: false);
 
   String? _jsonGrammar(
     List<ToolDefinition>? tools, {
@@ -264,128 +248,24 @@ lfm2-single-quoted ::= "'" ([^'\\] | "\\" (['\\/ bfnrt] | "u" [0-9a-fA-F]{4}))* 
     allowParallelToolCalls: parallelToolCalls,
   );
 
-  /// The `[name(arg=value)]` list these models write unprompted, as in
-  /// llama.cpp, with differences that keep `required` a guarantee: no prose
-  /// may precede the list, required parameters must appear, and values follow
-  /// each parameter's schema instead of being any literal.
-  ///
-  /// A name that cannot be written in that list falls back to the JSON list,
-  /// which [parse] also reads.
-  String? _callGrammar(
-    List<ToolDefinition>? tools, {
-    required bool parallelToolCalls,
+  List<LlamaCompletionChunkToolCall>? _parseCallList(
+    String payload, {
+    required int startIndex,
   }) {
-    if (tools == null || tools.isEmpty) {
+    try {
+      return ToolCallParsingUtils.parseToolCallArray(
+            ToolCallParsingUtils.decodeJsonValue(payload),
+            startIndex: startIndex,
+            failOnInvalidItem: false,
+            assignFallbackIds: true,
+          ) ??
+          _PythonCallList(payload).parse(startIndex: startIndex) ??
+          _parsePythonStyleToolCallList(payload, startIndex: startIndex);
+    } on LlamaInferenceException {
+      // Arguments the wire format refuses (too deep, not finite) are model
+      // text, not a caller error, so they must not throw out of parse.
       return null;
     }
-    final writable = tools.every(
-      (tool) =>
-          _PythonCallList.isName(tool.name) &&
-          schemaProperties(
-            tool.toJsonSchema(),
-          ).keys.every(_PythonCallList.isName),
-    );
-    if (!writable) {
-      return _jsonGrammar(tools, parallelToolCalls: parallelToolCalls);
-    }
-
-    final converter = JsonSchemaConverter();
-    final rules = <String>[];
-    final toolRules = <String>[];
-    for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
-      final tool = tools[toolIndex];
-      final schema = tool.toJsonSchema();
-      converter.resolveRefs(schema, schema);
-      final requiredNames = schemaRequired(schema);
-      final requiredRules = <String>[];
-      final optionalRules = <String>[];
-      var argumentIndex = 0;
-      for (final entry in schemaProperties(schema).entries) {
-        final rule = 'lfm2-tool-$toolIndex-arg-${argumentIndex++}';
-        final value = _argumentValue(
-          entry.value,
-          converter.visit(entry.value, '$rule-value'),
-        );
-        rules.add(
-          '$rule ::= ${ToolCallGrammarUtils.literal('${entry.key}=')} $value',
-        );
-        (requiredNames.contains(entry.key) ? requiredRules : optionalRules).add(
-          rule,
-        );
-      }
-      final toolRule = 'lfm2-tool-$toolIndex';
-      final arguments = _argumentsExpression(
-        rules,
-        toolRule,
-        requiredRules,
-        optionalRules,
-      );
-      rules.add(
-        '$toolRule ::= ${ToolCallGrammarUtils.literal('${tool.name}(')} '
-        '$arguments ")"',
-      );
-      toolRules.add(toolRule);
-    }
-
-    final more = parallelToolCalls ? ' ("," lfm2-space lfm2-tool)*' : '';
-    final buffer = StringBuffer()
-      ..writeln(
-        'root ::= "<|tool_call_start|>[" lfm2-space lfm2-tool$more '
-        'lfm2-space "]<|tool_call_end|>"',
-      )
-      ..writeln('lfm2-tool ::= ${toolRules.join(' | ')}')
-      ..writeln('lfm2-space ::= " "?')
-      ..writeln(_singleQuotedRule);
-    rules.forEach(buffer.writeln);
-    appendJsonRules(buffer, converter);
-    return buffer.toString();
-  }
-
-  /// [jsonValue], plus the Python spelling of a value whose schema only states
-  /// its type. These models favour both, and a string that must be double
-  /// quoted is cut short at its first unescaped `"`.
-  String _argumentValue(Map<String, dynamic> schema, String jsonValue) {
-    const annotations = {'type', 'description', 'title', 'default', 'examples'};
-    if (!schema.keys.every(annotations.contains)) return jsonValue;
-    return switch (schema['type']) {
-      'string' => '($jsonValue | lfm2-single-quoted)',
-      'boolean' => '($jsonValue | "True" | "False")',
-      _ => jsonValue,
-    };
-  }
-
-  /// Required arguments, then any of the optional ones, in schema order as the
-  /// JSON grammar takes them. One rule per optional argument keeps the grammar
-  /// linear in their number.
-  String _argumentsExpression(
-    List<String> rules,
-    String toolRule,
-    List<String> requiredRules,
-    List<String> optionalRules,
-  ) {
-    String restFrom(int index) => '$toolRule-rest-$index';
-    for (var i = requiredRules.isEmpty ? 1 : 0; i < optionalRules.length; i++) {
-      final next = i + 1 < optionalRules.length ? ' ${restFrom(i + 1)}' : '';
-      rules.add(
-        '${restFrom(i)} ::= ("," lfm2-space ${optionalRules[i]})?$next',
-      );
-    }
-    if (requiredRules.isNotEmpty) {
-      return [
-        requiredRules.join(' "," lfm2-space '),
-        if (optionalRules.isNotEmpty) restFrom(0),
-      ].join(' ');
-    }
-    if (optionalRules.isEmpty) {
-      return '';
-    }
-    final starts = [
-      for (var i = 0; i < optionalRules.length; i++)
-        i + 1 < optionalRules.length
-            ? '${optionalRules[i]} ${restFrom(i + 1)}'
-            : optionalRules[i],
-    ];
-    return '(${starts.join(' | ')})?';
   }
 
   List<LlamaCompletionChunkToolCall>? _parsePythonStyleToolCallList(
@@ -481,11 +361,14 @@ lfm2-single-quoted ::= "'" ([^'\\] | "\\" (['\\/ bfnrt] | "u" [0-9a-fA-F]{4}))* 
 class _PythonCallList {
   _PythonCallList(this._source);
 
-  static final RegExp _name = RegExp(r'^[A-Za-z_][A-Za-z0-9_.-]*$');
   static final RegExp _nameAtStart = RegExp(r'[A-Za-z_][A-Za-z0-9_.-]*');
   static final RegExp _numberAtStart = RegExp(
     r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?',
   );
+  static final RegExp _hexAtStart = RegExp(r'[0-9a-fA-F]{4}');
+
+  /// One less than the wire format's limit, which counts the arguments map.
+  static const int _maxValueDepth = 127;
   static const Map<String, Object?> _literals = {
     'True': true,
     'False': false,
@@ -508,8 +391,7 @@ class _PythonCallList {
 
   final String _source;
   int _at = 0;
-
-  static bool isName(String value) => _name.hasMatch(value);
+  int _depth = 0;
 
   /// The calls of the whole source, or null if it is not such a list.
   List<LlamaCompletionChunkToolCall>? parse({required int startIndex}) {
@@ -571,7 +453,9 @@ class _PythonCallList {
     final number = _numberAtStart.matchAsPrefix(_source, _at);
     if (number == null) throw const FormatException();
     _at = number.end;
-    return jsonDecode(number[0]!);
+    final value = jsonDecode(number[0]!) as num;
+    if (!value.isFinite) throw const FormatException();
+    return value;
   }
 
   String _string(String quote) {
@@ -587,11 +471,10 @@ class _PythonCallList {
       if (_at >= _source.length) break;
       final escape = _source[_at++];
       if (escape == 'u') {
-        if (_at + 4 > _source.length) break;
-        buffer.writeCharCode(
-          int.parse(_source.substring(_at, _at + 4), radix: 16),
-        );
-        _at += 4;
+        final hex = _hexAtStart.matchAsPrefix(_source, _at);
+        if (hex == null) throw const FormatException();
+        buffer.writeCharCode(int.parse(hex[0]!, radix: 16));
+        _at = hex.end;
         continue;
       }
       final decoded = _escapes[escape];
@@ -603,37 +486,47 @@ class _PythonCallList {
 
   List<Object?> _list() {
     _expect('[');
+    _enterContainer();
     _skipSpace();
     final items = <Object?>[];
-    if (_accept(']')) return items;
-    do {
-      _skipSpace();
-      items.add(_value());
-      _skipSpace();
-    } while (_accept(','));
-    _expect(']');
+    if (!_accept(']')) {
+      do {
+        _skipSpace();
+        items.add(_value());
+        _skipSpace();
+      } while (_accept(','));
+      _expect(']');
+    }
+    _depth--;
     return items;
   }
 
   Map<String, Object?> _dict() {
     _expect('{');
+    _enterContainer();
     _skipSpace();
     final entries = <String, Object?>{};
-    if (_accept('}')) return entries;
-    do {
-      _skipSpace();
-      if (_at >= _source.length) throw const FormatException();
-      final quote = _source[_at];
-      if (quote != '"' && quote != "'") throw const FormatException();
-      final key = _string(quote);
-      _skipSpace();
-      _expect(':');
-      _skipSpace();
-      entries[key] = _value();
-      _skipSpace();
-    } while (_accept(','));
-    _expect('}');
+    if (!_accept('}')) {
+      do {
+        _skipSpace();
+        if (_at >= _source.length) throw const FormatException();
+        final quote = _source[_at];
+        if (quote != '"' && quote != "'") throw const FormatException();
+        final key = _string(quote);
+        _skipSpace();
+        _expect(':');
+        _skipSpace();
+        entries[key] = _value();
+        _skipSpace();
+      } while (_accept(','));
+      _expect('}');
+    }
+    _depth--;
     return entries;
+  }
+
+  void _enterContainer() {
+    if (++_depth > _maxValueDepth) throw const FormatException();
   }
 
   String _matchName() {

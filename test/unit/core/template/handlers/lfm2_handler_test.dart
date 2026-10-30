@@ -204,6 +204,74 @@ void main() {
     });
   });
 
+  group('model output never throws out of parse', () {
+    String nested(String open, String close, int depth) =>
+        open * depth + close * depth;
+
+    for (final (name, arguments, expected) in <(String, String, Object?)>[
+      ('a negative unicode escape', r'x="\u-001"', {'x': r'\u-001'}),
+      ('a signed unicode escape', r'x="\u+041"', {'x': r'\u+041'}),
+      ('a short unicode escape', r'x="\u12"', {'x': r'\u12'}),
+      ('an overflowing number in a list', 'x=[1e999]', {'x': '[1e999]'}),
+      ('a lone quote', "x='", {'x': "'"}),
+    ]) {
+      test('$name reads as text', () {
+        _expectCalls(
+          Lfm2Handler().parse(
+            '<|tool_call_start|>[f($arguments)]<|tool_call_end|>',
+          ),
+          '',
+          [('f', jsonEncode(expected))],
+        );
+      });
+    }
+
+    test('keeps a value at the depth the wire format allows', () {
+      final value = nested('[', ']', 127);
+      final parsed = Lfm2Handler().parse(
+        '<|tool_call_start|>[f(x=$value)]<|tool_call_end|>',
+      );
+      expect(parsed.toolCalls.single.function?.arguments, '{"x":$value}');
+    });
+
+    for (final (name, value) in [
+      ('one level too deep', nested('[', ']', 128)),
+      ('a deep list', nested('[', ']', 200000)),
+      ('an unclosed deep list', '[' * 200000),
+      ('an unclosed deep map', '{"a":' * 200000),
+    ]) {
+      test('$name reads as text', () {
+        _expectCalls(
+          Lfm2Handler().parse(
+            '<|tool_call_start|>[f(x=$value)]<|tool_call_end|>',
+          ),
+          '',
+          [
+            ('f', jsonEncode({'x': value})),
+          ],
+        );
+      });
+    }
+
+    for (final (name, payload) in [
+      ('an overflowing number', '[f(x=1e999)]'),
+      ('an overflowing negative number', '[f(x=-1e999)]'),
+      ('a JSON overflowing number', '[{"name":"f","arguments":{"x":1e999}}]'),
+      (
+        'a JSON value nested too deep',
+        '[{"name":"f","arguments":{"x":${nested('[', ']', 200)}}}]',
+      ),
+    ]) {
+      test('$name takes no call', () {
+        final parsed = Lfm2Handler().parse(
+          'Before<|tool_call_start|>$payload<|tool_call_end|>',
+        );
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, 'Before');
+      });
+    }
+  });
+
   test('still reads a list only the loose parser understands', () {
     _expectCalls(
       Lfm2Handler().parse(
@@ -249,29 +317,9 @@ void main() {
     );
 
     test('takes a second call only when the request allows it', () {
-      expect(render([search]).grammar, isNot(contains('lfm2-tool)*')));
-      expect(render([search], parallel: true).grammar, contains('lfm2-tool)*'));
-    });
-
-    test('falls back to the JSON list for a name a call cannot write', () {
-      for (final tool in [
-        ToolDefinition(
-          name: 'search web',
-          description: 'Search',
-          parameters: [ToolParam.string('query', required: true)],
-          handler: _noop,
-        ),
-        ToolDefinition(
-          name: 'search',
-          description: 'Search',
-          parameters: [ToolParam.string('the query', required: true)],
-          handler: _noop,
-        ),
-      ]) {
-        final grammar = render([tool]).grammar;
-        expect(grammar, contains('root-item'), reason: tool.name);
-        expect(grammar, isNot(contains('lfm2-tool')), reason: tool.name);
-      }
+      final single = render([search]).grammar;
+      expect(single, contains('root-item'));
+      expect(render([search], parallel: true).grammar, isNot(single));
     });
 
     test('force-json-schema keeps the JSON list and its parallel flag', () {
@@ -345,9 +393,15 @@ void main() {
     expect(renderedWithRequiredChoice.grammar, isNotNull);
     expect(
       renderedWithRequiredChoice.grammar,
-      contains('"<|tool_call_start|>['),
+      contains('"<|tool_call_start|>"'),
     );
-    expect(renderedWithRequiredChoice.grammar, contains('"search("'));
+    expect(
+      renderedWithRequiredChoice.grammar,
+      contains(
+        'root-item ::= "{" space root-item-name-kv "," space '
+        'root-item-arguments-kv "}" space',
+      ),
+    );
     expect(renderedWithRequiredChoice.grammarLazy, isFalse);
     expect(renderedWithRequiredChoice.grammarTriggers, hasLength(1));
 
