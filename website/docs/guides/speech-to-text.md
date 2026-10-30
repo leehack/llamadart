@@ -269,14 +269,12 @@ adapter carries the runtime settings (`backend`, `numberOfThreads`,
 so `params:` and `backend:` must be null. A `LiteRtLmAsrAdapter` model takes
 no projector, and a prompt adapter model no tokenizer.
 
-The default overlap reduces duplicated words at untimed ASR window
-boundaries. Other boundary and recognition errors can remain.
-
 The model can also be a dedicated ASR `.litertlm` container, such as the
 published Whisper tiny container with the `whisperTiny` preset. The container
 uses its embedded tokenizer, but `load` still requires a `tokenizer` file.
 Flutter iOS and macOS apps run the runtime that `llamadart_litert_lm_flutter`
-links, so use companion `0.17.x` with core `0.17.x`.
+links, so use the companion with the core's `MAJOR.MINOR`. Boundary and
+recognition errors can remain.
 
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
