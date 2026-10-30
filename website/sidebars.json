@@ -98,8 +98,7 @@
       "items": [
         "troubleshooting/common-issues",
         "migration/upgrade-checklist",
-        "migration/0-5-to-0-6",
-        "migration/0-4-to-0-5",
+        "migration/upgrade-to-0-17",
         "changelog/recent-releases"
       ]
     }
