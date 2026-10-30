@@ -6,7 +6,7 @@ description: Decide when to use GGUF with llama.cpp or .litertlm bundles with Li
 
 For pre-load desktop setup information, run `dart run llamadart:doctor --json`
 or call `collectLlamaRuntimeSetupReport()`; see the
-[setup report contract](../platforms/native-build-hooks#desktop-setup-report).
+[setup report contract](../platforms/diagnose-setup#desktop-setup-report).
 It reports pinned publication policy and override presence. It does not choose
 or initialize a backend, validate GPU usability or replace loaded-model
 capabilities. Web/mobile require separate app/device/browser validation.
@@ -137,7 +137,7 @@ never falls back to another device:
   uses Vulkan on Android. Android Vulkan is experimental and fails on some
   devices; keep `auto` or `cpu` there unless you have validated your target
   devices
-  ([known limitations](../platforms/support-matrix#known-limitations)). On
+  ([known limitations](../platforms/known-platform-issues)). On
   an iOS simulator it uses Metal, as `GpuBackend.metal` does, and Metal
   returns incorrect output there
   ([#950](https://github.com/leehack/llamadart/issues/950)); keep `auto` or
@@ -247,9 +247,9 @@ JavaScript runtime.
 | Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU default; explicit GPU on Linux x64 (Vulkan) and Windows x64 (Direct3D 12), with compatible drivers. Linux arm64 remains CPU-only. |
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Native CPU embedding engine on macOS, iOS and Android arm64 (`embeddingEngine: true`); not on GPU or Web |
-| Next-token log-probabilities | Supported on native and on WebGPU bridge assets `v0.1.52+` | Not exposed |
+| Next-token log-probabilities | Supported on native and on WebGPU (pinned assets) | Not exposed |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
-| LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU bridge assets `v0.1.54+` | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
+| LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU (pinned assets) | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: ordered system/user/assistant text; tool declarations and tool messages are rejected. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | GBNF is unsupported and explicit grammar params are rejected; a separate native JSON Schema route supports canonical Qwen3 text on macOS arm64 CPU with thinking disabled and a bounded scalar-object subset; other strict combinations fail early |
 | Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |
@@ -333,8 +333,8 @@ runtime graphs, so this compares deployments, not kernels.
 - Treat `GenerationParams.speculativeDecoding` as a per-model, per-device
   tuning knob, not a guaranteed speedup; the `LlamaEngine` default is off.
 
-[Backend benchmarks](./backend-benchmarks) has measured Gemma 4 E2B results on
-Pixel 9 Pro, macOS, and web, including speculative decoding.
+[Performance tuning](./performance-tuning#compare-fairly) summarizes a
+historical Gemma 4 E2B comparison on Pixel 9 Pro, macOS and web.
 
 ## Reduce app size
 
