@@ -5,7 +5,7 @@ description: Observe local inference with optional OpenTelemetry instrumentation
 
 `llamadart` exposes operation observers and per-request usage. Your app can use
 these hooks for logging, tracing or metrics without installing OpenTelemetry.
-The optional companion package planned in
+The optional OpenTelemetry package planned in
 [#696](https://github.com/leehack/llamadart/issues/696) is separate work; this
 guide uses an application-owned adapter today.
 
@@ -66,7 +66,7 @@ the lifecycle contract and a logger-only observer.
 
 The example uses application-specific metric names so it does not promise full
 conformance with evolving GenAI metric conventions. Spans use `gen_ai.*`
-operation/model/usage attributes where applicable. The future companion may
+operation/model/usage attributes where applicable. The future OpenTelemetry package may
 standardize a broader mapping; the example is not its API contract.
 
 Metric dimensions are operation, approved model alias, runtime when known,

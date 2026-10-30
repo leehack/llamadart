@@ -8,14 +8,17 @@ For pre-load desktop setup information, run `dart run llamadart:doctor --json`
 or call `collectLlamaRuntimeSetupReport()`; see the
 [setup report contract](../platforms/diagnose-setup#desktop-setup-report).
 It reports pinned publication policy and override presence. It does not choose
-or initialize a backend, validate GPU usability or replace loaded-model
+or initialize a runtime, validate GPU usability or replace loaded-model
 capabilities. Web/mobile require separate app/device/browser validation.
 
 ## Quick answer
 
+Terms such as runtime and backend module are defined in the
+[glossary](./glossary).
+
 | Choose this | Best fit | Tradeoffs |
 | --- | --- | --- |
-| `llama.cpp` / GGUF | Broad model catalog, many quantizations, embeddings, LoRA, state persistence, grammar constraints, multimodal, and low-level runtime tuning. | Mobile GPU performance depends heavily on the device, driver, model size, and backend. It does not use LiteRT-LM NPU delegates. |
+| `llama.cpp` / GGUF | Broad model catalog, many quantizations, embeddings, LoRA, state persistence, grammar constraints, multimodal, and low-level runtime tuning. | Mobile GPU performance depends heavily on the device, driver, model size, and GPU backend module. It does not use LiteRT-LM NPU delegates. |
 | LiteRT-LM / `.litertlm` | LiteRT-LM bundles, Gemma 4 LiteRT-LM variants, Android GPU/NPU delegate experiments, and app flows that only need text generation/chat. | Smaller model catalog and fewer exposed runtime features today. Unsupported llama.cpp-only options are rejected. |
 
 - Start with GGUF / llama.cpp if you need the broadest model support or
@@ -23,7 +26,7 @@ capabilities. Web/mobile require separate app/device/browser validation.
   multimodal projectors.
 - Start with LiteRT-LM if your model already ships as a `.litertlm` bundle and
   your app mainly needs text generation or chat on mobile or web.
-- On desktop, GGUF / llama.cpp is usually the more complete production backend
+- On desktop, GGUF / llama.cpp is usually the more complete production runtime
   unless your product specifically ships LiteRT-LM bundles.
 - On Android, benchmark LiteRT-LM `gpu` and `npu` separately when the model and
   device support them. NPU is a LiteRT-LM deployment path, not a general

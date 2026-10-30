@@ -364,8 +364,8 @@ Schema JSON nesting is limited to 128 containers, including annotation values.
 Cycles and non-JSON values throw `LlamaArgumentException`; deep or malformed
 schemas, constraints in the wrong context, conflicting bounds and unresolved or
 external references throw `LlamaUnsupportedException`. References must target
-schema positions, never annotation/extension payloads. On grammar-capable
-backends a grammar llama.cpp would refuse to load also fails before generation.
+schema positions, never annotation/extension payloads. On runtimes that
+support grammar constraints, a grammar llama.cpp would refuse to load also fails before generation.
 
 For live rendering, keep the stream returned by
 `engine.create(..., responseFormat: output.responseFormat)` and finalize it with
@@ -411,7 +411,7 @@ remains necessary.
 `ChatSession` takes the same `responseFormat` on `session.create(...)` and has
 `session.createStructuredJson(parts, output: output)` for multi-turn structured
 output; the JSON reply is kept in the session history like any other turn.
-An unrecognised format, or a strict one on a backend without grammar
+An unrecognised format, or a strict one on a runtime without grammar
 constraints, throws before the user message joins the history. A request that
 fails or is cancelled before any reply content takes back its own user message
 (and any turns its context trimming dropped, if the history is otherwise
