@@ -104,15 +104,13 @@ void main() {
       final threads = <List<int>>[];
       capped.debugOnSpeculativeDraftContextForTesting = (draft) =>
           threads.add([llama_n_threads(draft), llama_n_threads_batch(draft)]);
-      final handle = capped.loadModel(
-        '${dir.path}/model.gguf',
-        _contextParams(),
-      );
+      const params = ModelParams(gpuLayers: 0, contextSize: 64);
+      final handle = capped.loadModel('${dir.path}/model.gguf', params);
       final cancel = calloc<Int8>();
       addTearDown(() => calloc.free(cancel));
       await capped
           .generate(
-            capped.createContext(handle, _contextParams()),
+            capped.createContext(handle, params),
             'abab',
             GenerationParams(
               maxTokens: 2,
