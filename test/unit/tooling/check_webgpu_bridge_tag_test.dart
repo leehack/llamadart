@@ -46,12 +46,12 @@ Directory _fakeRuntimeRepo({
     'example/chat_app/web/index.html':
         "    const defaultBridgeLlamaCppTag = '$bridgeTag';\n",
     'doc/webgpu_bridge.md': parityWording
-        ? 'That release embeds llama.cpp `$bridgeTag`, behind the '
+        ? 'That release embeds llama.cpp `$bridgeTag`, matching the '
               '`hook/build.dart` native pin\n'
         : 'That release embeds llama.cpp `$bridgeTag`, which now trails the '
               '`hook/build.dart`\n',
     'website/docs/platforms/webgpu-bridge.md': parityWording
-        ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, behind '
+        ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, matching '
               'the native runtime\n'
         : '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, which now '
               'trails the\n',
@@ -228,7 +228,7 @@ void main() {
     expect(bridgeApprovedNativePin, 'v0.8.0');
     expect(
       normalizeNativeLlamaCppTag(bridgeApprovedNativePin),
-      bridgeApprovedNativeUpstreamAhead,
+      bridgeLlamaCppTag,
     );
   });
 
@@ -844,7 +844,7 @@ void main() {
   }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
 
   group('Web/native llama.cpp relationship', () {
-    test('the checked-in repo agrees on the Web/native relationship', () {
+    test('the checked-in repo agrees on upstream family parity', () {
       expect(
         findBridgeRuntimeDrift(Directory.current, bridgeLlamaCppTag),
         isEmpty,
@@ -875,26 +875,6 @@ void main() {
       );
     });
 
-    test('the native pin may run ahead only on the approved upstream', () {
-      expect(
-        findBridgeRuntimeDrift(
-          _fakeRuntimeRepo(
-            bridgeTag: bridgeLlamaCppTag,
-            nativeTag: bridgeApprovedNativePin,
-          ),
-          bridgeLlamaCppTag,
-        ),
-        isEmpty,
-      );
-      expect(
-        findBridgeRuntimeDrift(
-          _fakeRuntimeRepo(bridgeTag: bridgeLlamaCppTag, nativeTag: 'v0.9.0'),
-          bridgeLlamaCppTag,
-        ),
-        contains(contains('Web and native must share')),
-      );
-    });
-
     test('an upstream-family mismatch is reported', () {
       final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.3.0-1');
 
@@ -903,8 +883,7 @@ void main() {
         contains(
           'bridge assets embed llama.cpp v0.2.0 but $nativeLlamaCppTagPath '
           'pins v0.3.0-1 (upstream family v0.3.0) — Web and native must share '
-          'an upstream llama.cpp release, or the native pin may run ahead on '
-          'the approved $bridgeApprovedNativeUpstreamAhead',
+          'the same upstream llama.cpp release',
         ),
       );
     });
@@ -952,7 +931,7 @@ void main() {
       );
     });
 
-    test('relationship prose is accepted for the approved pin', () {
+    test('parity prose is accepted for matching upstream tags', () {
       final root = _fakeRuntimeRepo(
         bridgeTag: bridgeLlamaCppTag,
         nativeTag: bridgeApprovedNativePin,

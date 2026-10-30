@@ -441,7 +441,7 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, behind the '
+      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the '
       r'`hook/build\.dart` native pin$',
       multiLine: true,
     ),
@@ -449,7 +449,7 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, behind the native runtime$',
+      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime$',
       multiLine: true,
     ),
   ),
@@ -465,7 +465,7 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^\(`(?<nativePin>[^`]+)`; the bridge is built from upstream llama\.cpp '
+      r'^\(`(?<nativePin>[^`]+)`, both built from upstream llama\.cpp '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
       r'even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
       r'native runtime tag\r?\n'
@@ -480,7 +480,7 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^  \(`(?<nativePin>[^`]+)`; the bridge is built from upstream '
+      r'^  \(`(?<nativePin>[^`]+)`, both built from upstream '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
       r'  even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
       r'native runtime tag\r?\n'
@@ -564,13 +564,11 @@ List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
         'native pin $bridgeApprovedNativePin',
       );
     }
-    if (normalizedNativeFamily != bridgeTag &&
-        normalizedNativeFamily != bridgeApprovedNativeUpstreamAhead) {
+    if (normalizedNativeFamily != bridgeTag) {
       problems.add(
         'bridge assets embed llama.cpp $bridgeTag but $nativeLlamaCppTagPath '
         'pins $nativeTag (upstream family $normalizedNativeFamily) — Web and '
-        'native must share an upstream llama.cpp release, or the native pin '
-        'may run ahead on the approved $bridgeApprovedNativeUpstreamAhead',
+        'native must share the same upstream llama.cpp release',
       );
     }
   }
@@ -1266,8 +1264,8 @@ Future<void> main(List<String> arguments) async {
     '$expectedTag.',
   );
   stdout.writeln(
-    '[webgpu-bridge-tag] OK: Web runs upstream llama.cpp $bridgeLlamaCppTag '
-    'beside native pin $bridgeApprovedNativePin.',
+    '[webgpu-bridge-tag] OK: Web and native both run upstream llama.cpp '
+    '$bridgeLlamaCppTag.',
   );
   stdout.writeln(
     '[webgpu-bridge-tag] OK: ${bridgeProvenancePins.length} docs restate the '
