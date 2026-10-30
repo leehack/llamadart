@@ -5,7 +5,12 @@ description: Generate local text, image and audio embeddings with llamadart, pro
 ---
 
 `llamadart` supports local embedding generation through `LlamaEngine` on
-native and web runtimes.
+native and web runtimes. `LlamaEngine.embed` and `embedContent` return vectors
+from a loaded embedding model, `LlamaTextEmbedder` adds EmbeddingGemma-2 task
+prefixes and Matryoshka dimensions to text, and the LiteRT-LM embedding engine
+(`embeddingEngine: true`) embeds text, images and audio on native CPU.
+`LlamaReranker` re-scores retrieved candidates with a cross-encoder; see
+[Reranking](./reranking).
 
 ## Basic usage
 
@@ -43,45 +48,39 @@ Future<void> main() async {
 `LlamaEmbeddingInput` accepts a nonempty ordered list of `LlamaTextContent`,
 `LlamaImageContent` and `LlamaAudioContent` parts. Use `embedContent(input)`
 or `embedContentBatch(inputs)` for one vector per input. Adjacent text parts
-form one verbatim-concatenated text segment on every backend, including within mixed inputs; no separator or task prefix is added. An empty
-batch returns no vectors; an empty parts list throws `LlamaArgumentException`.
+form one verbatim-concatenated text segment on every backend, including within
+mixed inputs; no separator or task prefix is added. An empty batch returns no
+vectors; an empty parts list throws `LlamaArgumentException`.
 
 ```dart
 Future<List<double>> embedContentExample(LlamaEngine engine) async {
   final capabilities = await engine.embeddingCapabilities;
   if (!capabilities.text) {
-    throw LlamaUnsupportedException('This loaded runtime cannot embed text.');
-  }
-  return engine.embedContent(
-    LlamaEmbeddingInput([const LlamaTextContent('hello world')]),
-  );
-}
-```
-
 After loading a model and any projector, `await engine.embeddingCapabilities`
-reports `text`, `image` and `audio`. Native llama.cpp probes the loaded pooling/
-attention mode, mixed-batch ABI and projector encoders. EmbeddingGemma-2 with
-its projector supports images/audio on native v0.7.0-1 (BF16 qualified on CPU on
-macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other
-GPU backends unqualified); without a projector it reports text only. Web llama.cpp probes image/audio
-embeddings through the bridge's embedding API and a compatible model/projector;
-the pinned assets include it.
-EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
-native CPU/Metal. Repeated media batches are qualified only on memory64 (wasm32 is
-unqualified); hardware WebGPU is unqualified. Image bytes are encoded data; embedding calls ignore width/height.
-LiteRT-LM embedding engines probe text/image/audio processors on native CPU.
-Native and Web text-only content follows `embed`, including causal unpooled models;
-media gates do not restrict text. `mediaUnsupportedReason` on the capability
-report explains native media requirements, including the v0.7.0-1 ABI when
-an older override lacks the mixed-batch or input-width symbols.
-Chat vision/audio support does not imply embedding support. Custom backends may implement the
-optional `BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart`
-and positively probe each loaded model/runtime modality.
+reports `text`, `image` and `audio`. Native llama.cpp probes the loaded
+pooling/attention mode, mixed-batch ABI and projector encoders.
+EmbeddingGemma-2 with its projector supports images/audio on native v0.7.0-1
+(BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS,
+and on macOS Metal; other GPU backends unqualified); without a projector it
+reports text only. Web llama.cpp probes image/audio embeddings through the
+bridge's embedding API and a compatible model/projector; the pinned assets
+include it. EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64
+against native CPU/Metal. Repeated media batches are qualified only on memory64
+(wasm32 is unqualified); hardware WebGPU is unqualified. Image bytes are encoded
+data; embedding calls ignore width/height. LiteRT-LM embedding engines probe
+text/image/audio processors on native CPU. Native and Web text-only content
+follows `embed`, including causal unpooled models; media gates do not restrict
+text. `mediaUnsupportedReason` on the capability report explains native media
+requirements, including the v0.7.0-1 ABI when an older override lacks the
+mixed-batch or input-width symbols. Chat vision/audio support does not imply
+embedding support. Custom backends may implement the optional
+`BackendMultimodalEmbeddings` SPI from `package:llamadart/backend.dart` and
+positively probe each loaded model/runtime modality.
 
 The modality enum may gain values such as video; include a default case in
-switches. Video and chat-only parts throw `LlamaUnsupportedException`; a portable
-video frame/timestamp sampling contract has not been defined. No media is
-silently flattened into text. Source/codec support is runtime-specific;
+switches. Video and chat-only parts throw `LlamaUnsupportedException`; a
+portable video frame/timestamp sampling contract has not been defined. No media
+is silently flattened into text. Source/codec support is runtime-specific;
 embedding PCM uses mono 16 kHz Float32 samples. Keep media buffers unchanged
 until the future settles. `normalize` and cancellation through
 `cancelGeneration()` use the existing `LlamaInferenceException` cancellation
@@ -90,23 +89,27 @@ native LiteRT-LM also checks again after worker startup. Web content calls
 discard late successful bridge results after cancellation; synchronous WASM
 compute may still finish before the future throws. Await the future before
 reuse; a later call starts independently. Native llama.cpp and Web legacy
-string embedding cancellation contracts are unchanged. Content-call
-observers receive only ordered part kinds/counts, with no text, paths, URLs
-or media payloads; old string calls retain their existing text observations.
+string embedding cancellation contracts are unchanged. Content-call observers
+receive only ordered part kinds/counts, with no text, paths, URLs or media
+payloads; old string calls retain their existing text observations.
 
 GGUF embeddings reuse the existing model and its `LlamaModel.projector` or
-`loadMultimodalProjector` loading path. `LiteRtLmModelParams(embeddingEngine: true)`
-selects the separate LiteRT-LM embedding engine. Use `ComputeDevice.cpu` on
-macOS arm64, iOS arm64 or Android arm64 (verified on a Galaxy S24 without SME and on arm64 emulators). Native GPU, Linux, Windows, Android x86_64
-and all LiteRT-LM Web paths throw `LlamaUnsupportedException` at load, before
-native engine creation, whatever runtime library is loaded
-([#1367](https://github.com/leehack/llamadart/issues/1367)). This flag
-is LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
-existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
-than inferring modality support from its name. Task-prefix and Matryoshka
-helpers are explicit opt-in text operations described below.
+`loadMultimodalProjector` loading path. Task-prefix and Matryoshka helpers are
+explicit opt-in text operations described below. LiteRT-LM uses a separate
+engine, described in [LiteRT-LM embedding engine](#litert-lm-embedding-engine).
 
-### LiteRT-LM embedding engine
+## LiteRT-LM embedding engine
+
+`LiteRtLmModelParams(embeddingEngine: true)` selects the separate LiteRT-LM
+embedding engine. Use `ComputeDevice.cpu` on macOS arm64, iOS arm64 or Android
+arm64 (verified on a Galaxy S24 without SME and on arm64 emulators). Native GPU,
+Linux, Windows, Android x86_64 and all LiteRT-LM Web paths throw
+`LlamaUnsupportedException` at load, before native engine creation, whatever
+runtime library is loaded
+([#1367](https://github.com/leehack/llamadart/issues/1367)). This flag is
+LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
+existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
+than inferring modality support from its name.
 
 ```dart
 import 'dart:typed_data';
@@ -126,18 +129,35 @@ Future<List<double>> embedLiteRtImage(LlamaEngine engine, Uint8List png) async {
 }
 ```
 
-LiteRT-LM Web embeddings remain unsupported: Web CPU cannot load external text-encoder
-weights, and pinned WebGPU vectors missed the native CPU parity gate. Media inputs accept encoded PNG/JPEG bytes,
-mono 16 kHz PCM16/Float32 WAV bytes, or mono 16 kHz Float32 samples. Paths,
-image URLs, video and multiple sources per part are unsupported. All parts are
-decoded before inference.
-No task prefix is inserted. Embedding mode rejects generation and tokenizer APIs.
+LiteRT-LM Web embeddings remain unsupported: Web CPU cannot load external
+text-encoder weights, and pinned WebGPU vectors missed the native CPU parity
+gate. Media inputs accept encoded PNG/JPEG bytes, mono 16 kHz PCM16/Float32 WAV
+bytes, or mono 16 kHz Float32 samples. Paths, image URLs, video and multiple
+sources per part are unsupported. All parts are decoded before inference. No
+task prefix is inserted. Embedding mode rejects generation and tokenizer APIs.
 
 LiteRT-LM selects overflow-error behavior. It has no expanded-token count API,
 so overflow may be discovered after earlier batch items consumed compute; the
 whole call throws `LlamaInferenceException` and returns no vectors. It never
 truncates or returns partial results. llama.cpp still validates actual expanded
 context/batch/micro-batch capacity before inference.
+
+### Lifecycle and options
+
+Concurrent embedding calls queue. Whole-batch media decoding runs off the caller
+isolate; native inference checks cancellation between items. Cancel, unload and
+dispose discard all vectors after the current item settles and cancel queued
+requests too. A timeout throws `LlamaInferenceException` and cancels only its own
+request; other callers stay queued with their own deadlines. A timed-out queued
+request never enters native inference. Reuse waits for any active native item to
+settle.
+
+`contextSize` selects the model's encoder signature without truncating inputs.
+Embedding mode applies `numberOfThreads`, `cacheDir` and CPU selection;
+LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths,
+program cache limits, MTP/rollback and Web memory hints throw
+`LlamaUnsupportedException` before model I/O. GPU/NPU and Web embeddings
+remain unavailable.
 
 ## Native overflow errors
 
@@ -172,7 +192,7 @@ try {
   GGUFs (such as Qwen3-Reranker) return classifier scores rather than
   embeddings, so `embed(...)` and `embedBatch(...)` throw
   `LlamaUnsupportedException` for them. Use `LlamaReranker`; see
-  [Cross-encoder reranking](#cross-encoder-reranking).
+  [Reranking](./reranking).
 - On native, encoder-decoder GGUFs (such as T5) throw
   `LlamaUnsupportedException`; use an encoder-only or decoder-only embedding
   model.
@@ -376,7 +396,8 @@ double dotProduct(List<double> a, List<double> b) {
 ```
 
 With `normalize: true`, dot-product scores correspond to cosine similarity,
-which is usually the simplest ranking baseline for local retrieval.
+which is usually the simplest ranking baseline for local retrieval. To refine the top candidates
+with a cross-encoder, see [Reranking](./reranking).
 
 ## Throughput tuning for `embedBatch(...)`
 
@@ -399,7 +420,8 @@ architecture is not available before bridge context creation. Known decoder
 presets can use smaller batches; see [Performance tuning](./performance-tuning).
 An embedding input must fit its model's context and, for encoder-only,
 no-memory, non-causal or MEAN/CLS-pooled models, one micro-batch. Set both
-batch values explicitly only when tuning a known workload; selecting memory64 does not remove this micro-batch requirement.
+batch values explicitly only when tuning a known workload; selecting memory64
+does not remove this micro-batch requirement.
 
 - `batchSize` (`n_batch`): max logical tokens per forward pass.
 - `microBatchSize` (`n_ubatch`): scheduler micro-batch size.
@@ -409,109 +431,3 @@ batch values explicitly only when tuning a known workload; selecting memory64 do
 Start with `maxParallelSequences` matching expected concurrent batch width (for
 example `4` or `8`), then tune based on memory and latency/throughput tradeoffs.
 Measure sequential and batch throughput on the target device.
-
-### LiteRT-LM embedding lifecycle and options
-
-Concurrent embedding calls queue. Whole-batch media decoding runs off the caller
-isolate; native inference checks cancellation between items. Cancel, unload and
-dispose discard all vectors after the current item settles and cancel queued
-requests too. A timeout throws `LlamaInferenceException` and cancels only its own
-request; other callers stay queued with their own deadlines. A timed-out queued
-request never enters native inference. Reuse waits for any active native item to
-settle.
-
-`contextSize` selects the model's encoder signature without truncating inputs.
-Embedding mode applies `numberOfThreads`, `cacheDir` and CPU selection;
-LoRA, chat templates, activation type, prefill, parallel loading, dispatch paths,
-program cache limits, MTP/rollback and Web memory hints throw
-`LlamaUnsupportedException` before model I/O. GPU/NPU and Web embeddings
-remain unavailable.
-
-## Cross-encoder reranking
-
-Retrieve a candidate set with embeddings, then score query/document pairs with
-a separate rank-pooled GGUF reranker. `LlamaReranker(engine)` borrows an already rank-pooled engine. For published
-BERT/Jina rerankers that omit rank metadata, use the owning factory:
-
-```dart
-import 'package:llamadart/llamadart.dart';
-
-Future<void> rerankLocal(String modelPath) async {
-  final reranker = await LlamaReranker.load(
-    LlamaModel(ModelSource.path(modelPath)),
-    params: const LlamaCppModelParams(
-      contextSize: 2048, batchSize: 2048, microBatchSize: 2048,
-      maxParallelSequences: 4,
-    ),
-  );
-  try {
-    final results = await reranker.rerank('capital of France', [
-      'Paris is the capital of France.', 'Rome is the capital of Italy.',
-    ]);
-    print(results.first.index);
-  } finally {
-    await reranker.dispose();
-  }
-}
-```
-
-The factory verifies a bounded GGUF classifier tensor directory and matching
-output width before explicitly selecting RANK. It rejects unverified or ordinary
-models, LoRA adapters and multimodal projectors. Normal engine loads retain
-their original pooling configuration. `dispose()` releases an owned engine;
-on a borrowed helper it leaves the caller's engine alive. Existing engine and
-backend interfaces gain no required members.
-
-```dart
-import 'package:llamadart/llamadart.dart';
-
-Future<List<LlamaRerankResult>> rankCandidates(
-  LlamaEngine rerankerEngine,
-  String query,
-  List<String> documents,
-) async {
-  final reranker = LlamaReranker(rerankerEngine);
-  final support = await reranker.capabilities;
-  if (!support.isSupported) {
-    throw LlamaUnsupportedException(support.unsupportedReason!);
-  }
-  return reranker.rerank(query, documents, topN: 5);
-}
-```
-
-Native llama.cpp supports RANK-pooled models such as Qwen3-Reranker and Jina/BGE
-rerankers. WebGPU and LiteRT-LM report unsupported. Ordinary embedding and chat
-models are rejected; `embed` continues to reject classifier output.
-
-Results sort descending, retain the original document `index`, and keep
-`classifierScores` and nullable `classifierLabels` in model order. The default
-`scoreIndex: 0` matches upstream llama-server. For another class, inspect the
-labels and pass its index explicitly. No positive label is inferred. Qwen3
-returns native softmax probabilities; other models can return unbounded raw
-scores. No sigmoid, L2 normalization or further softmax is applied.
-
-The model's named `rerank` template substitutes `{query}`, then `{document}`,
-and parses its embedded special tokens. Without that template, query and
-document are tokenized separately as literal text and framed with the
-vocabulary's BOS/EOS/SEP flags. Inputs are not sent through the ordinary chat
-renderer, and an ordinary chat-template override does not override reranking.
-
-Every complete pair, including framing, must fit `maxInputTokens` from the
-probe: the minimum of allocated context, per-sequence context, logical batch
-and micro-batch limits. All pairs are checked before inference. Oversized input
-throws `LlamaInferenceException`; it is never truncated and no partial result
-is returned. Set `contextSize`, `batchSize` and `microBatchSize` at load to fit
-your inputs. `maxParallelSequences > 1` enables independent sequence batching
-within those limits; the default one scores documents sequentially.
-
-Ties preserve input order and duplicate documents retain separate indices.
-`topN` limits results after all pairs are scored. Empty batches return no results
-on a supported, loaded engine. Invalid score indices and negative `topN` throw
-`LlamaArgumentException`. Call `reranker.cancel()` or `engine.cancelGeneration()`
-to cancel this engine's inference; cancellation waits for its current native
-pass before returning `LlamaInferenceException`. Await pending calls before
-unloading or switching the engine's model, and always dispose the engine.
-
-See the [CPU command-line example](https://github.com/leehack/llamadart/blob/main/example/basic_app/bin/llamadart_reranking_example.dart).
-Native API availability alone does not qualify every model, quantization or
-platform. Validation evidence: [Feature validation evidence](../maintainers/feature-validation#qualification-procedures).
