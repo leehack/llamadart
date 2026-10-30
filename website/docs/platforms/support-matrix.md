@@ -266,14 +266,12 @@ output and grammars, sampling controls and speculative decoding. Guides:
   on an iPhone 16 Pro with iOS 18.3.2 (CPU and GPU); simulator evidence is
   iOS 26.4, CPU only. No other iOS version is device-verified
   ([#514](https://github.com/leehack/llamadart/issues/514)).
-- Flutter macOS LiteRT-LM needs a `llamadart_litert_lm_flutter` that matches
-  the core to put the runtime in the app bundle. With llamadart `0.12.0` and
-  earlier, with companion `0.0.14` or earlier, or without the companion, an
-  unsandboxed app run on the build machine from the project loads the runtime
-  from the hook cache, and a sandboxed (the `flutter create` default), copied
-  or distributed app throws `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`
-  (`'libLiteRtMetalAccelerator.dylib'` with llamadart `0.12.0` and a newer
-  companion) on the first CPU or GPU generation. Add the companion, or the
+- Flutter macOS LiteRT-LM needs `llamadart_litert_lm_flutter` to put the runtime
+  in the app bundle. Without it, an unsandboxed app run on the build machine
+  from the project loads the runtime from the hook cache, and a sandboxed (the
+  `flutter create` default), copied or distributed app throws
+  `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'` on the first CPU or
+  GPU generation. Add the companion, or the
   [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase)
   ([#1029](https://github.com/leehack/llamadart/issues/1029)).
 - macOS x86_64: no LiteRT-LM runtime is published
