@@ -265,6 +265,9 @@ class Lfm2Handler extends ChatTemplateHandler {
       // Arguments the wire format refuses (too deep, not finite) are model
       // text, not a caller error, so they must not throw out of parse.
       return null;
+    } on StackOverflowError {
+      // A deeply nested JSON `id` overflows when it is stringified.
+      return null;
     }
   }
 
@@ -356,9 +359,13 @@ class Lfm2Handler extends ChatTemplateHandler {
 }
 
 /// Reads the `[name(arg=value), ...]` list LFM2 writes, as llama.cpp's
-/// `python_style_tool_calls` and `normalize_quotes_to_json` do: values are
-/// Python or JSON literals, and strings decode their quote and backslash
-/// escapes.
+/// `python_style_tool_calls` does: values are Python or JSON literals.
+///
+/// Unlike llama.cpp's `normalize_quotes_to_json`, strings keep every backslash
+/// sequence as written, and a backslash only stops the next character from
+/// closing the string. Models often copy text verbatim, so `C:\\temp`, `it\'s`,
+/// `\/` and `\u00e9` may be the value itself, and decoding them would change
+/// those values silently. Text this class cannot read goes to the loose parser.
 class _PythonCallList {
   _PythonCallList(this._source);
 
@@ -366,7 +373,6 @@ class _PythonCallList {
   static final RegExp _numberAtStart = RegExp(
     r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?',
   );
-  static final RegExp _hexAtStart = RegExp(r'[0-9a-fA-F]{4}');
 
   /// One less than the wire format's limit, which counts the arguments map.
   static const int _maxValueDepth = 127;
@@ -377,15 +383,6 @@ class _PythonCallList {
     'true': true,
     'false': false,
     'null': null,
-  };
-  // Unlike llama.cpp, without \b, \f, \n, \r and \t: models write `\frac` and
-  // `C:\new\table` unescaped, and decoding them corrupts the value silently.
-  // Such text reads as the loose parser always read it, backslashes kept.
-  static const Map<String, String> _escapes = {
-    '"': '"',
-    "'": "'",
-    r'\': r'\',
-    '/': '/',
   };
 
   final String _source;
@@ -430,11 +427,21 @@ class _PythonCallList {
       } while (_accept(','));
       _expect(')');
     }
+    if (_isArgumentContainer(arguments)) throw const FormatException();
     return ToolCallParsingUtils.createFunctionToolCall(
       index: index,
       name: name,
       arguments: arguments,
     );
+  }
+
+  /// Whether [arguments] is a lone `arguments={...}`, which the loose parser
+  /// unwraps, JSON-decoding its strings.
+  bool _isArgumentContainer(Map<String, dynamic> arguments) {
+    if (arguments.length != 1) return false;
+    final MapEntry(:key, :value) = arguments.entries.single;
+    return fallbackArgumentContainerKeys.contains(key) &&
+        (value is Map || value is String);
   }
 
   Object? _value() {
@@ -458,27 +465,16 @@ class _PythonCallList {
   }
 
   String _string(String quote) {
-    _at++;
-    final buffer = StringBuffer();
+    final start = ++_at;
     while (_at < _source.length) {
       final char = _source[_at++];
-      if (char == quote) return buffer.toString();
-      if (char != r'\') {
-        buffer.write(char);
-        continue;
+      if (char == quote) return _source.substring(start, _at - 1);
+      if (char == r'\') {
+        // The loose parser JSON-decodes objects, and a value in a list is text
+        // to it, so what a backslash means there stays its call.
+        if (_depth > 0) throw const FormatException();
+        _at++;
       }
-      if (_at >= _source.length) break;
-      final escape = _source[_at++];
-      if (escape == 'u') {
-        final hex = _hexAtStart.matchAsPrefix(_source, _at);
-        if (hex == null) throw const FormatException();
-        buffer.writeCharCode(int.parse(hex[0]!, radix: 16));
-        _at = hex.end;
-        continue;
-      }
-      final decoded = _escapes[escape];
-      if (decoded == null) throw const FormatException();
-      buffer.write(decoded);
     }
     throw const FormatException();
   }

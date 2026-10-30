@@ -1414,6 +1414,30 @@ void main() {
       expect(grammar(parallel: true), isNot(grammar(parallel: false)));
     });
 
+    test('ignores parallelToolCalls when a schema routes LFM2 to generic', () {
+      const template =
+          'List of tools: <|tool_list_start|>[{"name":"x"}]<|tool_list_end|>'
+          '{% for message in messages %}{{ message["content"] }}{% endfor %}';
+
+      String? grammar({required bool parallel}) => ChatTemplateEngine.render(
+        templateSource: template,
+        messages: grammarMessages,
+        metadata: const {},
+        tools: tools,
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: parallel,
+        responseFormat: const {
+          'type': 'json_schema',
+          'json_schema': {
+            'name': 'answer',
+            'schema': {'type': 'object'},
+          },
+        },
+      ).grammar;
+
+      expect(grammar(parallel: true), grammar(parallel: false));
+    });
+
     test('still ignores parallelToolCalls on another format the caps deny', () {
       const template =
           '{% if tools %}<tools></tools>{% endif %}<|im_start|>user\n'

@@ -15,8 +15,8 @@ import 'package:test/test.dart';
 void main() {
   // Outputs and values of llama.cpp 620d2225 tests/test-chat.cpp
   // test_lfm2_parser. Its <think> cases are out of scope because this format
-  // deliberately parses calls inside thoughts, and its \n and \t cases because
-  // decoding those corrupts unescaped Windows paths.
+  // deliberately parses calls inside thoughts, and its escape cases because
+  // this parser keeps backslash sequences as written; see the group below.
   group('parses a call list as llama.cpp does', () {
     for (final (output, content, calls) in <(String, String, List<_Call>)>[
       ('[special_function(arg1=1)]', '', [('special_function', '{"arg1": 1}')]),
@@ -45,11 +45,6 @@ void main() {
                 '"metadata": {"priority": "high", "reminder": true}}',
           ),
         ],
-      ),
-      (
-        r'[python(code="print(\"hi\")")]',
-        '',
-        [('python', r'{"code": "print(\"hi\")"}')],
       ),
       (
         '[special_function(arg1=1), special_function_with_opt(arg1=1, arg2=2)]',
@@ -81,40 +76,6 @@ void main() {
       );
     });
 
-    test('with the escapes normalize_quotes_to_json handles', () {
-      _expectCalls(
-        Lfm2Handler().parse(
-          r'''<|tool_call_start|>[save(a='it\'s "ok"', b="\u00e9\/", '''
-          r'''c={'k': ['v', False, -1.5e2]})]<|tool_call_end|>''',
-        ),
-        '',
-        [
-          (
-            'save',
-            jsonEncode({
-              'a': 'it\'s "ok"',
-              'b': 'é/',
-              'c': {
-                'k': ['v', false, -150.0],
-              },
-            }),
-          ),
-        ],
-      );
-    });
-
-    test('with an escaped backslash', () {
-      _expectCalls(
-        Lfm2Handler().parse(
-          r'<|tool_call_start|>[save(a="C:\\new\\table")]<|tool_call_end|>',
-        ),
-        '',
-        [
-          ('save', jsonEncode({'a': r'C:\new\table'})),
-        ],
-      );
-    });
-
     test('keeps a string that reads like a call or a separator', () {
       _expectCalls(
         Lfm2Handler().parse(
@@ -126,7 +87,7 @@ void main() {
           (
             'save',
             jsonEncode({
-              'a': '{"name": "other"}; x',
+              'a': r'{\"name\": \"other\"}; x',
               'b': 'f(c=1), g()',
               'd': 'key=value',
             }),
@@ -169,13 +130,8 @@ void main() {
     test('leaves text it cannot read as Python to the loose parser', () {
       for (final (arguments, expected) in [
         ('x={kk: 1}', {'x': '{kk: 1}'}),
-        (r'y="\q"', {'y': r'\q'}),
-        (r'z="\frac{a}{b}"', {'z': r'\frac{a}{b}'}),
-        (r'z="C:\back"', {'z': r'C:\back'}),
-        (r'z="C:\repo"', {'z': r'C:\repo'}),
-        (r'z="C:\new"', {'z': r'C:\new'}),
-        (r'z="C:\table"', {'z': r'C:\table'}),
-        (r'z="a\nb", n=True', {'z': r'a\nb', 'n': 'True'}),
+        (r'a="C:\temp\", n=1', {'a': r'C:\temp\', 'n': 1}),
+        (r'a="C:\temp\", b="D:\"', {'a': r'C:\temp\', 'b': 'D:\\'}),
       ]) {
         _expectCalls(
           Lfm2Handler().parse(
@@ -192,6 +148,58 @@ void main() {
         '<|tool_call_start|>[a(b=1)] junk<|tool_call_end|>',
       );
       expect(parsed.toolCalls, isEmpty);
+    });
+
+    test('reads each literal inside a container', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          '<|tool_call_start|>[f(a=[True, False, None, true, false, null])]'
+          '<|tool_call_end|>',
+        ),
+        '',
+        [
+          (
+            'f',
+            jsonEncode({
+              'a': [true, false, null, true, false, null],
+            }),
+          ),
+        ],
+      );
+    });
+
+    test('leaves a lone argument container to the loose parser', () {
+      for (final key in ['arguments', 'parameters', 'params', 'input']) {
+        for (final (value, expected) in <(String, Object)>[
+          ('{"a": 1}', {'a': 1}),
+          ("'{\"a\": 1}'", {'a': 1}),
+          (r'{"a": "C:\\x"}', {'a': r'C:\x'}),
+          ('{"a": True}', {key: '{"a": True}'}),
+        ]) {
+          _expectCalls(
+            Lfm2Handler().parse(
+              '<|tool_call_start|>[f($key=$value)]<|tool_call_end|>',
+            ),
+            '',
+            [('f', jsonEncode(expected))],
+          );
+        }
+      }
+    });
+
+    test('reads a lone argument named like a container as any other', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          '<|tool_call_start|>[f(input=True), g(input=[1, 2]), '
+          'h(input={"a": 1}, n=1)]<|tool_call_end|>',
+        ),
+        '',
+        [
+          ('f', '{"input": true}'),
+          ('g', '{"input": [1, 2]}'),
+          ('h', '{"input": {"a": 1}, "n": 1}'),
+        ],
+      );
     });
 
     test('leaves a nested object in its own argument', () {
@@ -213,6 +221,88 @@ void main() {
     });
   });
 
+  // llama.cpp decodes these; see _PythonCallList.
+  group('keeps backslash sequences as the model wrote them', () {
+    for (final value in <String>[
+      r'''print('C:\\temp\\x.txt')''',
+      r'''print('it\'s ok')''',
+      r"grep -E 'a\\.b' f.txt",
+      r's/\//-/g',
+      r'echo \"hi\" > out.txt',
+      r'\\server\\share',
+      r'a \\ b',
+      r'https:\/\/a.com\/b',
+      r'caf\u00e9',
+      r'C:\udead',
+      r'\ud83d\ude00',
+      r'\u0022',
+      r'{\"path\": \"C:\\temp\"}',
+      r'C:\new\table.txt',
+      r'\frac{a}{b}',
+      r'a\nb',
+      r'\q',
+    ]) {
+      test(value, () {
+        for (final quote in ['"', "'"]) {
+          if (value.replaceAll(RegExp(r'\\.'), '').contains(quote)) continue;
+          _expectCalls(
+            Lfm2Handler().parse(
+              '<|tool_call_start|>'
+              '[f(a=$quote$value$quote, n=True)]'
+              '<|tool_call_end|>',
+            ),
+            '',
+            [
+              ('f', jsonEncode({'a': value, 'n': true})),
+            ],
+          );
+        }
+      });
+    }
+
+    test('leaves a backslash inside a container to the loose parser', () {
+      for (final (arguments, expected) in [
+        (r'a=["x\\y"], n=1', {'a': r'["x\\y"]', 'n': 1}),
+        (r'a={"k": "x\\y"}, n=1', {'k': r'x\y'}),
+      ]) {
+        _expectCalls(
+          Lfm2Handler().parse(
+            '<|tool_call_start|>[f($arguments)]<|tool_call_end|>',
+          ),
+          '',
+          [('f', jsonEncode(expected))],
+        );
+      }
+    });
+
+    test('an escaped quote does not close the string', () {
+      _expectCalls(
+        Lfm2Handler().parse(
+          r'''<|tool_call_start|>[f(a="b\", c", d='e\', f')]<|tool_call_end|>''',
+        ),
+        '',
+        [
+          ('f', jsonEncode({'a': r'b\", c', 'd': r"e\', f"})),
+        ],
+      );
+    });
+
+    test(
+      'a string that ends in an open escape is left to the loose parser',
+      () {
+        _expectCalls(
+          Lfm2Handler().parse(
+            r'<|tool_call_start|>[f(a="b\")]<|tool_call_end|>',
+          ),
+          '',
+          [
+            ('f', jsonEncode({'a': r'b\'})),
+          ],
+        );
+      },
+    );
+  });
+
   group('model output never throws out of parse', () {
     String nested(String open, String close, int depth) =>
         open * depth + close * depth;
@@ -232,6 +322,22 @@ void main() {
           '',
           [('f', jsonEncode(expected))],
         );
+      });
+    }
+
+    for (final (name, call) in [
+      ('a deep list id', '{"name":"f","id":${nested('[', ']', 200000)}}'),
+      (
+        'a deep map id',
+        '{"name":"f","id":${'{"a":' * 200000}1${'}' * 200000}}',
+      ),
+    ]) {
+      test('$name takes no call', () {
+        final parsed = Lfm2Handler().parse(
+          'Before<|tool_call_start|>[$call]<|tool_call_end|>',
+        );
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, 'Before');
       });
     }
 
