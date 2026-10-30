@@ -528,21 +528,7 @@ core `0.13.x` for its v0.6.0 runtime and companions. Do not point a core before
 `0.17.1` at native `v0.8.0` or later: its bindings give
 `mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 
-The following thresholds describe historical wrapper features; they do not
-make an older ABI compatible with this core. A runtime older than `v0.5.0-1`
-has no exit teardown:
-llamadart then creates models and contexts with the upstream llama.cpp
-functions and logs a warning at the first model load, and the exits that
-teardown covers abort on Apple Metal as they did before
-([Exiting with a model loaded](../guides/model-lifecycle#exiting-with-a-model-loaded)).
-`v0.5.0-1` has exit teardown but can still abort when a native host calls C
-`exit()` during the free of the last object; use `v0.5.0-2` or later.
-A runtime older than `v0.6.0-1` has no exception barrier and no Vulkan device
-facts: a C++ exception llama.cpp throws ends the process instead of becoming
-a typed `LlamaException` (llamadart logs a warning at the first model load),
-every Android Vulkan context keeps the 8-token text-prompt decode cap, and no
-Vulkan GPU is refused for a driver below Vulkan 1.2. State files are tied to
-the llama.cpp release of the runtime that wrote them
+State files are tied to the llama.cpp release of the runtime that wrote them
 ([Save and restore prompt state](../guides/model-lifecycle#save-and-restore-prompt-state)).
 Two checks fail closed:
 
