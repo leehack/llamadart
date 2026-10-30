@@ -267,8 +267,6 @@ and rejects every other field in the table the same way.
 
 Benchmark load time, prefill and decode throughput, and output quality on the
 deployment device after changing the activation type or prefill chunk size.
-The LiteRT-LM smoke tool for a repository checkout is in
-[Backend benchmarks](../guides/backend-benchmarks#reproducing).
 
 ## LiteRT-LM cache directory
 

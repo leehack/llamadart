@@ -16,8 +16,7 @@ hexadecimal escapes, with exactly two hexadecimal digits. For example,
 `\\x41` keeps the literal text `\x41`. A malformed escape raises
 `LlamaException` naming the template source. Model architectures must also be
 supported by the selected runtime; this syntax repair does not qualify Flint
-for the pinned native runtime
-([native #112](https://github.com/leehack/llamadart-native/issues/112)).
+for the pinned native runtime.
 
 ## Core API
 
@@ -169,10 +168,8 @@ For native CPU Qwen3-0.6B, use the updated
 The older `8414150f` bundle can emit literal byte-level token spellings such
 as `ĠðŁĺĬ` instead of an emoji. A runtime upgrade alone does not repair its
 tokenizer; replace the model artifact. Preserve literal user text rather than
-rewriting these characters. The updated bundle is verified on macOS CPU;
-Linux/Windows CPU qualification runs in the maintained smoke workflow.
-GPU, iOS, Android and Web adoption still need separate validation
-([#554](https://github.com/leehack/llamadart/issues/554)).
+rewriting these characters. Qualified on macOS, Linux and Windows CPU; GPU, iOS, Android and Web
+adoption still need separate validation.
 
 Native LiteRT-LM recognizes renamed Qwen 3 bundles only with a Qwen 3
 model-type declaration (metadata field 6), or the complete canonical Qwen 3
@@ -193,9 +190,8 @@ an override retain their existing behavior.
 
 Other families keep their native bundle
 template and content-shape adapter; an override still drives Dart-side metadata
-and parsing. The maintained registry coverage, smoke commands, and contribution
-notes live in
-[`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md).
+and parsing. Validation evidence:
+[Feature validation evidence](../maintainers/feature-validation#qualification-procedures).
 
 On a filename-matched or positively identified Qwen 3 text bundle the native
 conversation renders a `ModelParams.chatTemplate` itself, and from LiteRT-LM

@@ -226,8 +226,7 @@ actual context, batch and micro-batch capacities. Oversized input throws
 M-RoPE projectors and image URLs throw `LlamaUnsupportedException`. Use exactly
 one source per media part: encoded bytes/local file, or mono 16 kHz audio PCM.
 Cancellation settles the worker before releasing its media buffers; await the
-embedding future before reuse or unload. Qualification details are in
-[the native qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/multimodal_embeddings_native.md).
+embedding future before reuse or unload.
 
 For example, after downloading the matching model/projector and local media:
 
@@ -324,8 +323,7 @@ defaults. The helper retains the underlying engine's cancellation/unsupported
 contract and does not own or dispose it.
 
 The text retrieval comparison uses the pinned official EG2 float32 reference
-and BF16 GGUF CPU output at each dimension; see the
-[qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/embedding_text_helpers.md).
+and BF16 GGUF CPU output at each dimension.
 That evidence does not qualify quantized models, LiteRT bundles, media, GPU or
 Web retrieval. Google recommends [renormalization after truncation](https://huggingface.co/google/embeddinggemma-2#best-practices)
 and warns that 128 dimensions has a larger cost for multimodal quality.
@@ -411,9 +409,7 @@ batch values explicitly only when tuning a known workload; selecting memory64 do
 
 Start with `maxParallelSequences` matching expected concurrent batch width (for
 example `4` or `8`), then tune based on memory and latency/throughput tradeoffs.
-
-To measure sequential vs batch throughput, see
-[Backend benchmarks](./backend-benchmarks#embedding-throughput).
+Measure sequential and batch throughput on the target device.
 
 ### LiteRT-LM embedding lifecycle and options
 
@@ -518,7 +514,5 @@ pass before returning `LlamaInferenceException`. Await pending calls before
 unloading or switching the engine's model, and always dispose the engine.
 
 See the [CPU command-line example](https://github.com/leehack/llamadart/blob/main/example/basic_app/bin/llamadart_reranking_example.dart).
-Real-model qualification uses the local-only `native-reranking` scenario and
-the pinned upstream oracle described in `doc/native_reranking.md`. Its receipts
-identify the model hashes, runtime revision and tested device/backend; native
-API availability alone does not qualify every model, quantization or platform.
+Native API availability alone does not qualify every model, quantization or
+platform. Validation evidence: [Feature validation evidence](../maintainers/feature-validation#qualification-procedures).

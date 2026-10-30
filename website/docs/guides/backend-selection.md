@@ -333,8 +333,8 @@ runtime graphs, so this compares deployments, not kernels.
 - Treat `GenerationParams.speculativeDecoding` as a per-model, per-device
   tuning knob, not a guaranteed speedup; the `LlamaEngine` default is off.
 
-[Backend benchmarks](./backend-benchmarks) has measured Gemma 4 E2B results on
-Pixel 9 Pro, macOS, and web, including speculative decoding.
+[Performance tuning](./performance-tuning#compare-fairly) summarizes a
+historical Gemma 4 E2B comparison on Pixel 9 Pro, macOS and web.
 
 ## Reduce app size
 

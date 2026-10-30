@@ -148,8 +148,7 @@ const generationParams = GenerationParams(
 - `reusePromptPrefix` is on by default for native generation. Keep it on for
   multi-turn chat and repeated prompts. Reuse targets evolving prompts with a
   shared prefix; an exact prompt replay is re-ingested to keep output
-  deterministic. Validate parity for your model with the prompt-reuse parity
-  tool ([Reproducing](./backend-benchmarks#reproducing)).
+  deterministic. Validate output parity for your model with and without reuse.
 
 ## Speculative decoding
 
@@ -160,7 +159,7 @@ in production.
 
 - Native LiteRT-LM: set `GenerationParams(speculativeDecoding: true)`. It was
   slower for Gemma 4 E2B on both measured devices
-  ([Backend benchmarks](./backend-benchmarks#speculative-decoding-check)).
+  (a Pixel 9 Pro and an Apple M4 Max).
 - Native llama.cpp: pass `speculativeDecodingConfig`. The legacy
   `speculativeDecoding: true` flag without a config runs `ngram-mod`.
 - WebGPU: the same configs, with bridge assets whose
@@ -275,15 +274,9 @@ Knobs:
   its separate bridge capability contract.
 
 Draftless n-gram strategies depend on the workload. On prompts with little
-repetition they can produce no drafts and run slower than baseline; measured
-results are in
-[Backend benchmarks](./backend-benchmarks#llamacpp-upstream-speculative-parity-check).
-
-The speculative benchmark reserves the maximum effective draft length among
-the selected cases. Draft-model cases do not inherit the default n-gram window
-of 48, and an n-gram window does not inherit an unused draft or `ngramTokenMax`
-setting. Selecting only `baseline` reserves no rollback snapshots. This removes
-unrelated reservations; it does not make recurrent/hybrid reservations safe.
+repetition they can produce no drafts and run slower than baseline. A
+repeated-context prompt with small n-gram sizes was the clear speedup in
+local checks; short natural-language and code prompts were slower.
 
 ### DSpark
 
@@ -364,9 +357,15 @@ print('$backendName total=${vram.total} free=${vram.free}');
   other.
 - Validate memory behavior with your real context sizes.
 
-Benchmark and parity scripts for a repository checkout, and measured
-llama.cpp and LiteRT-LM results, are in
-[Backend benchmarks](./backend-benchmarks#reproducing).
+In one historical comparison of Gemma 4 E2B (Pixel 9 Pro, Apple M4 Max and
+Chromium on the same Mac), LiteRT-LM on the GPU was about 9x faster than
+llama.cpp on Vulkan on the Pixel, about as fast as llama.cpp on Metal on the
+Mac, and about 2x faster than the llama.cpp WebGPU bridge on web. On web the
+GGUF path was also more sensitive to serving behavior: a large model needs a
+range-capable server or a browser cache. Treat this as a reason to measure
+both formats on your target device, not as a ranking; on desktop, decide on
+model format, features and distribution constraints
+([Choosing llama.cpp or LiteRT-LM](./backend-selection)).
 
 On native llama.cpp and LiteRT-LM, cancelling a queued generation before it starts makes
 `getPerformanceContext()` return `null` for that context. This includes

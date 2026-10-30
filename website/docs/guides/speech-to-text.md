@@ -328,8 +328,8 @@ active task per `SpeechToTextEngine` instance.
 
 Qwen3-ASR recognition is validated up to 30 seconds per input. Longer inputs
 can drop or repeat sentences without reaching any limit, so split longer
-recordings into windows of at most 30 seconds. Built-in windowing is tracked in
-[#327](https://github.com/leehack/llamadart/issues/327).
+recordings into windows of at most 30 seconds. Built-in windowing is not
+available yet.
 
 A Qwen3-ASR prompt grows by about 13 tokens per second of audio, and the
 transcript shares the same context. On native llama.cpp, a prompt-adapter task
@@ -380,8 +380,8 @@ needs enough memory for the roughly 1.02 GB Qwen3-ASR
 
 ## Known limits
 
-- Validated with Qwen3-ASR 0.6B Q8_0 on WAV up to 33 s, and on MP3 and FLAC
-  copies of the 11 s `jfk.wav` on native macOS and in headless Chromium. The
+- Qualified with Qwen3-ASR 0.6B Q8_0 on WAV up to 33 s, and on MP3 and FLAC
+  on native macOS and in headless Chromium. The
   audio prompt grows with duration, about 13 tokens per second of audio.
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker.
   `Qwen3AsrAdapter` strips that marker, but does not expose it as reliable

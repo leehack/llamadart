@@ -54,6 +54,9 @@ image-generation API yet.
 | Windows x64 | CPU, or Vulkan with the Vulkan build | Not set by llamadart | Needs the latest Microsoft Visual C++ v14 Redistributable (x64) and AVX2; the Vulkan build needs a GPU driver that provides `vulkan-1.dll`; validated on Windows Server 2022 with CPU and an NVIDIA L4; no arm64 runtime |
 | Web | None | | `load` throws `LlamaUnsupportedException` |
 
+Validation evidence for each recipe is listed in
+[Feature validation evidence](../maintainers/feature-validation#qualification-procedures).
+
 Measured with the prototype on the same runtime, 512x512, one step, warm:
 
 | Device | SDXS Q8 (651 MB) | SD-Turbo Q8 + TAESD (1.9 GB) |
@@ -154,8 +157,7 @@ filename extensions. The header check assigns roles; it does not validate all
 weight data or prove the architecture, dtype or quantization runs on the active
 backend. F16/F32/BF16 Safetensors and GGUF quantization still need compatible
 tensors and kernels. Do not assume arbitrary FP8/INT8 variants work; newer
-upstream and FP8 CPU qualification are tracked in
-[stable-diffusion-native#20](https://github.com/leehack/stable-diffusion-native/issues/20).
+upstream and FP8 CPU qualification are tracked upstream.
 `checkRuntime()` reports runtime/device availability, not support for every
 model. Use [Support](#support) and the recipe's platform evidence separately.
 The public model roles do not include LoRA, upscaler or external tokenizer
@@ -211,14 +213,6 @@ variants preserve every tensor byte. All seven public loads generate the same
 128-square, one-step Euler/discrete image at seed 42, CFG 1 and four CPU
 threads, matching separate guarded direct-C controls. This is container and
 transport evidence, not an image-quality or speed benchmark.
-
-Earlier `v0.2.0-4` checks rejected the 2.6-GB legacy file and timed out on
-full ZIP inputs. The current legacy result verifies the published reader
-repair; ZIP's earlier timeout cause remains unresolved
-([owner #24](https://github.com/leehack/stable-diffusion-native/issues/24)).
-Passing these selected ZIP inputs is a later non-reproduction, not proof of a
-causal ZIP fix. Earlier small TAESD ZIP/nested/legacy and explicit local
-single-shard-index controls remain narrower component/layout evidence.
 
 Other architectures, dtypes, producer layouts, arbitrary serialized objects,
 accelerators, Windows/Linux and mobile full-checkpoint paths are unqualified
@@ -648,15 +642,12 @@ Left `null`, the engine picks them for the device it loads on:
 | `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GiB to 0.3 GiB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x sampling time unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. 512x512 on phones: SD-Turbo with TAESD 12% faster on a Galaxy S24 (CPU) and 11% on an iPhone 16 Pro (Metal), same peak memory; its 3.7% gap on a Pixel 9 Pro is within run-to-run noise there (the same `auto` arm took 11.3 s, then 17.4 s a round later); SDXS unchanged on those and a Galaxy A53. Pixels change slightly |
 | `vaeDirectConvolution` (VAE decode) | On, except on Metal and when a tiny autoencoder decodes: a `taesd` file, or a checkpoint whose header shows an embedded one, as SDXS's does | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Galaxy S24 and Pixel 9 Pro CPU, SD-Turbo 512x512: peak 3.7 to 4.0 GiB to 2.8 to 3.1 GiB, time unchanged within thermal noise (about 56 s per image on the S24). Metal: about 7 times slower. Identical output on the CPU; on M4 Max Metal, SD-Turbo at 256x256 and 512x512 differed by at most 2 of 255 per channel. `true` on iOS Metal throws `LlamaUnsupportedException`: on an iPhone 16 Pro every decode tripped the GPU watchdog and returned a corrupt image ([#1044](https://github.com/leehack/llamadart/issues/1044)) |
 
-The phone figures are Firebase Test Lab runs of the chat app's settings
-comparison. Peak memory is the `phys_footprint` interval peak on the iPhone
-and a 20 ms sampled `VmRSS` peak on Android, where Test Lab refused the
-`VmHWM` reset on all three phones. The Galaxy A53's memory check refused
-SD-Turbo (about 2.9 GiB needed, 2.5 GiB available), so it has no SD-Turbo
-figures, and its SDXS figures come from a run that does not verify because
-of that refusal: they are an observation, not verified evidence. The iPhone
-full-VAE arm has not been measured yet, because its decode trips the GPU
-watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
+The phone figures are from the chat app's settings comparison on real devices.
+Peak memory is the `phys_footprint` interval peak on the iPhone and a sampled
+`VmRSS` peak on Android. The Galaxy A53's memory check refused SD-Turbo, so it
+has no SD-Turbo figures, and its SDXS figures are an observation, not verified
+evidence. The iPhone full-VAE arm has not been measured, because its decode
+trips the GPU watchdog ([#1047](https://github.com/leehack/llamadart/issues/1047)).
 
 With a tiny autoencoder, direct convolutions cost time for little memory:
 on an M4 Max CPU they took 1.4 to 1.7 s per 512x512 SDXS image against 1.2
@@ -746,14 +737,11 @@ to change capacity. This cache already operates when the option is unset;
 this control does not enable approximate diffusion-step caching, change
 sampling, or promise a speed or memory improvement.
 
-The maintained `image-generation-smoke` checks compare disabled, default and
-one-entry caches with SDXS (embedded tiny decoder) and SD-Turbo (full VAE),
-including repeated/changed prompts, eviction, cancellation/reuse and reload.
 Qualification for this control covers macOS arm64 CPU and Metal. Android,
 iOS, Linux CPU/Vulkan, Windows CPU/Vulkan and macOS x64 have not been measured
 for this option; SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image were not run.
 Web image generation remains unavailable. Approximation-cache modes remain
-separate work in [#1233](https://github.com/leehack/llamadart/issues/1233).
+separate work.
 
 ## Module placement and GPU memory
 
@@ -787,8 +775,7 @@ other values throw `LlamaImageGenerationException`. It takes whole GiB
 because the runtime reads a fraction in the process's locale. Together with
 `autoFit: false` it throws `LlamaUnsupportedException`: the pinned runtime
 then keeps every weight on the GPU and aborts the process in `new_sd_ctx`
-when the budget is below them (SD-Turbo with 1 GiB,
-[stable-diffusion-native#34](https://github.com/leehack/stable-diffusion-native/issues/34)).
+when the budget is below them (SD-Turbo with 1 GiB).
 Outside Metal it also needs a discrete GPU: when the runtime reports only
 integrated Vulkan GPUs, or no GPU type (`SD_VK_DEVICE` set), it throws
 `LlamaUnsupportedException`, because the runtime's fit plans only for
@@ -802,9 +789,7 @@ consider the integrated GPU, which can then compute the diffusion model when
 it reports more free memory. That is slower, not a failure;
 `ComputeDevice.gpu` keeps the first discrete GPU.
 
-The `image-generation-smoke` check reads where the runtime put each module's
-weights (`total params memory size` in its debug log) and compares pixels
-with the default placement. A module moved to the CPU leaves the Metal-only
+A module moved to the CPU leaves the Metal-only
 FLUX.1 Kontext recipe unqualified (`supportsReferenceImageEditing` is
 `false`). The [memory check](#memory-check) counts every weight against the
 device whatever the placement. Placement was measured with SD-Turbo on one
@@ -869,7 +854,6 @@ ordinary output after circular generation and cancellation/reuse. Measured
 qualification is macOS arm64 CPU and actual Metal; other platforms are
 unmeasured. SD-Turbo's full VAE missed the fixed profile's absolute seam gate
 and is refused. Other families and external TAESD decoders are not qualified.
-See the [reproducible source and artifact evidence](https://github.com/leehack/llamadart/blob/main/doc/image_seamless_textures.md).
 
 ## First-image latency and warm-up
 
@@ -1085,33 +1069,22 @@ The Vulkan rules are tested on reported figures, and the call that reads them
 is checked on macOS Metal, where its total equals the working set above. On
 an NVIDIA L4 under Vulkan, one GPU each on Linux and Windows, the figures,
 the device facts and the device selection were checked. The warning, the
-refusal and the two-GPU paths have not been checked on a physical GPU yet
-([#1024](https://github.com/leehack/llamadart/issues/1024)).
+refusal and the two-GPU paths have not been checked on a physical GPU yet.
 The Apple checks do not use these figures: Metal's total is the same working
 set, and its free figure counts only this process's allocations.
 
 On Android, `MemAvailable` alone is too strict: it leaves out the memory the
 low-memory killer frees by stopping cached apps and what it swaps to zram,
-and it varied by up to a gigabyte between idle readings. On Firebase Test
-Lab, an app that kept touching all of its memory was killed only after
-allocating 0.9 to 3.6 GiB more than `MemAvailable`:
-
-| Phone (RAM) | `MemTotal` | `MemAvailable` at idle | Allocated when killed | Half of `MemTotal` less the app |
-| --- | --- | --- | --- | --- |
-| Moto G Play 2024 (4 GB) | 3.57 GiB | 1.38 GiB | 2.31 GiB | 1.45 GiB |
-| Galaxy A53 (6 GB) | 5.26 GiB | 1.81 GiB | 2.81 GiB | 2.31 GiB |
-| Pixel 6a (6 GB) | 5.45 GiB | 1.87 GiB | 3.63 GiB | 2.37 GiB |
-| Galaxy S24 (8 GB) | 6.95 GiB | 2.38 GiB | 3.88 GiB | 3.10 GiB |
-| Pixel 8a (8 GB) | 7.38 GiB | 2.56 GiB | 4.81 GiB | 3.29 GiB |
-| Pixel 9 Pro (16 GB) | 15.19 GiB | 9.13 GiB | 12.75 GiB | 7.18 GiB |
+and it varied by up to a gigabyte between idle readings. On six phones from
+4 to 16 GB, an app that kept touching all of its memory was killed only after
+allocating 0.9 to 3.6 GiB more than `MemAvailable`.
 
 So 8 GB phones load SD-Turbo with TAESD (2.87 GiB estimated) even when
 `MemAvailable` reads 2.1 GiB, unless the app already holds more than about
 0.6 GiB, such as a loaded chat model, and 6 GB phones refuse it unless
 `MemAvailable` alone covers it. With the check
-off, no SD-Turbo variant was killed on these phones, but the Galaxy A53
-swapped most of the app out: a one-step image took 65 s with TAESD and 282 s
-with the full VAE, against 18 s and 67 s on the Pixel 6a.
+off, no SD-Turbo variant was killed on these phones, but a 6 GB phone swapped
+most of the app out and a one-step image took several times longer.
 
 The estimate does not depend on the image size. It covers the measured peaks
 at each model's native size, with the automatic attention and VAE settings:
@@ -1181,8 +1154,7 @@ core and `llamadart_stable_diffusion_flutter` together.
   for a file in the wrong role is only `get sd version from file failed`,
   and a failed generation does not quote its reason yet.
 - Android runs on the CPU only: ggml Vulkan and OpenCL crashed or ran slower
-  on the phones tried
-  ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
+  on the phones tried.
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps). This leaves ggml's Metal backend in an error
   state: from then on every generation on that engine fails until you
@@ -1275,11 +1247,6 @@ The recipe caps source files at 3 GiB including metadata; headers/index and
 nesting also have explicit bounds.
 
 `example/basic_app/bin/local_image_set.dart` is a runnable local-only consumer.
-The maintained `image-local-checkpoint-sets` scenario builds two unchanged
-shards from the fixed complete checkpoint, compares public directory/index
-output to the pinned C settings, and checks source-removal lifetime, cache
-reuse, cancellation cleanup and recovery. See
-[the provenance and procedure](https://github.com/leehack/llamadart/blob/main/doc/local_image_sets.md).
 
 
 The first slice requires complete contiguous numbered shard basenames,
@@ -1353,9 +1320,7 @@ owned through cancellation until the native call ends. Cancellation, concurrent
 generation and disposal use the same rules as text-to-image. Reusing a session
 for ordinary generation resets input/mask fields to native defaults.
 Run `example/basic_app/bin/image_editing.dart` with a local full checkpoint;
-it creates a decoded RGB fixture without a codec dependency. Maintainers can
-reproduce the independent C comparison, mask/strength measurements and
-cancellation checks in [the qualification procedure](https://github.com/leehack/llamadart/blob/main/doc/image_editing.md).
+it creates a decoded RGB fixture without a codec dependency.
 
 ## ControlNet
 
@@ -1404,7 +1369,7 @@ layout, as Safetensors or GGUF. The headers must show a 768-wide text context
 in both and a three-channel hint block. Other families, Diffusers-layout or
 `.pth` ControlNets, extra components, devices and platforms throw
 `LlamaUnsupportedException` when the model loads. Qualified on SD 1.5 `v1-5-pruned-emaonly` with `control_v11p_sd15_canny` (fp16
-Safetensors); see [the measured qualification](https://github.com/leehack/llamadart/blob/main/doc/image_controlnet.md).
+Safetensors).
 
 The control image is the finished map: llamadart runs no edge, depth or pose
 detector and does not resize it. Supply decoded RGB with the output's
@@ -1467,8 +1432,7 @@ native-detected SD 1.x or SD 2.x checkpoint with its embedded full VAE and no
 component overrides. Other families, decoders, hosts and devices report
 `supportsHiresFix: false`, and a hires-fix request throws
 `LlamaUnsupportedException`. The request type cannot carry image editing,
-ControlNet, VAE tiling or circular axes. Qualified on SD 1.5 and SD-Turbo;
-see [the measured qualification](https://github.com/leehack/llamadart/blob/main/doc/image_hires_fix.md).
+ControlNet, VAE tiling or circular axes. Qualified on SD 1.5 and SD-Turbo.
 
 Progress reports both passes: `ImageGenerationProgressEvent.pass` is 0 for
 the first pass and 1 for the second, with `passCount` 2 and the second
@@ -1538,7 +1502,6 @@ other families, TAEF1 or extra components, the CPU, Vulkan, other platforms,
 more references and requests that combine references with image editing,
 ControlNet, a hires fix, VAE tiling or circular axes report
 `supportsReferenceImageEditing: false` or throw `LlamaUnsupportedException`.
-See [the qualification](https://github.com/leehack/llamadart/blob/main/doc/image_reference_editing.md).
 
 FLUX.1 Kontext [dev] is released under the FLUX.1 [dev] Non-Commercial
 License. Run `example/basic_app/bin/image_reference_editing.dart` with local
