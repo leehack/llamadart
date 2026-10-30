@@ -58,7 +58,7 @@ jobs:
           start=$(date +%s)
           dart test -p vm -j 1 test/integration/backends/llama_cpp/prompt_state_isolation_test.dart > probe.log 2>&1 || true
           echo "DIAG_PROBE t0_isolation_secs=$(( $(date +%s) - start ))"
-      - name: Full lane with 2 threads
+      - name: Host probe 2 threads
         shell: bash
         env:
           GGML_METAL_DEVICES: "0"
@@ -66,5 +66,7 @@ jobs:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
         run: |
           start=$(date +%s)
-          dart test -p vm -j 1 --exclude-tags local-only --reporter github
-          echo "DIAG_FULL secs=$(( $(date +%s) - start ))"
+          dart test -p vm -j 1 test/integration/backends/llama_cpp/prompt_state_isolation_test.dart > probe2.log 2>&1 || true
+          echo "DIAG_PROBE t2_isolation_secs=$(( $(date +%s) - start ))"
+          sysctl hw.optional.arm 2>/dev/null | grep -c ": 1" || true
+          sysctl hw.l2cachesize hw.cachelinesize hw.tbfrequency || true
