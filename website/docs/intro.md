@@ -7,7 +7,8 @@ description: llamadart runs LLMs on-device in Flutter and Dart apps, with one AP
 
 `llamadart` is a Dart package for on-device inference. It runs GGUF models
 through `llama.cpp` and `.litertlm` bundles through LiteRT-LM, on Android, iOS,
-macOS, Linux, Windows and the web, behind one Dart API.
+macOS, Linux, Windows and the web, behind one Dart API. Web support is
+experimental.
 
 ## Who this is for
 
