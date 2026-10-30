@@ -1,5 +1,6 @@
 import 'package:dinja/dinja.dart';
 
+import '../../exceptions.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_role.dart';
 import '../../models/chat/chat_template_result.dart';
@@ -71,6 +72,8 @@ class Lfm2Handler extends ChatTemplateHandler {
     final hasTools = tools != null && tools.isNotEmpty;
     final toolChoice = metadata[internalToolChoiceMetadataKey];
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
+    final parallelToolCalls =
+        metadata[internalParallelToolCallsMetadataKey] == 'true';
     final hasForceJsonMarker = _shouldConstrainWithJsonTools(messages);
     final shouldConstrainWithJsonTools =
         hasTools && (hasForceJsonMarker || toolChoiceRequired);
@@ -96,7 +99,9 @@ class Lfm2Handler extends ChatTemplateHandler {
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: shouldConstrainWithJsonTools ? buildGrammar(tools) : null,
+      grammar: shouldConstrainWithJsonTools
+          ? _jsonGrammar(tools, parallelToolCalls: parallelToolCalls)
+          : null,
       grammarLazy: shouldConstrainWithJsonTools && !toolChoiceRequired,
       additionalStops: getStops(
         hasTools: hasTools,
@@ -208,15 +213,7 @@ class Lfm2Handler extends ChatTemplateHandler {
     for (var i = 0; i < matches.length; i++) {
       final match = matches.elementAt(i);
       final payload = match.group(1)!;
-      final decoded = ToolCallParsingUtils.decodeJsonValue(payload);
-      final parsedCalls =
-          ToolCallParsingUtils.parseToolCallArray(
-            decoded,
-            startIndex: toolCalls.length,
-            failOnInvalidItem: false,
-            assignFallbackIds: true,
-          ) ??
-          _parsePythonStyleToolCallList(payload, startIndex: toolCalls.length);
+      final parsedCalls = _parseCallList(payload, startIndex: toolCalls.length);
       if (parsedCalls != null) {
         toolCalls.addAll(parsedCalls);
       }
@@ -236,13 +233,42 @@ class Lfm2Handler extends ChatTemplateHandler {
   }
 
   @override
-  String? buildGrammar(List<ToolDefinition>? tools) {
-    return ToolCallGrammarUtils.buildWrappedArrayGrammar(
-      tools: tools,
-      prefix: '<|tool_call_start|>',
-      suffix: '<|tool_call_end|>',
-      allowParallelToolCalls: false,
-    );
+  String? buildGrammar(List<ToolDefinition>? tools) =>
+      _jsonGrammar(tools, parallelToolCalls: false);
+
+  String? _jsonGrammar(
+    List<ToolDefinition>? tools, {
+    required bool parallelToolCalls,
+  }) => ToolCallGrammarUtils.buildWrappedArrayGrammar(
+    tools: tools,
+    prefix: '<|tool_call_start|>',
+    suffix: '<|tool_call_end|>',
+    allowParallelToolCalls: parallelToolCalls,
+  );
+
+  List<LlamaCompletionChunkToolCall>? _parseCallList(
+    String payload, {
+    required int startIndex,
+  }) {
+    try {
+      return ToolCallParsingUtils.parseToolCallArray(
+            ToolCallParsingUtils.decodeJsonValue(payload),
+            startIndex: startIndex,
+            failOnInvalidItem: false,
+            assignFallbackIds: true,
+          ) ??
+          _parsePythonStyleToolCallList(payload, startIndex: startIndex);
+    } on LlamaInferenceException {
+      // Arguments the wire format refuses (too deep, not finite) are model
+      // text, not a caller error, so they must not throw out of parse.
+      return null;
+    } on StackOverflowError {
+      // dart2js converts a list recursively, and a list under a map key only
+      // when the key is read, past any catch in the JSON helpers. A depth limit
+      // would also refuse lists that decode, since the overflow depends on the
+      // stack, and the partial conversion is discarded here.
+      return null;
+    }
   }
 
   List<LlamaCompletionChunkToolCall>? _parsePythonStyleToolCallList(

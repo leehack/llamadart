@@ -11,6 +11,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:llamadart/src/core/template/template_render_context.dart';
 import 'package:test/test.dart';
 
@@ -1393,6 +1394,42 @@ void main() {
       expect(result.format, equals(ChatFormat.lfm2.index));
       expect(result.grammar, isNotNull);
       expect(result.grammarLazy, isFalse);
+    });
+
+    test('honors parallelToolCalls on LFM2 templates that omit tool_calls', () {
+      const template =
+          'List of tools: <|tool_list_start|>[{"name":"x"}]<|tool_list_end|>'
+          '{% for message in messages %}{{ message["content"] }}{% endfor %}';
+      expect(TemplateCaps.detect(template).supportsParallelToolCalls, isFalse);
+
+      String? grammar({required bool parallel}) => ChatTemplateEngine.render(
+        templateSource: template,
+        messages: grammarMessages,
+        metadata: const {},
+        tools: tools,
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: parallel,
+      ).grammar;
+
+      expect(grammar(parallel: true), isNot(grammar(parallel: false)));
+    });
+
+    test('still ignores parallelToolCalls on another format the caps deny', () {
+      const template =
+          '{% if tools %}<tools></tools>{% endif %}<|im_start|>user\n'
+          '{{ messages[0]["content"] }}<|im_end|>{# <tool_call> #}';
+      expect(TemplateCaps.detect(template).supportsParallelToolCalls, isFalse);
+
+      String? grammar({required bool parallel}) => ChatTemplateEngine.render(
+        templateSource: template,
+        messages: grammarMessages,
+        metadata: const {},
+        tools: tools,
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: parallel,
+      ).grammar;
+
+      expect(grammar(parallel: true), grammar(parallel: false));
     });
 
     test('keeps lazy grammar for strict LFM2 force-json-schema mode', () {

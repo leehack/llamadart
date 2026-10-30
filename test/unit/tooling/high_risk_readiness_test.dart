@@ -2781,11 +2781,48 @@ final segment = '${Object()}ImageEditingRequest${Object()}';
       },
     );
 
+    test(
+      'composite action changes bind tooling tests to the changed action',
+      () async {
+        const action = '.github/actions/companion-package/action.yml';
+        const otherAction = '.github/actions/other/action.yml';
+        const target = 'test/unit/tooling/ci_workflow_selection_test.dart';
+        final evidence = backendEvidence()
+          ..['surfaces'] = ['regressionPolicy']
+          ..['affected_test_paths'] = [target];
+        final proof = testProof(action);
+        evidence['test_evidence'] = {target: proof};
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          const [
+            RepositoryChange(path: action, kind: RepositoryChangeKind.modified),
+          ],
+          existingPaths: {action, otherAction, target, backendSource},
+        ).evaluate(evidence: evidence, context: context);
+
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+
+        for (final unrelated in [otherAction, backendSource]) {
+          proof['production_refs'] = productionRefs(unrelated);
+          final result = await evaluate();
+          expectFailure(
+            result,
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          expect(result.message, contains('disconnected'), reason: unrelated);
+        }
+      },
+    );
+
     test('production refs admit no non-workflow policy paths', () async {
       for (final path in [
         '.github/CODEOWNERS',
         '.github/pull_request_template.md',
         '.github/workflows_backup/ci.yml',
+        '.github/actions_backup/companion-package/action.yml',
+        '.github/actions/../CODEOWNERS',
         '.github/workflows/../CODEOWNERS',
         'packages/genkit_llamadart/.github/check_docs.py',
         'scripts/release/publish.sh',

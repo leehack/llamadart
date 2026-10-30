@@ -37,6 +37,39 @@ void main() {
   });
 
   group('ToolCallParsingUtils', () {
+    test('stringifies a non-string id exactly as toString does', () {
+      Object? nested(int depth) {
+        Object? value = <Object?>[];
+        for (var i = 1; i < depth; i++) {
+          value = <Object?>[value];
+        }
+        return value;
+      }
+
+      for (final value in <Object>[
+        7,
+        1.5,
+        true,
+        double.infinity,
+        <Object?>[],
+        <String, Object?>{},
+        <Object?>[1, 'a', null, true, 2.5],
+        <String, Object?>{'a': 1, 'b': 'c', 'd': null},
+        <Object?>[
+          <String, Object?>{
+            'a': <Object?>[<Object?>[], <String, Object?>{}],
+          },
+          <Object?>[1],
+        ],
+        nested(500)!,
+      ]) {
+        final call = ToolCallParsingUtils.parseToolCallArray(<Object?>[
+          <String, Object?>{'name': 'f', 'id': value},
+        ], assignFallbackIds: true)!.single;
+        expect(call.id, value.toString());
+      }
+    });
+
     test(
       'rejects duplicate object keys before JSON decoding collapses them',
       () {

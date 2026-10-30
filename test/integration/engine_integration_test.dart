@@ -128,7 +128,9 @@ void main() async {
         );
       }
 
-      const maxTokens = 100;
+      // The grammar has no way to end, so only cancellation or the token
+      // limit stops the stream; a model's own end-of-text cannot.
+      const maxTokens = 200;
       final stream = engine.create(
         [
           const LlamaChatMessage.fromText(
@@ -139,6 +141,7 @@ void main() async {
         params: const GenerationParams(
           maxTokens: maxTokens,
           streamBatchTokenThreshold: 1,
+          grammar: 'root ::= "a" root',
         ),
       );
 
