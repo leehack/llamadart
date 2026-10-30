@@ -299,7 +299,7 @@ jobs:
             "- [ ] If stable_diffusion sync was requested, confirm release \`${RESOLVED_STABLE_DIFFUSION_TAG}\` includes every pinned runtime archive and the Apple XCFramework." \
             "- [ ] Confirm manifest provenance, ABI/capabilities, bundle coverage, checksums, and real-model evidence." \
             "- [ ] Confirm Apple SPM pins and current README/website/changelog surfaces are aligned." \
-            "- [ ] A moved llama.cpp pin clears \`llamaCppCompatibleAppleCompanionTags\`, so apps on the previous companion fail the Apple build. For a wrapper rebuild of the same upstream llama.cpp, re-list the previous pin only after confirming identical headers and thin binaries." \
+            "- [ ] A moved llama.cpp pin clears \`llamaCppCompatibleAppleCompanionTags\`, so apps on the previous companion fail the Apple build. For a wrapper rebuild of the same upstream llama.cpp, re-list the previous pin only after confirming identical headers and thin binaries. Either way, update \`test/fixtures/native/llama_cpp_apple_compatibility.json\`: until then \`is bound to the verified artifact pair\` in \`test/unit/hook/native_release_pins_test.dart\` fails." \
             > "${body_file}"
           title="chore(native): sync native release ${RESOLVED_NATIVE_TAG}"
           if [[ -n "${open_pr}" ]]; then

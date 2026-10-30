@@ -903,7 +903,8 @@ void main() {
         contains(
           'bridge assets embed llama.cpp v0.2.0 but $nativeLlamaCppTagPath '
           'pins v0.3.0-1 (upstream family v0.3.0) — Web and native must share '
-          'the same upstream llama.cpp release',
+          'an upstream llama.cpp release, or the native pin may run ahead on '
+          'the approved $bridgeApprovedNativeUpstreamAhead',
         ),
       );
     });

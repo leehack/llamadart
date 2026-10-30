@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
+import '../../../support/gbnf_recognizer.dart';
 import '../../../support/llama_cpp_grammar_load.dart';
 
 const _maxCount = 1024;
@@ -957,6 +958,56 @@ void main() {
           reason: 'p$i',
         );
       }
+    });
+
+    group('accept and reject objects', () {
+      String object(
+        Iterable<int> indexes, {
+        Iterable<String> extras = const [],
+      }) =>
+          '{${[for (final i in indexes) '"p$i":1', for (final k in extras) '"$k":2'].join(',')}}';
+
+      late GbnfRecognizer long;
+      late GbnfRecognizer withExtras;
+
+      setUpAll(() {
+        long = GbnfRecognizer(JsonSchemaConverter.convert(objectWith(200)));
+        withExtras = GbnfRecognizer(
+          JsonSchemaConverter.convert(<String, dynamic>{
+            ...objectWith(200),
+            'additionalProperties': {'type': 'integer'},
+          }),
+        );
+      });
+
+      test('take any ascending subset across block boundaries', () {
+        expect(long.accepts('{}'), isTrue);
+        expect(long.accepts(object([0])), isTrue);
+        expect(long.accepts(object([199])), isTrue);
+        expect(long.accepts(object([5, 40, 100, 150, 199])), isTrue);
+        expect(long.accepts(object(Iterable.generate(200))), isTrue);
+      });
+
+      test('keep property order inside a block', () {
+        expect(long.accepts(object([33, 34])), isTrue);
+        expect(long.accepts(object([34, 33])), isFalse);
+        expect(long.accepts(object([100, 130, 129])), isFalse);
+      });
+
+      test('refuse a repeated or unknown property', () {
+        expect(long.accepts(object([70, 70])), isFalse);
+        expect(long.accepts(object([3], extras: ['x'])), isFalse);
+      });
+
+      test('allow any number of extra properties after the last block', () {
+        expect(withExtras.accepts(object([150], extras: ['x'])), isTrue);
+        expect(withExtras.accepts(object([150], extras: ['x', 'y'])), isTrue);
+        expect(
+          withExtras.accepts(object([199], extras: ['x', 'y', 'z'])),
+          isTrue,
+        );
+        expect(withExtras.accepts(object([], extras: ['x', 'y'])), isTrue);
+      });
     });
   });
 }

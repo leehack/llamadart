@@ -368,10 +368,12 @@ count exceed 2000. Hermes, for example, puts every schema tool inside one
 repeated group, so about 2000 schema tools exceed it.
 
 The llama.cpp `v0.8.0` grammar parser also refuses a grammar nested or chained
-more than 256 levels deep. Generated schema grammars stay below that, including
-objects with 1023 optional properties. A hand-written `grammar` above it makes
-generation throw `LlamaInferenceException`; the Web bridge's older llama.cpp does
-not apply the check.
+more than 256 levels deep. Generated schema grammars keep a list of up to 1023
+optional properties under that, but a `$ref` alias chain of 255 or more
+levels, or an object with more than about 7000 optional properties, still
+exceeds it and fails to load. A grammar above it makes generation throw
+`LlamaInferenceException`; the Web bridge's older llama.cpp does not apply the
+check.
 
 | Selected tool format | Canonical schema support |
 | --- | --- |

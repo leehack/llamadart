@@ -573,7 +573,8 @@ List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
       problems.add(
         'bridge assets embed llama.cpp $bridgeTag but $nativeLlamaCppTagPath '
         'pins $nativeTag (upstream family $normalizedNativeFamily) — Web and '
-        'native must share the same upstream llama.cpp release',
+        'native must share an upstream llama.cpp release, or the native pin '
+        'may run ahead on the approved $bridgeApprovedNativeUpstreamAhead',
       );
     }
   }
