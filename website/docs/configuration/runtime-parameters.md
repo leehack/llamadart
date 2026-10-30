@@ -156,16 +156,11 @@ const params = LlamaCppModelParams(
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
   resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
-  CPU preset uses `min(n_batch, 512)`. On Android, a llama.cpp context that
-  runs on Vulkan keeps that `n_ubatch` but decodes a text prompt at most `8`
-  tokens at a time when this is `0`, and an explicit value above `32` can
+  CPU preset uses `min(n_batch, 512)`. On Android, a context that runs on
+  Vulkan keeps that `n_ubatch` but can decode a text prompt in smaller micro-batches when this is `0`, and an
+  explicit value above `32` can
   return wrong text on some GPUs
-  ([known limitations](../platforms/support-matrix#known-limitations)).
-  The cap applies to text-prompt decoding only: it does not cover prompts
-  with image or audio input, embeddings, decision models, text-to-speech, or
-  speculative-decoding verification batches during generation, which can
-  exceed `32` tokens, so speculative decoding can still produce wrong output
-  on an affected GPU.
+  ([Android llama.cpp Vulkan](../platforms/known-platform-issues#android)).
   Explicit positive values are preserved within
   `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models, models without a KV cache (such as BERT and ModernBERT),
