@@ -50,11 +50,7 @@ description: >-
   bundled; a list naming `stable_diffusion` bundles it through the hook, and
   App Store Connect rejects that iOS framework's `MinimumOSVersion`.
   `flutter build ios` output shows neither build warning; Xcode and
-  `xcodebuild` show both. Use companion `0.17.0` with core `0.17.x`,
-  `0.16.0` with core `0.16.x`, or `0.15.2` with core `>=0.15.2 <0.16.0`; locked `0.15.0`/`0.15.1` companions
-  work with core `0.15.2` with an upgrade warning. Pair `0.14.0` with core
-  `0.14.x`, and `0.13.0` with core `0.13.x`, `0.0.3` with core `0.12.2`,
-  `0.12.1` and `0.12.0`, and `0.0.2` with core `0.11.1` and `0.11.0`. Adding it
+  `xcodebuild` show both. Use the companion with the core's `MAJOR.MINOR`. Adding it
   opts the app into the runtime (about 37 MB per Apple target).
 The core accepts only an Apple SD companion pinning its own runtime
 (`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before

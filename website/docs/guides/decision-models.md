@@ -46,7 +46,7 @@ The API keeps the names of TypeSafe's
 | Runtime | `DecisionEngine` |
 | --- | --- |
 | Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
-| WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (apiVersion 1), which the default pin includes; checked only in headless Chromium on macOS. Older assets report unsupported. See [Web](#web) |
+| WebGPU / GGUF | Experimental, with pinned bridge assets (apiVersion 1); checked only in headless Chromium on macOS. See [Web](#web) |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 
@@ -480,8 +480,8 @@ final official = await DecisionEngine.load(
 ## Web
 
 On Web, `DecisionEngine` runs through the decision API (apiVersion 1) of the
-llama.cpp WebGPU bridge, which `llama-web-bridge-assets` `v0.1.47+` and the
-default pin include. With older assets, `capabilitiesFor` reports unsupported
+llama.cpp WebGPU bridge, which the pinned assets include. With assets that
+lack it, `capabilitiesFor` reports unsupported
 and `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`.
 LiteRT-LM Web models report unsupported too.
 

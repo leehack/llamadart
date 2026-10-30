@@ -57,7 +57,7 @@ image-generation API yet.
 Validation evidence for each recipe is listed in
 [Feature validation evidence](../maintainers/feature-validation#qualification-procedures).
 
-Measured with the prototype on the same runtime, 512x512, one step, warm:
+Measured on the same runtime, 512x512, one step, warm:
 
 | Device | SDXS Q8 (651 MB) | SD-Turbo Q8 + TAESD (1.9 GB) |
 | --- | --- | --- |
@@ -105,12 +105,7 @@ selects Vulkan, which it does by default; set
 Flutter iOS and macOS apps should also add the companion package, which links
 the runtime's XCFramework through Swift Package Manager and selects the
 runtime on those platforms by itself, adding about 37 MB per Apple target.
-Pair `0.17.0` with core `0.17.x`, `0.16.0` with core `0.16.x`, `0.15.2` with
-core `>=0.15.2 <0.16.0`,
-`0.14.0` with core `0.14.x`, `0.13.0` with core
-`0.13.x`, `0.0.3` with core
-`0.12.2`, `0.12.1` and
-`0.12.0`, and `0.0.2` with core `0.11.1` and `0.11.0`. Cores older than `0.10.0` ignore it:
+Use the companion with the core's `MAJOR.MINOR`:
 
 ```yaml
 dependencies:
@@ -127,9 +122,8 @@ iOS 16.4, so App Store Connect rejects the iOS upload. The iOS build reports
 this as an Xcode build warning, which Xcode and `xcodebuild` show but plain
 `flutter build` and `flutter run` output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
-The hook-bundled runtime also cannot carry an Apple privacy manifest. The
-companion's XCFramework carries one from `stable-diffusion-native` `v0.2.0-1`,
-which `llamadart_stable_diffusion_flutter` releases after `0.0.1` link; see
+The hook-bundled runtime also cannot carry an Apple privacy manifest; the
+companion's XCFramework does. See
 [Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest)
 for the File Timestamp reasons (`C617.1`, `3B52.1`) an app declares itself
 when its `stable_diffusion.framework` has no manifest.
@@ -166,13 +160,12 @@ inputs; `controlNet` loads only in the [ControlNet recipe](#controlnet).
 FP8 image weights (`F8_E4M3`/`F8_E5M2` in Safetensors, types 43/44 in
 GGUF) load on Metal with the pinned stable-diffusion-native `v0.3.0-1`, which
 converts them to F16 there: they need twice their file size in memory, which
-`ImageModelParams.checkMemory` counts. A runtime without that fix, told apart
-by its exports, aborts on them instead
-([#1446](https://github.com/leehack/llamadart/issues/1446)): with it, FP8
+`ImageModelParams.checkMemory` counts. FP8
 weights, uninspectable GGUF/Safetensors headers and ordinary JSON shard
 indexes are refused with `LlamaUnsupportedException` on Metal, including
-`ComputeDevice.auto` when it selects Metal, before native context creation;
-use `ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
+`ComputeDevice.auto` when it selects Metal, before native context creation
+([#1446](https://github.com/leehack/llamadart/issues/1446)); use
+`ComputeDevice.cpu` there. FP8 re-encodings of SD-Turbo are measured on
 macOS arm64 CPU and Metal; arbitrary FP8 models are not qualified.
 
 For a trusted PyTorch checkpoint whose native layout is compatible:
@@ -1057,9 +1050,8 @@ uses them: beside a discrete GPU an integrated one adds nothing to the sum,
 and with integrated GPUs only it compares with `MemAvailable` on Linux, as
 for the CPU.
 
-Nothing is checked or warned about when a GPU does not report its memory,
-when the `SD_VK_DEVICE` environment variable is set, or with a
-`stable_diffusion` runtime older than `stable-diffusion-native` `v0.2.0-2`.
+Nothing is checked or warned about when a GPU does not report its memory or
+when the `SD_VK_DEVICE` environment variable is set.
 
 The figures are the runtime's, which are ggml's, for every GPU it lists. The
 engine asks for them in a short-lived isolate, because the first such call in
@@ -1125,16 +1117,12 @@ final engine = await ImageGenerationEngine.load(model);
   generation records more, the oldest are lost and one warning says how
   many. On an M4 Max an SDXS load recorded 28 messages at `info` and 40 at
   `debug`, and reading them took about 0.1 ms.
-- The runtime no longer writes ggml's device messages to stderr, at any
+- The runtime does not write ggml's device messages to stderr, at any
   level, the default `none` included: its recorder is always registered,
   because the reason of a failed load comes from it. What a ggml backend
   writes to stderr itself still goes there.
-- A `stable_diffusion` runtime older than `stable-diffusion-native`
-  `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
-The core accepts only an Apple SD companion pinning its own runtime
-(`v0.3.0-1`): earlier runtimes abort on FP8 weights on Metal, and those before
-`v0.3.0` have a smaller `sd_ctx_params_t`. Upgrade the
+The core accepts only an Apple SD companion pinning its own runtime; upgrade the
 core and `llamadart_stable_diffusion_flutter` together.
 
 ## Errors
@@ -1158,9 +1146,7 @@ core and `llamadart_stable_diffusion_flutter` together.
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps). This leaves ggml's Metal backend in an error
   state: from then on every generation on that engine fails until you
-  dispose it and load the model again. A runtime older than
-  `stable-diffusion-native` `v0.2.0-2` has no log to detect this from, so
-  its failures read as recoverable.
+  dispose it and load the model again.
 - On Linux a model on a Vulkan GPU is refused only when it fits neither the
   GPU nor the GPU plus system memory; one larger than the GPU's memory loads
   with a warning and runs slower. On Windows such a model is warned about
@@ -1249,11 +1235,10 @@ nesting also have explicit bounds.
 `example/basic_app/bin/local_image_set.dart` is a runnable local-only consumer.
 
 
-The first slice requires complete contiguous numbered shard basenames,
+The loader requires complete contiguous numbered shard basenames,
 `model-00001-of-000NN.safetensors` through `model-000NN-of-000NN.safetensors`,
 for N in 1..16. Arbitrary names, gaps and count aliases fail before manager or
-native work. This keeps caller-chosen basenames out of the existing native
-log path; no shared worker/redactor expansion is needed. The strict index
+native work. The strict index
 mapping and tensor-layout fingerprint bind all native-visible tensor names;
 unsupported metadata/extra aliases use fixed error categories without
 quoting caller text.

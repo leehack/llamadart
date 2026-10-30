@@ -29,7 +29,7 @@ unchecked. See [scope and limits](./native-build-hooks#isolated-native-check).
 | macOS (arm64, x86_64) | CPU, Metal; on x86_64, Rosetta included, `auto` uses the CPU because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)) | arm64: CPU, GPU; x86_64: none ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)) | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
-| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (unvalidated, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
+| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 (unvalidated, [#1025](https://github.com/leehack/llamadart/issues/1025)) | Qwen3-ASR, WAV, MP3 or FLAC bytes | Qwen3-TTS, memory64 | Checked in headless Chromium on macOS | Not yet ([#969](https://github.com/leehack/llamadart/issues/969)) | Experimental |
 
 On Windows, the llama.cpp and LiteRT-LM bundles ship the Visual C++ runtime
 DLLs they need, so they need no Visual C++ Redistributable. The opt-in
@@ -211,21 +211,21 @@ native and web. Model architecture support depends on the pinned runtime; see
 | Repetition `penalty` | Yes | Yes | A value other than the default, at least `1.0`, without speculative decoding; counts only tokens of the current send | No: rejects a value other than the default |
 | Speculative decoding | Draft model, MTP, n-gram and DSpark strategies; external drafts require `draftModel`, in-file MTP requires an MTP head and `loadMtp`; `draftMicroBatchSize` sizes the draft context; recurrent/hybrid models reject nonzero rollback capacity | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, MTP uses the model's own layers, and `draftMicroBatchSize` is rejected; otherwise rejected | Runtime default or MTP, for bundles with a speculative drafter; `capabilities` reports the bundle's declaration | No |
 | MoE expert placement and cache | `cpuMoeLayers` keeps experts in host memory; `moeCacheBytes` caches them on Metal and CUDA GPUs (qualified on Metal with OLMoE; CUDA has no hardware evidence); only `moeCacheBytes` throws `LlamaUnsupportedException` on Vulkan, other backends and tensor split, while `cpuMoeLayers` alone runs there | No | No | No |
-| State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
+| State persistence | Yes | Yes; WASMFS paths, lost on page reload | No | No |
 | State identity (`stateIdentity`) | `llamadart-native` `v0.7.0-3+` | No: the bridge reports no build identity | No | No |
-| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Bridge `v0.1.7+`; `v0.1.73+` rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64 and iOS arm64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; other platforms throw `LlamaUnsupportedException` at load ([#1367](https://github.com/leehack/llamadart/issues/1367)) | Unsupported (parity gate) |
+| Embeddings | Yes; one-pass attention and MEAN/CLS inputs must fit the physical micro-batch | Yes; rejects rerankers and over-long one-pass input as native does | CPU, explicit embedding engine; macOS arm64 and iOS arm64 qualified; Android arm64 verified on a Galaxy S24 without SME and on arm64 emulators; other platforms throw `LlamaUnsupportedException` at load ([#1367](https://github.com/leehack/llamadart/issues/1367)) | Unsupported (parity gate) |
 | Reranking | Rank-pooled GGUF only; explicit loaded-context probe, complete-pair limits and independent sequence batching | No | No | No |
 | Text task helpers and Matryoshka | Opt-in EG2 text profile; CPU BF16 retrieval reference | Same Dart helpers on an available embedding engine; no new Web qualification | Same Dart helpers on an available CPU embedding engine; bundle requires independent retrieval qualification | Unsupported with the underlying embedding engine |
-| Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Bridge `v0.1.64+`, explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; repeated media batches qualified only on memory64 (assets `v0.1.76+` remove the projector copy behind the wasm32 abort, unqualified); hardware WebGPU unqualified (default pinned assets include the API) | CPU; bundle processors on macOS arm64, iOS arm64 and Android arm64 (Galaxy S24 and emulators) | Unsupported (parity gate) |
-| Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
-| Generation-limit reporting | `length` for output or context limits | `length` with bridge usage probe (`v0.1.54+`); cap cause unspecified | `length` for output or context limits on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes report `stop` | No |
-| Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.54+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
+| Image/audio embeddings (`embedContent`) | EmbeddingGemma-2 + compatible projector, native v0.7.0-1; one complete micro-batch (BF16 qualified on CPU on macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other GPU backends unqualified) | Explicit API-version-1 modality probe + compatible projector; EmbeddingGemma-2 qualified Chrome CPU wasm memory64 vs native CPU/Metal; repeated media batches qualified only on memory64 (wasm32 unqualified); hardware WebGPU unqualified | CPU; bundle processors on macOS arm64, iOS arm64 and Android arm64 (Galaxy S24 and emulators) | Unsupported (parity gate) |
+| Next-token scores | Yes | Yes | No | No |
+| Generation-limit reporting | `length` for output or context limits | `length` with the bridge usage probe; cap cause unspecified | `length` for output or context limits | No |
+| Per-request usage | `usage` on the final `create` chunk | Yes | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | `LlamaBackend.withTextHistory()` or `LiteRtLmBackend.withTextHistory()` (existing defaults retain single-user-text): system/user/assistant text when the loaded runtime consumes `preface` and exposes `getHistory()` (`@litert-lm/core@0.18.0`); final user message required; model/browser qualification is separate |
 | Deterministic session template time | `TemplateTimeChatSession`, Dart-rendered templates | Same Dart template path | Dart-side rendering only; runtime-owned template clock unchanged | No: runtime-owned clock; explicit template time rejected |
 | Tool calling | Yes | Yes | Yes | No: tool declarations and tool messages throw |
 | Canonical JSON Schema tools | Supported subset and selected formats | Non-lazy grammars only; other combinations rejected | No | No |
-| Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes on runtimes whose finish-reason ABI is 1 (`v0.18.0-3`+, default pin included); older runtimes throw before generation | No: pinned runtime has no reliable termination cause; throws before generation |
+| Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | Yes | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
 | Tool-result media | Images with a vision projector and a Hermes-style template (smoke-tested on macOS CPU and Metal with Qwen3.5-0.8B weights, a `qwen3vl_merger` projector and the Qwen3-VL template) | No | No | No |
@@ -239,9 +239,9 @@ image/audio parts and media alongside `LlamaToolResultContent` under any role
 `LlamaEngine.supportsVideo` returns `false` on every runtime, and passing
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,
-export and import it in app code. Bridge assets `v0.1.54+`, the default pin
-among them, report the WebGPU LoRA, thinking-budget, presence-penalty, Min-P
-and speculative decoding capabilities; older assets report none of them.
+export and import it in app code. The pinned bridge assets report the WebGPU LoRA, thinking-budget,
+presence-penalty, Min-P and speculative decoding capabilities; older assets
+report none of them ([Older bridge assets](./webgpu-bridge#older-bridge-assets)).
 After a load, `LlamaEngine.runtime` names the runtime and
 `LlamaEngine.capabilities` reports the rows of this table for the loaded model:
 media input, embeddings, next-token scores, multi-turn chat, tools, structured
@@ -255,7 +255,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
 
 ## Known limitations
 
-- Native LiteRT-LM v0.18.0 iOS artifacts omit the Gemma FST constraint
+- Native LiteRT-LM iOS artifacts omit the Gemma FST constraint
   provider. Gemma 3/4 and FunctionGemma conversations must disable constrained
   decoding; Dart already does so. Ordinary generation, thinking and best-effort
   tool formatting remain available. Automatic tool loops and strict structured
@@ -266,16 +266,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
   on an iPhone 16 Pro with iOS 18.3.2 (CPU and GPU); simulator evidence is
   iOS 26.4, CPU only. No other iOS version is device-verified
   ([#514](https://github.com/leehack/llamadart/issues/514)).
-- Flutter macOS LiteRT-LM needs a `llamadart_litert_lm_flutter` that matches
-  the core to put the runtime in the app bundle. With llamadart `0.12.0` and
-  earlier, with companion `0.0.14` or earlier, or without the companion, an
-  unsandboxed app run on the build machine from the project loads the runtime
-  from the hook cache, and a sandboxed (the `flutter create` default), copied
-  or distributed app throws `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'`
-  (`'libLiteRtMetalAccelerator.dylib'` with llamadart `0.12.0` and a newer
-  companion) on the first CPU or GPU generation. Add the companion, or the
-  [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase)
-  ([#1029](https://github.com/leehack/llamadart/issues/1029)).
+- Flutter macOS LiteRT-LM needs `llamadart_litert_lm_flutter` to put the runtime
+  in the app bundle. Without it, an unsandboxed app run on the build machine
+  from the project loads the runtime from the hook cache, and a sandboxed (the
+  `flutter create` default), copied or distributed app throws
+  `Failed to load dynamic library 'libCLiteRTLM_mac.dylib'` on the first CPU or
+  GPU generation. Add the companion, or the
+  [LiteRT-LM build phase](../getting-started/installation#flutter-macos-litert-lm-build-phase).
 - macOS x86_64: no LiteRT-LM runtime is published
   ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
   Universal apps launch on an Intel Mac and under Rosetta, and LiteRT-LM
@@ -368,8 +365,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   the GPU driver. When the Vulkan GPU a load would run on reports an older
   version, `ComputeDevice.gpu` throws `LlamaUnsupportedException` naming the
   GPU and both versions, and `ComputeDevice.auto` loads the model on the CPU
-  and logs a warning. A device that used to run Vulkan on a 1.1 driver now
-  takes that path. When other GPUs of the load are usable, such as a
+  and logs a warning. A device with a Vulkan 1.1 driver takes that path. When other GPUs of the load are usable, such as a
   discrete GPU beside an old one, the load leaves the old one out and logs a
   warning; a GPU llama.cpp would not select, like an integrated GPU beside a
   discrete one, changes nothing.
@@ -380,9 +376,8 @@ output and grammars, sampling controls and speculative decoding. Guides:
   decision-head GPU selection can independently choose the affected device.
   `ComputeDevice.auto` loads on CPU with a warning, including when
   `preferredBackend` requests Vulkan; `ComputeDevice.gpu` throws
-  `LlamaUnsupportedException`. CPU loads do not probe Vulkan. Detection needs
-  the device-facts API in native `v0.6.0-1` or later; an overridden runtime
-  without it cannot enforce this guard. Other driver versions are unchanged.
+  `LlamaUnsupportedException`. CPU loads do not probe Vulkan. Other driver
+  versions are unchanged.
   A shader crash workaround alone does not qualify this driver; re-enabling
   a model requires qualification of the final native artifact on that exact
   driver.

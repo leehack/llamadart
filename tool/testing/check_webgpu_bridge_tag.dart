@@ -112,15 +112,7 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^The example currently pins bridge assets to `(v\d+\.\d+\.\d+)`,',
-      multiLine: true,
-    ),
-  ),
-  BridgeTagPin(
-    'website/docs/platforms/webgpu-bridge.md',
-    RegExp(
-      r'^  even though the bridge asset tag `(v\d+\.\d+\.\d+)` differs from the '
-      r'native runtime tag$',
+      r'^This llamadart version pins bridge assets `(v\d+\.\d+\.\d+)`, which',
       multiLine: true,
     ),
   ),
@@ -128,13 +120,6 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
       r'^- The pinned `(v\d+\.\d+\.\d+)` bridge assets embed llama\.cpp ',
-      multiLine: true,
-    ),
-  ),
-  BridgeTagPin(
-    'website/docs/platforms/webgpu-bridge.md',
-    RegExp(
-      r'^identified as `(v\d+\.\d+\.\d+)-local-[a-zA-Z0-9.-]+`\.$',
       multiLine: true,
     ),
   ),
@@ -155,10 +140,6 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
   BridgeTagPin(
     'doc/multimodal_embeddings_web.md',
     RegExp(r'^mmproj and pinned assets `(v\d+\.\d+\.\d+)` on', multiLine: true),
-  ),
-  BridgeTagPin(
-    'website/docs/guides/text-to-speech.md',
-    RegExp(r'^- The chat example pins `(v\d+\.\d+\.\d+)`,', multiLine: true),
   ),
 ];
 
@@ -449,7 +430,7 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime$',
+      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime\.?$',
       multiLine: true,
     ),
   ),
@@ -474,21 +455,6 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
       r'tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
       r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\r?\n'
       r'`(?<manifestSha256>[0-9a-f]{64})`\.',
-      multiLine: true,
-    ),
-  ),
-  BridgeTagPin(
-    'website/docs/platforms/webgpu-bridge.md',
-    RegExp(
-      r'^  \(`(?<nativePin>[^`]+)`, both built from upstream '
-      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
-      r'  even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
-      r'native runtime tag\r?\n'
-      r'  `v\d+\.\d+\.\d+(?:-\d+)?`\. Pinned artifact provenance: release '
-      r'`(?<releaseId>\d+)`, tag commit\r?\n'
-      r'  `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
-      r'  `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\r?\n'
-      r'  `(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
     ),
   ),

@@ -226,7 +226,7 @@ otherwise the load rejects them before the runtime starts.
 
 - `loras` (llama.cpp, native and WebGPU): LoRA adapters applied at their
   scales once the model loads; an adapter that cannot be applied fails the
-  load. WebGPU needs bridge assets `v0.1.54+`.
+  load. WebGPU needs assets whose LoRA probe reports support.
 
 For runtime LoRA control (`setLoraSource`, `removeLoraSource`, `clearLoras`), see
 [LoRA Adapters](../guides/lora-adapters).
@@ -341,28 +341,19 @@ restarts with the same PID. That lease never expires, so its model's program
 caches stay unpruned until its two lease files are deleted while no engine of
 that model is running.
 
-The cap guards against runtime cache growth: with Qwen3.5-0.8B
-on the macOS GPU backend, every engine create appended about 0.5 GB to
-`*_mldrift_program_cache.bin`, later creates logged
-`Deserialization failed: DATA_LOSS`, and deleting the file did not slow engine
-create. llamadart can create an engine more than once per loaded model: on the
+The cap guards against runtime cache growth: with some models the GPU
+backend appends to `*_mldrift_program_cache.bin` on every engine create
+([LiteRT-LM#2503](https://github.com/google-ai-edge/LiteRT-LM/issues/2503)).
+llamadart can create an engine more than once per loaded model: on the
 first generation, tokenization or detokenization after each context create,
 and again when speculative decoding, vision, audio or image-count settings
 change.
 
-On the macOS GPU backend, the program cache of Qwen3 0.6B (4 MB) and
-Gemma 4 E2B (11 MB) no longer grows after the first engine create. The
-Qwen3.5 0.8B VL int8 bundle still appends about 270 MB per create; the default
-cap keeps it from filling the disk.
-
 The cache file names carry the model file's name, modification time and size,
-not the runtime version, so an app that updates llamadart keeps the files the
-previous runtime wrote, and the new runtime appends its own programs to the
-program cache. To reclaim the old bytes, delete the
-`*_mldrift_program_cache.bin` files once after updating, or run once with
-`maxProgramCacheBytes: 0`; the runtime rebuilds the file. In a
-directory llamadart prunes, the default cap deletes them once their total
-exceeds 1 GiB.
+so replacing a model file leaves its old caches in place. In a directory
+llamadart prunes, the default cap deletes them once their total exceeds 1 GiB;
+to reclaim the bytes sooner, delete the `*_mldrift_program_cache.bin` files or
+run once with `maxProgramCacheBytes: 0`.
 
 The runtime fails engine creation when it cannot write the cache directory,
 on the CPU backend too. A missing `cacheDir` is created, so this affects a
@@ -412,7 +403,7 @@ Important fields:
   `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
   and LiteRT-LM web reject non-zero values rather than silently ignoring them.
 - Native LiteRT-LM applies `penalty` and `presencePenalty` through its
-  per-send repetition penalty API (litert-lm-native v0.18.0 or newer). They
+  per-send repetition penalty API. They
   count only the tokens the current send generates, not the prompt or
   earlier turns, so outputs differ from llama.cpp. The default `penalty` of
   `1.1` stays unapplied so default requests keep their output; a `penalty`

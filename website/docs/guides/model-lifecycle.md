@@ -266,7 +266,7 @@ be set again. `unloadModel()` frees the model without loading another.
 
 ## Save and restore prompt state
 
-Native backends and WebGPU bridge assets `v0.1.15+` can save and restore
+Native backends and the WebGPU bridge can save and restore
 llama.cpp KV-cache state to avoid re-evaluating a long raw prompt on resume or
 when forking a prompt prefix. Gate the flow with `supportsStatePersistence` so
 backends that do not implement state persistence can fall back to prompt

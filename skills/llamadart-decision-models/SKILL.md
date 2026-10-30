@@ -58,7 +58,7 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   matching device used for an out-of-range index or a negative index in other
   split modes, and CPU used if none matches.
 - Runtimes: native llama.cpp is experimental (validated on macOS Metal and
-  CPU); WebGPU needs bridge assets `v0.1.47+` (the default pin includes them);
+  CPU); WebGPU needs bridge assets with the decision API (the pinned ones have it);
   LiteRT-LM, native or Web, is unsupported and `load`/`attach` throw
   `LlamaUnsupportedException`.
 - `load` and `attach` throw `LlamaUnsupportedException` for a non-encoder
@@ -105,7 +105,7 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
 - Instruction-model alternative: with no trained head, put lettered options in
   a chat-templated prompt and call `engine.scoreNextToken(prompt, candidates:
   letterTokens)`. Check `engine.supportsNextTokenScoring` first (native
-  llama.cpp and WebGPU bridge assets `v0.1.52+`; LiteRT-LM and older bridges
+  llama.cpp and WebGPU bridge assets that support it; LiteRT-LM and other bridges
   throw `LlamaUnsupportedException`). Verify each letter tokenizes to exactly
   one token, and renormalize the candidate probabilities, which are a softmax
   over the whole vocabulary. Keep the variable input last in the prompt so
