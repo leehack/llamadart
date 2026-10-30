@@ -164,8 +164,8 @@ device loss there.
 ### LiteRT-LM GPU crashes on Linux without a hardware Vulkan driver
 
 With only Mesa llvmpipe (the runtime logs `Selected adapter: llvmpipe ...
-adapterType=CPU / Software`), LiteRT-LM `v0.17.0-6` loads the model and answers
-the first prompts, then segfaults in `libvulkan_lvp.so` and takes the process
+adapterType=CPU / Software`), LiteRT-LM can load the model and answer
+the first prompts, then segfault in `libvulkan_lvp.so` and take the process
 down. There is no load error to fall back from, so hosts with Mesa but no
 vendor ICD must use `device: ComputeDevice.cpu`
 ([#572](https://github.com/leehack/llamadart/issues/572)).
@@ -224,7 +224,7 @@ In the browser console, `window.LlamaWebGpuBridge` should exist and
    policy, base href, service-worker cache state, and whether the runtime came
    from the CDN or local assets.
 
-The readiness probe, fallback rules and smoke test are in
+The readiness probe and fallback rules are in
 [WebGPU bridge](../platforms/webgpu-bridge).
 
 ## Slow generation

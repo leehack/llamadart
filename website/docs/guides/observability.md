@@ -79,8 +79,8 @@ not a reliable per-request tokens-per-second measurement.
 | Path | Observed operations | Per-request generation usage |
 | --- | --- | --- |
 | Native llama.cpp | Yes | When the backend reports it on the final `create` chunk |
-| WebGPU bridge `v0.1.54+` | Yes | When the bridge reports it on the final `create` chunk |
-| Older WebGPU bridges | Yes | Unavailable |
+| WebGPU bridge with `supportsCompletionUsage` | Yes | When the bridge reports it on the final `create` chunk |
+| WebGPU bridges without it | Yes | Unavailable |
 | LiteRT-LM, native or Web | Yes | Unavailable |
 | Raw `generate`, embeddings, model load | Yes | No final chat usage object |
 

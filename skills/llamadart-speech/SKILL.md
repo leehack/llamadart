@@ -46,7 +46,7 @@ description: >-
   audio support alone never makes a model ASR:
   - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the
     Qwen3-ASR GGUF as `source` and its mmproj as `projector`. Native
-    llama.cpp, or WebGPU with bridge assets `v0.1.30+`.
+    llama.cpp, or WebGPU (pinned bridge assets).
   - Another audio chat model on `LlamaEngine`: extend
     `SpeechToTextPromptAdapter` with `name`, `promptFor(request)` (the text
     sent before the audio) and `parseTranscript(output)` (returns a
@@ -65,8 +65,8 @@ description: >-
     `whisperTiny`, `qwen3Asr0_6b`; the files must match the preset.
     Boundary and recognition errors can remain.
   - Qwen3-TTS: `Qwen3TtsAdapter` with the Qwen3-TTS GGUF and its
-    audio-generation mmproj. Native llama.cpp, or WebGPU with bridge assets
-    `v0.1.33+`. LiteRT-LM (native and Web) has no TTS. Synthesis is
+    audio-generation mmproj. Native llama.cpp, or WebGPU (pinned
+    bridge assets). LiteRT-LM (native and Web) has no TTS. Synthesis is
     runtime-native, so a custom `TextToSpeechAdapter` can target only a model
     the runtime reports as a `BackendTextToSpeechModel`.
 - After `attach`, `await recognizer.capabilities` /
@@ -113,7 +113,7 @@ description: >-
     `LlamaSpeechTranscriptTruncatedException`. Read `limit`
     (`LlamaSpeechTranscriptLimit.maxOutputTokens` or `.contextSize`) and
     `partialTranscript`. On Web, bridge assets with
-    `supportsCompletionUsage` (`v0.1.54+`) report truncation with `.runtime`:
+    `supportsCompletionUsage` report truncation with `.runtime`:
     the bridge combines output, context and media caps, so do not diagnose
     the exact cause from token counts. Older assets without a termination
     signal retain their existing completion behavior.

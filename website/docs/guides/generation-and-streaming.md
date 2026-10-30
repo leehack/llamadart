@@ -149,10 +149,10 @@ exposes its own model id should set that id on its responses instead.
 
 ## Token usage and timings
 
-On native llama.cpp, and on WebGPU with bridge assets `v0.1.54+`, the final
+On native llama.cpp, and on WebGPU, the final
 `create` chunk carries the request's usage whenever the backend reports it.
 The backend can report none, for example for a request cancelled while it is
-queued. Usage is null on LiteRT-LM, on older bridge assets and on every
+queued. Usage is null on LiteRT-LM, on bridge assets that do not report it and on every
 earlier chunk. On WebGPU, `completionTokens` can include tokens generated after
 a stop sequence, before the stop reached the bridge.
 
@@ -504,5 +504,5 @@ same as llama-server's `n_probs`; sampling settings do not apply. The prompt is
 tokenized like a `generate` prompt, and a prefix shared with the previous
 prompt is reused unless `reusePromptPrefix` is false. Check
 `engine.supportsNextTokenScoring` first: native llama.cpp and WebGPU bridge
-assets `v0.1.52+` support it; LiteRT-LM and older bridge assets report false
+assets that support it; LiteRT-LM and other bridge assets report false
 and throw `LlamaUnsupportedException`.

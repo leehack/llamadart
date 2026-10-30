@@ -486,8 +486,7 @@ hooks:
 - Before downloading from an overridden release, the hook reads its
   `assets.json` and fails with `NativeHookContractException` when it needs a
   hook contract other than 1 or 2. A release without `assets.json` counts as
-  contract 1. llamadart before 0.17 does not check the contract: pointed at a
-  contract 2 release, it warns and builds `windows-x64` without CUDA.
+  contract 1.
 - The hook keeps the release's `SHA256SUMS` beside the cached archive under
   the llamadart package's `.dart_tool/llamadart/native_bundles/`. A cached archive that it lists is
   used without network access; any download is checked against a freshly
@@ -523,21 +522,18 @@ and symbol-compatible with the pinned release; the hook logs a warning when an
 override is active. This core requires the v0.7.0 ABI, including its changed
 context-parameter and performance-data layouts; it calls nothing that
 `v0.7.0-3` lacks. Native v0.6.0 and older
-bundles are incompatible even when they export the same symbol names. Do not point a core before
-`0.17.1` at native `v0.8.0` or later: its bindings give
-`mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
+bundles are incompatible even when they export the same symbol names. Use
+core `0.13.x` for its v0.6.0 runtime and companions.
 
 State files are tied to the llama.cpp release of the runtime that wrote them
 ([Save and restore prompt state](../guides/model-lifecycle#save-and-restore-prompt-state)).
-Two checks fail closed:
+One check fails closed:
 
 - LoRA adapters need both `llama_adapter_get_alora_n_invocation_tokens` and
   `llama_adapter_get_alora_invocation_tokens`. Without a compatible pair,
   `setLoraSource` and loads with `ModelParams.loras` throw
   `LlamaUnsupportedException` rather than activate an adapter whose type it
   cannot check.
-- DSpark speculative decoding (`SpeculativeDecodingConfig.draftDspark`) needs
-  at least the `b10356-llamadart.1` wrapper fix; the pinned release has it.
 
 LiteRT-LM has no override keys; the hook always downloads the pinned
 `litert-lm-native` release and verifies its checksum. Tag grammar for
@@ -551,8 +547,8 @@ companion package is a dependency:
 - `llamadart_llama_cpp_flutter` links the llama.cpp XCFrameworks.
 - `llamadart_litert_lm_flutter` links the LiteRT-LM iOS and macOS
   XCFrameworks, including the macOS WebGPU accelerator, sampler and Dawn. The
-  Metal accelerator and sampler stay iOS-only: their `v0.18.0` macOS slices
-  carry an invalid code signature, and the macOS GPU path uses WebGPU.
+  Metal accelerator and sampler stay iOS-only; the macOS GPU path uses
+  WebGPU.
 - `llamadart_stable_diffusion_flutter` links the stable-diffusion.cpp
   XCFramework for [image generation](../guides/image-generation).
 
@@ -735,11 +731,7 @@ recording the archive's SHA-256, size and modification time and every extracted
 file's size. A later build reuses `extracted/` only while that record matches
 the cached archive and the directory's files, hashing the archive again only
 when its modification time changed; otherwise it extracts the cached archive
-again, verified as above, or downloads it when the archive is gone. A cache
-from before llamadart 0.17 has no record and is extracted again once from its
-cached archive, offline for the pinned release and for an override whose
-`SHA256SUMS` is cached; an override cached without `SHA256SUMS` is extracted
-again from the archive as it is, which that cache already trusted.
+again, verified as above, or downloads it when the archive is gone.
 The hook also checks each LiteRT-LM archive for its required libraries and
 downloads it again when a cached copy is incomplete. Which
 repository owns which change: [Runtime ownership](../maintainers/runtime-ownership).

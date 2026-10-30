@@ -247,9 +247,9 @@ JavaScript runtime.
 | Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU default; explicit GPU on Linux x64 (Vulkan) and Windows x64 (Direct3D 12), with compatible drivers. Linux arm64 remains CPU-only. |
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Native CPU embedding engine on macOS, iOS and Android arm64 (`embeddingEngine: true`); not on GPU or Web |
-| Next-token log-probabilities | Supported on native and on WebGPU bridge assets `v0.1.52+` | Not exposed |
+| Next-token log-probabilities | Supported on native and on WebGPU (pinned assets) | Not exposed |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
-| LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU bridge assets `v0.1.54+` | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
+| LoRA adapters | Supported on native GGUF flows, and at load or runtime on WebGPU (pinned assets) | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: ordered system/user/assistant text; tool declarations and tool messages are rejected. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | GBNF is unsupported and explicit grammar params are rejected; a separate native JSON Schema route supports canonical Qwen3 text on macOS arm64 CPU with thinking disabled and a bounded scalar-object subset; other strict combinations fail early |
 | Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |

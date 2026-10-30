@@ -164,8 +164,7 @@ in production.
 - Native llama.cpp: pass `speculativeDecodingConfig`. The legacy
   `speculativeDecoding: true` flag without a config runs `ngram-mod`.
 - WebGPU: the same configs, with bridge assets whose
-  `getCompletionCapabilities()` reports the strategy: bridge assets
-  `v0.1.54+`, the default pin among them. `draftModel` is a remote
+  `getCompletionCapabilities()` reports the strategy. `draftModel` is a remote
   `ModelSource` whose URL the runtime fetches, the n-gram cache paths are
   URLs, and `mtp` uses
   only the model's own MTP layers. See

@@ -64,11 +64,11 @@ attention mode, mixed-batch ABI and projector encoders. EmbeddingGemma-2 with
 its projector supports images/audio on native v0.7.0-1 (BF16 qualified on CPU on
 macOS arm64, Linux x64, Windows x64, Android and iOS, and on macOS Metal; other
 GPU backends unqualified); without a projector it reports text only. Web llama.cpp probes image/audio
-embeddings with bridge assets v0.1.64+
-and a compatible model/projector. The default pinned assets include the media API.
+embeddings through the bridge's embedding API and a compatible model/projector;
+the pinned assets include it.
 EmbeddingGemma-2 vectors are qualified on Chrome CPU wasm memory64 against
-native CPU/Metal. Repeated media batches are qualified only on memory64 (assets
-`v0.1.76+` remove the projector copy behind the wasm32 abort, unqualified); hardware WebGPU is unqualified. Image bytes are encoded data; embedding calls ignore width/height.
+native CPU/Metal. Repeated media batches are qualified only on memory64 (wasm32 is
+unqualified); hardware WebGPU is unqualified. Image bytes are encoded data; embedding calls ignore width/height.
 LiteRT-LM embedding engines probe text/image/audio processors on native CPU.
 Native and Web text-only content follows `embed`, including causal unpooled models;
 media gates do not restrict text. `mediaUnsupportedReason` on the capability
@@ -146,7 +146,7 @@ input exceeds its context or single-pass capacity. It remains an inference
 exception for existing callers. The effective limit can be lower than the model
 context because of batch, micro-batch or parallel-sequence settings. For mixed
 inputs the counts are expanded rows; no prefix or media content appears in the
-structured fields. Web bridge assets `v0.1.73+` throw it too when an input
+structured fields. Web bridge assets throw it too when an input
 exceeds the single-pass capacity. Other runtimes retain their existing
 inference errors.
 
@@ -168,7 +168,7 @@ try {
   model, so the model limits below still apply.
 - Native llama.cpp/GGUF backends support embeddings, including batched
   embeddings, when the loaded model was built for embedding output.
-- On native and with Web bridge assets `v0.1.73+`, rank-pooled reranker
+- On native and on Web, rank-pooled reranker
   GGUFs (such as Qwen3-Reranker) return classifier scores rather than
   embeddings, so `embed(...)` and `embedBatch(...)` throw
   `LlamaUnsupportedException` for them. Use `LlamaReranker`; see
@@ -198,10 +198,9 @@ try {
   invalid attention metadata or an unavailable required runtime probe throws
   `LlamaUnsupportedException` before decoding. Use the pinned native runtime
   or a compatible runtime that exposes the required model information.
-- Web backend supports embeddings when bridge assets expose embedding APIs
-  (`v0.1.7` or newer).
-- If web bridge assets are older than `v0.1.7`, embedding calls can fail with
-  an unsupported/runtime error. Update bridge assets to a newer tag.
+- Web backend supports embeddings when bridge assets expose embedding APIs;
+  the pinned assets do. With older assets, embedding calls can fail with an
+  unsupported/runtime error ([Older bridge assets](../platforms/webgpu-bridge#older-bridge-assets)).
 - `LlamaEngine.embedBatch(...)` uses true backend batching when available and
   otherwise falls back to repeated `embed(...)` calls.
 
