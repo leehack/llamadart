@@ -260,9 +260,9 @@ python3 ../../tool/release/stage_genkit_package.py /tmp/genkit-publish-check
 (cd /tmp/genkit-publish-check && dart pub get && dart pub publish --dry-run)
 ```
 
-The full CI job runs after `flutter pub upgrade`, so it exercises the latest
-compatible dependency set. A focused compatibility job pins the direct runtime
-dependencies to their supported lower bounds, then runs analysis and the fast
+The CI job runs after `flutter pub upgrade`, so it exercises the latest
+compatible dependency set. A focused compatibility step first pins the direct
+runtime dependencies to their supported lower bounds, then runs analysis and the fast
 test suite. This keeps both ends executable without duplicating the latest
 dependency checks.
 

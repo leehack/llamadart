@@ -57,10 +57,11 @@ Important fields:
   `ModelSplitMode.row` needs llama.cpp split buffer types on every model
   device, which llama.cpp `v0.7.0` provides only on backends llamadart does
   not bundle (SYCL, Hexagon). On native llama.cpp a row split load whose
-  devices lack them, as on every bundled GPU backend and with
-  `GpuBackend.cpu`, throws
-  `LlamaUnsupportedException` naming the device before the model loads; use
-  `ModelSplitMode.layer`.
+  devices lack them, as on every bundled GPU backend, with `GpuBackend.blas`
+  or `GpuBackend.cpu`, with `auto` on Android, the iOS simulator and macOS
+  x86_64 (which runs on the CPU), and when the load falls back to the CPU because the requested
+  backend is missing or Vulkan is refused, throws `LlamaUnsupportedException`
+  naming the device before the model loads; use `ModelSplitMode.layer`.
 - `gpuDevices`: the GPUs to load on, as the `GpuDeviceInfo.mainGpu` indices
   `LlamaEngine.listGpuDevices` reports for `preferredBackend`
   (llama.cpp `--device`). The list order is the split order. Under

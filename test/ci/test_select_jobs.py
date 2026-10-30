@@ -49,7 +49,6 @@ class SelectionTest(unittest.TestCase):
             plan = ci.select(ci.inventory(raw))
             self.assertTrue(plan['jobs']['test-linux-coverage'])
             self.assertTrue(plan['jobs']['genkit'])
-            self.assertTrue(plan['jobs']['genkit-lower-bounds'])
             self.assertEqual(plan['apps'], [])
             self.assertEqual(plan['desktops'], [])
 
@@ -79,7 +78,7 @@ class SelectionTest(unittest.TestCase):
         plan = ci.select(['website/docs/integrations/genkit.md'])
         self.assertEqual({j for j, v in plan['jobs'].items() if v},
                          {'docs-check', 'docs-versions', 'test-linux-coverage',
-                          'genkit', 'genkit-lower-bounds'})
+                          'genkit'})
         self.assertEqual(plan['companions'], [])
         self.assertEqual(plan['apps'], [])
 
@@ -87,7 +86,7 @@ class SelectionTest(unittest.TestCase):
         for path in ('lib/genkit_llamadart.dart', 'README.md', 'pubspec.yaml',
                      '.github/check_docs.py', 'test/contract_test.dart'):
             plan = ci.select(['packages/genkit_llamadart/' + path])
-            expected = {'genkit', 'genkit-lower-bounds'}
+            expected = {'genkit'}
             if path.endswith('.md'):
                 expected.add('test-linux-coverage')
             self.assertEqual({j for j, v in plan['jobs'].items() if v}, expected)
@@ -99,7 +98,6 @@ class SelectionTest(unittest.TestCase):
                       ['packages/genkit_llamadart/lib/a.dart', 'lib/llamadart.dart']):
             plan = ci.select(paths)
             self.assertTrue(plan['jobs']['genkit'])
-            self.assertTrue(plan['jobs']['genkit-lower-bounds'])
 
     def test_model_store_is_independent_but_core_changes_test_it(self):
         for path in ('lib/llamadart_model_store.dart', 'README.md', 'pubspec.yaml',
@@ -371,6 +369,45 @@ class AggregateTest(unittest.TestCase):
                           for j, s in ci.expected_jobs(plan).items()})
             del needs['test-linux-vm']
             self.assertTrue(ci.aggregate(plan, needs), paths)
+
+    def test_companion_job_runs_for_every_check_it_hosts(self):
+        # Each path selects one of the checks without the others being implied.
+        cases = (
+            (['packages/llamadart_litert_lm_flutter/lib/a.dart'], True),
+            (['test/integration/apple_companion_flutter_cache_test.dart'], True),
+            (['packages/llamadart_validation/test/process_memory_test.dart'], True),
+            (['example/chat_app/lib/main.dart'], True),
+            (['README.md'], False),
+            (['packages/genkit_llamadart/lib/a.dart'], False),
+            (['example/chat_app/test/unit_test.dart'], False),
+        )
+        for paths, selected in cases:
+            with self.subTest(paths=paths):
+                plan = ci.select(paths)
+                self.assertEqual(ci.expected_jobs(plan)['companion-packages'], selected)
+                needs = {'changes': {'result': 'success'}}
+                needs.update({j: {'result': 'success' if s else 'skipped'}
+                              for j, s in ci.expected_jobs(plan).items()})
+                self.assertEqual(ci.aggregate(plan, needs), [])
+                needs['companion-packages']['result'] = 'failure' if selected else 'success'
+                self.assertTrue(ci.aggregate(plan, needs))
+
+    def test_windows_harness_leg_stands_alone_only_without_test_native(self):
+        cases = (
+            (['packages/llamadart_validation/test/process_memory_test.dart'],
+             ['ubuntu-latest', 'windows-latest']),
+            (['example/chat_app/lib/main.dart'], ['ubuntu-latest', 'windows-latest']),
+            (['packages/llamadart_validation/lib/src/runner.dart'],
+             ['ubuntu-latest', 'windows-latest']),
+            (['lib/llamadart.dart'], ['ubuntu-latest']),
+            (['packages/llamadart_validation/test/a.dart', 'test/unit/core/a_test.dart'],
+             ['ubuntu-latest']),
+        )
+        for paths, oses in cases:
+            with self.subTest(paths=paths):
+                plan = ci.select(paths)
+                self.assertTrue(plan['jobs']['validation-harness'])
+                self.assertEqual(ci.validation_harness_oses(plan), oses)
 
     def test_malformed_selection_cannot_turn_missing_work_into_success(self):
         for field, value in [('jobs', {}), ('desktops', ['unknown']), ('apps', ['web', 'web']),

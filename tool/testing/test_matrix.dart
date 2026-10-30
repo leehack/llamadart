@@ -41,7 +41,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'independent published/local-core resolution, minimum Dart and lower bounds, docs snippets and browser guards',
     command:
-        'CI jobs genkit and genkit-lower-bounds in .github/workflows/ci.yml; package commands in packages/genkit_llamadart/CONTRIBUTING.md',
+        'CI job genkit in .github/workflows/ci.yml; package commands in packages/genkit_llamadart/CONTRIBUTING.md',
     useWhen:
         'Genkit adapter, core API or integration quickstart changes. Browser guards do not qualify a full Genkit Web deployment.',
   ),
