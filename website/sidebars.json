@@ -62,6 +62,7 @@
       "label": "Platforms",
       "items": [
         "platforms/support-matrix",
+        "platforms/known-platform-issues",
         "platforms/native-build-hooks",
         "platforms/linux-prerequisites",
         "platforms/webgpu-bridge"
