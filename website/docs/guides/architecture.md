@@ -17,8 +17,6 @@ runtimes and a web bridge:
 
 ## Architecture overview
 
-import ArchitectureDiagram from '@site/src/components/ArchitectureDiagram';
-
 <ArchitectureDiagram />
 
 ## Native targets

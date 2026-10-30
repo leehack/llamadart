@@ -304,7 +304,7 @@ including an empty assistant reply, is preserved.
 Use a browser-compatible bundle; the JS package documents Gemma 4 E2B/E4B
 `-web.litertlm` files. A native `.litertlm` file is not interchangeable.
 
-This slice rejects tool declarations/results, media and user/system thinking parts, a final
+LiteRT-LM Web rejects tool declarations/results, media and user/system thinking parts, a final
 assistant/system message, custom templates (including an empty override),
 `enableThinking: false`, template kwargs, explicit template clocks and native-only
 `liteRtLm*` controls. Default thinking remains the model's behavior; no template

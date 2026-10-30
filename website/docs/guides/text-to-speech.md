@@ -8,7 +8,7 @@ description: Generate complete PCM and WAV audio with the experimental typed lla
 `LlamaEngine.create` because audio sample metadata, speaker reference input,
 progress, cancellation, and output buffering are not chat-token semantics.
 
-The first implementation is experimental and deliberately narrow. It supports
+Text to speech is experimental and deliberately narrow. It supports
 Qwen3-TTS through native llama.cpp or WebGPU bridge assets `v0.1.33+` with the
 matching audio-generation projector. It reports prompt/frame progress, then
 returns one complete 24 kHz mono float32 PCM buffer. It does not stream playable
@@ -179,10 +179,8 @@ responsible for its own files, byte buffers, permissions, and disclosures.
 ## Cancellation, concurrency, and buffering
 
 Call `task.cancel()` to request cooperative cancellation of that synthesis.
-Cancelling only the event-stream subscription does not cancel synthesis. On native llama.cpp with
-llamadart-native `v0.4.1-1` or later, which the default pin meets, a cancel
-stops a Qwen3-TTS audio decode in progress at its next chunk boundary. Older
-runtimes finish the native step first, which can include the whole decode.
+Cancelling only the event-stream subscription does not cancel synthesis. On native llama.cpp, a cancel
+stops a Qwen3-TTS audio decode in progress at its next chunk boundary.
 `LlamaEngine.unloadModel()` and `dispose()` cancel an active synthesis the same
 way, and its task reports `cancelled`.
 
@@ -212,7 +210,7 @@ The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 
 ## Known limits
 
-- The first backend returns complete 24 kHz mono output only; no incremental
+- Output is complete 24 kHz mono output only; no incremental
   audio chunks, timestamps, or output backpressure are available.
 - Qwen3-TTS and llama.cpp audio generation are experimental. Voice quality,
   latency, supported reference formats, and accelerator behavior remain

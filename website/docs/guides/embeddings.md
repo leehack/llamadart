@@ -103,10 +103,8 @@ native engine creation, whatever runtime library is loaded
 ([#1367](https://github.com/leehack/llamadart/issues/1367)). This flag
 is LiteRT-LM-only: llama.cpp GGUF loaders reject true; the default false preserves
 existing loading. The qualified bundle is EmbeddingGemma-2 740M; probe it rather
-than inferring modality support from its name. Follow
-[the multimodal tracker](https://github.com/leehack/llamadart/issues/1072);
-[task-prefix and Matryoshka helpers](https://github.com/leehack/llamadart/issues/1126)
-are explicit opt-in text operations described below.
+than inferring modality support from its name. Task-prefix and Matryoshka
+helpers are explicit opt-in text operations described below.
 
 ### LiteRT-LM embedding engine
 

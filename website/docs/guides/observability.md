@@ -273,11 +273,6 @@ a loopback receiver, without downloading a model or contacting a vendor.
 - **No parent relation:** create the engine stream inside the parent context.
 - **Content absent in Langfuse:** expected; this example captures metadata only.
 
-A macOS arm64 smoke with Qwen3.5-0.8B Q4_K_M, native llama.cpp v0.5.0 and
-LGTM 0.34.0 also verified the parent/child trace and received input/output token
-metrics (17/64) through OTLP/HTTP. This is an integration check, not a model
-quality benchmark.
-
 Langfuse account ingestion and mobile/Web export need validation in your own
 environment. The recipe does not claim those paths were exercised by the
 model-free test suite.
