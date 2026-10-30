@@ -372,7 +372,10 @@ more than 256 levels deep. Generated schema grammars keep a list of up to 1023
 optional properties under that, but a `$ref` alias chain of 255 or more
 levels, or an object with more than about 7000 optional properties, still
 exceeds it and fails to load. A grammar above it makes generation throw
-`LlamaInferenceException`, on Web as on native.
+`LlamaInferenceException`, on Web as on native. On Web, a schema of about 7000
+or more properties or a grammar of 1 MB or more instead traps the runtime, and
+later generations can fail until the page reloads; keep tool schemas well below
+that.
 
 | Selected tool format | Canonical schema support |
 | --- | --- |

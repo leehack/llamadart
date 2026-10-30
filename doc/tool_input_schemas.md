@@ -70,7 +70,7 @@ limit, when a schema exceeds one:
 
 The bound limit is llama.cpp's grammar repetition limit
 (`MAX_REPETITION_THRESHOLD`, 2000): the grammar parser of the llama.cpp release
-the native runtime ships (upstream `v0.7.0`) rejects a repetition count above
+the native runtime ships (upstream `v0.8.0`) rejects a repetition count above
 2000 and silently drops a larger upper bound. The schema factory rejects bounds
 above 2000 so those constraints cannot be lost.
 
