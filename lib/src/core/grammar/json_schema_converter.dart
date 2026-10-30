@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 /// A GBNF grammar rule with its content and dependencies.
 class _BuiltinRule {
@@ -78,6 +79,12 @@ final _reservedNames = <String>{
 /// count reach `MAX_REPETITION_THRESHOLD` (2000). Larger generated groups move
 /// into named rules, each of which counts as one symbol.
 const _maxInlineGroupSize = 256;
+
+/// Longest optional-property list that keeps llama.cpp's own `-rest` rule chain.
+const _maxOptionalRestChain = 128;
+
+/// Optional properties in one `-tail` rule of a longer list.
+const _optionalBlockSize = 32;
 
 /// Most characters the declared-key exclusion rules may add to one grammar.
 ///
@@ -848,20 +855,44 @@ class JsonSchemaConverter {
         rule += ' "," space ( ';
       }
 
+      final rulePrefix = name.isNotEmpty ? '$name-' : '';
+      String optionalRef(String k) =>
+          '( "," space ${propKvRuleNames[k]} )${k == additionalKey ? '*' : '?'}';
+
+      // The `-rest` rules of a long list would each lead into the next, and
+      // llama.cpp from v0.8.0 refuses rules chained over 256 levels deep. A
+      // `-tail` rule covers one block of properties, which bounds the depth
+      // by a block plus the number of blocks.
+      String tailRule(int from) {
+        final end = min(from + _optionalBlockSize, optionalProps.length);
+        final refs = [
+          for (final k in optionalProps.sublist(from, end)) optionalRef(k),
+          if (end < optionalProps.length) tailRule(end),
+        ];
+        return _addRule(
+          '$rulePrefix${optionalProps[from]}-tail',
+          refs.join(' '),
+        );
+      }
+
       String getRecursiveRefs(List<String> ks, bool firstIsOptional) {
         final k = ks.first;
         final rest = ks.sublist(1);
         final kvRuleName = propKvRuleNames[k]!;
         String res;
-        final commaRef = '( "," space $kvRuleName )';
         if (firstIsOptional) {
-          res = '$commaRef${k == additionalKey ? '*' : '?'}';
+          res = optionalRef(k);
         } else {
-          res = '$kvRuleName${k == additionalKey ? ' $commaRef*' : ''}';
+          res =
+              '$kvRuleName${k == additionalKey ? ' ( "," space $kvRuleName )*' : ''}';
         }
         if (rest.isNotEmpty) {
+          final restStart = optionalProps.length - rest.length;
           res +=
-              ' ${_addRule('${name.isNotEmpty ? '$name-' : ''}$k-rest', getRecursiveRefs(rest, true))}';
+              optionalProps.length > _maxOptionalRestChain &&
+                  restStart % _optionalBlockSize == 0
+              ? ' ${tailRule(restStart)}'
+              : ' ${_addRule('$rulePrefix$k-rest', getRecursiveRefs(rest, true))}';
         }
         return res;
       }

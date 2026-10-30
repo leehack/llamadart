@@ -455,8 +455,9 @@ void main() {
           );
           final warning =
               'Resolved llamadart_llama_cpp_flutter 0.0.22 pins '
-              'leehack/llamadart-native@$tag, an earlier build of the same '
-              'llama.cpp runtime as $llamaCppTag, so this build links it. '
+              'leehack/llamadart-native@$tag, an earlier llama.cpp runtime '
+              'than $llamaCppTag that this core still supports, so this build '
+              'links it. '
               'Its frameworks lack $missing. Depend on '
               '`llamadart_llama_cpp_flutter: $constraint` to link '
               '$llamaCppTag.';

@@ -89,8 +89,10 @@ dependencies:
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Use companion `0.17.0` with core `0.17.x` for llama.cpp `v0.7.0-3`; core
-`0.17.x` rejects earlier llama.cpp companions. Use `0.16.0` with core `0.16.x`,
+Use companion `0.17.1` with core `>=0.17.1 <0.18.0` for llama.cpp `v0.8.0`.
+A locked companion `0.17.0` keeps `v0.7.0-3` and works with those cores with an
+upgrade warning; core `0.17.0` needs it. Core `0.17.x` rejects earlier llama.cpp
+companions. Use `0.16.0` with core `0.16.x`,
 or `0.15.2` with core `>=0.15.6 <0.16.0`, for llama.cpp `v0.7.0-2`.
 Locked `0.15.0`/`0.15.1` companions keep `v0.7.0-1` and work with core `0.15.6`
 with an upgrade warning, or pair with core `0.15.0` to `0.15.5`.
@@ -678,7 +680,7 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.7.0-3` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.8.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.1-4` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.76` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.18.0` |

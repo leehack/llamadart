@@ -4010,6 +4010,24 @@ ffi.Pointer<ggml_tensor> ggml_pool_2d_back(
   return _ggml_pool_2d_back(ctx, a, af, op.value, k0, k1, s0, s1, p0, p1);
 }
 
+@ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<ggml_tensor>)>(
+  symbol: 'ggml_prec_get_acc',
+)
+external int _ggml_prec_get_acc(ffi.Pointer<ggml_tensor> a);
+
+ggml_prec ggml_prec_get_acc(ffi.Pointer<ggml_tensor> a) {
+  return ggml_prec.fromValue(_ggml_prec_get_acc(a));
+}
+
+@ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<ggml_tensor>, ffi.Int)>(
+  symbol: 'ggml_prec_get_src',
+)
+external int _ggml_prec_get_src(ffi.Pointer<ggml_tensor> a, int idx);
+
+ggml_prec ggml_prec_get_src(ffi.Pointer<ggml_tensor> a, int idx) {
+  return ggml_prec.fromValue(_ggml_prec_get_src(a, idx));
+}
+
 @ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
   symbol: 'ggml_prec_set_acc',
 )
@@ -5507,6 +5525,25 @@ external ffi.Pointer<ggml_tensor> ggml_top_k(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_top_k_mask(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> mask,
+  ffi.Pointer<ggml_tensor> top_k,
+  ffi.Pointer<ggml_tensor> score,
+  ffi.Pointer<ggml_tensor> blocks,
+  ffi.Pointer<ggml_tensor> extra,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
   )
 >()
 external ffi.Pointer<ggml_tensor> ggml_transpose(
@@ -6162,6 +6199,9 @@ external ffi.Pointer<llama_batch_ext> llama_dart_batch_ext_init(
 @ffi.Native<ffi.Pointer<ffi.Char> Function()>()
 external ffi.Pointer<ffi.Char> llama_dart_build_identity();
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>)>()
+external bool llama_dart_cancel_flag_abort_callback(ffi.Pointer<ffi.Void> data);
+
 @ffi.Native<ffi.Void Function()>()
 external void llama_dart_clear_last_error();
 
@@ -6361,6 +6401,28 @@ external ffi.Pointer<mtmd_bitmap> llama_dart_mtmd_bitmap_init_from_file(
 external int llama_dart_mtmd_encode_chunk(
   ffi.Pointer<mtmd_context> ctx,
   ffi.Pointer<mtmd_input_chunk> chunk,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<mtmd_input_chunk>,
+    ffi.Pointer<ffi.Int8>,
+  )
+>()
+external int llama_dart_mtmd_encode_chunk_cancellable(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_input_chunk> chunk,
+  ffi.Pointer<ffi.Int8> cancel_flag,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.Bool, ffi.Pointer<ffi.Void>)
+>()
+external bool llama_dart_mtmd_eval_callback(
+  ffi.Pointer<ggml_tensor> tensor,
+  bool ask,
+  ffi.Pointer<ffi.Void> user_data,
 );
 
 @ffi.Native<
@@ -7010,6 +7072,29 @@ llama_dart_tts_status llama_dart_tts_get_info(
 
 @ffi.Native<
   ffi.Int Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Uint32,
+    ffi.Pointer<llama_dart_tts_info>,
+  )
+>(symbol: 'llama_dart_tts_get_info_ext')
+external int _llama_dart_tts_get_info_ext(
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
+  ffi.Pointer<llama_dart_tts_info> out_info,
+);
+
+llama_dart_tts_status llama_dart_tts_get_info_ext(
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
+  ffi.Pointer<llama_dart_tts_info> out_info,
+) {
+  return llama_dart_tts_status.fromValue(
+    _llama_dart_tts_get_info_ext(mtmd, accepted_model_types, out_info),
+  );
+}
+
+@ffi.Native<
+  ffi.Int Function(
     ffi.Pointer<llama_dart_tts>,
     ffi.Pointer<llama_dart_tts_output_info>,
   )
@@ -7038,6 +7123,21 @@ llama_dart_tts_status llama_dart_tts_get_output_info(
 external ffi.Pointer<llama_dart_tts> llama_dart_tts_init(
   ffi.Pointer<llama_context> llama,
   ffi.Pointer<mtmd_context> mtmd,
+  ffi.Pointer<ffi.Int> out_status,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_dart_tts> Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_context>,
+    ffi.Uint32,
+    ffi.Pointer<ffi.Int>,
+  )
+>()
+external ffi.Pointer<llama_dart_tts> llama_dart_tts_init_ext(
+  ffi.Pointer<llama_context> llama,
+  ffi.Pointer<mtmd_context> mtmd,
+  int accepted_model_types,
   ffi.Pointer<ffi.Int> out_status,
 );
 
@@ -7131,6 +7231,29 @@ llama_dart_tts_status llama_dart_tts_start(
 @ffi.Native<
   ffi.Int Function(
     ffi.Pointer<llama_dart_tts>,
+    ffi.Pointer<llama_dart_tts_request>,
+    ffi.Pointer<ffi.Char>,
+  )
+>(symbol: 'llama_dart_tts_start_with_voice')
+external int _llama_dart_tts_start_with_voice(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_request> request,
+  ffi.Pointer<ffi.Char> voice,
+);
+
+llama_dart_tts_status llama_dart_tts_start_with_voice(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_request> request,
+  ffi.Pointer<ffi.Char> voice,
+) {
+  return llama_dart_tts_status.fromValue(
+    _llama_dart_tts_start_with_voice(tts, request, voice),
+  );
+}
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_tts>,
     ffi.Pointer<llama_dart_tts_progress>,
   )
 >(symbol: 'llama_dart_tts_step')
@@ -7147,6 +7270,9 @@ llama_dart_tts_status llama_dart_tts_step(
     _llama_dart_tts_step(tts, out_progress),
   );
 }
+
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_tts_supported_model_types();
 
 @ffi.Native<ffi.Int32 Function()>()
 external int llama_dart_vulkan_get_device_count();
@@ -8819,6 +8945,68 @@ llama_vocab_type llama_vocab_type$1(ffi.Pointer<llama_vocab> vocab) {
   return llama_vocab_type.fromValue(_llama_vocab_type(vocab));
 }
 
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<mtmd_audio_stream>, ffi.Bool)>()
+external int mtmd_audio_stream_flush(
+  ffi.Pointer<mtmd_audio_stream> stream,
+  bool end,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_audio_stream>)>()
+external void mtmd_audio_stream_free(ffi.Pointer<mtmd_audio_stream> stream);
+
+@ffi.Native<ffi.Int64 Function(ffi.Pointer<mtmd_audio_stream>)>()
+external int mtmd_audio_stream_get_n_rows(
+  ffi.Pointer<mtmd_audio_stream> stream,
+);
+
+@ffi.Native<ffi.Int64 Function(ffi.Pointer<mtmd_audio_stream>)>()
+external int mtmd_audio_stream_get_n_rows_flushed(
+  ffi.Pointer<mtmd_audio_stream> stream,
+);
+
+@ffi.Native<ffi.Pointer<ffi.Float> Function(ffi.Pointer<mtmd_audio_stream>)>()
+external ffi.Pointer<ffi.Float> mtmd_audio_stream_get_output_embd(
+  ffi.Pointer<mtmd_audio_stream> stream,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_audio_stream> Function(
+    ffi.Pointer<mtmd_context>,
+    mtmd_audio_stream_params,
+  )
+>()
+external ffi.Pointer<mtmd_audio_stream> mtmd_audio_stream_init(
+  ffi.Pointer<mtmd_context> ctx,
+  mtmd_audio_stream_params params,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_audio_stream>)>()
+external bool mtmd_audio_stream_is_seq_start(
+  ffi.Pointer<mtmd_audio_stream> stream,
+);
+
+@ffi.Native<mtmd_audio_stream_params Function()>()
+external mtmd_audio_stream_params mtmd_audio_stream_params_default();
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_audio_stream>,
+    ffi.Pointer<ffi.Float>,
+    ffi.Size,
+  )
+>()
+external int mtmd_audio_stream_push(
+  ffi.Pointer<mtmd_audio_stream> stream,
+  ffi.Pointer<ffi.Float> samples,
+  int n_samples,
+);
+
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<mtmd_audio_stream>, llama_token)>()
+external int mtmd_audio_stream_step(
+  ffi.Pointer<mtmd_audio_stream> stream,
+  int last_token,
+);
+
 @ffi.Native<
   ffi.Int32 Function(ffi.Pointer<mtmd_batch>, ffi.Pointer<mtmd_input_chunk>)
 >()
@@ -8917,6 +9105,12 @@ external void mtmd_bitmap_set_id(
 );
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_bitmap>, ffi.Bool)>()
+external void mtmd_bitmap_set_is_video(
+  ffi.Pointer<mtmd_bitmap> bitmap,
+  bool is_video,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_bitmap>, ffi.Bool)>()
 external void mtmd_bitmap_set_mergeable(
   ffi.Pointer<mtmd_bitmap> bitmap,
   bool mergeable,
@@ -8967,18 +9161,40 @@ external mtmd_gen_audio_info mtmd_gen_audio_get_info(
 @ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<mtmd_context>,
+    ffi.Pointer<mtmd_gen_state>,
     ffi.Pointer<mtmd_gen_inp>,
     ffi.Pointer<mtmd_gen_out>,
   )
 >()
 external int mtmd_gen_audio_process(
   ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_gen_state> state,
   ffi.Pointer<mtmd_gen_inp> inp,
   ffi.Pointer<mtmd_gen_out> out,
 );
 
 @ffi.Native<mtmd_gen_inp Function(ffi.Pointer<mtmd_context>)>()
 external mtmd_gen_inp mtmd_gen_inp_default(ffi.Pointer<mtmd_context> ctx);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_gen_state>)>()
+external void mtmd_gen_state_free(ffi.Pointer<mtmd_gen_state> state);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_gen_state> Function(
+    ffi.Pointer<mtmd_context>,
+    mtmd_gen_state_params,
+  )
+>()
+external ffi.Pointer<mtmd_gen_state> mtmd_gen_state_init(
+  ffi.Pointer<mtmd_context> ctx,
+  mtmd_gen_state_params params,
+);
+
+@ffi.Native<mtmd_gen_state_params Function()>()
+external mtmd_gen_state_params mtmd_gen_state_params_default();
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_gen_state>)>()
+external void mtmd_gen_state_reset(ffi.Pointer<mtmd_gen_state> state);
 
 @ffi.Native<ffi.Int Function(ffi.Pointer<mtmd_context>)>()
 external int mtmd_get_audio_sample_rate(ffi.Pointer<mtmd_context> ctx);
@@ -8992,6 +9208,38 @@ external ffi.Pointer<ffi.Char> mtmd_get_marker(ffi.Pointer<mtmd_context> ctx);
 @ffi.Native<ffi.Pointer<ffi.Float> Function(ffi.Pointer<mtmd_context>)>()
 external ffi.Pointer<ffi.Float> mtmd_get_output_embd(
   ffi.Pointer<mtmd_context> ctx,
+);
+
+@ffi.Native<
+  mtmd_video_config Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Float,
+  )
+>()
+external mtmd_video_config mtmd_get_video_config(
+  ffi.Pointer<mtmd_context> ctx,
+  int src_width,
+  int src_height,
+  int src_n_frames,
+  double src_fps,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<llama_logit_bias>,
+    ffi.Int32,
+  )
+>()
+external int mtmd_helper_audio_stream_get_logit_bias(
+  ffi.Pointer<mtmd_context> mctx,
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<llama_logit_bias> out,
+  int n_max,
 );
 
 @ffi.Native<
@@ -9099,9 +9347,25 @@ external int mtmd_helper_eval_chunks(
   ffi.Pointer<llama_pos> new_n_past,
 );
 
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
+external int mtmd_helper_gen_audio_flush(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+);
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
 external void mtmd_helper_gen_audio_free(
   ffi.Pointer<mtmd_helper_gen_audio> ctx,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_logit_bias> Function(
+    ffi.Pointer<mtmd_helper_gen_audio>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external ffi.Pointer<llama_logit_bias> mtmd_helper_gen_audio_get_logit_bias(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+  ffi.Pointer<ffi.Size> n_bias,
 );
 
 @ffi.Native<
@@ -9130,6 +9394,14 @@ external int mtmd_helper_gen_audio_get_output(
 external ffi.Pointer<mtmd_helper_gen_audio> mtmd_helper_gen_audio_init(
   ffi.Pointer<llama_context> lctx,
   ffi.Pointer<mtmd_context> mctx,
+);
+
+@ffi.Native<mtmd_helper_gen_audio_inp Function()>()
+external mtmd_helper_gen_audio_inp mtmd_helper_gen_audio_inp_default();
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
+external bool mtmd_helper_gen_audio_next_is_text(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
 );
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
@@ -9171,6 +9443,14 @@ external int mtmd_helper_gen_audio_step_prompt(
   int n_batch,
 );
 
+@ffi.Native<
+  mtmd_helper_cap Function(ffi.Pointer<llama_model>, ffi.Pointer<mtmd_context>)
+>()
+external mtmd_helper_cap mtmd_helper_get_capabilities(
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<mtmd_context> mctx,
+);
+
 @ffi.Native<llama_pos Function(ffi.Pointer<mtmd_input_chunks>)>()
 external int mtmd_helper_get_n_pos(ffi.Pointer<mtmd_input_chunks> chunks);
 
@@ -9199,6 +9479,7 @@ external void mtmd_helper_log_set(
   ffi.Pointer<ffi.Void> user_data,
 );
 
+@Deprecated('use mtmd_helper_get_capabilities() instead')
 @ffi.Native<
   ffi.Bool Function(ffi.Pointer<llama_context>, ffi.Pointer<mtmd_context>)
 >()
@@ -9207,6 +9488,7 @@ external bool mtmd_helper_model_can_chat(
   ffi.Pointer<mtmd_context> mctx,
 );
 
+@Deprecated('use mtmd_helper_get_capabilities() instead')
 @ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_context>)>()
 external bool mtmd_helper_support_video(ffi.Pointer<mtmd_context> ctx);
 
@@ -9420,6 +9702,10 @@ external void mtmd_log_set(
 @ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_context>)>()
 external bool mtmd_support_audio(ffi.Pointer<mtmd_context> ctx);
 
+/// //////////////////////////////////////
+@ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_context>)>()
+external bool mtmd_support_audio_stream(ffi.Pointer<mtmd_context> ctx);
+
 @ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_context>)>()
 external bool mtmd_support_vision(ffi.Pointer<mtmd_context> ctx);
 
@@ -9514,6 +9800,8 @@ const int GGML_TENSOR_SIZE = 336;
 const int LLAMA_DART_TTS_API_VERSION = 1;
 
 const int LLAMA_DEFAULT_SEED = 4294967295;
+
+const int LLAMA_DRY_MAX_SEQ_BREAKERS = 64;
 
 const int LLAMA_FILE_MAGIC_GGLA = 1734831201;
 
@@ -10438,17 +10726,18 @@ enum ggml_op {
   GGML_OP_DSV4_HC_COMB(88),
   GGML_OP_DSV4_HC_PRE(89),
   GGML_OP_DSV4_HC_POST(90),
-  GGML_OP_UNARY(91),
-  GGML_OP_MAP_CUSTOM1(92),
-  GGML_OP_MAP_CUSTOM2(93),
-  GGML_OP_MAP_CUSTOM3(94),
-  GGML_OP_CUSTOM(95),
-  GGML_OP_CROSS_ENTROPY_LOSS(96),
-  GGML_OP_CROSS_ENTROPY_LOSS_BACK(97),
-  GGML_OP_OPT_STEP_ADAMW(98),
-  GGML_OP_OPT_STEP_SGD(99),
-  GGML_OP_GLU(100),
-  GGML_OP_COUNT(101);
+  GGML_OP_TOP_K_MASK(91),
+  GGML_OP_UNARY(92),
+  GGML_OP_MAP_CUSTOM1(93),
+  GGML_OP_MAP_CUSTOM2(94),
+  GGML_OP_MAP_CUSTOM3(95),
+  GGML_OP_CUSTOM(96),
+  GGML_OP_CROSS_ENTROPY_LOSS(97),
+  GGML_OP_CROSS_ENTROPY_LOSS_BACK(98),
+  GGML_OP_OPT_STEP_ADAMW(99),
+  GGML_OP_OPT_STEP_SGD(100),
+  GGML_OP_GLU(101),
+  GGML_OP_COUNT(102);
 
   final int value;
   const ggml_op(this.value);
@@ -10545,17 +10834,18 @@ enum ggml_op {
     88 => GGML_OP_DSV4_HC_COMB,
     89 => GGML_OP_DSV4_HC_PRE,
     90 => GGML_OP_DSV4_HC_POST,
-    91 => GGML_OP_UNARY,
-    92 => GGML_OP_MAP_CUSTOM1,
-    93 => GGML_OP_MAP_CUSTOM2,
-    94 => GGML_OP_MAP_CUSTOM3,
-    95 => GGML_OP_CUSTOM,
-    96 => GGML_OP_CROSS_ENTROPY_LOSS,
-    97 => GGML_OP_CROSS_ENTROPY_LOSS_BACK,
-    98 => GGML_OP_OPT_STEP_ADAMW,
-    99 => GGML_OP_OPT_STEP_SGD,
-    100 => GGML_OP_GLU,
-    101 => GGML_OP_COUNT,
+    91 => GGML_OP_TOP_K_MASK,
+    92 => GGML_OP_UNARY,
+    93 => GGML_OP_MAP_CUSTOM1,
+    94 => GGML_OP_MAP_CUSTOM2,
+    95 => GGML_OP_MAP_CUSTOM3,
+    96 => GGML_OP_CUSTOM,
+    97 => GGML_OP_CROSS_ENTROPY_LOSS,
+    98 => GGML_OP_CROSS_ENTROPY_LOSS_BACK,
+    99 => GGML_OP_OPT_STEP_ADAMW,
+    100 => GGML_OP_OPT_STEP_SGD,
+    101 => GGML_OP_GLU,
+    102 => GGML_OP_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_op: $value'),
   };
 }
@@ -11392,6 +11682,20 @@ enum llama_dart_exit_stage {
   };
 }
 
+enum llama_dart_mtmd_encode_status {
+  LLAMA_DART_MTMD_ENCODE_CANCELLED(2);
+
+  final int value;
+  const llama_dart_mtmd_encode_status(this.value);
+
+  static llama_dart_mtmd_encode_status fromValue(int value) => switch (value) {
+    2 => LLAMA_DART_MTMD_ENCODE_CANCELLED,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_mtmd_encode_status: $value',
+    ),
+  };
+}
+
 final class llama_dart_mtp extends ffi.Opaque {}
 
 final class llama_dart_ngram extends ffi.Opaque {}
@@ -11522,7 +11826,8 @@ final class llama_dart_tts extends ffi.Opaque {}
 
 enum llama_dart_tts_capability {
   LLAMA_DART_TTS_CAPABILITY_LANGUAGE(1),
-  LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE(2);
+  LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE(2),
+  LLAMA_DART_TTS_CAPABILITY_VOICE(4);
 
   final int value;
   const llama_dart_tts_capability(this.value);
@@ -11530,6 +11835,7 @@ enum llama_dart_tts_capability {
   static llama_dart_tts_capability fromValue(int value) => switch (value) {
     1 => LLAMA_DART_TTS_CAPABILITY_LANGUAGE,
     2 => LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE,
+    4 => LLAMA_DART_TTS_CAPABILITY_VOICE,
     _ => throw ArgumentError(
       'Unknown value for llama_dart_tts_capability: $value',
     ),
@@ -11575,6 +11881,8 @@ final class llama_dart_tts_info extends ffi.Struct {
 enum llama_dart_tts_model_type {
   LLAMA_DART_TTS_MODEL_TYPE_NONE(0),
   LLAMA_DART_TTS_MODEL_TYPE_QWEN3(1),
+  LLAMA_DART_TTS_MODEL_TYPE_LFM3_AUDIO(2),
+  LLAMA_DART_TTS_MODEL_TYPE_SOPRANO(3),
   LLAMA_DART_TTS_MODEL_TYPE_UNKNOWN(255);
 
   final int value;
@@ -11583,6 +11891,8 @@ enum llama_dart_tts_model_type {
   static llama_dart_tts_model_type fromValue(int value) => switch (value) {
     0 => LLAMA_DART_TTS_MODEL_TYPE_NONE,
     1 => LLAMA_DART_TTS_MODEL_TYPE_QWEN3,
+    2 => LLAMA_DART_TTS_MODEL_TYPE_LFM3_AUDIO,
+    3 => LLAMA_DART_TTS_MODEL_TYPE_SOPRANO,
     255 => LLAMA_DART_TTS_MODEL_TYPE_UNKNOWN,
     _ => throw ArgumentError(
       'Unknown value for llama_dart_tts_model_type: $value',
@@ -12956,6 +13266,28 @@ enum llama_vocab_type {
   };
 }
 
+final class mtmd_audio_stream extends ffi.Opaque {}
+
+final class mtmd_audio_stream_params extends ffi.Struct {
+  @ffi.Int32()
+  external int step_ms;
+
+  external ffi.Pointer<llama_token> prompt;
+
+  @ffi.Size()
+  external int n_prompt;
+
+  static ffi.Pointer<mtmd_audio_stream_params> $allocate(
+    ffi.Allocator $allocator, {
+    required int step_ms,
+    required ffi.Pointer<llama_token> prompt,
+    required int n_prompt,
+  }) => $allocator<mtmd_audio_stream_params>()
+    ..ref.step_ms = step_ms
+    ..ref.prompt = prompt
+    ..ref.n_prompt = n_prompt;
+}
+
 final class mtmd_batch extends ffi.Opaque {}
 
 final class mtmd_bitmap extends ffi.Opaque {}
@@ -12984,13 +13316,18 @@ final class mtmd_caps extends ffi.Struct {
   @ffi.Bool()
   external bool inp_audio;
 
+  @ffi.Bool()
+  external bool gen_audio;
+
   static ffi.Pointer<mtmd_caps> $allocate(
     ffi.Allocator $allocator, {
     required bool inp_vision,
     required bool inp_audio,
+    required bool gen_audio,
   }) => $allocator<mtmd_caps>()
     ..ref.inp_vision = inp_vision
-    ..ref.inp_audio = inp_audio;
+    ..ref.inp_audio = inp_audio
+    ..ref.gen_audio = gen_audio;
 }
 
 final class mtmd_context extends ffi.Opaque {}
@@ -13127,7 +13464,9 @@ final class mtmd_gen_audio_info extends ffi.Struct {
 enum mtmd_gen_audio_type {
   MTMD_GEN_AUDIO_TYPE_NONE(0),
   MTMD_GEN_AUDIO_TYPE_QWEN3TTS(1),
-  MTMD_GEN_AUDIO_TYPE_POCKETTTS(2);
+  MTMD_GEN_AUDIO_TYPE_POCKETTTS(2),
+  MTMD_GEN_AUDIO_TYPE_SOPRANO(3),
+  MTMD_GEN_AUDIO_TYPE_LFM3A(4);
 
   final int value;
   const mtmd_gen_audio_type(this.value);
@@ -13136,6 +13475,8 @@ enum mtmd_gen_audio_type {
     0 => MTMD_GEN_AUDIO_TYPE_NONE,
     1 => MTMD_GEN_AUDIO_TYPE_QWEN3TTS,
     2 => MTMD_GEN_AUDIO_TYPE_POCKETTTS,
+    3 => MTMD_GEN_AUDIO_TYPE_SOPRANO,
+    4 => MTMD_GEN_AUDIO_TYPE_LFM3A,
     _ => throw ArgumentError('Unknown value for mtmd_gen_audio_type: $value'),
   };
 }
@@ -13158,11 +13499,14 @@ final class mtmd_gen_inp extends ffi.Struct {
   @ffi.Float()
   external double top_p;
 
-  @ffi.Uint32()
-  external int seed;
-
   @ffi.Float()
   external double temp;
+
+  @ffi.Float()
+  external double penalty_repeat;
+
+  @ffi.Int32()
+  external int penalty_last_n;
 
   external ffi.Pointer<ffi.Int32> codes;
 
@@ -13174,11 +13518,6 @@ final class mtmd_gen_inp extends ffi.Struct {
   @ffi.Size()
   external int n_feats;
 
-  external ffi.Pointer<ffi.Char> state_data;
-
-  @ffi.Size()
-  external int state_size;
-
   static ffi.Pointer<mtmd_gen_inp> $allocate(
     ffi.Allocator $allocator, {
     required mtmd_gen_process_type type,
@@ -13186,28 +13525,26 @@ final class mtmd_gen_inp extends ffi.Struct {
     required ffi.Pointer<ffi.Float> embd,
     required int top_k,
     required double top_p,
-    required int seed,
     required double temp,
+    required double penalty_repeat,
+    required int penalty_last_n,
     required ffi.Pointer<ffi.Int32> codes,
     required int n_codes,
     required ffi.Pointer<ffi.Float> feats,
     required int n_feats,
-    required ffi.Pointer<ffi.Char> state_data,
-    required int state_size,
   }) => $allocator<mtmd_gen_inp>()
     ..ref.type = type
     ..ref.code0 = code0
     ..ref.embd = embd
     ..ref.top_k = top_k
     ..ref.top_p = top_p
-    ..ref.seed = seed
     ..ref.temp = temp
+    ..ref.penalty_repeat = penalty_repeat
+    ..ref.penalty_last_n = penalty_last_n
     ..ref.codes = codes
     ..ref.n_codes = n_codes
     ..ref.feats = feats
-    ..ref.n_feats = n_feats
-    ..ref.state_data = state_data
-    ..ref.state_size = state_size;
+    ..ref.n_feats = n_feats;
 }
 
 final class mtmd_gen_out extends ffi.Struct {
@@ -13231,11 +13568,6 @@ final class mtmd_gen_out extends ffi.Struct {
   @ffi.Size()
   external int n_samples;
 
-  external ffi.Pointer<ffi.Char> state_data;
-
-  @ffi.Size()
-  external int state_size;
-
   static ffi.Pointer<mtmd_gen_out> $allocate(
     ffi.Allocator $allocator, {
     required ffi.Pointer<ffi.Int32> codes,
@@ -13246,8 +13578,6 @@ final class mtmd_gen_out extends ffi.Struct {
     required bool is_eos,
     required ffi.Pointer<ffi.Float> audio,
     required int n_samples,
-    required ffi.Pointer<ffi.Char> state_data,
-    required int state_size,
   }) => $allocator<mtmd_gen_out>()
     ..ref.codes = codes
     ..ref.n_codes = n_codes
@@ -13256,9 +13586,7 @@ final class mtmd_gen_out extends ffi.Struct {
     ..ref.embd = embd
     ..ref.is_eos = is_eos
     ..ref.audio = audio
-    ..ref.n_samples = n_samples
-    ..ref.state_data = state_data
-    ..ref.state_size = state_size;
+    ..ref.n_samples = n_samples;
 }
 
 enum mtmd_gen_process_type {
@@ -13275,6 +13603,18 @@ enum mtmd_gen_process_type {
   };
 }
 
+final class mtmd_gen_state extends ffi.Opaque {}
+
+final class mtmd_gen_state_params extends ffi.Struct {
+  @ffi.Uint32()
+  external int seed;
+
+  static ffi.Pointer<mtmd_gen_state_params> $allocate(
+    ffi.Allocator $allocator, {
+    required int seed,
+  }) => $allocator<mtmd_gen_state_params>()..ref.seed = seed;
+}
+
 final class mtmd_helper_bitmap_wrapper extends ffi.Struct {
   external ffi.Pointer<mtmd_bitmap> bitmap;
 
@@ -13287,6 +13627,52 @@ final class mtmd_helper_bitmap_wrapper extends ffi.Struct {
   }) => $allocator<mtmd_helper_bitmap_wrapper>()
     ..ref.bitmap = bitmap
     ..ref.video_ctx = video_ctx;
+}
+
+final class mtmd_helper_cap extends ffi.Struct {
+  @ffi.Bool()
+  external bool chat;
+
+  @ffi.Bool()
+  external bool vision;
+
+  @ffi.Bool()
+  external bool audio;
+
+  @ffi.Bool()
+  external bool video;
+
+  @ffi.Bool()
+  external bool audio_stream;
+
+  @ffi.Bool()
+  external bool text_gen;
+
+  @ffi.Bool()
+  external bool audio_gen;
+
+  @ffi.Bool()
+  external bool audio_gen_spk_ref;
+
+  static ffi.Pointer<mtmd_helper_cap> $allocate(
+    ffi.Allocator $allocator, {
+    required bool chat,
+    required bool vision,
+    required bool audio,
+    required bool video,
+    required bool audio_stream,
+    required bool text_gen,
+    required bool audio_gen,
+    required bool audio_gen_spk_ref,
+  }) => $allocator<mtmd_helper_cap>()
+    ..ref.chat = chat
+    ..ref.vision = vision
+    ..ref.audio = audio
+    ..ref.video = video
+    ..ref.audio_stream = audio_stream
+    ..ref.text_gen = text_gen
+    ..ref.audio_gen = audio_gen
+    ..ref.audio_gen_spk_ref = audio_gen_spk_ref;
 }
 
 final class mtmd_helper_embd_batch extends ffi.Struct {
@@ -13326,6 +13712,9 @@ final class mtmd_helper_embd_batch extends ffi.Struct {
 final class mtmd_helper_gen_audio extends ffi.Opaque {}
 
 final class mtmd_helper_gen_audio_inp extends ffi.Struct {
+  @ffi.Bool()
+  external bool stream;
+
   @llama_seq_id()
   external int seq_id;
 
@@ -13334,9 +13723,22 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
   @ffi.Size()
   external int prompt_len;
 
+  @ffi.Int32()
+  external int n_past;
+
+  @ffi.UnsignedInt()
+  external int out_modeAsInt;
+
+  mtmd_helper_gen_audio_out_mode get out_mode =>
+      mtmd_helper_gen_audio_out_mode.fromValue(out_modeAsInt);
+  set out_mode(mtmd_helper_gen_audio_out_mode value) =>
+      out_modeAsInt = value.value;
+
   external ffi.Pointer<mtmd_bitmap> speaker_ref;
 
   external ffi.Pointer<ffi.Char> lang;
+
+  external ffi.Pointer<ffi.Char> voice;
 
   @ffi.Int32()
   external int top_k;
@@ -13357,25 +13759,53 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
 
   static ffi.Pointer<mtmd_helper_gen_audio_inp> $allocate(
     ffi.Allocator $allocator, {
+    required bool stream,
     required int seq_id,
     required ffi.Pointer<ffi.Char> prompt,
     required int prompt_len,
+    required int n_past,
+    required mtmd_helper_gen_audio_out_mode out_mode,
     required ffi.Pointer<mtmd_bitmap> speaker_ref,
     required ffi.Pointer<ffi.Char> lang,
+    required ffi.Pointer<ffi.Char> voice,
     required int top_k,
     required double top_p,
     required int seed,
     required mtmd_helper_gen_audio_outtype out_type,
   }) => $allocator<mtmd_helper_gen_audio_inp>()
+    ..ref.stream = stream
     ..ref.seq_id = seq_id
     ..ref.prompt = prompt
     ..ref.prompt_len = prompt_len
+    ..ref.n_past = n_past
+    ..ref.out_mode = out_mode
     ..ref.speaker_ref = speaker_ref
     ..ref.lang = lang
+    ..ref.voice = voice
     ..ref.top_k = top_k
     ..ref.top_p = top_p
     ..ref.seed = seed
     ..ref.out_type = out_type;
+}
+
+enum mtmd_helper_gen_audio_out_mode {
+  MTMD_HELPER_GEN_AUDIO_OUT_AUTO(0),
+  MTMD_HELPER_GEN_AUDIO_OUT_TEXT(1),
+  MTMD_HELPER_GEN_AUDIO_OUT_AUDIO(2),
+  MTMD_HELPER_GEN_AUDIO_OUT_MIXED(3);
+
+  final int value;
+  const mtmd_helper_gen_audio_out_mode(this.value);
+
+  static mtmd_helper_gen_audio_out_mode fromValue(int value) => switch (value) {
+    0 => MTMD_HELPER_GEN_AUDIO_OUT_AUTO,
+    1 => MTMD_HELPER_GEN_AUDIO_OUT_TEXT,
+    2 => MTMD_HELPER_GEN_AUDIO_OUT_AUDIO,
+    3 => MTMD_HELPER_GEN_AUDIO_OUT_MIXED,
+    _ => throw ArgumentError(
+      'Unknown value for mtmd_helper_gen_audio_out_mode: $value',
+    ),
+  };
 }
 
 enum mtmd_helper_gen_audio_outtype {
@@ -13448,15 +13878,20 @@ final class mtmd_helper_video_init_params extends ffi.Struct {
   @ffi.Int64()
   external int timestamp_interval_ms;
 
+  @ffi.Bool()
+  external bool no_soundtrack;
+
   static ffi.Pointer<mtmd_helper_video_init_params> $allocate(
     ffi.Allocator $allocator, {
     required double fps_target,
     required ffi.Pointer<ffi.Char> ffmpeg_bin_dir,
     required int timestamp_interval_ms,
+    required bool no_soundtrack,
   }) => $allocator<mtmd_helper_video_init_params>()
     ..ref.fps_target = fps_target
     ..ref.ffmpeg_bin_dir = ffmpeg_bin_dir
-    ..ref.timestamp_interval_ms = timestamp_interval_ms;
+    ..ref.timestamp_interval_ms = timestamp_interval_ms
+    ..ref.no_soundtrack = no_soundtrack;
 }
 
 final class mtmd_image_tokens extends ffi.Opaque {}
@@ -13528,3 +13963,53 @@ typedef mtmd_progress_callbackFunction =
     ffi.Bool Function(ffi.Float progress, ffi.Pointer<ffi.Void> user_data);
 typedef Dartmtmd_progress_callbackFunction =
     bool Function(double progress, ffi.Pointer<ffi.Void> user_data);
+
+final class mtmd_video_config extends ffi.Struct {
+  @ffi.UnsignedInt()
+  external int tmplAsInt;
+
+  mtmd_video_template get tmpl => mtmd_video_template.fromValue(tmplAsInt);
+  set tmpl(mtmd_video_template value) => tmplAsInt = value.value;
+
+  @ffi.Float()
+  external double fps;
+
+  @ffi.Int32()
+  external int n_frames;
+
+  @ffi.Int32()
+  external int frame_width;
+
+  @ffi.Int32()
+  external int frame_height;
+
+  static ffi.Pointer<mtmd_video_config> $allocate(
+    ffi.Allocator $allocator, {
+    required mtmd_video_template tmpl,
+    required double fps,
+    required int n_frames,
+    required int frame_width,
+    required int frame_height,
+  }) => $allocator<mtmd_video_config>()
+    ..ref.tmpl = tmpl
+    ..ref.fps = fps
+    ..ref.n_frames = n_frames
+    ..ref.frame_width = frame_width
+    ..ref.frame_height = frame_height;
+}
+
+enum mtmd_video_template {
+  MTMD_VIDEO_TEMPLATE_DEFAULT(0),
+  MTMD_VIDEO_TEMPLATE_LFM3(1),
+  MTMD_VIDEO_TEMPLATE_LFM3_OMNI(2);
+
+  final int value;
+  const mtmd_video_template(this.value);
+
+  static mtmd_video_template fromValue(int value) => switch (value) {
+    0 => MTMD_VIDEO_TEMPLATE_DEFAULT,
+    1 => MTMD_VIDEO_TEMPLATE_LFM3,
+    2 => MTMD_VIDEO_TEMPLATE_LFM3_OMNI,
+    _ => throw ArgumentError('Unknown value for mtmd_video_template: $value'),
+  };
+}

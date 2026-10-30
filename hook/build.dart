@@ -1168,9 +1168,9 @@ void _validateAppleCompanion(
           : 'Depend on `${contract.packageName}: $constraint` to link';
       final upgrade =
           'Resolved ${contract.packageName} ${metadata['version']} pins '
-          '${contract.nativeRepository}@$pinnedTag, an earlier build of the '
-          'same ${contract.label} runtime as ${contract.nativeTag}, so this '
-          'build links it. Its frameworks lack $missing. $next '
+          '${contract.nativeRepository}@$pinnedTag, an earlier ${contract.label} '
+          'runtime than ${contract.nativeTag} that this core still supports, '
+          'so this build links it. Its frameworks lack $missing. $next '
           '${contract.nativeTag}.';
       log.warning(upgrade);
       stderr.writeln('warning: llamadart: $upgrade');

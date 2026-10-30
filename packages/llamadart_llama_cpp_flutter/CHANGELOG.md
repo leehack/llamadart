@@ -1,3 +1,7 @@
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.8.0`.
+
 ## 0.17.0
 
 * Pair with core `0.17.x`; update Apple SwiftPM to `leehack/llamadart-native@v0.7.0-3`, the runtime `LlamaEngine.stateIdentity()` needs.

@@ -84,8 +84,9 @@ dependency_overrides:
     git: https://github.com/leehack/llamadart.git
 ```
 
-Use llama.cpp companion `0.17.0` with core `0.17.x` for native `v0.7.0-3`.
-Use `0.16.0` with core `0.16.x`, or `0.15.2` with core `>=0.15.6 <0.16.0`, for
+Use llama.cpp companion `0.17.1` with core `>=0.17.1 <0.18.0` for native
+`v0.8.0`. A locked companion `0.17.0` keeps `v0.7.0-3` and works with those
+cores with an upgrade warning; core `0.17.0` needs it. Use `0.16.0` with core `0.16.x`, or `0.15.2` with core `>=0.15.6 <0.16.0`, for
 native `v0.7.0-2`. Locked `0.15.0`/`0.15.1` companions
 keep `v0.7.0-1` and work with core `0.15.6` with an upgrade warning, or pair
 with core `0.15.0` to `0.15.5`.
@@ -95,8 +96,9 @@ keep `0.0.22` with core `0.12.1`
 and `0.12.0`, and `0.0.21` with core `0.11.1` and `0.11.0`. The build checks the resolved llama.cpp and stable_diffusion companions' runtime pins and fails on
 a mismatch or on an unverified local `Artifacts` override; the llama.cpp error
 names the companion release of your core's minor to depend on, such as
-`^0.17.0` with core `0.17.0`. Core `0.17.0` requires a `v0.7.0-3` companion
-and rejects every earlier companion pin; core `0.16.x` requires a `v0.7.0-2`
+`^0.17.1` with core `0.17.1`. Core `0.17.1` requires a `v0.8.0` companion or a
+`v0.7.0-3` one with the warning above, and core `0.17.0` a `v0.7.0-3` one; both
+reject every earlier companion pin. Core `0.16.x` requires a `v0.7.0-2`
 companion or a `v0.7.0-1` one with the warning above. The stable_diffusion
 check accepts only the core's own SD pin, so core `0.17.x` needs SD companion
 `0.17.0` (`v0.3.0-1`), and core `0.16.x` SD companion `0.16.0` (`v0.3.0`). On macOS,
@@ -378,7 +380,7 @@ hooks:
     llamadart:
       llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
       # Compatibility testing only; omit to use the tested pin.
-      # llamadart_native_tag: v0.7.0-3
+      # llamadart_native_tag: v0.8.0
 ```
 
 A `llamadart_native_backends` request that names any backend module the target
@@ -393,7 +395,7 @@ rebuild counters start at 1. Build-hook overrides must always name an explicit
 tag; `latest` is limited to maintainer synchronization and header/binding
 regeneration. An override does not regenerate the Dart bindings, so its
 binary must stay ABI-compatible with the default
-`leehack/llamadart-native@v0.7.0-3` runtime.
+`leehack/llamadart-native@v0.8.0` runtime.
 
 Every key, per-target backend and Android CPU variant selection, local bundle
 paths, and fallback rules:
