@@ -95,13 +95,34 @@ void main() {
     });
 
     test('core stays off what only the pinned runtime has', () {
-      final forbidden = <String>{
-        ...(proof['current_only_symbols'] as List<dynamic>).cast<String>(),
-        ...(proof['types_changed_and_unused_by_core'] as List<dynamic>)
-            .cast<String>(),
-      };
+      final changedTypes =
+          (proof['types_changed_and_unused_by_core'] as List<dynamic>)
+              .cast<String>();
       final bindings = RegExp(r'(^|/)(stable_diffusion_)?bindings\.dart$');
       final word = RegExp(r'[A-Za-z_][A-Za-z_0-9]*');
+      final llamaBindings = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+      final dependingOnChangedTypes = <String>{
+        for (final match in RegExp(
+          r'^(?:external\s+[^;]*?|[\w.<>]+\s+)\b(\w+)\([^;{]*?\)\s*[;{]',
+          multiLine: true,
+        ).allMatches(llamaBindings))
+          if (word
+              .allMatches(match[0]!)
+              .any((w) => changedTypes.contains(w[0])))
+            match[1]!,
+      };
+      expect(
+        dependingOnChangedTypes,
+        containsAll(['mtmd_get_cap_from_file', 'mtmd_gen_audio_process']),
+        reason: 'A binding taking or returning a changed type is derived',
+      );
+      final forbidden = <String>{
+        ...(proof['current_only_symbols'] as List<dynamic>).cast<String>(),
+        ...changedTypes,
+        ...dependingOnChangedTypes,
+      };
       final uses = <String>[];
       for (final entity in Directory('lib').listSync(recursive: true)) {
         if (entity is! File ||

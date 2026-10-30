@@ -23,8 +23,15 @@ import '../../../support/safetensors_writer.dart';
 import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
-const _params = ModelParams(gpuLayers: 0, contextSize: 64);
+const _params = ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
+  gpuLayers: 0,
+  contextSize: 64,
+);
 const _pooled = ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
   gpuLayers: 0,
   contextSize: 64,
   maxParallelSequences: 2,
@@ -366,7 +373,12 @@ void main() {
       );
       final encoder = service.loadModel(
         '${dir.path}/encoder.gguf',
-        const ModelParams(gpuLayers: 99, contextSize: 64),
+        const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
+          gpuLayers: 99,
+          contextSize: 64,
+        ),
       );
       SyntheticDecisionHead(
         d: 16,
@@ -438,6 +450,8 @@ void main() {
     final small = service.createContext(
       model,
       const ModelParams(
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
         gpuLayers: 0,
         contextSize: 64,
         batchSize: 16,

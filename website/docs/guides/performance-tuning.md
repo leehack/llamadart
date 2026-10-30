@@ -55,8 +55,12 @@ const modelParams = ModelParams(
 - `contextSize`: keep it only as large as the use case needs. Oversized
   context raises first-token latency and memory use.
 - `numberOfThreads` / `numberOfThreadsBatch`: `0` (automatic) is a good
-  baseline. Some mobile devices prefer fewer threads; set them only after
-  measuring.
+  baseline. On native llama.cpp it means 4, or the host's core count when
+  lower. Some mobile devices prefer fewer threads; set them only after
+  measuring. Set them explicitly under a container CPU limit (`docker --cpus`,
+  `--cpuset-cpus`, Kubernetes CPU limits) or CPU affinity (`taskset`): Dart
+  still reports the host's cores there, and more threads than usable cores
+  can make inference tens of times slower.
 - `batchSize` / `microBatchSize`: native decoder models start at the
   llama.cpp-aligned caps of `2048` and `512`. Lower `microBatchSize` first
   (for example to `256` or `128`) when memory or GPU stability is tight;

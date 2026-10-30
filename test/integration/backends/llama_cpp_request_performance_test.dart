@@ -16,7 +16,12 @@ import 'package:test/test.dart';
 
 import '../../support/synthetic_embedding_gguf.dart';
 
-const _modelParams = ModelParams(gpuLayers: 0, contextSize: 64);
+const _modelParams = ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
+  gpuLayers: 0,
+  contextSize: 64,
+);
 const _generation = GenerationParams(maxTokens: 3, temp: 0, topK: 1, seed: 1);
 
 void main() {
@@ -100,6 +105,8 @@ void main() {
       await engine.loadModel(
         path,
         modelParams: const ModelParams(
+          numberOfThreads: 2,
+          numberOfThreadsBatch: 2,
           gpuLayers: 0,
           contextSize: 128,
           batchSize: 16,

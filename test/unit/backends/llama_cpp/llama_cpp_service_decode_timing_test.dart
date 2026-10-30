@@ -20,7 +20,12 @@ import 'package:test/test.dart';
 import '../../../support/fake_mtmd.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
-const _params = ModelParams(gpuLayers: 0, contextSize: 64);
+const _params = ModelParams(
+  numberOfThreads: 2,
+  numberOfThreadsBatch: 2,
+  gpuLayers: 0,
+  contextSize: 64,
+);
 const _greedy = GenerationParams(maxTokens: 8, temp: 0, topK: 1, seed: 1);
 
 // The time the fake backend keeps computing after each llama_decode returns.

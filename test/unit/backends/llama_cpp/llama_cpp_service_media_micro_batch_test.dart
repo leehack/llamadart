@@ -78,6 +78,8 @@ void main() {
     bool chunkEval = true,
   }) {
     final params = ModelParams(
+      numberOfThreads: 2,
+      numberOfThreadsBatch: 2,
       gpuLayers: 0,
       contextSize: 64,
       batchSize: batchSize,
