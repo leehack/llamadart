@@ -1878,6 +1878,48 @@ void main() {
     );
   });
 
+  test('LFM2 required tool choice takes every call only under parallel', () {
+    String grammar({required bool parallel}) => ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather in Seoul and Paris?',
+        ),
+      ],
+      metadata: const {},
+      tools: [_weatherWithCityTool],
+      toolChoice: ToolChoice.required,
+      parallelToolCalls: parallel,
+    ).grammar!;
+
+    const one =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul"}}]<|tool_call_end|>';
+    const two =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul"}}, {"name": "weather", '
+        '"arguments": {"city": "Paris"}}]<|tool_call_end|>';
+    final three = two.replaceFirst(
+      '}}]',
+      '}}, {"name": "weather", "arguments": {"city": "Rome"}}]',
+    );
+    _expectGrammar(
+      validator,
+      grammar(parallel: true),
+      valid: [one, two, three],
+      invalid: ['<|tool_call_start|>[]<|tool_call_end|>'],
+    );
+    _expectGrammar(
+      validator,
+      grammar(parallel: false),
+      valid: const [one],
+      invalid: [two, three],
+    );
+  });
+
   test(
     'Firefunction v2 required tool grammar leaves the call id undeclared',
     () {

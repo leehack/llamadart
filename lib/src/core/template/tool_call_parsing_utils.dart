@@ -4,6 +4,13 @@ import '../exceptions.dart';
 import '../grammar/json_value_depth.dart';
 import '../models/chat/completion_chunk.dart';
 
+/// Literal text in [ToolCallParsingUtils]'s id stringifier.
+class _IdText {
+  const _IdText(this.text);
+
+  final String text;
+}
+
 /// A parsed JSON value and the exclusive end offset where it stopped.
 class ParsedJsonValueSlice {
   /// The decoded JSON value.
@@ -18,6 +25,39 @@ class ParsedJsonValueSlice {
 
 /// Shared helpers for JSON-style tool-call parsing.
 class ToolCallParsingUtils {
+  /// [value]'s `toString`, without the recursion that overflows on a deep
+  /// list or map.
+  static String _stringifyId(Object value) {
+    final out = StringBuffer();
+    final pending = <Object?>[value];
+    while (pending.isNotEmpty) {
+      final item = pending.removeLast();
+      if (item is _IdText) {
+        out.write(item.text);
+      } else if (item is List) {
+        out.write('[');
+        pending.add(const _IdText(']'));
+        for (var i = item.length - 1; i >= 0; i--) {
+          pending.add(item[i]);
+          if (i > 0) pending.add(const _IdText(', '));
+        }
+      } else if (item is Map) {
+        out.write('{');
+        pending.add(const _IdText('}'));
+        final entries = item.entries.toList(growable: false);
+        for (var i = entries.length - 1; i >= 0; i--) {
+          pending
+            ..add(entries[i].value)
+            ..add(_IdText('${entries[i].key}: '));
+          if (i > 0) pending.add(const _IdText(', '));
+        }
+      } else {
+        out.write(item);
+      }
+    }
+    return out.toString();
+  }
+
   /// Attempts to decode [text] into a JSON object.
   static Map<String, dynamic>? decodeJsonObject(String text) {
     if (text.isEmpty) {
@@ -375,7 +415,7 @@ class ToolCallParsingUtils {
         return value;
       }
       if (stringify && value != null) {
-        final stringValue = value.toString();
+        final stringValue = _stringifyId(value);
         if (stringValue.isNotEmpty) {
           return stringValue;
         }

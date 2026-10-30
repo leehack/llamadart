@@ -17,6 +17,8 @@ For canonical full release notes, use:
 - Streamed thinking tags now match the final parse however a backend splits them: a `</think>` split across chunks no longer streams as content when the parse drops it, as in a DeepSeek R1 reply that starts with `</think>`, and TranslateGemma, Muse Glimmer without tools, and PEG-parsed templates without tools such as Ministral 3 Reasoning, Devstral and Nemotron 3 Nano stream thinking tags their parse keeps as text ([#1582](https://github.com/leehack/llamadart/issues/1582)).
 - `ModelSplitMode.row` on native llama.cpp devices without split buffers, which include every bundled GPU backend, BLAS and an explicitly selected or fallback CPU, now throws `LlamaUnsupportedException` naming the device before the model loads, instead of a generic load failure; use `ModelSplitMode.layer` ([#1576](https://github.com/leehack/llamadart/issues/1576)).
 - On macOS x86_64, including Rosetta on Apple silicon (an x86_64 process cannot tell the two apart), llama.cpp `GpuBackend.auto` now runs on the CPU with 0 GPU layers, because Metal returns garbled output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)). An explicit `GpuBackend.metal` or `ComputeDevice.gpu` still uses Metal and logs a warning; arm64 macOS is unchanged.
+- `ToolChoice.required` on LFM2 and LFM2.5 with `parallelToolCalls: true` now returns every call instead of only the first.
+- LFM2 and LFM2.5 tool-call parsing no longer throws on malformed model output: a number too large to represent, a value nested too deeply or a lone quote.
 
 ## 0.17.0
 
