@@ -11,18 +11,14 @@ accelerator and sampler, and Dawn XCFrameworks, so the app bundle holds the
 complete runtime and a sandboxed or distributed app loads LiteRT-LM on CPU and
 GPU. Every macOS XCFramework is arm64 only; a universal build prints an
 `ignoring file ... required architecture 'x86_64'` linker warning for each.
-The Metal accelerator and sampler stay iOS-only: their `v0.18.0` macOS slices
-carry an invalid code signature, and the macOS GPU path uses the WebGPU
-accelerator.
+The Metal accelerator and sampler are iOS-only; the macOS GPU path uses the
+WebGPU accelerator.
 
 LiteRT-LM is not available on x86_64 macOS: `litert-lm-native` publishes
-arm64-only macOS runtimes
-([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
-A universal app still launches on an Intel Mac or under Rosetta, where
-LiteRT-LM throws `LlamaUnsupportedException`. Building the macOS app for arm64
-only, for example with `EXCLUDED_ARCHS = x86_64`, just silences the linker
-warnings.
-The core uses this macOS runtime only when it recognizes this package's
+arm64-only macOS runtimes. A universal app still launches on an Intel Mac or
+under Rosetta, where LiteRT-LM throws `LlamaUnsupportedException`. Building the
+macOS app for arm64 only, for example with `EXCLUDED_ARCHS = x86_64`, just
+silences the linker warnings. The core uses this macOS runtime only when it recognizes this package's
 manifest; with an older companion it keeps LiteRT-LM in its hook cache and
 warns.
 
@@ -40,18 +36,10 @@ normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
 The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.1-4`.
 That runtime loads dedicated ASR `.litertlm` containers such as Whisper tiny.
-Use companion `0.17.0` with core `0.17.x`. Companion `0.16.2` pins the same
-runtime for core `>=0.16.2 <0.17.0`. Companion `0.16.1`
-pins `v0.18.1-2` for core `>=0.16.1 <0.17.0`, and `0.16.0` pins `v0.18.1` for
-core `0.16.x`; from core `0.16.2` both build with a macOS upgrade warning.
-Companion `0.15.2` pins
-`v0.18.0-3` for core `>=0.15.6 <0.16.0`. Locked `0.15.0`/`0.15.1`
-companions keep `v0.18.0-2` and work with core `0.15.6` with a macOS upgrade
-warning. Pair `0.14.0` with core `0.14.x`, `0.13.0` with
-core `0.13.x`, and `0.0.16` with core `0.12.2`;
-companion `0.0.15` retains
-`v0.18.0` for core `0.12.1`, `0.0.14` pairs with core `0.12.0`, and `0.0.13`
-retains `v0.17.0-8` for core `0.11.1` and `0.11.0`.
+
+Use the companion that shares the core's `MAJOR.MINOR`: companion `0.17.x` pairs
+with core `0.17.x`. Earlier pairings are in the
+[changelog](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md).
 
 These iOS artifacts omit the Gemma FST constraint provider. Gemma 3/4 and
 FunctionGemma conversations must use constrained decoding disabled, as the Dart
@@ -61,27 +49,26 @@ generation, thinking and best-effort tool formatting remain available; automatic
 tool loops and strict structured output remain unsupported. On macOS,
 `LiteRtLm.framework` carries its own provider.
 
-iOS 16.4 is the declared deployment floor, not a tested one. The Swift package
-requires an iOS 16.4 app target and the `v0.18.0` frameworks declare
-`MinimumOSVersion` 15.0, but nothing has been run on iOS 16.4. On a device,
-model load and generation have run only on an iPhone 16 Pro with iOS 18.3.2;
-no other iOS version is device-verified
-([#831](https://github.com/leehack/llamadart/issues/831)).
+iOS 16.4 is the declared deployment floor, not a tested one: the Swift package
+requires an iOS 16.4 app target, but nothing has been run on iOS 16.4. On a
+device, model load and generation have run only on an iPhone 16 Pro with
+iOS 18.3.2. Device qualification is tracked in
+[llamadart#514](https://github.com/leehack/llamadart/issues/514).
 
 Apps bound for the App Store should use this package for LiteRT-LM on iOS:
-the `v0.18.0` iOS frameworks carry Apple privacy manifests for the
+its iOS frameworks carry Apple privacy manifests for the
 [required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 they reference, and the dylibs the core package's native-assets fallback
 bundles carry none. `LiteRtLm` declares File Timestamp (`C617.1`, `3B52.1`)
 and System Boot Time (`35F9.1`), `LiteRtMetalAccelerator` File Timestamp
 (`C617.1`, `3B52.1`) and User Defaults (`CA92.1`), `LiteRtTopKMetalSampler`
-User Defaults (`CA92.1`), and `CLiteRTLM` no API. Releases of this package up
-to `0.0.12` link `v0.17.0-6` or older, which has no manifest. If the embedded
-LiteRT-LM frameworks in the built app have no `PrivacyInfo.xcprivacy`, or the
-app uses the fallback, declare those three categories and reasons in the
-app's own `PrivacyInfo.xcprivacy`. The reasons come from the runtime owner's
-audit ([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65))
-and have not been verified with an App Store Connect upload.
+User Defaults (`CA92.1`), and `CLiteRTLM` no API. If the embedded LiteRT-LM
+frameworks in the built app have no `PrivacyInfo.xcprivacy`, or the app uses
+the fallback, declare those three categories and reasons in the app's own
+`PrivacyInfo.xcprivacy`. The reasons come from the runtime owner's audit
+([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65))
+and have not been verified with an App Store Connect upload. See
+[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks).
 
 Source for this package lives in
 `packages/llamadart_litert_lm_flutter` in the
