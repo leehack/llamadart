@@ -99,7 +99,8 @@ final decisions = await DecisionEngine.load(
   an iOS simulator and on macOS x86_64) or
   throws `LlamaUnsupportedException` from the encoder load; `npu` is not
   supported. `threads` sets the CPU threads of the encoder and head; `0` keeps
-  the runtime default (llama.cpp uses 4).
+  the runtime default (native llama.cpp uses 4, or the host's core count when
+  lower).
 - `download:` takes `ModelLoadOptions` for every remote file: cache policy and
   directory, authentication, resume, retries and a cancel token.
   `ModelLoadOptions.sha256` cannot apply to several files and throws. A

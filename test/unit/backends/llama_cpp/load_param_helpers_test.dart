@@ -456,6 +456,7 @@ void main() {
           const ModelParams(numberOfThreads: 2, numberOfThreadsBatch: 6),
           maxTokens: 512,
           runsOnCpu: false,
+          availableCores: 16,
         );
         expect(
           [c.ref.n_ctx, c.ref.n_batch, c.ref.n_ubatch, c.ref.n_seq_max],
@@ -472,7 +473,7 @@ void main() {
       }
     });
 
-    test('keeps default threads when none are set', () {
+    test('caps automatic threads at the available cores', () {
       final c = gpuDefaults();
       try {
         applyDecisionContextParams(
@@ -480,8 +481,9 @@ void main() {
           const ModelParams(numberOfThreads: 0, numberOfThreadsBatch: 0),
           maxTokens: 64,
           runsOnCpu: false,
+          availableCores: 2,
         );
-        expect([c.ref.n_threads, c.ref.n_threads_batch], [3, 3]);
+        expect([c.ref.n_threads, c.ref.n_threads_batch], [2, 2]);
       } finally {
         calloc.free(c);
       }
@@ -495,6 +497,7 @@ void main() {
           const ModelParams(),
           maxTokens: 512,
           runsOnCpu: false,
+          availableCores: 16,
         );
         expect(c.ref.offload_kqv, isTrue);
         expect(c.ref.op_offload, isTrue);
@@ -515,6 +518,7 @@ void main() {
           const ModelParams(),
           maxTokens: 512,
           runsOnCpu: true,
+          availableCores: 16,
         );
         expect(c.ref.offload_kqv, isFalse);
         expect(c.ref.op_offload, isFalse);
@@ -614,6 +618,66 @@ void main() {
         ),
         base,
       );
+    });
+  });
+
+  group('resolveCpuThreads', () {
+    test('caps an automatic count at the available cores', () {
+      for (final (cores, threads) in const [
+        (1, 1),
+        (2, 2),
+        (3, 3),
+        (4, 4),
+        (5, 4),
+        (128, 4),
+      ]) {
+        expect(
+          resolveCpuThreads(0, availableCores: cores),
+          threads,
+          reason: '$cores cores',
+        );
+      }
+    });
+
+    test('treats a negative count as automatic, as ggml does', () {
+      expect(resolveCpuThreads(-1, availableCores: 2), 2);
+      expect(resolveCpuThreads(-1, availableCores: 16), 4);
+    });
+
+    test('never changes an explicit count', () {
+      for (final cores in const [1, 2, 3, 4, 128]) {
+        for (final threads in const [1, 2, 4, 5, 64]) {
+          expect(resolveCpuThreads(threads, availableCores: cores), threads);
+        }
+      }
+    });
+
+    test('uses one thread when the core count is unavailable', () {
+      expect(resolveCpuThreads(0, availableCores: -1), 1);
+      expect(resolveCpuThreads(0, availableCores: 0), 1);
+    });
+  });
+
+  group('applyContextThreads', () {
+    test('resolves the generation and batch counts independently', () {
+      final c = calloc<llama_context_params>();
+      try {
+        applyContextThreads(
+          c.ref,
+          const ModelParams(numberOfThreads: 6),
+          availableCores: 2,
+        );
+        expect([c.ref.n_threads, c.ref.n_threads_batch], [6, 2]);
+
+        applyContextThreads(
+          c.ref,
+          const ModelParams(numberOfThreadsBatch: 6),
+          availableCores: 3,
+        );
+        expect([c.ref.n_threads, c.ref.n_threads_batch], [3, 6]);
+      } finally {
+        calloc.free(c);
+      }
     });
   });
 }
