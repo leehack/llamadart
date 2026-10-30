@@ -10,6 +10,10 @@
 /// byte-for-byte. Release-prep PRs, detected as `release_on_prep_merge.yml`
 /// detects them, are exempt because they create the new section.
 ///
+/// The docs changelog keeps only the current and previous minor, so it may
+/// also lose its oldest sections: its tail may be cut at a `## <version>`
+/// heading, provided every section that remains is unchanged.
+///
 /// CI runs it on `pull_request` events from a full-history checkout:
 ///
 /// ```bash
@@ -25,6 +29,12 @@ const releasedChangelogs = <String>[
   'CHANGELOG.md',
   'website/docs/changelog/recent-releases.md',
 ];
+
+/// Changelogs that may lose their oldest released sections. `CHANGELOG.md`
+/// keeps every release.
+const truncatableChangelogs = <String>{
+  'website/docs/changelog/recent-releases.md',
+};
 
 final RegExp _versionHeading = RegExp(r'^## [0-9]+\.[0-9]+\.[0-9]+\S*\s*$');
 final RegExp _prepBranch = RegExp(
@@ -74,12 +84,43 @@ String? releasedSectionChange(String path, String base, String head) {
       _endsWithNewline(base) == _endsWithNewline(head)) {
     return null;
   }
+  if (truncatableChangelogs.contains(path) &&
+      _isTailTruncation(released, candidate)) {
+    return null;
+  }
   String quote(List<String> lines) =>
       index < lines.length ? '`${lines[index]}`' : 'the end of the file';
   return '$path:${headStart + index + 1} changes a released section: the '
       'base has ${quote(released)}, this PR has ${quote(candidate)}. Keep '
       'new bullets under `## Unreleased`; a rebase across a release can move '
       'them (see website/docs/maintainers/release-workflow.md).';
+}
+
+/// Whether [candidate] is [released] with whole sections cut from the end:
+/// what remains is an exact prefix and the first removed line is a version
+/// heading. Trailing blank lines are ignored so an editor may trim the file.
+bool _isTailTruncation(List<String> released, List<String> candidate) {
+  final kept = _withoutTrailingBlankLines(candidate);
+  if (kept.isEmpty ||
+      kept.length >= _withoutTrailingBlankLines(released).length) {
+    return false;
+  }
+  for (var index = 0; index < kept.length; index++) {
+    if (released[index] != kept[index]) return false;
+  }
+  var next = kept.length;
+  while (next < released.length && released[next].trim().isEmpty) {
+    next++;
+  }
+  return next < released.length && _versionHeading.hasMatch(released[next]);
+}
+
+List<String> _withoutTrailingBlankLines(List<String> lines) {
+  var end = lines.length;
+  while (end > 0 && lines[end - 1].trim().isEmpty) {
+    end--;
+  }
+  return lines.sublist(0, end);
 }
 
 bool _endsWithNewline(String text) => text.endsWith('\n');

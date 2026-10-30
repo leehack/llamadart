@@ -82,6 +82,64 @@ void main() {
     });
   });
 
+  group('releasedSectionChange on the docs changelog', () {
+    const base =
+        '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n\n'
+        '## 0.8.0\n\n- Oldest.\n';
+
+    String? change(String head, {String path = _docsChangelog}) =>
+        releasedSectionChange(path, base, head);
+
+    test('accepts cutting whole sections from the tail', () {
+      for (final head in [
+        '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n',
+        '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n\n',
+        '## Unreleased\n\n$_released',
+        '## Unreleased\n\n$_released\n',
+        '## 1.1.0\n\n- New.\n',
+      ]) {
+        expect(change(head), isNull, reason: head);
+      }
+    });
+
+    test('rejects the same cut in CHANGELOG.md', () {
+      expect(
+        change('## Unreleased\n\n$_released', path: 'CHANGELOG.md'),
+        contains('changes a released section'),
+      );
+    });
+
+    test('rejects a cut inside a section', () {
+      for (final head in [
+        '## Unreleased\n\n## 1.1.0\n',
+        '## Unreleased\n\n## 1.1.0\n\n- New.\n\n## 1.0.0\n',
+        '## Unreleased\n\n$_released\n## 0.9.0\n\n- Older.\n\n## 0.8.0\n',
+      ]) {
+        expect(change(head), isNotNull, reason: head);
+      }
+    });
+
+    test('rejects a cut that also edits a kept section or the tail', () {
+      expect(change('## Unreleased\n\n## 1.1.0\n\n- New edited.\n'), isNotNull);
+      expect(
+        change(
+          '## Unreleased\n\n## 1.1.0\n\n- New.\n\n## 1.0.0\n\n- Old.\n'
+          '\n## 0.9.0\n\n- Older.\n\n## 0.8.0\n\n- Oldest.\n- Extra.\n',
+        ),
+        isNotNull,
+      );
+      expect(change('## Unreleased\n\n## 1.1.0\n\n- Pending.\n'), isNotNull);
+    });
+
+    test('rejects adding a section or removing every section', () {
+      expect(change('## 1.2.0\n\n$_released'), isNotNull);
+      expect(
+        change('## Unreleased\n'),
+        '$_docsChangelog no longer has the released section `## 1.1.0`.',
+      );
+    });
+  });
+
   group('isCoreReleasePrep', () {
     bool prep({
       List<String> labels = const [],
@@ -205,6 +263,30 @@ void main() {
         ),
       );
       expect(result.stderr, isNot(contains('- CHANGELOG.md')));
+    });
+
+    test('lets only the docs changelog drop its oldest sections', () {
+      const head = '## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n';
+      repo.commit({'CHANGELOG.md': head, _docsChangelog: '$_docsIntro$head'});
+
+      final result = run();
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        contains('CHANGELOG.md:8 changes a released section'),
+      );
+      expect(result.stderr, isNot(contains('- $_docsChangelog')));
+    });
+
+    test('passes a docs changelog trimmed at a version heading', () {
+      repo.commit({
+        _docsChangelog:
+            '$_docsIntro## Unreleased\n\n- Pending.\n\n## 1.1.0\n\n- New.\n',
+      });
+
+      final result = run();
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(result.stdout, contains('match the base'));
     });
 
     test('compares against the merge base, not the base branch tip', () {
