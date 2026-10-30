@@ -125,8 +125,8 @@ Linux and web. Full docs: https://llamadart.leehack.com
   single-device negative-index combination with `LlamaArgumentException`.
 - `ModelParams(device: ComputeDevice.cpu)` forces the CPU on every runtime.
   Native llama.cpp `auto` already runs on the CPU on Android, an iOS
-  simulator and macOS x86_64 (Rosetta included).
-  `ComputeDevice.gpu` or `npu` runs there or throws
+  simulator and macOS x86_64 (Rosetta included). An explicit
+  `ComputeDevice.gpu` or `npu` runs on that GPU or NPU or throws
   `LlamaUnsupportedException`, never on another device; native LiteRT-LM
   reports a GPU or NPU delegate that fails to start from the first
   generation or `tokenize`. Under `auto` it retries a GPU engine that fails

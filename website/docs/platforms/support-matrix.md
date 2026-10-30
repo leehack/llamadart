@@ -297,8 +297,8 @@ output and grammars, sampling controls and speculative decoding. Guides:
   explicit GPU backend, such as `GpuBackend.vulkan`, also loads its GPU
   layers on Metal and warns, since the Apple runtime has no other GPU
   backend. The x86_64 (Rosetta) simulator behaves the same. iOS devices and
-  macOS are unchanged: `auto` uses Metal, and on an iPhone 16 Pro its output
-  matches the CPU's.
+  Apple silicon macOS are unchanged: `auto` uses Metal, and on an iPhone 16
+  Pro its output matches the CPU's. Intel macOS differs: see the next entry.
 - macOS x86_64: upstream llama.cpp Metal returns garbled output on Intel Macs
   with AMD GPUs
   ([llama.cpp#30702](https://github.com/ggml-org/llama.cpp/issues/30702)),
@@ -306,8 +306,10 @@ output and grammars, sampling controls and speculative decoding. Guides:
   `auto` therefore runs llama.cpp on the CPU with 0 GPU layers ([#1597](https://github.com/leehack/llamadart/issues/1597)).
   An x86_64 process cannot tell an Intel Mac from Rosetta on Apple silicon,
   so a Rosetta process also uses the CPU. `GpuBackend.metal` and
-  `ComputeDevice.gpu` still load on Metal, and the load logs a warning.
-  `gpuDevices` and `tensorSplit` need one of them there, since `auto` would
+  `ComputeDevice.gpu` still load on Metal, and the load logs a warning. Under
+  `ComputeDevice.auto`, another explicit GPU backend, such as
+  `GpuBackend.vulkan`, also loads its GPU layers on Metal and warns, since the
+  Apple runtime has no other GPU backend. `gpuDevices` and `tensorSplit` need one of them there, since `auto` would
   load on the CPU. arm64 macOS is unchanged.
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
