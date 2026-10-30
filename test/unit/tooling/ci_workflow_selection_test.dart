@@ -464,6 +464,112 @@ void main() {
     },
   );
 
+  group('CI cannot mask a failure', () {
+    final masksExit = RegExp(r'\|\|\s*(true|exit\s+0|:)\b|;\s*true\b');
+    final neverRuns = {'false', '0', ''};
+
+    Map<String, dynamic> job(String name) {
+      final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
+      return jobs[name] as Map<String, dynamic>;
+    }
+
+    List<Map> stepsOf(String name) => (job(name)['steps'] as List).cast<Map>();
+
+    List<Map> actionSteps() {
+      final steps = <Map>[];
+      for (final action in Directory('.github/actions').listSync()) {
+        if (action is! Directory) continue;
+        final manifest =
+            jsonDecode(
+                  jsonEncode(
+                    loadYaml(
+                      File('${action.path}/action.yml').readAsStringSync(),
+                    ),
+                  ),
+                )
+                as Map<String, dynamic>;
+        steps.addAll(((manifest['runs'] as Map)['steps'] as List).cast<Map>());
+      }
+      return steps;
+    }
+
+    List<Map> allSteps() => [
+      for (final entry in (readWorkflow('ci')['jobs'] as Map).entries)
+        for (final step in (entry.value['steps'] as List? ?? const []))
+          step as Map,
+      ...actionSteps(),
+    ];
+
+    bool neverRunsStep(Map step) =>
+        step.containsKey('if') &&
+        neverRuns.contains(
+          '${step['if']}'
+              .replaceAll(RegExp(r'^\$\{\{|\}\}$'), '')
+              .trim()
+              .toLowerCase(),
+        );
+
+    test('no job continues past a failed step', () {
+      final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
+      for (final name in const [
+        'companion-packages',
+        'test-other-os',
+        'genkit',
+      ]) {
+        expect(jobs, contains(name));
+      }
+      jobs.forEach((name, job) {
+        final continues = (job as Map)['continue-on-error'];
+        expect(continues, anyOf(isNull, isFalse), reason: name);
+      });
+    });
+
+    test('no step in a job or action is switched off', () {
+      expect(actionSteps(), isNotEmpty);
+      expect(allSteps().where(neverRunsStep), isEmpty);
+    });
+
+    test('the Genkit analysis and the dependency and publish checks run', () {
+      final genkit = stepsOf('genkit');
+      final checked = [
+        ...genkit.where(
+          (step) => '${step['run']}'.contains('dart analyze --fatal-infos'),
+        ),
+        genkit.singleWhere(
+          (step) => step['name'] == 'Resolve independent minimum dependencies',
+        ),
+        genkit.singleWhere(
+          (step) => '${step['run']}'.contains('dart pub publish --dry-run'),
+        ),
+        stepsOf(
+          'model-store',
+        ).singleWhere((step) => step['name'] == 'Publish dry-run'),
+      ];
+      expect(checked.length, greaterThanOrEqualTo(4));
+      for (final step in checked) {
+        expect(neverRunsStep(step), isFalse, reason: '$step');
+        expect(step.containsKey('continue-on-error'), isFalse);
+        expect(masksExit.hasMatch('${step['run']}'), isFalse, reason: '$step');
+      }
+    });
+
+    test('no run script discards a failing exit status', () {
+      for (final step in allSteps()) {
+        expect(masksExit.hasMatch('${step['run']}'), isFalse, reason: '$step');
+      }
+    });
+
+    test('the masking checks catch what they look for', () {
+      expect(masksExit.hasMatch('dart analyze || exit 0'), isTrue);
+      expect(masksExit.hasMatch('dart pub get || true'), isTrue);
+      expect(masksExit.hasMatch('dart pub get; true'), isTrue);
+      expect(masksExit.hasMatch('if [ -n "\$x" ]; then exit 1; fi'), isFalse);
+      expect(neverRunsStep({'if': false}), isTrue);
+      expect(neverRunsStep({'if': r'${{ false }}'}), isTrue);
+      expect(neverRunsStep({'if': r'${{ !cancelled() }}'}), isFalse);
+    });
+  });
+
   test('macOS and Windows memory and cache steps cannot mask a failure', () {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
     final macos = (jobs['companion-packages']['steps'] as List).cast<Map>();
