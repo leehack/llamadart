@@ -189,6 +189,11 @@ or shipping runtimes the app does not use.
   (`cpu`, `vulkan`) are bundled. Windows x64 downloads the CUDA runtime, a
   separate archive of about 688 MiB, only when `cuda` is selected. Apple
   llama.cpp is one consolidated CPU and Metal runtime and is not configurable.
+- macOS x86_64, Rosetta included: llama.cpp `ComputeDevice.auto` and
+  `GpuBackend.auto` run on the CPU with 0 GPU layers, because Metal returns
+  garbled output on Intel Macs with AMD GPUs. `GpuBackend.metal` or
+  `ComputeDevice.gpu` still loads on Metal and logs a warning; use it only
+  on Macs the app has validated. arm64 macOS keeps Metal.
 - Selecting `litert_lm` by name fails the build on targets without a
   LiteRT-LM runtime, such as the iOS x86_64 simulator. Apps that include
   LiteRT-LM must exclude that simulator architecture.

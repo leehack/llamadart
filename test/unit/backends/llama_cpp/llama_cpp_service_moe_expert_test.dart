@@ -31,6 +31,7 @@ void main() {
       ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
     );
     service = LlamaCppService(
+      isMacosX64: false,
       objectCalls: LlamaCppObjectCalls.tracked(
         recorder.api,
         isWindows: Platform.isWindows,

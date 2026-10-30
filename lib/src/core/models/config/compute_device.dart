@@ -12,8 +12,10 @@ enum ComputeDevice {
   /// default. It adds no failure mode the runtime does not already have.
   ///
   /// - llama.cpp native: every layer on the best GPU backend that loads,
-  ///   otherwise the CPU; the CPU on Android and on an iOS simulator, whose
-  ///   Metal device returns incorrect output.
+  ///   otherwise the CPU; the CPU on Android, on an iOS simulator, whose
+  ///   Metal device returns incorrect output, and in a macOS x86_64 process,
+  ///   Rosetta included, since Metal returns garbled output on Intel Macs
+  ///   with AMD GPUs.
   /// - llama.cpp on the Web: WebGPU when the browser has it, otherwise the
   ///   WebAssembly CPU runtime.
   /// - LiteRT-LM native: the GPU on Android, iOS and macOS, and the CPU on
@@ -30,8 +32,9 @@ enum ComputeDevice {
   cpu,
 
   /// A GPU: for llama.cpp, the best GPU backend that loads, which is Vulkan
-  /// on Android and Metal on an iOS simulator, where llama.cpp's output is
-  /// incorrect; LiteRT-LM's GPU delegate; WebGPU in a browser.
+  /// on Android and Metal on an iOS simulator or macOS x86_64, where
+  /// llama.cpp's output can be incorrect; LiteRT-LM's GPU delegate; WebGPU in
+  /// a browser.
   ///
   /// A model that would run on the CPU, because no GPU module or device is
   /// present or the browser has no WebGPU, throws

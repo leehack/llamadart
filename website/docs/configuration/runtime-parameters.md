@@ -44,6 +44,9 @@ Important fields:
   CPU; a negative value means all layers, as in llama.cpp, and every runtime
   treats it like `ModelParams.maxGpuLayers`.
 - `preferredBackend`: backend preference (`auto`, `vulkan`, `metal`, etc).
+  On native llama.cpp, `auto` loads on the CPU with 0 GPU layers on Android,
+  an iOS simulator and macOS x86_64, Rosetta included ([#1597](https://github.com/leehack/llamadart/issues/1597)); an
+  explicit GPU backend or `device: ComputeDevice.gpu` still loads on the GPU.
   On Linux and Windows, an explicit GPU backend whose module is missing loads
   the model on CPU with 0 GPU layers and logs a Dart warning;
   `getBackendName()` then reports `CPU`. With `device: ComputeDevice.gpu` the
@@ -62,7 +65,8 @@ Important fields:
   `LlamaEngine.listGpuDevices` reports for `preferredBackend`
   (llama.cpp `--device`). The list order is the split order. Under
   `GpuBackend.auto` it needs a host with one GPU backend; otherwise set
-  `preferredBackend`. `ModelSplitMode.none` uses `mainGpu` instead.
+  `preferredBackend`. Where `auto` loads on the CPU, such as macOS x86_64,
+  set a GPU `preferredBackend` or `device: ComputeDevice.gpu`. `ModelSplitMode.none` uses `mainGpu` instead.
 - `tensorSplit`: one proportion per device, in `gpuDevices` order or the
   backend's listing order (llama.cpp `--tensor-split`); llama.cpp
   normalizes them and stores them as float32. `validate()` rejects empty

@@ -161,7 +161,10 @@ runtime's three categories itself. Copy the categories and codes from
 LiteRT-LM is not available on x86_64 macOS, on an Intel Mac or under Rosetta.
 From `v0.18.0-1`, `litert-lm-native` publishes macOS runtimes for arm64 only
 ([litert-lm-native#72](https://github.com/leehack/litert-lm-native/issues/72)).
-llama.cpp runs on both architectures.
+llama.cpp runs on both architectures. On x86_64, Rosetta included,
+llama.cpp `GpuBackend.auto` runs on the CPU, because Metal returns garbled
+output on Intel Macs with AMD GPUs ([#1597](https://github.com/leehack/llamadart/issues/1597)); `GpuBackend.metal` or
+`ComputeDevice.gpu` still loads on Metal, with a warning.
 
 A universal Flutter macOS app that depends on `llamadart_litert_lm_flutter`
 builds and launches on x86_64. The build hook leaves LiteRT-LM out of the
