@@ -521,7 +521,7 @@ Use `SeamlessImageGenerationRequest(circularX: true, circularY: true, ...)`
 with SDXS's embedded tiny decoder at 512×512. Load with
 `flashAttention: false` and `vaeDirectConvolution: false`. Both axes default
 to off; decoder overrides and unqualified families/options throw. The
-[guide](https://llamadart.leehack.com/docs/next/guides/image-generation#seamless-textures)
+[guide](https://llamadart.leehack.com/docs/next/guides/image-generation-advanced#seamless-textures)
 includes a complete example. The maintained real-model suite saves 2×2
 repeat PNGs and checks both numerical seams and cancellation/reuse:
 
