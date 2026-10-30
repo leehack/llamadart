@@ -58,7 +58,7 @@ The opt-in `stable_diffusion` runtime logs through the same handler.
 records from the stricter of `level` and `nativeLevel`, so a later
 `configure` call applies to the next load. Its messages arrive after each
 load and generation, not while one runs, and are not printed to stderr at
-any level; see [Runtime logs](../guides/image-generation#runtime-logs).
+any level; see [Runtime logs](../guides/image-generation-memory-and-limits#runtime-logs).
 
 ## Recommended profiles
 

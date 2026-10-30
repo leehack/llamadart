@@ -92,7 +92,7 @@ four entries.
 This option is qualified with SDXS and SD-Turbo on macOS arm64 CPU/Metal;
 other image platforms and families have not been measured for this control.
 It adds no Web image runtime or approximate sampling cache. See
-[Conditioning cache](../guides/image-generation#conditioning-cache).
+[Conditioning cache](../guides/image-generation-settings#conditioning-cache).
 
 Image module placement (`ImageModelPlacement`: text encoders or VAE on the
 CPU, `maxGpuMemoryGiB`, `autoFit`) applies to Metal and Vulkan engines and is
@@ -100,7 +100,7 @@ measured with SD-Turbo on macOS arm64 Metal and on one Linux x64 Vulkan Tesla
 T4; multi-GPU hosts have no evidence yet. A CPU engine (Android, the CPU builds,
 `ComputeDevice.cpu`) and the Web throw `LlamaUnsupportedException`, as does
 `maxGpuMemoryGiB` on Vulkan without a discrete GPU. See
-[Module placement](../guides/image-generation#module-placement-and-gpu-memory).
+[Module placement](../guides/image-generation-settings#module-placement-and-gpu-memory).
 
 Image editing uses `ImageEditingRequest` with copied decoded RGB and optional
 binary masks (255 edits, 0 preserves the latent). It is bounded to a single
@@ -110,7 +110,7 @@ tilings or circular axes. SD-Turbo is measured; matching other SD 2.x
 checkpoints remain unmeasured. Other recipes report
 `supportsImageEditing: false` and throw on an editing request. This does not
 extend editing support to the other text-to-image platforms in the table.
-See [image editing](../guides/image-generation#image-editing).
+See [image editing](../guides/image-generation-advanced#image-editing).
 
 ControlNet uses `ControlNetImageGenerationRequest` with a copied, finished RGB
 control map and a strength from 0 to 2. A ControlNet loads only as an SD 1.x
@@ -118,7 +118,7 @@ checkpoint with embedded full VAE plus an original-layout SD 1.x ControlNet on
 macOS CPU with the pinned SD v0.3.0-1 runtime, flash attention/direct VAE
 convolution off and no other components; other recipes throw at load. Qualified
 on SD 1.5 with `control_v11p_sd15_canny` (fp16 Safetensors), and no other platform, family or ControlNet
-layout is supported. See [ControlNet](../guides/image-generation#controlnet).
+layout is supported. See [ControlNet](../guides/image-generation-advanced#controlnet).
 
 A hires fix uses `HiresFixImageGenerationRequest` with an `ImageHiresFix`:
 a latent upscale to at most twice each side and 1024x1024, then a second
@@ -126,7 +126,7 @@ sampling pass. It is bounded to an SD 1.x or SD 2.x checkpoint with embedded
 full VAE and no components on macOS CPU or Metal with the pinned SD
 v0.3.0-1 runtime; SD 1.5 and SD-Turbo are measured. Other recipes report
 `supportsHiresFix: false` and throw on a hires-fix request. See
-[hires fix](../guides/image-generation#hires-fix).
+[hires fix](../guides/image-generation-advanced#hires-fix).
 
 Reference image editing uses `ReferenceImageEditingRequest` with
 `ImageReferenceEditingRecipe.fluxKontext`: one RGB reference at the output
@@ -134,14 +134,14 @@ size, at most 1024x1024. It is bounded to the FLUX.1 Kontext [dev]
 transformer with `ae`, CLIP-L and T5-XXL on macOS Metal with the pinned SD
 v0.3.0-1 runtime. Other models, components, devices, platforms and reference
 counts report `supportsReferenceImageEditing: false` or throw on the
-request. See [reference image editing](../guides/image-generation#reference-image-editing).
+request. See [reference image editing](../guides/image-generation-advanced#reference-image-editing).
 
 Seamless textures use `SeamlessImageGenerationRequest` with independent X/Y
 flags. The initial qualified profile is SDXS (512-DS), embedded tiny decoder,
 512×512, flash attention and direct VAE convolutions disabled; CPU and actual
 Metal were measured on macOS arm64. Other platforms are unmeasured, other GPUs
 and model/decoder recipes are refused. See
-[seamless textures](../guides/image-generation#seamless-textures).
+[seamless textures](../guides/image-generation-advanced#seamless-textures).
 
 ## Compute device
 
@@ -420,4 +420,4 @@ the index, an app-private owned cache, pinned SD v0.3.0-1, and explicit flash
 attention/direct VAE convolution off. They report
 `supportsLocalSafetensorsSets` after admission. This text-to-image recipe does
 not enable editing, tiling or seamless combinations. See
-[the set contract](../guides/image-generation#local-checkpoint-sets).
+[the set contract](../guides/image-generation-advanced#local-checkpoint-sets).
