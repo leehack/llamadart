@@ -114,14 +114,14 @@ hooks:
     llamadart:
       llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
       # Compatibility testing only; omit to use the tested pin.
-      # llamadart_native_tag: v0.8.0
+      # llamadart_native_tag: v0.8.0-1
 ```
 
 An override tag names a `leehack/llamadart-native` release and must be explicit;
 the accepted forms are in
 [Override the llama.cpp release](../platforms/native-build-hooks#override-the-llamacpp-release).
 An override does not regenerate the Dart bindings, so its binary must stay
-ABI-compatible with the default `leehack/llamadart-native@v0.8.0` runtime.
+ABI-compatible with the default `leehack/llamadart-native@v0.8.0-1` runtime.
 Do not point a core before `0.17.1` at native `v0.8.0` or later: its bindings
 give `mtmd_helper_init_opt` 24 bytes, and `v0.8.0` writes past them.
 
