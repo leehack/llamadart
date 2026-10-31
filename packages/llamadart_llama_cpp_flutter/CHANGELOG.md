@@ -1,6 +1,6 @@
-## Unreleased
+## 0.17.1
 
-* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.8.0`.
+* Update Apple SwiftPM to `leehack/llamadart-native@v0.8.0`, the llama.cpp runtime of core `0.17.1`; require core `>=0.17.1 <0.18.0`.
 
 ## 0.17.0
 

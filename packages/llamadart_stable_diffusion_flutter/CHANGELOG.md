@@ -1,3 +1,7 @@
+## 0.17.1
+
+* Release with core `0.17.1`; Apple SwiftPM stays pinned to `leehack/stable-diffusion-native@v0.3.0-1`, so core `0.17.0` still pairs with it. The README now shows the current pairing and privacy-manifest facts.
+
 ## 0.17.0
 
 * Pair with core `0.17.x`; update Apple SwiftPM to `leehack/stable-diffusion-native@v0.3.0-1`, which loads FP8 image weights as F16 on Metal.
