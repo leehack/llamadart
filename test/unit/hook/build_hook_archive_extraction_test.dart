@@ -287,7 +287,7 @@ void main() {
   test(
     'blocks regular file entries that replace the extraction root',
     () async {
-      for (final name in const ['.', './']) {
+      for (final name in const ['.', './.']) {
         final archivePath = await writeArchive([
           _regularFile(name, 'root-replacement-payload'),
         ]);
