@@ -93,6 +93,13 @@ local-only`) of every example package except the chat app, which Web Chat
 covers, as one Ubuntu job in the full graph. `ci_workflow_selection_test.dart`
 fails when an example package with a `test/` directory has no step there.
 
+Obsolete PR CI runs cancel within the same PR. Every non-PR CI run uses its
+own run ID as its concurrency group, so consecutive main pushes and manual
+runs retain all selected checks, including runs waiting for a runner. Disabling
+`cancel-in-progress` alone on a shared group would still replace its pending
+run. Push selection continues to use only that event's before/after diff;
+retaining each run preserves the checks selected for every merge (#1646).
+
 Obsolete PR bundle runs cancel. Manual bundle runs have unique concurrency
 groups and do not cancel one another. Bundle workflows do not automatically run
 on main pushes; that candidate/artifact policy remains unchanged.
@@ -179,9 +186,9 @@ been cancelled, so the newer build lands last. An input change pushed with
 `GITHUB_TOKEN` starts no workflow and stays undeployed until the next run;
 today only the docs version cut pushes that way, and it changes no demo input.
 
-CI cancels an in-progress `main` run when a newer push arrives. If that newer
-push does not select Web Chat, the chat app stays on the older build until the
-next selecting push or a manual run.
+CI retains each `main` run when a newer push arrives. A later push that does
+not select Web Chat leaves the earlier run eligible to finish and deploy,
+subject to the same artifact and current-input guards above.
 
 The former manual arbitrary-ref deployment is removed. A manual CI run on
 `main` selects the full graph and deploys the artifact that run built and
@@ -192,8 +199,8 @@ gh workflow run ci.yml --ref main
 gh workflow run laya_tetris_hf_static_deploy.yml --ref main
 ```
 
-The manual CI run shares the `main` concurrency group, so it replaces a `main`
-run in progress and a later push replaces it. Retry a failed upload through its
+Each manual CI run has its own concurrency group, so it retains its checks
+alongside main pushes and other manual runs. Retry a failed upload through its
 original CI run while the guard still accepts that commit and its seven-day
 artifact is available. No artifact from another run or untested rebuild is
 accepted. GitHub-hosted promotion and HF upload must still be verified after an

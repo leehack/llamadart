@@ -72,6 +72,88 @@ void expectGuardedUpload(Map<String, dynamic> job, String demo) {
 }
 
 void main() {
+  group('CI run retention', () {
+    // Evaluate the workflow's small expression subset; unknown syntax fails
+    // rather than silently testing a policy different from the YAML.
+    Object evaluate(Object input, Map<String, Object?> github) {
+      if (input is! String) return input;
+      return input.replaceAllMapped(RegExp(r'\$\{\{(.*?)\}\}'), (match) {
+        final expression = match[1]!.trim();
+        if (expression.contains(' == ')) {
+          final parts = expression.split(' == ');
+          expect(parts, hasLength(2));
+          expect(parts[1], matches(r"^'[^']*'$"));
+          expect(github.containsKey(parts[0]), isTrue);
+          return '${github[parts[0]] == parts[1].substring(1, parts[1].length - 1)}';
+        }
+        for (final operand in expression.split(' || ')) {
+          expect(github.containsKey(operand), isTrue, reason: operand);
+          final value = github[operand];
+          if (value != null && value != false && value != '' && value != 0) {
+            return '$value';
+          }
+        }
+        return '';
+      });
+    }
+
+    Map<String, String> arrivals(String event, {int? pr}) {
+      final concurrency = readWorkflow('ci')['concurrency'] as Map;
+      final groups = <String, String>{};
+      final states = <String, String>{};
+      for (final id in ['101', '102', '103']) {
+        final github = <String, Object?>{
+          'github.workflow': 'CI',
+          'github.event_name': event,
+          'github.event.pull_request.number': pr,
+          'github.ref': 'refs/heads/main',
+          'github.run_id': id,
+        };
+        final group = '${evaluate(concurrency['group'], github)}';
+        final cancel = '${evaluate(concurrency['cancel-in-progress'], github)}';
+        expect(cancel, anyOf('true', 'false'));
+        // Actions allows one pending run per group even when running-run
+        // cancellation is disabled. Model one occupied runner so 102 queues.
+        for (final previous in groups.keys) {
+          if (groups[previous] == group &&
+              (states[previous] == 'pending' || cancel == 'true')) {
+            states[previous] = 'cancelled';
+          }
+        }
+        groups[id] = group;
+        states[id] = states.containsValue('running') ? 'pending' : 'running';
+        if (pr != null && id == '102') break;
+      }
+      if (pr != null) {
+        expect(groups.values.toSet(), hasLength(1));
+      } else {
+        expect(
+          groups.values.toSet(),
+          hasLength(3),
+          reason: 'Run states: $states',
+        );
+      }
+      return states;
+    }
+
+    test('two pushes to one PR cancel the superseded run', () {
+      expect(arrivals('pull_request', pr: 1646), {
+        '101': 'cancelled',
+        '102': 'running',
+      });
+    });
+
+    for (final event in ['push', 'workflow_dispatch']) {
+      test('three $event runs retain running and pending main checks', () {
+        expect(arrivals(event), {
+          '101': 'running',
+          '102': 'pending',
+          '103': 'pending',
+        });
+      });
+    }
+  });
+
   // This is the first suite in Test Native (windows-latest, tooling) to start Python,
   // and that runner's first launch has taken up to 54 s (later ones well under
   // 1 s). It runs here, outside the 30 s budget of whichever test would
