@@ -294,6 +294,13 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
+Core `0.17.1` preparation pairs all three Apple companions at `0.17.1`, with
+SwiftPM pins `v0.8.0-1`, `v0.18.1-4` and `v0.3.0-1`. The llama.cpp companion
+requires `llamadart: '>=0.17.1 <0.18.0'`. The LiteRT-LM and SD companions keep
+`llamadart: '>=0.17.0 <0.18.0'`: their manifests are unchanged from `0.17.0`, so
+core `0.17.0` still accepts them. Merge remains the approval boundary for
+publication.
+
 Core `0.17.0` preparation pairs all three Apple companions at `0.17.0`, with
 SwiftPM pins `v0.7.0-3`, `v0.18.1-4` and `v0.3.0-1`, and constrains them to
 `llamadart: '>=0.17.0 <0.18.0'`. Core `0.17.0` lists no earlier llama.cpp or
@@ -374,7 +381,7 @@ bounded image recipes gate on the upstream commit
 (`ImageGenerationEngine._isQualifiedRuntime`): a repin that moves it reruns
 their `run_local_e2e.dart` scenarios before moving that gate.
 
-Core `0.17.1` moves the llama.cpp pin to `v0.8.0`, a new upstream release, inside
+Core `0.17.1` moves the llama.cpp pin to `v0.8.0-1`, built from upstream `v0.8.0`, inside
 the `0.17` minor. It keeps companion `0.17.0` (`v0.7.0-3`) through
 `llamaCppCompatibleAppleCompanionTags` because the core calls no symbol that
 framework lacks; `test/fixtures/native/llama_cpp_apple_compatibility.json` records

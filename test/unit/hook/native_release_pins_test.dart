@@ -16,8 +16,8 @@ import 'package:test/test.dart';
 void main() {
   final sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 
-  test('llama.cpp pins the approved v0.8.0 release', () {
-    expect(llamaCppTag, 'v0.8.0');
+  test('llama.cpp pins the approved v0.8.0-1 release', () {
+    expect(llamaCppTag, 'v0.8.0-1');
   });
 
   test('llama.cpp tag follows the native release tag grammar', () {
