@@ -2,13 +2,27 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.17.0` -> `0.17.1`: llama.cpp native runtime `v0.8.0`
+## `0.17.0` -> `0.17.1`: llama.cpp native runtime `v0.8.0-1`
 
-The hook and the llama.cpp Apple companion source pin `v0.8.0`. Flutter iOS and
+The hook and the llama.cpp Apple companion source pin `v0.8.0-1`. Flutter iOS and
 macOS apps get it with `llamadart_llama_cpp_flutter` `0.17.1`, which requires
 core `0.17.1`. A locked companion `0.17.0` keeps `v0.7.0-3` and builds with an
-upgrade warning. Web moves to llama.cpp `v0.8.0` too. No
-Dart API changes.
+upgrade warning. Web moves to llama.cpp `v0.8.0` too. The LiteRT-LM and
+stable_diffusion companions also release at `0.17.1` with unchanged pins, and
+their `0.17.0` releases keep working. No Dart API changes.
+
+Behavior to recheck after upgrading:
+
+- A hand-written `grammar` nested or chained more than 256 levels deep throws
+  `LlamaInferenceException`.
+- `ModelSplitMode.row` on a native llama.cpp device without split buffers throws
+  `LlamaUnsupportedException` before the load; use `ModelSplitMode.layer`.
+- `GpuBackend.auto` on macOS x86_64 runs on the CPU. Explicit `GpuBackend.metal`
+  still uses Metal.
+- Opt-in `GpuBackend.blas` at the default thread count uses at most 4 threads;
+  set an explicit count to raise it.
+- LFM2 and LFM2.5 with `parallelToolCalls: true` can need a higher `maxTokens`: a
+  call list cut off before it closes returns no calls.
 
 <a id="016x-to-0170-upgrade-guide"></a>
 

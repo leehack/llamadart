@@ -1,11 +1,11 @@
 {
   "previous_tag": "v0.7.0-3",
-  "current_tag": "v0.8.0",
+  "current_tag": "v0.8.0-1",
   "previous_upstream_commit": "620d2225cc436ab0b001e3200e590e3b286ef9ab",
   "current_upstream_commit": "8642541b255bfb5dc39cd351a178be09013a55d6",
   "xcframework_checksums": {
     "v0.7.0-3": "749c9bc9fa846fb2386b3cf20ac1e6754182cd145aaf21affa2634c1f1177192",
-    "v0.8.0": "314a18c472a138aad011c99bf2e64e2ec88e00102c040fefb17b97e6a5655e03"
+    "v0.8.0-1": "b959e9782f402c8ba72f7cbb68bea24c937ea48fa544e920fdcfc68db198ebf0"
   },
   "published_companion_checksums": {
     "llamadart_llama_cpp_flutter-v0.17.0": "749c9bc9fa846fb2386b3cf20ac1e6754182cd145aaf21affa2634c1f1177192"
