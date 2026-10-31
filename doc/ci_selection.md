@@ -136,7 +136,15 @@ part of this batch.
 python3 -m unittest discover -s test/ci -p 'test_*.py'
 dart run tool/testing/run_local_e2e.dart --scenario ci-selection
 actionlint .github/workflows/ci.yml .github/workflows/validation_bundles.yml
+actionlint -ignore '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$' .github/workflows/chat_app_hf_static_deploy.yml
 ```
+
+Actionlint 1.7.12 rejects GitHub's documented `concurrency.queue` key
+([upstream issue](https://github.com/rhysd/actionlint/issues/657),
+[pending fix](https://github.com/rhysd/actionlint/pull/654)). Retain its unfiltered
+diagnostic as evidence before the second invocation: that invocation excludes
+only this known schema diagnostic for the reusable deploy workflow. Its queue
+policy is covered by the workflow tests; other lint diagnostics still fail.
 
 Tests cover docs-only and package changes, shared/runtime/unknown inputs,
 platform targets, workflow changes, actual Git rename/deletion histories,
@@ -179,12 +187,28 @@ artifact is never uploaded over it. The Laya Tetris deploy runs the same guard
 with its workflow's `paths` filter as the input list, since a push outside that
 filter starts no Laya Tetris run.
 
+Chat app deployments share a serialized, non-cancelling group with
+[`queue: max`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency#example-queueing-multiple-pending-runs).
+It retains up to 100 pending deployments. Older validation can finish after
+newer validation: it must not cancel a running newer deployment or replace a
+pending one before reaching its own stale-input guard. Each retained build
+checks current inputs after entering the group, so stale builds skip without
+displacing the current build. At the 100-pending limit, GitHub cancels additional
+arrivals; rerun a cancelled current build once capacity is available.
+
+Before merging this concurrency-policy change, let all queued and running main
+CI and chat app deployment runs from the old revision finish. An older CI run
+can still invoke its original cancelling deployment workflow and preempt the
+new group. If old and new runs overlap and a current deployment is cancelled,
+first drain the old runs, then dispatch CI on current `main` with the command
+below to rebuild, test and deploy it.
+
 `main` can still move between the guard and the Hugging Face commit. A push
-that changes the demo's inputs starts its own deploy run, and the deploy
-concurrency group lets that run upload only after the older one has finished or
-been cancelled, so the newer build lands last. An input change pushed with
-`GITHUB_TOKEN` starts no workflow and stays undeployed until the next run;
-today only the docs version cut pushes that way, and it changes no demo input.
+that changes chat app inputs starts its own run, whose upload waits for the
+current deployment to finish. The Laya Tetris deploy keeps its separate
+cancelling group. An input change pushed with `GITHUB_TOKEN` starts no workflow
+and stays undeployed until the next run; today only the docs version cut pushes
+that way, and it changes no demo input.
 
 CI retains each `main` run when a newer push arrives. A later push that does
 not select Web Chat leaves the earlier run eligible to finish and deploy,

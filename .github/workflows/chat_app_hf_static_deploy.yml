@@ -18,8 +18,11 @@ permissions:
   actions: read
 
 concurrency:
+  # Validation can finish out of commit order; stale builds must not cancel
+  # newer deployments before reaching the current-input guard.
   group: chat-app-hf-static-deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   deploy:

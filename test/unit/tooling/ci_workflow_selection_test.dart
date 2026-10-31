@@ -71,6 +71,58 @@ void expectGuardedUpload(Map<String, dynamic> job, String demo) {
   }
 }
 
+Future<Map<String, bool>> deploymentGuardVerdicts() async {
+  final scratch = await Directory.systemTemp.createTemp('deploy-order-');
+  addTearDown(() => scratch.delete(recursive: true));
+  final origin = await Directory('${scratch.path}/origin').create();
+  final work = '${scratch.path}/work';
+  Future<String> git(List<String> args, {String? cwd}) async {
+    final result = await Process.run(
+      'git',
+      args,
+      workingDirectory: cwd ?? origin.path,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    return '${result.stdout}'.trim();
+  }
+
+  await git(['init', '-q', '-b', 'main']);
+  await git(['config', 'user.name', 'Test']);
+  await git(['config', 'user.email', 'test@example.invalid']);
+  final input = File('${origin.path}/lib/llamadart.dart');
+  await input.parent.create();
+  await input.writeAsString('older');
+  await git(['add', '.']);
+  await git(['commit', '-qm', 'older']);
+  final older = await git(['rev-parse', 'HEAD']);
+  await git(['clone', '-q', '--depth=1', origin.uri.toString(), work]);
+  await input.writeAsString('newer');
+  await git(['commit', '-qam', 'newer']);
+  final newer = await git(['rev-parse', 'HEAD']);
+  final verdicts = <String, bool>{};
+  for (final entry in {'newer': newer, 'older': older}.entries) {
+    final output = File('${scratch.path}/${entry.key}.output');
+    final environment = {...Platform.environment}..remove('GH_TOKEN');
+    environment.addAll({
+      'DEPLOY_SHA': entry.value,
+      'GITHUB_OUTPUT': output.path,
+      'GITHUB_STEP_SUMMARY': '${scratch.path}/${entry.key}.summary',
+    });
+    final result = await Process.run(
+      Platform.isWindows ? 'python' : 'python3',
+      [File('tool/ci/deploy_guard.py').absolute.path, 'chat-app'],
+      workingDirectory: work,
+      environment: environment,
+      includeParentEnvironment: false,
+    );
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    final value = (await output.readAsString()).replaceAll('\r\n', '\n');
+    expect(value, entry.key == 'newer' ? 'deploy=true\n' : 'deploy=false\n');
+    verdicts[entry.key] = value == 'deploy=true\n';
+  }
+  return verdicts;
+}
+
 void main() {
   group('CI run retention', () {
     // Evaluate the workflow's small expression subset; unknown syntax fails
@@ -152,6 +204,71 @@ void main() {
         });
       });
     }
+  });
+
+  group('retained CI deployment ordering', () {
+    Future<void> reverseValidationCompletion({
+      required bool newerPending,
+    }) async {
+      final concurrency =
+          readWorkflow('chat_app_hf_static_deploy')['concurrency'] as Map;
+      expect(concurrency['group'], 'chat-app-hf-static-deploy');
+      final cancel = concurrency['cancel-in-progress'] ?? false;
+      final queue = concurrency['queue'] ?? 'single';
+      expect(cancel, isA<bool>());
+      expect(queue, anyOf('single', 'max'));
+      final verdicts = await deploymentGuardVerdicts();
+      final cancelled = <String>[];
+      final pending = <String>[];
+      final uploaded = <String>[];
+      String? running;
+
+      void arrive(String id) {
+        if (running != null && cancel == true) {
+          cancelled.add(running!);
+          running = null;
+        }
+        // GitHub's default single-pending group replaces waiting work even
+        // when running-work cancellation is disabled.
+        if (queue == 'single') {
+          cancelled.addAll(pending);
+          pending.clear();
+        }
+        if (running == null) {
+          running = id;
+        } else {
+          pending.add(id);
+        }
+      }
+
+      if (newerPending) arrive('occupied');
+      arrive('newer');
+      // Older validation finishes last, after the newer deploy has entered
+      // the shared group but before its upload has finished.
+      arrive('older');
+      while (running != null) {
+        final id = running!;
+        if (verdicts[id] == true) uploaded.add(id);
+        running = pending.isEmpty ? null : pending.removeAt(0);
+      }
+      expect(
+        cancelled,
+        isEmpty,
+        reason: 'Newest deploy must survive: $cancelled',
+      );
+      expect(uploaded, ['newer']);
+    }
+
+    test('stale validation cannot cancel a running newer deployment', () async {
+      await reverseValidationCompletion(newerPending: false);
+    });
+
+    test(
+      'stale validation cannot replace a pending newer deployment',
+      () async {
+        await reverseValidationCompletion(newerPending: true);
+      },
+    );
   });
 
   // This is the first suite in Test Native (windows-latest, tooling) to start Python,
