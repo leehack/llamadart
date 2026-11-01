@@ -105,7 +105,8 @@ Future<void> main(List<String> args) async {
     await generate(1).timeout(const Duration(seconds: 60));
     await engine.unloadModel();
     try {
-      await engine.loadModel('$model.missing', modelParams: params);
+      final missingModel = '$model.missing.litertlm';
+      await engine.loadModel(missingModel, modelParams: params);
       throw StateError('Missing model unexpectedly loaded');
     } on LlamaModelException {
       event('missing_model_rejected');
