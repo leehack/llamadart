@@ -13,7 +13,7 @@ with core `0.17.x`. Upgrade both together. Earlier pairings are in the
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.2
+  llamadart: ^0.17.3
   llamadart_llama_cpp_flutter: ^0.17.1
 ```
 
