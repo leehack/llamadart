@@ -146,7 +146,11 @@ def select(paths, force_full=False):
         # Root tests scan all maintained Markdown, including independent package
         # docs and the Genkit gateway handled above. Keep this additive so a
         # specialized path cannot bypass those repository-wide contracts.
-        if path.endswith('.md'):
+        # These helpers are followed by the reader-inventory guard. A helper
+        # can start reading Markdown without changing its root test suite.
+        if (path.endswith('.md') or path.startswith(('tool/docs/',
+                                                   'tool/testing/validation/'))
+                or path == 'tool/testing/validation.dart'):
             jobs.add('markdown-tests')
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.

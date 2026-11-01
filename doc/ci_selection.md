@@ -10,6 +10,7 @@ PR. A path filter must not prevent a required workflow from reporting.
 |---|---|---|
 | Documentation, website, docs tooling | Docs build/tool tests plus version and bridge-pin checks | None |
 | Any `*.md` path | Adds `Markdown Tests`, unless full Linux coverage is selected | None |
+| `tool/docs/`, `tool/testing/validation/`, or `tool/testing/validation.dart` | Adds the Markdown reader inventory guard through `Markdown Tests`; retains the path's other checks | Existing path selection |
 | One companion package | Root static checks, affected package's Flutter/SwiftPM/publish checks, root Linux coverage and full macOS/Windows VM checks, Web Chat consumer | Android, Web, iOS inputs |
 | Validation package tests/schemas or unbundled assets | Root static checks, private suite and provider/workspace/Flutter consumer contracts | None |
 | Validation assets the chat app bundles (`flutter.assets`, such as profiles) | Same validation checks and Web Chat | None |
@@ -52,8 +53,13 @@ coverage. It carries no coverage, so a Markdown-only commit uploads none to
 Codecov. `markdown_test_suites_test.dart` fails when a root test names Markdown,
 directly or through a local helper or tool, and is neither listed nor explained
 in that test: list a suite that reads a tracked `.md`, or a tool that does. That
-check runs with the full graph, which any change under `test/` or `tool/ci/`
-selects. Because Linux coverage can no longer stand in for
+check runs in `Markdown Tests` itself as well as the full graph. Changes to
+`tool/docs/`, `tool/testing/validation/` or `tool/testing/validation.dart` also
+select it, since those helpers can introduce a reader without editing a test.
+The exemption map's test has an explicit CODEOWNERS assignment; requiring owner
+approval still depends on repository protection settings. The source scan is
+heuristic and does not prove the absence of every possible Markdown reader.
+Because Linux coverage can no longer stand in for
 `validation-integration` on a Markdown path, that job stays selected there.
 
 Linux VM tests run as parallel shards (`core-template`, `engine`, `tooling`,

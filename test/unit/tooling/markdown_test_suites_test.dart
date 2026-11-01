@@ -49,8 +49,6 @@ const Map<String, String> _notMarkdownReaders = {
   'test/unit/tooling/litert_lm_tokenizer_fixture_test.dart': _validationTooling,
   'test/unit/tooling/macos_litert_lm_prepare_app_script_test.dart':
       'Reads the installation docs only on macOS; this job runs on Linux.',
-  'test/unit/tooling/markdown_test_suites_test.dart':
-      'This test: it scans test sources, not Markdown.',
   'test/unit/tooling/run_local_e2e_test.dart': _validationTooling,
   'test/unit/tooling/validation_android_java_home_test.dart':
       _validationTooling,
@@ -106,6 +104,21 @@ List<String> markdownSources(String source, {String root = '.'}) {
   return hits;
 }
 
+void expectMarkdownJob(Map job) {
+  expect(job['runs-on'], 'ubuntu-latest');
+  expect(job['continue-on-error'], anyOf(isNull, isFalse));
+  final step = (job['steps'] as List).cast<Map>().singleWhere(
+    (step) => step['name'] == 'Run Markdown tests',
+  );
+  expect(step.containsKey('if'), isFalse);
+  expect(step['continue-on-error'], anyOf(isNull, isFalse));
+  expect(
+    step['run'],
+    'xargs dart test -p vm -j 1 --exclude-tags local-only '
+    '< $_inventoryPath',
+  );
+}
+
 void main() {
   final inventory = File(_inventoryPath).readAsLinesSync();
   final rootTests =
@@ -121,20 +134,54 @@ void main() {
     expect(inventory, isNotEmpty);
     expect(inventory, orderedEquals([...inventory.toSet()]..sort()));
     expect(rootTests, containsAll(inventory));
+    expect(
+      inventory,
+      contains('test/unit/tooling/markdown_test_suites_test.dart'),
+    );
   });
 
   test('the Markdown Tests job runs the inventory on Linux', () {
     final workflow =
         loadYaml(File('.github/workflows/ci.yml').readAsStringSync())
             as YamlMap;
-    final job = workflow['jobs']['markdown-tests'] as YamlMap;
-    expect(job['runs-on'], 'ubuntu-latest');
+    expectMarkdownJob(workflow['jobs']['markdown-tests'] as Map);
+  });
+
+  test('the Markdown job contract rejects masking its test step', () {
+    final workflow =
+        loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
+    final job = workflow['jobs']['markdown-tests'] as Map;
+    final steps = (job['steps'] as List).cast<Map>();
+    for (final mutation in [
+      {'continue-on-error': true},
+      {'if': false},
+      {
+        'run':
+            '${steps.singleWhere((s) => s['name'] == 'Run Markdown tests')['run']} || exit 0',
+      },
+    ]) {
+      final mutated = {
+        ...job,
+        'steps': [
+          for (final step in steps)
+            if (step['name'] == 'Run Markdown tests')
+              {...step, ...mutation}
+            else
+              step,
+        ],
+      };
+      expect(
+        () => expectMarkdownJob(mutated),
+        throwsA(isA<TestFailure>()),
+        reason: '$mutation',
+      );
+    }
+  });
+
+  test('the reader exemptions have an explicit CODEOWNERS assignment', () {
     expect(
-      (job['steps'] as YamlList).map((step) => step['run']),
-      contains(
-        'xargs dart test -p vm -j 1 --exclude-tags local-only '
-        '< $_inventoryPath',
-      ),
+      File('.github/CODEOWNERS').readAsLinesSync(),
+      contains('/test/unit/tooling/markdown_test_suites_test.dart @leehack'),
     );
   });
 

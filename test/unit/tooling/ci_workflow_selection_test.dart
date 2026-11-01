@@ -1131,6 +1131,28 @@ for event,flag,cancel,good,main in itertools.product(('push','pull_request','wor
   );
 
   test(
+    'Markdown reader helper changes select the guard without full coverage',
+    () async {
+      for (final path in [
+        'tool/docs/build_site.sh',
+        'tool/docs/new_reader.dart',
+        'tool/testing/validation/remote.dart',
+        'tool/testing/validation.dart',
+      ]) {
+        final jobs = (await selected([path]))['jobs'] as Map;
+        expect(jobs['markdown-tests'], isTrue, reason: path);
+        for (final job in [
+          'test-linux-coverage',
+          'test-web',
+          'test-other-os',
+        ]) {
+          expect(jobs[job], isFalse, reason: '$path: $job');
+        }
+      }
+    },
+  );
+
+  test(
     'capability registry changes select an unconditional inventory gate',
     () async {
       final jobs = readWorkflow('ci')['jobs'] as Map;
@@ -1393,6 +1415,21 @@ for event,flag,cancel,good,main in itertools.product(('push','pull_request','wor
   );
 
   group('test lane shards', () {
+    void expectDistinctNativeLegs(Map job) {
+      expect(job['name'], r'Test Native (${{ matrix.leg }})');
+      final matrix = (job['strategy']['matrix']['include'] as List).cast<Map>();
+      final legs = matrix.map((entry) => entry['leg']).toList();
+      expect(legs.toSet(), hasLength(matrix.length));
+      for (final entry in matrix) {
+        expect(
+          entry['leg'],
+          entry['os'] == 'windows-latest'
+              ? '${entry['os']}, ${entry['shard']}'
+              : entry['os'],
+        );
+      }
+    }
+
     Map<String, List<String>> shardsOf(String job, {String? os}) {
       final matrix =
           readWorkflow('ci')['jobs'][job]['strategy']['matrix'] as Map;
@@ -1474,6 +1511,7 @@ for event,flag,cancel,good,main in itertools.product(('push','pull_request','wor
       expect(shardsOf('test-other-os', os: 'macos-latest'), {'all': isEmpty});
       final job = readWorkflow('ci')['jobs']['test-other-os'] as Map;
       expect(job['strategy']['fail-fast'], isFalse);
+      expectDistinctNativeLegs(job);
       final matrix = (job['strategy']['matrix']['include'] as List).cast<Map>();
       expect(
         matrix.singleWhere((leg) => leg['os'] == 'macos-latest')['leg'],
@@ -1485,6 +1523,33 @@ for event,flag,cancel,good,main in itertools.product(('push','pull_request','wor
           (s) => s['name'] == 'Upload native test timing',
         )['with']['name'],
         r'native-test-timing-${{ matrix.os }}-${{ matrix.shard }}-${{ github.run_attempt }}',
+      );
+    });
+
+    test('native leg names reject identical Windows shard labels', () {
+      final job = readWorkflow('ci')['jobs']['test-other-os'] as Map;
+      final matrix = (job['strategy']['matrix']['include'] as List).cast<Map>();
+      final firstWindows = matrix.firstWhere(
+        (entry) => entry['os'] == 'windows-latest',
+      );
+      final mutated = {
+        ...job,
+        'strategy': {
+          ...job['strategy'] as Map,
+          'matrix': {
+            'include': [
+              for (final entry in matrix)
+                if (entry['os'] == 'windows-latest')
+                  {...entry, 'leg': firstWindows['leg']}
+                else
+                  entry,
+            ],
+          },
+        },
+      };
+      expect(
+        () => expectDistinctNativeLegs(mutated),
+        throwsA(isA<TestFailure>()),
       );
     });
 
