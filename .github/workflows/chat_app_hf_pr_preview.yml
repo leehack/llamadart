@@ -79,7 +79,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     env:
       HF_CHAT_APP_SPACE_REPO: ${{ vars.HF_CHAT_APP_SPACE_REPO }}

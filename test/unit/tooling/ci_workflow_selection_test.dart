@@ -439,6 +439,7 @@ void main() {
       expect(deploy['concurrency']['queue'], 'max');
       expect(deploy['concurrency']['group'], contains('pull_request.number'));
       expect(deploy['permissions']['actions'], 'read');
+      expect(deploy['permissions']['pull-requests'], 'write');
       final operation = (deploy['steps'] as List).singleWhere(
         (step) => '${step['run']}'.contains('preview_guard.py'),
       );
