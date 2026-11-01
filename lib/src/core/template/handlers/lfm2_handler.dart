@@ -80,15 +80,23 @@ class Lfm2Handler extends ChatTemplateHandler {
     final effectiveMessages = hasForceJsonMarker
         ? _stripForceJsonSchemaMarker(messages)
         : messages;
+    final adjustedMessages = templateMessages(
+      effectiveMessages,
+      templateSource: templateSource,
+    );
+    // llama.cpp supplies the alias used by LFM2.5 templates alongside reasoning.
+    for (final message in adjustedMessages) {
+      if (message['reasoning_content'] case final String reasoning
+          when reasoning.isNotEmpty) {
+        message['thinking'] = reasoning;
+      }
+    }
 
     final prompt = renderTemplate(
       template,
       metadata: metadata,
       context: {
-        'messages': templateMessages(
-          effectiveMessages,
-          templateSource: templateSource,
-        ),
+        'messages': adjustedMessages,
         'add_generation_prompt': addAssistant,
         'tools': _serializeToolsForTemplate(tools),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '',

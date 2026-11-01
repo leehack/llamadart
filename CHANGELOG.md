@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Preserve assistant reasoning in LFM2.5 templates that read `message.thinking`, including turns with tool calls ([#1623](https://github.com/leehack/llamadart/issues/1623)).
+
 ## 0.17.1
 
 - Aligned the default WebGPU bridge assets to `v0.1.79`: Web now runs llama.cpp `v0.8.0` like native, and a media embedding batch that takes longer than two minutes on the CPU stays on the worker instead of moving to the main thread ([llama-web-bridge#165](https://github.com/leehack/llama-web-bridge/issues/165)). Upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6` matches native `v0.8.0`, which the manifest records; Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c`.
