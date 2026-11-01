@@ -6,12 +6,22 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:ffi/ffi.dart';
 
+Future<void> emitPassiveSnapshot(
+  List<Map<String, Object?>> observations,
+) async {
+  for (final observation in observations) {
+    stdout.writeln('PASSIVE_MODULE ${jsonEncode(observation)}');
+  }
+  // A flush owns the sink until its future completes.
+  await stdout.flush();
+}
+
 // Inspect existing handles only. A missing resident Windows API is a diagnostic
 // failure, never permission to load another DLL or change the stock control.
-List<Map<String, Object?>> snapshot(
+Future<List<Map<String, Object?>>> snapshot(
   String checkpoint, {
   bool includeCounts = false,
-}) {
+}) async {
   final observations = <Map<String, Object?>>[];
   if (!checkpoint.startsWith('after-')) {
     throw StateError(
@@ -234,9 +244,8 @@ List<Map<String, Object?>> snapshot(
         'imports': imports,
       };
       observations.add(observation);
-      stdout.writeln('PASSIVE_MODULE ${jsonEncode(observation)}');
     }
-    stdout.flush();
+    await emitPassiveSnapshot(observations);
     return observations;
   } finally {
     calloc.free(handles);
@@ -256,7 +265,10 @@ bool isPrimaryLlamaModule(String modulePath) =>
     modulePath.toLowerCase().endsWith(r'\llama.dll');
 
 // First passive map is complete before this code-asset resolution or getter.
-void registryIdentity(List<Map<String, Object?>> before, String outcome) {
+Future<void> registryIdentity(
+  List<Map<String, Object?>> before,
+  String outcome,
+) async {
   final codeAsset = Native.addressOf<NativeFunction<Size Function()>>(
     hookRegistryCount,
   ).address;
@@ -291,5 +303,5 @@ void registryIdentity(List<Map<String, Object?>> before, String outcome) {
   print(
     'REGISTRY_IDENTITY ${jsonEncode({'outcome': outcome, 'observerAfterFirstPassiveSnapshot': true, 'codeAssetResolutionAndGetterPotentiallyLoadingOrInitializing': true, 'codeAssetId': 'package:llamadart/ggml', 'codeAssetAddress': codeAsset, 'codeAssetProvider': matched, 'primaryRegistryImports': primary, 'providersBeforeCodeAssetObservation': providers, 'distinctRegistryProviderBasesBefore': providerBases.length, 'primaryMatchesCodeAsset': matches, 'noUnintendedDuplicateRegistry': providerBases.length == 1, 'registryCountAfterOutcome': count})}',
   );
-  snapshot('after-registry-observation', includeCounts: true);
+  await snapshot('after-registry-observation', includeCounts: true);
 }

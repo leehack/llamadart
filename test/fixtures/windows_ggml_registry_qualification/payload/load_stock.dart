@@ -40,7 +40,10 @@ Future<void> main(List<String> args) async {
     } catch (error) {
       print('MODEL_OUTCOME exception $error');
       try {
-        registryIdentity(snapshot('after-stock-model-exception'), 'exception');
+        await registryIdentity(
+          await snapshot('after-stock-model-exception'),
+          'exception',
+        );
       } catch (diagnosticError) {
         print('SNAPSHOT_FAILURE $diagnosticError');
       }
@@ -48,7 +51,10 @@ Future<void> main(List<String> args) async {
     }
     print('MODEL_OUTCOME success');
     print('LOAD_SUCCESS ${jsonEncode(placement)} unloadCompleted=true');
-    registryIdentity(snapshot('after-stock-model-success'), 'success');
+    await registryIdentity(
+      await snapshot('after-stock-model-success'),
+      'success',
+    );
   } finally {
     await engine.dispose();
   }
