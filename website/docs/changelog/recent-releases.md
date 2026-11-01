@@ -11,6 +11,8 @@ For upgrade planning, combine this page with the
 [Upgrade Checklist](../migration/upgrade-checklist). For breaking changes,
 validate against the exact release tag notes.
 
+## Unreleased
+
 ## 0.17.2
 
 - Fix Windows native runtime overrides failing model loads with `no backends are loaded` ([#1649](https://github.com/leehack/llamadart/issues/1649)).
