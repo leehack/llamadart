@@ -644,6 +644,46 @@ for event,flag,cancel,good,main in itertools.product(('push','pull_request','wor
     );
   });
 
+  test('qualification evidence uses runner context only in supported steps', () {
+    final job =
+        readWorkflow('ci')['jobs']['windows-registry-qualification'] as Map;
+    const root =
+        r'${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}';
+    void lint(Map candidate) {
+      // GitHub rejects runner in jobs.<job>.env before creating a run.
+      if (jsonEncode(candidate['env']).contains('runner.')) {
+        throw FormatException('runner context is unavailable in job env');
+      }
+      final steps = (candidate['steps'] as List).cast<Map>();
+      for (final name in [
+        'Prepare pinned qualification SDK',
+        'List, inspect and execute the durable scenario',
+        'Seal all qualification evidence',
+      ]) {
+        final step = steps.singleWhere((step) => step['name'] == name);
+        if (step['env']?['LLAMADART_WINDOWS_QUALIFICATION'] != root) {
+          throw FormatException('execution/sealing evidence root differs');
+        }
+      }
+      final upload = steps.singleWhere(
+        (step) => step['id'] == 'qualification-artifact',
+      );
+      if (upload['with']['path'] != '$root/evidence.zip') {
+        throw FormatException('upload evidence root differs');
+      }
+    }
+
+    lint(job);
+    final invalidJob = Map.of(job)
+      ..['env'] = {'LLAMADART_WINDOWS_QUALIFICATION': root};
+    expect(() => lint(invalidJob), throwsFormatException);
+    final invalidPath = jsonDecode(jsonEncode(job)) as Map;
+    (invalidPath['steps'] as List).singleWhere(
+      (step) => step['id'] == 'qualification-artifact',
+    )['with']['path'] = 'evidence.zip';
+    expect(() => lint(invalidPath), throwsFormatException);
+  });
+
   test('one macOS job runs each selected companion and hosted check', () async {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;
     final job = jobs['companion-packages'] as Map;

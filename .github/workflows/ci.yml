@@ -1116,8 +1116,6 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
-    env:
-      LLAMADART_WINDOWS_QUALIFICATION: ${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1125,9 +1123,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Prepare pinned qualification SDK
+        env:
+          LLAMADART_WINDOWS_QUALIFICATION: ${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}
         shell: pwsh
         run: ./test/fixtures/windows_ggml_registry_qualification/qualification.ps1 -Prepare
       - name: List, inspect and execute the durable scenario
+        env:
+          LLAMADART_WINDOWS_QUALIFICATION: ${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}
         shell: pwsh
         run: |
           . ./test/fixtures/windows_ggml_registry_qualification/qualification.ps1 -FunctionsOnly
@@ -1142,6 +1144,8 @@ jobs:
           Must 'launcher-scenario' $dart 'run tool/testing/run_local_e2e.dart --scenario windows-native-override-registry' 3900
       - name: Seal all qualification evidence
         if: ${{ always() }}
+        env:
+          LLAMADART_WINDOWS_QUALIFICATION: ${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}
         shell: pwsh
         run: ./test/fixtures/windows_ggml_registry_qualification/qualification.ps1 -Seal
       - name: Keep immutable qualification evidence
@@ -1150,7 +1154,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-registry-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.LLAMADART_WINDOWS_QUALIFICATION }}/evidence.zip
+          path: ${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}/evidence.zip
           if-no-files-found: error
           overwrite: false
           retention-days: 1
