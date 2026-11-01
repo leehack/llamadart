@@ -219,6 +219,8 @@ Future<void> main() async {
 Load a GGUF model on two of a host's GPUs, three quarters on the first
 (native llama.cpp only; the Web and LiteRT-LM throw
 `LlamaUnsupportedException`, as do indices the host lacks):
+Keep `tensorSplit` proportions within `ModelParams`' documented float32 limits;
+direct native llama.cpp calls also reject a non-finite sum before loading.
 
 ```dart
 import 'package:llamadart/llamadart.dart';
