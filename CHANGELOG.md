@@ -1,6 +1,10 @@
-## Unreleased
+## 0.17.2
 
+- Fix Windows native runtime overrides failing model loads with `no backends are loaded` ([#1649](https://github.com/leehack/llamadart/issues/1649)).
 - Preserve assistant reasoning in LFM2.5 templates that read `message.thinking`, including turns with tool calls ([#1623](https://github.com/leehack/llamadart/issues/1623)).
+- Keep the default WebGPU bridge assets at `v0.1.79` (unchanged from 0.17.1).
+
+Runtime baseline unchanged from `0.17.1`: native llama.cpp `v0.8.0-1` and Web use upstream `v0.8.0@8642541b255bfb5dc39cd351a178be09013a55d6`; native LiteRT-LM stays `v0.18.1-4` and stable-diffusion stays `v0.3.0-1`. Web LiteRT-LM stays `@litert-lm/core@0.18.0`. Manifest SHA-256: `66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c`.
 
 ## 0.17.1
 
