@@ -309,6 +309,32 @@ const List<String> _referenceEditComponentVariables = [
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
+      name: 'windows-native-override-registry',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Pinned Windows x64 CPU H/E/P registry matrix, declaration mutation and distributed AOT evidence.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/integration/windows_ggml_registry_qualification_test.dart',
+          ],
+          description:
+              'Run the Windows-only model-backed qualification; set LLAMADART_WINDOWS_QUALIFICATION to a fresh evidence root.',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'ci-selection',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

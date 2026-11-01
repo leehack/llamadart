@@ -26,7 +26,10 @@ dynamic _invoke(
 
 void main(List<String> arguments) {
   final calls = LlamaCppObjectCalls.untracked();
-  final service = LlamaCppService(objectCalls: calls);
+  final service = LlamaCppService(
+    objectCalls: calls,
+    isWindows: arguments.single == 'windows-registry' ? true : null,
+  );
   final wrapperClass =
       _owner.declarations[MirrorSystem.getSymbol('_LlamaModelWrapper', _owner)]
           as ClassMirror;
@@ -42,6 +45,15 @@ void main(List<String> arguments) {
   _check(_read(service, '_reasoningBudgetApiLookupAttempted'), isFalse);
   _check(_read(service, '_reasoningBudgetApi'), isNull);
   switch (arguments.single) {
+    case 'windows-registry':
+      _invoke(service, '_resolveGgmlFallbackFunctions', []);
+      final count =
+          _read(service, '_ggmlBackendRegCountFallback') as int Function();
+      final devices =
+          _read(service, '_ggmlBackendDevCountFallback') as int Function();
+      _check(count(), 3);
+      _check(devices(), 4);
+      _check(_read(service, '_ggmlBackendLoadAllFallback'), isNull);
     case 'placement':
       _check(service.getBackendInfo(), [
         'CPU',

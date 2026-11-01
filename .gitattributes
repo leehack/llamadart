@@ -19,3 +19,6 @@ test/fixtures/templates/LFM2_5-1_2B-Thinking-ba551d58630a.jinja -text
 # by hand (see website/docs/maintainers/release-workflow.md).
 /CHANGELOG.md merge=union
 /website/docs/changelog/recent-releases.md merge=union
+
+# The qualification input manifests bind exact portable fixture bytes.
+test/fixtures/windows_ggml_registry_qualification/** -text

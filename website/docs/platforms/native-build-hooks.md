@@ -301,6 +301,13 @@ hooks:
 - On Windows, `dart run` and `dart test` load only the modules the app
   bundles, as does a Linux app built with `dart build cli` and run from
   another directory.
+  `LLAMADART_NATIVE_LIB_DIR` and `LLAMADART_BACKEND_MODULE_DIR` can select
+  a different backend-module directory (in that order). They do not replace
+  the hook-bundled `llama.dll`, `ggml.dll` or `ggml-base.dll`. Use
+  `llamadart_native_path` to replace the complete runtime; putting another
+  runtime on `PATH` is unnecessary. Windows registration and model loading
+  share the hook's ggml code assets. An unavailable ggml code asset or missing `ggml_backend_reg_count`
+  export throws `LlamaUnsupportedException` before native model loading.
 - On Linux, a process whose working directory is the package root, as with
   `dart run` and `dart test`, copies each backend module missing from
   `.dart_tool/lib` out of the hook's download cache,

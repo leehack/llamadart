@@ -86,6 +86,10 @@ void main() {
     );
   }
 
+  test('Windows registry code assets use the fake DLL on every host', () async {
+    await run(Platform.resolvedExecutable, [kernel, 'windows-registry']);
+  });
+
   test(
     'model diagnostics and decision-head CPU placement use fake devices',
     () async {

@@ -110,3 +110,8 @@ lib/src/backends/litert_lm/litert_lm_embedding_bindings.dart @leehack
 # Qwen3 CPU tokenizer fixture qualification.
 /tool/litert_lm_tokenizer_fixture.dart @leehack
 /test/unit/tooling/litert_lm_tokenizer_fixture_test.dart @leehack
+
+# Windows registry model-backed qualification and its orchestration.
+/test/fixtures/windows_ggml_registry_qualification/ @leehack
+/test/integration/windows_ggml_registry_qualification_test.dart @leehack
+/tool/testing/run_local_e2e.dart @leehack

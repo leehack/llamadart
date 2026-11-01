@@ -16,6 +16,9 @@ EXPORT void * llama_model_get_vocab(void * model) {
 EXPORT void llama_model_free(void * model) {}
 EXPORT void llama_free(void * context) {}
 
+// Three backends expose four devices because Metal has two device ordinals.
+EXPORT size_t ggml_backend_reg_count(void) { return 3; }
+
 // Registry order deliberately differs from each backend's device ordinal.
 EXPORT size_t ggml_backend_dev_count(void) { return 4; }
 EXPORT void * ggml_backend_dev_get(size_t index) {
