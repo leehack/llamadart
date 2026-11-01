@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -12,6 +13,21 @@ import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('reasoning is available to either LFM2 template field', () {
+    final rendered = Lfm2Handler().render(
+      templateSource:
+          '{{ messages[0].thinking }}|{{ messages[0].reasoning_content }}',
+      messages: const [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [LlamaThinkingContent('Why')],
+        ),
+      ],
+      metadata: const {},
+    );
+    expect(rendered.prompt, 'Why|Why');
+  });
+
   group('required tool choice grammar', () {
     LlamaChatTemplateResult render(
       List<ToolDefinition> tools, {
