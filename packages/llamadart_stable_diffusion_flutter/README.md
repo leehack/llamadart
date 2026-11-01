@@ -19,7 +19,7 @@ with core `0.17.x`. Upgrade both together. Earlier pairings are in the
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.1
+  llamadart: ^0.17.2
   llamadart_stable_diffusion_flutter: ^0.17.1
 ```
 

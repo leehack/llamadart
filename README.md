@@ -26,7 +26,7 @@ version.
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.1
+  llamadart: ^0.17.2
 ```
 
 ```bash
@@ -47,7 +47,7 @@ companion shares its core's `MAJOR.MINOR` and constrains `llamadart` to it.
 
 ```yaml
 dependencies:
-  llamadart: ^0.17.1
+  llamadart: ^0.17.2
   llamadart_llama_cpp_flutter: ^0.17.1 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.17.1 # Apple .litertlm / LiteRT-LM targets
   llamadart_stable_diffusion_flutter: ^0.17.1 # Apple image generation, opt-in
