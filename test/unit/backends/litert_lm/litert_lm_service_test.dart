@@ -3126,6 +3126,80 @@ void main() {
       });
     }
 
+    for (final preference in [GpuBackend.auto, GpuBackend.metal]) {
+      test('recreates a CPU fallback context with unchanged '
+          '${preference.name} hints', () async {
+        if (skipWithoutGpu()) return;
+        if (preference == GpuBackend.auto &&
+            liteRtLmDefaultNativeBackendForCurrentPlatform() !=
+                liteRtLmGpuBackend) {
+          markTestSkipped('ComputeDevice.auto selects the CPU here.');
+          return;
+        }
+        final gpu = _FakeLiteRtLmRuntimeClient(
+          initializeError: LiteRtLmEngineCreateError('no gpu.'),
+        );
+        final cpu = _FakeLiteRtLmRuntimeClient()..tokenizeResult = const [7];
+        final recreated = _FakeLiteRtLmRuntimeClient()
+          ..tokenizeResult = const [8];
+        final clients = [gpu, cpu, recreated];
+        var nextClient = 0;
+        final service = LiteRtLmService(
+          clientFactory: () => clients[nextClient++],
+          useTempCacheDir: false,
+        );
+        try {
+          final params = ModelParams(preferredBackend: preference);
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          expect(await service.tokenize(model, 'first', true), [7]);
+          expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+          service.freeContext(context);
+          for (final explicit in [
+            const ModelParams(device: ComputeDevice.gpu),
+            const ModelParams(device: ComputeDevice.npu),
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.npu),
+          ]) {
+            expect(
+              () => service.createContext(model, explicit),
+              throwsA(
+                anyOf(isA<ArgumentError>(), isA<LlamaUnsupportedException>()),
+              ),
+            );
+          }
+          final cpuContext = service.createContext(
+            model,
+            const ModelParams(device: ComputeDevice.cpu, gpuLayers: 0),
+          );
+          service.freeContext(cpuContext);
+          final second = service.createContext(model, params);
+          expect(second, isNot(context));
+          expect(await service.tokenize(model, 'second', true), [8]);
+          expect(nextClient, 3);
+          expect(gpu.lastBackend, 'gpu');
+          expect(cpu.lastBackend, 'cpu');
+          expect(cpu.disposeCount, 1);
+          expect(recreated.lastBackend, 'cpu');
+          expect(records, hasLength(1));
+          service.freeContext(second);
+          final cpuModel = await service.loadModel(
+            modelFile.path,
+            const ModelParams(gpuLayers: 0),
+          );
+          expect(
+            () => service.createContext(
+              cpuModel,
+              const ModelParams(preferredBackend: GpuBackend.metal),
+            ),
+            throwsArgumentError,
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
     test('the CPU retry recomputes the cache directory for a CPU '
         'engine', () async {
       if (skipWithoutGpu()) return;

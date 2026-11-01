@@ -170,8 +170,13 @@ retried on the CPU with a `LlamaLogLevel.warn` record, and
 the GPU error is thrown, as `LlamaModelException` when the runtime reports no
 engine. The retry applies only when neither `device` nor the deprecated
 `liteRtLmBackend` or `LiteRtLmBackend(preferredBackend:)` names a device.
-Under `cpu`, an engine the runtime cannot create throws `LlamaModelException`
-at that first call. Windows arm64 has no LiteRT-LM runtime.
+After a successful CPU fallback, backend-SPI callers can free and recreate the
+context with the same automatic backend hints; the new context stays on the
+CPU. Explicit GPU or NPU context requests still require reloading the model.
+When `auto` already resolves to CPU (the Linux/Windows default, `gpuLayers: 0`,
+or a CPU preference), an engine-create failure throws `LlamaModelException`
+without a second attempt. Under `cpu`, an engine the runtime cannot create
+throws `LlamaModelException` at that first call. Windows arm64 has no LiteRT-LM runtime.
 
 `ModelParams.validate()`, which every `LlamaEngine` load calls before any
 download, throws `LlamaArgumentException` when `device` contradicts another

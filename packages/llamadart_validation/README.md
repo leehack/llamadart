@@ -129,6 +129,10 @@ bundle (`e6687177`, SHA-256 `c5f39b41…`) checked by the maintained
 `qwen3-litert-cpu-unicode` root scenario. The `chat-litert-gpu` profile retains
 the legacy artifact pending separate qualification of the updated bundle; CPU
 checks do not qualify GPU/device/Web adoption.
+A LiteRT profile with `backend: auto` passes `ComputeDevice.auto` and
+`GpuBackend.auto`, allowing the runtime's platform default and GPU-to-CPU
+fallback. It does not force CPU placement or prove accelerator execution;
+explicit `cpu`, `gpu` and `npu` profiles retain their device requests.
 
 `lib/llamadart_validation.dart` is the platform-neutral suite; conditional native
 adapters and `lib/io.dart` handle filesystem/runtime checks. `bin/run.dart` and `bin/report.dart` are the

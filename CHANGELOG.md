@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Reject projector requests on fixed LiteRT-LM custom backends before resolving files, preserving the loaded model ([#1556](https://github.com/leehack/llamadart/issues/1556)).
+- Fixed native LiteRT-LM backend-SPI context recreation after automatic GPU-to-CPU fallback when reusing GPU preference hints.
 
 ## 0.17.2
 
