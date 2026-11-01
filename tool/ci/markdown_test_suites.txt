@@ -8,6 +8,7 @@ test/unit/tooling/genkit_release_routing_test.dart
 test/unit/tooling/high_risk_readiness_test.dart
 test/unit/tooling/high_risk_review_policy_test.dart
 test/unit/tooling/macos_swiftpm_bootstrap_docs_test.dart
+test/unit/tooling/markdown_test_suites_test.dart
 test/unit/tooling/package_skills_test.dart
 test/unit/tooling/pubignore_test.dart
 test/unit/tooling/release_install_snippets_test.dart

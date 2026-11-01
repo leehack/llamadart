@@ -59,8 +59,18 @@ class SelectionTest(unittest.TestCase):
         self.assertTrue(plan['jobs']['web-chat-contract'])
         self.assertTrue(plan['jobs']['validation-integration'])
 
-    def test_markdown_tests_only_follow_markdown(self):
-        for path in ('website/sidebars.json', 'doc/images/a.png', 'tool/docs/build.sh',
+    def test_markdown_reader_helpers_run_the_guard_without_full_coverage(self):
+        for path in ('tool/docs/build_site.sh', 'tool/docs/new_reader.dart',
+                     'tool/testing/validation/remote.dart', 'tool/testing/validation.dart'):
+            with self.subTest(path=path):
+                plan = ci.select([path])
+                self.assertTrue(plan['jobs']['markdown-tests'])
+                self.assertFalse(plan['jobs']['test-linux-coverage'])
+                self.assertFalse(plan['jobs']['test-web'])
+                self.assertFalse(plan['jobs']['test-other-os'])
+
+    def test_unrelated_paths_do_not_select_markdown_tests(self):
+        for path in ('website/sidebars.json', 'doc/images/a.png',
                      'LICENSE', 'packages/genkit_llamadart/lib/a.dart',
                      'example/chat_app/test/unit_test.dart'):
             with self.subTest(path=path):

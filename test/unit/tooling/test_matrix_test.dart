@@ -4,11 +4,89 @@ library;
 import 'dart:io';
 
 import 'package:test/test.dart';
+import 'package:yaml/yaml.dart';
 
 import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
+  group('maintained runtime CI job names', () {
+    final ci =
+        loadYaml(File('.github/workflows/ci.yml').readAsStringSync()) as Map;
+    final smoke =
+        loadYaml(
+              File('.github/workflows/litert_lm_smoke.yml').readAsStringSync(),
+            )
+            as Map;
+
+    void expectCurrentJobNames(Map<String, String> commands) {
+      final jobs = ci['jobs'] as Map;
+      final native = jobs['test-other-os'] as Map;
+      final windowsNames = [
+        for (final entry
+            in (native['strategy']['matrix']['include'] as List).cast<Map>())
+          if (entry['os'] == 'windows-latest')
+            (native['name'] as String).replaceAll(
+              r'${{ matrix.leg }}',
+              entry['leg'] as String,
+            ),
+      ];
+      final smokeJob = smoke['jobs']['native-smoke'] as Map;
+      String smokeName(String os) {
+        expect(
+          (smokeJob['strategy']['matrix']['include'] as List).cast<Map>().any(
+            (entry) => entry['os'] == os,
+          ),
+          isTrue,
+        );
+        return '${smoke['name']} / ${(smokeJob['name'] as String).replaceAll(r'${{ matrix.os }}', os)}';
+      }
+
+      final expected = {
+        'linux-x64-ci-runtime': [
+          jobs['test-linux-web']['name'],
+          jobs['native-prompt-reuse-parity']['name'],
+          smokeName('ubuntu-latest'),
+        ],
+        'windows-x64-ci-runtime': [
+          ...windowsNames,
+          smokeName('windows-latest'),
+        ],
+      };
+      for (final entry in expected.entries) {
+        expect(
+          RegExp(
+            '"([^"]+)"',
+          ).allMatches(commands[entry.key]!).map((match) => match.group(1)),
+          unorderedEquals(entry.value),
+          reason: entry.key,
+        );
+      }
+    }
+
+    final commands = {
+      for (final row in testMatrixRows)
+        if (row.id == 'linux-x64-ci-runtime' ||
+            row.id == 'windows-x64-ci-runtime')
+          row.id: row.command,
+    };
+    test('Linux and Windows rows name the actual workflow jobs', () {
+      expectCurrentJobNames(commands);
+    });
+    test('a stale maintained job name is rejected', () {
+      for (final id in commands.keys) {
+        expect(
+          () => expectCurrentJobNames({
+            ...commands,
+            id: commands[id]!.replaceFirst('"', '"stale '),
+          }),
+          throwsA(isA<TestFailure>()),
+          reason: id,
+        );
+      }
+    });
+  });
+
   test(
     'Windows registry matrix reaches the explicitly unskipped integration',
     () async {
