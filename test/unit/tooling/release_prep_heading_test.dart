@@ -158,7 +158,7 @@ void main() {
         'keeps the current and previous minor (releasePrep $releasePrep)',
         () {
           final result = verify(
-            '## 0.14.0\n\n## 0.13.2\n\n## 0.12.2\n',
+            '## 0.14.0\n\n## 0.13.2\n\n## 0.13.0\n\n## 0.12.2\n',
             docsChangelog: '## 0.14.0\n\n## 0.13.2\n\n## 0.13.0\n',
             releasePrep: releasePrep,
           );
@@ -169,7 +169,7 @@ void main() {
       test('rejects releases older than the previous minor '
           '(releasePrep $releasePrep)', () {
         final result = verify(
-          '## 0.14.0\n\n## 0.12.2\n',
+          '## 0.14.0\n\n## 0.13.2\n\n## 0.12.2\n',
           docsChangelog: '## 0.14.0\n\n## 0.13.2\n\n## 0.12.2\n\n## 0.5.0\n',
           releasePrep: releasePrep,
         );
@@ -177,12 +177,41 @@ void main() {
         expect(
           result.stderr,
           contains(
-            '${retention}0.14.x and 0.13.x; remove ## 0.12.2, ## 0.5.0 '
+            '${retention}the current and previous published minor; remove ## 0.12.2, ## 0.5.0 '
             '(older releases stay in CHANGELOG.md).',
           ),
         );
         expect(result.stderr, isNot(contains('CHANGELOG.md keeps only')));
       });
+    }
+
+    for (final releasePrep in [true, false]) {
+      for (final removed in [
+        ['## 0.14.0'],
+        ['## 0.13.0'],
+        ['## 0.13.2', '## 0.13.0'],
+      ]) {
+        test('rejects missing $removed (releasePrep $releasePrep)', () {
+          const headings = ['## 0.14.1', '## 0.14.0', '## 0.13.2', '## 0.13.0'];
+          File(
+            '${root.path}/pubspec.yaml',
+          ).writeAsStringSync('version: 0.14.1\n');
+          final result = verify(
+            [...headings, '## 0.12.2'].join('\n\n'),
+            docsChangelog: headings
+                .where((heading) => !removed.contains(heading))
+                .join('\n\n'),
+            releasePrep: releasePrep,
+          );
+          expect(result.exitCode, 1);
+          expect(
+            result.stderr,
+            contains(
+              'is missing retained release sections: ${removed.join(', ')}.',
+            ),
+          );
+        });
+      }
     }
 
     test('ignores headings that are not releases', () {

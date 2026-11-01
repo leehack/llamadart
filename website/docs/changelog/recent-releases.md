@@ -13,6 +13,8 @@ validate against the exact release tag notes.
 
 ## Unreleased
 
+- Restore documentation destinations linked from published package READMEs and protect retained release notes.
+
 ## 0.17.3
 
 - Reject projector requests on fixed LiteRT-LM custom backends before resolving files, preserving the loaded model ([#1556](https://github.com/leehack/llamadart/issues/1556)).
