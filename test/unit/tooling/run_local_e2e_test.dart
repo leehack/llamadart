@@ -12,6 +12,229 @@ import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
+  group('foreground output decoding', () {
+    late Directory directory;
+    late File child;
+    late File nativeDiagnostic;
+    const nativePrefix =
+        'llama_model_loader: - kv  19:                      '
+        'tokenizer.ggml.merges arr[str,63683]   = '
+        '["Ċ Ċ", "Ċ ĊĊ", "ĊĊ Ċ", "Ċ ';
+
+    setUp(() {
+      directory = Directory.systemTemp.createTempSync('local-e2e-output-');
+      // Native v0.8.0 cuts this metadata preview inside the final Ċ.
+      nativeDiagnostic = File('${directory.path}/native-diagnostic.bin')
+        ..writeAsBytesSync([
+          ...utf8.encode(nativePrefix),
+          0xc4,
+          ...ascii.encode('...\n'),
+        ]);
+      child = File('${directory.path}/output.dart')
+        ..writeAsStringSync(r'''
+import 'dart:io';
+Future<void> main(List<String> args) async {
+  final output = args[0] == 'stdout' ? stdout : stderr;
+  final bytes = switch (args[1]) {
+    'malformed' => [0xe2, 0x21],
+    'truncated' => [0xe2, 0x82],
+    'native-metadata' => File(args[3]).readAsBytesSync(),
+    'unicode' => [0xe2, 0x82, 0xac, 0xf0, 0x9f, 0x8c, 0xb2],
+    _ => systemEncoding.encode('native café'),
+  };
+  output.add(bytes.sublist(0, 1));
+  await output.flush();
+  await Future<void>.delayed(const Duration(milliseconds: 20));
+  output.add(bytes.sublist(1));
+  await output.flush();
+  exit(int.parse(args[2]));
+}
+''');
+    });
+
+    tearDown(() => directory.deleteSync(recursive: true));
+
+    LocalE2eCommandStep step(
+      String stream,
+      String mode,
+      int exitCode, {
+      Encoding stdoutEncoding = systemEncoding,
+    }) => LocalE2eCommandStep(
+      workingDirectory: directory.path,
+      executable: Platform.resolvedExecutable,
+      arguments: [child.path, stream, mode, '$exitCode', nativeDiagnostic.path],
+      description: 'Child output fixture',
+      foregroundStdoutEncoding: stdoutEncoding,
+    );
+
+    for (final stream in ['stdout', 'stderr']) {
+      for (final mode in ['malformed', 'truncated', 'native-metadata']) {
+        for (final exitCode in [0, 7]) {
+          test('$mode $stream diagnostics preserve exit $exitCode', () async {
+            final result = await runLocalE2e(
+              ['--scenario', 'gguf-stop-sequences'],
+              projectRoot: directory.path,
+              foregroundStepRun: (_) =>
+                  runLocalE2eForegroundStep(step(stream, mode, exitCode)),
+            );
+            expect(result.exitCode, exitCode);
+            final expected = switch (mode) {
+              'native-metadata' =>
+                Platform.isWindows
+                    ? systemEncoding.decode(nativeDiagnostic.readAsBytesSync())
+                    : '$nativePrefix\uFFFD...\n',
+              _ =>
+                Platform.isWindows
+                    ? systemEncoding.decode([
+                        0xe2,
+                        mode == 'malformed' ? 0x21 : 0x82,
+                      ])
+                    : mode == 'malformed'
+                    ? '\uFFFD!'
+                    : '\uFFFD',
+            };
+            expect(result.stdout, contains(expected));
+            expect(result.stderr, isEmpty);
+          });
+        }
+      }
+
+      test('$stream retains the platform encoding', () async {
+        final result = await runLocalE2eForegroundStep(
+          step(stream, 'system', 0),
+        );
+        expect(result.exitCode, 0);
+        expect(
+          stream == 'stdout' ? result.stdout : result.stderr,
+          systemEncoding.decode(systemEncoding.encode('native café')),
+        );
+      });
+
+      test(
+        'split UTF-8 $stream stays intact',
+        () async {
+          final result = await runLocalE2eForegroundStep(
+            step(stream, 'unicode', 0, stdoutEncoding: utf8),
+          );
+          expect(result.exitCode, 0);
+          expect(stream == 'stdout' ? result.stdout : result.stderr, '€🌲');
+        },
+        skip: stream == 'stderr' && Platform.isWindows
+            ? 'Windows diagnostics use the system code page tested above.'
+            : false,
+      );
+    }
+
+    test('explicit UTF-8 stdout rejects a malformed protocol', () async {
+      final result = await runLocalE2e(
+        ['--scenario', 'qwen3-litert-cpu-unicode', '--model-path', '/fixture'],
+        projectRoot: directory.path,
+        foregroundStepRun: (command) {
+          expect(command.foregroundStdoutEncoding, same(utf8));
+          return runLocalE2eForegroundStep(
+            step(
+              'stdout',
+              'malformed',
+              0,
+              stdoutEncoding: command.foregroundStdoutEncoding,
+            ),
+          );
+        },
+      );
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('FormatException'));
+    });
+
+    test('explicit UTF-8 stdout still tolerates stderr diagnostics', () async {
+      final result = await runLocalE2eForegroundStep(
+        step('stderr', 'malformed', 0, stdoutEncoding: utf8),
+      );
+      expect(result.exitCode, 0);
+      expect(result.stdout, isEmpty);
+      expect(result.stderr, isNotEmpty);
+    });
+
+    test('an explicit stdout codec is retained', () async {
+      final result = await runLocalE2eForegroundStep(
+        step('stdout', 'malformed', 0, stdoutEncoding: latin1),
+      );
+      expect(result.exitCode, 0);
+      expect(result.stdout, 'â!');
+    });
+
+    test(
+      'the CLI uses diagnostic decoding and strict protocol decoding',
+      () async {
+        final runner = File(
+          'tool/testing/run_local_e2e.dart',
+        ).copySync('${directory.path}/runner.dart');
+        final shim = File('${directory.path}/dart');
+        String quote(String value) => "'${value.replaceAll("'", "'\\''")}'";
+        for (final stream in ['stdout', 'stderr']) {
+          for (final exitCode in [0, 7]) {
+            shim.writeAsStringSync(
+              '#!/bin/sh\nexec ${quote(Platform.resolvedExecutable)} '
+              '${quote(child.path)} $stream malformed $exitCode\n',
+            );
+            expect((await Process.run('chmod', ['+x', shim.path])).exitCode, 0);
+            final result = await Process.run(
+              Platform.resolvedExecutable,
+              [runner.path, '--scenario', 'gguf-stop-sequences'],
+              workingDirectory: directory.path,
+              environment: {
+                'PATH': '${directory.path}:${Platform.environment['PATH']}',
+              },
+            );
+            expect(result.exitCode, exitCode);
+            expect(result.stdout, contains('\uFFFD!'));
+            expect(result.stderr, isEmpty);
+          }
+        }
+        shim.writeAsStringSync(
+          '#!/bin/sh\nexec ${quote(Platform.resolvedExecutable)} '
+          '${quote(child.path)} stdout malformed 0\n',
+        );
+        final protocol = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            runner.path,
+            '--scenario',
+            'qwen3-litert-cpu-unicode',
+            '--model-path',
+            '/fixture',
+          ],
+          workingDirectory: directory.path,
+          environment: {
+            'PATH': '${directory.path}:${Platform.environment['PATH']}',
+          },
+        );
+        expect(protocol.exitCode, 1);
+        expect(protocol.stderr, contains('FormatException'));
+      },
+      skip: Platform.isWindows ? 'Uses a POSIX executable shim.' : false,
+    );
+
+    test('process launch errors remain failures', () async {
+      final missing = LocalE2eCommandStep(
+        workingDirectory: directory.path,
+        executable: '${directory.path}/missing-executable',
+        arguments: const [],
+        description: 'Missing executable',
+      );
+      await expectLater(
+        runLocalE2eForegroundStep(missing),
+        throwsA(isA<ProcessException>()),
+      );
+      final result = await runLocalE2e(
+        ['--scenario', 'gguf-stop-sequences'],
+        projectRoot: directory.path,
+        foregroundStepRun: (_) => runLocalE2eForegroundStep(missing),
+      );
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('ProcessException'));
+    });
+  });
+
   test(
     'native JSON Schema scenario consumes the maintained CPU test and local model',
     () async {

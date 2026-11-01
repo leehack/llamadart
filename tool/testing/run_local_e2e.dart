@@ -43,8 +43,9 @@ class LocalE2eCommandStep {
   final bool background;
   final int? waitForPort;
 
-  /// Codec for foreground stdout; controlled Dart protocols can opt into UTF-8.
-  /// Other commands retain their platform's output encoding.
+  /// Codec for foreground stdout; controlled Dart protocols can opt into
+  /// strict [utf8]. The default retains the platform's output encoding, with
+  /// replacement characters for malformed UTF-8 diagnostics.
   final Encoding foregroundStdoutEncoding;
 
   /// Renders this step as a copy-pasteable command for [shell].
@@ -2328,6 +2329,25 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   ];
 }
 
+/// Runs a foreground step without letting malformed diagnostics hide its exit
+/// code. Explicit stdout codecs remain strict for controlled output protocols.
+Future<ProcessResult> runLocalE2eForegroundStep(LocalE2eCommandStep step) {
+  final diagnostics = Platform.isWindows
+      ? systemEncoding
+      : const Utf8Codec(allowMalformed: true);
+  return Process.run(
+    step.executable,
+    step.arguments,
+    workingDirectory: step.workingDirectory,
+    environment: step.environment.isEmpty ? null : step.environment,
+    runInShell: false,
+    stdoutEncoding: step.foregroundStdoutEncoding == systemEncoding
+        ? diagnostics
+        : step.foregroundStdoutEncoding,
+    stderrEncoding: diagnostics,
+  );
+}
+
 Future<LocalE2eResult> runLocalE2e(
   List<String> args, {
   String? projectRoot,
@@ -2756,16 +2776,9 @@ Future<LocalE2eResult> runLocalE2e(
         continue;
       }
 
-      final result = await (foregroundStepRun == null
-          ? Process.run(
-              step.executable,
-              step.arguments,
-              workingDirectory: step.workingDirectory,
-              environment: step.environment.isEmpty ? null : step.environment,
-              runInShell: false,
-              stdoutEncoding: step.foregroundStdoutEncoding,
-            )
-          : foregroundStepRun(step));
+      final result = await (foregroundStepRun ?? runLocalE2eForegroundStep)(
+        step,
+      );
       buffer
         ..write(result.stdout)
         ..write(result.stderr);
