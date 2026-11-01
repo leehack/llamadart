@@ -41,6 +41,8 @@ def verify(archive, head, run_id, run_attempt, *, inventory_only=False):
                     'candidate-source-files.json', 'baseline-source-files.json',
                     'sdk-identity.json', 'sdk-extracted-files.json', 'host.json',
                     'peak-space-budget.json', 'cases.jsonl',
+                    'fixed-maintained-registry-integration.events.json',
+                    'fixed-maintained-registry-integration-result.json',
                     'codeasset-mutation-receipt.json', 'normal-AOT-distribution-before.json',
                     'normal-AOT-distribution-after.json', 'normal-AOT-distributed-providers.json'}
         if not required <= files:
@@ -61,6 +63,22 @@ def verify(archive, head, run_id, run_attempt, *, inventory_only=False):
             for suffix in ('.stdout.log', '.stderr.log', '-process-environment.json'):
                 if case['name'] + suffix not in files:
                     raise ValueError('raw subprocess evidence omitted')
+        integration_name = 'fixed-maintained-registry-integration'
+        integration = [case for case in cases if case['name'] == integration_name]
+        proof = json.loads(bundle.read(integration_name + '-result.json'))
+        process = json.loads(bundle.read(integration_name + '-process-environment.json'))
+        normalized = lambda value: value.replace('\\', '/').rstrip('/').lower()
+        if (len(integration) != 1 or integration[0]['exitCode'] != 0 or
+                (proof.get('head'), proof.get('runId'), proof.get('runAttempt')) != (head, run_id, run_attempt) or
+                proof.get('caseName') != integration_name or proof.get('success') is not True or
+                type(proof.get('executedTests')) is not int or proof['executedTests'] != 1 or
+                type(proof.get('skippedTests')) is not int or proof['skippedTests'] != 0 or
+                proof.get('testName') != 'an external module directory does not open another ggml registry' or
+                f'--file-reporter "json:{proof["reportPath"]}"' not in process['arguments'] or
+                normalized(proof['workingDirectory']) != normalized(process['workingDirectory']) or
+                normalized(proof['suitePath']) != normalized(proof['workingDirectory']) + '/test/integration/windows_ggml_registry_test.dart' or
+                proof.get('reportSha256') != hashlib.sha256(bundle.read(integration_name + '.events.json')).hexdigest()):
+            raise ValueError('maintained integration execution proof invalid')
         for row in rows:
             name = row['name']
             if name.startswith('fixed-') or name == 'original-H0E0P0':

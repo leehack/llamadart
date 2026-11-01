@@ -1,3 +1,5 @@
+. "$PSScriptRoot/registry_test_report.ps1"
+
 function CheckSnapshot($name,$requireCoherent) {
   $text=Get-Content "$O\$name.stdout.log" -Raw
   $lines=@($text -split "`r?`n" | Where-Object {$_.StartsWith('PASSIVE_MODULE ')})
@@ -103,8 +105,10 @@ function Invoke-RegistryQualification {
   Must 'fixed-codeasset-control-dependency-receipt' $dart "run dependency_receipt.dart pubspec.lock $O\fixed-codeasset-control-external-resolution.json"
   if((Hash "$O\fixed-codeasset-control-external-resolution.json") -cne $externalHash){throw 'mutant control dependency resolution differs'}
   Copy-Item "$mutantCore\pubspec.lock" "$O\fixed-codeasset-control-pubspec.lock"
-  Must 'fixed-maintained-registry-integration' $dart 'test -p vm -j 1 test/integration/windows_ggml_registry_test.dart' 300
-  if((Get-Content "$O\fixed-maintained-registry-integration.stdout.log" -Raw) -notmatch 'All tests passed!'){throw 'unmutated maintained integration did not actually pass'}
+  $report="$O/fixed-maintained-registry-integration.events.json"
+  if((Test-Path -LiteralPath $report) -or (Test-Path -LiteralPath "$O/fixed-maintained-registry-integration-result.json")){throw 'maintained integration requires fresh reporter evidence'}
+  Must 'fixed-maintained-registry-integration' $dart "test -p vm -j 1 --file-reporter `"json:$report`" test/integration/windows_ggml_registry_test.dart" 300
+  Assert-MaintainedRegistryReport $report
   Invoke-NativeRegistryMappingMutation "$mutantCore\lib\src\backends\llama_cpp\native_signatures.dart" $dart
   foreach($entry in (Get-Content $C.candidateSourceFiles -Raw | ConvertFrom-Json)){if($entry.path -ne 'pubspec.yaml'){Verify (Join-Path $mutantCore $entry.path) $entry.sha256}}
   RecordFiles $mutantCore 'codeasset-control-after-restoration'

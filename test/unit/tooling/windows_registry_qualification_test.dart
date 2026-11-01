@@ -4,12 +4,109 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:test/test.dart';
 
 import '../../fixtures/windows_ggml_registry_qualification/payload/passive_modules.dart';
 
 void main() {
+  test(
+    'maintained integration reporter proves execution without skips',
+    () async {
+      final scratch = await Directory.systemTemp.createTemp(
+        'registry-reporter-',
+      );
+      addTearDown(() => scratch.delete(recursive: true));
+      final root = scratch.resolveSymbolicLinksSync();
+      final core = Directory('$root/core')..createSync();
+      final tests = Directory('${core.path}/test/integration')
+        ..createSync(recursive: true);
+      Directory('${core.path}/.dart_tool').createSync();
+      File(
+        '.dart_tool/package_config.json',
+      ).copySync('${core.path}/.dart_tool/package_config.json');
+      File(
+        '${core.path}/pubspec.yaml',
+      ).writeAsStringSync('name: reporter_control\n');
+      final testLibrary = await Isolate.resolvePackageUri(
+        Uri.parse('package:test/test.dart'),
+      );
+      final runner = testLibrary!.resolve('../bin/test.dart').toFilePath();
+      final config = File('.dart_tool/package_config.json').absolute.path;
+      for (final variant in [
+        'pass',
+        'skip',
+        'failure',
+        'empty',
+        'wrong-name',
+        'multiple',
+        'setup-failure',
+      ]) {
+        final body = variant == 'empty'
+            ? ''
+            : '''
+${variant == 'setup-failure' ? "setUpAll(() => fail('setup control'));" : ''}
+test('${variant == 'wrong-name' ? 'different test' : 'an external module directory does not open another ggml registry'}',
+  () { ${variant == 'failure' ? "fail('test control');" : 'expect(1, 1);'} }, skip: ${variant == 'skip'});
+${variant == 'multiple' ? "test('extra test', () {});" : ''}
+''';
+        File('${tests.path}/windows_ggml_registry_test.dart').writeAsStringSync(
+          "import 'package:test/test.dart';\nvoid main() {$body}\n",
+        );
+        final result = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            '--packages=$config',
+            runner,
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '--file-reporter',
+            'json:$root/$variant.events.json',
+            'test/integration/windows_ggml_registry_test.dart',
+          ],
+          workingDirectory: core.path,
+          environment: {'GITHUB_ACTIONS': 'true'},
+        );
+        expect(
+          result.exitCode,
+          variant == 'empty'
+              ? 79
+              : ['failure', 'setup-failure'].contains(variant)
+              ? 1
+              : 0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        if (variant == 'pass') {
+          expect('${result.stdout}', contains('1 test passed.'));
+          expect('${result.stdout}', isNot(contains('All tests passed!')));
+        }
+      }
+      final result = await Process.run(
+        Platform.environment['LLAMADART_TEST_PWSH'] ?? 'pwsh',
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-File',
+          'test/unit/tooling/support/windows_registry/check_registry_report.ps1',
+          '-BundleRoot',
+          Directory(
+            'test/fixtures/windows_ggml_registry_qualification',
+          ).absolute.path,
+          '-ReportsRoot',
+          root,
+          '-OutputPath',
+          '$root/receipt.json',
+        ],
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   test('observer flushes complete before the next piped snapshot', () async {
     for (final mode in ['unawaited-flush', 'success', 'exception']) {
       final process = await Process.start(Platform.resolvedExecutable, [

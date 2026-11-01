@@ -33,9 +33,24 @@ files.update({
     'codeasset-mutation-receipt.json': encoded(dict(causalRefusalVerified=True, sourceRestored=True, sourceSha256='b' * 64, restoredSha256='b' * 64)),
     'cases.jsonl': b'\n'.join(encoded(dict(name=row['name'], exitCode=0, timeout=False)) for row in rows),
 })
+integration_name = 'fixed-maintained-registry-integration'
+report = b'real reporter parsing is exercised separately'
+files[integration_name + '.events.json'] = report
+files[integration_name + '-result.json'] = encoded(dict(
+    caseName=integration_name, head='a' * 40, runId='12', runAttempt='1',
+    workingDirectory='C:/fixture/core', suitePath='C:/fixture/core/test/integration/windows_ggml_registry_test.dart',
+    reportPath='C:/fixture/out/fixed-maintained-registry-integration.events.json',
+    testName='an external module directory does not open another ggml registry',
+    executedTests=1, skippedTests=0, success=True, reportSha256=hashlib.sha256(report).hexdigest()))
+files['cases.jsonl'] += b'\n' + encoded(dict(name=integration_name, exitCode=0, timeout=False))
 for row in rows:
     for suffix in ('.stdout.log', '.stderr.log', '-process-environment.json'):
         files[row['name'] + suffix] = b'raw fixture'
+files[integration_name + '.stdout.log'] = b'raw stdout'
+files[integration_name + '.stderr.log'] = b''
+files[integration_name + '-process-environment.json'] = encoded(dict(
+    workingDirectory='C:/fixture/core',
+    arguments='test -p vm -j 1 --file-reporter "json:C:/fixture/out/fixed-maintained-registry-integration.events.json" test/integration/windows_ggml_registry_test.dart'))
 
 with tempfile.TemporaryDirectory() as work:
     def archive(content, mutate_manifest=False):
@@ -62,9 +77,15 @@ with tempfile.TemporaryDirectory() as work:
     verify(files)
     verify(files, rejected=True, mutate_manifest=True)
     verify(files, rejected=True, head='c' * 40)
-    for omitted in ('candidate-source-files.json', 'fixed-H0E0P0.stderr.log'):
+    for omitted in ('candidate-source-files.json', 'fixed-H0E0P0.stderr.log', integration_name + '.events.json', integration_name + '-result.json'):
         changed = dict(files)
         del changed[omitted]
+        verify(changed, rejected=True)
+    for key, value in (('skippedTests', 1), ('executedTests', 0), ('reportSha256', 'wrong'), ('workingDirectory', 'C:/foreign/core'), ('head', 'c' * 40)):
+        changed = dict(files)
+        proof = json.loads(changed[integration_name + '-result.json'])
+        proof[key] = value
+        changed[integration_name + '-result.json'] = encoded(proof)
         verify(changed, rejected=True)
     for key, value in (('harnessFailed', True), ('completed', False), ('phase', 'setup')):
         changed = dict(files)
