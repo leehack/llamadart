@@ -126,6 +126,8 @@ Map<String, Object?> _traitsOf(ChatFormat format) {
     'requiredKeepsLazyGrammar': traits.requiredKeepsLazyGrammar,
     'routesThroughGeneric': traits.routesThroughGeneric,
     'toolChoiceNoneRendersContentOnly': traits.toolChoiceNoneRendersContentOnly,
+    'qualifiesJsonSchemaTools': traits.qualifiesJsonSchemaTools,
+    'hasIncompleteToolCallCheck': traits.leavesIncompleteToolCall != null,
   };
 }
 
