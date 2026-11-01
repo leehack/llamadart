@@ -72,6 +72,13 @@ void main() {
       expect(parallel.grammar, isNot(single.grammar));
     });
 
+    test('auto without the force-json marker leaves grammar unconstrained', () {
+      final result = render([search], toolChoice: ToolChoice.auto);
+      expect(result.grammar, isNull);
+      expect(result.grammarLazy, isFalse);
+      expect(result.grammarTriggers, isEmpty);
+    });
+
     test('buildGrammar is the single-call list', () {
       expect(Lfm2Handler().buildGrammar([search]), render([search]).grammar);
     });
@@ -161,6 +168,27 @@ void main() {
             .single;
         expect(call.id, id);
       }
+    });
+
+    test('parses a deep map id with ordered siblings and mixed values', () {
+      const depth = identical(0, 0.0) ? 1000 : 20000;
+      final id =
+          '${'{"before":[1,"[,{}]",null],"next":' * depth}7'
+          '${',"after":{"z":true,"a":2}}' * depth}';
+      final call = Lfm2Handler()
+          .parse(
+            '<|tool_call_start|>[{"name":"f","id":$id,"arguments":{"ok":true}}]'
+            '<|tool_call_end|>',
+          )
+          .toolCalls
+          .single;
+      expect(
+        call.id,
+        '${'{before: [1, [,{}], null], next: ' * depth}7'
+        '${', after: {z: true, a: 2}}' * depth}',
+      );
+      expect(call.function?.name, 'f');
+      expect(call.function?.arguments, '{"ok":true}');
     });
 
     test('keeps a call whose ignored field nests deeply but decodes', () {

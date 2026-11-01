@@ -70,6 +70,23 @@ void main() {
       }
     });
 
+    test('preserves deep map id order and delimiters through parsing', () {
+      const depth = identical(0, 0.0) ? 1000 : 20000;
+      const opening = '{"before":[1,"[,{}]",null],"next":';
+      const closing = ',"after":{"z":true,"a":2}}';
+      final payload = '${opening * depth}7${closing * depth}';
+      final parsed = ToolCallParsingUtils.parseToolCallArray(
+        jsonDecode('[{"name":"f","id":$payload,"arguments":{"ok":true}}]'),
+      )!.single;
+      expect(
+        parsed.id,
+        '${'{before: [1, [,{}], null], next: ' * depth}7'
+        '${', after: {z: true, a: 2}}' * depth}',
+      );
+      expect(parsed.function?.name, 'f');
+      expect(parsed.function?.arguments, '{"ok":true}');
+    });
+
     test(
       'rejects duplicate object keys before JSON decoding collapses them',
       () {

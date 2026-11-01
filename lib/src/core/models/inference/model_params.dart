@@ -22,10 +22,9 @@ enum ModelSplitMode {
   /// Split layers and KV cache across GPUs, with row-level tensor splitting
   /// where supported by the backend.
   ///
-  /// Needs llama.cpp split buffer types on every model device. llama.cpp
-  /// `v0.7.0` provides them only on backends llamadart does not bundle (SYCL
-  /// and Hexagon), so on native llama.cpp a load whose devices lack them,
-  /// such as any bundled GPU backend or a selected CPU, throws
+  /// Needs llama.cpp split buffer types on every model device.
+  /// A native llama.cpp load whose devices lack them,
+  /// such as a bundled GPU backend or a selected CPU, throws
   /// `LlamaUnsupportedException` before the model loads. Use [layer]
   /// instead.
   row(2),

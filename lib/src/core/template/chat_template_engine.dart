@@ -207,7 +207,8 @@ class ChatTemplateEngine {
 
     // 3. Prepare template capabilities and render context matching llama.cpp
     final caps = TemplateCaps.detect(effectiveTemplate ?? '');
-    // LFM2 templates never read tool_calls, but every LFM2 call is a list.
+    // LFM2 list grammar honors the parallel flag even when capability
+    // detection misses tool_calls in the template.
     final effectiveParallelToolCalls =
         allowToolCalls &&
         parallelToolCalls &&
