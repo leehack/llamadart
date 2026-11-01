@@ -14,6 +14,7 @@ from playwright_chat_app_utils import (
     browser_args,
     emit,
     enable_flutter_semantics,
+    enter_chat_prompt,
     local_storage_init_script,
     safe_body_text,
 )
@@ -299,8 +300,7 @@ def main() -> int:
                 encodedByteLength=speaker_audio_path.stat().st_size,
             )
 
-        textbox = page.get_by_role("textbox").last
-        textbox.fill(args.prompt)
+        enter_chat_prompt(page, args.prompt, button_name="Synthesize speech")
         synthesize_button = page.get_by_role("button", name="Synthesize speech")
         synthesize_button.wait_for(state="visible")
         emit("synthesize_click", character_count=len(args.prompt))
