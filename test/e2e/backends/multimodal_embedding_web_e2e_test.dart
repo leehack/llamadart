@@ -443,9 +443,6 @@ JSObject? _expectWorkerState(
   bool worker,
   String stage,
 ) {
-  print(
-    'EMBEDDING_STAGE ${worker ? 'worker' : 'direct'} $stage ${DateTime.now()}',
-  );
   final proxy = (bridge as JSObject).getProperty<JSObject?>(
     '_workerProxy'.toJS,
   );
