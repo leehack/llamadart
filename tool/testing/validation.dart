@@ -31,6 +31,7 @@ Future<void> main(List<String> arguments) async {
         '  plan --target <remote-target> --config <local-json> --bundle <directory> --out <plan.json>\n'
         '  run --plan <plan.json>\n'
         '  status|collect|cleanup --run-id <id>\n'
+        '  reassess --run-id <saved-id> --out <new-directory> (offline, prepared dependencies required)\n'
         '  reconcile --run-id <id> --remote-id <matrix-or-numeric-instance-id>\n'
         'Remote commands require explicit account/project and current quota/credit evidence.',
       );
@@ -75,6 +76,28 @@ Future<void> main(List<String> arguments) async {
           'rows': rows,
         }),
       );
+    } else if (command == 'reassess') {
+      final id = required('run-id');
+      if (!RegExp(r'^qa-[a-z0-9-]+$').hasMatch(id)) {
+        throw const FormatException('Invalid run ID');
+      }
+      final result = await RemoteController(runRoot, GcloudProvider()).reassess(
+        id,
+        Directory(p.absolute(required('out'))),
+        replay: (saved, output) => reassessSavedRun(root, saved, output),
+      );
+      stdout.writeln(
+        jsonEncode({
+          for (final key in [
+            'kind',
+            'run_id',
+            'assertions_passed',
+            'qualified',
+          ])
+            key: result[key],
+        }),
+      );
+      if (result['qualified'] != true) exitCode = 1;
     } else if (command == 'voice') {
       final result = await executeCommand(
         Platform.resolvedExecutable,
