@@ -443,6 +443,25 @@ void main() {
   });
   tearDown(() => scratch.deleteSync(recursive: true));
 
+  test('reassess CLI rejects unsafe run IDs before creating output', () async {
+    final output = Directory(p.join(scratch.path, 'unsafe-reassessment'));
+    final result = await Process.run(Platform.resolvedExecutable, <String>[
+      '--packages=${File('.dart_tool/package_config.json').absolute.path}',
+      File('tool/testing/validation.dart').absolute.path,
+      'reassess',
+      '--run-id',
+      '../unsafe',
+      '--out',
+      output.path,
+    ], workingDirectory: Directory.current.path);
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('Invalid run ID'));
+    expect(
+      FileSystemEntity.typeSync(output.path),
+      FileSystemEntityType.notFound,
+    );
+  });
+
   RemotePlan plan({
     String id = 'qa-one',
     String target = 'firebase-android',
