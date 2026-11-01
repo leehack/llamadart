@@ -87,6 +87,8 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/upstage-Solar-Open-100B.jinja': '11111011',
   'test/fixtures/templates/DeepSeek-R1-Distill-Llama-8B.jinja': '10001000',
   'test/fixtures/templates/DeepSeek-R1-Distill-Qwen-1_5B.jinja': '10001000',
+  // Current LFM2.5 render fixture: pinned from JinjaAnalyzer, not /props.
+  'test/fixtures/templates/LFM2_5-1_2B-Thinking-ba551d58630a.jinja': '11111011',
   'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja': '10101000',
   // Retained #1623 GGUF template, pinned from Dart detection.
   'test/fixtures/templates/LFM2_5-8B-A1B-6d65c8804847.jinja': '11111011',
