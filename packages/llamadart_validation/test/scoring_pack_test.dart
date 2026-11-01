@@ -66,7 +66,10 @@ class ScoringEngine extends harness.FakeEngine
     int topK = 0,
     required bool reuse,
   }) async {
-    if (!supported) throw LlamaUnsupportedException('Scoring unsupported');
+    if (!supported) {
+      if (fault == 'unsupported_wrong_type') throw StateError('Scoring failed');
+      throw LlamaUnsupportedException('Scoring unsupported');
+    }
     if (fault == 'accepts_empty' && text.isEmpty) return {};
     if (text.isEmpty || topK < 0 || candidates.any((id) => id < 0)) {
       throw ArgumentError('invalid scoring request');
@@ -93,6 +96,46 @@ class ScoringEngine extends harness.FakeEngine
       ],
       'top': [for (final id in ids) row(id)],
     };
+  }
+
+  @override
+  Future<Map<String, dynamic>> generate(
+    String prompt,
+    ValidationProfile profile, {
+    bool raw = false,
+    int? maxTokens,
+    int? streamBatchTokens,
+    int? streamBatchBytes,
+    bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
+    int? cancelAfterMs,
+    List<LlamaChatMessage>? history,
+    List<String>? stopSequences,
+    bool? enableThinking,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    String? grammar,
+  }) async {
+    final result = await super.generate(
+      prompt,
+      profile,
+      raw: raw,
+      maxTokens: maxTokens,
+      streamBatchTokens: streamBatchTokens,
+      streamBatchBytes: streamBatchBytes,
+      cancelAfterFirst: cancelAfterFirst,
+      cancelOnListen: cancelOnListen,
+      cancelAfterMs: cancelAfterMs,
+      history: history,
+      stopSequences: stopSequences,
+      enableThinking: enableThinking,
+      tools: tools,
+      toolChoice: toolChoice,
+      grammar: grammar,
+    );
+    if (fault == 'recovery_incomplete') result['stream_completed'] = false;
+    if (fault == 'recovery_empty') result['content'] = '';
+    return result;
   }
 
   @override
@@ -291,6 +334,35 @@ void main() {
     final lying = await runScoring(selected: litert, supported: true);
     expect(record(lying, 'N01.capability')['status'], 'FAIL');
   });
+
+  for (final fault in [
+    'unsupported_wrong_type',
+    'recovery_incomplete',
+    'recovery_empty',
+  ]) {
+    test('LiteRT capability fails on $fault', () async {
+      final events = await runScoring(
+        selected: profile('scoring-litert-cpu'),
+        supported: false,
+        fault: fault,
+      );
+      final capability = record(events, 'N01.capability');
+      expect(capability['status'], 'FAIL', reason: jsonEncode(capability));
+      expect(
+        capability['rejection'],
+        fault == 'unsupported_wrong_type'
+            ? 'StateError'
+            : 'LlamaUnsupportedException',
+      );
+      final recovery = capability['recovery'] as Map;
+      expect(recovery['stream_completed'], fault != 'recovery_incomplete');
+      expect(
+        recovery['content'],
+        fault == 'recovery_empty' ? isEmpty : isNotEmpty,
+      );
+      expect(report(events).qualified, false);
+    });
+  }
 
   test(
     'missing adapter, unqualified host and false support stay honest',
@@ -674,6 +746,32 @@ void main() {
       );
     });
 
+    test('N03 combined top enforces its own probability-mass bound', () async {
+      final events = await runScoring();
+      final evidence = record(events, 'N03.candidates');
+      final baseline = evidence['baseline']['top'] as List;
+      final mass = baseline.fold<double>(
+        0,
+        (sum, row) => sum + math.exp((row['logprob'] as num).toDouble()),
+      );
+      final strict = _FixtureProfile(profile(), {
+        'max_probability_mass': mass + 0.0001,
+      });
+      bool accepts() => validScoringCaseEvidence(
+        'N03.candidates',
+        evidence,
+        strict,
+        web: false,
+        diagnostics: cpuDiagnostics,
+      );
+      expect(accepts(), true);
+      // Stay within the baseline delta tolerance while crossing the mass bound.
+      for (final row in evidence['combined']['top'] as List) {
+        row['logprob'] += 0.001;
+      }
+      expect(accepts(), false);
+    });
+
     test('catalog 12 does not declare the scoring cases', () {
       for (final id in caseIds) {
         expect(catalogDeclaresCase(id, 12), false, reason: id);
@@ -715,6 +813,26 @@ void main() {
     test('a coherent run raises no cross-case problem', () async {
       expect(report(await runScoring()).problems, isNot(contains(message)));
     });
+
+    for (final id in ['N02.top_k', 'N03.candidates', 'N05.guards']) {
+      for (final status in ['NOT_RUN', 'FAIL', 'ERROR', 'UNSUPPORTED']) {
+        test('excludes $status $id from cross-case agreement', () async {
+          final events = copy(await runScoring());
+          final excluded = record(events, id)..['status'] = status;
+          if (id == 'N02.top_k') {
+            excluded['trials'][0]['tokens'][0] = 500;
+          } else {
+            excluded['tokens'][0] = 500;
+          }
+          final result = report(events);
+          expect(result.problems, isNot(contains(message)));
+          expect(result.qualified, false);
+          // The same disagreement must be detected when the case passes.
+          excluded['status'] = 'PASS';
+          expect(report(events).problems, contains(message));
+        });
+      }
+    }
 
     for (final entry in mutations.entries) {
       test('reports ${entry.key}', () async {

@@ -2178,13 +2178,15 @@ their inventories and hashes.
 | --- | --- |
 | `N01.capability` | Independently expected capability; LiteRT-LM rejects `scoreNextToken` with `LlamaUnsupportedException` and still generates |
 | `N02.top_k` | Two fixed prompts return exactly eight distinct finite log-probabilities, most probable first, with total probability at most 1.001, a `promptTokens` equal to the special-token-aware tokenization and the same result on repeat |
-| `N03.candidates` | Candidates (top ranks 0, 2, 5 and the smallest ID outside the top eight) return in request order; each matches its top entry within 0.01, the outsider is no likelier than the least likely top token, and candidates alone return an empty top list |
+| `N03.candidates` | Candidates (top ranks 0, 2, 5 and the smallest ID outside the top eight) return in request order; each matches its top entry within 0.01, the outsider is no likelier than the least likely top token, and candidates alone return an empty top list; the combined candidates/top-K request preserves the baseline top IDs and scores within 0.01 and the same mass bound |
 | `N04.reuse` | After scoring a prefix with prefix reuse on, the extended prompt scores within 0.01 of a no-reuse run, with at least 8 shared and 2 new tokens |
 | `N05.guards` | An empty prompt, a negative candidate, a negative `topK` and neither candidates nor `topK` throw `ArgumentError`, and the next score equals the baseline |
 
 ```sh
 dart run tool/testing/validation.dart local --profile scoring-gguf-cpu \
   --model /path/to/stories15M.gguf --out /tmp/scoring-cpu-run
+dart run tool/testing/validation.dart local --profile scoring-litert-cpu \
+  --model /path/to/Qwen3-0.6B.litertlm --out /tmp/scoring-litert-cpu-run
 ```
 
 The profile locks Stories15M (SHA256
@@ -2195,11 +2197,14 @@ independent oracle, and non-CPU or non-GGUF profiles omit `N02`-`N05` as
 `scoring-litert-cpu` (Qwen3-0.6B on LiteRT-LM CPU) runs only `N01`, as an
 expected-unsupported profile: the importer requires the typed
 `LlamaUnsupportedException` plus a working generation afterwards. LiteRT-LM
-next-token scoring itself is blocked on LiteRT-LM v0.19
-([#1158](https://github.com/leehack/llamadart/issues/1158)); until then no
-LiteRT profile may claim `N02`-`N05`. The importer also requires N02 trial 0,
-the N03 baseline and the N05 baseline, which score the same fresh prompt, to
-agree on tokens, top IDs and scores within 0.01. N04 shows reuse does not change
+next-token scoring has an unresolved API/semantic contract
+([#1158](https://github.com/leehack/llamadart/issues/1158)); the runtime upgrade
+is tracked separately in [litert-lm-native#75](https://github.com/leehack/litert-lm-native/issues/75)
+and does not establish scoring support. Until the contract is implemented and
+qualified, no LiteRT profile may claim `N02`-`N05`. Among passing records, the
+importer also requires N02 trial 0, the N03 baseline and the N05 baseline,
+which score the same fresh prompt, to agree on tokens, top IDs and scores
+within 0.01. Non-PASS records do not enter that comparison. N04 shows reuse does not change
 scores; it does not prove the cache was used (see P03 for counters). Scores
 are raw logits, so no sampler setting is covered. The pack does not qualify
 Web, accelerators, other models or physical devices.
