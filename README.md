@@ -146,7 +146,9 @@ historical or nightly `bNNNN` artifacts. New nightly wrapper rebuilds use
 consumption-only overrides. Nightly cores use canonical decimal spelling, and
 rebuild counters start at 1 without leading zeros. Build-hook overrides must
 always name an explicit tag; `latest` is limited to maintainer synchronization
-and header/binding regeneration. The full override rules are in [Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks#override-the-llamacpp-release).
+and header/binding regeneration. On Windows, runtime environment directory
+overrides select backend modules; use `llamadart_native_path` to replace the
+complete runtime. The full override rules are in [Native runtime configuration](https://llamadart.leehack.com/docs/platforms/native-build-hooks#override-the-llamacpp-release).
 
 ## Guides
 

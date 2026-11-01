@@ -385,6 +385,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Native prompt reuse, context reuse, generation stability changes.',
   ),
   TestMatrixRow(
+    id: 'windows-native-override-registry',
+    tier: 'platform',
+    mode: 'manual local-only Windows x64 CPU',
+    covers:
+        '18 fresh H/E/P and alias model/context/unload cases, passive registry/IAT identity, maintained declaration mutation, whole-bundle AOT distribution',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario windows-native-override-registry',
+    useWhen:
+        'Windows native override or registry changes; pinned SDK/native/model inputs, complete immutable evidence archive and independent review required. GPU remains unqualified.',
+  ),
+  TestMatrixRow(
     id: 'native-inference-benchmark',
     tier: 'targeted',
     mode: 'local-only',

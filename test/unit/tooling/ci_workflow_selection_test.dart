@@ -293,7 +293,12 @@ void main() {
       expect(deploy['needs'], ['test-linux-web', 'web-chat-contract']);
       // GitHub's implicit success() includes skipped ancestors of the aggregate.
       // Explicit cancellation status lets direct successful needs decide eligibility.
-      expect(deploy['if'], startsWith('!cancelled() &&'));
+      expect(
+        deploy['if'],
+        startsWith(
+          '!cancelled() && inputs.windows_registry_qualification != true &&',
+        ),
+      );
       const mainOnly =
           "(github.event_name == 'push' || "
           "github.event_name == 'workflow_dispatch') && "
@@ -504,6 +509,7 @@ void main() {
         'changes',
         'test-linux-web',
         'deploy-chat-app',
+        'windows-registry-qualification',
       });
       final aggregate = jobs['test-linux-web'] as Map;
       expect(aggregate['if'], r'${{ always() }}');
@@ -554,8 +560,16 @@ void main() {
         'pull_request',
         'workflow_dispatch',
       });
-      // No inputs: a manual run cannot name another ref or artifact to deploy.
-      expect(triggers['workflow_dispatch'], isNull);
+      // A manual run cannot name another ref, command, model or deploy artifact.
+      expect(triggers['workflow_dispatch']['inputs'], {
+        'windows_registry_qualification': {
+          'description':
+              'Run the pinned Windows CPU registry qualification separately',
+          'type': 'boolean',
+          'required': false,
+          'default': false,
+        },
+      });
       for (final name in ['push', 'pull_request']) {
         final trigger = triggers[name] as Map;
         expect(trigger.containsKey('paths'), isFalse);
@@ -563,6 +577,112 @@ void main() {
       }
     },
   );
+
+  test(
+    'qualification flag causally gates manual execution and deployment',
+    () async {
+      final jobs = readWorkflow('ci')['jobs'] as Map;
+      final result = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          '-c',
+          r"""
+import itertools,json,sys
+qualification,deploy=json.loads(sys.argv[1])
+for event,flag,cancel,good,main in itertools.product(('push','pull_request','workflow_dispatch'),(False,True),(False,True),(False,True),(False,True)):
+ values={'github.event_name':repr(event),'inputs.windows_registry_qualification':repr(flag),'cancelled()':repr(cancel),'github.ref':repr('refs/heads/main' if main else 'refs/heads/test'),'github.repository':repr('leehack/llamadart'),'needs.test-linux-web.result':repr('success' if good else 'failure'),'needs.web-chat-contract.result':repr('success' if good else 'failure')}
+ def run(expression):
+  for key,value in values.items(): expression=expression.replace(key,value)
+  return eval(expression.replace('&&',' and ').replace('||',' or ').replace('!=','@NE@').replace('!',' not ').replace('@NE@','!=').replace('true','True').replace('false','False').strip(),{'__builtins__':{}},{})
+ assert run(qualification)==(event=='workflow_dispatch' and flag)
+ assert run(deploy)==(not cancel and not flag and event in ('push','workflow_dispatch') and main and good)
+""",
+          jsonEncode([
+            jobs['windows-registry-qualification']['if'],
+            jobs['deploy-chat-app']['if'],
+          ]),
+        ],
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+  );
+
+  test('manual qualification is bounded and outside required aggregate', () {
+    final jobs = readWorkflow('ci')['jobs'] as Map;
+    final job = jobs['windows-registry-qualification'] as Map;
+    expect(
+      job['if'],
+      "github.event_name == 'workflow_dispatch' && inputs.windows_registry_qualification == true",
+    );
+    expect(job['runs-on'], 'windows-2022');
+    expect(job['permissions'], {'contents': 'read'});
+    expect(job['timeout-minutes'], 75);
+    expect(job.containsKey('needs'), isFalse);
+    expect(job.containsKey('secrets'), isFalse);
+    final steps = (job['steps'] as List).cast<Map>();
+    expect(steps.first['with'], {
+      'ref': r'${{ github.sha }}',
+      'fetch-depth': 0,
+      'persist-credentials': false,
+    });
+    expect(steps.any((s) => s.containsKey('continue-on-error')), isFalse);
+    final upload = steps.singleWhere(
+      (s) => s['uses'] == 'actions/upload-artifact@v7',
+    );
+    expect(upload['if'], r'${{ always() }}');
+    expect(upload['with']['overwrite'], isFalse);
+    expect(upload['with']['retention-days'], 1);
+    expect(upload['with']['if-no-files-found'], 'error');
+    expect(
+      upload['with']['name'],
+      r'windows-registry-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}',
+    );
+    expect(jsonEncode(job), isNot(contains('secrets.')));
+    expect(
+      (jobs['test-linux-web']['needs'] as List),
+      isNot(contains('windows-registry-qualification')),
+    );
+  });
+
+  test('qualification evidence uses runner context only in supported steps', () {
+    final job =
+        readWorkflow('ci')['jobs']['windows-registry-qualification'] as Map;
+    const root =
+        r'${{ runner.temp }}/windows-registry-${{ github.run_id }}-${{ github.run_attempt }}';
+    void lint(Map candidate) {
+      // GitHub rejects runner in jobs.<job>.env before creating a run.
+      if (jsonEncode(candidate['env']).contains('runner.')) {
+        throw FormatException('runner context is unavailable in job env');
+      }
+      final steps = (candidate['steps'] as List).cast<Map>();
+      for (final name in [
+        'Prepare pinned qualification SDK',
+        'List, inspect and execute the durable scenario',
+        'Seal all qualification evidence',
+      ]) {
+        final step = steps.singleWhere((step) => step['name'] == name);
+        if (step['env']?['LLAMADART_WINDOWS_QUALIFICATION'] != root) {
+          throw FormatException('execution/sealing evidence root differs');
+        }
+      }
+      final upload = steps.singleWhere(
+        (step) => step['id'] == 'qualification-artifact',
+      );
+      if (upload['with']['path'] != '$root/evidence.zip') {
+        throw FormatException('upload evidence root differs');
+      }
+    }
+
+    lint(job);
+    final invalidJob = Map.of(job)
+      ..['env'] = {'LLAMADART_WINDOWS_QUALIFICATION': root};
+    expect(() => lint(invalidJob), throwsFormatException);
+    final invalidPath = jsonDecode(jsonEncode(job)) as Map;
+    (invalidPath['steps'] as List).singleWhere(
+      (step) => step['id'] == 'qualification-artifact',
+    )['with']['path'] = 'evidence.zip';
+    expect(() => lint(invalidPath), throwsFormatException);
+  });
 
   test('one macOS job runs each selected companion and hosted check', () async {
     final jobs = readWorkflow('ci')['jobs'] as Map<String, dynamic>;

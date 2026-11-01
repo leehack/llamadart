@@ -209,6 +209,92 @@ void main() {
     });
   });
 
+  group('Windows ggml code assets', () {
+    test('binds the registry through assets despite a module override', () {
+      final service = LlamaCppService(isWindows: true);
+      _write(service, '_backendModuleDirectory', '/external/runtime');
+      final lookedUp = <String>[];
+      final countAddress = Pointer.fromFunction<Size Function()>(
+        _registryCount,
+        0,
+      );
+      _invoke<void>(service, '_resolveGgmlFallbackFunctions', const [], {
+        #assetSymbol: (String symbol) {
+          lookedUp.add(symbol);
+          return symbol == 'ggml_backend_reg_count'
+              ? countAddress
+              : Pointer<NativeType>.fromAddress(1);
+        },
+      });
+      final count = _read<int Function()>(
+        service,
+        '_ggmlBackendRegCountFallback',
+      );
+      expect(count(), 7);
+      expect(lookedUp, hasLength(20));
+      expect(lookedUp.toSet(), hasLength(20));
+      expect(
+        lookedUp,
+        containsAll([
+          'ggml_backend_load',
+          'ggml_backend_register',
+          'ggml_backend_reg_count',
+          'ggml_backend_reg_get_proc_address',
+          'ggml_backend_dev_buffer_type',
+        ]),
+      );
+      _write(service, '_backendModuleDirectory', '/another/runtime');
+      _invoke<void>(service, '_resolveGgmlFallbackFunctions', const [], {
+        #assetSymbol: (String symbol) => throw StateError('registry changed'),
+      });
+      expect(count(), 7);
+    });
+
+    test('missing optional getters do not reject a compatible registry', () {
+      final service = LlamaCppService(isWindows: true);
+      final countAddress = Pointer.fromFunction<Size Function()>(
+        _registryCount,
+        0,
+      );
+      _invoke<void>(service, '_resolveGgmlFallbackFunctions', const [], {
+        #assetSymbol: (String symbol) => symbol == 'ggml_backend_reg_count'
+            ? countAddress
+            : throw ArgumentError('optional symbol not exported'),
+      });
+      expect(
+        _read<int Function()>(service, '_ggmlBackendRegCountFallback')(),
+        7,
+      );
+      expect(_read<Object?>(service, '_ggmlBackendDevMemoryFallback'), isNull);
+      expect(_read<Object?>(service, '_ggmlBackendLoadAllFallback'), isNull);
+    });
+
+    test('missing asset symbols are unsupported on every attempt', () {
+      final service = LlamaCppService(isWindows: true);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        expect(
+          () => _invoke<void>(
+            service,
+            '_resolveGgmlFallbackFunctions',
+            const [],
+            {
+              #assetSymbol: (String symbol) =>
+                  throw ArgumentError('not exported'),
+            },
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('Windows llama.cpp backend registration'),
+            ),
+          ),
+        );
+      }
+      expect(_read<Object?>(service, '_ggmlBackendLoadFallback'), isNull);
+    });
+  });
+
   group('ggml fallback probe', () {
     List<String> resolve(
       LlamaCppService service,
@@ -731,3 +817,5 @@ void _write(LlamaCppService service, String field, Object? value) {
     service,
   ).setField(MirrorSystem.getSymbol(field, _serviceLibrary), value);
 }
+
+int _registryCount() => 7;
