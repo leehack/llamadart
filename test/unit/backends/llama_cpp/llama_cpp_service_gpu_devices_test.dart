@@ -703,6 +703,80 @@ void main() {
     });
   });
 
+  group('non-finite tensor split sum', () {
+    for (final initialList in [false, true]) {
+      for (final draft in [false, true]) {
+        test(
+          '${draft ? 'draft' : 'main'} load frees '
+          '${initialList ? 'a replaced' : 'a new'} device list before refusal',
+          () {
+            final devices = [
+              _fake('CUDA0', 'CUDA', 0x1000),
+              _fake('CUDA1', 'CUDA', 0x2000),
+            ];
+            start(
+              registeredDevices: () => devices,
+              backendDevices: (_) => initialList
+                  ? [for (final entry in devices) entry.device!]
+                  : const [],
+              deviceTypes: (_) => [_gpu],
+            );
+            _setPrivate(service, '_backendModuleDirectory', null);
+            recorder.fail = (name) => name == _load;
+            final params = ModelParams(
+              preferredBackend: GpuBackend.cuda,
+              gpuDevices: const [0, 1],
+              tensorSplit: const [1.7e308, 1.7e308],
+              cpuMoeLayers: draft ? 0 : 1,
+            );
+            Object? failure;
+            try {
+              if (draft) {
+                const target = 7;
+                (_private(service, '_modelLoadParams')
+                        as Map<int, ModelParams>)[target] =
+                    params;
+                (_private(service, '_modelBackendNames')
+                        as Map<int, String>)[target] =
+                    'CUDA';
+                (_private(service, '_modelResolvedGpuLayers')
+                        as Map<int, int>)[target] =
+                    99;
+                _loadDraft(service, target, model);
+              } else {
+                service.loadModel(model, params);
+              }
+            } catch (error) {
+              failure = error;
+            }
+            expect(recorder.calls, isNot(contains(_load)));
+            expect(
+              allocator.byteCounts,
+              List.filled(
+                initialList ? 2 : 1,
+                3 * sizeOf<ggml_backend_dev_t>(),
+              ),
+              reason:
+                  'only device lists precede refusal; split, override '
+                  'patterns and model path must not allocate',
+            );
+            allocator.expectAllFreed();
+            expect(
+              failure,
+              isA<LlamaArgumentException>()
+                  .having((error) => error.name, 'name', 'tensorSplit')
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    contains('finite sum'),
+                  ),
+            );
+          },
+        );
+      }
+    }
+  });
+
   test('the tensor split holds llama_max_devices() floats', () {
     start();
     final array = _invokePrivate<Pointer<Float>>(
